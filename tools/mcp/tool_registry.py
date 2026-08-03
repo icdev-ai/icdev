@@ -1195,7 +1195,11 @@ TOOL_REGISTRY = {
         "category": "knowledge",
         "module": "tools.mcp.knowledge_server",
         "handler": "handle_search_knowledge",
-        "description": "Search the ICDEV™ knowledge base for patterns, solutions, and best practices. Supports keyword search with optional pattern type filtering.",
+        "description": (
+            "Search the ICDEV™ knowledge base for patterns, solutions, and best practices. "
+            "Supports keyword search with optional pattern type filtering. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5010,7 +5014,11 @@ TOOL_REGISTRY = {
         "category": "rag",
         "module": "tools.mcp.rag_server",
         "handler": "handle_rag_search",
-        "description": "Search ICDEV™ RAG knowledge base with natural language query. Returns ranked results from all indexed sources (innovation signals, compliance artifacts, research dossiers, etc.).",
+        "description": (
+            "Search ICDEV™ RAG knowledge base with natural language query. Returns ranked results "
+            "from all indexed sources (innovation signals, compliance artifacts, research dossiers, etc.). "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5152,7 +5160,12 @@ TOOL_REGISTRY = {
         "category": "rag",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_query_classify",
-        "description": "Classify a RAG query into 4-label taxonomy: fact_single, summary, reasoning, unanswerable (D-RAG-24).",
+        "description": (
+            "Classify a RAG query into 4-label taxonomy: fact_single, summary, reasoning, "
+            "unanswerable (D-RAG-24). Deterministic — subprocesses tools/rag/query_classifier.py "
+            "and never calls a provider, which is also what cortex.classify degrades to. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5270,7 +5283,11 @@ TOOL_REGISTRY = {
         "category": "knowledge_graph",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_kg_search",
-        "description": "Search the ICDEV™ Knowledge Graph using GraphRAG with scoring profiles (compliance, exploratory, provenance, security).",
+        "description": (
+            "Search the ICDEV™ Knowledge Graph using GraphRAG with scoring profiles "
+            "(compliance, exploratory, provenance, security). "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -6879,7 +6896,8 @@ TOOL_REGISTRY = {
         "handler": "handle_dic_search",
         "description": (
             "BM25+KG full-text search over a DIC collection. Returns ranked chunks with "
-            "source citations, entity co-occurrences, and relevance scores."
+            "source citations, entity co-occurrences, and relevance scores. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
         ),
         "input_schema": {
             "type": "object",
