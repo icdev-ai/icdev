@@ -46,8 +46,9 @@ Categories:
     nova (9)
     pulse (1)
     cortex (8)
+    analyzers (2)
 
-Total: 444 tools, 6 resources
+Total: 463 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -7564,6 +7565,83 @@ TOOL_REGISTRY = {
                 "graph": {"type": "object", "description": "Inline pipeline graph {nodes, edges} (overrides pipeline_id)"},
                 "name": {"type": "string", "description": "Pipeline name"},
                 "format": {"type": "string", "description": "Export format", "default": "gitlab_ci"},
+            },
+        },
+    },
+    # ============================================================
+    # ANALYZERS — One dispatch path for observables (anz-disp-01, 2 tools)
+    # ============================================================
+    # Declarative metadata only: module + handler strings into the existing
+    # gateway, NOT a new MCP server. Which analyzers run is read from
+    # args/analyzer_contract.yaml at call time, so declaring a new analyzer
+    # there exposes it through these tools with no edit here.
+    "analyzer_dispatch": {
+        "category": "analyzers",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_analyzer_dispatch",
+        "description": (
+            "Submit one observable (ip / domain / url / file_hash / email / file_path / cve / "
+            "vendor / ...) and get taxonomy-tagged reports from EVERY analyzer that declared it "
+            "accepts that type. Fans out concurrently with a per-analyzer timeout and returns "
+            "partial results: an analyzer that timed out, raised, or could not run is reported "
+            "with that status, never omitted. Responders (which act) are excluded unless "
+            "include_responders is set."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "observable_type": {
+                    "type": "string",
+                    "description": (
+                        "Observable type from the contract's closed vocabulary. Call "
+                        "analyzer_capabilities for the current list; an unknown type is rejected "
+                        "with the legal values rather than returning zero reports."
+                    ),
+                },
+                "value": {"description": "The observable itself (string, or object for structured types)"},
+                "context": {
+                    "type": "object",
+                    "description": (
+                        "Dispatch context. Keys are consumed by name via each declaration's "
+                        "binding.context_args (e.g. project_id for cve_triage). A missing key "
+                        "yields status 'skipped' naming it, not a silent drop."
+                    ),
+                },
+                "analyzers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Restrict to these analyzer keys; the rest are listed under 'excluded'",
+                },
+                "include_responders": {
+                    "type": "boolean",
+                    "description": "Also run responders, which take ACTION (e.g. RTBH blackhole). Default false.",
+                    "default": False,
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Override every analyzer's declared timeout budget",
+                },
+            },
+            "required": ["observable_type", "value"],
+        },
+    },
+    "analyzer_capabilities": {
+        "category": "analyzers",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_analyzer_capabilities",
+        "description": (
+            "List the observable-type vocabulary and, for each type, the analyzers and responders "
+            "that accept it with their taxonomy namespace, predicates, levels, timeout and sandbox "
+            "posture. Read from args/analyzer_contract.yaml — a newly declared analyzer appears "
+            "here with no code change."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "observable_type": {
+                    "type": "string",
+                    "description": "Restrict to one observable type; omit for the whole vocabulary",
+                },
             },
         },
     },

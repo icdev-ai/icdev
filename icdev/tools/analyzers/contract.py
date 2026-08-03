@@ -67,6 +67,8 @@ ANALYZER_KINDS: Tuple[str, ...] = ("analyzer", "responder")
 _DOTTED_PATH = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _KEY = re.compile(r"^[a-z][a-z0-9_]*$")
+#: ``param`` or ``param.key`` — the two forms ``binding.observable_arg`` takes.
+_ARG_TARGET = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +153,59 @@ class TaxonomyDeclaration:
 
 
 @dataclasses.dataclass(frozen=True)
+class ArgumentBinding:
+    """How a dispatcher turns an observable plus context into a call (anz-disp-01).
+
+    Declared per analyzer because ICDEV's entrypoints share no signature. The
+    observable value is the third argument of ``triage_cve(project_id, cve_id,
+    component, ...)``, the whole first argument of ``screen_item(item: dict)``,
+    and the *second* of ``trigger_rtbh(conn, prefix, ...)`` — whose first
+    argument is a live DB connection. Any "just pass it first" rule hands an IP
+    address to ``conn``; the call then fails somewhere inside the analyzer and
+    the failure reads exactly like the analyzer having nothing to report.
+
+    So the mapping is declared, in data, next to the analyzer it describes:
+
+    * ``observable_arg`` — parameter that receives the observable value. Use
+      ``param.key`` to nest it inside a dict built for ``param`` (that is how
+      ``screen_item({"vendor_name": ...})`` is reached). When omitted the value
+      goes to the callable's first parameter.
+    * ``context_args`` — ``parameter -> dispatch-context key``. A key the caller
+      did not supply is reported, not guessed.
+    * ``static_args`` — constants passed on every call.
+
+    A parameter left with no source and no default is a *misdeclaration*: the
+    dispatcher says so by name rather than calling the analyzer and hoping.
+    """
+
+    observable_arg: Optional[str] = None
+    context_args: Tuple[Tuple[str, str], ...] = ()
+    static_args: Tuple[Tuple[str, Any], ...] = ()
+
+    @property
+    def context_map(self) -> Dict[str, str]:
+        """``{parameter: context key}`` as a plain dict."""
+        return dict(self.context_args)
+
+    @property
+    def static_map(self) -> Dict[str, Any]:
+        """``{parameter: constant}`` as a plain dict."""
+        return dict(self.static_args)
+
+    @property
+    def declared(self) -> bool:
+        """True when the contract said anything at all about this analyzer's call."""
+        return bool(self.observable_arg or self.context_args or self.static_args)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "observable_arg": self.observable_arg,
+            "context_args": self.context_map,
+            "static_args": self.static_map,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
 class AnalyzerDeclaration:
     """One declared analyzer or responder. Declared in config, not in code."""
 
@@ -166,6 +221,7 @@ class AnalyzerDeclaration:
     sandbox: str
     timeout_seconds: int
     enabled: bool
+    binding: ArgumentBinding = ArgumentBinding()
 
     def accepts_observable(self, observable_type: str) -> bool:
         """True when this analyzer declared *observable_type* as an input."""
@@ -185,6 +241,7 @@ class AnalyzerDeclaration:
             "sandbox": self.sandbox,
             "timeout_seconds": self.timeout_seconds,
             "enabled": self.enabled,
+            "binding": self.binding.to_dict(),
         }
 
 
@@ -407,6 +464,67 @@ def _parse_taxonomy(
     )
 
 
+def _parse_binding(raw: Any, *, analyzer_key: str) -> ArgumentBinding:
+    """Validate an optional ``binding:`` block. Absent means "first parameter"."""
+    if raw is None:
+        return ArgumentBinding()
+    what = f"analyzer {analyzer_key!r} `binding`"
+    block = _require_mapping(raw, what)
+
+    observable_arg = block.get("observable_arg")
+    if observable_arg is not None:
+        observable_arg = _require_str(observable_arg, f"{what}.observable_arg")
+        if not _ARG_TARGET.match(observable_arg):
+            raise InvalidDeclaration(
+                f"{what}.observable_arg must be `parameter` or `parameter.key`, "
+                f"got {observable_arg!r}"
+            )
+
+    def _pairs(section: str, *, values_must_be_str: bool) -> Tuple[Tuple[str, Any], ...]:
+        value = block.get(section)
+        if value is None:
+            return ()
+        mapping = _require_mapping(value, f"{what}.{section}")
+        out: List[Tuple[str, Any]] = []
+        for param, source in mapping.items():
+            param = _require_str(param, f"{what}.{section} key")
+            if not _IDENTIFIER.match(param):
+                raise InvalidDeclaration(
+                    f"{what}.{section} key {param!r} must be a Python parameter name"
+                )
+            if values_must_be_str:
+                source = _require_str(source, f"{what}.{section}.{param}")
+            out.append((param, source))
+        return tuple(out)
+
+    context_args = _pairs("context_args", values_must_be_str=True)
+    static_args = _pairs("static_args", values_must_be_str=False)
+
+    # Two sources for one parameter is a declaration defect, not a precedence
+    # question — refuse to guess which one the author meant.
+    context_params = {p for p, _ in context_args}
+    static_params = {p for p, _ in static_args}
+    clash = sorted(context_params & static_params)
+    if clash:
+        raise InvalidDeclaration(
+            f"{what}: parameter(s) {clash} are supplied by both `context_args` "
+            "and `static_args`"
+        )
+    if observable_arg:
+        head = observable_arg.split(".", 1)[0]
+        if head in context_params or head in static_params:
+            raise InvalidDeclaration(
+                f"{what}: parameter {head!r} receives the observable and is also "
+                "supplied by `context_args`/`static_args`"
+            )
+
+    return ArgumentBinding(
+        observable_arg=observable_arg,
+        context_args=context_args,
+        static_args=static_args,
+    )
+
+
 def _parse_analyzer(
     raw: Any,
     index: int,
@@ -499,6 +617,7 @@ def _parse_analyzer(
         sandbox=sandbox,
         timeout_seconds=timeout_seconds,
         enabled=enabled,
+        binding=_parse_binding(block.get("binding"), analyzer_key=key),
     )
 
 

@@ -263,6 +263,29 @@ python tools/analyzers/contract.py --observable cve      # who accepts this obse
 python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause for a migration
 ```
 
+### Observable dispatch (anz-disp-01)
+
+One entry point. Submitting an observable fans it out to **every** analyzer that
+declared it accepts that type — concurrently, with a per-analyzer timeout — and
+returns taxonomy-tagged reports. An analyzer that timed out is reported as
+`timeout`, never omitted: a fan-out that dropped it would read identically to
+one where it found nothing. Exit code is 2 when the result is partial.
+
+```bash
+python tools/analyzers/dispatch.py --observables                          # vocabulary + who accepts what
+python tools/analyzers/dispatch.py --type ip --value 198.51.100.7         # fan out to every ip analyzer
+python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 \
+    --context '{"project_id":"p1","component":"xz","cvss_score":10.0,"severity":"critical","description":"backdoor"}'
+python tools/analyzers/dispatch.py --type vendor --value Acme --json      # machine-readable reports
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --analyzer threat_intel_match
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+```
+
+MCP (existing gateway, category `analyzers`, no new server):
+`analyzer_dispatch` (params: `observable_type`, `value`, `context`,
+`analyzers`, `include_responders`, `timeout_seconds`) and
+`analyzer_capabilities` (param: `observable_type`).
+
 ---
 
 ## Browser Automation & Agent Scope Controls
