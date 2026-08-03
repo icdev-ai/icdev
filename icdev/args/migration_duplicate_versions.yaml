@@ -24,7 +24,9 @@
 # migration_versions.check()::unexplained_entries.
 #
 # Re-derive the classification at any time with:
-#   python tools/db/shadowed_migration_audit.py #       --fresh-db <sqlite built by init_icdev_db.py + migrate.py --up --converge> #       --fresh-pg-dsn <postgres built by bootstrap_pg.py + migrate.py --up --converge>
+#   python tools/db/shadowed_migration_audit.py \
+#       --fresh-db <sqlite built by init_icdev_db.py + migrate.py --up --converge> \
+#       --fresh-pg-dsn <postgres built by bootstrap_pg.py + migrate.py --up --converge>
 #
 # 48 duplicated versions; 60 migrations shadowed. Verdicts as of 2026-08-03:
 #   42 benign, 9 not-actually-shadowed, 3 no-DDL, 6 were real gaps (now fixed).

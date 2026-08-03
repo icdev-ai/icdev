@@ -217,6 +217,14 @@ def main(argv: list[str] | None = None) -> int:
                   "allowlist — it exists to freeze historical damage, not to absorb new.")
         else:
             print("\nOK — no new duplicate versions.")
+        if result["unexplained_entries"]:
+            print("\nAllowlisted with NO recorded reason — 'grandfathered' is not "
+                  "the same claim as 'harmless':")
+            for entry in result["unexplained_entries"]:
+                print(f"  {entry}")
+            print("\nClassify it first:  python tools/db/shadowed_migration_audit.py "
+                  "--gaps\nthen write the finding next to the entry as "
+                  "`- <name>: \"<why it is safe>\"`.")
 
     if args.gate and not result["passed"]:
         return 1
