@@ -43,6 +43,11 @@ def _patch_km(db_path, monkeypatch):
     monkeypatch.setattr(km, "_task_log_is_empty", lambda tid: True)
     monkeypatch.setattr(km, "_get_task_timeout", lambda tid: 900)
     monkeypatch.setattr(km, "_detect_execution_anomaly", lambda age: (False, ""))
+    # _reap_stale_in_progress returns at its first line when another live
+    # scheduler owns the runner. Unpatched, these tests pass in CI and fail on
+    # any developer machine with a scheduler running — and the failure reads as
+    # "stale task not reaped" rather than "the reaper never ran".
+    monkeypatch.setattr(km, "_foreign_scheduler_pid", lambda: 0)
 
     # ── ambient host state the sweeps read, pinned so this file tests gate
     #    exemption and nothing else ────────────────────────────────────────

@@ -66,6 +66,20 @@ def _make_conn() -> sqlite3.Connection:
     return conn
 
 
+def _make_reflex_conn():
+    """A connection safe to hand to the reflex under test.
+
+    The reflex authors PostgreSQL SQL (`%s` placeholders) and relies on
+    StorageConnection to rewrite them for SQLite. A bare sqlite3 connection
+    removes that layer, so every INSERT raises `near "%": syntax error` inside
+    the reflex's best-effort `except` and the test asserts against a no-op it
+    caused itself.
+    """
+    from tests._sql_compat import translating
+
+    return translating(_make_conn())
+
+
 # ---------------------------------------------------------------------------
 # 1. ad_trap_events write path
 # ---------------------------------------------------------------------------
@@ -74,7 +88,7 @@ class TestTrapEventWritePath(unittest.TestCase):
     """Direct INSERT into ad_trap_events via _insert_trap_event."""
 
     def setUp(self):
-        self.conn = _make_conn()
+        self.conn = _make_reflex_conn()
 
     def tearDown(self):
         self.conn.close()
@@ -129,8 +143,20 @@ class TestTrapEventWritePath(unittest.TestCase):
 class TestTrapSweepReflex(unittest.TestCase):
     """_trap_sweep detects direction flips and inserts trap events."""
 
+    # _trap_sweep reads its thresholds from a cfg dict (run() supplies
+    # _load_trap_config()). Pinned here rather than loaded from
+    # args/ta_config.yaml so the confidence and cooldown assertions below stay
+    # true when an operator retunes the live config.
+    CFG = {
+        "cooldown_hours": 4,
+        "dedup_window_hours": 24,
+        "min_confidence": 0.50,
+        "sentiment_elevation": 0.15,
+        "sentiment_bearish_threshold": 0.40,
+    }
+
     def setUp(self):
-        self.conn = _make_conn()
+        self.conn = _make_reflex_conn()
 
     def tearDown(self):
         self.conn.close()
@@ -150,7 +176,7 @@ class TestTrapSweepReflex(unittest.TestCase):
             ("SELL", 0.85, "2026-04-24T10:00:00"),  # newest
             ("BUY", 0.80, "2026-04-24T08:00:00"),   # older
         ])
-        events = _trap_sweep(self.conn)
+        events = _trap_sweep(self.conn, self.CFG)
         self.assertGreaterEqual(len(events), 1)
         tickers = [e["ticker"] for e in events]
         self.assertIn("SPY", tickers)
@@ -161,7 +187,7 @@ class TestTrapSweepReflex(unittest.TestCase):
             ("BUY", 0.90, "2026-04-24T11:00:00"),
             ("SELL", 0.88, "2026-04-24T09:00:00"),
         ])
-        events = _trap_sweep(self.conn)
+        events = _trap_sweep(self.conn, self.CFG)
         tickers = [e["ticker"] for e in events]
         self.assertIn("QQQ", tickers)
 
@@ -171,7 +197,7 @@ class TestTrapSweepReflex(unittest.TestCase):
             ("BUY", 0.80, "2026-04-24T10:00:00"),
             ("BUY", 0.75, "2026-04-24T08:00:00"),
         ])
-        events = _trap_sweep(self.conn)
+        events = _trap_sweep(self.conn, self.CFG)
         tickers = [e["ticker"] for e in events]
         self.assertNotIn("NVDA", tickers)
 
@@ -181,7 +207,7 @@ class TestTrapSweepReflex(unittest.TestCase):
             ("SELL", 0.30, "2026-04-24T10:00:00"),
             ("BUY", 0.25, "2026-04-24T08:00:00"),
         ])
-        events = _trap_sweep(self.conn)
+        events = _trap_sweep(self.conn, self.CFG)
         tickers = [e["ticker"] for e in events]
         self.assertNotIn("AMD", tickers)
 
@@ -191,8 +217,8 @@ class TestTrapSweepReflex(unittest.TestCase):
             ("SELL", 0.85, "2026-04-24T10:00:00"),
             ("BUY", 0.82, "2026-04-24T08:00:00"),
         ])
-        events1 = _trap_sweep(self.conn)
-        events2 = _trap_sweep(self.conn)
+        events1 = _trap_sweep(self.conn, self.CFG)
+        events2 = _trap_sweep(self.conn, self.CFG)
         tsla_first = sum(1 for e in events1 if e["ticker"] == "TSLA")
         tsla_second = sum(1 for e in events2 if e["ticker"] == "TSLA")
         # After first sweep sets cooldown, second sweep should not insert again
@@ -200,7 +226,7 @@ class TestTrapSweepReflex(unittest.TestCase):
 
     def test_no_signals_returns_empty(self):
         from tools.genesis.reflexes.fathomdesk_trap_sweep import _trap_sweep
-        events = _trap_sweep(self.conn)
+        events = _trap_sweep(self.conn, self.CFG)
         self.assertEqual(events, [])
 
 

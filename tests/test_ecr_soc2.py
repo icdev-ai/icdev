@@ -75,12 +75,15 @@ def test_collector_populates_evidence(_soc2_db, monkeypatch):
 
     tid = f"tenant-{uuid.uuid4().hex[:8]}"
 
-    # Seed audit_trail with a login_success event (maps to CC6.1)
+    # Seed audit_trail with a login_success event (maps to CC6.1).
+    # Columns are audit_trail's real ones. The fixture used to declare
+    # tenant_id/resource/recorded_at, which the live table has never had, so
+    # this insert passed here and raised in production.
     with storage.get_connection() as conn:
         conn.execute(
-            "INSERT INTO audit_trail (id, tenant_id, action, resource, recorded_at) "
-            "VALUES (?,?,?,?,datetime('now'))",
-            (str(uuid.uuid4()), tid, "login_success", "auth", ),
+            "INSERT INTO audit_trail (event_type, actor, action, created_at) "
+            "VALUES (?,?,?,datetime('now'))",
+            ("compliance_check", tid, "login_success"),
         )
         conn.commit()
 
@@ -103,13 +106,14 @@ def test_collector_idempotent(_soc2_db, monkeypatch):
     from tools.compliance.soc2_collector import collect_evidence
 
     tid = f"idem-{uuid.uuid4().hex[:8]}"
-    audit_id = str(uuid.uuid4())
 
+    # audit_trail.id is an autoincrementing INTEGER, so the row id is assigned
+    # by the database rather than supplied here.
     with storage.get_connection() as conn:
         conn.execute(
-            "INSERT INTO audit_trail (id, tenant_id, action, resource, recorded_at) "
-            "VALUES (?,?,?,?,datetime('now'))",
-            (audit_id, tid, "login_success", "auth"),
+            "INSERT INTO audit_trail (event_type, actor, action, created_at) "
+            "VALUES (?,?,?,datetime('now'))",
+            ("compliance_check", tid, "login_success"),
         )
         conn.commit()
 

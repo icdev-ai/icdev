@@ -13,8 +13,9 @@ CLI:
 import argparse
 import json
 import math
+import sqlite3
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import StorageConnection, get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -194,7 +195,26 @@ def compute_time_aware_score(
 
 
 def _get_connection(db_path: Optional[Path] = None):
-    """Get a DB connection."""
+    """Get a DB connection, honouring the ``db_path`` test seam.
+
+    ``db_path`` stands in for ``get_connection()`` so a caller can point
+    scoring at an isolated database instead of the platform one — the CLI
+    passes ``--db-path`` through to it. It used to be accepted and then
+    ignored, so ``score_entry``/``rank_with_decay`` always read the live
+    ``data/icdev.db``: a test that seeded a ``tmp_path`` database was really
+    asserting against whatever rows the developer's checkout happened to hold.
+    That reads as green on a populated box and as "entry not found" / empty
+    result set on a clean one.
+
+    The wrapper reproduces what ``get_connection()`` returns rather than a bare
+    sqlite3 connection: ``sqlite3.Row`` so rows stay subscriptable by column
+    name, and ``StorageConnection`` so PostgreSQL ``%s`` placeholders are still
+    rewritten to ``?`` (``score_entry``'s SELECT uses ``%s``).
+    """
+    if db_path is not None:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return StorageConnection(conn, "sqlite")
     return get_connection()
 
 

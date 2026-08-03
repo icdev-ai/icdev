@@ -54,6 +54,12 @@ class TranslatingCursor:
         self._cursor.executemany(TranslatingConnection._t(sql), seq)
         return self
 
+    def executescript(self, sql: str):
+        # Not translated: executescript takes DDL/seed scripts, which carry no
+        # bound parameters, and sqlite3 rejects a parameterized script anyway.
+        self._cursor.executescript(sql)
+        return self
+
     def __iter__(self):
         return iter(self._cursor)
 

@@ -591,8 +591,8 @@ def _seed_achievements(conn):
                 (a["slug"], a["title"], a["description"], a["icon"],
                  a["xp_bonus"], a["rarity"], a["criteria_json"]),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            _log.warning("_seed_achievements: best-effort INSERT into fa_achievements failed (non-blocking): %s", exc)
     conn.commit()
 
 
@@ -607,8 +607,8 @@ def _seed_skill_nodes(conn):
                 (n["slug"], n["title"], n["tier"], n["role_filter"],
                  json.dumps(n.get("prereqs", [])), pos[0], pos[1]),
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            _log.warning("_seed_skill_nodes: best-effort INSERT into fa_skill_nodes failed (non-blocking): %s", exc)
     conn.commit()
 
 
@@ -1603,8 +1603,8 @@ def join_guild(invite_code: str, user_id: int, tenant_id: str | None = None) -> 
             "UPDATE fa_users SET guild_id=%s WHERE id=%s", (guild["id"], user_id)
         )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+        _log.warning("join_guild: best-effort INSERT into fa_guild_members failed (non-blocking): %s", exc)
     return dict(guild)
 
 
@@ -1712,8 +1712,11 @@ def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = No
                 (u["id"], period, u["xp"], rank, now, tenant_id or ""),
             )
             count += 1
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+            _log.warning(
+                "refresh_leaderboard_cache: best-effort INSERT into fa_leaderboard_cache failed (non-blocking): %s",
+                exc,
+            )
     try:
         conn.commit()
     except Exception:

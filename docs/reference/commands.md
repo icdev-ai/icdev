@@ -246,6 +246,48 @@ python tools/integrity/pr_gates.py --base origin/main --gate            # CI gat
 
 ---
 
+## Analyzer / Responder Contract (anz-con-01)
+
+The contract is DATA — `args/analyzer_contract.yaml`. A new analyzer is declared
+entirely there (accepted observable types, output taxonomy, rate limit, sandbox
+posture); no base class, no dispatch table, no blueprint edit. An unknown
+observable type is rejected when the file is LOADED, naming the offending
+analyzer and the legal values — not swallowed at dispatch time the way an
+unknown `citation_type` was.
+
+```bash
+python tools/analyzers/contract.py --validate            # load + validate; exit 1 on any defect
+python tools/analyzers/contract.py --list                # declared analyzers and responders
+python tools/analyzers/contract.py --json                # whole contract, machine-readable
+python tools/analyzers/contract.py --observable cve      # who accepts this observable type
+python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause for a migration
+```
+
+### Observable dispatch (anz-disp-01)
+
+One entry point. Submitting an observable fans it out to **every** analyzer that
+declared it accepts that type — concurrently, with a per-analyzer timeout — and
+returns taxonomy-tagged reports. An analyzer that timed out is reported as
+`timeout`, never omitted: a fan-out that dropped it would read identically to
+one where it found nothing. Exit code is 2 when the result is partial.
+
+```bash
+python tools/analyzers/dispatch.py --observables                          # vocabulary + who accepts what
+python tools/analyzers/dispatch.py --type ip --value 198.51.100.7         # fan out to every ip analyzer
+python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 \
+    --context '{"project_id":"p1","component":"xz","cvss_score":10.0,"severity":"critical","description":"backdoor"}'
+python tools/analyzers/dispatch.py --type vendor --value Acme --json      # machine-readable reports
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --analyzer threat_intel_match
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+```
+
+MCP (existing gateway, category `analyzers`, no new server):
+`analyzer_dispatch` (params: `observable_type`, `value`, `context`,
+`analyzers`, `include_responders`, `timeout_seconds`) and
+`analyzer_capabilities` (param: `observable_type`).
+
+---
+
 ## Browser Automation & Agent Scope Controls
 ```bash
 # Driver resolution (vendored msedgedriver / chromedriver — no runtime downloads)
@@ -747,6 +789,16 @@ python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis 
 
 # Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
 python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
+
+# Kanban — clear a stale done-gate block without re-dispatching (kpr-rvfy-02)
+python tools/kanban/cli.py --reverify <task-id> --dry-run     # Compute the verdict, write nothing
+python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh verification row
+# Exit 0=passed, 1=failed, 2=no such task. pr_watcher's enforced done-gate reads only the
+# LATEST kanban_verifications row and nothing writes one except a dispatch, so a task that
+# verified badly once cannot auto-merge until it is re-dispatched — which opens a SECOND PR.
+# This recomputes the verdict from the branch's real state (remote refs only, so it does not
+# depend on the dispatching process still being alive) and appends it. It does not weaken the
+# gate: a branch with no work still fails.
 
 # Kanban task_factory — loop_type and adversarial fields
 # Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
@@ -1399,7 +1451,11 @@ python tools/db/migrate.py --status [--json]                      # Show migrati
 python tools/db/migrate.py --up [--target 005] [--dry-run]        # Apply pending migrations
 python tools/db/migrate.py --down [--target 003]                  # Roll back migrations
 python tools/db/migrate.py --validate [--json]                    # Validate checksums
-python tools/db/migrate.py --create "add_feature_table"           # Scaffold new migration
+python tools/db/migrate.py --create "add_feature_table"           # Scaffold new migration (allocates a YYYYMMDDHHMMSS version)
+# ALWAYS scaffold with --create. Migration ids are UTC timestamps, not a
+# sequence: hand-picking "highest + 1" is a read-modify-write across every
+# concurrent session and produced three collisions in one session on
+# 2026-08-02, one of which broke main. The legacy 001-341 range is closed.
 python tools/db/migrate.py --mark-applied 001                    # Mark existing DB as migrated
 python tools/db/migrate.py --up --all-tenants                    # Apply to all tenant DBs
 
@@ -3579,6 +3635,29 @@ python -c "from tools.twin_core import TwinRegistry; print(TwinRegistry.keys())"
 # Canonical schema: tools/twin_core/schema.py (verdict pass|warn|fail|unknown; Sequoia Pattern 4 violations)
 ```
 
+## FORGE Academy — xAPI Export (aca-trn-05)
+
+```bash
+# Export Academy completions as xAPI 1.0.3 statements so they can feed an external LMS/LRS.
+# Only records with a verified provenance row (fa_xp_ledger for step/mission,
+# fa_certificate_evidence for a certificate) are emitted; the rest are withheld and named
+# in the `excluded` block rather than silently dropped.
+python -m apps.forge_academy.xapi --json                                   # full envelope: statements + excluded + counts
+python -m apps.forge_academy.xapi --statements-only --out academy_feed.json  # bare array an LRS POST /statements expects
+python -m apps.forge_academy.xapi --user-id 1 --since 2026-01-01T00:00:00Z   # one learner, incremental
+python -m apps.forge_academy.xapi --include-unverified                       # also emit unverifiable records, each stamped verified:false
+
+# Library API
+python -c "from apps.forge_academy.xapi import build_statements; import json; print(json.dumps(build_statements()['counts']))"
+
+# HTTP (org-leadership gated, same tier as Oracle / Org Readiness)
+#   GET /api/academy/export/xapi[?user_id=&since=&include_unverified=1&statements_only=1]
+# Env: ICDEV_XAPI_ACTIVITY_BASE (default https://icdev.ai/xapi/forge-academy) — two deployments
+#   feeding the same LRS must not both claim the same activity IRIs.
+# SCORM is deliberately NOT implemented: it records one rolled-up completion per launch and would
+#   discard the per-step granularity that makes this export worth having.
+```
+
 ## Agent Browser — Indexed-Element Page Representation (tools/browser/)
 
 ```bash
@@ -3890,3 +3969,144 @@ page's own parser:
 The middle one is the state that had `/updates` advertising 1.2.37 while the
 package shipped 1.2.39. The last exists because notes that read as written but
 say nothing are worse than none.
+
+---
+
+## IDP Scorecard-as-Code (idp-score-02)
+
+Grades every component in `args/component_registry.yaml` against a ladder of
+ranked levels. Rules are **IQE queries**, not a bespoke DSL — see
+[tools/manifest/idp-scorecards.md](../../tools/manifest/idp-scorecards.md).
+
+```bash
+# List the shipped scorecards, their ladders, and how many rules gate them
+python tools/idp/scorecard.py --list
+python tools/idp/scorecard.py --list --json
+
+# Evaluate every scorecard in args/scorecards/ (human table)
+python tools/idp/scorecard.py
+
+# One scorecard, machine-readable — per-entity level, score, and rule outcomes
+python tools/idp/scorecard.py --scorecard component-readiness --json
+
+# Why is one component stuck at its level?
+python tools/idp/scorecard.py --scorecard component-readiness --component ndc
+
+# Evaluate scorecards from somewhere else (a tenant overlay, a test fixture)
+python tools/idp/scorecard.py --dir /path/to/scorecards --json
+```
+
+### Portal surface (idp-ui-02)
+
+The same catalog and scorecards rendered as a dashboard page, mounted at the
+`url_prefix` declared in `args/component_registry.yaml`. It grades itself: the
+portal appears in its own catalog and passes the 8-point completeness gate it
+surfaces for every other canvas.
+
+| Route | Purpose |
+|-------|---------|
+| `/idp/` | Ladder, rule coverage, catalog, and the portal's own grade |
+| `/idp/catalog` | Same page, catalog section |
+| `/idp/scorecards` | Same page, scorecard section |
+| `/idp/component/<key>` | One component: facts, per-rule outcomes, 8-point breakdown |
+| `GET /idp/api/catalog` | JSON catalog (`?scorecard=`, `?refresh=1`) |
+| `GET /idp/api/scorecard` | JSON scorecard report |
+| `GET /idp/api/component/<key>` | JSON component detail |
+| `POST /idp/api/iqe-query` | IQE natural-language query over `idp.components` |
+
+The view models are a library, not a CLI — import them:
+
+```python
+from tools.idp.portal import portal_overview, component_detail, self_check
+
+portal_overview()               # everything /idp renders
+component_detail("ndc")         # one component's facts, rules and 8 points
+self_check()["completeness"]    # the portal's own 8-point breakdown
+```
+
+Any rule expression is a standalone IQE query, so it can be run by hand against
+the same collection the scorecard grades:
+
+```bash
+python -m tools.iqe.run --query-string \
+  'foreach c in idp.components where c.has_e2e_spec == true select c.key'
+```
+
+Adding a rule or a level is a YAML edit under `args/scorecards/` — no Python
+change. `python tools/idp/scorecard.py --list` reflects it immediately.
+
+### Score history (idp-score-03)
+
+`scorecard.py` computes a standing and throws it away. `score_history.py` keeps
+it, so "is this component getting better or worse" becomes answerable. One row
+per component per evaluation in the append-only `idp_scorecard_history`, each
+carrying the attained ladder level — a promotion or demotion is a comparison of
+two adjacent rows, not a re-evaluation of historical rule sets.
+
+```bash
+# Record a point for every scorecard (always writes)
+python tools/idp/score_history.py --record
+
+# Record only if the scorecard's evaluation.window has rolled over —
+# how the scheduled reflex calls it, so a 3h cadence feeds a 24h window
+# without writing eight identical rows a day
+python tools/idp/score_history.py --record --if-due
+
+# One scorecard only
+python tools/idp/score_history.py --record --scorecard component-readiness
+
+# Read one component's series back (oldest-first, with delta and direction)
+python tools/idp/score_history.py --trend ndc
+python tools/idp/score_history.py --trend ndc --json --limit 30
+
+# Every ladder promotion/demotion across the estate
+python tools/idp/score_history.py --level-changes
+python tools/idp/score_history.py --level-changes --since 2026-08-01 --json
+```
+
+An explicit `--record` always writes, so re-scoring right after a fix shows the
+improvement immediately instead of waiting out the window. The scheduled writer
+is the Genesis reflex `idp_score_recorder` (3h, GREEN tier — see
+`args/genesis_config.yaml`); the window in `args/scorecards/<key>.yaml` decides
+whether each cycle actually records, so changing granularity is a YAML edit.
+
+### Gap seeder — a failing rule becomes a kanban task (idp-gap-01)
+
+A catalog product surfaces a red cell and stops. ICDEV owns `kanban_tasks` and
+an autonomous build pipeline, so a failing rule can become work. One task per
+failing rule per component, with the rule's `failureMessage` as the description
+and the IQE query that measured the failure as the acceptance criteria.
+
+```bash
+# Dry run — the default. Reads everything, applies every cap, writes nothing.
+python tools/idp/gap_seeder.py
+python tools/idp/gap_seeder.py --json
+
+# Try different caps before committing to them
+python tools/idp/gap_seeder.py --max-per-run 3 --max-per-component 1
+
+# One scorecard only
+python tools/idp/gap_seeder.py --scorecard component-readiness
+
+# Actually write (refused until args/idp_gap_seeder.yaml has enabled: true)
+python tools/idp/gap_seeder.py --seed --json
+python tools/idp/gap_seeder.py --seed --force        # one-off, ignores enabled: false
+```
+
+Caps live in `args/idp_gap_seeder.yaml`. `max_tasks_per_component` is applied
+**before** `max_tasks_per_run` so one badly scoring component cannot consume the
+whole budget; both truncations are logged at WARNING, printed to stderr, and
+reported as `truncated` in the JSON — a silent truncation would read as
+"nothing left to do". Measured on the live board: 311 failing rules → 10 tasks.
+
+Re-running seeds nothing. The idempotency key is
+`idp-gap:<scorecard>:<component>:<rule>` and already-seeded gaps are filtered
+out *before* the cap is applied, so the same ten are not re-offered forever.
+
+Nothing dispatches without confirmation: tasks land as `suggested` **and** carry
+`depends_on_task_id = idpgap-gate-00`, a `*-gate-00` sentinel held `in_progress`.
+The dependency edge is the hold that is enforced in code
+(`promote_backlog_to_scheduled::_deps_satisfied`); `suggested` alone is not,
+because the kanban deadlock-breaker can promote a card out of it. Release the
+whole batch by setting the gate to `done`. Seeding is refused outright if the
+gate has already been released.

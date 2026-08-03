@@ -793,7 +793,7 @@ def _audit(conn, action: str, details: str = "", actor: str = "far_dfars_verifie
             "INSERT INTO audit_trail "
             "(created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), _now(), "govcon.far_dfars_verification", actor, action, details, "govcon"),
+            (_now(), "govcon.far_dfars_verification", actor, action, details, "govcon"),
         )
     except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)

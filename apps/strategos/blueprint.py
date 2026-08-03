@@ -103,6 +103,9 @@ from tools.strategos.ooda import (
     DOMAINS as OODA_DOMAINS,
     COA_CRITERIA,
 )
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.apps.strategos.blueprint")
 
 
 def _strategos_tenant_id() -> str | None:
@@ -1510,8 +1513,8 @@ def api_supply_sync():
                     (r["node_id"], r["node_type"], r["label"]),
                 )
                 nodes_written += 1
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                logger.warning("api_supply_sync: best-effort INSERT into sg_kg_nodes failed (non-blocking): %s", exc)
         for src, tgt, rel in _SUPPLY_EDGES:
             existing = conn.execute(
                 f"SELECT 1 FROM sg_kg_edges WHERE source_id={ph} AND target_id={ph} AND relation={ph}",  # nosec B608
@@ -1524,8 +1527,11 @@ def api_supply_sync():
                         (src, tgt, rel, 1.0),
                     )
                     edges_written += 1
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
+                    logger.warning(
+                        "api_supply_sync: best-effort INSERT into sg_kg_edges failed (non-blocking): %s",
+                        exc,
+                    )
         conn.commit()
     finally:
         conn.close()

@@ -25,6 +25,11 @@ tests/cortex/test_api_governed.py
 tests/cortex/test_governance_pipeline.py
 tests/cortex/test_api_core.py
 
+# swp-audit-01: the deployed audit_trail event_type CHECK must admit exactly
+# VALID_EVENT_TYPES. On SQLite that assertion skips (no audit_trail in the
+# per-test DB), so this tier is the only place the REAL constraint is compared
+# against the constant — which is how the 221-vs-189 drift went unnoticed.
+tests/test_audit_event_type_parity.py
 # AuditStore / `icdev audit tail`. Qualifies on the rule above: the SQLite cases
 # inject their own connection_factory rather than forcing the ambient backend,
 # and the two test_pg_* cases read the AMBIENT connection via get_connection.

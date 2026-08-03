@@ -131,27 +131,33 @@ def _now() -> str:
 
 
 def _audit(action: str, details: str, project_id: str = "") -> None:
+    """Append-only audit trail entry (NIST AU). Best-effort.
+
+    This wrote ``(id, tenant_id, user_id, action, resource, details, project_id,
+    classification, recorded_at)``. Four of those columns do not exist on
+    audit_trail, and the required NOT NULL ``event_type``/``actor`` were absent,
+    so both the primary INSERT and its "schema differs" fallback raised and were
+    swallowed — procurement_vehicles never recorded a single audit row.
+    """
     try:
         conn = get_connection()
-        # Neither statement here could ever run (swp-scan-01): tenant_id, user_id
-        # and resource are not columns; recorded_at is created_at; and id is a
-        # SERIAL integer, so a uuid string is the wrong type for it. The
-        # "in case schema differs" fallback was chasing exactly this bug, and
-        # since it named the same absent columns it failed identically — the
-        # bare `except: pass` is what kept it quiet. actor is NOT NULL, so the
-        # previously-hardcoded None would have failed even after the renames.
         conn.execute(
             "INSERT INTO audit_trail "
-            "(event_type, actor, action, details, project_id, classification, created_at) "
+            "(created_at, event_type, actor, action, details, project_id, classification) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            ("procurement_vehicles", "system", action,
-             details, project_id, "CUI", _now()),
+            (
+                _now(),
+                "govcon.procurement_vehicle",
+                "procurement_vehicles",
+                action,
+                details,
+                project_id or None,
+                "CUI",
+            ),
         )
         conn.commit()
     except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
-        logger.warning(
-            "_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc
-        )
+        logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
 def _validate_create(

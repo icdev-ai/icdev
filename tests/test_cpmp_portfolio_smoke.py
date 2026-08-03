@@ -63,6 +63,22 @@ def _build_cpmp_test_app() -> Flask:
     )
     flask_app.config["TESTING"] = True
 
+    # /cpmp is wrapped in @require_role(...), which abort(401)s unless
+    # g.current_user is set. This bare app registers no auth hook, so without
+    # this every request 401s and the route under test never runs. Mirrors
+    # tests/test_gcpl_perf_11_cpmp_negative_event_create.py.
+    @flask_app.before_request
+    def _inject_test_user():
+        from flask import g
+
+        g.current_user = {
+            "id": "test-admin",
+            "username": "test_user",
+            "role": "admin",
+            "email": "test@test.mil",
+            "classification": "CUI",
+        }
+
     def _get_db():  # not used by /cpmp, but _register_govcon_pages requires it
         return None
 

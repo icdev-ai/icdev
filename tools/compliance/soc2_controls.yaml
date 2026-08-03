@@ -4,7 +4,13 @@
 #
 # Structure per control:
 #   description: Human-readable TSC criterion text
-#   event_types:  audit_trail.action values that constitute evidence
+#   event_types:  values that constitute evidence. Matched against
+#                 audit_trail.event_type first, then audit_trail.action, and
+#                 against component_audit_log.event_type. Only 3 of the 89
+#                 values below (cve_triaged, rollback_executed, sbom_generated)
+#                 are admitted by audit_trail_event_type_check, so the rest can
+#                 only ever match on `action` -- aligning this vocabulary with
+#                 tools.audit.audit_logger.VALID_EVENT_TYPES is an open gap.
 #   component_keys: component_audit_log.component_key values that constitute evidence
 #   category: CC=Common Criteria, A=Availability, PI=Processing Integrity, C=Confidentiality, P=Privacy
 

@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 from unittest.mock import patch
 
 import pytest
+
+from tests._sql_compat import connect as translating_connect
 
 
 KG_SCHEMA = """
@@ -44,8 +45,10 @@ CREATE TABLE IF NOT EXISTS ft_dataset_examples (
 
 @pytest.fixture
 def kg_db():
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    # tools.finetune.kg_pair_generator authors PostgreSQL ``%s`` placeholders and
+    # relies on StorageConnection to rewrite them for SQLite. Handing it a bare
+    # sqlite3 connection makes every statement raise ``near "%": syntax error``.
+    conn = translating_connect(":memory:")
     conn.executescript(KG_SCHEMA)
     # Populate test graph
     conn.execute(

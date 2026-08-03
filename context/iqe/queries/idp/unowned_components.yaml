@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+collection: idp.components
+query: "Which components have no owner?"
+description: >-
+  The platform's single biggest IDP gap. has_owner reads the SCRUBBED registry
+  field, so a placeholder ('TBD', 'unassigned', …) scores as unowned — an owner
+  nobody can be paged is worse than a blank, because it reads as answered.
+iqe: >-
+  foreach c in idp.components where c.has_owner == false
+  select c.key, c.kind, c.route
+example_questions:
+  - "Show components with no owner"
+  - "Who owns nothing?"
+  - "List unowned canvases"

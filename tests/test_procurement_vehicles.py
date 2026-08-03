@@ -64,16 +64,28 @@ def db(tmp_path, monkeypatch):
 
     # Pre-create the schema this tool depends on
     raw = sqlite3.connect(str(db_path))
+    # Shaped like the LIVE audit_trail. This fixture used to declare
+    # (id TEXT, tenant_id, user_id, resource, recorded_at) -- the same columns
+    # procurement_vehicles._audit was writing to, and none of which exist on the
+    # real table. Because the fixture and the bug agreed with each other, the
+    # audit assertions below passed while every write raised CheckViolation on
+    # live PostgreSQL and was swallowed by _audit's best-effort except.
     raw.executescript("""
         CREATE TABLE IF NOT EXISTS audit_trail (
-            id TEXT PRIMARY KEY,
-            tenant_id TEXT,
-            user_id TEXT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT,
+            event_type TEXT NOT NULL,
+            actor TEXT NOT NULL,
             action TEXT NOT NULL,
-            resource TEXT,
             details TEXT,
+            affected_files TEXT,
             classification TEXT DEFAULT 'CUI',
-            recorded_at TEXT NOT NULL
+            ip_address TEXT,
+            session_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            hash TEXT,
+            previous_hash TEXT,
+            signature TEXT
         );
     """)
     raw.commit()

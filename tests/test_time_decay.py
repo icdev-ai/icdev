@@ -378,7 +378,9 @@ class TestHybridSearchIntegration:
         """Verify hybrid_rank works without time-decay flag."""
         from tools.memory.hybrid_search import hybrid_rank
 
-        entries = [(1, "test content", "event", 5, None, "2026-01-01 00:00:00")]
+        # Row shape must match get_all_entries():
+        # id, content, type, importance, embedding, created_at, classification, compartment
+        entries = [(1, "test content", "event", 5, None, "2026-01-01 00:00:00", "CUI", "")]
         bm25 = [0.8]
         results = hybrid_rank(entries, bm25, None, 0.7, 0.3)
         assert len(results) == 1
@@ -388,7 +390,7 @@ class TestHybridSearchIntegration:
         """Verify time-decay changes the combined score."""
         from tools.memory.hybrid_search import hybrid_rank
 
-        entries = [(1, "test content", "event", 5, None, "2020-01-01 00:00:00")]
+        entries = [(1, "test content", "event", 5, None, "2020-01-01 00:00:00", "CUI", "")]
         bm25 = [0.8]
         # Without decay
         results_no_decay = hybrid_rank(entries, bm25, None, 0.7, 0.3)

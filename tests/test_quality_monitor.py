@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 from unittest.mock import patch
 
 import pytest
+
+from tests._sql_compat import connect as translating_connect
 
 
 MONITOR_SCHEMA = """
@@ -38,8 +39,10 @@ CREATE TABLE IF NOT EXISTS rag_retrieval_log (
 
 @pytest.fixture
 def monitor_db():
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    # tools.finetune.quality_monitor authors PostgreSQL ``%s`` placeholders and
+    # relies on StorageConnection to rewrite them for SQLite. Handing it a bare
+    # sqlite3 connection makes every statement raise ``near "%": syntax error``.
+    conn = translating_connect(":memory:")
     conn.executescript(MONITOR_SCHEMA)
     return conn
 

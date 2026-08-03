@@ -1339,6 +1339,38 @@ def api_academy_health():
     return jsonify(health), (200 if ok else 503)
 
 
+@bp.route("/api/academy/export/xapi")
+@require_org_intel
+def api_export_xapi():
+    """Export Academy completions as xAPI 1.0.3 statements (aca-trn-05).
+
+    Org-leadership gated on the same tier as the other cohort-wide surfaces: this
+    reads every learner's record by design, since feeding an external LMS is an
+    administrative act, not a per-learner one. ``?user_id=`` narrows it to one
+    learner for a single transfer-of-record request.
+
+    Unverified records — no provenance row in fa_xp_ledger / no evidence row in
+    fa_certificate_evidence — are withheld by default and counted in ``excluded``.
+    ``?include_unverified=1`` emits them stamped ``verified: false`` rather than
+    laundering them into the same shape as graded work.
+
+    ``?statements_only=1`` returns the bare array an LRS POST /statements expects.
+    """
+    _ensure_init()
+    from .xapi import build_statements
+
+    result = build_statements(
+        user_id=request.args.get("user_id", type=int),
+        since=request.args.get("since"),
+        include_unverified=request.args.get("include_unverified", "").lower()
+        in ("1", "true", "yes"),
+        tenant_id=_fa_tenant_id(),
+    )
+    if request.args.get("statements_only", "").lower() in ("1", "true", "yes"):
+        return jsonify(result["statements"])
+    return jsonify(result)
+
+
 @bp.route("/api/academy/competencies")
 def api_competencies():
     """The signed-in learner's competency profile."""

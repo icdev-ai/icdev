@@ -27,6 +27,8 @@ import sqlite3
 
 import pytest
 
+from tests._sql_compat import connect as _translating_connect
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -72,9 +74,15 @@ CREATE INDEX IF NOT EXISTS idx_cpmp_cor_created  ON cpmp_cor_access_log(created_
 
 @pytest.fixture()
 def log_conn():
-    """In-memory SQLite connection with cpmp_cor_access_log schema."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    """In-memory SQLite connection with cpmp_cor_access_log schema.
+
+    Uses the translating connection from ``tests/_sql_compat.py`` rather than a
+    bare ``sqlite3.connect``: ``_cor_access_log`` authors its INSERT for
+    PostgreSQL (``%s`` placeholders) and swallows failures as best-effort, so a
+    raw sqlite3 connection turns every write into a silent no-op that the test
+    then reads back as a missing feature.
+    """
+    conn = _translating_connect(":memory:")
     conn.executescript(_DDL)
     conn.commit()
     yield conn

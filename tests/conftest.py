@@ -549,15 +549,31 @@ CREATE TABLE IF NOT EXISTS mfa_attempts (
     ip_address TEXT,
     recorded_at TEXT NOT NULL
 );
+-- audit_trail mirrors the LIVE table (information_schema.columns on the
+-- primary PostgreSQL backend), not the older shape this fixture used to carry.
+-- It previously declared (id TEXT, tenant_id, user_id, resource, recorded_at
+-- NOT NULL) -- four columns the live table does not have, and it omitted the
+-- NOT NULL event_type/actor it does. That inversion is not cosmetic: it made
+-- the fixture reward exactly the INSERTs that are dead in production. An audit
+-- write naming `resource`/`recorded_at` passed here and raised on live PG,
+-- where the caller's best-effort `except` swallowed it, so tools/govcon and
+-- cross_agency_transfer_logger recorded nothing while their tests stayed green.
+-- Keep this in step with tools/db/init_icdev_db.py's audit_trail DDL.
 CREATE TABLE IF NOT EXISTS audit_trail (
-    id TEXT PRIMARY KEY,
-    tenant_id TEXT,
-    user_id TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
     action TEXT NOT NULL,
-    resource TEXT,
     details TEXT,
+    affected_files TEXT,
     classification TEXT DEFAULT 'CUI',
-    recorded_at TEXT NOT NULL
+    ip_address TEXT,
+    session_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    hash TEXT,
+    previous_hash TEXT,
+    signature TEXT
 );
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
@@ -1081,6 +1097,109 @@ CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
     tenant_id TEXT,
     classification TEXT DEFAULT 'CUI'
 );
+-- Win/loss analysis (tools/win_loss/win_loss_engine.py). DDL mirrors
+-- tools/db/init_icdev_db.py. WinLossEngine.run() writes all four in one
+-- transaction and swallows the exception on failure, so a single missing table
+-- here reads as "the engine ran and persisted nothing" rather than as an error.
+CREATE TABLE IF NOT EXISTS pg_win_loss_records (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled')),
+    competitor_name TEXT,
+    competitor_strengths TEXT,
+    our_strengths   TEXT,
+    our_weaknesses  TEXT,
+    lessons_learned TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_pg_winloss_opp ON pg_win_loss_records(opportunity_id);
+CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
+    id              TEXT PRIMARY KEY,
+    win_loss_id     TEXT NOT NULL,
+    category        TEXT NOT NULL CHECK(category IN ('technical', 'management', 'pricing', 'past_performance', 'compliance', 'staffing', 'other')),
+    lesson          TEXT NOT NULL,
+    actionable      INTEGER NOT NULL DEFAULT 1,
+    applied         INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS win_loss_analysis_runs (
+    id                  TEXT PRIMARY KEY,
+    run_at              TEXT,
+    outcomes_analyzed   INTEGER,
+    patterns_found      INTEGER,
+    top_win_features    TEXT,
+    top_loss_features   TEXT,
+    result_json         TEXT,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS win_loss_feature_impacts (
+    id                      TEXT PRIMARY KEY,
+    run_id                  TEXT,
+    feature_tag             TEXT,
+    win_count               INTEGER,
+    loss_count              INTEGER,
+    win_rate                REAL,
+    impact_score            REAL,
+    innovation_signal_id    TEXT,
+    analyzed_at             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wl_feature_impacts_run ON win_loss_feature_impacts(run_id);
+-- Cross-registration target for high-impact win/loss features. init_icdev_db.py
+-- declares pain_point_id as REFERENCES creative_pain_points(id), a parent table
+-- that is not in this fixture, so the clause is dropped rather than left
+-- dangling.
+CREATE TABLE IF NOT EXISTS creative_feature_gaps (
+    id TEXT PRIMARY KEY,
+    pain_point_id TEXT,
+    feature_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    requested_by_count INTEGER DEFAULT 0,
+    competitor_coverage TEXT DEFAULT '{}',
+    gap_score REAL DEFAULT 0.0,
+    market_demand REAL DEFAULT 0.0,
+    signal_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'identified'
+        CHECK(status IN ('identified','validated','spec_generated','addressed','rejected')),
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cfg_gap ON creative_feature_gaps(gap_score);
+-- Voice-of-customer signal capture (tools/voc/). DDL mirrors migration
+-- 069_voc_signals plus the classification column PG carries on
+-- voc_job_statements. Both tables are append-only. TranscriptIngestor.ingest()
+-- and VOCEngine._cluster_and_signal() wrap their writes in a best-effort
+-- except, so a missing table here reads as "extracted zero job statements"
+-- rather than as an error.
+CREATE TABLE IF NOT EXISTS voc_documents (
+    id                  TEXT PRIMARY KEY,
+    filename            TEXT NOT NULL,
+    source_type         TEXT NOT NULL,
+    ingested_at         TEXT NOT NULL,
+    word_count          INTEGER,
+    job_statement_count INTEGER,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS voc_job_statements (
+    id                  TEXT PRIMARY KEY,
+    document_id         TEXT NOT NULL,
+    raw_text            TEXT NOT NULL,
+    job_category        TEXT,
+    frequency           INTEGER,
+    severity_score      REAL,
+    strategic_fit_score REAL,
+    composite_score     REAL,
+    creative_gap_id     TEXT,
+    analyzed_at         TEXT NOT NULL,
+    classification      TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_voc_score ON voc_job_statements(composite_score);
+CREATE INDEX IF NOT EXISTS idx_voc_document_id ON voc_job_statements(document_id);
+CREATE INDEX IF NOT EXISTS idx_voc_category ON voc_job_statements(job_category);
 CREATE TABLE IF NOT EXISTS dic_handoff_sessions (
     session_id          TEXT    PRIMARY KEY,
     departing_owner_id  TEXT    NOT NULL,
