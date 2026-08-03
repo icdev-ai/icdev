@@ -4119,6 +4119,45 @@ would have lowered the score. An unassessed component is still persisted, with
 > `--persist` raises `ScorecardPersistError` rather than silently writing
 > nothing.
 
+### Component Scoring Sweep (idp-score-01-d4)
+
+The operational entry point for the scorer above: walks every component in
+`args/component_registry.yaml` and upserts each verdict into
+`developer_scorecards`. This is what CI and a scheduled refresh run.
+
+```bash
+# Score the whole registry and write the results
+python -m tools.quality.run_component_scoring
+
+# Score everything and write NOTHING — the CI shape, no migrated DB needed
+python -m tools.quality.run_component_scoring --dry-run
+
+# Machine-readable run report
+python -m tools.quality.run_component_scoring --dry-run --json
+
+# One or a few components
+python -m tools.quality.run_component_scoring --dry-run --keys ndc,sdc
+
+# Assess the coherence dimension too (a sweep is minutes long, so it is never
+# triggered implicitly — hand it the report the checker already produced)
+python tools/workflow/coherence_checker.py --all --json > .tmp/coherence.json
+python -m tools.quality.run_component_scoring --coherence-report .tmp/coherence.json
+```
+
+**Exit codes are load-bearing:** `0` the sweep completed (components *may* be
+unassessed), `1` at least one component raised while being scored or persisted
+— the rest still completed, `2` the sweep could not start (the registry would
+not load, or persistence was asked for with no usable connection).
+
+**An all-NOT_ASSESSED sweep is a clean run.** On a checkout with no probe
+history, no compliance assessment and no coherence report, every component
+correctly comes back `NOT_ASSESSED` — that is the honest state of ICDEV's own
+measurement coverage, not a broken runner. The report's
+`unassessed_by_dimension` tally is the actionable part: it names which
+measurement subsystem is dark. The CI step (`Component scoring sweep (dry run)`
+in `.github/workflows/icdev-ci.yml`) is therefore a smoke gate on the sweep
+*running*, and deliberately does not assert that anything was assessed.
+
 ### Portal surface (idp-ui-02)
 
 The same catalog and scorecards rendered as a dashboard page, mounted at the
