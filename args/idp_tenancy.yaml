@@ -1,0 +1,45 @@
+# CUI // SP-CTI
+# IDP tenant-isolation posture (idp-mt-01).
+#
+# The prose decision record — the measured facts, the options considered and
+# the residual risk — is docs/security/idp-tenant-isolation-posture.md. This
+# file is the machine-readable half of the SAME decision, so the portal can
+# render the current posture instead of a reader having to trust that the code
+# and the doc still agree.
+#
+# Read by tools/idp/tenancy.py::posture(). Nothing here changes how scoping is
+# computed; scoping is always applied. What these values control is what the
+# surface *claims* about itself.
+
+tenancy:
+  # How tenant isolation is actually enforced for IDP scoring data today.
+  # One of: app_layer_only | pg_native_rls | hybrid
+  #
+  # MEASURED 2026-08-02: PostgreSQL RLS is enabled on 0 of 1,737 tables and
+  # pg_policies is empty. Isolation is SQL rewriting in
+  # tools/security/row_security.py plus conn.set_security_context(), i.e.
+  # entirely in application code. PG-native RLS exists only as a spike
+  # (docs/reference/spike-crx-db-01-pg-native-rls.md).
+  isolation_posture: app_layer_only
+
+  # Has a human accepted app-layer-only isolation for IDP data offered to
+  # EXTERNAL tenants? This is deliberately false and must stay false until a
+  # named person signs the decision record. An unsigned record is not a
+  # decision, and inheriting one silently is the failure this card exists to
+  # prevent.
+  external_offering_approved: false
+
+  # Filled in by whoever signs docs/security/idp-tenant-isolation-posture.md.
+  approved_by: ""
+  approved_on: ""
+
+  # Where the reasoning lives. Surfaced next to the posture on /idp so the
+  # claim on the page always carries its source.
+  decision_record: docs/security/idp-tenant-isolation-posture.md
+
+  # Shown on the portal and attached to every tenant-scoped API payload while
+  # external_offering_approved is false.
+  unapproved_notice: >-
+    IDP scoring is tenant-scoped in application code only. PostgreSQL-native
+    row-level security is not in force on these tables. Serving this surface to
+    an external tenant is not yet approved — see the decision record.

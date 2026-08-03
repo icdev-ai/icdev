@@ -31,6 +31,16 @@ Fact sourcing:
       live signal: when the table is empty or unreachable, ``health_probed`` is
       false and ``failing_probes`` is 0, so a rule can tell "healthy" apart
       from "never measured".
+
+Tenant scoping (idp-mt-01):
+    This adapter is the single fact source behind every IDP read path — the
+    scorecard universe, each rule's query, the evidence fact rows, the catalog
+    and the free-text IQE widget — so it is where tenant scoping is applied.
+    When a tenant is in scope (``tools.idp.tenancy.active_tenant_id``) the row
+    set is reduced to the components that tenant has enabled, per
+    ``tenant_component_overrides``. Scoping the scorecard evaluator instead
+    would have left ``POST /idp/api/iqe-query`` — arbitrary IQE over this same
+    collection — serving the whole estate to any tenant that asked.
 """
 from __future__ import annotations
 
@@ -286,14 +296,56 @@ def reset_cache() -> None:
     _CACHE = None
 
 
-def components_adapter(conn: Any = None) -> list[dict]:
-    """Return one fact row per registered component (memoized per process)."""
+def components_adapter(conn: Any = None, tenant_id: str | None = None) -> list[dict]:
+    """Return one fact row per component visible to the caller's tenant.
+
+    Memoized per process, but only the *facts* are cached — they derive from
+    files and registry YAML, neither of which is tenant-specific. The tenant
+    filter is re-resolved on every call rather than cached with the rows: a
+    tenant enabling or disabling a component must take effect on the next
+    request, not on the next cache eviction.
+
+    ``tenant_id`` defaults to the ambient scope, which is how the IQE executor
+    reaches it — ``execute_query`` calls a collection adapter with the
+    connection only, so a caller that needs a specific tenant binds it with
+    ``tools.idp.tenancy.tenant_scope``.
+    """
     global _CACHE
-    if _CACHE is not None:
-        return [dict(r) for r in _CACHE]
-    rows = _collect_components(conn)
-    _CACHE = [dict(r) for r in rows]
-    return rows
+    if _CACHE is None:
+        _CACHE = [dict(r) for r in _collect_components(conn)]
+    rows = [dict(r) for r in _CACHE]
+    return _scoped(rows, conn, tenant_id)
+
+
+def _scoped(
+    rows: list[dict], conn: Any = None, tenant_id: str | None = None
+) -> list[dict]:
+    """Reduce *rows* to the components the in-scope tenant has enabled.
+
+    Resolution and filtering are guarded separately, and the order matters. If
+    the tenant cannot even be resolved there is no tenant in play and the
+    platform view is correct. But once a tenant IS known, a failure to compute
+    its scope yields the EMPTY set, never the full estate — handing a tenant
+    every component in the platform because a lookup broke is the disclosure
+    this whole module exists to prevent.
+    """
+    resolved = tenant_id
+    if resolved is None:
+        try:
+            from tools.idp.tenancy import active_tenant_id  # noqa: PLC0415
+
+            resolved = active_tenant_id()
+        except Exception:  # noqa: BLE001
+            return rows
+    if not resolved:
+        return rows
+
+    try:
+        from tools.idp.tenancy import scope_component_rows  # noqa: PLC0415
+
+        return scope_component_rows(rows, resolved, conn)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _collect_components(conn: Any = None) -> list[dict]:

@@ -43,6 +43,20 @@ bucket. ``if_due=True`` skips a run whose bucket is already recorded, which is
 what lets a 3h reflex feed a 24h scorecard without writing eight identical
 rows a day. An explicit ``--record`` always writes, so re-scoring right after a
 fix shows the improvement immediately instead of waiting out the window.
+
+Tenancy (idp-mt-01)
+-------------------
+Every row carries a ``tenant_id``: the tenant the evaluation was scoped to, or
+NULL for the platform's own series. **Every read filters on it**, and that is
+the half that matters — a nullable column nobody filters on is decoration.
+``tenant_id=None`` reads the platform series (``tenant_id IS NULL``) rather
+than "everything", so the default read can never blend one tenant's scores
+into another's trend. Cross-tenant reporting is available, but only by asking
+for it: ``all_tenants=True`` / ``--all-tenants``.
+
+The due check is scoped for the same reason. ``last_recorded_window`` filtered
+globally would let the first tenant to record a window suppress every other
+tenant's write for that window, and their series would silently develop holes.
 """
 from __future__ import annotations
 
@@ -163,6 +177,28 @@ def _open_connection() -> Any:
     return get_connection()
 
 
+def _tenant_clause(
+    tenant_id: str | None, all_tenants: bool
+) -> tuple[str, list[Any]]:
+    """SQL predicate isolating one tenant's rows, plus its parameters.
+
+    Three distinct answers, and conflating any two of them is a bug:
+
+      ``all_tenants=True``    no predicate — the operator asked for every row
+      ``tenant_id="acme"``    ``tenant_id = 'acme'`` — that tenant only
+      ``tenant_id=None``      ``tenant_id IS NULL`` — the platform's own series
+
+    The third is the one worth being careful about. Omitting the predicate for
+    a None tenant would make the DEFAULT read cross-tenant, so ICDEV's own
+    trend line would quietly absorb every customer's scores.
+    """
+    if all_tenants:
+        return "", []
+    if tenant_id:
+        return "tenant_id = %s", [tenant_id]
+    return "tenant_id IS NULL", []
+
+
 def _rows(cursor_result: Any) -> list[dict[str, Any]]:
     """Normalise fetchall() output to plain dicts across both backends."""
     out: list[dict[str, Any]] = []
@@ -216,10 +252,17 @@ def persist_evaluation(
     is no point to plot, so no point is written; the count comes back as
     ``skipped_unassessed`` so the omission is reported rather than silent.
 
+    ``tenant_id`` defaults to the tenant the report was evaluated for, so a
+    scoped evaluation persists under that tenant without the caller having to
+    say it twice — and, more to the point, without a caller that forgets
+    writing one tenant's scores into the platform's own series.
+
     Returns ``{run_id, window_start, rows_written, skipped_unassessed, components}``.
     """
     own = conn is None
     conn = conn or _open_connection()
+    if tenant_id is None:
+        tenant_id = report.get("tenant_id") or None
     run_id = run_id or uuid.uuid4().hex
     now = now or _utcnow()
     evaluated_at = now.astimezone(timezone.utc).isoformat()
@@ -272,6 +315,7 @@ def persist_evaluation(
     return {
         "run_id": run_id,
         "scorecard": report.get("scorecard"),
+        "tenant_id": tenant_id,
         "window_start": bucket,
         "window": window_label,
         "evaluated_at": evaluated_at,
@@ -281,29 +325,40 @@ def persist_evaluation(
     }
 
 
-def last_recorded_window(scorecard_key: str, conn: Any) -> str | None:
-    """The most recent ``window_start`` recorded for *scorecard_key*."""
+def last_recorded_window(
+    scorecard_key: str, conn: Any, tenant_id: str | None = None
+) -> str | None:
+    """The most recent ``window_start`` recorded for *scorecard_key*.
+
+    Scoped to one tenant. Unscoped, the first tenant to record a window would
+    make every other tenant's run look "already recorded" for that bucket, and
+    their series would develop holes nothing reports.
+    """
+    clause, params = _tenant_clause(tenant_id, all_tenants=False)
     rows = _rows(
         conn.execute(
-            f"SELECT window_start FROM {TABLE} WHERE scorecard_key = %s "
+            f"SELECT window_start FROM {TABLE} WHERE scorecard_key = %s AND {clause} "
             "ORDER BY window_start DESC LIMIT 1",
-            (scorecard_key,),
+            tuple([scorecard_key, *params]),
         ).fetchall()
     )
     return str(rows[0]["window_start"]) if rows else None
 
 
 def is_due(
-    scorecard: Scorecard, conn: Any, now: datetime | None = None
+    scorecard: Scorecard,
+    conn: Any,
+    now: datetime | None = None,
+    tenant_id: str | None = None,
 ) -> tuple[bool, str, str | None]:
-    """Is a fresh evaluation due for *scorecard*?
+    """Is a fresh evaluation due for *scorecard*, for this tenant?
 
     Returns ``(due, current_window_start, last_recorded_window)``. Due when the
     current bucket has not been recorded yet — which also makes the first ever
     run due, and makes a re-run inside the same bucket a no-op.
     """
     bucket = window_start(now or _utcnow(), parse_window(scorecard.window))
-    last = last_recorded_window(scorecard.key, conn)
+    last = last_recorded_window(scorecard.key, conn, tenant_id)
     return (last != bucket, bucket, last)
 
 
@@ -316,11 +371,15 @@ def record_scorecard(
     tenant_id: str | None = None,
     directory: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Evaluate *scorecard* and persist the result.
+    """Evaluate *scorecard* and persist the result, scoped to one tenant.
 
     With ``if_due=True`` the run is skipped when the current evaluation window
     has already been recorded — the mode the scheduled reflex uses, so its
     cadence can be finer than the scorecard's window without duplicating rows.
+
+    ``tenant_id`` scopes the evaluation as well as the write: the scorecard
+    covers only what that tenant has enabled, and the row it stores says so.
+    ``None`` records the platform's own series over the full estate.
     """
     card = (
         scorecard
@@ -330,17 +389,18 @@ def record_scorecard(
     own = conn is None
     conn = conn or _open_connection()
     try:
-        due, bucket, last = is_due(card, conn, now=now)
+        due, bucket, last = is_due(card, conn, now=now, tenant_id=tenant_id)
         if if_due and not due:
             return {
                 "status": "skipped",
                 "reason": "window already recorded",
                 "scorecard": card.key,
+                "tenant_id": tenant_id,
                 "window_start": bucket,
                 "last_window": last,
                 "rows_written": 0,
             }
-        report = evaluate(card, conn=conn)
+        report = evaluate(card, conn=conn, tenant_id=tenant_id)
         written = persist_evaluation(
             report,
             conn,
@@ -364,7 +424,7 @@ def record_all(
     directory: Path | str | None = None,
     tenant_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Record every scorecard on disk."""
+    """Record every scorecard on disk, all under the same tenant scope."""
     own = conn is None
     conn = conn or _open_connection()
     try:
@@ -434,13 +494,19 @@ def get_score_trend(
     conn: Any = None,
     *,
     limit: int = 100,
+    tenant_id: str | None = None,
+    all_tenants: bool = False,
 ) -> dict[str, Any]:
-    """One component's score series, oldest point first.
+    """One component's score series for one tenant, oldest point first.
 
     Mirrors ``readiness_scorer.get_score_trend`` — same contract, different
     subject — and adds ``level_changes``, because a ladder demotion is the
     event an operator actually wants paged about; a two-point score dip inside
     the same level usually is not.
+
+    ``tenant_id=None`` is the platform's own series, NOT every row: two tenants
+    interleaved in one trend would produce ladder "changes" that are really
+    just the reader looking at two different estates.
     """
     own = conn is None
     conn = conn or _open_connection()
@@ -450,6 +516,10 @@ def get_score_trend(
         if scorecard_key:
             where.append("scorecard_key = %s")
             params.append(scorecard_key)
+        clause, tenant_params = _tenant_clause(tenant_id, all_tenants)
+        if clause:
+            where.append(clause)
+            params.extend(tenant_params)
         params.append(int(limit))
         rows = _rows(
             conn.execute(
@@ -483,6 +553,8 @@ def get_score_trend(
         "status": "ok",
         "component": component,
         "scorecard": scorecard_key,
+        "tenant_id": None if all_tenants else tenant_id,
+        "all_tenants": all_tenants,
         "data_points": len(points),
         "trend": points,
         "current_score": points[-1]["score"] if points else None,
@@ -499,13 +571,19 @@ def get_level_changes(
     *,
     since: str | None = None,
     limit_per_component: int = 50,
+    tenant_id: str | None = None,
+    all_tenants: bool = False,
 ) -> dict[str, Any]:
-    """Every ladder promotion/demotion across the estate, newest first.
+    """Every ladder promotion/demotion across one tenant's estate, newest first.
 
     Grouping and comparison happen in Python rather than as a windowed SQL
     query: the row count here is components × retained points, and the
     portability rule pushes anything cleverer than a filtered SELECT out of
     SQL anyway.
+
+    With ``all_tenants=True`` the grouping key stays ``component_key`` alone,
+    so the same component under two tenants would interleave. That mode is for
+    counting activity across the fleet, not for reading one component's ladder.
     """
     own = conn is None
     conn = conn or _open_connection()
@@ -518,6 +596,10 @@ def get_level_changes(
         if since:
             where.append("evaluated_at >= %s")
             params.append(since)
+        tenant_sql, tenant_params = _tenant_clause(tenant_id, all_tenants)
+        if tenant_sql:
+            where.append(tenant_sql)
+            params.extend(tenant_params)
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         rows = _rows(
             conn.execute(
@@ -546,6 +628,8 @@ def get_level_changes(
     return {
         "status": "ok",
         "scorecard": scorecard_key,
+        "tenant_id": None if all_tenants else tenant_id,
+        "all_tenants": all_tenants,
         "since": since,
         "components_with_history": len(by_component),
         "change_count": len(changes),
@@ -569,9 +653,12 @@ def _render_record(results: list[dict[str, Any]]) -> str:
                 "already recorded"
             )
             continue
+        scope = (
+            f" for tenant {result['tenant_id']}" if result.get("tenant_id") else ""
+        )
         lines.append(
-            f"{result['scorecard']}: recorded {result['rows_written']} component(s) "
-            f"at {result['evaluated_at']} (window {result['window_start']}, "
+            f"{result['scorecard']}: recorded {result['rows_written']} component(s)"
+            f"{scope} at {result['evaluated_at']} (window {result['window_start']}, "
             f"{result.get('window') or 'default'})"
         )
         dist = result.get("level_distribution") or {}
@@ -639,8 +726,25 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--since", metavar="ISO8601", help="With --level-changes: lower bound")
     ap.add_argument("--limit", type=int, default=100, help="Max points per component")
     ap.add_argument("--dir", metavar="PATH", help="Scorecard directory")
+    ap.add_argument(
+        "--tenant",
+        metavar="ID",
+        help="Scope to one tenant. With --record, score only that tenant's "
+        "enabled components and stamp the rows with it; with --trend or "
+        "--level-changes, read only that tenant's rows. Default: the "
+        "platform's own series (tenant_id IS NULL).",
+    )
+    ap.add_argument(
+        "--all-tenants",
+        action="store_true",
+        help="Reading only: every tenant's rows, not just one. Ignored with --record, "
+        "because a row has to belong to exactly one tenant.",
+    )
     ap.add_argument("--json", action="store_true", help="Emit JSON")
     args = ap.parse_args(argv)
+
+    if args.record and args.all_tenants:
+        ap.error("--all-tenants is a read mode; use --tenant with --record")
 
     if not (args.record or args.trend or args.level_changes):
         ap.error("one of --record, --trend or --level-changes is required")
@@ -661,10 +765,16 @@ def main(argv: list[str] | None = None) -> int:
                         conn,
                         if_due=args.if_due,
                         directory=args.dir,
+                        tenant_id=args.tenant,
                     )
                 ]
             else:
-                results = record_all(conn, if_due=args.if_due, directory=args.dir)
+                results = record_all(
+                    conn,
+                    if_due=args.if_due,
+                    directory=args.dir,
+                    tenant_id=args.tenant,
+                )
             print(
                 json.dumps(results, indent=2, default=str)
                 if args.json
@@ -673,7 +783,12 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.trend:
             trend = get_score_trend(
-                args.trend, args.scorecard, conn, limit=args.limit
+                args.trend,
+                args.scorecard,
+                conn,
+                limit=args.limit,
+                tenant_id=args.tenant,
+                all_tenants=args.all_tenants,
             )
             print(
                 json.dumps(trend, indent=2, default=str)
@@ -682,7 +797,13 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         if args.level_changes:
-            payload = get_level_changes(args.scorecard, conn, since=args.since)
+            payload = get_level_changes(
+                args.scorecard,
+                conn,
+                since=args.since,
+                tenant_id=args.tenant,
+                all_tenants=args.all_tenants,
+            )
             print(
                 json.dumps(payload, indent=2, default=str)
                 if args.json
