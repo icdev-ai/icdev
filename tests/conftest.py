@@ -3860,6 +3860,55 @@ CREATE TABLE IF NOT EXISTS fa_step_assessment_policy (
     updated_at         TEXT,
     created_at         TEXT    DEFAULT (datetime('now')),
     UNIQUE(step_id));
+
+-- developer_scorecards references projects(id), and tools/db/storage.py opens
+-- SQLite with PRAGMA foreign_keys=ON — so the FK target has to exist or any
+-- write through a storage connection fails on "no such table: main.projects".
+-- Copied verbatim from tools/db/init_icdev_db.py.
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    type TEXT NOT NULL CHECK(type IN ('webapp', 'microservice', 'api', 'cli', 'data_pipeline', 'iac')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'completed', 'archived')),
+    tech_stack_backend TEXT,
+    tech_stack_frontend TEXT,
+    tech_stack_database TEXT,
+    directory_path TEXT NOT NULL,
+    created_by TEXT,
+    impact_level TEXT DEFAULT 'IL5' CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
+    cloud_environment TEXT DEFAULT 'aws-govcloud',
+    target_frameworks TEXT,
+    ato_status TEXT DEFAULT 'none' CHECK(ato_status IN ('none', 'in_progress', 'iato', 'ato', 'cato', 'dato', 'denied')),
+    accrediting_authority TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Copied verbatim from tools/db/init_icdev_db.py (D-INV-29), including the
+-- three NOT NULLs. Migration 20260802145147_scorecard_component_id relaxes them
+-- and adds component_id/evaluated_at; tests that exercise the component grain
+-- apply that migration themselves, so this must stay the PRE-migration shape or
+-- they would assert against a schema no deployed database has ever had.
+CREATE TABLE IF NOT EXISTS developer_scorecards (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    actor TEXT,
+    overall_score REAL NOT NULL,
+    letter_grade TEXT NOT NULL CHECK(letter_grade IN ('A','B','C','D','F')),
+    code_quality_score REAL,
+    security_score REAL,
+    compliance_score REAL,
+    test_coverage_score REAL,
+    velocity_score REAL,
+    dimension_details TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sc_project ON developer_scorecards(project_id);
+CREATE INDEX IF NOT EXISTS idx_sc_actor ON developer_scorecards(actor);
+CREATE INDEX IF NOT EXISTS idx_sc_created ON developer_scorecards(created_at);
 """
 
 

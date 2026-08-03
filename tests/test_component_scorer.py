@@ -17,6 +17,10 @@ database, the registry or the filesystem.
 """
 from __future__ import annotations
 
+import importlib.util
+import json
+from pathlib import Path
+
 import pytest
 
 from tools.quality.component_scorer import (
@@ -24,10 +28,14 @@ from tools.quality.component_scorer import (
     DIMENSIONS,
     NOT_ASSESSED,
     DimensionScore,
+    ScorecardPersistError,
+    aggregate_score,
     extract_coherence,
     extract_compliance,
     extract_completeness,
     extract_health,
+    letter_grade,
+    persist_scorecard,
     score_component,
 )
 
@@ -426,3 +434,437 @@ def test_score_component_averages_only_assessed_dimensions():
     # health = 100, compliance = 80, coherence + completeness unassessed.
     assert result["assessed_dimensions"] == 2
     assert result["overall"] == 90.0
+
+
+# ---------------------------------------------------------------------------
+# Aggregation — the honesty rule (idp-score-01-d3)
+# ---------------------------------------------------------------------------
+
+
+def _measured(name, score, evidence=3):
+    return DimensionScore.measured(name, score, evidence, source=f"src.{name}")
+
+
+def _all_assessed(health=100.0, compliance=80.0, coherence=90.0, completeness=70.0):
+    """Four measured dimensions — the only shape that earns an overall score."""
+    return {
+        "health": _measured("health", health, 4),
+        "compliance": _measured("compliance", compliance, 10),
+        "coherence": _measured("coherence", coherence, 6),
+        "completeness": _measured("completeness", completeness, 8),
+    }
+
+
+def test_aggregate_score_grades_a_fully_assessed_component():
+    """All four measured: weighted mean, banded to a letter."""
+    result = aggregate_score(_all_assessed())
+    # Uniform default weights: (100 + 80 + 90 + 70) / 4 = 85.0
+    assert result["overall_score"] == 85.0
+    assert result["letter_grade"] == "B"
+    assert result["status"] == ASSESSED
+    assert result["unassessed_dimensions"] == []
+    assert result["assessed_dimensions"] == 4
+    # Evidence counts survive into the details, per dimension.
+    assert result["evidence_count"] == 4 + 10 + 6 + 8
+    assert result["dimension_details"]["compliance"]["evidence_count"] == 10
+    assert result["dimension_details"]["compliance"]["source"] == "src.compliance"
+
+
+@pytest.mark.parametrize(
+    ("score", "grade"),
+    [(95.0, "A"), (90.0, "A"), (85.0, "B"), (75.0, "C"), (65.0, "D"), (10.0, "F"), (0.0, "F")],
+)
+def test_letter_grade_bands_match_the_check_constraint(score, grade):
+    """Only A-F — the letters developer_scorecards.letter_grade admits."""
+    assert letter_grade(score) == grade
+
+
+def test_letter_grade_of_nothing_is_nothing():
+    """None in, None out. An "F" here would turn unmeasured into failed."""
+    assert letter_grade(None) is None
+
+
+@pytest.mark.parametrize("missing", list(DIMENSIONS))
+def test_any_unassessed_dimension_caps_the_overall_score(missing):
+    """THE honesty rule: one unassessed dimension and there is no score.
+
+    Parametrized over all four so no dimension is quietly exempt — the
+    temptation is always to let "just this one" be optional.
+    """
+    dimensions = _all_assessed()
+    dimensions[missing] = DimensionScore.unassessed(missing, reason="nothing measured it")
+
+    result = aggregate_score(dimensions)
+
+    assert result["overall_score"] is None
+    assert result["letter_grade"] is None
+    assert result["status"] == NOT_ASSESSED
+    assert result["unassessed_dimensions"] == [missing]
+    assert missing in result["reason"]
+    # The other three are still reported with their evidence — the score is
+    # withheld, the measurements are not.
+    assert result["assessed_dimensions"] == 3
+    for name in DIMENSIONS:
+        if name != missing:
+            assert result["dimension_details"][name]["assessed"] is True
+
+
+def test_a_dimension_absent_from_the_dict_is_unassessed_not_ignored():
+    """A key that was never computed must not be silently dropped."""
+    dimensions = _all_assessed()
+    del dimensions["coherence"]
+
+    result = aggregate_score(dimensions)
+
+    assert result["overall_score"] is None
+    assert result["unassessed_dimensions"] == ["coherence"]
+    assert result["dimension_details"]["coherence"]["status"] == NOT_ASSESSED
+
+
+def test_aggregate_score_honours_custom_weights():
+    """Weights are normalized, so a caller need not do the arithmetic."""
+    result = aggregate_score(
+        _all_assessed(health=100.0, compliance=0.0, coherence=0.0, completeness=0.0),
+        # Unnormalized on purpose: 3 + 1 + 1 + 1 = 6, so health is 0.5.
+        weights={"health": 3, "compliance": 1, "coherence": 1, "completeness": 1},
+    )
+    assert result["overall_score"] == 50.0
+    assert result["weights"]["health"] == 0.5
+
+
+def test_aggregate_score_accepts_serialized_dimensions():
+    """A round-tripped result aggregates the same as the live objects."""
+    live = _all_assessed()
+    serialized = {name: dim.to_dict() for name, dim in live.items()}
+    assert aggregate_score(serialized) == aggregate_score(live)
+
+
+def test_zero_weights_fall_back_to_uniform_rather_than_dividing_by_zero():
+    result = aggregate_score(_all_assessed(), weights=dict.fromkeys(DIMENSIONS, 0))
+    assert result["overall_score"] == 85.0
+
+
+def test_score_component_exposes_the_aggregate():
+    """The end-to-end path: nothing assessed, so no score and no grade."""
+    result = score_component(
+        dict(CANVAS),
+        conn=None,
+        posture=[],
+        canvas_health=[],
+        evidence=[],
+        coherence_report=None,
+        repo_root="/nonexistent-repo-root",
+    )
+    assert result["aggregate"]["overall_score"] is None
+    assert result["aggregate"]["letter_grade"] is None
+    assert sorted(result["aggregate"]["unassessed_dimensions"]) == sorted(DIMENSIONS)
+
+
+# ---------------------------------------------------------------------------
+# Persistence — developer_scorecards (idp-score-01-d3)
+# ---------------------------------------------------------------------------
+
+# The table exactly as tools/db/init_icdev_db.py creates it — i.e. the shape
+# every deployed database had BEFORE migration 20260802145147. The migration is
+# then applied on top, so these tests exercise the real upgrade path rather than
+# a convenient hand-built table. That matters more than usual here: the bug this
+# task is most exposed to is an INSERT naming a column the live schema lacks,
+# which raises, gets swallowed by a caller, and reports success while writing
+# nothing.
+#
+# ``projects`` comes along because ``developer_scorecards`` references it and
+# ``tools/db/storage.py`` opens SQLite with ``PRAGMA foreign_keys=ON``. Without
+# it the migration's SQLite table rebuild fails on "no such table:
+# main.projects" — which is a property of the test database, not of the
+# migration, since every real database has the table.
+_PROJECTS_DDL = """
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    directory_path TEXT NOT NULL
+)
+"""
+
+_PRE_MIGRATION_DDL = """
+CREATE TABLE IF NOT EXISTS developer_scorecards (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    actor TEXT,
+    overall_score REAL NOT NULL,
+    letter_grade TEXT NOT NULL CHECK(letter_grade IN ('A','B','C','D','F')),
+    code_quality_score REAL,
+    security_score REAL,
+    compliance_score REAL,
+    test_coverage_score REAL,
+    velocity_score REAL,
+    dimension_details TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
+MIGRATION_DIR = (
+    Path(__file__).resolve().parent.parent
+    / "tools"
+    / "db"
+    / "migrations"
+    / "20260802145147_scorecard_component_id"
+)
+
+
+def _load_migration(name: str):
+    """Import the shipped migration by path (its dir name is not an identifier)."""
+    spec = importlib.util.spec_from_file_location(
+        f"_mig_scorecard_{name}", MIGRATION_DIR / f"{name}.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def conn(tmp_path, monkeypatch):
+    """Storage connection over a temp SQLite DB, migrated to the component grain.
+
+    ``get_connection`` rather than raw ``sqlite3``: the module writes ``%s``
+    placeholders and only the storage wrapper translates them to ``?``. A raw
+    connection here would make these tests assert their own no-op.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    from tools.db.storage import get_connection
+
+    connection = get_connection(db_path=str(tmp_path / "scorecards.db"))
+    connection.execute(_PROJECTS_DDL)
+    connection.execute(_PRE_MIGRATION_DDL)
+    connection.commit()
+    _load_migration("up").up(connection)
+    yield connection
+    try:
+        connection.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _mock_component(key="mock-canvas", **overrides):
+    """A scored result for a component that need not exist in the registry."""
+    result = {
+        "key": key,
+        "display_name": "Mock Canvas",
+        "kind": "canvas",
+        "route": "/mock",
+        "dimensions": {name: dim.to_dict() for name, dim in _all_assessed().items()},
+        "aggregate": aggregate_score(_all_assessed()),
+    }
+    result.update(overrides)
+    return result
+
+
+def _select_all(conn, component_id):
+    """SELECT * — the acceptance criterion in its own words."""
+    cursor = conn.execute(
+        "SELECT * FROM developer_scorecards WHERE component_id = %s", (component_id,)
+    )
+    columns = [d[0] for d in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def test_persist_scorecard_writes_a_row_with_the_right_grade(conn):
+    """THE acceptance criterion, end to end.
+
+    Insert a scorecard for a mock component; SELECT * returns the correct
+    letter grade and a dimension_details payload carrying per-source evidence
+    counts.
+    """
+    outcome = persist_scorecard(_mock_component(), conn=conn)
+    assert outcome["action"] == "insert"
+
+    rows = _select_all(conn, "mock-canvas")
+    assert len(rows) == 1
+    row = rows[0]
+
+    # (100 + 80 + 90 + 70) / 4 = 85.0 -> B
+    assert row["overall_score"] == 85.0
+    assert row["letter_grade"] == "B"
+    assert row["component_id"] == "mock-canvas"
+    assert row["evaluated_at"]
+    assert row["classification"] == "CUI // SP-CTI"
+
+    details = json.loads(row["dimension_details"])
+    assert set(details["dimensions"]) == set(DIMENSIONS)
+    assert details["dimensions"]["compliance"]["evidence_count"] == 10
+    assert details["dimensions"]["health"]["evidence_count"] == 4
+    assert details["dimensions"]["coherence"]["source"] == "src.coherence"
+    assert details["evidence_count"] == 28
+    assert details["component"]["key"] == "mock-canvas"
+
+    # The one legacy column that genuinely means the same thing is populated;
+    # the four that do not are left NULL rather than filled with a lookalike.
+    assert row["compliance_score"] == 80.0
+    for column in (
+        "code_quality_score",
+        "security_score",
+        "test_coverage_score",
+        "velocity_score",
+    ):
+        assert row[column] is None, column
+
+
+def test_persist_scorecard_upserts_rather_than_duplicating(conn):
+    """Re-scoring a component updates its row: one component, one standing."""
+    persist_scorecard(_mock_component(), conn=conn)
+
+    improved = _mock_component(
+        aggregate=aggregate_score(
+            _all_assessed(health=100.0, compliance=95.0, coherence=95.0, completeness=90.0)
+        )
+    )
+    outcome = persist_scorecard(improved, conn=conn)
+
+    assert outcome["action"] == "update"
+    rows = _select_all(conn, "mock-canvas")
+    assert len(rows) == 1
+    assert rows[0]["overall_score"] == 95.0
+    assert rows[0]["letter_grade"] == "A"
+
+
+def test_an_unassessed_component_persists_as_null_not_as_f(conn):
+    """The row that says "we looked and could not measure it".
+
+    NULL score and NULL grade — not 0.0 and not "F", which are findings.
+    """
+    dimensions = _all_assessed()
+    dimensions["coherence"] = DimensionScore.unassessed("coherence", reason="no check names it")
+    result = _mock_component(key="unmeasured", aggregate=aggregate_score(dimensions))
+
+    outcome = persist_scorecard(result, conn=conn)
+
+    assert outcome["overall_score"] is None
+    row = _select_all(conn, "unmeasured")[0]
+    assert row["overall_score"] is None
+    assert row["letter_grade"] is None
+    # Why it is unassessed rides on the row, so the gap is actionable.
+    details = json.loads(row["dimension_details"])
+    assert details["unassessed_dimensions"] == ["coherence"]
+    assert "coherence" in details["reason"]
+
+
+def test_persist_scorecard_refuses_a_schema_without_the_component_grain(tmp_path, monkeypatch):
+    """A pre-migration table must raise, not swallow and report success."""
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    from tools.db.storage import get_connection
+
+    connection = get_connection(db_path=str(tmp_path / "premigration.db"))
+    connection.execute(_PROJECTS_DDL)
+    connection.execute(_PRE_MIGRATION_DDL)
+    connection.commit()
+    try:
+        with pytest.raises(ScorecardPersistError, match="component_id"):
+            persist_scorecard(_mock_component(), conn=connection)
+        # And nothing was written under the illusion that it had worked.
+        count = connection.execute("SELECT COUNT(*) FROM developer_scorecards").fetchone()[0]
+        assert count == 0
+    finally:
+        connection.close()
+
+
+def test_persist_scorecard_refuses_a_result_with_no_component_key(conn):
+    with pytest.raises(ScorecardPersistError, match="no component key"):
+        persist_scorecard({"key": "", "dimensions": {}}, conn=conn)
+
+
+def test_persist_all_records_every_component_and_survives_one_failure(conn, monkeypatch):
+    """A sweep persists each key; a component that raises is reported, not fatal."""
+    import tools.quality.component_scorer as scorer
+
+    def fake_score(key, **_kwargs):
+        if key == "explodes":
+            raise RuntimeError("canvas module will not import")
+        return _mock_component(key=key)
+
+    monkeypatch.setattr(scorer, "score_component", fake_score)
+
+    summary = scorer.persist_all(conn=conn, keys=["alpha", "explodes", "bravo"])
+
+    assert [r["component_id"] for r in summary["persisted"]] == ["alpha", "bravo"]
+    assert summary["errors"][0]["component_id"] == "explodes"
+    assert summary["assessed"] == 2
+    # One shared timestamp, so a sweep's rows sort together on the index.
+    stamps = {_select_all(conn, k)[0]["evaluated_at"] for k in ("alpha", "bravo")}
+    assert stamps == {summary["evaluated_at"]}
+
+
+def test_the_whole_path_from_raw_sources_to_a_persisted_grade(conn):
+    """Real extractors -> aggregate -> row, with nothing hand-built in between.
+
+    Every other persistence test above starts from a constructed ``dimensions``
+    dict, which proves the aggregation and the write but not the join between
+    them: an extractor could change the shape it returns and those tests would
+    still pass. This one feeds the four raw sources in and reads the graded row
+    back out, so the whole chain is under test.
+
+    All four sources are injected — including ``completeness_report``, which is
+    why that parameter exists. Without it a fully-assessed component could not
+    be produced without the filesystem and the registry, and the end-to-end
+    case would be untestable.
+
+      health        1 passing probe                       -> 100.0
+      compliance    posture 80.0 backed by 2 + 8 findings ->  80.0
+      coherence     one passing + one failing check       ->  50.0
+      completeness  4 required points, all present        -> 100.0
+
+    Uniform weights: (100 + 80 + 50 + 100) / 4 = 82.5 -> B.
+    """
+    result = score_component(
+        {
+            "key": "mockc",
+            "display_name": "Mock",
+            "kind": "canvas",
+            "url_prefix": "/mockc",
+            "module": "tools.mockc.blueprint",
+        },
+        conn=None,
+        evidence=[{"route": "/mockc", "status": "pass"}],
+        posture=[
+            {"name": "Mock", "score": 80.0, "open_findings": 2, "closed_findings": 8}
+        ],
+        coherence_report={
+            "checks": [
+                {
+                    "check_id": "mirror_parity",
+                    "status": "pass",
+                    "expected": ["tools/mockc/blueprint.py"],
+                },
+                {
+                    "check_id": "completeness_gate",
+                    "status": "fail",
+                    "missing": ["tools/mockc/constants.py"],
+                },
+            ]
+        },
+        completeness_report={
+            "items": [
+                {"point": "template", "required": True, "present": True},
+                {"point": "route", "required": True, "present": True},
+                {"point": "module", "required": True, "present": True},
+                {"point": "iqe", "required": True, "present": True},
+            ]
+        },
+    )
+
+    persist_scorecard(result, conn=conn)
+
+    row = _select_all(conn, "mockc")[0]
+    assert row["overall_score"] == 82.5
+    assert row["letter_grade"] == "B"
+    assert row["compliance_score"] == 80.0
+    assert row["project_id"] is None, "a component scorecard has no project"
+
+    # The evidence counts are the extractors' own, not a fixture's: one probe,
+    # ten findings, two coherence checks, four required completeness points.
+    details = json.loads(row["dimension_details"])
+    assert {
+        name: dim["evidence_count"] for name, dim in details["dimensions"].items()
+    } == {"health": 1, "compliance": 10, "coherence": 2, "completeness": 4}
+    # And each names the subsystem it came from, so a reader can go check.
+    assert details["dimensions"]["health"]["source"] == "awareness_component_health"
+    assert details["dimensions"]["compliance"]["source"] == "canvas_compliance.posture"

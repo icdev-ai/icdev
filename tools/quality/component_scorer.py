@@ -69,6 +69,7 @@ import argparse
 import dataclasses
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -920,14 +921,32 @@ def score_component(
     posture: Sequence[dict[str, Any]] | None = None,
     canvas_health: Sequence[dict[str, Any]] | None = None,
     evidence: Sequence[dict[str, Any]] | None = None,
+    completeness_report: Any = None,
+    weights: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Run every extractor for one component and aggregate the result.
 
-    ``overall`` is the mean of the **assessed** dimensions only, and is ``None``
-    when nothing assessed the component. Unassessed dimensions are neither
-    counted as zeros (which would punish a component for gaps in ICDEV's own
-    measurement coverage) nor silently dropped from the report — they appear
-    with ``status = "not_assessed"`` and the reason they are missing.
+    Two aggregations are reported, and they answer different questions:
+
+    ``overall``
+        Mean of the **assessed** dimensions only, ``None`` when nothing
+        assessed the component. A diagnostic — "of what we did measure, how
+        does it look".
+    ``aggregate``
+        The publishable verdict from :func:`aggregate_score`, carrying the
+        weighted ``overall_score``, the ``letter_grade`` and the honesty rule:
+        any unassessed dimension leaves ``overall_score`` at ``None``. This is
+        what :func:`persist_scorecard` writes.
+
+    Unassessed dimensions are neither counted as zeros (which would punish a
+    component for gaps in ICDEV's own measurement coverage) nor silently
+    dropped from the report — they appear with ``status = "not_assessed"`` and
+    the reason they are missing.
+
+    Every dimension's source can be injected — ``evidence``/``canvas_health``,
+    ``posture``, ``coherence_report``, ``completeness_report`` — so a caller
+    that has already fetched them pays once, and a test can drive all four
+    dimensions without touching the database, the registry or the filesystem.
     """
     comp = _as_component(component)
     if len(comp) == 1 and comp.get("key"):
@@ -940,7 +959,7 @@ def score_component(
         DIMENSION_COMPLIANCE: extract_compliance(comp, conn=conn, posture=posture),
         DIMENSION_COHERENCE: extract_coherence(comp, report=coherence_report),
         DIMENSION_COMPLETENESS: extract_completeness(
-            comp, registry=registry, repo_root=repo_root
+            comp, registry=registry, repo_root=repo_root, report=completeness_report
         ),
     }
 
@@ -960,6 +979,519 @@ def score_component(
         "total_dimensions": len(dimensions),
         "evidence_count": sum(d.evidence_count for d in dimensions.values()),
         "dimensions": {name: d.to_dict() for name, d in dimensions.items()},
+        # The publishable verdict. `overall` above is the mean of whatever
+        # happened to be assessed and is retained as a diagnostic; `aggregate`
+        # applies the honesty rule and is what gets persisted and rendered.
+        "aggregate": aggregate_score(dimensions, weights=weights),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Aggregation — weighted overall score, letter grade, dimension details
+# ---------------------------------------------------------------------------
+
+#: Relative weight of each dimension in the overall score.
+#:
+#: Deliberately uniform. Ranking these four sources against each other would be
+#: an assertion about their relative predictive value, and nothing in the
+#: platform has measured that — inventing 0.4/0.3/0.2/0.1 here would dress a
+#: guess up as a finding. The parameter exists so a program that *has* done
+#: that work can supply its own; the default declines to pretend.
+#:
+#: Weights are normalized before use, so a caller may pass unnormalized
+#: numbers (``{"health": 3, "compliance": 1}``) without doing the arithmetic.
+DEFAULT_WEIGHTS: dict[str, float] = {
+    DIMENSION_HEALTH: 0.25,
+    DIMENSION_COMPLIANCE: 0.25,
+    DIMENSION_COHERENCE: 0.25,
+    DIMENSION_COMPLETENESS: 0.25,
+}
+
+#: Fallback A–F bands, used only when ``tools.idp.scorecard`` cannot be
+#: imported. Kept identical to that module's ``DEFAULT_GRADE_BANDS``, which is
+#: the source of truth: ``developer_scorecards.letter_grade`` carries a
+#: ``CHECK(letter_grade IN ('A','B','C','D','F'))`` and these are the letters
+#: that CHECK admits.
+_FALLBACK_GRADE_BANDS: tuple[tuple[str, float], ...] = (
+    ("A", 90.0),
+    ("B", 80.0),
+    ("C", 70.0),
+    ("D", 60.0),
+    ("F", 0.0),
+)
+
+
+def grade_bands() -> tuple[tuple[str, float], ...]:
+    """The A–F bands, read from ``tools.idp.scorecard`` when importable."""
+    try:
+        from tools.idp.scorecard import DEFAULT_GRADE_BANDS  # noqa: PLC0415
+
+        return tuple(DEFAULT_GRADE_BANDS)
+    except Exception:  # noqa: BLE001
+        return _FALLBACK_GRADE_BANDS
+
+
+def letter_grade(
+    score: float | None,
+    bands: Sequence[tuple[str, float]] | None = None,
+) -> str | None:
+    """Band *score* to a letter, or ``None`` when there is no score.
+
+    ``None`` in, ``None`` out. Substituting ``"F"`` for an absent score would
+    turn "nobody measured this" into "this failed", which is the single defect
+    this whole module is built to avoid.
+    """
+    if score is None:
+        return None
+    for letter, minimum in sorted(bands or grade_bands(), key=lambda b: -b[1]):
+        if score >= minimum:
+            return letter
+    return None
+
+
+def _as_dimension_dict(value: Any) -> dict[str, Any]:
+    """Normalize a :class:`DimensionScore` or its ``to_dict()`` to a dict."""
+    if isinstance(value, DimensionScore):
+        return value.to_dict()
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _normalized_weights(weights: dict[str, float] | None) -> dict[str, float]:
+    """Weights for :data:`DIMENSIONS`, normalized to sum to 1.0.
+
+    Unknown keys are dropped and missing ones default to their
+    :data:`DEFAULT_WEIGHTS` share. A weight set that sums to zero (or to a
+    negative) is not a weighting — it is a caller error that would divide by
+    zero — so it falls back to the uniform default rather than raising.
+    """
+    source = DEFAULT_WEIGHTS if weights is None else weights
+    raw = {}
+    for name in DIMENSIONS:
+        try:
+            value = float(source.get(name, DEFAULT_WEIGHTS[name]))
+        except (TypeError, ValueError):
+            value = DEFAULT_WEIGHTS[name]
+        raw[name] = max(0.0, value)
+
+    total = sum(raw.values())
+    if total <= 0.0:
+        return dict(DEFAULT_WEIGHTS)
+    return {name: value / total for name, value in raw.items()}
+
+
+def aggregate_score(
+    dimensions: dict[str, Any],
+    weights: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Fold four dimension scores into one overall score and letter grade.
+
+    THE HONESTY RULE
+    ----------------
+    **Any** unassessed dimension caps ``overall_score`` at ``None``. A
+    component is graded only when all four dimensions were actually measured.
+
+    This is stricter than averaging whatever happened to be assessed, and the
+    strictness is the point. A weighted average is only meaningful when its
+    weights sum to the whole; dropping an unassessed dimension and renormalizing
+    the rest silently redefines what the number means, so an ``85`` computed
+    from one dimension and an ``85`` computed from four would print identically
+    while resting on completely different amounts of evidence. Worse, the
+    dimensions most often unassessed are the ones that would have *lowered* the
+    score — a component nothing probed, nothing assessed for compliance and no
+    coherence check names would score on completeness alone and grade ``A``.
+
+    So an unmeasured dimension makes the score unavailable rather than
+    optimistic. ``developer_scorecards.overall_score`` and ``letter_grade`` are
+    both nullable (migration ``20260802145147``) precisely so this state is
+    representable and does not have to be encoded as a ``0``/``F``.
+
+    A dimension absent from *dimensions* entirely counts as unassessed — a key
+    that was never computed is not a measured one.
+
+    Args:
+        dimensions: ``{dimension_name: DimensionScore | dict}``, as produced by
+            :func:`score_component`'s ``dimensions`` field.
+        weights: Optional relative weights; see :data:`DEFAULT_WEIGHTS`.
+            Normalized before use.
+
+    Returns:
+        A dict carrying ``overall_score``, ``letter_grade``, ``status``,
+        ``dimension_details`` and the reason a score is missing when it is.
+    """
+    effective = _normalized_weights(weights)
+    normalized = {name: _as_dimension_dict(dimensions.get(name)) for name in DIMENSIONS}
+
+    details: dict[str, Any] = {}
+    unassessed: list[str] = []
+    weighted_total = 0.0
+    evidence_total = 0
+
+    for name in DIMENSIONS:
+        dim = normalized[name]
+        # `assessed` is authoritative when present; fall back to the status
+        # string for a caller that hand-built the dict. An empty dict — the
+        # missing-dimension case — falls through to unassessed.
+        is_assessed = bool(dim.get("assessed")) or dim.get("status") == ASSESSED
+        score = dim.get("score")
+        if score is None:
+            is_assessed = False
+
+        count = int(dim.get("evidence_count") or 0)
+        evidence_total += count
+
+        details[name] = {
+            "score": score,
+            "status": ASSESSED if is_assessed else NOT_ASSESSED,
+            "assessed": is_assessed,
+            "weight": round(effective[name], 4),
+            # The acceptance criterion for this dimension: how many
+            # observations, and from which subsystem, back the number.
+            "evidence_count": count,
+            "source": str(dim.get("source") or ""),
+            "reason": str(dim.get("reason") or ""),
+            "detail": dim.get("detail") or {},
+        }
+
+        if is_assessed:
+            weighted_total += float(score) * effective[name]
+        else:
+            unassessed.append(name)
+
+    if unassessed:
+        return {
+            "overall_score": None,
+            "letter_grade": None,
+            "status": NOT_ASSESSED,
+            "assessed": False,
+            "reason": (
+                "not scored: "
+                + ", ".join(unassessed)
+                + (" was" if len(unassessed) == 1 else " were")
+                + " not assessed — a weighted score over a subset of "
+                "dimensions would overstate the evidence behind it"
+            ),
+            "unassessed_dimensions": unassessed,
+            "assessed_dimensions": len(DIMENSIONS) - len(unassessed),
+            "total_dimensions": len(DIMENSIONS),
+            "evidence_count": evidence_total,
+            "weights": {k: round(v, 4) for k, v in effective.items()},
+            "dimension_details": details,
+        }
+
+    overall = round(max(0.0, min(100.0, weighted_total)), 1)
+    return {
+        "overall_score": overall,
+        "letter_grade": letter_grade(overall),
+        "status": ASSESSED,
+        "assessed": True,
+        "reason": "",
+        "unassessed_dimensions": [],
+        "assessed_dimensions": len(DIMENSIONS),
+        "total_dimensions": len(DIMENSIONS),
+        "evidence_count": evidence_total,
+        "weights": {k: round(v, 4) for k, v in effective.items()},
+        "dimension_details": details,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Persistence — developer_scorecards, one row per component
+# ---------------------------------------------------------------------------
+
+#: The table this module owns. Re-keyed from the project grain to the component
+#: grain by migration ``20260802145147_scorecard_component_id``.
+PERSIST_TABLE = "developer_scorecards"
+
+#: Columns :func:`persist_scorecard` writes. Every one of these must exist in
+#: the LIVE schema — see the guard in :func:`_require_component_grain`.
+#:
+#: The four other dimension columns the table declares (``code_quality_score``,
+#: ``security_score``, ``test_coverage_score``, ``velocity_score``) are left
+#: NULL on purpose. They were designed for the original per-developer grain and
+#: none of this module's four dimensions means the same thing; filling
+#: ``test_coverage_score`` with a completeness percentage because both are
+#: percentages would put a number under a label that does not describe it.
+#: ``compliance_score`` is written because it is the one genuine match — the
+#: compliance dimension *is* a compliance posture score. Everything else lives
+#: in ``dimension_details``, which has no such naming problem.
+INSERT_COLUMNS: tuple[str, ...] = (
+    "id",
+    "component_id",
+    "overall_score",
+    "letter_grade",
+    "compliance_score",
+    "dimension_details",
+    "classification",
+    "evaluated_at",
+)
+
+#: Columns an update refreshes. ``id`` and ``component_id`` identify the row.
+_UPDATE_COLUMNS: tuple[str, ...] = (
+    "overall_score",
+    "letter_grade",
+    "compliance_score",
+    "dimension_details",
+    "classification",
+    "evaluated_at",
+)
+
+DEFAULT_CLASSIFICATION = "CUI // SP-CTI"
+
+
+class ScorecardPersistError(RuntimeError):
+    """Raised when a scorecard cannot be persisted.
+
+    Deliberately a raise rather than a swallowed warning. The failure mode this
+    guards against is the one CLAUDE.md's INSERT/schema-parity rule was written
+    for: an INSERT names a column the live table lacks, raises, is caught by a
+    surrounding ``except Exception``, and the caller reports success while
+    persisting nothing — which is exactly how ``developer_scorecards`` sat at 0
+    rows with a fully-designed schema.
+    """
+
+
+def _row_id(component_id: str) -> str:
+    """Deterministic primary key for a component's scorecard row.
+
+    Deterministic rather than a UUID so that re-running the scorer is
+    idempotent even if the ``component_id`` lookup below is bypassed, and so a
+    row is greppable from its component key. Prefixed to keep it out of the
+    namespace of the legacy project-grain rows.
+    """
+    return f"sc-comp-{component_id}"
+
+
+def _require_component_grain(conn: Any) -> None:
+    """Fail loudly unless the component-grain migration has been applied.
+
+    ``component_id`` is the marker: it and ``evaluated_at`` arrive together
+    with the three ``DROP NOT NULL`` relaxations in migration
+    ``20260802145147``. Without it, an INSERT here fails twice over — on the
+    unknown column *and* on ``project_id NOT NULL``, which a component
+    scorecard has nothing to put in.
+    """
+    try:
+        from tools.db.storage import column_exists, table_exists  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        raise ScorecardPersistError(f"tools.db.storage unavailable: {exc}") from exc
+
+    if not table_exists(conn, PERSIST_TABLE):
+        raise ScorecardPersistError(
+            f"{PERSIST_TABLE} does not exist — run tools/db/init_icdev_db.py"
+        )
+    for column in ("component_id", "evaluated_at"):
+        if not column_exists(conn, PERSIST_TABLE, column):
+            raise ScorecardPersistError(
+                f"{PERSIST_TABLE}.{column} is missing — apply migration "
+                "20260802145147_scorecard_component_id before persisting "
+                "component scorecards"
+            )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def persist_scorecard(
+    result: dict[str, Any],
+    conn: Any = None,
+    evaluated_at: str | None = None,
+    classification: str = DEFAULT_CLASSIFICATION,
+) -> dict[str, Any]:
+    """Write one component's scorecard to ``developer_scorecards``.
+
+    Upserts on ``component_id``: a component has one current scorecard row,
+    updated in place on re-evaluation. (Score *history* is a separate table,
+    ``idp_scorecard_history``, owned by ``tools/idp/score_history.py`` — this
+    row is the current standing, not the trend.)
+
+    An unassessed component is persisted with ``overall_score`` and
+    ``letter_grade`` both NULL. That row is not a gap in the table; it is the
+    record that ICDEV looked and could not measure, and ``dimension_details``
+    carries which dimension was missing and why. Skipping such components
+    instead would make the table silently describe only the well-covered
+    corners of the platform.
+
+    Args:
+        result: A :func:`score_component` result, or any dict carrying ``key``
+            and either ``aggregate`` or ``dimensions``.
+        conn: Storage connection. Opened and closed here when omitted.
+        evaluated_at: Evaluation timestamp; defaults to now (UTC, ISO-8601).
+            Distinct from the row's ``created_at``, which is insert time.
+        classification: Marking for the row.
+
+    Returns:
+        ``{"component_id", "action": "insert"|"update", "overall_score",
+        "letter_grade", "status"}``.
+
+    Raises:
+        ScorecardPersistError: The component has no key, or the live schema
+            predates the component-grain migration.
+    """
+    component_id = str(result.get("key") or "").strip()
+    if not component_id:
+        raise ScorecardPersistError("result has no component key to persist under")
+
+    aggregate = result.get("aggregate")
+    if not isinstance(aggregate, dict):
+        aggregate = aggregate_score(result.get("dimensions") or {})
+
+    own = conn is None
+    if own:
+        try:
+            from tools.db.storage import get_connection  # noqa: PLC0415
+
+            conn = get_connection()
+        except Exception as exc:  # noqa: BLE001
+            raise ScorecardPersistError(f"cannot open a database connection: {exc}") from exc
+
+    try:
+        _require_component_grain(conn)
+
+        details = aggregate.get("dimension_details") or {}
+        compliance = (details.get(DIMENSION_COMPLIANCE) or {}).get("score")
+
+        payload = {
+            "overall_score": aggregate.get("overall_score"),
+            "letter_grade": aggregate.get("letter_grade"),
+            "compliance_score": compliance,
+            "dimension_details": json.dumps(
+                {
+                    "component": {
+                        "key": component_id,
+                        "display_name": result.get("display_name") or "",
+                        "kind": result.get("kind") or "",
+                        "route": result.get("route") or "",
+                    },
+                    "status": aggregate.get("status"),
+                    "reason": aggregate.get("reason") or "",
+                    "unassessed_dimensions": aggregate.get("unassessed_dimensions") or [],
+                    "evidence_count": aggregate.get("evidence_count", 0),
+                    "weights": aggregate.get("weights") or {},
+                    "dimensions": details,
+                },
+                default=str,
+                sort_keys=True,
+            ),
+            "classification": classification,
+            "evaluated_at": evaluated_at or _utc_now(),
+        }
+
+        cursor = conn.execute(
+            f"SELECT id FROM {PERSIST_TABLE} WHERE component_id = %s",  # noqa: S608
+            (component_id,),
+        )
+        existing = cursor.fetchone() if hasattr(cursor, "fetchone") else None
+        row_id = None
+        if existing is not None:
+            row_id = existing[0] if not isinstance(existing, dict) else existing.get("id")
+
+        if row_id:
+            assignments = ", ".join(f"{col} = %s" for col in _UPDATE_COLUMNS)
+            conn.execute(
+                f"UPDATE {PERSIST_TABLE} SET {assignments} WHERE id = %s",  # noqa: S608
+                tuple(payload[col] for col in _UPDATE_COLUMNS) + (row_id,),
+            )
+            action = "update"
+        else:
+            row_id = _row_id(component_id)
+            values = {"id": row_id, "component_id": component_id, **payload}
+            placeholders = ", ".join(["%s"] * len(INSERT_COLUMNS))
+            conn.execute(
+                f"INSERT INTO {PERSIST_TABLE} ({', '.join(INSERT_COLUMNS)}) "  # noqa: S608
+                f"VALUES ({placeholders})",
+                tuple(values[col] for col in INSERT_COLUMNS),
+            )
+            action = "insert"
+
+        conn.commit()
+        return {
+            "component_id": component_id,
+            "id": row_id,
+            "action": action,
+            "overall_score": aggregate.get("overall_score"),
+            "letter_grade": aggregate.get("letter_grade"),
+            "status": aggregate.get("status"),
+        }
+    finally:
+        if own and hasattr(conn, "close"):
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+
+
+def registry_component_keys(registry: Any = None) -> list[str]:
+    """Every component key declared in ``args/component_registry.yaml``."""
+    if registry is None:
+        from tools.config.component_registry import get_registry  # noqa: PLC0415
+
+        registry = get_registry()
+    return [str(c.key) for c in registry.list_all() if getattr(c, "key", "")]
+
+
+def persist_all(
+    conn: Any = None,
+    registry: Any = None,
+    keys: Sequence[str] | None = None,
+    evaluated_at: str | None = None,
+    **score_kwargs: Any,
+) -> dict[str, Any]:
+    """Score and persist every registered component.
+
+    One component's failure does not abort the sweep — it is recorded in
+    ``errors`` and the rest still persist. A single unimportable canvas module
+    should not cost the platform its whole scorecard refresh.
+
+    Args:
+        conn: Storage connection. Opened and closed here when omitted.
+        registry: Optional registry instance.
+        keys: Restrict to these component keys instead of the whole registry.
+        evaluated_at: Shared evaluation timestamp for the sweep, so every row
+            written by one pass sorts together on ``idx_sc_component_evaluated``.
+        **score_kwargs: Forwarded to :func:`score_component` (``coherence_report``,
+            ``posture``, ``canvas_health``, ``weights``, …).
+
+    Returns:
+        ``{"persisted": [...], "errors": [...], "assessed", "unassessed"}``.
+    """
+    own = conn is None
+    if own:
+        try:
+            from tools.db.storage import get_connection  # noqa: PLC0415
+
+            conn = get_connection()
+        except Exception as exc:  # noqa: BLE001
+            raise ScorecardPersistError(f"cannot open a database connection: {exc}") from exc
+
+    stamp = evaluated_at or _utc_now()
+    persisted: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    try:
+        component_keys = list(keys) if keys is not None else registry_component_keys(registry)
+        for key in component_keys:
+            try:
+                result = score_component(key, conn=conn, registry=registry, **score_kwargs)
+                persisted.append(
+                    persist_scorecard(result, conn=conn, evaluated_at=stamp)
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"component_id": key, "error": str(exc)})
+    finally:
+        if own and hasattr(conn, "close"):
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+
+    return {
+        "evaluated_at": stamp,
+        "persisted": persisted,
+        "errors": errors,
+        "assessed": sum(1 for r in persisted if r.get("overall_score") is not None),
+        "unassessed": sum(1 for r in persisted if r.get("overall_score") is None),
     }
 
 
@@ -974,15 +1506,19 @@ def _pct(score: float | None) -> str:
 
 
 def _render(result: dict[str, Any]) -> str:
+    aggregate = result.get("aggregate") or {}
+    grade = aggregate.get("letter_grade") or "—"
     lines = [
         f"{result['key']} ({result.get('kind') or 'unknown kind'}) — "
-        f"overall {_pct(result['overall'])} "
+        f"score {_pct(aggregate.get('overall_score'))} grade {grade} "
         f"from {result['assessed_dimensions']}/{result['total_dimensions']} dimensions",
         "",
     ]
     for name, dim in result["dimensions"].items():
         detail = dim["reason"] if not dim["assessed"] else f"{dim['evidence_count']} evidence"
         lines.append(f"  {name:<14} {_pct(dim['score']):>6}  [{dim['source']}] {detail}")
+    if aggregate.get("reason"):
+        lines += ["", f"  {aggregate['reason']}"]
     return "\n".join(lines)
 
 
@@ -995,6 +1531,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("component", nargs="?", help="Component registry key")
     ap.add_argument("--all", action="store_true", help="Score every registered component")
     ap.add_argument("--json", action="store_true", help="Emit JSON")
+    ap.add_argument(
+        "--persist",
+        action="store_true",
+        help="Write each result to developer_scorecards (upsert on component_id)",
+    )
     args = ap.parse_args(argv)
 
     if not args.component and not args.all:
@@ -1022,6 +1563,15 @@ def main(argv: list[str] | None = None) -> int:
             keys = [args.component]
 
         results = [score_component(key, conn=conn) for key in keys]
+
+        written: list[dict[str, Any]] = []
+        if args.persist:
+            if conn is None:
+                print("error: --persist needs a database connection", file=sys.stderr)
+                return 2
+            stamp = _utc_now()
+            for result in results:
+                written.append(persist_scorecard(result, conn=conn, evaluated_at=stamp))
     finally:
         if conn is not None and hasattr(conn, "close"):
             try:
@@ -1030,9 +1580,14 @@ def main(argv: list[str] | None = None) -> int:
                 pass
 
     if args.json:
-        print(json.dumps(results if len(results) > 1 else results[0], indent=2, default=str))
+        payload: Any = results if len(results) > 1 else results[0]
+        if args.persist:
+            payload = {"results": results, "persisted": written}
+        print(json.dumps(payload, indent=2, default=str))
     else:
         print("\n\n".join(_render(r) for r in results))
+        for row in written:
+            print(f"  persisted {row['component_id']} ({row['action']})")
     return 0
 
 

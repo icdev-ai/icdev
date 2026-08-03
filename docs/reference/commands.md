@@ -4089,6 +4089,36 @@ python tools/idp/scorecard.py --scorecard component-readiness --component ndc
 python tools/idp/scorecard.py --dir /path/to/scorecards --json
 ```
 
+### Component Scorer (idp-score-01)
+
+The complement to the scorecard above: where `tools/idp/scorecard.py` grades a
+component against *declared* YAML/IQE rules, this reads ICDEV's own measurement
+subsystems (probes, compliance posture, coherence, the 8-point gate) and turns
+each into one dimension score.
+
+```bash
+# Score one component across all four dimensions
+python tools/quality/component_scorer.py ndc
+python tools/quality/component_scorer.py ndc --json
+
+# Score every component in args/component_registry.yaml
+python tools/quality/component_scorer.py --all
+
+# Score and upsert into developer_scorecards (one row per component)
+python tools/quality/component_scorer.py --all --persist --json
+```
+
+**The honesty rule:** any dimension that nothing measured caps `overall_score`
+and `letter_grade` at NULL. A component is graded only when all four dimensions
+were actually assessed — a weighted average over a subset would overstate the
+evidence behind it, and the dimensions most often unassessed are the ones that
+would have lowered the score. An unassessed component is still persisted, with
+`dimension_details` naming which dimension was missing and why.
+
+> Requires migration `20260802145147_scorecard_component_id`. Without it
+> `--persist` raises `ScorecardPersistError` rather than silently writing
+> nothing.
+
 ### Portal surface (idp-ui-02)
 
 The same catalog and scorecards rendered as a dashboard page, mounted at the
