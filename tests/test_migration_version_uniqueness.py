@@ -365,7 +365,8 @@ def test_timestamp_versions_cannot_alias_a_legacy_version():
 
 
 #: Versions the GATE sees but MigrationRunner does not — i.e. files that look
-#: like migrations and will never run. Frozen 2026-08-02 (mvs-invisible-04).
+#: like migrations and will never run. Frozen 2026-08-02, triaged 2026-08-03
+#: (mvs-invisible-04). Shrink this list; never grow it.
 #:
 #: Two distinct causes, both silent:
 #:
@@ -377,14 +378,60 @@ def test_timestamp_versions_cannot_alias_a_legacy_version():
 #:     ``.sql``; a top-level ``.py`` migration is not a shape the runner has
 #:     ever understood.
 #:
-#: They are frozen rather than fixed here because making 17 never-executed
-#: migrations suddenly apply to live databases is a triage job of its own — the
-#: same one PR #1199 did for the shadowed set, where 10 of the examined entries
-#: turned out to have left real schema gaps. Shrink this list; never grow it.
+#: THE TRIAGE (2026-08-03). Every one of the original 17 was checked against the
+#: live PostgreSQL database, because "never ran" and "left a schema gap" are not
+#: the same claim — the question is whether the schema arrived by another route.
+#: For most of these it did: ``tools/db/schema/pg_consolidated.sql`` is a
+#: pg_dump snapshot taken from a database where these had been applied BY HAND
+#: (each bare .py has an ``if __name__ == "__main__"`` block), so every fresh
+#: bootstrap inherits their objects and only long-lived incrementally-migrated
+#: databases can be missing them.
+#:
+#: Removed because they were REAL gaps, absent from the live database and now
+#: converted to ``NNN_name/up.sql`` directories:
+#:
+#:   200 teams_inbox, 201 mattermost_inbox, 202 github_inbox,
+#:   203 gitlab_inbox, 204 skype_inbox
+#:
+#: Those five are the ones that mattered: nothing outside the invisible
+#: migration creates them (``init_icdev_db.py`` has no route at all), the
+#: gateway adapters and listeners INSERT into them, and every such write is
+#: wrapped in a broad ``except`` that logs a warning and drops the message. So
+#: the symptom was silent message loss, not a crash. ``telegram_inbox`` is the
+#: control case: same shape, same era, but it exists — which is what made the
+#: other five visible as an anomaly rather than a design.
+#:
+#: KEPT, and why each is benign (verified present on the live database):
+#:
+#:   149  source_citation_registry + govchain_pending_operations — both present;
+#:        also in pg_consolidated.sql and tools/integrity/provenance.py.
+#:   150  wf_citations.source_hash — column present.
+#:   151  canvas_ai_decisions.decision_hash/previous_decision_hash/signature.
+#:   152  memory_entries.decay_weight/classification/compartment.
+#:   153  kg_nodes.ontology_id + canvas_kg_nodes.ontology_id.
+#:   168  declares NO schema. It seeds canvas_access_grants rows into
+#:        platform.db and has its own --dry-run CLI. Making the runner execute
+#:        it would point a data seed at the wrong database.
+#:   172  declares NO schema in this database. It copies aac_* rows into the
+#:        AI-ify CANVAS db and says so: "any conn passed by a runner is
+#:        ignored". Runner-visibility would be actively misleading.
+#:   173  TWO files, and the only split verdict. 173_cpmp_obligation_periods.py
+#:        is benign (cpmp_contract_periods + three cpmp_contracts columns all
+#:        present). 173_white_team_review_type.py was a REAL gap — the live
+#:        CHECK constraint rejected 'white_team' while the dashboard API offered
+#:        it — fixed by 20260803201015_proposal_reviews_white_team_review_type.
+#:        173 stays here because promoting either file to a directory would make
+#:        version 173 a DUPLICATE, which is the collision the tests above exist
+#:        to prevent, and because the legacy 3-digit range is closed.
+#:   177  cpmp_contract_mods — present.
+#:   178  cpmp_budget_allocations/_obligations/_tier_history — all present.
+#:   179  integrity_{assessments,capabilities,findings,verdicts,authorizations}
+#:        and kanban_task_revivals — all present.
+#:   205  kanban_tasks.loop_type + adversarial_enabled — both present.
 RUNNER_INVISIBLE_VERSIONS = frozenset({
     "149", "150", "151", "152", "153",          # dirs with migration.py
     "168", "172", "173", "177", "178", "179",   # bare .py files
-    "200", "201", "202", "203", "204", "205",   # bare .py files
+    "205",                                      # bare .py file
 })
 
 

@@ -1,0 +1,8 @@
+{
+  "description": "teams_inbox — durable Teams Bot Framework message receipt buffer",
+  "date": "2026-08-03",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "note": "Converted from the runner-invisible bare file 200_teams_inbox.py (mvs-invisible-04)."
+}
