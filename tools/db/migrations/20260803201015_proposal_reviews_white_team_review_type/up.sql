@@ -18,12 +18,20 @@
 -- white-team review raised a CHECK violation on precisely the deployments that
 -- have been running longest.
 --
--- 173 is NOT renumbered into this shape. Version 173 is also claimed by
--- 173_cpmp_obligation_periods.py, so promoting either file to a directory would
--- create a duplicate version — the collision that shadows migrations and that
--- tests/test_migration_version_uniqueness.py exists to prevent. The legacy
--- 3-digit range is closed besides, so the fix lands on a timestamp id instead
--- and 173 stays documented as invisible-but-superseded.
+-- 173 is NOT renumbered into this shape, for three independent reasons:
+--
+--   1. schema_migrations on the live database ALREADY holds version 173, as
+--      "squashed-173" from the bootstrap marking. A migration promoted to
+--      version 173 would therefore be treated as applied and skipped without
+--      running — the fix would look landed and change nothing.
+--   2. Version 173 is also claimed by 173_cpmp_obligation_periods.py, so
+--      promoting either file to a directory creates a duplicate version — the
+--      collision that shadows migrations and that
+--      tests/test_migration_version_uniqueness.py exists to prevent.
+--   3. The legacy 3-digit range is closed (mvs-alloc-01).
+--
+-- So the fix lands on a timestamp id and 173 stays documented as
+-- invisible-but-superseded.
 
 -- @pg-only
 -- Drop-then-add is what makes this re-runnable: a second run drops the wide
