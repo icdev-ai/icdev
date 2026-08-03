@@ -98,6 +98,24 @@ rather than replaying a stored verdict, attaching the raw
 breakdown for the 8-point gate. An empty source set reports `measured: false` —
 absent evidence is reported absent, not summarised as a pass.
 
+## Delivery intelligence (Phase: idp-intel)
+
+Feeds `/api/sre/dora`. The query is correct and stays untouched — it was simply
+starved: measured 2026-08-02 it returned `metrics_assessed: 0` because every
+input table was empty.
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Delivery events | tools/idp/delivery_events.py | Projects the kanban merge ledger into the three tables the DORA query reads. One `status='done'` task with a `completed_at` (a merge-verified transition) = one `deployment_initiated` audit event, stamped when the change **landed**, not when it was backfilled. A change whose *most recent* `kanban_verifications` row is `failed`/`phantom` also gets `deployment_failed`; `bypassed` does **not** count (an unverified change is not a failed one) and neither does `failure_count > 0` (pre-landing rework). Work-start → landed becomes a `ci_pipeline_runs` row; work-start is `scheduled_at`, falling back to the earliest verification, never `created_at` (that would measure backlog wait). Public API: `collect_changes(conn, days)`, `sync_delivery_events(days, dry_run, conn)`, `dora_input_status(days, conn)`, `emitted_task_ids(conn)`. Idempotent — emitted task ids are read back out of `audit_trail` and parsed in Python (PG portability rule). Raises `DeliveryEventError`; the batch is rolled back, never half-committed and swallowed. | `--sync \| --status \| --dry-run \| --days N \| --json` | JSON summary |
+| Delivery events reflex | tools/genesis/reflexes/idp_delivery_events.py | GREEN-tier Genesis reflex, 6h (`args/genesis_config.yaml: reflexes.idp_delivery_events`), calling `sync_delivery_events(days=7)`. Exists because the endpoint reads a **rolling** 30-day window: a one-off backfill ages out and DORA silently returns to `metrics_assessed: 0`. `metric_value` is deploy events emitted; a cycle with no new merges reports 0 and still succeeds (`gte 0`). | reflex config (`days`, `dry_run`) | `{success, metric_value, details}` |
+
+**`mttr` stays `Not Assessed` after a full sync, by design.** It reads
+`sre_incidents`, and this platform has no production incident ledger — nothing
+records a service degradation and its restoration. Bug-type tasks and failed
+verifications are not production incidents; projecting them would put a rating
+on the dashboard that no measurement supports. `tests/test_idp_delivery_events.py::test_mttr_stays_not_assessed`
+fails if anyone relaxes the sentinel to make the page look populated.
+
 ## Closing the loop (Phase: idp-gap)
 
 `gap_seeder.py` is the half a catalog product cannot ship: a failing rule

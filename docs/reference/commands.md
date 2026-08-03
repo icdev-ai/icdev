@@ -4183,3 +4183,45 @@ The dependency edge is the hold that is enforced in code
 because the kanban deadlock-breaker can promote a card out of it. Release the
 whole batch by setting the gate to `done`. Seeding is refused outright if the
 gate has already been released.
+
+### Delivery events — give the DORA query something to measure (idp-intel-01)
+
+`/api/sre/dora` (surfaced at `/sre`) bands all four DORA keys correctly and
+refuses to launder missing data into a favourable rating — it reports
+`Not Assessed`. Measured 2026-08-02 it returned `metrics_assessed: 0`, because
+every input table was empty. This emits the inputs; the query is untouched.
+
+The ledger already exists: `kanban_tasks.status = 'done'` is merge-verified, so
+a done task with a `completed_at` is a record of a change reaching main, and
+`kanban_verifications` records what the verifier said about it on the way.
+
+```bash
+# What can the DORA query see right now?
+python tools/idp/delivery_events.py --status --json
+
+# What would be emitted — reads everything, writes nothing
+python tools/idp/delivery_events.py --sync --dry-run --json
+
+# Emit (incremental and idempotent; re-running adds only new changes)
+python tools/idp/delivery_events.py --sync --json
+python tools/idp/delivery_events.py --sync --days 90 --json   # cold-install backfill
+```
+
+The mapping: one `done` task = one `deployment_initiated` event stamped at the
+moment the change landed (not at backfill time); a change whose *most recent*
+verification returned `failed`/`phantom` also gets a `deployment_failed`;
+work-start → landed becomes a `ci_pipeline_runs` row for lead time. `bypassed`
+verifications are **not** counted as failures — an unverified change is not a
+failed one — and a task with no dispatch or verification timestamp gets its
+deploy event but no pipeline row, reported as `no_start_signal` rather than
+having a start invented from `created_at` (that would measure backlog wait).
+
+`mttr` stays `Not Assessed` after a full sync and that is the correct answer:
+it reads `sre_incidents`, and this platform has no production incident ledger.
+Projecting bug tasks or failed verifications into it would put a rating on the
+dashboard that no measurement supports.
+
+The scheduled writer is the Genesis reflex `idp_delivery_events` (6h, GREEN
+tier — `args/genesis_config.yaml`). It exists because the endpoint reads a
+*rolling* 30-day window: without a writer, a one-off backfill ages out and the
+endpoint returns to `metrics_assessed: 0` with nobody having changed a line.
