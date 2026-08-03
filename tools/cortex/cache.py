@@ -150,16 +150,21 @@ def audit_hit(operation: str, ctx) -> None:
     A pre-pipeline hit skips GovernancePipeline.wrap, so without this the
     append-only NIST-AU trail and /cortex/metrics would silently undercount
     served responses. Best-effort — a metrics write must never break serving.
+
+    Routed through ``record_governed_call`` so a hit costs ONE connection, not
+    one per write (cxo-perf-03) — otherwise the cache saves the LLM call but not
+    the DB round-trip it was meant to make cheap.
     """
     try:
-        from .db.init_db import record_audit
-        record_audit({
+        from .db.init_db import record_governed_call
+        record_governed_call({
             "operation": operation,
             "tenant_id": getattr(ctx, "tenant_id", "") or "default",
             "classification": getattr(ctx, "classification", "") or "CUI",
             "user_id": getattr(ctx, "user_id", "") or "",
             "session_id": getattr(ctx, "session_id", "") or "",
             "domain": getattr(ctx, "domain", "") or "",
+            "air_gap": bool(getattr(ctx, "air_gap", False)),
             "outcomes": {"cache": "pass"},
             "blocked": False,
             "cache_hit": True,
