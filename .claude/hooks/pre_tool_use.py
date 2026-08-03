@@ -505,6 +505,13 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # the old one, or "is this component getting better" stops being
         # answerable from the data.
         "idp_scorecard_history",
+        # IDP rule-level scorecard exemptions (idp-score-04, migration
+        # 20260803030514). The log IS the record: an exemption is an authority
+        # claim, and the only thing that makes one reviewable later is knowing
+        # who approved it and why. An UPDATE would overwrite the approver and a
+        # DELETE would erase the fact that anyone waived anything, so every
+        # state change — request, approval, denial, revocation — appends.
+        "idp_rule_exemptions",
         # Observability Canvas integration (D-OC audit trail, NIST AU)
         "od_audit",
         "nc_audit",

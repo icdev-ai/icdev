@@ -28,6 +28,23 @@ Rules may carry a ``filter`` (also an IQE query) naming the entities the rule
 applies to at all; entities outside the filter are "not applicable" and are
 excluded from both the score denominator and the ladder.
 
+Exemptions (idp-score-04)
+-------------------------
+An exemption waives ONE rule for ONE entity. The entity is then neither
+passing nor failing that rule — it is excluded from it, exactly like a rule
+whose ``filter`` does not select it — so the rule leaves the score's
+denominator instead of paying out its weight. Crediting an exemption as a pass
+would make waiving a rule the cheapest way to raise a score, which is the
+incentive a scorecard exists to remove. An exempt rule does not hold the ladder
+either: a rung whose only unmet rule is exempted here is met, and progression
+continues.
+
+Every exemption must name **who approved it** and **why**; one that does not is
+reported as *inert* and waives nothing. Grants come from two places, merged:
+the scorecard's own ``exemptions.grants`` block, and the append-only approval
+log in ``tools/idp/exemptions.py``. Config carries ``enabled``, ``autoApprove``
+(default off) and ``userSpecificNotifications``.
+
 Dimensions and the letter grade (idp-ui-01)
 -------------------------------------------
 A rule may declare a ``dimension``, which buckets it with the other rules that
@@ -75,6 +92,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.idp.exemptions import (  # noqa: E402
+    ACTIVE_STATUS,
+    ExemptionPolicy,
+    attribution_defect,
+)
 from tools.iqe import IQESyntaxError, execute_query, parse  # noqa: E402
 from tools.iqe.ast_nodes import AttrRef, BinOp, CollectionCall, SelectNode  # noqa: E402
 
@@ -171,18 +193,47 @@ class Rule:
 
 @dataclasses.dataclass(frozen=True)
 class Exemption:
-    """Waives one rule for one entity. Approval/audit lands in idp-score-04."""
+    """Waives one rule for one entity — if it is attributed and approved.
+
+    ``approved_by`` and ``reason`` are what make a waiver reviewable six months
+    later, so an exemption missing either one is *inert*: it is loaded, it is
+    reported, and it waives nothing. That is deliberately louder than dropping
+    it, because a waiver that quietly failed to apply is as confusing as one
+    that quietly applied.
+
+    ``source`` distinguishes a grant declared in the scorecard YAML (attributed
+    by the ``approvedBy:`` field and by git history) from one granted through
+    the append-only approval log (``tools/idp/exemptions.py``).
+    """
 
     identifier: str
     entity: str
     reason: str = ""
     expires: str = ""
+    approved_by: str = ""
+    approved_at: str = ""
+    status: str = ACTIVE_STATUS
+    source: str = "scorecard"
+    decision_reason: str = ""
+    auto_approved: bool = False
 
-    def is_active(self, today: str) -> bool:
-        """Active unless it carries an ``expires`` date that has passed."""
-        if not self.expires:
-            return True
-        return str(self.expires) >= today
+    def defect(self, today: str, policy: "ExemptionPolicy | None" = None) -> str:
+        """Why this exemption does not apply, or ``""`` when it does."""
+        return attribution_defect(
+            status=self.status,
+            approved_by=self.approved_by,
+            reason=self.reason,
+            expires=self.expires,
+            today=today,
+            policy=policy,
+        )
+
+    def is_active(self, today: str, policy: "ExemptionPolicy | None" = None) -> bool:
+        """True when this exemption actually waives its rule."""
+        return not self.defect(today, policy)
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -202,6 +253,11 @@ class Scorecard:
     source_path: str = ""
     dimensions: tuple[Dimension, ...] = ()
     grade_bands: tuple[tuple[str, float], ...] = DEFAULT_GRADE_BANDS
+    #: ``enabled`` / ``autoApprove`` / ``userSpecificNotifications``.
+    #: ``field(default_factory=...)`` rather than a shared default instance:
+    #: the policy is mutable, and one shared object would let a test (or a
+    #: second scorecard) flip auto-approve on for every card in the process.
+    exemption_policy: ExemptionPolicy = dataclasses.field(default_factory=ExemptionPolicy)
 
     def ladder(self) -> list[Level]:
         """Levels ordered worst-to-best."""
@@ -278,15 +334,37 @@ class RuleOutcome:
     dimension: str = UNASSIGNED_DIMENSION
     evidence: Evidence | None = None
 
+    #: Set on an ``exempt`` outcome: who approved the waiver, why, when it
+    #: lapses, and which store it came from. An exemption with no attribution
+    #: never reaches this point — it is reported as inert instead.
+    exemption: dict[str, Any] | None = None
+
     @property
     def counted(self) -> bool:
-        """Does this outcome participate in the score?"""
-        return self.status in ("pass", "fail", "exempt")
+        """Does this outcome participate in the score?
+
+        ``exempt`` does not. An exemption removes the entity from the rule; it
+        does not hand it the rule's weight. Paying out a waived rule would make
+        an exemption a score increase, so the cheapest way to fix a red
+        scorecard would be to stop measuring — which is the failure mode the
+        approval step exists to prevent.
+        """
+        return self.status in ("pass", "fail")
 
     @property
     def credited(self) -> bool:
-        """Does this outcome earn its weight? Exemptions credit, by design."""
-        return self.status in ("pass", "exempt")
+        """Does this outcome earn its weight?"""
+        return self.status == "pass"
+
+    @property
+    def gating(self) -> bool:
+        """Does this outcome constrain ladder progression?
+
+        Only a leveled rule that actually applies. ``exempt`` sits out
+        alongside ``not_applicable``: an exempt rule must not block the rung it
+        was waived on, nor the rungs above it.
+        """
+        return bool(self.level) and self.status not in ("not_applicable", "exempt")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -296,7 +374,9 @@ class RuleOutcome:
             "level": self.level,
             "message": self.message,
             "dimension": self.dimension,
+            "counted": self.counted,
             "evidence": self.evidence.to_dict() if self.evidence else None,
+            "exemption": self.exemption,
         }
 
 
@@ -519,14 +599,31 @@ def parse_scorecard(data: dict[str, Any], source_path: str = "") -> Scorecard:
     if not rules:
         raise ScorecardError(f"{key}: scorecard defines no rules")
 
+    exemption_block = data.get("exemptions")
+    exemption_policy = ExemptionPolicy.from_config(exemption_block)
+    # ``exemptions:`` may be either a bare list of grants (the shape shipped
+    # before idp-score-04) or a mapping carrying the policy plus ``grants:``.
+    # Both are accepted so an existing scorecard keeps working unchanged.
+    if isinstance(exemption_block, dict):
+        raw_grants = exemption_block.get("grants") or []
+    else:
+        raw_grants = exemption_block or []
     exemptions = [
         Exemption(
             identifier=str(raw.get("identifier") or "").strip(),
             entity=str(raw.get("entity") or "").strip(),
             reason=str(raw.get("reason") or ""),
             expires=str(raw.get("expires") or ""),
+            approved_by=str(raw.get("approvedBy") or raw.get("approved_by") or ""),
+            approved_at=str(raw.get("approvedAt") or raw.get("approved_at") or ""),
+            # A grant written into the scorecard file is approved by whoever
+            # the file says approved it; there is no pending state in YAML,
+            # because merging the edit *is* the approval step for config.
+            status=ACTIVE_STATUS,
+            source="scorecard",
+            decision_reason=str(raw.get("decisionReason") or raw.get("decision_reason") or ""),
         )
-        for raw in data.get("exemptions") or []
+        for raw in raw_grants
     ]
 
     evaluation = data.get("evaluation") or {}
@@ -544,6 +641,7 @@ def parse_scorecard(data: dict[str, Any], source_path: str = "") -> Scorecard:
         source_path=source_path,
         dimensions=tuple(dimensions),
         grade_bands=grade_bands,
+        exemption_policy=exemption_policy,
     )
 
 
@@ -732,11 +830,16 @@ def _assign_level(
     with ``assessed=False``. An empty ``by_level`` is therefore the "no
     evidence at all" case and returns unranked, so the ladder cannot be
     climbed by never being looked at.
+
+    An ``exempt`` outcome sits out the same way a not-applicable one does (see
+    :attr:`RuleOutcome.gating`), so an approved waiver lets progression
+    continue past the rung it was granted on rather than freezing the entity
+    below it — which is the whole reason to grant one.
     """
     by_level: dict[str, list[RuleOutcome]] = {}
     for outcome in outcomes:
-        if outcome.level and outcome.status != "not_applicable":
-            by_level.setdefault(outcome.level, []).append(outcome)
+        if outcome.gating:
+            by_level.setdefault(outcome.level or "", []).append(outcome)
 
     if not by_level:
         return (None, 0)
@@ -747,6 +850,72 @@ def _assign_level(
             break
         attained = level
     return (attained.name, attained.rank) if attained else (None, 0)
+
+
+def _store_exemptions(scorecard: Scorecard, conn: Any) -> list[Exemption]:
+    """Approved waivers from the append-only log, as :class:`Exemption` values.
+
+    Only attempted when a connection was handed in. Opening the ambient
+    database from inside a pure evaluation would make the result depend on
+    whichever database the process happens to be pointed at — the "ambient host
+    state" trap — and would break every caller that evaluates a synthetic
+    collection with ``conn=None``. A missing table costs the report its stored
+    waivers, not its scores.
+    """
+    if conn is None:
+        return []
+    try:
+        from tools.idp.exemptions import current_states  # noqa: PLC0415
+
+        states = current_states(scorecard.key, conn=conn)
+    except Exception:  # noqa: BLE001
+        return []
+    return [
+        Exemption(
+            identifier=str(state.get("rule_identifier") or ""),
+            entity=str(state.get("component_key") or ""),
+            reason=str(state.get("reason") or ""),
+            expires=str(state.get("expires_on") or ""),
+            approved_by=str(state.get("decided_by") or ""),
+            approved_at=str(state.get("recorded_at") or ""),
+            status=str(state.get("status") or ""),
+            source="approval-log",
+            decision_reason=str(state.get("decision_reason") or ""),
+            auto_approved=bool(state.get("auto_approved")),
+        )
+        for state in states
+    ]
+
+
+def _resolve_exemptions(
+    scorecard: Scorecard,
+    conn: Any,
+    today: str,
+) -> tuple[dict[tuple[str, str], Exemption], list[dict[str, Any]]]:
+    """Split every known grant into the ones that apply and the ones that do not.
+
+    The approval log wins over a YAML grant for the same (rule, entity): a
+    revocation recorded in the log must be able to switch off a waiver that is
+    still written in the file, otherwise revoking would require a code change
+    and would not take effect until it merged.
+
+    Returns ``(active_by_target, inert)``. The inert list is reported rather
+    than discarded — an exemption that silently failed to apply is as confusing
+    as one that silently applied.
+    """
+    policy = scorecard.exemption_policy
+    active: dict[tuple[str, str], Exemption] = {}
+    inert: list[dict[str, Any]] = []
+    for grant in list(scorecard.exemptions) + _store_exemptions(scorecard, conn):
+        target = (grant.identifier, grant.entity)
+        defect = grant.defect(today, policy)
+        if defect:
+            inert.append({**grant.to_dict(), "defect": defect})
+            # A revoked/denied log entry also clears any YAML grant it shadows.
+            active.pop(target, None)
+        else:
+            active[target] = grant
+    return active, inert
 
 
 def evaluate(
@@ -807,9 +976,7 @@ def _evaluate_scoped(
     facts = _fact_rows(scorecard, conn)
     adapter_module = scorecard.resolved_adapter_module()
 
-    active_exemptions = {
-        (ex.identifier, ex.entity) for ex in scorecard.exemptions if ex.is_active(today)
-    }
+    active_exemptions, inert_exemptions = _resolve_exemptions(scorecard, conn, today)
 
     # Evidence field lists are per rule, not per entity — parse once.
     rule_fields = {
@@ -837,22 +1004,20 @@ def _evaluate_scoped(
     for entity in entities:
         outcomes: list[RuleOutcome] = []
         for rule in scorecard.rules:
+            waiver: Exemption | None = active_exemptions.get((rule.identifier, entity))
             if entity not in applicable[rule.identifier]:
                 status = "not_applicable"
                 message = ""
+                waiver = None
             elif entity in passing[rule.identifier]:
                 status = "pass"
                 message = ""
-            elif (rule.identifier, entity) in active_exemptions:
+                # A passing rule needs no waiver; reporting one here would
+                # suggest the pass was bought rather than earned.
+                waiver = None
+            elif waiver is not None:
                 status = "exempt"
-                message = next(
-                    (
-                        ex.reason
-                        for ex in scorecard.exemptions
-                        if ex.identifier == rule.identifier and ex.entity == entity
-                    ),
-                    "",
-                )
+                message = waiver.reason
             else:
                 status = "fail"
                 message = rule.failure_message
@@ -879,6 +1044,7 @@ def _evaluate_scoped(
                         observed={f: fact_row[f] for f in fields if f in fact_row},
                         note=rule.evidence_note,
                     ),
+                    exemption=waiver.to_dict() if waiver is not None else None,
                 )
             )
 
@@ -918,6 +1084,16 @@ def _evaluate_scoped(
         "grade_distribution": _grade_distribution(results, scorecard),
         "assessed_count": sum(1 for r in results if r.assessed),
         "adapter_module": adapter_module,
+        # Exemptions are reported, never implicit: the policy in force, every
+        # waiver that applied (with its approver), and every one that did not
+        # (with the reason it did not).
+        "exemptions": {
+            "policy": scorecard.exemption_policy.to_dict(),
+            "active_count": len(active_exemptions),
+            "inert_count": len(inert_exemptions),
+            "active": [ex.to_dict() for ex in active_exemptions.values()],
+            "inert": inert_exemptions,
+        },
         # Repo-relative: the absolute path is a property of whichever worktree
         # happened to render the page, and printing it in the UI leaks a local
         # filesystem layout while telling the reader nothing they can act on.
@@ -936,6 +1112,18 @@ def _evaluate_scoped(
                 "evidence_note": r.evidence_note,
                 "applicable": len(applicable[r.identifier]),
                 "passing": len(applicable[r.identifier] & passing[r.identifier]),
+                # Entities the rule covers but was waived for. Kept as its own
+                # count rather than folded into either side: an exempt entity
+                # is neither a pass to celebrate nor a failure to chase.
+                "exempt": len(
+                    {
+                        entity
+                        for (identifier, entity) in active_exemptions
+                        if identifier == r.identifier
+                        and entity in applicable[r.identifier]
+                        and entity not in passing[r.identifier]
+                    }
+                ),
             }
             for r in scorecard.rules
         ],
@@ -1060,10 +1248,30 @@ def _render(report: dict[str, Any], component: str | None) -> str:
     lines.append("Rules:")
     for rule in report["rules"]:
         gate = f"gates {rule['level']}" if rule["gates_ladder"] else "scores only"
+        waived = f" +{rule['exempt']} exempt" if rule.get("exempt") else ""
         lines.append(
             f"  {rule['identifier']:<28} {rule['passing']:>3}/{rule['applicable']:<3} "
-            f"w={rule['weight']:<3} [{rule['dimension']}] ({gate})"
+            f"w={rule['weight']:<3} [{rule['dimension']}] ({gate}){waived}"
         )
+    exemptions = report.get("exemptions") or {}
+    if exemptions.get("active") or exemptions.get("inert"):
+        lines.append("")
+        lines.append("Exemptions:")
+        for grant in exemptions.get("active") or []:
+            lines.append(
+                f"  {grant['identifier']}:{grant['entity']} — approved by "
+                f"{grant['approved_by']} ({grant['source']})"
+                + (f", expires {grant['expires']}" if grant.get("expires") else "")
+                + f" — {grant.get('reason') or ''}"
+            )
+        for grant in exemptions.get("inert") or []:
+            # An exemption that does NOT apply is printed too. Dropping it
+            # would leave an operator staring at a failing rule they believe
+            # they waived, with nothing on screen explaining why it did not
+            # take.
+            lines.append(
+                f"  {grant['identifier']}:{grant['entity']} — INERT: {grant['defect']}"
+            )
     lines.append("")
     rows = report["results"]
     if component:

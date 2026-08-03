@@ -247,13 +247,47 @@ rules:
     No `owner_contact:`. An owner nobody can reach is only marginally better
     than no owner. Scores but does not gate.
 
-# Exemptions waive one rule for one component. `expires` is optional; an
-# expired exemption stops applying automatically. Approval + audit trail for
-# these lands in idp-score-04.
+# ── Exemptions (idp-score-04) ─────────────────────────────────────────────
+# An exemption waives ONE rule for ONE component. The component is then
+# neither passing nor failing that rule — it is excluded from it, so the rule
+# leaves the score's denominator instead of paying out its weight, and it does
+# not hold the component back on the ladder.
 #
-#   exemptions:
-#   - identifier: e2e-spec
-#     entity: some-component
-#     reason: Headless component with no rendered page.
-#     expires: '2026-12-31'
-exemptions: []
+# Without this, a scorecard carrying a single unfair rule does not get that
+# rule fixed — it gets the whole scorecard ignored, and an ignored scorecard is
+# worse than none because it still reads as governance.
+#
+# Every exemption must name WHO approved it and WHY. One that does not is
+# reported as INERT and waives nothing (`python tools/idp/scorecard.py` prints
+# it, so a failed waiver is visible rather than silent).
+exemptions:
+  # Master switch. `false` makes every grant inert — for a scorecard whose
+  # rules are statutory and not waivable.
+  enabled: true
+
+  # Approve a request the moment it is filed. DEFAULT OFF, deliberately: an
+  # exemption nobody reviewed is a self-service way to delete a rule. With it
+  # off, a request sits at `pending` and waives nothing until approved via
+  #   python tools/idp/exemptions.py --approve <rule>:<component> --by <who>
+  autoApprove: false
+
+  # Notify the people attached to an exemption (requester, approver, and the
+  # component's owner/on_call from the registry) rather than broadcasting.
+  # A waiver granted on a component whose owner never hears about it is a
+  # governance change made behind the owner's back.
+  userSpecificNotifications: false
+
+  # Grants declared in config. `approvedBy` and `reason` are REQUIRED — a grant
+  # missing either is inert. `expires` is optional; an expired grant stops
+  # applying automatically. Grants requested through the CLI live in the
+  # append-only log (`idp_rule_exemptions`) instead, and a revocation recorded
+  # there overrides a grant still written here.
+  #
+  #   grants:
+  #   - identifier: e2e-spec
+  #     entity: some-component
+  #     reason: Headless component; renders no page for Playwright to drive.
+  #     approvedBy: platform-lead@example.mil
+  #     approvedAt: '2026-08-03'
+  #     expires: '2026-12-31'
+  grants: []
