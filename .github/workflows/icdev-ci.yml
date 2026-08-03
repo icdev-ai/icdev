@@ -64,6 +64,22 @@ jobs:
       - name: Swallowed-INSERT gate
         working-directory: ${{ github.workspace }}
         run: python tools/dev/check_swallowed_inserts.py
+      # idp-score-01-d4. A SMOKE gate, not a quality bar: it proves the sweep
+      # walks all ~68 components in args/component_registry.yaml and produces a
+      # verdict for each without raising. --dry-run writes nothing, so this
+      # needs no migrated database and leaves no rows behind.
+      #
+      # It does NOT assert that anything was assessed, and must not. A CI
+      # checkout has no probe history, no compliance assessment and no coherence
+      # report, so every component correctly comes back NOT_ASSESSED -- that is
+      # the honest answer about ICDEV's measurement coverage on a cold tree, not
+      # a failure of the runner. Reddening here over an unassessed component
+      # would train everyone to add a `|| true`, and the real signal (a
+      # component that RAISES, exit 1) would go with it. Exit codes: 0 swept
+      # clean, 1 a component raised, 2 the registry would not load.
+      - name: Component scoring sweep (dry run)
+        working-directory: ${{ github.workspace }}
+        run: python -m tools.quality.run_component_scoring --dry-run
       - name: Run core unit tests
         # NOTE: this list is a shell line-continuation chain -- do NOT put `#`
         # comments between the entries. A comment after a trailing `\` swallows
@@ -159,6 +175,7 @@ jobs:
             tests/test_cxo_adopt_04_mcp_cortex_adapters.py \
             tests/test_awareness_edge_deriver.py \
             tests/workflow/test_vendor_parity.py \
+            tests/quality/test_run_component_scoring.py \
             tests/slides/test_blueprint.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
