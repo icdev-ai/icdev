@@ -125,6 +125,12 @@ observable_types:
   document:
     description: A document artifact (PDF, DOCX, MD) to be analyzed as a whole.
     consumers: [tools/doc_modernization/scanner.py]
+  advisory:
+    description: Identifier (nc_advisories.id) of a vulnerability advisory record held by the platform.
+    consumers: [tools/network/vuln_predictor.py, tools/network/vuln_triage_engine.py]
+  network:
+    description: Identifier of a network under analysis, used to scope NQE device-inventory queries.
+    consumers: [tools/network/attack_surface_mapper.py]
 
 # ---------------------------------------------------------------------------
 # Closed vocabulary: output taxonomy
@@ -144,6 +150,7 @@ taxonomy:
     SUPPLYCHAIN: tools/supply_chain/ — SCRM, CVE triage, Section 889 screening.
     DSOC: tools/dsoc_canvas/ — DDoS, BGP and network-defence analyzers.
     STRATEGOS: tools/strategos/ — intelligence feeds, importers and OSINT.
+    NETWORK: tools/network/ — predictive vulnerability management and attack-surface analysis.
 
 # ---------------------------------------------------------------------------
 # Closed vocabulary: sandbox posture
@@ -309,3 +316,140 @@ analyzers:
       context_args:
         reason: reason
         triggered_by: user_id
+
+  # -------------------------------------------------------------------------
+  # DSOC BGP family (anz-mig-01)
+  # -------------------------------------------------------------------------
+  # Both take a live DB handle as their first positional parameter and WRITE
+  # their findings. `binding.connection` names the factory so the dispatcher
+  # owns that handle end to end — open, call, commit, close — instead of every
+  # call site repeating the same three lines. `commit: true` is not decoration:
+  # a hijack detection computed and never committed is a silent no-op.
+  - key: bgp_prefix_hijack
+    kind: analyzer
+    display_name: BGP Prefix Hijack Detector
+    description: Detects a prefix announced by an origin AS that does not own it.
+    module: tools.dsoc_canvas.bgp_hijack_detector
+    entrypoint: detect_prefix_hijack
+    accepts: [bgp_prefix]
+    taxonomy:
+      namespace: DSOC
+      predicates: [prefix-hijack, hijack-confidence]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 600
+      per_seconds: 3600
+    # detect_prefix_hijack(conn, *, our_prefix, our_asn, observed_prefix,
+    #                      observed_origin_asn, peer_asn=None,
+    #                      detection_source='internal')
+    # peer_asn and detection_source carry defaults, so a caller that omits them
+    # is not reported missing — the dispatcher only insists on a context key
+    # when the parameter has no default of its own.
+    binding:
+      observable_arg: observed_prefix
+      connection:
+        param: conn
+        factory: tools.dsoc_canvas.db.init_db:get_connection
+        commit: true
+      context_args:
+        our_prefix: our_prefix
+        our_asn: our_asn
+        observed_origin_asn: observed_origin_asn
+        peer_asn: peer_asn
+        detection_source: detection_source
+
+  - key: bgp_route_leak
+    kind: analyzer
+    display_name: BGP Route Leak Detector
+    description: Detects a prefix propagated beyond its intended peering scope.
+    module: tools.dsoc_canvas.bgp_hijack_detector
+    entrypoint: detect_route_leak
+    accepts: [bgp_prefix]
+    taxonomy:
+      namespace: DSOC
+      predicates: [route-leak, leak-confidence]
+      levels: [info, suspicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 600
+      per_seconds: 3600
+    # detect_route_leak(conn, *, prefix, announcing_asn, peer_asn,
+    #                   leak_type='unknown', confidence_pct=70.0,
+    #                   detection_source='bgp_monitor')
+    # peer_asn has NO default here (unlike the hijack detector above), so a
+    # caller that omits it is correctly reported as missing context.
+    binding:
+      observable_arg: prefix
+      connection:
+        param: conn
+        factory: tools.dsoc_canvas.db.init_db:get_connection
+        commit: true
+      context_args:
+        announcing_asn: announcing_asn
+        peer_asn: peer_asn
+        leak_type: leak_type
+        confidence_pct: confidence_pct
+        detection_source: detection_source
+
+  # -------------------------------------------------------------------------
+  # Predictive Vulnerability Management family (anz-mig-01)
+  # -------------------------------------------------------------------------
+  - key: pvm_risk_prediction
+    kind: analyzer
+    display_name: PVM Advisory Risk Prediction
+    description: Predicts composite risk, exploit likelihood and patch lag for one advisory.
+    module: tools.network.vuln_predictor
+    entrypoint: predict_advisory_risk
+    accepts: [advisory]
+    taxonomy:
+      namespace: NETWORK
+      predicates: [composite-risk, exploit-likelihood, patch-lag]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 600
+      per_seconds: 3600
+    binding:
+      observable_arg: advisory_id
+
+  - key: pvm_triage_scoring
+    kind: analyzer
+    display_name: PVM Triage Scoring
+    description: Scores advisories for triage priority and whether HITL review is required.
+    module: tools.network.vuln_triage_engine
+    entrypoint: score_advisories
+    accepts: [advisory]
+    taxonomy:
+      namespace: NETWORK
+      predicates: [triage-priority, hitl-required]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 240
+      per_seconds: 3600
+    # score_advisories(advisory_ids: list[int] | None = None) is batch-shaped.
+    # `observable_form: list` wraps the single observable; without it the
+    # callable receives a bare scalar where it iterates and reports having
+    # scored nothing — a wrong answer rather than an error.
+    binding:
+      observable_arg: advisory_ids
+      observable_form: list
+
+  - key: pvm_attack_surface
+    kind: analyzer
+    display_name: PVM Attack Surface Mapper
+    description: Maps exposed services and scores the attack surface of one network.
+    module: tools.network.attack_surface_mapper
+    entrypoint: map_attack_surface
+    accepts: [network]
+    taxonomy:
+      namespace: NETWORK
+      predicates: [surface-score, exposure-type]
+      levels: [info, suspicious, malicious]
+    sandbox: trusted_first_party
+    rate_limit:
+      max_calls: 60
+      per_seconds: 3600
+    binding:
+      observable_arg: network_id
