@@ -5429,13 +5429,30 @@ def check_component_cli_reachability(
 
 
 def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
-    """Run the 8-point completeness gate against every registered canvas."""
+    """Run the 8-point completeness gate against every registered canvas.
+
+    BLOCKING (idp-score-05). This is the registry-driven half of the CLAUDE.md
+    8-component new-page gate; ``check_new_page_completeness`` is the
+    filesystem-driven half. The two enumerate the same rule from opposite
+    directions — one from ``args/component_registry.yaml``, one from
+    ``tools/dashboard/templates/*/page.html`` — so they must agree on severity
+    or the weaker one launders the rule. This one returned ``warn`` while its
+    sibling returned ``fail`` and was declared blocking in
+    ``args/security_gates.yaml``, which meant a canvas visible only to the
+    registry could ship incomplete. Both now fail, and both honour the same
+    ``args/page_completeness_whitelist.yaml`` grandfather list.
+    """
     missing_issues: List[str] = []
+    whitelisted: List[str] = []
     try:
         from tools.config.component_registry import get_registry
 
+        whitelist = _load_page_completeness_whitelist()
         registry = get_registry()
         for comp in registry.iter_canvases():
+            if comp.key in whitelist:
+                whitelisted.append(comp.key)
+                continue
             report = registry.validate_canvas_completeness(comp.key)
             if not report.passed:
                 for item in report.items:
@@ -5460,23 +5477,29 @@ def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> Coh
         return CoherenceCheck(
             check_id="canvas_completeness",
             check_name="Canvas Completeness Gate",
-            status="warn",
+            status="fail",
             expected=["All canvases pass 8-point completeness gate"],
             actual=[f"{len(missing_issues)} missing component(s)"],
             missing=sorted(missing_issues),
             extra=[],
-            message=f"{len(missing_issues)} canvas completeness issue(s) found (legacy canvases may need registry updates)",
+            message=(
+                f"{len(missing_issues)} canvas completeness issue(s) found — ship the "
+                "missing component(s), declare the point N/A in the registry's "
+                "completeness block, or grandfather the canvas in "
+                "args/page_completeness_whitelist.yaml"
+            ),
         )
 
+    suffix = f" ({len(whitelisted)} whitelisted)" if whitelisted else ""
     return CoherenceCheck(
         check_id="canvas_completeness",
         check_name="Canvas Completeness Gate",
         status="pass",
         expected=["All canvases pass 8-point completeness gate"],
-        actual=["All canvases complete"],
+        actual=[f"All canvases complete{suffix}"],
         missing=[],
-        extra=[],
-        message="All registered canvases pass the 8-point completeness gate",
+        extra=sorted(whitelisted),
+        message=f"All registered canvases pass the 8-point completeness gate{suffix}",
     )
 
 
