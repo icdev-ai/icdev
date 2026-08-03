@@ -120,10 +120,14 @@ def stale_directory_message(rows: list[dict[str, str]]) -> str:
         "leaves the old directory behind holding only __pycache__, which git "
         "reports as a clean tree. Your working tree is stale; the versions do "
         "NOT collide and main is not broken.\n"
-        "Remove them:\n"
-        "    git clean -xdf tools/db/migrations        # bash\n"
-        "    Remove-Item -Recurse -Force <path>        # PowerShell, one directory\n"
-        "(If one is a migration you are still authoring, `git add` it instead.)"
+        "Remove them — one at a time, by the exact path listed above:\n"
+        + "\n".join(f"    rm -rf {r['path']}" for r in rows)
+        + "\n    # PowerShell: Remove-Item -Recurse -Force <path>\n"
+        "Check first with `git clean -xdn tools/db/migrations`. Do NOT reach "
+        "for `git clean -xdf` on that directory: it would also delete a "
+        "migration you are still authoring but have not `git add`ed yet, and "
+        "such a directory is listed above too — if one of these is yours, "
+        "`git add` it instead of removing it."
     )
 
 

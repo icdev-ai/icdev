@@ -219,7 +219,12 @@ def test_stale_directory_is_named_and_its_removal_explained(tmp_path: pathlib.Pa
     msg = stale_directory_message(rows)
     assert "028_odc_mitre_coverage" in msg
     assert "stale" in msg.lower(), "must say the working tree is stale"
-    assert "git clean" in msg, "must say how to remove it"
+    assert f"rm -rf {rows[0]['path']}" in msg, "must give the exact path to remove"
+    assert "git clean -xdf" not in msg.replace("NOT reach for `git clean -xdf`", ""), (
+        "must not hand out a blanket clean — it would also delete a migration "
+        "the author has not `git add`ed yet, which is listed here too"
+    )
+    assert "git add" in msg, "must say what to do if the directory is yours"
     # The whole point: it must not read as a version collision. The original
     # failure text blamed the migrations; this has to blame the working tree.
     assert "do NOT collide" in msg
