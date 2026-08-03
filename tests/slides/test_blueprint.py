@@ -3,7 +3,34 @@
 
 Covers page routes and the native asset-generator smoke endpoint.
 Database-backed routes use the slides canvas DB (SQLite in tests).
+
+sdt-auth-01 — two things this file needs that it used to get by accident:
+
+1. The blueprint must be MOUNTED. It is only registered when ICDEV_SLIDES_ENABLED
+   is on, and that lives in the repo .env; tests/conftest.py now sets it before the
+   dashboard app is first imported (it cannot be done from this module — the app is
+   already built by the time this module is collected).
+2. The caller must be AUTHENTICATED. The seven write routes carry
+   @require_role(*_SLIDES_WRITE_ROLES), and global dashboard auth requires a
+   session on every route. The fix has to go THROUGH the session: a second
+   before_request that sets g.current_user never runs, because
+   _auth_before_request returns a redirect for an anonymous page request and a
+   returned response short-circuits every later hook. So the `client` fixture seeds
+   session['user_id'] and stubs get_user_by_id.
+
+Authenticating the fixture to fix an auth failure would otherwise delete the only
+thing that notices the gate being dropped later, so TestWriteRoutesRequireAuth
+keeps two unauthenticated callers around. Note which assertion pins what — they
+are not interchangeable, and this was measured by removing the decorator:
+
+  * `anon_client` (no session) pins GLOBAL dashboard auth. It gets 401/302 from
+    _auth_before_request whether or not @require_role is on the route, so on its
+    own it would stay green through the decorator's removal.
+  * `viewer_client` (session, role NOT in _SLIDES_WRITE_ROLES) is what actually
+    pins @require_role: it clears the session gate and is refused 403 by the role
+    gate. With the decorator deleted it reaches the view and returns 404 instead.
 """
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -14,16 +41,107 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# role must be in tools.slides.blueprint._SLIDES_WRITE_ROLES; status must be
+# 'active' or _auth_before_request clears the session as expired.
+_TEST_USER = {
+    "id": "slides-test-user",
+    "email": "slides-tester@icdev.local",
+    "display_name": "Slides Tester",
+    "role": "developer",
+    "status": "active",
+}
+
+
+@pytest.fixture(scope="module")
+def slides_db(tmp_path_factory):
+    """Give this module its OWN slides canvas database.
+
+    Third piece of undeclared ambient state, same family as the toggle. The canvas
+    DB is whatever SLIDES_PG_DATABASE names — a PostgreSQL *database name* that
+    get_canvas_connection() reuses as a SQLite *file path* once the backend is
+    sqlite (which tests/conftest.py forces). With the repo .env loaded that value is
+    "icdev_slides", i.e. the file of that name COMMITTED at the repo root, whose
+    slides_decks was created from the PG schema and still carries the
+    pre-sdt-vocab-01 eight-type deck_type CHECK. CREATE TABLE IF NOT EXISTS never
+    widens a CHECK and slides migration 006 only widens it on PostgreSQL, so
+    test_fill_end_to_end_creates_deck raises IntegrityError on a machine that has
+    .env and passes on one that does not. A private file makes the run identical
+    either way — and matches sdt-vv-01, which asserts against a *freshly
+    initialised* schema.
+    """
+    path = tmp_path_factory.mktemp("slides_canvas") / "slides_canvas.db"
+    # init_db() and the blueprint each memoise "schema is up" in a module global.
+    # Both have to forget it or the new file never gets a schema.
+    for name in ("tools.slides.db.init_db", "tools.slides.blueprint"):
+        importlib.import_module(name)._INIT_DONE = False
+    return str(path)
+
 
 @pytest.fixture
-def client():
-    """Create a Flask test client from the full dashboard app so base.html context
-    processors (nav_tree, etc.) are available."""
+def anon_client(monkeypatch, slides_db):
+    """An explicitly UNAUTHENTICATED test client.
+
+    Both dev-autologin escape hatches are removed so an inherited .env cannot
+    silently authenticate the "anonymous" caller and turn the auth assertions green.
+    """
+    monkeypatch.delenv("ICDEV_DASHBOARD_DEV_AUTOLOGIN", raising=False)
+    monkeypatch.delenv("ICDEV_DASHBOARD_API_KEY", raising=False)
+    monkeypatch.setenv("SLIDES_PG_DATABASE", slides_db)
+
     from tools.dashboard.app import app
-    from tools.slides.db.init_db import init_db
 
     app.config["TESTING"] = True
     with app.test_client() as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def viewer_client(monkeypatch, slides_db):
+    """Authenticated, but with a role that is NOT in _SLIDES_WRITE_ROLES.
+
+    This is what actually pins @require_role. The anonymous client cannot: global
+    dashboard auth 401s it in before_request, so it would keep passing even if
+    every @require_role were deleted. Only a caller who clears the session gate and
+    is then refused by the role gate can tell the two apart.
+    """
+    monkeypatch.setenv("SLIDES_PG_DATABASE", slides_db)
+    auth = importlib.import_module("tools.dashboard.auth")
+    viewer = dict(_TEST_USER, id="slides-test-viewer", role="auditor")
+    monkeypatch.setattr(auth, "get_user_by_id", lambda user_id: dict(viewer))
+
+    from tools.dashboard.app import app
+
+    app.config["TESTING"] = True
+    with app.test_client() as test_client:
+        with test_client.session_transaction() as sess:
+            sess["user_id"] = viewer["id"]
+        yield test_client
+
+
+@pytest.fixture
+def client(monkeypatch, slides_db):
+    """Create a Flask test client from the full dashboard app so base.html context
+    processors (nav_tree, etc.) are available, logged in as a slides author."""
+    monkeypatch.setenv("SLIDES_PG_DATABASE", slides_db)
+
+    from tools.dashboard.app import app
+    from tools.slides.db.init_db import init_db
+
+    # Shim-aware: tools.dashboard.auth and icdev.tools.dashboard.auth are the same
+    # module object, and _auth_before_request resolves get_user_by_id as a module
+    # global, so patching the attribute is what the hook actually reads.
+    auth = importlib.import_module("tools.dashboard.auth")
+    monkeypatch.setattr(auth, "get_user_by_id", lambda user_id: dict(_TEST_USER))
+
+    assert "slides" in app.blueprints, (
+        "slides blueprint not mounted — ICDEV_SLIDES_ENABLED must be set in "
+        "tests/conftest.py before tools.dashboard.app is first imported"
+    )
+
+    app.config["TESTING"] = True
+    with app.test_client() as test_client:
+        with test_client.session_transaction() as sess:
+            sess["user_id"] = _TEST_USER["id"]
         with app.app_context():
             try:
                 init_db()
@@ -71,6 +189,7 @@ class TestAssetSmokeEndpoint:
 class TestPresentRoute:
     def _insert_test_deck_sqlite(self):
         """Insert a minimal completed deck + one slide via SQLite directly, return deck_id."""
+        from tools.db.storage import sql_placeholder
         from tools.slides.db.init_db import get_connection, init_db
         try:
             init_db()
@@ -87,10 +206,15 @@ class TestPresentRoute:
             )
             conn.commit()
             deck_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            # sql_placeholder(conn), not a bare '?': get_connection() here returns a
+            # StorageConnection whose dialect follows the resolved backend, so a
+            # hardcoded '?' is a ProgrammingError the moment this runs on psycopg2.
+            # canvas_placeholder_style in coherence_checker gates exactly this.
+            ph = sql_placeholder(conn)
             conn.execute(
                 "INSERT INTO slides_slides "
                 "(deck_id, position, slide_type, title, bullets, speaker_notes) "
-                "VALUES (?, 1, 'content', 'Intro Slide', '[\"Bullet A\"]', 'Notes here')",
+                f"VALUES ({ph}, 1, 'content', 'Intro Slide', '[\"Bullet A\"]', 'Notes here')",
                 (deck_id,),
             )
             conn.commit()
@@ -220,3 +344,67 @@ class TestTemplateFillRoutes:
             content_type="application/json",
         )
         assert resp.status_code == 404
+
+
+class TestWriteRoutesRequireAuth:
+    """The `client` fixture above authenticates, so nothing else in this file would
+    notice @require_role(*_SLIDES_WRITE_ROLES) being dropped from a write route.
+    These pin it with a caller that is genuinely anonymous.
+
+    401 vs 302 is not a detail: _auth_before_request only aborts(401) when the
+    request is JSON or the path starts with /api/. The slides write routes live
+    under /slides/api/..., so a multipart upload from a browser is REDIRECTED, and
+    a redirect body is not the JSON the caller asked for. Both shapes are pinned.
+    """
+
+    def test_fill_refuses_anonymous_with_401(self, anon_client):
+        resp = anon_client.post(
+            "/slides/api/templates/1/fill",
+            data=json.dumps({"selections": [{"slide_index": 0, "title": "x"}]}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 401
+
+    def test_generate_refuses_anonymous_with_401(self, anon_client):
+        resp = anon_client.post(
+            "/slides/api/generate",
+            data=json.dumps({"title": "x"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 401
+
+    def test_upload_refuses_anonymous(self, anon_client):
+        import io
+
+        resp = anon_client.post(
+            "/slides/api/templates/upload",
+            data={"file": (io.BytesIO(b"nope"), "x.pptx")},
+            content_type="multipart/form-data",
+        )
+        # Non-JSON, non-/api/ path -> the auth hook redirects to the login page
+        # rather than 401'ing. Either way the route never runs.
+        assert resp.status_code in (302, 401)
+        if resp.status_code == 302:
+            assert "/login" in resp.headers.get("Location", "")
+
+    def test_fill_refuses_authenticated_non_author_with_403(self, viewer_client):
+        """The assertion that actually fails if @require_role is removed."""
+        resp = viewer_client.post(
+            "/slides/api/templates/1/fill",
+            data=json.dumps({"selections": [{"slide_index": 0, "title": "x"}]}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 403
+
+    def test_generate_refuses_authenticated_non_author_with_403(self, viewer_client):
+        resp = viewer_client.post(
+            "/slides/api/generate",
+            data=json.dumps({"title": "x"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 403
+
+    def test_read_routes_stay_open_to_any_authenticated_user(self, viewer_client):
+        """The gate is on the write routes only — a non-author still reads decks."""
+        resp = viewer_client.get("/slides/")
+        assert resp.status_code == 200
