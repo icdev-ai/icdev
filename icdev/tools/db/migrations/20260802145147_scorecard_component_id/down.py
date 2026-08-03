@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Migration 343 rollback — remove the component key from developer_scorecards.
+"""Migration 20260802145147 rollback — remove the component key from developer_scorecards.
 
 PARTIAL BY DESIGN. This drops the two added columns and the composite index.
 It deliberately does **not** restore ``NOT NULL`` on ``project_id``,
@@ -8,7 +8,7 @@ It deliberately does **not** restore ``NOT NULL`` on ``project_id``,
 Restoring them would fail outright on any database the scorer has written to —
 a component scorecard row has no ``project_id``, and an unassessed one has no
 score or grade, so ``SET NOT NULL`` would raise on exactly the rows migration
-343 exists to permit. Silently deleting those rows to make the constraint
+this migration exists to permit. Silently deleting those rows to make the constraint
 re-appliable would be worse. The relaxation is forward-only; if it must be
 undone, delete the component-keyed rows first and re-apply the constraints by
 hand, having decided what should happen to them.
@@ -18,7 +18,7 @@ from __future__ import annotations
 from tools.db.storage import column_exists, get_connection, table_exists
 
 _TABLE = "developer_scorecards"
-_TAG = "[343_scorecard_component_id]"
+_TAG = "[20260802145147_scorecard_component_id]"
 
 
 def down(conn=None) -> dict:

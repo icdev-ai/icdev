@@ -1,5 +1,5 @@
 {
-  "id": "343_scorecard_component_id",
+  "id": "20260802145147_scorecard_component_id",
   "description": "Re-key the dead developer_scorecards table from (project_id, actor) to the component: add component_id + evaluated_at, index (component_id, evaluated_at), and relax project_id/overall_score/letter_grade NOT NULL so a component-keyed and an unassessed row are both representable (idp-score-01-d1).",
   "tables_affected": ["developer_scorecards"],
   "reversible": false,
