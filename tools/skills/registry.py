@@ -8,6 +8,18 @@ it documents, and any MCP tool references. Produces a cached JSON
 registry at `tools/skills/registry.json` for fast lookup by
 `tools/skills/invoke.py`.
 
+ars-scope-01 — two OPTIONAL scoping fields are also parsed:
+
+    paths:  repo-relative directories/files the skill may act on
+    tools:  tool modules (``tools/...`` paths or ``tools.x.y`` dotted
+            names) the skill may invoke
+
+Both are enforced by ``tools/skills/invoke.py`` at the existing command
+allowlist seam. Omitting them keeps a skill's behaviour exactly as it
+was — scoping only ever narrows, never widens. Note that ``tools:`` is
+distinct from ``allowed-tools:``: the latter is the Claude Code agent
+tool list (Bash, Read, …) and is unchanged.
+
 Usage:
     python tools/skills/registry.py --rebuild --json
     python tools/skills/registry.py --list --json
@@ -31,14 +43,44 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 SKILLS_DIR = BASE_DIR / ".agents" / "skills"
 REGISTRY_PATH = BASE_DIR / "tools" / "skills" / "registry.json"
 
+# Bumped whenever parse_skill() gains a field. registry.json is a committed
+# cache, so a stale copy would silently omit the scoping fields and the
+# invoker would fail OPEN. load_registry() rebuilds on a version mismatch.
+SCHEMA_VERSION = 2
+
 
 _FENCE_RE = re.compile(r"```(?:bash|shell|sh)?\n(.*?)```", re.DOTALL)
 _PYTHON_CMD_RE = re.compile(r"^\s*(?:!)?\s*(python(?:\s+-m)?\s+\S+[^\n]*)", re.MULTILINE)
 _MCP_REF_RE = re.compile(r"(mcp__[a-z0-9_]+__[a-z0-9_]+|MCP tool[^\n]*)", re.IGNORECASE)
 
 
+def _clean_scalar(val: str) -> str:
+    return val.strip().strip('"').strip("'")
+
+
+def _as_list(value: Any) -> list[str]:
+    """Coerce a frontmatter value to a list of non-empty strings.
+
+    Accepts a YAML block list (already a list), an inline ``[a, b]``
+    sequence, or a plain comma-separated string.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    s = str(value).strip()
+    if s.startswith("[") and s.endswith("]"):
+        s = s[1:-1]
+    return [p for p in (_clean_scalar(part) for part in s.split(",")) if p]
+
+
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
-    """Return (frontmatter_dict, body) from a SKILL.md file."""
+    """Return (frontmatter_dict, body) from a SKILL.md file.
+
+    Scalars are returned as strings. A key whose value is empty and is
+    followed by ``- item`` lines is returned as a list, so both YAML
+    list styles work for the ``paths:`` / ``tools:`` scoping fields.
+    """
     if not text.startswith("---"):
         return {}, text
     end = text.find("\n---", 3)
@@ -47,11 +89,24 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     raw = text[3:end].strip()
     body = text[end + 4:].lstrip("\n")
     fm: dict[str, Any] = {}
+    pending_key: str | None = None
     for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("- ") and pending_key is not None:
+            if not isinstance(fm.get(pending_key), list):
+                fm[pending_key] = []
+            fm[pending_key].append(_clean_scalar(stripped[2:]))
+            continue
         if ":" not in line:
             continue
         key, _, val = line.partition(":")
-        fm[key.strip()] = val.strip().strip('"').strip("'")
+        key = key.strip()
+        val = val.strip()
+        fm[key] = _clean_scalar(val)
+        # An empty scalar may be the header of a block list on the next lines.
+        pending_key = key if val == "" else None
     return fm, body
 
 
@@ -93,8 +148,11 @@ def parse_skill(skill_dir: Path) -> dict[str, Any]:
     return {
         "name": fm.get("name") or skill_name,
         "path": str(skill_md.relative_to(BASE_DIR)),
-        "description": fm.get("description", ""),
-        "allowed_tools": [t.strip() for t in fm.get("allowed-tools", "").split(",") if t.strip()],
+        "description": fm.get("description", "") if isinstance(fm.get("description", ""), str) else "",
+        "allowed_tools": _as_list(fm.get("allowed-tools")),
+        # ars-scope-01 — optional capability scoping, enforced by invoke.py.
+        "paths": _as_list(fm.get("paths")),
+        "tools": _as_list(fm.get("tools")),
         "commands": _extract_commands(body),
         "mcp_references": _extract_mcp_refs(body),
         "body_line_count": len([ln for ln in body.splitlines() if ln.strip()]),
@@ -104,14 +162,17 @@ def parse_skill(skill_dir: Path) -> dict[str, Any]:
 def build_registry() -> dict[str, Any]:
     """Parse every icdev-* skill and return a registry dict."""
     if not SKILLS_DIR.exists():
-        return {"skills": {}, "count": 0, "error": f"{SKILLS_DIR} missing"}
+        return {"skills": {}, "count": 0, "schema_version": SCHEMA_VERSION,
+                "error": f"{SKILLS_DIR} missing"}
     skills: dict[str, dict] = {}
     for d in sorted(SKILLS_DIR.iterdir()):
         if not d.is_dir() or not d.name.startswith("icdev-"):
             continue
         entry = parse_skill(d)
         skills[entry["name"]] = entry
-    return {"skills": skills, "count": len(skills), "generated_from": str(SKILLS_DIR.relative_to(BASE_DIR))}
+    return {"skills": skills, "count": len(skills),
+            "schema_version": SCHEMA_VERSION,
+            "generated_from": str(SKILLS_DIR.relative_to(BASE_DIR))}
 
 
 def load_registry(rebuild: bool = False) -> dict[str, Any]:
@@ -120,16 +181,24 @@ def load_registry(rebuild: bool = False) -> dict[str, Any]:
         save_registry(reg)
         return reg
     try:
-        return json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        cached = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        reg = build_registry()
-        save_registry(reg)
-        return reg
+        cached = None
+    if isinstance(cached, dict) and cached.get("schema_version") == SCHEMA_VERSION:
+        return cached
+    # Missing/older schema: the cache predates a field (e.g. the scoping
+    # fields) and using it as-is would drop that field silently.
+    reg = build_registry()
+    save_registry(reg)
+    return reg
 
 
 def save_registry(reg: dict[str, Any]) -> None:
     REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REGISTRY_PATH.write_text(json.dumps(reg, indent=2), encoding="utf-8")
+    # registry.json is committed and mirrored — pin LF so a rebuild on Windows
+    # does not rewrite every line.
+    with open(REGISTRY_PATH, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(reg, indent=2))
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
