@@ -1,5 +1,5 @@
 {
-  "id": "342_fa_mission_learning_objective",
+  "id": "20260803005919_fa_mission_learning_objective",
   "description": "Add fa_missions.learning_objective and backfill it from the authored content (aca-trn-03). A mission advertised XP, estimated minutes and difficulty — three costs — and never stated what the learner would be able to do afterwards, which is the auditable unit for training used in a compliance context. Written in Python rather than SQL because the column has to be added idempotently on both engines (ADD COLUMN IF NOT EXISTS is PostgreSQL-only and a bare ADD COLUMN raises on the second SQLite run) and because the backfill values come from content_loader.extract_learning_objective rather than being duplicated into the migration as literals. Missions whose content states no objective are left NULL on purpose: an absent objective is a visible content gap, an invented one is an invisible false record",
   "created": "2026-08-02",
   "targets": ["icdev.db"],

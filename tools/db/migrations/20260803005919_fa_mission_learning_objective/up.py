@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Migration 342 — state what each mission teaches (aca-trn-03).
+"""Migration 20260803005919 — state what each mission teaches (aca-trn-03).
 
 ``fa_missions`` carried three numbers a learner pays — ``xp_reward``,
 ``estimated_minutes``, ``difficulty`` — and nothing about what they get. For
@@ -87,16 +87,16 @@ def up(conn=None) -> None:
     try:
         existing = _has_column(conn)
     except Exception as exc:
-        print(f"342: {TABLE} not present ({exc}) — nothing to do")
+        print(f"20260803005919: {TABLE} not present ({exc}) — nothing to do")
         return
 
     if not existing:
         conn.execute(f"ALTER TABLE {TABLE} ADD COLUMN {COLUMN} TEXT")
         if own:
             conn.commit()
-        print(f"342: added {TABLE}.{COLUMN}")
+        print(f"20260803005919: added {TABLE}.{COLUMN}")
     else:
-        print(f"342: {TABLE}.{COLUMN} already present")
+        print(f"20260803005919: {TABLE}.{COLUMN} already present")
 
     loader = _content_loader()
     discovered = loader.discover_steps()
@@ -121,6 +121,6 @@ def up(conn=None) -> None:
     if own:
         conn.commit()
     print(
-        f"342: backfilled an objective for {filled} of {len(rows)} missions "
+        f"20260803005919: backfilled an objective for {filled} of {len(rows)} missions "
         "from authored content (the rest state none)"
     )

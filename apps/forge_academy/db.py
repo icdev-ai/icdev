@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS fa_missions (
     -- aca-trn-03: what the learner will be able to do afterwards. NULL where the
     -- authored content states none — never a synthesised stand-in, because this is
     -- the field a compliance audit reads. Extracted by
-    -- content_loader.extract_learning_objective; migration 342 backfills.
+    -- content_loader.extract_learning_objective; migration 20260803005919 backfills.
     learning_objective TEXT,
     source_credit TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,

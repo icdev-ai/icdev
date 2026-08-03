@@ -957,8 +957,8 @@ _LEARNER_MISSION_FIELDS = (
 def _learner_mission_view(mission: dict) -> dict:
     """Project a mission row down to the fields a client may see.
 
-    Missing keys are dropped rather than nulled, so a row read before migration 342
-    simply omits the objective. A row that has the column but no authored objective
+    Missing keys are dropped rather than nulled, so a row read before migration
+    20260803005919 simply omits the objective. A row that has the column but no authored objective
     keeps it as an explicit ``null`` — "nobody wrote one" is a real answer, and the
     client should be able to tell it apart from "this build predates the field".
     """
