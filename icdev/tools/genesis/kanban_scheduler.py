@@ -24,6 +24,7 @@ __pycache__ clearing.
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -52,6 +53,35 @@ logger = get_logger(__name__)
 
 
 from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
+# Reused, not reimplemented: #1195 already worked out how to find the repo root
+# every worktree shares (`git rev-parse --git-common-dir`) when it fixed the
+# pause sentinel. The lockfile needs exactly the same anchor.
+from tools.kanban.scheduler_control import _canonical_repo_root  # noqa: E402
+
+
+def _running_from_linked_worktree() -> bool:
+    """True when this file lives in a linked worktree rather than the main checkout.
+
+    In a linked worktree ``--git-dir`` points at ``<main>/.git/worktrees/<name>``
+    while ``--git-common-dir`` points at ``<main>/.git``; in the main checkout
+    they are the same path.
+    """
+    try:
+        import subprocess as _sp
+
+        def _rev(flag: str) -> str:
+            out = _sp.run(["git", "rev-parse", flag], cwd=str(BASE_DIR),
+                          capture_output=True, text=True, timeout=10)
+            if out.returncode != 0 or not out.stdout.strip():
+                return ""
+            p = Path(out.stdout.strip())
+            return str((p if p.is_absolute() else (BASE_DIR / p)).resolve())
+
+        git_dir, common = _rev("--git-dir"), _rev("--git-common-dir")
+        return bool(git_dir and common and git_dir != common)
+    except Exception:  # noqa: BLE001 — never let this check stop a legitimate start
+        return False
+
 
 def main():
     parser = argparse.ArgumentParser(description="Kanban Scheduler")
@@ -79,7 +109,19 @@ def main():
     #  (2) concurrent starts -- re-check the lockfile each cycle; if another
     #      instance took ownership, exit.
     # --once bypasses this so one-shot/test runs always work.
-    LOCK_PATH = BASE_DIR / ".tmp" / "kanban_scheduler.pid"
+    #
+    # The path is resolved from the CANONICAL repo root, not BASE_DIR. BASE_DIR
+    # comes from __file__, so a scheduler launched from a git worktree used to
+    # get its OWN lockfile and the guard could not see the canonical instance --
+    # two schedulers then dispatched into the same board and database, one of
+    # them running whatever code that worktree happened to hold.
+    #
+    # Observed 2026-08-02: pid 18132 from C:\ai\icdev and pid 25224 from
+    # C:\AI\.wt-tsh-d4-audit5, concurrently, and only the canonical one honoured
+    # a pause. #1195 fixed the same bug for the pause sentinel; this is the
+    # lockfile half of it, and it reuses that fix's helper rather than
+    # reimplementing the resolution.
+    LOCK_PATH = _canonical_repo_root() / ".tmp" / "kanban_scheduler.pid"
     LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     def _lock_owner_alive() -> int:
@@ -109,6 +151,41 @@ def main():
         except Exception:
             return False
 
+    # A scheduler launched from a linked worktree dispatches WHATEVER CODE that
+    # worktree holds against the SHARED board and database. That is stale by
+    # construction — the worktree exists because someone is changing things in
+    # it — and the shared lock above now stops it from running alongside the
+    # canonical instance, but it could still win the race and become the only
+    # scheduler. Refusing is the honest answer: nobody wants the board driven by
+    # a feature branch.
+    #
+    # Escape hatch for the deliberate case (testing a scheduler change end to
+    # end), because a guard with no override gets deleted rather than respected.
+    if not args.once and _running_from_linked_worktree():
+        if os.environ.get("KANBAN_ALLOW_WORKTREE_SCHEDULER", "").lower() in ("1", "true", "yes"):
+            logger.warning(
+                "Starting from a linked worktree (%s) because "
+                "KANBAN_ALLOW_WORKTREE_SCHEDULER is set — this dispatches THIS "
+                "tree's code against the shared board.", BASE_DIR,
+            )
+        else:
+            msg = (
+                "Refusing to start: this scheduler lives in a linked git worktree\n"
+                f"  worktree      : {BASE_DIR}\n"
+                f"  main checkout : {_canonical_repo_root()}\n"
+                "It would dispatch THIS tree's code against the shared board. Run it\n"
+                "from the main checkout, or set KANBAN_ALLOW_WORKTREE_SCHEDULER=1 if\n"
+                "this is deliberate."
+            )
+            logger.error(msg.replace("\n", " "))
+            # Also straight to stderr. get_logger() does not propagate to the
+            # root stderr handler configured above, so logger.error alone lands
+            # ONLY in .logs/*.ndjson — and a refusal that prints nothing while
+            # exiting 0 is indistinguishable from a successful start. Whoever
+            # just ran this command needs to see why nothing is scheduling.
+            print(msg, file=sys.stderr, flush=True)
+            return
+
     if not args.once:
         owner = _lock_owner_alive()
         if owner:
@@ -127,6 +204,30 @@ def main():
         load_dotenv(BASE_DIR / ".env")
     except ImportError:
         pass
+
+    # Activate tracing so the spans this process produces are actually recorded.
+    #
+    # otel_spans had 0 rows on the live board. Measured 2026-08-02, the cause is
+    # NOT that the writer is broken — SQLiteTracer.flush() writes correctly on
+    # PostgreSQL (translate_sql rewrites its `INSERT OR IGNORE` to an ON CONFLICT
+    # form; verified by inserting and reading back a probe span). The cause is
+    # that `get_tracer()` returns a ProxyTracer delegating to a NullTracer until
+    # something calls `enable_tracing_if_enabled()`, and only tools/dashboard/app.py
+    # and tools/mcp/base_server.py ever did.
+    #
+    # So every `tracer.start_span(...)` in tools/llm/router.py and
+    # tools/agent/bedrock_client.py was a silent no-op in this process — the
+    # autonomous runner, which is where most LLM traffic on this board happens.
+    #
+    # Honours ICDEV_TRACING_ENABLED (unset = on). Spans buffer 10-deep and flush
+    # at exit, so this is batched writes, not one per span.
+    try:
+        from tools.observability import enable_tracing_if_enabled
+
+        if enable_tracing_if_enabled() is not None:
+            logger.info("tracing enabled — LLM/agent spans will be recorded to otel_spans")
+    except Exception as exc:  # noqa: BLE001 — never let telemetry stop the scheduler
+        logger.warning("tracing activation skipped: %s", exc)
 
     from tools.genesis.reflexes.kanban import run as kanban_run
     from tools.monitoring.reflex_observer import observe
@@ -353,7 +454,15 @@ def main():
                 # Always log every cycle so a silent hang is immediately visible.
                 # Previously only logged every 10 idle cycles — that 9-cycle gap
                 # masked scheduler death for up to 9 minutes.
-                logger.info("Cycle %d: idle (no due tasks)", cycle)
+                #
+                # "idle (no due tasks)" is true in six materially different
+                # situations and identical in all of them (kpr-idle-01), so the
+                # heartbeat carries the REASON. The diagnosis is recomputed only
+                # when it changes or every _IDLE_DIAGNOSIS_EVERY cycles: the
+                # heartbeat must stay cheap and unmissable, and a paragraph
+                # every 60s trains people to stop reading it.
+                reason = _idle_reason(cycle)
+                logger.info("Cycle %d: %s", cycle, reason)
         except Exception as exc:
             # guard-6: log FULL traceback, never exit on transient errors
             import traceback
@@ -362,6 +471,39 @@ def main():
             )
 
         time.sleep(args.interval)
+
+
+#: Re-diagnose an unchanged idle state this often (cycles). At the default
+#: 60s interval that is roughly every 30 minutes.
+_IDLE_DIAGNOSIS_EVERY = 30
+
+#: (cycle_last_diagnosed, last_summary) — module state so the reason survives
+#: between cycles without re-querying the board every 60 seconds.
+_idle_state: tuple = (None, None)
+
+
+def _idle_reason(cycle: int) -> str:
+    """A heartbeat that says WHY, degrading to the old line if it cannot.
+
+    Wrapped whole in a try/except on purpose: this is a diagnostic on the
+    liveness heartbeat, and a heartbeat that can be killed by its own
+    diagnostic is worse than one that says nothing. Any failure falls back to
+    the original wording.
+    """
+    global _idle_state
+    last_cycle, last_summary = _idle_state
+    if last_summary is not None and last_cycle is not None:
+        if cycle - last_cycle < _IDLE_DIAGNOSIS_EVERY:
+            return last_summary
+    try:
+        from tools.kanban.idle_advisor import diagnose, summary_line
+
+        summary = summary_line(diagnose())
+    except Exception as exc:  # noqa: BLE001 — never let the advisor stop the heartbeat
+        logger.debug("idle advisor unavailable: %s", exc)
+        summary = "idle (no due tasks)"
+    _idle_state = (cycle, summary)
+    return summary
 
 
 def _cleanup_orphan_processes() -> None:
