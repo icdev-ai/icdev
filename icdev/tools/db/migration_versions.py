@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -55,15 +56,92 @@ def _normalise(version: str) -> str:
     return version.lstrip("0") or "0"
 
 
+def _tracked_entries(migrations_dir: Path) -> set[str] | None:
+    """Top-level names under *migrations_dir* holding at least one tracked file.
+
+    Returns ``None`` when git cannot answer — no git binary, not a work tree, or
+    an empty answer we cannot distinguish from "nothing is tracked here". The
+    caller must then treat every entry as real: dropping migrations because git
+    was unavailable would be a far worse failure than the one this guards.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(migrations_dir), "ls-files", "-z", "--", "."],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    names = {
+        rel.split("/", 1)[0]
+        for rel in proc.stdout.decode("utf-8", "replace").split("\0")
+        if rel
+    }
+    return names or None
+
+
+def stale_directories(migrations_dir: Path | None = None) -> list[dict[str, str]]:
+    """Version-shaped directories that git does not track a single file in.
+
+    A migration rename leaves the old directory behind in every checkout that
+    predates it, holding nothing but ``__pycache__``. Git reports the tree clean
+    — nothing tracked, nothing unignored — so there is no signal at all, and a
+    filesystem scan happily reads the corpse as a second migration claiming that
+    version. Observed 2026-08-02: ``027_pipeline_snapshots/`` and
+    ``028_odc_mitre_coverage/`` produced two phantom duplicate-version failures
+    locally while main was green in CI.
+    """
+    d = migrations_dir or _MIGRATIONS_DIR
+    if not d.is_dir():
+        return []
+    tracked = _tracked_entries(d)
+    if tracked is None:
+        return []
+    out: list[dict[str, str]] = []
+    for p in sorted(d.iterdir()):
+        m = _VERSION_RE.match(p.name)
+        if m and p.is_dir() and p.name not in tracked:
+            out.append({"version": _normalise(m.group(1)), "name": p.name, "path": str(p)})
+    return out
+
+
+def stale_directory_message(rows: list[dict[str, str]]) -> str:
+    """Guidance for stale directories — deliberately not phrased as a collision."""
+    if not rows:
+        return ""
+    listed = "\n".join(f"  {r['name']}  (v{r['version']})" for r in rows)
+    return (
+        f"{len(rows)} STALE LOCAL migration director{'y' if len(rows) == 1 else 'ies'} "
+        "found — git tracks no file inside them:\n"
+        f"{listed}\n\n"
+        "These are local build artifacts, not migrations. A migration rename "
+        "leaves the old directory behind holding only __pycache__, which git "
+        "reports as a clean tree. Your working tree is stale; the versions do "
+        "NOT collide and main is not broken.\n"
+        "Remove them:\n"
+        "    git clean -xdf tools/db/migrations        # bash\n"
+        "    Remove-Item -Recurse -Force <path>        # PowerShell, one directory\n"
+        "(If one is a migration you are still authoring, `git add` it instead.)"
+    )
+
+
 def discover_versions(migrations_dir: Path | None = None) -> dict[str, list[str]]:
-    """Map normalised version -> sorted list of migration entry names."""
+    """Map normalised version -> sorted list of migration entry names.
+
+    Directories with no git-tracked file are skipped — see
+    :func:`stale_directories`. They are stale local artifacts, not migrations,
+    and counting them invents duplicate versions that exist in no other checkout.
+    """
     d = migrations_dir or _MIGRATIONS_DIR
     out: dict[str, list[str]] = defaultdict(list)
     if not d.is_dir():
         return {}
+    stale = {r["name"] for r in stale_directories(d)}
     for p in sorted(d.iterdir()):
         m = _VERSION_RE.match(p.name)
-        if m:
+        if m and p.name not in stale:
             out[_normalise(m.group(1))].append(p.name)
     return {v: sorted(names) for v, names in out.items()}
 
@@ -125,6 +203,7 @@ def check(migrations_dir: Path | None = None, allowlist_path: Path | None = None
         "grandfathered": len(allowed),
         "new_violations": new,
         "shadowed_count": len(shadowed_migrations(migrations_dir)),
+        "stale_directories": stale_directories(migrations_dir),
         "passed": not new,
     }
 
@@ -154,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"duplicated       : {result['duplicate_versions']} "
               f"({result['grandfathered']} grandfathered)")
         print(f"migrations shadowed and never applied: {result['shadowed_count']}")
+        if result["stale_directories"]:
+            print("\n" + stale_directory_message(result["stale_directories"]))
         if result["new_violations"]:
             print("\nNEW duplicate version(s) — these WILL be silently skipped:")
             for v, names in sorted(result["new_violations"].items(), key=lambda kv: int(kv[0])):

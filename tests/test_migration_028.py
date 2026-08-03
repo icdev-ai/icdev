@@ -1,8 +1,11 @@
 # CUI // SP-CTI
-"""Tests for migration 028 — odc_mitre_coverage DDL.
+"""Tests for the odc_mitre_coverage DDL migration.
 
 Plan step: dt-odc-twin-01 (ODC coverage schema).
-DB migration number: 028 (next available after 027_pipeline_snapshots).
+DB migration number: 336 (renumbered from 028 by PR #1199 to resolve a duplicate
+version). This file kept pointing at the old path and had been failing with
+FileNotFoundError since. See tests/test_migration_027.py for why loading a
+migration by path is what leaves a stale directory behind (mvs-guard-02).
 """
 
 import importlib.util
@@ -16,12 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
-    / "tools" / "db" / "migrations" / "028_odc_mitre_coverage" / "up.py"
+    / "tools" / "db" / "migrations" / "336_odc_mitre_coverage" / "up.py"
 )
 
 
 def _load_up():
-    spec = importlib.util.spec_from_file_location("migration_028_up", _MIGRATION_PATH)
+    spec = importlib.util.spec_from_file_location("migration_336_up", _MIGRATION_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.up

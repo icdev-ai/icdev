@@ -1,5 +1,13 @@
 # CUI // SP-CTI
-"""Tests for migration 027 — pipeline_snapshots DDL."""
+"""Tests for the pipeline_snapshots DDL migration.
+
+Renumbered 027 -> 335 by PR #1199 to resolve a duplicate version; this file kept
+pointing at the old path and had been failing with FileNotFoundError since. Note
+that loading the migration by path writes ``__pycache__`` INTO the migration
+directory — that is what leaves a directory behind after a rename, which
+``tools/db/migration_versions.py`` now recognises as a stale local artifact
+rather than a colliding migration (mvs-guard-02).
+"""
 
 import importlib.util
 import sqlite3
@@ -12,12 +20,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
-    / "tools" / "db" / "migrations" / "027_pipeline_snapshots" / "up.py"
+    / "tools" / "db" / "migrations" / "335_pipeline_snapshots" / "up.py"
 )
 
 
 def _load_up():
-    spec = importlib.util.spec_from_file_location("migration_027_up", _MIGRATION_PATH)
+    spec = importlib.util.spec_from_file_location("migration_335_up", _MIGRATION_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.up
