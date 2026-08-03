@@ -40,6 +40,14 @@ _REFLEX_DEFAULTS: Dict[str, Any] = {
         "min_samples": 3,
         "metrics": ["stars", "forks", "open_issues"],
     },
+    # Turn benchmark findings into suggested kanban cards after each scout
+    # pass. Off by default: the brief is the reflex's contract, and writing
+    # to the board is an escalation an operator opts into. Rate limits and
+    # the gap-verdict gate live in args/innovation_promoter.yaml.
+    "promotion": {
+        "enabled": False,
+        "dry_run": False,
+    },
 }
 
 
@@ -56,6 +64,8 @@ def _load_reflex_config() -> Dict[str, Any]:
             merged = {**_REFLEX_DEFAULTS, **file_cfg}
             ad_file = file_cfg.get("anomaly_detection", {})
             merged["anomaly_detection"] = {**_REFLEX_DEFAULTS["anomaly_detection"], **ad_file}
+            promo_file = file_cfg.get("promotion", {})
+            merged["promotion"] = {**_REFLEX_DEFAULTS["promotion"], **promo_file}
             return merged
     except (ImportError, Exception):
         pass
@@ -275,6 +285,40 @@ def _generate_brief(
     return "\n".join(lines)
 
 
+def _promote_findings(reflex_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Turn benchmark findings with a gap verdict into suggested kanban cards.
+
+    This is the step that makes the scout more than a report generator: a
+    finding on a subsystem the benchmark map judged deficient becomes a card
+    an operator can confirm. Everything that bounds it — the gap-verdict
+    gate, ``max_per_run``, ``max_per_subsystem`` — lives in the promoter and
+    its config, not here.
+
+    Never raises: a promotion failure must not fail the scout pass or wedge
+    the reflex loop behind it.
+    """
+    promo_cfg = reflex_cfg.get("promotion") or {}
+    if not promo_cfg.get("enabled", False):
+        return {"enabled": False}
+
+    try:
+        from tools.innovation.kanban_promoter import run_promotion
+
+        result = run_promotion(dry_run=bool(promo_cfg.get("dry_run", False)))
+        return {
+            "enabled": True,
+            "dry_run": result.get("dry_run"),
+            "candidates": result.get("candidates", 0),
+            "gap_verdict_eligible": result.get("gap_verdict_eligible", 0),
+            "created": result.get("created", 0),
+            "would_create": result.get("would_create", 0),
+            "truncated": result.get("truncated", False),
+        }
+    except Exception as exc:  # noqa: BLE001 - promotion is additive to the brief
+        logger.warning("scout: promotion step failed (non-blocking): %s", exc)
+        return {"enabled": True, "error": str(exc)[:200]}
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Scout Reflex."""
     if _is_air_gapped():
@@ -407,6 +451,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     successful = len(valid_targets)
     anomaly_repos = list(anomalies.keys())
 
+    promotion = _promote_findings(reflex_cfg)
+
     return {
         "success": successful > 0,
         "metric_value": float(successful),
@@ -417,6 +463,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "brief_file": str(brief_file),
             "anomalies_detected": len(anomaly_repos),
             "anomaly_repos": anomaly_repos,
+            "promotion": promotion,
             "top_by_stars": sorted(
                 [{"repo": t["repo"], "stars": t["info"].get("stars", 0)} for t in targets_data if t.get("info")],
                 key=lambda x: x["stars"],

@@ -1,13 +1,23 @@
 """Tests for tools/innovation/kanban_promoter.py
 
-Covers pure functions (build_kanban_task, _priority_for_score, load_config)
-and promote_signals against a fake connection. Integration with the real
-PostgreSQL DB is exercised via the --dry-run --list CLI path.
+Pins the four properties the promoter exists to guarantee:
+
+  1. a gap verdict produces exactly one suggested task
+  2. re-running produces none (stable id + idempotency_key)
+  3. the per-run and per-subsystem caps are enforced AND logged on truncation
+  4. nothing reaches 'backlog' — cards are always 'suggested'
+
+The write path is exercised against a recorded ``create_tasks`` rather than a
+live board, so the assertions are about the specs the promoter hands to
+task_factory. task_factory's own dedup is covered by its own tests.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
+
+import pytest
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
@@ -16,76 +26,415 @@ if str(BASE_DIR) not in sys.path:
 from tools.innovation import kanban_promoter as kp  # noqa: E402
 
 
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+CONFIG = {
+    "source_types": ["external_repo_scouting"],
+    "triage_results": ["approved"],
+    "min_innovation_score": 0.5,
+    "max_per_run": 3,
+    "max_per_subsystem": 2,
+    "default_task_type": "research",
+    "gap_verdicts": ["gap", "parity_with_named_gaps"],
+    "benchmark_subsystems": {
+        "developer_portal": {
+            "section": 1,
+            "verdict": "gap",
+            "benchmarked_against": "Backstage",
+            "icdev_surface": "args/component_registry.yaml",
+            "categories": ["developer_experience", "dx"],
+        },
+        "agent_runtime": {
+            "section": 3,
+            "verdict": "parity_with_named_gaps",
+            "categories": ["ai_tooling", "workflow"],
+        },
+        "observability": {
+            "section": 2,
+            "verdict": "ahead",
+            "categories": ["observability"],
+        },
+        "rag_knowledge_graph": {
+            "section": 5,
+            "verdict": "parity",
+            "categories": ["knowledge"],
+        },
+    },
+    "priority_thresholds": {"high": 0.7, "medium": 0.5},
+}
+
+
+def _sig(sid, category, score=0.8, **extra):
+    base = {
+        "id": sid,
+        "title": f"Finding {sid}",
+        "category": category,
+        "innovation_score": score,
+        "triage_result": "approved",
+        "source_type": "external_repo_scouting",
+    }
+    base.update(extra)
+    return base
+
+
+@pytest.fixture
+def promoter_warnings():
+    """Capture WARNINGs off the promoter's own logger.
+
+    ``get_logger`` returns a logger with ``propagate=False`` and its own file
+    handlers, so pytest's ``caplog`` (which listens on root) sees nothing.
+    Attach directly to the logger the module actually writes to.
+    """
+    records: list[str] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    handler = _Capture(level=logging.WARNING)
+    kp.logger.addHandler(handler)
+    try:
+        yield records
+    finally:
+        kp.logger.removeHandler(handler)
+
+
+@pytest.fixture
+def recorded_create_tasks(monkeypatch):
+    """Capture the specs handed to task_factory.create_tasks.
+
+    Patched via the module object so the shim/canonical namespace split
+    (tools.x vs icdev.tools.x) can't route the promoter to a different
+    object than the one under test.
+    """
+    import importlib
+
+    tf = importlib.import_module("tools.kanban.task_factory")
+    calls: list[list[dict]] = []
+    seen_ids: set[str] = set()
+    seen_keys: set[str] = set()
+
+    def _fake_create_tasks(specs):
+        calls.append(list(specs))
+        created = []
+        for s in specs:
+            # Mirror the real dedup: skip on id OR idempotency_key collision.
+            if s["id"] in seen_ids or s.get("idempotency_key") in seen_keys:
+                continue
+            seen_ids.add(s["id"])
+            if s.get("idempotency_key"):
+                seen_keys.add(s["idempotency_key"])
+            created.append(s["id"])
+        return created
+
+    monkeypatch.setattr(tf, "create_tasks", _fake_create_tasks)
+    return calls
+
+
+# ---------------------------------------------------------------------------
 # Priority mapping
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+
 def test_priority_high_score():
-    assert kp._priority_for_score(85, {"high": 80, "medium": 60}) == "high"
+    assert kp._priority_for_score(0.85, {"high": 0.7, "medium": 0.5}) == "high"
 
 
 def test_priority_medium_score():
-    assert kp._priority_for_score(65, {"high": 80, "medium": 60}) == "medium"
+    assert kp._priority_for_score(0.65, {"high": 0.7, "medium": 0.5}) == "medium"
 
 
 def test_priority_low_score():
-    assert kp._priority_for_score(45, {"high": 80, "medium": 60}) == "low"
+    assert kp._priority_for_score(0.45, {"high": 0.7, "medium": 0.5}) == "low"
 
 
 def test_priority_none_score():
-    assert kp._priority_for_score(None, {"high": 80, "medium": 60}) == "low"
+    assert kp._priority_for_score(None, {"high": 0.7, "medium": 0.5}) == "low"
 
 
 def test_priority_boundary_exactly_high():
-    assert kp._priority_for_score(80, {"high": 80, "medium": 60}) == "high"
+    assert kp._priority_for_score(0.7, {"high": 0.7, "medium": 0.5}) == "high"
 
 
-# --------------------------------------------------------------------------
-# build_kanban_task
-# --------------------------------------------------------------------------
-def test_build_task_basic():
-    sig = {"id": "sig-abc123def", "title": "Use Ruff for linting",
-           "innovation_score": 85, "triage_result": "approved"}
-    task = kp.build_kanban_task(sig, kp.DEFAULT_CONFIG)
+# ---------------------------------------------------------------------------
+# Criterion 1 — a gap verdict produces exactly one suggested task
+# ---------------------------------------------------------------------------
+
+
+def test_gap_verdict_signal_is_eligible():
+    gated = kp.classify_signals([_sig("sig-a", "developer_experience")], CONFIG)
+    assert len(gated["eligible"]) == 1
+    assert gated["eligible"][0]["_subsystem"] == "developer_portal"
+    assert gated["eligible"][0]["_verdict"] == "gap"
+
+
+def test_parity_with_named_gaps_counts_as_a_gap():
+    gated = kp.classify_signals([_sig("sig-b", "ai_tooling")], CONFIG)
+    assert len(gated["eligible"]) == 1
+    assert gated["eligible"][0]["_verdict"] == "parity_with_named_gaps"
+
+
+def test_ahead_subsystem_produces_no_work():
+    """ICDEV is ahead on observability — a finding there is intel, not work."""
+    gated = kp.classify_signals([_sig("sig-c", "observability")], CONFIG)
+    assert gated["eligible"] == []
+    assert gated["skipped_not_a_gap"][0]["verdict"] == "ahead"
+
+
+def test_parity_subsystem_produces_no_work():
+    gated = kp.classify_signals([_sig("sig-d", "knowledge")], CONFIG)
+    assert gated["eligible"] == []
+    assert gated["skipped_not_a_gap"][0]["verdict"] == "parity"
+
+
+def test_unmapped_category_produces_no_work():
+    """An unmapped category is skipped, not guessed into a subsystem."""
+    gated = kp.classify_signals([_sig("sig-e", "performance")], CONFIG)
+    assert gated["eligible"] == []
+    assert gated["skipped_unmapped"] == ["sig-e"]
+
+
+def test_metadata_subsystem_tag_overrides_category():
+    """The watchlist routing tag wins over the coarse category map."""
+    sig = _sig("sig-f", "observability", metadata='{"subsystem": "developer_portal"}')
+    gated = kp.classify_signals([sig], CONFIG)
+    assert len(gated["eligible"]) == 1
+    assert gated["eligible"][0]["_subsystem"] == "developer_portal"
+
+
+def test_unknown_metadata_tag_falls_back_to_category():
+    sig = _sig("sig-g", "developer_experience", metadata='{"subsystem": "no_such_thing"}')
+    gated = kp.classify_signals([sig], CONFIG)
+    assert len(gated["eligible"]) == 1
+    assert gated["eligible"][0]["_subsystem"] == "developer_portal"
+
+
+def test_malformed_metadata_json_does_not_crash():
+    sig = _sig("sig-h", "developer_experience", metadata="{not json")
+    gated = kp.classify_signals([sig], CONFIG)
+    assert len(gated["eligible"]) == 1
+
+
+def test_one_gap_verdict_creates_exactly_one_task(recorded_create_tasks):
+    gated = kp.classify_signals([_sig("sig-one", "developer_experience")], CONFIG)
+    result = kp.promote_signals(gated["eligible"], CONFIG, dry_run=False)
+    assert result["created"] == 1
+    assert len(recorded_create_tasks[0]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Criterion 2 — re-running produces none
+# ---------------------------------------------------------------------------
+
+
+def test_task_id_is_stable_across_calls():
+    """A clock-seeded id would defeat task_factory's dedup entirely."""
+    assert kp.stable_task_id("sig-xyz") == kp.stable_task_id("sig-xyz")
+    assert kp.stable_task_id("sig-xyz") != kp.stable_task_id("sig-abc")
+
+
+def test_idempotency_key_is_stable_and_signal_scoped():
+    assert kp.idempotency_key("sig-1") == kp.idempotency_key("sig-1")
+    assert kp.idempotency_key("sig-1") != kp.idempotency_key("sig-2")
+
+
+def test_rerun_creates_nothing(recorded_create_tasks):
+    gated = kp.classify_signals([_sig("sig-rerun", "developer_experience")], CONFIG)
+
+    first = kp.promote_signals(gated["eligible"], CONFIG, dry_run=False)
+    second = kp.promote_signals(gated["eligible"], CONFIG, dry_run=False)
+
+    assert first["created"] == 1
+    assert second["created"] == 0
+    assert second["skipped_existing"] == 1
+
+
+def test_spec_carries_idempotency_key_and_source_link(recorded_create_tasks):
+    gated = kp.classify_signals([_sig("sig-k", "developer_experience")], CONFIG)
+    kp.promote_signals(gated["eligible"], CONFIG, dry_run=False)
+    spec = recorded_create_tasks[0][0]
+    assert spec["idempotency_key"] == "innovation-promoter:sig-k"
+    assert spec["source_prediction_id"] == "sig-k"
+    assert spec["id"] == kp.stable_task_id("sig-k")
+
+
+def test_dry_run_writes_nothing(recorded_create_tasks):
+    gated = kp.classify_signals([_sig("sig-dry", "developer_experience")], CONFIG)
+    result = kp.promote_signals(gated["eligible"], CONFIG, dry_run=True)
+    assert result["created"] == 0
+    assert result["would_create"] == 1
+    assert result["dry_run"] is True
+    assert recorded_create_tasks == []
+
+
+# ---------------------------------------------------------------------------
+# Criterion 3 — caps enforced and logged when they truncate
+# ---------------------------------------------------------------------------
+
+
+def test_per_subsystem_cap_enforced():
+    sigs = [_sig(f"sig-{i}", "developer_experience", score=0.9 - i / 100)
+            for i in range(5)]
+    gated = kp.classify_signals(sigs, CONFIG)
+    capped = kp.apply_caps(gated["eligible"], CONFIG)
+    assert len(capped["kept"]) == 2                     # max_per_subsystem
+    assert len(capped["dropped_by_subsystem_cap"]) == 3
+    assert capped["truncated"] is True
+
+
+def test_per_run_cap_enforced_across_subsystems():
+    # 2 developer_portal + 2 agent_runtime = 4 eligible, run cap is 3
+    sigs = [
+        _sig("sig-a", "developer_experience", score=0.95),
+        _sig("sig-b", "dx", score=0.90),
+        _sig("sig-c", "ai_tooling", score=0.85),
+        _sig("sig-d", "workflow", score=0.80),
+    ]
+    gated = kp.classify_signals(sigs, CONFIG)
+    capped = kp.apply_caps(gated["eligible"], CONFIG)
+    assert len(capped["kept"]) == 3                     # max_per_run
+    assert len(capped["dropped_by_run_cap"]) == 1
+    assert capped["dropped_by_run_cap"][0]["id"] == "sig-d"   # lowest score drops
+    assert capped["truncated"] is True
+
+
+def test_cap_keeps_highest_scoring():
+    sigs = [
+        _sig("sig-low", "developer_experience", score=0.55),
+        _sig("sig-high", "developer_experience", score=0.95),
+        _sig("sig-mid", "developer_experience", score=0.75),
+    ]
+    gated = kp.classify_signals(sigs, CONFIG)
+    capped = kp.apply_caps(gated["eligible"], CONFIG)
+    assert [s["id"] for s in capped["kept"]] == ["sig-high", "sig-mid"]
+
+
+def test_no_truncation_flag_when_under_cap():
+    gated = kp.classify_signals([_sig("sig-solo", "developer_experience")], CONFIG)
+    capped = kp.apply_caps(gated["eligible"], CONFIG)
+    assert capped["truncated"] is False
+    assert capped["dropped_by_run_cap"] == []
+    assert capped["dropped_by_subsystem_cap"] == []
+
+
+def test_truncation_is_logged_not_silent(promoter_warnings):
+    """A cap that drops findings silently is indistinguishable from a
+    promoter that found nothing. Pin the WARNING."""
+    sigs = [_sig(f"sig-{i}", "developer_experience", score=0.9) for i in range(5)]
+    gated = kp.classify_signals(sigs, CONFIG)
+
+    kp.apply_caps(gated["eligible"], CONFIG)
+
+    assert any("CAP TRUNCATED" in m for m in promoter_warnings)
+    assert any("per-subsystem cap" in m for m in promoter_warnings)
+
+
+def test_run_cap_truncation_is_logged(promoter_warnings):
+    sigs = [
+        _sig("sig-a", "developer_experience", score=0.95),
+        _sig("sig-b", "dx", score=0.90),
+        _sig("sig-c", "ai_tooling", score=0.85),
+        _sig("sig-d", "workflow", score=0.80),
+    ]
+    gated = kp.classify_signals(sigs, CONFIG)
+
+    kp.apply_caps(gated["eligible"], CONFIG)
+
+    assert any("per-run cap" in m for m in promoter_warnings)
+
+
+def test_no_warning_when_caps_do_not_bite(promoter_warnings):
+    """The WARNING must mean something — no truncation, no warning."""
+    gated = kp.classify_signals([_sig("sig-quiet", "developer_experience")], CONFIG)
+    kp.apply_caps(gated["eligible"], CONFIG)
+    assert not any("CAP TRUNCATED" in m for m in promoter_warnings)
+
+
+def test_dropped_findings_are_reported_by_id():
+    """Truncation must be auditable — every drop accounted for."""
+    sigs = [_sig(f"sig-{i}", "developer_experience", score=0.9) for i in range(5)]
+    gated = kp.classify_signals(sigs, CONFIG)
+    capped = kp.apply_caps(gated["eligible"], CONFIG)
+    dropped = {d["id"] for d in capped["dropped_by_subsystem_cap"]}
+    kept = {s["id"] for s in capped["kept"]}
+    assert len(dropped | kept) == 5          # nothing vanished
+    assert not (dropped & kept)              # and nothing double-counted
+
+
+# ---------------------------------------------------------------------------
+# Criterion 4 — nothing reaches backlog without confirmation
+# ---------------------------------------------------------------------------
+
+
+def test_built_task_is_always_suggested():
+    task = kp.build_kanban_task(
+        {"id": "sig-s", "title": "T", "innovation_score": 0.9,
+         "_subsystem": "developer_portal", "_verdict": "gap"},
+        CONFIG,
+    )
     assert task["status"] == "suggested"
-    assert task["priority"] == "high"
-    assert task["source_prediction_id"] == "sig-abc123def"
-    assert task["task_type"] == "research"
-    assert task["title"].startswith("INNOV-sig-abc1: Use Ruff")
-    assert "innovation_signals.id = sig-abc123def" in task["description"]
 
 
-def test_build_task_title_truncated():
-    sig = {"id": "sig-longone", "title": "x" * 200, "innovation_score": 50}
-    task = kp.build_kanban_task(sig, kp.DEFAULT_CONFIG)
-    assert len(task["title"]) <= 120
+def test_promoter_refuses_to_write_backlog(monkeypatch, recorded_create_tasks):
+    """Even if build_kanban_task is subverted, the write path refuses."""
+    def _backlog_task(signal, config):
+        return {
+            "id": "task-x", "title": "T", "description": "",
+            "task_type": "research", "priority": "high",
+            "status": "backlog", "source_prediction_id": signal["id"],
+            "idempotency_key": "k", "dispatch_source": "innovation_promoter",
+            "acceptance_criteria": "",
+        }
+
+    monkeypatch.setattr(kp, "build_kanban_task", _backlog_task)
+    with pytest.raises(ValueError, match="only create 'suggested'"):
+        kp.promote_signals([_sig("sig-z", "developer_experience")], CONFIG, dry_run=False)
+    assert recorded_create_tasks == []
 
 
-def test_build_task_includes_spec_when_present():
-    sig = {"id": "sig-1", "title": "T", "innovation_score": 70,
-           "spec_content": "This is a detailed solution spec.",
-           "estimated_effort": "2 days"}
-    task = kp.build_kanban_task(sig, kp.DEFAULT_CONFIG)
-    assert "Solution spec" in task["description"]
-    assert "2 days" in task["description"]
+def test_suggested_status_constant_is_suggested():
+    assert kp.SUGGESTED_STATUS == "suggested"
 
 
-def test_build_task_missing_optional_fields():
-    """Signals with only id/title shouldn't crash."""
-    sig = {"id": "sig-minimal", "title": None, "innovation_score": None}
-    task = kp.build_kanban_task(sig, kp.DEFAULT_CONFIG)
-    assert task["priority"] == "low"
-    # id is truncated to 8 chars in the title prefix
-    assert "sig-mini" in task["title"]
+# ---------------------------------------------------------------------------
+# Scope — benchmark findings only (the 259-approved-CVE flood)
+# ---------------------------------------------------------------------------
 
 
-# --------------------------------------------------------------------------
-# Config loading
-# --------------------------------------------------------------------------
+def test_shipped_config_scopes_to_benchmark_source_types():
+    cfg = kp.load_config()
+    assert "cve" not in cfg["source_types"]
+    assert "cli_harmonization" not in cfg["source_types"]
+    assert "external_repo_scouting" in cfg["source_types"]
+
+
+def test_shipped_config_caps_are_bounded():
+    cfg = kp.load_config()
+    assert 0 < int(cfg["max_per_run"]) <= 10
+    assert 0 < int(cfg["max_per_subsystem"]) <= int(cfg["max_per_run"])
+
+
+def test_shipped_config_excludes_ahead_verdicts_from_gap_list():
+    cfg = kp.load_config()
+    assert "ahead" not in cfg["gap_verdicts"]
+    assert "parity" not in cfg["gap_verdicts"]
+    assert "gap" in cfg["gap_verdicts"]
+
+
+def test_shipped_config_every_subsystem_has_a_verdict():
+    cfg = kp.load_config()
+    for key, spec in cfg["benchmark_subsystems"].items():
+        assert spec.get("verdict"), f"{key} has no verdict"
+
+
 def test_default_config_shape():
     cfg = kp.DEFAULT_CONFIG
     assert "triage_results" in cfg
     assert "min_innovation_score" in cfg
-    assert "priority_thresholds" in cfg
+    assert "max_per_run" in cfg
+    assert "max_per_subsystem" in cfg
     assert cfg["priority_thresholds"]["high"] > cfg["priority_thresholds"]["medium"]
 
 
@@ -95,63 +444,50 @@ def test_load_config_returns_dict():
     assert "priority_thresholds" in cfg
 
 
-# --------------------------------------------------------------------------
-# promote_signals with a fake connection
-# --------------------------------------------------------------------------
-class _FakeCursor:
-    def __init__(self):
-        self.executed: list[tuple[str, tuple]] = []
-
-    def execute(self, sql, params=()):
-        self.executed.append((sql, tuple(params)))
-
-    def fetchall(self):
-        return []
-
-    def fetchone(self):
-        return None
+# ---------------------------------------------------------------------------
+# Task content
+# ---------------------------------------------------------------------------
 
 
-class _FakeConn:
-    def __init__(self):
-        self._cur = _FakeCursor()
-        self.committed = False
-
-    def cursor(self):
-        return self._cur
-
-    def commit(self):
-        self.committed = True
-
-
-def test_promote_dry_run_inserts_nothing():
-    signals = [{"id": "sig-1", "title": "A", "innovation_score": 70}]
-    conn = _FakeConn()
-    result = kp.promote_signals(conn, signals, kp.DEFAULT_CONFIG, dry_run=True)
-    assert result["inserted"] == 1
-    assert result["dry_run"] is True
-    assert conn.committed is False
-    assert len(conn._cur.executed) == 0
+def test_build_task_records_the_verdict_that_justified_it():
+    task = kp.build_kanban_task(
+        {"id": "sig-v", "title": "T", "innovation_score": 0.9,
+         "_subsystem": "developer_portal", "_verdict": "gap"},
+        CONFIG,
+    )
+    assert "developer_portal" in task["description"]
+    assert "gap" in task["description"]
+    assert "Backstage" in task["description"]
 
 
-def test_promote_live_issues_insert_and_commits():
-    signals = [
-        {"id": "sig-a", "title": "A", "innovation_score": 85},
-        {"id": "sig-b", "title": "B", "innovation_score": 65},
-    ]
-    conn = _FakeConn()
-    result = kp.promote_signals(conn, signals, kp.DEFAULT_CONFIG, dry_run=False)
-    assert result["inserted"] == 2
-    assert conn.committed is True
-    inserts = [sql for sql, _ in conn._cur.executed if "INSERT INTO kanban_tasks" in sql]
-    assert len(inserts) == 2
-    audits = [sql for sql, _ in conn._cur.executed if "audit_trail" in sql]
-    assert len(audits) == 1  # single batch audit row
+def test_build_task_title_truncated():
+    task = kp.build_kanban_task(
+        {"id": "sig-longone", "title": "x" * 200, "innovation_score": 0.5}, CONFIG
+    )
+    assert len(task["title"]) <= 120
 
 
-def test_promote_empty_list_no_audit_no_commit():
-    conn = _FakeConn()
-    result = kp.promote_signals(conn, [], kp.DEFAULT_CONFIG, dry_run=False)
-    assert result["inserted"] == 0
-    assert conn.committed is False
-    assert len(conn._cur.executed) == 0
+def test_build_task_includes_spec_when_present():
+    task = kp.build_kanban_task(
+        {"id": "sig-1", "title": "T", "innovation_score": 0.7,
+         "spec_content": "This is a detailed solution spec.",
+         "estimated_effort": "2 days"},
+        CONFIG,
+    )
+    assert "Solution spec" in task["description"]
+    assert "2 days" in task["description"]
+
+
+def test_build_task_missing_optional_fields():
+    """Signals with only id/title shouldn't crash."""
+    task = kp.build_kanban_task(
+        {"id": "sig-minimal", "title": None, "innovation_score": None}, CONFIG
+    )
+    assert task["priority"] == "low"
+    assert "sig-mini" in task["title"]
+
+
+def test_promote_empty_list_creates_nothing(recorded_create_tasks):
+    result = kp.promote_signals([], CONFIG, dry_run=False)
+    assert result["created"] == 0
+    assert recorded_create_tasks == []
