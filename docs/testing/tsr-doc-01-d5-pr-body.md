@@ -18,6 +18,13 @@ mandates (543 tables), and compared against the clean-worktree baseline
 **The slice was run twice.** The second run is what separates the reproducible remainder from a
 transient.
 
+A **third** measurement of the six files that changed or still fail was then taken in a second,
+independently seeded clean worktree at the branch tip `06fead3d7` — see
+[`tsr-doc-01-d5-residual-verification.md`](docs/testing/tsr-doc-01-d5-residual-verification.md). All
+six agree test-for-test with both earlier runs, so the after-state below is a property of the tree
+rather than of one run. That pass also isolated the docmod gate's root cause and **retracts** the
+cause originally published for it.
+
 ### Before / after
 
 | metric | before (`de2332135`) | run 1 | run 2 | delta |
@@ -53,7 +60,7 @@ for test, in both runs. None is a regression introduced by this epic.
 
 | file | count | cause |
 |------|-------|-------|
-| `tests/docmod/test_regen_quality_gate.py` | 2 failed | **Citation quality gate fails open.** The gate is correct in isolation (all 5 unit-level tests pass, including `test_gate_blocks_uncited_section`), but the integration path does not block an uncited section. `doc_generator.py:753` invokes the gate hook inside a broad `except Exception` that downgrades any failure to a log line and persists the draft as `pending_review`. **Compliance-relevant** — CLAUDE.md's TRUST invariants require promote/export to be gated on citation defects. |
+| `tests/docmod/test_regen_quality_gate.py` | 2 failed | **`BLOCK_MISSING_CITATIONS` is unreachable through `regenerate_document`.** An uncited section scores below `_CONF_ABSTAIN`, so `doc_generator.py:693` marks it `abstained=True`; `regen_quality_gate._section_dicts:69` then drops every abstained section, so the gate evaluates an empty list and correctly returns `blocked=False`. The condition that would trip the citation rule is the same condition that makes the section abstain first — the two rules are mutually exclusive by construction. The 5 unit-level gate tests pass because they hand it plain dicts with `abstained` unset, so the unit suite cannot detect this. **Compliance-relevant** (TRUST invariants), though narrower than "fails open": abstained prose is excluded from the persisted text, so what is lost is the blocking decision and its audit note, not containment. Isolated in [`tsr-doc-01-d5-residual-verification.md`](docs/testing/tsr-doc-01-d5-residual-verification.md), which also **retracts this row's earlier claim** that `doc_generator.py:753`'s `except Exception` swallowed the failure — the discriminating run emits no warning, so the hook never raises. |
 | `tests/test_dic_techwriter.py` | 1 error | **Production connection leak.** `blueprint.py::api_import_from_docgen` (lines 853–1053) opens `conn = _conn()` with zero `conn.close()` calls and no `finally:` — every return path leaks. Surfaced only because SQLite exposes the uncommitted write transaction at teardown; on PostgreSQL this leaks a pooled connection per request. Not a test defect. |
 | `tests/genesis_auto/test_extractors.py` | 1 failed | **Asserts a feature that never merged.** `_YIELD_RICH` exists in no file in the repo, and both trees (`tools/`, `icdev/tools/`) are byte-identical at 1541 lines, so it is not mirror drift. `git log -S` finds it only in `ce4e0b3e2` / `95851fea7` (aiify-opp-6059), **neither an ancestor of `origin/main`**. Do not fix by adding the constants. |
 | `tests/test_idr_multi_source.py` | 1 failed | CoT not invoked on evidence > 500 chars — test and router disagree on a threshold contract. 18 of 19 tests in the file pass. |

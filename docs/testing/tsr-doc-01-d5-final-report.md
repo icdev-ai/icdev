@@ -98,28 +98,48 @@ lines 120–172 — including `test_gate_blocks_uncited_section`.
 orchestrator computes `blocked = bool(gate_report.get("blocked"))`. An empty `gate_report` yields
 exactly the observed `False`.
 
-`doc_generator.py:753` invokes the hook inside a broad swallow:
+The sub-cause was left un-isolated in the first pass of this report, with the broad
+`except Exception` at `doc_generator.py:753` named as the likely culprit. **That hypothesis is
+wrong and is retracted here.** The discriminating run it called for
+(`-o log_cli=true --log-cli-level=WARNING`) was executed in
+[`tsr-doc-01-d5-residual-verification.md`](tsr-doc-01-d5-residual-verification.md): **no warning is
+emitted**, so the hook never raises and the swallow never fires. `gate_report` is not empty either —
+`test_clean_regeneration_reaches_pending_review` dereferences `out["quality_gate"]["blocked"]` and
+passes, which an empty dict could not do.
 
-```python
-try:
-    gate_status = quality_gate(generated_sections, allowed_source_ids, full_text)
-    if gate_status:
-        persist_status = gate_status
-except Exception as exc:
-    logger.warning("doc_generator: quality_gate hook error: %s", exc)
+The gate runs cleanly and returns `blocked=False` **on merit**. Tracing its arguments shows why:
+
+```
+[DBG] section type = GeneratedSection
+[DBG]   heading   = 'Overview'
+[DBG]   abstained = True          <-- set by doc_generator, not by the fixture
+[DBG]   content   = 'TLS 1.3 secures all endpoints.'
+[DBG] section_dicts = []          <-- gate sees ZERO sections
+[DBG] blocked = False reasons = []
 ```
 
-Anything the gate raises is downgraded to a log line and the draft persists as `pending_review`.
-The keyword signature matches (`evaluate_regeneration_quality(new_sections, old_text,
-allowed_sources, *, new_text)`), so this is not a `TypeError` — the sub-cause is either the closure
-raising for another reason or `generated_sections` arriving in a shape the gate reads as empty. That
-last step was **not** isolated here; the discriminating run is this file with the warning surfaced
-(`-o log_cli=true --log-cli-level=WARNING`).
+An uncited section derives a confidence below `_CONF_ABSTAIN`, so `doc_generator.py:693` marks it
+`abstained=True` and drops it from `full_text`. `regen_quality_gate._section_dicts` then skips every
+abstained section by design (`_section_dicts:69`, asserted by `test_gate_skips_abstained_sections`).
+The gate is handed an empty list, finds no citation defect in it, and correctly reports
+`blocked=False`. `test_force_override_promotes_and_audits` fails for the same reason one step later:
+`forced = blocked and force`, and `blocked` is already `False`.
+
+**The two rules are mutually exclusive by construction.** The condition that would trigger
+`BLOCK_MISSING_CITATIONS` — a section with no citations — is exactly the condition that makes the
+section abstain first. So `BLOCK_MISSING_CITATIONS` is **unreachable** through
+`regenerate_document`; it fires only in the gate's own unit tests, which pass plain dicts with
+`abstained` unset. The unit tests pass and the integration tests fail because they are exercising
+two different section shapes, and only one of them can ever reach the citation check.
 
 **This is compliance-relevant and should be the epic's next card.** CLAUDE.md's TRUST invariants
-require promote/export to be gated on citation defects. A citation gate whose failures are swallowed
-is a gate that fails **open**: uncited LLM-generated content reaches the review queue and the caller
-is told it passed. Whichever sub-cause holds, the `except Exception` needs to fail closed.
+require promote/export to be gated on citation defects. The gate does not fail open by swallowing an
+error — it fails open by never being asked the question. Note that the abstention path is not
+silently unsafe on its own (an abstained section is excluded from `full_text` rather than published),
+so the fix is a scoping decision, not a one-line patch: either the gate must see abstained sections
+and block on a draft that abstained everything, or `regenerate_document` must treat an
+all-abstained draft as a blocking outcome in its own right. The failing tests encode the first
+reading; the code implements neither.
 
 ### 2. `tests/test_dic_techwriter.py` — 1 error. A production connection leak.
 
