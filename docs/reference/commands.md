@@ -2394,6 +2394,15 @@ python tools/innovation/competitive_intel.py --gap-analysis --json
 # Standards body monitoring
 python tools/innovation/standards_monitor.py --check --all --json
 
+# Benchmark comparison — join each tracked external project to the ICDEV
+# subsystem it benchmarks, and attach the measured local state (xbm-cmp-01).
+# Read-only: writes nothing to the database.
+python tools/innovation/benchmark_compare.py --markdown
+python tools/innovation/benchmark_compare.py --json
+python tools/innovation/benchmark_compare.py --subsystem observability --json
+python tools/innovation/benchmark_compare.py --no-db --markdown   # code half only
+python tools/innovation/benchmark_compare.py --markdown --out docs/research/benchmark-comparison.md
+
 # Status and reporting
 python tools/innovation/innovation_manager.py --status --json
 python tools/innovation/innovation_manager.py --pipeline-report --json
