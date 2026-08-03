@@ -16,7 +16,9 @@ code; the precedent is `args/component_registry.yaml` and
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Analyzer Contract | tools/analyzers/contract.py | Loads and validates `args/analyzer_contract.yaml`. Closed vocabularies (observable types, taxonomy namespaces/levels, sandbox postures) are enforced **at load** — an unknown observable type raises `UnknownObservableType` naming the offending analyzer and the legal values, never a swallowed warn at dispatch time. Renders the SQL CHECK clause for any column storing an observable type. | --validate, --json, --list, --observable TYPE, --check-sql [COLUMN], --path FILE | Validation verdict / machine-readable contract / CHECK clause |
-| Observable Dispatch | tools/analyzers/dispatch.py | One entry point for observables (`anz-disp-01`). Fans an observable out to every analyzer that declared it accepts that type, concurrently over a shared bounded pool with a per-analyzer timeout, and returns taxonomy-tagged reports. Every matched declaration produces a report carrying a status (`ok`/`timeout`/`error`/`unavailable`/`misdeclared`/`skipped`) — a slow analyzer is reported as timed-out, never omitted. Responders are opt-in. | --type TYPE --value VALUE [--context JSON] [--analyzer KEY] [--responders] [--timeout N] [--json], --observables | `DispatchResult` (reports + `partial` + `partial_reasons` + `excluded`); exit 2 when partial |
+| Observable Dispatch | tools/analyzers/dispatch.py | One entry point for observables (`anz-disp-01`). Fans an observable out to every analyzer that declared it accepts that type, concurrently over a shared bounded pool with a per-analyzer timeout, and returns taxonomy-tagged reports. Every matched declaration produces a report carrying a status (`ok`/`timeout`/`error`/`unavailable`/`misdeclared`/`skipped`/`rate_limited`/`sandbox_unavailable`) — a slow or throttled analyzer is reported, never omitted. Responders are opt-in. | --type TYPE --value VALUE [--context JSON] [--analyzer KEY] [--responders] [--timeout N] [--rate-limit-wait SECONDS] [--strict-sandbox] [--json], --observables | `DispatchResult` (reports + `partial` + `partial_reasons` + `excluded`); exit 2 when partial |
+| Analyzer Rate Limit | tools/analyzers/rate_limit.py | Enforces each declaration's `rate_limit` (`anz-rate-01`). Sliding window keyed by analyzer, so a fixed-window boundary cannot spend two quotas in two seconds against a metered API. Exceeding a limit **queues** (bounded by `max_wait_seconds`) or is **reported** with `retry_after_seconds` — never dropped. Library; no CLI. | `get_limiter().acquire(key, max_calls, per_seconds, max_wait_seconds=…)` | `RateLimitDecision` (`allowed`, `remaining`, `retry_after_seconds`, `waited_seconds`) |
+| Analyzer Sandbox Gate | tools/analyzers/sandbox.py | Turns each declaration's `sandbox:` posture into an execution mode and runs sandboxed analyzers through the platform `SandboxExecutor` behind the `sandbox_execute` MCP tool (D-SEC-10) — **no second isolation path**. Unknown posture and unavailable sandbox both fail closed; never downgraded to in-process. Library; no CLI. | `resolve_execution_mode(decl)`, `run_sandboxed(decl, kwargs, …)` | `'in_process'` / `'sandboxed'`; the entrypoint's return value |
 
 ## Adding an analyzer
 1. append an entry under `analyzers:` in `args/analyzer_contract.yaml`
@@ -63,6 +65,20 @@ caller omitted is reported `skipped` **by name**. Neither is ever guessed.
 - **Taxonomy tags are validated, not trusted.** The namespace is stamped from
   the declaration; a predicate or level outside what the analyzer declared is
   dropped into `taxonomy_defects` and makes the result partial.
+- **A rate limit queues or reports — it never drops.** An exhausted window
+  yields a `rate_limited` report carrying `retry_after_seconds` (and
+  `--rate-limit-wait` queues for a slot instead), so a throttled analyzer is
+  never indistinguishable from one that ran and found nothing.
+- **Quota is spent only by a call that happens.** The limiter is consulted
+  *after* import, binding and posture resolution, so an analyzer reported
+  `misdeclared`, `unavailable` or `sandbox_unavailable` burns none of the
+  external API quota it never reached. The queue is additionally capped by
+  what remains of the analyzer's own timeout budget — otherwise a call could
+  acquire its slot after the fan-out had already abandoned it.
+- **Sandbox posture is enforced, not merely declared.** `sandboxed` always
+  routes through `SandboxExecutor`; `sandboxed_on_demand` is promoted by
+  `ICDEV_STRICT_SANDBOX=1`; an unknown posture and an unavailable sandbox both
+  fail closed as `sandbox_unavailable` rather than degrading to in-process.
 
 ## Why the vocabulary is closed
 `register_citation` raised `ValueError` on an unknown `citation_type`, every
@@ -86,11 +102,19 @@ Both read the contract at call time, so a newly declared analyzer is reachable
 over MCP without touching the registry.
 
 ## Scope
-`anz-con-01` shipped the declaration and its guard; `anz-disp-01` adds the
-dispatch path, argument binding and the MCP surface. Porting existing analyzers
-(`anz-mig-*`) and rate-limit / sandbox enforcement via the existing
-`sandbox_execute` MCP tool (`anz-rate-*`) remain separate tasks — dispatch reads
-`rate_limit` and `sandbox` from the declaration but does not yet enforce them.
+`anz-con-01` shipped the declaration and its guard; `anz-disp-01` added the
+dispatch path, argument binding and the MCP surface; `anz-rate-01` makes the
+declared `rate_limit` and `sandbox` posture **enforced** rather than advisory,
+and records one sandbox-coverage decision per ported analyzer (OPT-58, Gap 48).
+Porting further analyzers (`anz-mig-*`) remains a separate task.
+
+**Deployment prerequisite for `sandboxed` analyzers.** The sandbox driver runs
+`importlib.import_module(<declared module>)` inside the container, so the image
+must have ICDEV importable. The stock `python:3.12-slim` in
+`args/sandbox_config.yaml` does not; an operator declaring an analyzer
+`sandboxed` must point `sandbox.images.python` at an image carrying the
+platform. It fails loudly rather than silently running untrusted content
+in-process — that is the intended trade.
 
 ## Related
 - `args/analyzer_contract.yaml` — the contract data (single source; the copy at

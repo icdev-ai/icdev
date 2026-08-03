@@ -155,6 +155,7 @@ jobs:
             tests/test_analyzer_contract.py \
             tests/test_agent_approval_gate.py \
             tests/test_analyzer_dispatch.py \
+            tests/test_analyzer_rate_limit.py \
             tests/test_cxo_adopt_04_mcp_cortex_adapters.py \
             tests/workflow/test_vendor_parity.py \
             -v --tb=short -x
