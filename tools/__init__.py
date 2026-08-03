@@ -37,10 +37,30 @@ class _ToolsRedirect(types.ModuleType):
         self.__file__ = __file__
 
     def __getattr__(self, name):
+        canonical = f"{_ICDEV_TOOLS_BASE}.{name}"
         try:
-            return importlib.import_module(f"{_ICDEV_TOOLS_BASE}.{name}")
-        except ModuleNotFoundError:
+            return importlib.import_module(canonical)
+        except ModuleNotFoundError as exc:
+            # Only fall through when the target module itself is absent. A
+            # missing *dependency* inside it must keep its own message rather
+            # than being relabelled "tools.<name> does not exist".
+            if exc.name != canonical:
+                raise
+        local = f"{__name__}.{name}"
+        try:
             return importlib.import_module(f".{name}", package=__name__)
+        except ModuleNotFoundError as exc:
+            if exc.name != local:
+                raise
+            # PEP 562: an absent module attribute is an AttributeError, not an
+            # ImportError. Raising ModuleNotFoundError here breaks every
+            # hasattr(tools, ...) probe — including pytest's Package collector,
+            # which asks for `setUpModule` and cannot collect any test under
+            # tools/ if the question raises. `from tools import x` still fails
+            # with ImportError, because Python converts AttributeError for it.
+            raise AttributeError(
+                f"module {__name__!r} has no attribute {name!r}"
+            ) from exc
 
 
 _redirect = _ToolsRedirect(__name__, __doc__)

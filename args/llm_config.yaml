@@ -1912,6 +1912,38 @@ agent_loop:
     tool_result_max_chars: 32768      # truncate large tool results to this many chars
     llm_call_timeout_seconds: 120.0   # wrap each router.invoke() in this timeout
     stall_threshold: 3                # abort after N turns with no novel tool call
+    # Ceiling on TOTAL session duration (ars-wall-01). tool_timeout_seconds and
+    # llm_call_timeout_seconds are PER-CALL ceilings: a session can stay under
+    # every one of them, under max_total_tokens and under max_cost_usd, and
+    # still run for hours — which is exactly what a slow external dependency or
+    # a patient loop produces. Exceeding this ends the run with
+    # result_subtype=error_max_wall_clock / truncation_reason=max_wall_clock_seconds,
+    # deliberately distinct from the token/cost reasons so "ran too long" never
+    # reads as "task too big".
+    # 1800s matches the kanban runner's default per-task kill timer
+    # (KANBAN_MAX_EXECUTION_SECONDS) so the loop-level and task-level ceilings
+    # agree out of the box; the dispatcher narrows it further per task from
+    # kanban_tasks.max_runtime_seconds.
+    max_wall_clock_seconds: 1800.0    # hard cap on total elapsed session time
+  # Semantic loop detection (ars-loop-01) — consumed by
+  # icdev/tools/llm/loop_detector.load_detector_config().
+  # stall_threshold catches an agent making NO progress. This catches one making
+  # steady progress through semantically equivalent actions: re-reading the same
+  # file with a different path spelling, re-running a failing command with
+  # cosmetic variation. Without it the run burns to the token ceiling and reports
+  # error_max_budget_tokens, which reads as "task too big" rather than "stuck".
+  # Thresholds were tuned by replaying real transcripts through
+  # tools/llm/loop_detector_tune.py — lower similarity_threshold at your own risk,
+  # a false positive kills legitimate iterative work.
+  loop_detection:
+    enabled: true
+    window: 8                     # most recent tool calls considered
+    similarity_threshold: 0.85    # argument AND result similarity both required
+    min_cluster_size: 3           # equivalent calls needed before flagging
+    min_distinct_turns: 3         # spread over N turns (one parallel fan-out is not a loop)
+    min_distinct_variants: 2      # byte-identical repeats are the duplicate guard's job
+    coverage_ratio: 0.6           # cluster must be this fraction of the window
+    result_sample_chars: 400      # head+tail sample compared per tool result
   memory:
     enabled: true
     top_k: 5                  # agent-loop recall depth

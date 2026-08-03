@@ -193,12 +193,18 @@ def test_filter_excludes_entity_from_score_and_ladder():
 # ---------------------------------------------------------------------------
 
 
-def test_active_exemption_credits_like_a_pass():
+def test_active_exemption_excludes_the_rule_without_crediting_it():
+    """idp-score-04 semantics: an exemption removes the rule, it does not pass it.
+
+    The legacy list shape (`exemptions:` as a bare list of grants) is still
+    accepted, so this also pins backward compatibility of the YAML.
+    """
     exempted = BASE_YAML + """
 exemptions:
 - identifier: has-owner
   entity: bravo
   reason: Vendor-managed component.
+  approvedBy: platform-lead@example.mil
   expires: '2099-01-01'
 """
     report = evaluate(_card(exempted), conn=None, today="2026-08-02")
@@ -207,9 +213,29 @@ exemptions:
     outcome = next(o for o in bravo["rules"] if o["identifier"] == "has-owner")
     assert outcome["status"] == "exempt"
     assert outcome["message"] == "Vendor-managed component."
-    # An exemption unblocks the rung it waives.
+    assert outcome["counted"] is False
+    # An exemption unblocks the rung it waives…
     assert bravo["level"] == "Gold"
+    # …but its weight leaves the denominator rather than being paid out: 10/10
+    # from the rule bravo actually passes, not 20/20.
+    assert (bravo["earned_weight"], bravo["total_weight"]) == (10, 10)
     assert bravo["score"] == 100.0
+
+
+def test_unattributed_exemption_does_not_apply():
+    """No approver, no waiver. An unattributed exemption is a silent failure."""
+    exempted = BASE_YAML + """
+exemptions:
+- identifier: has-owner
+  entity: bravo
+  reason: Vendor-managed component.
+"""
+    report = evaluate(_card(exempted), conn=None, today="2026-08-02")
+
+    bravo = next(r for r in report["results"] if r["entity"] == "bravo")
+    outcome = next(o for o in bravo["rules"] if o["identifier"] == "has-owner")
+    assert outcome["status"] == "fail"
+    assert report["exemptions"]["inert_count"] == 1
 
 
 def test_expired_exemption_stops_applying():
@@ -218,6 +244,7 @@ exemptions:
 - identifier: has-owner
   entity: bravo
   reason: Temporary waiver.
+  approvedBy: platform-lead@example.mil
   expires: '2026-01-01'
 """
     report = evaluate(_card(expired), conn=None, today="2026-08-02")

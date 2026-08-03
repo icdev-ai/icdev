@@ -50,6 +50,9 @@ if str(REPO_ROOT) not in sys.path:
 EXIT_CLEAN = 0
 EXIT_VIOLATIONS = 1
 EXIT_NO_DETECTOR = 2
+# Same code as EXIT_NO_DETECTOR: both mean "this run proved nothing", which a
+# caller must not read as a pass. Named separately because the causes differ.
+EXIT_USAGE = 2
 
 
 def _resolve_paths(raw: Sequence[str]) -> List[Path]:
@@ -135,6 +138,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     paths = _resolve_paths(args.path)
+
+    # A path that does not exist is a usage error, not a clean tree. Scanning
+    # nothing found nothing, and this printed "OK: no swallowed INSERT sites"
+    # and exited 0 — so `--path tools/gvocon` (a typo) reported the subsystem
+    # clean. A gate that answers "fine" for a target it never looked at is the
+    # exact silent pass it exists to prevent.
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        message = "path does not exist: {}".format(", ".join(_rel(p) for p in missing))
+        if args.json:
+            print(json.dumps(
+                {"status": "error", "error": message, "violations": []}, indent=2))
+        else:
+            print("ERROR: {}".format(message), file=sys.stderr)
+        return EXIT_USAGE
 
     try:
         findings = scan(paths)

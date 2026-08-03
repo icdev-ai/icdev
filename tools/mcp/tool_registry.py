@@ -1195,7 +1195,11 @@ TOOL_REGISTRY = {
         "category": "knowledge",
         "module": "tools.mcp.knowledge_server",
         "handler": "handle_search_knowledge",
-        "description": "Search the ICDEV™ knowledge base for patterns, solutions, and best practices. Supports keyword search with optional pattern type filtering.",
+        "description": (
+            "Search the ICDEV™ knowledge base for patterns, solutions, and best practices. "
+            "Supports keyword search with optional pattern type filtering. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5010,7 +5014,11 @@ TOOL_REGISTRY = {
         "category": "rag",
         "module": "tools.mcp.rag_server",
         "handler": "handle_rag_search",
-        "description": "Search ICDEV™ RAG knowledge base with natural language query. Returns ranked results from all indexed sources (innovation signals, compliance artifacts, research dossiers, etc.).",
+        "description": (
+            "Search ICDEV™ RAG knowledge base with natural language query. Returns ranked results "
+            "from all indexed sources (innovation signals, compliance artifacts, research dossiers, etc.). "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5152,7 +5160,12 @@ TOOL_REGISTRY = {
         "category": "rag",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_query_classify",
-        "description": "Classify a RAG query into 4-label taxonomy: fact_single, summary, reasoning, unanswerable (D-RAG-24).",
+        "description": (
+            "Classify a RAG query into 4-label taxonomy: fact_single, summary, reasoning, "
+            "unanswerable (D-RAG-24). Deterministic — subprocesses tools/rag/query_classifier.py "
+            "and never calls a provider, which is also what cortex.classify degrades to. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5270,7 +5283,11 @@ TOOL_REGISTRY = {
         "category": "knowledge_graph",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_kg_search",
-        "description": "Search the ICDEV™ Knowledge Graph using GraphRAG with scoring profiles (compliance, exploratory, provenance, security).",
+        "description": (
+            "Search the ICDEV™ Knowledge Graph using GraphRAG with scoring profiles "
+            "(compliance, exploratory, provenance, security). "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -6879,7 +6896,8 @@ TOOL_REGISTRY = {
         "handler": "handle_dic_search",
         "description": (
             "BM25+KG full-text search over a DIC collection. Returns ranked chunks with "
-            "source citations, entity co-occurrences, and relevance scores."
+            "source citations, entity co-occurrences, and relevance scores. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
         ),
         "input_schema": {
             "type": "object",
@@ -7583,9 +7601,10 @@ TOOL_REGISTRY = {
             "Submit one observable (ip / domain / url / file_hash / email / file_path / cve / "
             "vendor / ...) and get taxonomy-tagged reports from EVERY analyzer that declared it "
             "accepts that type. Fans out concurrently with a per-analyzer timeout and returns "
-            "partial results: an analyzer that timed out, raised, or could not run is reported "
-            "with that status, never omitted. Responders (which act) are excluded unless "
-            "include_responders is set."
+            "partial results: an analyzer that timed out, raised, was rate limited, or could "
+            "not run is reported with that status, never omitted. Each declaration's rate "
+            "limit and sandbox posture are enforced. Responders (which act) are excluded "
+            "unless include_responders is set."
         ),
         "input_schema": {
             "type": "object",
@@ -7621,6 +7640,17 @@ TOOL_REGISTRY = {
                     "type": "integer",
                     "description": "Override every analyzer's declared timeout budget",
                 },
+                "rate_limit_wait_seconds": {
+                    "type": "number",
+                    "description": (
+                        "Queue up to this long for a rate-limit slot instead of reporting "
+                        "'rate_limited' immediately. Default 0 (report). Either way the "
+                        "analyzer still produces a report: an exhausted quota carries "
+                        "retry_after_seconds so the call can be re-submitted, and is never "
+                        "dropped from 'reports'. Capped by the analyzer's own timeout budget."
+                    ),
+                    "default": 0,
+                },
             },
             "required": ["observable_type", "value"],
         },
@@ -7632,8 +7662,10 @@ TOOL_REGISTRY = {
         "description": (
             "List the observable-type vocabulary and, for each type, the analyzers and responders "
             "that accept it with their taxonomy namespace, predicates, levels, timeout and sandbox "
-            "posture. Read from args/analyzer_contract.yaml — a newly declared analyzer appears "
-            "here with no code change."
+            "posture, plus the declared rate limit, that limit's live window state, and the "
+            "execution mode the posture resolves to on this host. Read from "
+            "args/analyzer_contract.yaml — a newly declared analyzer appears here with no code "
+            "change. Reading this consumes no rate-limit quota."
         ),
         "input_schema": {
             "type": "object",

@@ -9,6 +9,8 @@ Lifecycle:
   6. invoke.py --exec icdev-status actually executes the documented command
      (must exit 0 with real stdout)
   7. invoke.py --exec nonexistent-skill returns error JSON (not crash)
+  8. a scoped command inside its declaration really executes (ars-scope-01)
+  9. a scoped command outside its declaration is blocked, never spawned
 
 Run: python tests/skills/e2e_skill_invoke.py
 """
@@ -120,6 +122,38 @@ def main() -> int:
         res.ok("invoke_unknown_graceful")
     except Exception as e:
         res.fail("invoke_unknown_graceful", e)
+
+    # ars-scope-01 — scoping is enforced out-of-process, not just in unit tests.
+    scope_probe = (
+        "import json;"
+        "from tools.skills.invoke import run_command;"
+        "s={'paths':['tools/project/'],'tools':['tools/project/']};"
+        "ok=run_command('python tools/project/session_context_builder.py "
+        "--format markdown',[],scope=s,timeout=120);"
+        "bad=run_command('python tools/db/storage.py --health',[],scope=s,timeout=120);"
+        "esc=run_command('python tools/project/session_context_builder.py "
+        "--out ../../escape.md',[],scope=s,timeout=120);"
+        "print(json.dumps({'ok':ok,'bad':bad,'esc':esc}))"
+    )
+    try:
+        out = _run([PY, "-c", scope_probe], timeout=180)
+        assert out.returncode == 0, f"rc={out.returncode} stderr={out.stderr[:300]}"
+        data = json.loads(out.stdout.strip().splitlines()[-1])
+        assert data["ok"].get("returncode") == 0, "in-scope command did not run"
+        assert data["ok"].get("stdout", "").strip(), "in-scope command produced no output"
+        res.ok("scope_in_scope_executes")
+    except Exception as e:
+        res.fail("scope_in_scope_executes", e)
+
+    try:
+        for key, field in (("bad", "tools"), ("esc", "paths")):
+            step = data[key]
+            assert step.get("blocked") is True, f"{key} was not blocked"
+            assert "returncode" not in step, f"{key} spawned a process anyway"
+            assert step["violations"][0]["field"] == field
+        res.ok("scope_violation_blocks")
+    except Exception as e:
+        res.fail("scope_violation_blocks", e)
 
     print("\n" + "=" * 60)
     print(f"PASSED: {len(res.p)}  FAILED: {len(res.f)}  TOTAL: {len(res.p)+len(res.f)}")

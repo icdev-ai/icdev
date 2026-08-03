@@ -7,6 +7,7 @@ from .init_db import (
     ensure_session,
     init_db,
     record_audit,
+    record_governed_call,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "ensure_session",
     "init_db",
     "record_audit",
+    "record_governed_call",
 ]

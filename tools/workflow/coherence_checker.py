@@ -28,6 +28,7 @@ Checks:
  18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
  19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
  20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
+ 21. vendor_parity   — declared stdlib-only modules stay a subset of their OUT-OF-REPO vendored copies (cxo-doc-03)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -5428,13 +5429,30 @@ def check_component_cli_reachability(
 
 
 def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
-    """Run the 8-point completeness gate against every registered canvas."""
+    """Run the 8-point completeness gate against every registered canvas.
+
+    BLOCKING (idp-score-05). This is the registry-driven half of the CLAUDE.md
+    8-component new-page gate; ``check_new_page_completeness`` is the
+    filesystem-driven half. The two enumerate the same rule from opposite
+    directions — one from ``args/component_registry.yaml``, one from
+    ``tools/dashboard/templates/*/page.html`` — so they must agree on severity
+    or the weaker one launders the rule. This one returned ``warn`` while its
+    sibling returned ``fail`` and was declared blocking in
+    ``args/security_gates.yaml``, which meant a canvas visible only to the
+    registry could ship incomplete. Both now fail, and both honour the same
+    ``args/page_completeness_whitelist.yaml`` grandfather list.
+    """
     missing_issues: List[str] = []
+    whitelisted: List[str] = []
     try:
         from tools.config.component_registry import get_registry
 
+        whitelist = _load_page_completeness_whitelist()
         registry = get_registry()
         for comp in registry.iter_canvases():
+            if comp.key in whitelist:
+                whitelisted.append(comp.key)
+                continue
             report = registry.validate_canvas_completeness(comp.key)
             if not report.passed:
                 for item in report.items:
@@ -5459,23 +5477,29 @@ def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> Coh
         return CoherenceCheck(
             check_id="canvas_completeness",
             check_name="Canvas Completeness Gate",
-            status="warn",
+            status="fail",
             expected=["All canvases pass 8-point completeness gate"],
             actual=[f"{len(missing_issues)} missing component(s)"],
             missing=sorted(missing_issues),
             extra=[],
-            message=f"{len(missing_issues)} canvas completeness issue(s) found (legacy canvases may need registry updates)",
+            message=(
+                f"{len(missing_issues)} canvas completeness issue(s) found — ship the "
+                "missing component(s), declare the point N/A in the registry's "
+                "completeness block, or grandfather the canvas in "
+                "args/page_completeness_whitelist.yaml"
+            ),
         )
 
+    suffix = f" ({len(whitelisted)} whitelisted)" if whitelisted else ""
     return CoherenceCheck(
         check_id="canvas_completeness",
         check_name="Canvas Completeness Gate",
         status="pass",
         expected=["All canvases pass 8-point completeness gate"],
-        actual=["All canvases complete"],
+        actual=[f"All canvases complete{suffix}"],
         missing=[],
-        extra=[],
-        message="All registered canvases pass the 8-point completeness gate",
+        extra=sorted(whitelisted),
+        message=f"All registered canvases pass the 8-point completeness gate{suffix}",
     )
 
 
@@ -7439,6 +7463,235 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
 
 
 # ---------------------------------------------------------------------------
+# check_vendor_parity (cxo-doc-03) — out-of-repo VENDORED copies
+# ---------------------------------------------------------------------------
+
+_VENDOR_PARITY_CONFIG = "args/vendor_parity.yaml"
+_VENDOR_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _vendor_parity_config() -> Dict[str, Any]:
+    """Declared vendor targets. Empty dict when the config is absent/unreadable."""
+    cfg = PROJECT_ROOT / _VENDOR_PARITY_CONFIG
+    if not cfg.exists():
+        return {}
+    try:
+        import yaml  # lazy — yaml isn't a top-level import here
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _resolve_vendor_path(raw: str, defaults: Dict[str, str]) -> Optional[Path]:
+    """Expand ``${VAR}`` from the environment, then *defaults*.
+
+    Returns None when a placeholder resolves to nothing — that consumer is then
+    SKIPPED rather than failed, which is what keeps this check green on a
+    machine (or CI runner) where the standalone repos are not checked out.
+    """
+    unresolved: List[str] = []
+
+    def _sub(match: "re.Match[str]") -> str:
+        name = match.group(1)
+        value = os.environ.get(name) or defaults.get(name)
+        if not value:
+            unresolved.append(name)
+            return ""
+        return str(value)
+
+    expanded = _VENDOR_PLACEHOLDER_RE.sub(_sub, raw or "")
+    if unresolved or not expanded.strip():
+        return None
+    path = Path(expanded).expanduser()
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _public_api(source: str) -> Set[str]:
+    """Public API surface of a module: classes, functions, methods + parameters.
+
+    Compares the CALLABLE SURFACE, not bytes. A vendored copy legitimately
+    differs from canonical by a provenance header and by line endings (canonical
+    is LF, the standalone consumers are CRLF under core.autocrlf=true), so a
+    byte/line comparison would be pure noise. Annotations, default VALUES and
+    docstrings are ignored for the same reason; parameter NAMES are kept because
+    every call site in a consumer depends on them.
+    """
+    tree = ast.parse(source)
+
+    def _sig(fn) -> str:
+        args = fn.args
+        parts: List[str] = []
+        posonly = list(getattr(args, "posonlyargs", []) or [])
+        positional = posonly + list(args.args)
+        first_default = len(positional) - len(args.defaults)
+        for index, arg in enumerate(positional):
+            parts.append(arg.arg + ("=..." if index >= first_default else ""))
+            if posonly and index == len(posonly) - 1:
+                parts.append("/")
+        if args.vararg:
+            parts.append("*" + args.vararg.arg)
+        elif args.kwonlyargs:
+            parts.append("*")
+        for arg, default in zip(args.kwonlyargs, args.kw_defaults):
+            parts.append(arg.arg + ("=..." if default is not None else ""))
+        if args.kwarg:
+            parts.append("**" + args.kwarg.arg)
+        return "(" + ", ".join(parts) + ")"
+
+    api: Set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("_"):
+                api.add(f"{node.name}{_sig(node)}")
+        elif isinstance(node, ast.ClassDef):
+            if node.name.startswith("_"):
+                continue
+            api.add(f"class {node.name}")
+            for sub in node.body:
+                if not isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if sub.name.startswith("_") and sub.name != "__init__":
+                    continue
+                api.add(f"{node.name}.{sub.name}{_sig(sub)}")
+    return api
+
+
+def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag a declared stdlib-only module whose out-of-repo VENDORED copies lag it.
+
+    Some modules (tools/cortex/client.py, ctx-expose-06) are deliberately
+    dependency-free so standalone apps in SEPARATE repos can copy them verbatim.
+    Nothing tied the copies to canonical, and the drift is LATENT — the copies
+    were missing methods no consumer called yet, so nothing broke and nobody
+    noticed (measured 2026-08-02: canonical 24 public methods, compass 22,
+    idea_lab 19).
+
+    Targets live in ``args/vendor_parity.yaml``; adding one needs no code change.
+    FAIL when a CHANGED declared source's public API is not a subset of a
+    present vendored copy's; WARN on the full-repo sweep. A consumer path that
+    does not exist on this machine is SKIPPED with a note, never failed.
+    """
+    check_id = "vendor_parity"
+    check_name = "Vendored Copy Parity"
+    expected = ["Canonical public API is a subset of every declared vendored copy's API"]
+
+    config = _vendor_parity_config()
+    entries = [e for e in (config.get("vendored_copies") or []) if isinstance(e, dict)]
+    defaults = {str(k): str(v) for k, v in (config.get("path_defaults") or {}).items()}
+
+    if not entries:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no vendored copies declared"],
+            missing=[],
+            extra=[],
+            message=f"No vendor targets declared in {_VENDOR_PARITY_CONFIG}.",
+        )
+
+    severity = "warn"
+    if changed_files:
+        severity = "fail"
+        touched = [str(p).replace("\\", "/") for p in changed_files]
+        in_scope = []
+        for entry in entries:
+            source = str(entry.get("source") or "").strip()
+            if source and any(t == source or t.endswith("/" + source) for t in touched):
+                in_scope.append(entry)
+        if not in_scope:
+            return CoherenceCheck(
+                check_id=check_id,
+                check_name=check_name,
+                status="pass",
+                expected=expected,
+                actual=["no declared vendored source in the changed set"],
+                missing=[],
+                extra=[],
+                message="No declared vendored source changed.",
+            )
+        entries = in_scope
+
+    drift: List[str] = []
+    skipped: List[str] = []
+    verified: List[str] = []
+
+    for entry in entries:
+        source = str(entry.get("source") or "").strip()
+        canonical = PROJECT_ROOT / source
+        if not source or not canonical.exists():
+            drift.append(f"{source or '<unnamed>'}: declared vendored source does not exist")
+            continue
+        try:
+            canonical_api = _public_api(canonical.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, ValueError) as exc:
+            drift.append(f"{source}: canonical source could not be parsed ({exc})")
+            continue
+
+        for consumer in entry.get("consumers") or []:
+            if not isinstance(consumer, dict):
+                continue
+            raw = str(consumer.get("path") or "")
+            name = str(consumer.get("name") or raw)
+            path = _resolve_vendor_path(raw, defaults)
+            if path is None or not path.exists():
+                skipped.append(
+                    f"{source} -> {name}: consumer not present on this machine "
+                    f"({path or raw}) — skipped"
+                )
+                continue
+            try:
+                copy_api = _public_api(path.read_text(encoding="utf-8", errors="replace"))
+            except (OSError, SyntaxError, ValueError) as exc:
+                skipped.append(f"{source} -> {name}: could not be parsed ({exc}) — skipped")
+                continue
+            behind = sorted(canonical_api - copy_api)
+            if behind:
+                shown = ", ".join(behind[:8]) + (" …" if len(behind) > 8 else "")
+                drift.append(
+                    f"{source} -> {name} ({path}): vendored copy is missing "
+                    f"{len(behind)} public member(s): {shown}"
+                )
+            else:
+                verified.append(
+                    f"{source} -> {name}: in sync ({len(canonical_api)} public members)"
+                )
+
+    actual = verified + skipped
+    if drift:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status=severity,
+            expected=expected,
+            actual=actual,
+            missing=drift,
+            extra=[],
+            message=(
+                f"{len(drift)} vendored copy(ies) lag their canonical source — "
+                "re-copy the file into the consumer repo (keep only its provenance "
+                f"header) or update {_VENDOR_PARITY_CONFIG}."
+            ),
+        )
+
+    note = f"{len(verified)} copy(ies) in sync"
+    if skipped:
+        note += f", {len(skipped)} skipped (consumer repo absent on this machine)"
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=actual or ["no consumer paths resolved"],
+        missing=[],
+        extra=[],
+        message=f"Vendored copies match their canonical source — {note}.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -7491,6 +7744,7 @@ CHECK_REGISTRY = {
     "test_db_isolation": check_test_db_isolation,
     "migration_numbering": check_migration_numbering,
     "icdev_mirror_parity": check_icdev_mirror_parity,
+    "vendor_parity": check_vendor_parity,
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
     "insert_schema_parity": check_insert_schema_parity,

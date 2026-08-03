@@ -35,6 +35,15 @@
 </div>
 {% else %}
 {% set s = stats.summary %}
+{% if stats.detail and stats.detail.truncated %}
+<div style="background:#2a230f;border:1px solid #6e5a1e;border-radius:8px;padding:12px 16px;color:#e6b85a;font-size:12px;margin-bottom:16px;">
+  <strong>Partial spend detail.</strong>
+  Calls, blocked and the by-function / by-outcome / by-tenant counts below are exact for the full {{ stats.window_hours }}h window.
+  Cost, tokens, latency, redactions, cache hits and the domain / model breakdowns are computed from the most recent
+  {{ '{:,}'.format(stats.detail.rows_scanned) }} calls only — this window holds more than the {{ '{:,}'.format(stats.detail.limit) }}-row detail cap.
+  Narrow the window for complete spend figures.
+</div>
+{% endif %}
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
   {% macro card(label, value, hint='') -%}
   <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">

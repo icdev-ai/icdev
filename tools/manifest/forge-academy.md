@@ -104,6 +104,13 @@ decision recorded as Gap 31 in [docs/security/sandbox-coverage.md](../../docs/se
   composition (aca-hon-04)
 - `retire_superseded_missions`, `reconcile_all_step_assets`
 - `load_step_content` / `load_starter_code` / `load_test_code`
+- `extract_learning_objective` / `objective_for_mission` — reads the objective an author
+  already wrote: explicit `learning_objective:` frontmatter first, else the lead paragraph of
+  an objective-bearing section in the mission's **first** step. Returns `None` rather than
+  guessing — a question prompt, a section opening on a list or code fence, and a fragment
+  under 40 chars all yield nothing, because an absent objective is a visible content gap and
+  an invented one is a false record on an audited field (aca-trn-03). Backfilled into
+  `fa_missions.learning_objective` by migration `20260803005919`; 53 of 124 missions state one
 
 ### `apps/forge_academy/configurator.py` — guided configure steps
 `dispatch_configure(data)` — 7 handlers. Handlers that cannot reach live ICDEV data return an

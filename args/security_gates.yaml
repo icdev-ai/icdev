@@ -125,6 +125,27 @@ new_page_completeness:
     Violations are detected by tools/workflow/coherence_checker.py::check_new_page_completeness.
     Whitelisted canvases are skipped via args/page_completeness_whitelist.yaml.
     Canvas directories without page.html are checked by the mirror-parity sub-check.
+    Its registry-driven twin is `canvas_completeness` below — same rule, same severity.
+
+# Canvas Completeness Gate (idp-score-05) — registry-driven twin of the gate above.
+# `new_page_completeness` walks tools/dashboard/templates/*/page.html; this one walks
+# args/component_registry.yaml and runs
+# component_registry.py::validate_canvas_completeness over every `kind: canvas` entry.
+# The two enumerate the same CLAUDE.md 8-component rule from opposite directions, so a
+# canvas the filesystem walk cannot see (no page.html under its own key) is only ever
+# caught here. This check returned `warn` while its twin returned `fail`, which made the
+# rule CLAUDE.md calls mandatory unenforceable from the registry side; both now block.
+# Run: python tools/workflow/coherence_checker.py --check canvas_completeness --json --gate
+canvas_completeness:
+  blocking:
+    - incomplete_canvas_page          # a required completeness point is declared but absent
+  note: >
+    Violations are detected by tools/workflow/coherence_checker.py::check_canvas_completeness.
+    A point is only enforced when it applies: `db_migration` and `iqe` are required only when
+    the registry declares them, and `nav_link` is skipped when the component explicitly declares
+    `completeness.nav_link: false` (a MISSING key still means required). Grandfathering shares
+    one list with the twin gate — args/page_completeness_whitelist.yaml. Do not add entries to
+    get a commit through; declare the point N/A in the registry or ship the component.
 
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:

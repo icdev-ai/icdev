@@ -32,16 +32,26 @@ wins:
 
 | # | Rule | Verdict |
 |---|------|---------|
+| 0 | the policy enumerates the tool `reversible` **and** it is not in `command_tools` | `reversible`, no escalation |
 | 1 | an `irreversible` content pattern matches `"<tool_name> <flattened input>"` | `irreversible` |
 | 2 | the tool is enumerated in the policy's tier lists | as enumerated |
 | 3 | a non-irreversible pattern matches **and** the tool is in `command_tools` | as matched |
 | 4 | nothing matched | `default_tier` = `unknown` → **requires approval** |
 
-Three of those positions are load-bearing:
+Four of those positions are load-bearing:
 
-- **Rule 1 applies to every tool, unconditionally.** `run_command` is not a tier;
-  the string it is handed is. A shell tool a caller marked read-only can still
-  carry `git push`.
+- **Rule 0 stops a read from prompting.** A tool that does not execute what it is
+  handed cannot be made irreversible by it — its arguments are data being read,
+  not a command being run. Without this, `read_file("how do I git push safely")`
+  halted for human approval, and a gate that prompts on a read teaches operators
+  to approve reflexively, which costs more safety than the escalation buys.
+  The exemption is granted by the **operator's** policy file, not by a tool
+  schema's self-declared `is_read_only` — see Provenance. A generic executor
+  never receives it, whatever the policy says, because for a shell the input *is*
+  the command.
+- **Rule 1 applies to every other tool, unconditionally.** `run_command` is not a
+  tier; the string it is handed is. A shell tool a caller marked read-only can
+  still carry `git push`.
 - **Rule 3 only fires for declared generic executors.** A content pattern may
   always make a call *worse*, but may only make it *better* for a tool that is
   nothing but a shell. Otherwise incidental text decides: `git_push` with a
@@ -130,14 +140,28 @@ retired:
 - Its agent-loop wiring is **already present here**, and in a safer form — that
   branch logged an error and continued *unguarded* when the gate could not be
   built, where this one denies every tool.
-- Its schema-driven rules are the one genuine design disagreement. That branch let
-  a tool schema declare `reversibility`, and treated `is_read_only: true` as
-  proof of reversibility that short-circuits the content patterns. This
-  implementation **deliberately refuses to trust that flag** — "a tool schema's
-  own `is_read_only` flag is an assertion by the caller rather than a fact" — and
-  escalates on content first, for every tool, unconditionally. Both are defensible;
-  this one is the stricter reading, and it is the one that shipped. Reopening the
-  question means arguing that a first-party schema is trustworthy enough to skip
-  the pattern scan, not merely porting the code.
+- Its schema-driven rules were the one genuine design disagreement, and it is now
+  **resolved** (rule 0 above). That branch let a tool schema declare
+  `reversibility` and treated `is_read_only: true` as proof that short-circuits
+  the content patterns. This implementation originally refused any such
+  short-circuit — "an assertion by the caller rather than a fact" — and escalated
+  on content first for every tool, unconditionally.
+
+  Both positions were half right, and the disagreement was really about *whose*
+  claim to trust rather than whether to trust one at all:
+
+  - The branch was right that scanning a read's arguments for `git push` is a
+    category error. Measured on the shipped gate before the fix,
+    `read_file("how do I git push safely")` classified `irreversible` and halted.
+  - This implementation was right that the *tool's own* `is_read_only` flag is
+    not evidence — it ships with the tool and asserts its own safety.
+
+  The resolution takes the exemption from neither: it comes from the tool being
+  enumerated `reversible` in `args/agent_approval_policy.yaml`, which is the
+  operator's file and already the source of truth for every other tier. A generic
+  executor is excluded unconditionally, so the smuggling hole rule 1 exists to
+  close stays closed even if someone lists a shell as reversible. Listing a tool
+  under `reversible` is now a stronger claim than the other tiers — it asserts the
+  tool cannot act — and the policy file says so.
 - This document is adapted from that branch's, corrected to the API that actually
   shipped.

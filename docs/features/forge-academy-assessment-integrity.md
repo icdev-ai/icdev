@@ -123,12 +123,19 @@ non-solution, 6 were blocked as above, and 1 was vacuous. All 49 now grade.
 
 ## What was deliberately NOT built
 
-- **aca-trn-03 (learning objectives).** The card's premise did not hold. Measured against the
+- ~~**aca-trn-03 (learning objectives).** The card's premise did not hold. Measured against the
   real content tree, frontmatter carries only `ontology_id` and `step_class` across all 212 step
   files, and just 16 files contain anything objective-shaped. Extraction would put an objective
   on ~7% of missions, which is worse than showing none. It needs authoring, or a decision to
   derive objectives another way — left in the backlog **with that correction recorded**, rather
-  than half-built.
+  than half-built.~~
+  **Superseded 2026-08-02 — this one shipped.** The measurement was right and the conclusion was
+  too narrow: it scoped extraction to *frontmatter*, where authors had never been asked to write
+  an objective. The objective was already in the prose, in the opening section of the first step.
+  Reading that is still extraction, not authoring. Coverage is **53 of 124 missions (43%)**, not
+  7%; the other 71 stay NULL and both surfaces omit the line, per the same
+  absent-beats-invented rule this document argues everywhere else. See
+  [forge-academy-aca-trn-03-learning-objectives.md](forge-academy-aca-trn-03-learning-objectives.md).
 - **aca-trn-01/02/04/05** (assessment model, competency evidence chain, instructor/cohort
   workflow, xAPI/SCORM export) remain `scheduled`. They are product-shaped additions, not
   integrity defects, and none of them were blocking the integrity work.

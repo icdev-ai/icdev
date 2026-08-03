@@ -12,6 +12,7 @@ Covers:
   deep-merge, and the checked-in args/cortex_config.yaml shape.
 """
 import importlib
+import os
 
 import pytest
 import yaml
@@ -177,6 +178,47 @@ def test_context_air_gap_forces_exclusions(tmp_path):
     assert "worker:latest" not in exclusions
 
 
+def test_llm_config_is_parsed_once_across_repeated_exclusion_lookups(tmp_path, monkeypatch):
+    # airgap_exclusions() runs on every _invoke when air-gapped; the config
+    # read behind it is mtime-cached, so N lookups parse the YAML once.
+    from tools.cortex import config as cortex_config
+
+    monkeypatch.setenv("ICDEV_AIRGAP", "1")
+    path = _write_config(tmp_path, _base_llm_config())
+    parses = []
+    real_load_yaml = cortex_config._load_yaml
+    monkeypatch.setattr(
+        cortex_config,
+        "_load_yaml",
+        lambda p: (parses.append(str(p)), real_load_yaml(p))[1],
+    )
+
+    first = cortex_config.airgap_exclusions(None, config_path=path)
+    for _ in range(4):
+        assert cortex_config.airgap_exclusions(None, config_path=path) == first
+
+    assert parses.count(str(path)) == 1
+
+
+def test_llm_config_cache_refresh_and_mtime_invalidation(tmp_path, monkeypatch):
+    from tools.cortex import config as cortex_config
+
+    path = _write_config(tmp_path, _base_llm_config())
+    assert "frontier" in cortex_config._load_llm_config(path)["models"]
+
+    changed = _base_llm_config()
+    del changed["models"]["frontier"]
+    path.write_text(yaml.safe_dump(changed), encoding="utf-8")
+    # refresh= is the escape hatch that ignores an unchanged mtime.
+    os.utime(path, (1_700_000_000, 1_700_000_000))
+    assert "frontier" not in cortex_config._load_llm_config(path, refresh=True)["models"]
+
+    # A later mtime invalidates the cache without an explicit refresh.
+    path.write_text(yaml.safe_dump(_base_llm_config()), encoding="utf-8")
+    os.utime(path, (1_700_000_060, 1_700_000_060))
+    assert "frontier" in cortex_config._load_llm_config(path)["models"]
+
+
 def test_model_id_also_served_locally_is_never_excluded(tmp_path):
     config = _base_llm_config()
     # The same model_id resolves through both a cloud and a local entry.
@@ -249,6 +291,30 @@ def test_classify_honors_context_air_gap(tmp_path, monkeypatch, install_router):
     classify("text", ["alpha", "beta"], ctx={"air_gap": True})
     _, _, kwargs = router.calls[0]
     assert "frontier-9000" in kwargs["exclude_model_ids"]
+
+
+def test_invokes_parse_llm_config_once_when_airgapped(tmp_path, monkeypatch, install_router):
+    # The acceptance case: N air-gapped complete() calls, one YAML parse.
+    from tools.cortex import config as cortex_config
+
+    monkeypatch.setenv("ICDEV_AIRGAP", "1")
+    path = _write_config(tmp_path, _base_llm_config())
+    monkeypatch.setenv("ICDEV_LLM_CONFIG", str(path))
+    parses = []
+    real_load_yaml = cortex_config._load_yaml
+    monkeypatch.setattr(
+        cortex_config,
+        "_load_yaml",
+        lambda p: (parses.append(str(p)), real_load_yaml(p))[1],
+    )
+
+    router = install_router(KwargRouter(_response()))
+    for _ in range(5):
+        complete("say hello")
+
+    assert len(router.calls) == 5
+    assert all("frontier-9000" in kwargs["exclude_model_ids"] for _, _, kwargs in router.calls)
+    assert parses.count(str(path)) == 1
 
 
 # ---------------------------------------------------------------------------

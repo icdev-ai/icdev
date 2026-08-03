@@ -213,8 +213,130 @@ def test_a_mission_with_no_steps_or_no_objective_states_none(steps):
 
 
 # --------------------------------------------------------------------------
+# The opening paragraph (aca-trn-03-d2)
+# --------------------------------------------------------------------------
+# Five missions author "## What you'll build" as a code fence or a bullet list,
+# so the heading path finds no prose and they state nothing. Six of those files
+# had already said it one paragraph earlier, under the H1. That paragraph mixes
+# hook and claim, so only the claim is taken — and only when a cue marks it.
+
+def test_the_opening_claim_is_read_when_the_build_section_is_a_code_fence():
+    raw = (
+        "---\ntitle: t\n---\n"
+        "# Build a CI/CD Pipeline Agent\n\n"
+        "In this mission you'll build an agent that monitors a CI/CD pipeline, "
+        "detects failures, and diagnoses root causes.\n\n"
+        "## What you'll build\n\n"
+        "```python\nagent = PipelineAgent()\n```\n"
+    )
+    assert cl.extract_learning_objective(raw) == (
+        "In this mission you'll build an agent that monitors a CI/CD pipeline, "
+        "detects failures, and diagnoses root causes."
+    )
+
+
+def test_the_hook_before_the_claim_is_dropped():
+    """"Attackers don't target your code" is motivation, not an objective — and
+    it is also what a length trim would keep while dropping the claim."""
+    raw = (
+        "---\ntitle: t\n---\n"
+        "# Threat Model an Agentic Pipeline\n\n"
+        "Attackers don't target your code — they target your AI's behavior. "
+        "In this mission you'll run a STRIDE threat model against a realistic "
+        "agentic pipeline graph.\n"
+    )
+    assert cl.extract_learning_objective(raw) == (
+        "In this mission you'll run a STRIDE threat model against a realistic "
+        "agentic pipeline graph."
+    )
+
+
+def test_an_opening_paragraph_with_no_cue_states_no_objective():
+    """Topic scene-setting is not a claim about the outcome. Refusing here is the
+    whole point: without the cue this path would turn any intro into an objective."""
+    raw = (
+        "---\ntitle: t\n---\n"
+        "# Advanced RAG\n\n"
+        "A GitLab pipeline fails. The error is buried in 2,000 lines of logs and "
+        "a developer scrolls for fifteen minutes to find a missing variable.\n\n"
+        "## What you'll build\n\n"
+        "- chunk_document()\n- build_index()\n"
+    )
+    assert cl.extract_learning_objective(raw) == ""
+
+
+def test_an_objective_section_still_beats_the_opening_paragraph():
+    """The opening paragraph is a fallback, not a new winner — a section written
+    to state the objective is the more deliberate channel."""
+    raw = (
+        "---\ntitle: t\n---\n"
+        "# Some Mission\n\n"
+        "In this mission you'll learn something the intro paragraph claims loudly.\n\n"
+        "## Learning Objective\n\n"
+        "Configure a FIPS 199 categorisation for a new system boundary.\n"
+    )
+    assert cl.extract_learning_objective(raw) == (
+        "Configure a FIPS 199 categorisation for a new system boundary."
+    )
+
+
+def test_a_question_in_the_opening_paragraph_yields_nothing():
+    raw = (
+        "---\ntitle: t\n---\n"
+        "# Some Mission\n\n"
+        "What does the agent actually do? In this mission you'll build one and "
+        "find out for yourself over several steps.\n"
+    )
+    assert cl.extract_learning_objective(raw) == ""
+
+
+def test_a_claim_below_the_floor_is_still_dropped():
+    """The fallback inherits the fragment floor rather than relaxing it."""
+    raw = (
+        "---\ntitle: t\n---\n"
+        "# Some Mission\n\n"
+        "This mission covers agents.\n"
+    )
+    assert cl.extract_learning_objective(raw) == ""
+
+
+def test_an_h2_only_file_has_no_opening_paragraph_to_read():
+    """No H1 means no opening prose — a '## Notes' section is not an intro."""
+    raw = (
+        "---\ntitle: t\n---\n"
+        "## Notes\n\n"
+        "In this mission you'll build something that is not the mission's intro.\n"
+    )
+    assert cl.extract_learning_objective(raw) == ""
+
+
+# --------------------------------------------------------------------------
 # Against the real catalogue
 # --------------------------------------------------------------------------
+
+def test_the_opening_claim_path_fires_on_real_content_and_stays_a_minority():
+    """The fallback must reach real missions the heading path misses, without
+    becoming the dominant source — that would mean it is matching intros broadly."""
+    discovered = cl.discover_steps()
+    if not discovered:
+        pytest.skip("no authored content in this checkout")
+
+    from_opening = 0
+    stated = 0
+    for steps in discovered.values():
+        objective = cl.objective_for_mission(steps)
+        if not objective:
+            continue
+        stated += 1
+        if cl._MISSION_CUE_RE.search(objective):
+            from_opening += 1
+
+    assert stated, "the extractor fires on nothing in the real catalogue"
+    # A cue-bearing objective can only have come from the opening-paragraph path:
+    # the heading sections in this catalogue are written imperatively.
+    assert from_opening >= 3, "the d2 fallback reaches nothing on real content"
+    assert from_opening < stated / 2, "the fallback has become the dominant source"
+
 
 def test_the_authored_catalogue_yields_objectives_without_inventing_them():
     """Guards both directions at once: the extractor must actually fire on real

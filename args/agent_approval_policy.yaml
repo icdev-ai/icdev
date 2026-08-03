@@ -6,6 +6,14 @@
 #
 # TIERS
 #   reversible   — no durable side effect, or one undone by re-running. Auto-allow.
+#                  ALSO EXEMPT FROM CONTENT ESCALATION: a tool listed here is one
+#                  that does not execute what it is handed, so its arguments are
+#                  data, not commands, and the irreversible patterns below are not
+#                  applied to them. Listing a tool here is therefore a stronger
+#                  claim than the other tiers — it says "this cannot act". Do not
+#                  add anything that mutates. A tool in `command_tools` never gets
+#                  the exemption even if listed here, because for a shell the
+#                  input IS the command.
 #   recoverable  — mutates local state that a checkpoint/VCS can restore. Auto-allow.
 #   irreversible — publishes, destroys, or writes evidence that cannot be un-written.
 #                  ALWAYS halts for confirmation.
@@ -43,7 +51,6 @@ tools:
     - get_project_context
     - health_check
     - browser_read_state
-    - browser_screenshot
     - classify
     - summarize
 
@@ -51,6 +58,9 @@ tools:
   # Recoverable — local mutation a checkpoint or git can restore.
   # ---------------------------------------------------------------------------
   recoverable:
+    # Writes an image to a caller-supplied path, so it is not a pure read and
+    # must not get the reversible tier's escalation exemption (see TIERS).
+    - browser_screenshot
     - write_file
     - edit_file
     - apply_patch
