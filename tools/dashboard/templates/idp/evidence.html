@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Evidence — {{ evidence.rule or 'rule' }} — Developer Portal{% endblock %}
+{% block content %}
+<div class="cui-banner">CUI // SP-CTI</div>
+
+<div class="container-fluid py-3">
+  <a href="/idp/" class="small">&larr; Developer Portal</a>
+  {% if evidence.component %}
+    <span class="text-muted small mx-1">/</span>
+    <a href="/idp/component/{{ evidence.component }}" class="small">{{ evidence.component }}</a>
+  {% endif %}
+
+  {% if not evidence.found %}
+  <div class="alert alert-warning mt-3">
+    <strong>No evidence to show.</strong>
+    <div class="small mt-1">{{ evidence.error }}</div>
+  </div>
+  {% else %}
+
+  <div class="d-flex align-items-center flex-wrap gap-2 mt-2 mb-1">
+    <h2 class="mb-0">{{ evidence.title or evidence.rule }}</h2>
+    <span class="badge {{ {'pass':'bg-success','fail':'bg-danger','exempt':'bg-info text-dark'}.get(evidence.status, 'bg-secondary') }} fs-6">
+      {{ 'not applicable' if evidence.status == 'not_applicable' else evidence.status }}
+    </span>
+    <span class="badge bg-dark">{{ evidence.dimension }}</span>
+    {% if evidence.level %}<span class="badge bg-secondary">gates {{ evidence.level }}</span>{% endif %}
+    <span class="text-muted small">weight {{ evidence.weight }}</span>
+  </div>
+  <p class="text-muted small">
+    <code>{{ evidence.rule }}</code> as it applies to <code>{{ evidence.component }}</code>.
+    Everything below was re-derived when you loaded this page &mdash; it is not a
+    replay of a stored verdict.
+  </p>
+
+  {% if evidence.message %}
+  <div class="alert alert-danger py-2 small">{{ evidence.message }}</div>
+  {% endif %}
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header py-2"><strong>The check</strong></div>
+        <div class="card-body">
+          <div class="text-muted small">query &mdash; runnable as-is in the IQE widget</div>
+          <div class="font-monospace small border rounded p-2 mt-1" style="word-break:break-all;">{{ evidence.evidence.expression }}</div>
+          {% if evidence.evidence.filter_expression %}
+            <div class="text-muted small mt-2">applies to</div>
+            <div class="font-monospace small border rounded p-2 mt-1" style="word-break:break-all;">{{ evidence.evidence.filter_expression }}</div>
+          {% endif %}
+          <div class="mt-3 small">
+            {% if evidence.status == 'not_applicable' %}
+              {# The passing set is irrelevant here: the filter excluded this
+                 component, so the rule never graded it. Leading with the
+                 passing set would imply a verdict that was never reached. #}
+              <div class="alert alert-secondary py-2 mb-2">
+                <strong>This rule does not apply to {{ evidence.component }}.</strong>
+                It falls outside the <em>applies to</em> query above, so it is
+                neither passing nor failing here &mdash; it is unmeasured, and
+                contributes nothing to the {{ evidence.dimension }} score.
+              </div>
+              <div class="text-muted">
+                For reference, {{ evidence.passing_count }} of the collection match the check itself.
+              </div>
+            {% else %}
+              <div>
+                <span class="text-muted">result:</span>
+                {{ evidence.passing_count }} of the collection pass;
+                <code>{{ evidence.component }}</code>
+                {% if evidence.component_passes %}
+                  <span class="badge bg-success">is in the passing set</span>
+                {% else %}
+                  <span class="badge bg-danger">is not</span>
+                {% endif %}
+              </div>
+            {% endif %}
+            <div class="text-muted mt-2">
+              collection <code>{{ evidence.evidence.collection }}</code>
+              &middot; adapter <code>{{ evidence.adapter_module }}</code>
+              &middot; rule defined in <code>{{ evidence.scorecard_source }}</code>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header py-2"><strong>Observed facts</strong></div>
+        <div class="card-body p-0">
+          {% if evidence.evidence.observed %}
+          <table class="table table-sm mb-0">
+            <tbody>
+              {% for field, value in evidence.evidence.observed | dictsort %}
+              <tr>
+                <td class="font-monospace small text-muted">{{ field }}</td>
+                <td class="small">
+                  {% if value is sameas true %}✅ true
+                  {% elif value is sameas false %}❌ false
+                  {% elif value == '' or value is none %}<span class="text-muted">&mdash;</span>
+                  {% else %}{{ value }}{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="p-3 text-muted small">
+            This rule's predicate reads no fact field the collection exposes, so
+            there is no observed value to show.
+          </div>
+          {% endif %}
+          {% if evidence.evidence.note %}
+          <div class="p-3 border-top small text-muted">{{ evidence.evidence.note }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# The raw rows behind a derived fact. A count is an assertion until the rows
+     are visible; an empty set is "not measured", never "healthy". #}
+  {% for source in evidence.sources %}
+  <div class="card mt-3">
+    <div class="card-header py-2 d-flex align-items-center gap-2">
+      <strong>{{ source.label }}</strong>
+      {% if source.table %}<code class="small">{{ source.table }}</code>{% endif %}
+      {% if source.measured %}
+        <span class="badge bg-secondary ms-auto">{{ source.rows | length }} row(s)</span>
+      {% else %}
+        <span class="badge bg-warning text-dark ms-auto">not measured</span>
+      {% endif %}
+    </div>
+    <div class="card-body p-0">
+      {% if not source.measured %}
+        <div class="p-3 small text-muted">
+          Nothing has been recorded here for this component. Absent evidence is
+          reported as absent &mdash; it is not counted as a pass.
+        </div>
+      {% elif source.kind == 'probe_rows' %}
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Route</th><th>Status</th><th>Probed at</th></tr></thead>
+          <tbody>
+            {% for row in source.rows %}
+            <tr>
+              <td class="font-monospace small">{{ row.route }}</td>
+              <td>
+                <span class="badge {% if row.status in ('fail','error') %}bg-danger{% else %}bg-success{% endif %}">{{ row.status }}</span>
+              </td>
+              <td class="small text-muted">{{ row.probed_at }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for row in source.rows %}
+            <tr>
+              <td style="width:40px;" class="text-center">
+                {% if row.present %}✅{% elif row.required %}❌{% else %}➖{% endif %}
+              </td>
+              <td class="font-monospace small">{{ row.point }}</td>
+              <td class="small text-muted">{{ row.message }}{% if row.path %} <span class="font-monospace">{{ row.path }}</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="text-muted small mt-3">
+    JSON: <code>/idp/api/evidence?component={{ evidence.component }}&amp;rule={{ evidence.rule }}</code>
+  </div>
+  {% endif %}
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

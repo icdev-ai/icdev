@@ -119,6 +119,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Core audit
         "audit_trail",
         "hook_events",
+        # Approval-gate verdicts for irreversible agent actions (ars-appr-01,
+        # migration 342). A decision has no lifecycle: someone authorised an
+        # irreversible action once, for a stated reason. An UPDATE here rewrites
+        # who is answerable for a force-push that already happened, so a
+        # correction is a new row.
+        "agent_approval_log",
         # Cortex canvas governance/facade audit (ctx-canvas-01)
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)

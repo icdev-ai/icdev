@@ -112,13 +112,21 @@ def _query_probe_rows(conn: Any) -> list[tuple[Any, Any, Any]]:
     return [tuple(r)[:3] for r in cur.fetchall()]
 
 
-def _latest_failing_routes(conn: Any) -> tuple[set[str], bool]:
-    """Return (failing route paths, probed) from awareness_component_health.
+def _latest_failing_routes(conn: Any) -> tuple[set[str], set[str]]:
+    """Return (failing route paths, probed route paths) from awareness_component_health.
 
     Keeps only the newest snapshot per node so a route that has since recovered
-    does not count against a component forever. ``probed`` is False when the
-    table is empty or unreadable, which lets a rule distinguish a genuinely
-    healthy component from one that has never been probed.
+    does not count against a component forever.
+
+    Both halves are route sets, and the second one is why. It used to be a
+    single global "did any probe row exist anywhere" boolean, which made
+    ``health_probed`` true for all 67 components the moment *one* route was
+    probed. Combined with ``failing_probes == 0`` — also 0 for a route nobody
+    probed — every unprobed component passed the health rule. Measured
+    2026-08-02: ``/document-intelligence`` had zero probe rows and still
+    scored a pass. Returning the probed set lets each component ask whether
+    *its own* routes were probed, so never-measured comes back as not
+    applicable instead of as healthy.
     """
     rows: list[tuple[Any, Any, Any]] = []
     for candidate in (conn, None):
@@ -151,7 +159,7 @@ def _latest_failing_routes(conn: Any) -> tuple[set[str], bool]:
             continue
 
     if not rows:
-        return set(), False
+        return set(), set()
 
     latest: dict[str, tuple[Any, str]] = {}
     for node_id, status, probed_at in rows:
@@ -164,22 +172,99 @@ def _latest_failing_routes(conn: Any) -> tuple[set[str], bool]:
             latest[node] = (stamp, str(status or ""))
 
     if not latest:
-        return set(), False
+        return set(), set()
 
-    return (
-        {node[len("route::"):] for node, (_, status) in latest.items() if status in ("fail", "error")},
-        True,
-    )
+    probed = {node[len("route::"):] for node in latest}
+    failing = {
+        node[len("route::"):]
+        for node, (_, status) in latest.items()
+        if status in ("fail", "error")
+    }
+    return failing, probed
+
+
+def probe_evidence(route: str, conn: Any = None, limit: int = 50) -> list[dict[str, Any]]:
+    """Newest probe row per route under *route*'s prefix — the raw evidence.
+
+    ``failing_probes`` is a count, and a count is an assertion until you can
+    see the rows behind it. The IDP portal's evidence endpoint (idp-ui-01)
+    serves these so a "probes healthy" verdict links to the probe rows that
+    produced it rather than asking to be believed.
+
+    Returns ``[]`` when the route is empty, the table is unreadable, or nothing
+    under the prefix has been probed. An empty list is "no probe rows", which
+    the caller must render as *not measured* — never as *healthy*.
+    """
+    if not route or route == "/":
+        return []
+
+    rows: list[tuple[Any, Any, Any]] = []
+    for candidate in (conn, None):
+        try:
+            if candidate is None:
+                from tools.db.storage import get_connection  # noqa: PLC0415
+
+                fallback = get_connection()
+                try:
+                    rows = _query_probe_rows(fallback)
+                finally:
+                    try:
+                        fallback.close()
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+            else:
+                rows = _query_probe_rows(candidate)
+            if rows:
+                break
+        except Exception:
+            # Same aborted-transaction hazard as _latest_failing_routes.
+            if candidate is not None:
+                try:
+                    candidate.rollback()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+            continue
+
+    prefix = route.rstrip("/")
+    latest: dict[str, tuple[str, str]] = {}
+    for node_id, status, probed_at in rows:
+        node = str(node_id or "")
+        if not node.startswith("route::"):
+            continue
+        path = node[len("route::"):]
+        if not (path == prefix or path.startswith(prefix + "/")):
+            continue
+        stamp = str(probed_at or "")
+        prior = latest.get(path)
+        if prior is None or stamp >= prior[0]:
+            latest[path] = (stamp, str(status or ""))
+
+    evidence = [
+        {"route": path, "status": status, "probed_at": stamp, "node_id": f"route::{path}"}
+        for path, (stamp, status) in latest.items()
+    ]
+    # Failing first — the rows that explain a bad verdict are the ones worth
+    # showing when the list is truncated.
+    evidence.sort(key=lambda e: (e["status"] not in ("fail", "error"), e["route"]))
+    return evidence[:limit]
+
+
+def _routes_under(route: str, routes: set[str]) -> int:
+    """Count routes in *routes* that live under this component's url_prefix.
+
+    A component with no url_prefix (or the bare "/") owns no route subtree and
+    matches nothing: "/" as a prefix would otherwise claim every route in the
+    platform.
+    """
+    if not route or route == "/":
+        return 0
+    prefix = route.rstrip("/")
+    return sum(1 for r in routes if r == prefix or r.startswith(prefix + "/"))
 
 
 def _failing_probe_count(route: str, failing_routes: set[str]) -> int:
     """Count failing probed routes that live under this component's url_prefix."""
-    if not route or route == "/":
-        return 0
-    prefix = route.rstrip("/")
-    return sum(
-        1 for r in failing_routes if r == prefix or r.startswith(prefix + "/")
-    )
+    return _routes_under(route, failing_routes)
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +312,7 @@ def _collect_components(conn: Any = None) -> list[dict]:
     adapters_dir = root / "tools" / "iqe" / "adapters"
     queries_dir = root / "context" / "iqe" / "queries"
     rls_violators = _rls_violation_keys()
-    failing_routes, health_probed = _latest_failing_routes(conn)
+    failing_routes, probed_routes = _latest_failing_routes(conn)
 
     rows: list[dict] = []
     for comp in registry.list_all():
@@ -314,7 +399,12 @@ def _collect_components(conn: Any = None) -> list[dict]:
             # coherence + live health
             "rls_clean": comp.key not in rls_violators,
             "failing_probes": _failing_probe_count(route, failing_routes),
-            "health_probed": health_probed,
+            # Per component, not platform-wide: "were THIS component's routes
+            # probed?". A component whose routes have no probe row is not
+            # healthy, it is unmeasured, and the health rule's filter uses this
+            # to say so.
+            "probed_routes": _routes_under(route, probed_routes),
+            "health_probed": _routes_under(route, probed_routes) > 0,
         })
 
     rows.sort(key=lambda r: r["key"])
