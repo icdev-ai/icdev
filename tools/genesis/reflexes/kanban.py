@@ -4760,11 +4760,21 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
             fh.write(f"[work_dir {work_dir}]\n\n")
 
             tools_schema, tool_handlers = build_worktree_toolset(work_dir)
+            _task_budget = _get_task_timeout(task_id)
             # Cap one gate sweep at a quarter of the task's dispatch budget.
             # The rubric loop grades up to max_grading_iterations times before
             # post-task validation runs again, so an ungoverned gate could (and
             # did) spend the whole dispatch window judging instead of building.
-            _gate_budget = max(60.0, _get_task_timeout(task_id) * 0.25)
+            _gate_budget = max(60.0, _task_budget * 0.25)
+            # Session wall-clock ceiling (ars-wall-01). _get_task_timeout is the
+            # SAME number the reaper uses to kill this task — and it already
+            # honours kanban_tasks.max_runtime_seconds ahead of every heuristic,
+            # so the loop-level and task-level ceilings derive from one source
+            # instead of racing. Held slightly under the kill timer so the loop
+            # stops itself and returns a real result with
+            # truncation_reason="max_wall_clock_seconds"; being killed from
+            # outside yields no result and no reason at all.
+            _wall_budget = max(60.0, _task_budget * 0.9)
             grader = make_pipeline_grader(
                 cwd=work_dir,
                 task_id=task_id,
@@ -4806,6 +4816,8 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 llm_function="code_generation",
                 max_iterations=12,
                 stop_event=stop_event,
+                # Budget for the WHOLE rubric run (all rounds + grading).
+                max_wall_clock_seconds=_wall_budget,
                 # Continuous Harness: key the recorded codegen decision on the
                 # kanban task id so record_outcome() (fired on the task's status
                 # transition) attaches to a real decision row.
@@ -4817,7 +4829,9 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 f"\n[rubric-loop done] satisfied={result.satisfied} "
                 f"grading_attempts={result.grading_attempts} "
                 f"loop_done={getattr(ar, 'done', None)} "
-                f"cost_usd={getattr(ar, 'total_cost_usd', 0)}\n"
+                f"cost_usd={getattr(ar, 'total_cost_usd', 0)} "
+                f"elapsed_s={getattr(ar, 'elapsed_seconds', 0):.0f}/{_wall_budget:.0f} "
+                f"truncation_reason={getattr(ar, 'truncation_reason', '')}\n"
             )
             if not result.satisfied:
                 # In-session revision exhausted without passing the gates. Signal
