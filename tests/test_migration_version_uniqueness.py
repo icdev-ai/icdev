@@ -17,6 +17,9 @@ These tests freeze the existing damage and stop the count growing.
 from __future__ import annotations
 
 import pathlib
+import shutil
+import subprocess
+import warnings
 
 import pytest
 
@@ -26,6 +29,8 @@ from tools.db.migration_versions import (
     find_duplicates,
     load_allowlist,
     shadowed_migrations,
+    stale_directories,
+    stale_directory_message,
 )
 
 
@@ -37,6 +42,10 @@ from tools.db.migration_versions import (
 def test_no_new_duplicate_migration_versions():
     """The one that matters. A new collision silently discards a migration."""
     result = check()
+    if result["stale_directories"]:
+        # Not a failure — they are excluded from the scan. Surfaced here because
+        # this is where someone chasing a migration problem is already looking.
+        warnings.warn(stale_directory_message(result["stale_directories"]), stacklevel=2)
     assert result["passed"], (
         "New duplicate migration version(s) detected: "
         f"{result['new_violations']}\n\n"
@@ -45,6 +54,8 @@ def test_no_new_duplicate_migration_versions():
         "the next unused version. Do NOT add to "
         "args/migration_duplicate_versions.yaml — that allowlist freezes "
         "historical damage, it is not a place to park new collisions."
+        + ("\n\n" + stale_directory_message(result["stale_directories"])
+           if result["stale_directories"] else "")
     )
 
 
@@ -140,6 +151,132 @@ def test_shadowed_reports_the_losers_not_the_winner(tmp_path: pathlib.Path):
 
 def test_discover_handles_missing_directory(tmp_path: pathlib.Path):
     assert discover_versions(tmp_path / "nope") == {}
+
+
+# --------------------------------------------------------------------------- #
+# Stale local directories are not migrations (mvs-guard-02)
+# --------------------------------------------------------------------------- #
+#
+# The scan reads the FILESYSTEM. When a migration is renamed — PR #1199 renamed
+# ten — the old directory survives in every pre-existing checkout holding
+# nothing but __pycache__. Git reports the tree clean, so nothing signals that
+# it is stale, and the scan counts the corpse as a second migration claiming
+# that version. Observed 2026-08-02: 027_pipeline_snapshots/ and
+# 028_odc_mitre_coverage/ produced two phantom duplicate-version failures
+# locally while main was green in CI, and the failure text pointed at the
+# migrations rather than at the working tree.
+
+
+def _git_migrations_repo(root: pathlib.Path) -> pathlib.Path:
+    """A real git repo with a migrations/ dir. Returns the migrations dir."""
+    if shutil.which("git") is None:
+        pytest.skip("git not available")
+    subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+    d = root / "migrations"
+    d.mkdir()
+    return d
+
+
+def _add(root: pathlib.Path, *paths: str) -> None:
+    subprocess.run(["git", "-C", str(root), "add", "--", *paths],
+                   check=True, capture_output=True)
+
+
+def _make_stale_pycache_dir(migrations_dir: pathlib.Path, name: str) -> pathlib.Path:
+    """Exactly what a renamed migration leaves behind: only __pycache__."""
+    d = migrations_dir / name / "__pycache__"
+    d.mkdir(parents=True)
+    (d / "up.cpython-311.pyc").write_bytes(b"\x00\x00\x00\x00")
+    return migrations_dir / name
+
+
+def test_pycache_only_directory_is_not_a_migration(tmp_path: pathlib.Path):
+    """The reported failure, reproduced: a rename leaves a phantom duplicate."""
+    d = _git_migrations_repo(tmp_path)
+    (d / "027_pipeline_snapshot").mkdir()
+    (d / "027_pipeline_snapshot" / "up.sql").write_text("-- x", encoding="utf-8")
+    _add(tmp_path, "migrations/027_pipeline_snapshot/up.sql")
+
+    # the pre-rename directory, surviving in this checkout only
+    _make_stale_pycache_dir(d, "027_pipeline_snapshots")
+
+    assert find_duplicates(d) == {}, "a stale local directory is not a collision"
+    assert discover_versions(d)["27"] == ["027_pipeline_snapshot"]
+    assert shadowed_migrations(d) == []
+
+
+def test_stale_directory_is_named_and_its_removal_explained(tmp_path: pathlib.Path):
+    d = _git_migrations_repo(tmp_path)
+    (d / "028_odc_mitre_coverage_v2").mkdir()
+    (d / "028_odc_mitre_coverage_v2" / "up.sql").write_text("-- x", encoding="utf-8")
+    _add(tmp_path, "migrations/028_odc_mitre_coverage_v2/up.sql")
+    _make_stale_pycache_dir(d, "028_odc_mitre_coverage")
+
+    rows = stale_directories(d)
+    assert [r["name"] for r in rows] == ["028_odc_mitre_coverage"]
+    assert rows[0]["version"] == "28"
+
+    msg = stale_directory_message(rows)
+    assert "028_odc_mitre_coverage" in msg
+    assert "stale" in msg.lower(), "must say the working tree is stale"
+    assert f"rm -rf {rows[0]['path']}" in msg, "must give the exact path to remove"
+    assert "git clean -xdf" not in msg.replace("NOT reach for `git clean -xdf`", ""), (
+        "must not hand out a blanket clean — it would also delete a migration "
+        "the author has not `git add`ed yet, which is listed here too"
+    )
+    assert "git add" in msg, "must say what to do if the directory is yours"
+    # The whole point: it must not read as a version collision. The original
+    # failure text blamed the migrations; this has to blame the working tree.
+    assert "do NOT collide" in msg
+    assert "duplicate" not in msg.lower()
+
+
+def test_check_reports_a_stale_directory_rather_than_failing(tmp_path: pathlib.Path):
+    """Green gate, plus the artifact surfaced — not a red gate blaming main."""
+    d = _git_migrations_repo(tmp_path)
+    (d / "027_real").mkdir()
+    (d / "027_real" / "up.sql").write_text("-- x", encoding="utf-8")
+    _add(tmp_path, "migrations/027_real/up.sql")
+    _make_stale_pycache_dir(d, "027_renamed_away")
+
+    empty_allowlist = tmp_path / "none.yaml"
+    empty_allowlist.write_text("grandfathered: {}\n", encoding="utf-8")
+
+    result = check(migrations_dir=d, allowlist_path=empty_allowlist)
+    assert result["passed"] is True
+    assert result["new_violations"] == {}
+    assert [r["name"] for r in result["stale_directories"]] == ["027_renamed_away"]
+
+
+def test_an_uncommitted_migration_file_still_collides(tmp_path: pathlib.Path):
+    """Only DIRECTORIES are exempted. A new .sql file is a real migration.
+
+    Otherwise the fix would blind the gate to exactly the case it exists for:
+    the collision you are about to commit.
+    """
+    d = _git_migrations_repo(tmp_path)
+    (d / "030_first.sql").write_text("-- x", encoding="utf-8")
+    _add(tmp_path, "migrations/030_first.sql")
+    (d / "030_second.sql").write_text("-- x", encoding="utf-8")  # not added
+
+    assert sorted(find_duplicates(d)["30"]) == ["030_first.sql", "030_second.sql"]
+    assert stale_directories(d) == []
+
+
+def test_scan_fails_open_when_git_cannot_answer(tmp_path: pathlib.Path):
+    """No repo, no git binary, no tracked files -> every entry counts.
+
+    Silently dropping migrations because git was unavailable would be a worse
+    failure than the phantom duplicate this guards against.
+    """
+    d = tmp_path / "migrations"  # deliberately NOT a git work tree
+    d.mkdir()
+    for name in ("031_alpha", "031_beta"):
+        (d / name).mkdir()
+        (d / name / "up.sql").write_text("-- x", encoding="utf-8")
+
+    assert stale_directories(d) == []
+    assert sorted(find_duplicates(d)["31"]) == ["031_alpha", "031_beta"]
 
 
 # --------------------------------------------------------------------------- #
