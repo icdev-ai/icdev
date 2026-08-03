@@ -59,10 +59,13 @@ on every SQLite install rather than failing loudly.
 """
 from __future__ import annotations
 
-# Keep in sync with tools/dashboard/auth.py::VALID_DASHBOARD_ROLES and with
-# migration 247, whose list this reproduces. Derived from the Python constant
-# rather than hardcoded per CLAUDE.md — the audit exists because the DB copy and
-# the Python copy drifted apart in the first place.
+# The same vocabulary as tools/dashboard/auth.py::VALID_DASHBOARD_ROLES, and the
+# list migration 247 reproduces. Written literally ON PURPOSE: a migration is a
+# frozen historical statement, so importing a live constant would let a future
+# edit rewrite what an already-applied migration claims to have done. CLAUDE.md's
+# "derive CHECK constraints from Python constants" rule is honoured by a test
+# instead — tests/db/test_shadowed_migration_audit.py compares these two SETS, so
+# they cannot drift apart the way the DB copy and the Python copy already did.
 _ROLES = (
     "admin", "pm", "developer", "isso", "co", "cor",
     "migration_engineer", "component_admin", "auditor", "ciso",
