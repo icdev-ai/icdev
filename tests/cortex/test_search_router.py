@@ -9,6 +9,7 @@ patched at the module attribute the router resolves at call time
 from __future__ import annotations
 
 import importlib
+import os
 import time
 
 import pytest
@@ -355,6 +356,43 @@ def test_cortex_config_loads_from_args():
     assert "timeouts" in search_cfg
     assert float(search_cfg["timeouts"]["default"]) > 0
     assert search_cfg["fan_out"]["backends"]
+
+
+def test_router_uses_the_canonical_config_loader():
+    """cxo-perf-01: search_service must NOT define its own loader.
+
+    The shadow copy skipped the CORTEX_CONFIG_DEFAULTS merge, ignored
+    $ICDEV_CORTEX_CONFIG, and cached forever — so cortex.search and
+    cortex.govern read the same YAML with different semantics than every
+    other caller.
+    """
+    from tools.cortex import config as cortex_config
+
+    assert search_service.load_cortex_config is cortex_config.load_cortex_config
+    assert not hasattr(search_service, "_find_repo_root")
+    assert not hasattr(search_service, "_config_cache")
+
+
+def test_router_config_merges_defaults_and_reloads_on_edit(tmp_path, monkeypatch):
+    """Defaults are merged in, and an edit lands without a process restart."""
+    path = tmp_path / "cortex_config.yaml"
+    path.write_text("search:\n  crag_threshold: 0.11\n", encoding="utf-8")
+    monkeypatch.setenv("ICDEV_CORTEX_CONFIG", str(path))
+
+    cfg = search_service.load_cortex_config()
+    assert cfg["search"]["crag_threshold"] == 0.11
+    # Keys absent from the file above come from CORTEX_CONFIG_DEFAULTS.
+    assert cfg["search"]["rrf_k"] == 60
+    assert cfg["search"]["strategy_weights"]["rag"] == 1.0
+
+    path.write_text("search:\n  crag_threshold: 0.42\n  rrf_k: 7\n", encoding="utf-8")
+    st = path.stat()
+    os.utime(path, (st.st_atime, st.st_mtime + 5))
+
+    # No refresh=True, no restart — the mtime-keyed cache invalidates itself.
+    reloaded = search_service.load_cortex_config()
+    assert reloaded["search"]["crag_threshold"] == 0.42
+    assert reloaded["search"]["rrf_k"] == 7
 
 
 def test_router_importable_via_canonical_namespace():

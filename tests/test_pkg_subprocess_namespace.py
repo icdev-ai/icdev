@@ -18,6 +18,12 @@ is exactly why four call sites shipped broken:
 
 The scan below is the guard for the class, not for those four: a new call site
 is a one-line mistake that no unit test would otherwise catch.
+
+It sweeps ``icdev/tools/`` as well, but only the ~41 modules the source sweep
+cannot reach — those with no twin in ``tools/``, and those whose twin is a
+back-compat shim so the real implementation lives only in the mirror. Note
+that ``strategos`` supplied three of the four call sites above and holds six
+such twinless modules today.
 """
 
 from __future__ import annotations
@@ -28,11 +34,43 @@ from pathlib import Path
 
 import pytest
 
+from icdev.tools.installer.sync_package_tree import _is_backcompat_shim
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCAN_ROOTS = ("tools", "apps")
 
 #: Directories whose content is not packaged, or is about the repo itself.
 _SKIP_PARTS = {"__pycache__", "node_modules", ".venv", "venv", "installer"}
+
+
+def _mirror_only_sources(repo_root: Path) -> list[Path]:
+    """Packaged modules that scanning ``tools/`` cannot reach.
+
+    ``icdev/tools/`` is normally a copy of ``tools/``, so sweeping the source
+    tree covers it. Two kinds of file break that assumption, and both ship in
+    the wheel:
+
+      * no twin in ``tools/`` at all (~36 modules: ``llm/agent_hitl.py``,
+        ``strategos/conflict_pipeline.py``, ``forecast/``, ``safety/``, …)
+      * the twin is a back-compat shim, so the real implementation lives only
+        here — including the 1,825-line ``llm/agent_loop.py``.
+
+    ``strategos`` is not a hypothetical neighbourhood for this: it held three
+    of the four ``python -m tools.…`` call sites this file was written for.
+    Scanning the whole mirror instead would double-report every ordinary file
+    and make a stale mirror fail branches that never touched it.
+    """
+    source, mirror = repo_root / "tools", repo_root / "icdev" / "tools"
+    if not mirror.is_dir():
+        return []
+    out: list[Path] = []
+    for path in mirror.rglob("*.py"):
+        if _SKIP_PARTS & set(path.parts):
+            continue
+        twin = source / path.relative_to(mirror)
+        if not twin.is_file() or _is_backcompat_shim(twin, path):
+            out.append(path)
+    return out
 
 
 def _packaged_sources(repo_root: Path) -> list[Path]:
@@ -45,6 +83,7 @@ def _packaged_sources(repo_root: Path) -> list[Path]:
             if _SKIP_PARTS & set(path.parts):
                 continue
             out.append(path)
+    out.extend(_mirror_only_sources(repo_root))
     return out
 
 
@@ -130,6 +169,45 @@ def test_the_scan_would_actually_catch_a_regression(tmp_path):
     )
     found = _offenders(tmp_path)
     assert any("bad.py" in f and "tools.db.init_icdev_db" in f for f in found), found
+
+
+def test_the_scan_reaches_modules_that_exist_only_in_the_mirror(tmp_path):
+    """Sweeping ``tools/`` alone left ~41 packaged modules unscanned.
+
+    A module with no twin in ``tools/`` is never reached by the source sweep,
+    yet it is exactly what a wheel install runs. Plant one and require a hit.
+    """
+    (tmp_path / "tools").mkdir()
+    mirror = tmp_path / "icdev" / "tools" / "strategos"
+    mirror.mkdir(parents=True)
+    (mirror / "research_bridge.py").write_text(
+        "import subprocess, sys\n"
+        "subprocess.run([sys.executable, '-m', 'tools.research.vertical_loader'])\n",
+        encoding="utf-8",
+    )
+    found = _offenders(tmp_path)
+    assert any(
+        "research_bridge.py" in f and "tools.research.vertical_loader" in f
+        for f in found
+    ), found
+
+
+def test_a_mirrored_twin_is_not_double_reported(tmp_path):
+    """The mirror copy of an ordinary module must not duplicate its finding.
+
+    One defect, one line. Reporting `tools/x.py` and `icdev/tools/x.py`
+    separately would also mean a stale mirror keeps failing after the source
+    is fixed.
+    """
+    (tmp_path / "tools" / "sub").mkdir(parents=True)
+    (tmp_path / "icdev" / "tools" / "sub").mkdir(parents=True)
+    body = (
+        "import subprocess, sys\n"
+        "subprocess.run([sys.executable, '-m', 'tools.db.init_icdev_db'])\n"
+    )
+    (tmp_path / "tools" / "sub" / "bad.py").write_text(body, encoding="utf-8")
+    (tmp_path / "icdev" / "tools" / "sub" / "bad.py").write_text(body, encoding="utf-8")
+    assert len(_offenders(tmp_path)) == 1, _offenders(tmp_path)
 
 
 def test_the_scan_accepts_the_runnable_module_form(tmp_path):

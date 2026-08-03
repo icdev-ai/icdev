@@ -176,6 +176,15 @@ def _governed_facade(
     context the output is grounded against. Every facade accepts ``ctx``,
     which is threaded into the pipeline for RLS/redaction policy and audit.
 
+    ``retrieval`` is the facade's DEFAULT posture, not a fixed property of it.
+    A facade whose groundedness varies per call (``complete``: a chat turn with
+    RAG hits is retrieval-backed, the same turn without them is generative)
+    declares ``retrieval=False`` and escalates per call by supplying
+    ``sources_param``. Escalation is what makes the two grounding gates grade a
+    turn that DID inject evidence; without sources the call still skips them,
+    because scoring an answer against no context manufactures a defect every
+    time (cxo-adopt-02).
+
     ``attach=True`` writes the report onto the returned CortexResult
     (complete/classify/extract/agent). ``attach=False`` leaves the native
     result untouched and stashes the report via _stash_outer_report
@@ -196,6 +205,11 @@ def _governed_facade(
             ctx = _coerce_context(bound.arguments.get("ctx"))
             text = str(bound.arguments.get(text_param) or "")
             sources = bound.arguments.get(sources_param) if sources_param else None
+            # Per-call escalation (see the decorator docstring). Only a facade
+            # that declared sources_param can reach this, and only on the calls
+            # that actually passed evidence — every existing retrieval=False
+            # facade without sources_param is byte-for-byte unaffected.
+            call_retrieval = retrieval or bool(sources)
 
             # Response cache (opt-in). Serve a prior GOVERNED result for an
             # identical request. The key folds tenant/classification/domain/
@@ -226,7 +240,7 @@ def _governed_facade(
                 ctx,
                 prompt=text,
                 context_sources=sources,
-                retrieval=retrieval,
+                retrieval=call_retrieval,
                 attach=attach,
             )
             if return_report:
@@ -509,7 +523,12 @@ def _validate_against_schema(payload: Any, schema: Optional[Dict]) -> tuple:
 # ---------------------------------------------------------------------------
 # Facade functions
 # ---------------------------------------------------------------------------
-@_governed_facade("cortex.complete", text_param="prompt", retrieval=False)
+@_governed_facade(
+    "cortex.complete",
+    text_param="prompt",
+    retrieval=False,
+    sources_param="context_sources",
+)
 def complete(
     prompt: str,
     function: str = CORTEX_COMPLETE_FUNCTION,
@@ -520,6 +539,7 @@ def complete(
     temperature: Optional[float] = None,
     history: Optional[List[dict]] = None,
     model: Optional[str] = None,
+    context_sources: Any = None,
 ) -> CortexResult:
     """Free-form completion via the config-routed LLM chain.
 
@@ -533,6 +553,15 @@ def complete(
             multi-turn callers (chat). Prepended before ``prompt``; already
             governed in their own turns, so they pass through as context.
         model: Optional model pin (chat's per-session override).
+        context_sources: Evidence the caller ALREADY injected into
+            ``system_prompt``/``history`` (RAG hits, KG block, ...), declared so
+            the citation and content grounding gates can grade this answer
+            against it. Consumed by the governance decorator — this function
+            body never reads it, and passing it adds nothing to the request.
+            Default None keeps every existing caller generative: the two
+            grounding gates record ``skip``, exactly as before. Accepts what
+            ``governance._allowed_source_ids`` accepts (an int count, or an
+            iterable of id strings / dicts / CortexSearchResult).
 
     Returns:
         CortexResult with provider/model/cost/latency_ms populated from the
@@ -584,6 +613,14 @@ def reason(
     methods take no ``exclude_model_ids``, so per-call air-gap relies on the
     global ICDEV_AIRGAP config; ``context.air_gap`` is still recorded for audit.
     Router errors propagate. ``result.metadata['reason_mode']`` records the mode.
+
+    ``result.data`` carries the chain telemetry the orchestration methods hang
+    on the response and ``_result_from_response`` drops: ``chain_rounds`` (one
+    entry per step — ``step``/``model_id``/tokens/cost/duration, no model prose)
+    and ``stop_reason`` (``completed``, ``timeout``, ``all_advisors_failed``, …).
+    Callers that need the per-step view read them there — e.g. the
+    ``council_query`` MCP tool derives its ``advisor_rounds`` from
+    ``chain_rounds``.
     """
     method_name = _REASON_MODES.get((mode or "cot").strip().lower())
     if method_name is None:
@@ -605,6 +642,9 @@ def reason(
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     result = _result_from_response(response, elapsed_ms=elapsed_ms)
     result.metadata["reason_mode"] = (mode or "cot").strip().lower()
+    rounds = getattr(response, "chain_rounds", None)
+    result.data["chain_rounds"] = list(rounds) if isinstance(rounds, list) else []
+    result.data["stop_reason"] = getattr(response, "stop_reason", "") or ""
     return result
 
 

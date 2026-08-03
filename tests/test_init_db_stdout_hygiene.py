@@ -36,12 +36,18 @@ EXTRA_MODULES = ["a2a/agent_registry.py"]
 
 
 def _banner_modules(tree: str) -> list[str]:
-    """Every ``<canvas>/db/init_db.py`` in *tree*, discovered not hardcoded.
+    """Every ``init_db.py`` under a top-level module of *tree*, not hardcoded.
 
     A hardcoded list rots: gpx-hyg-01 originally fixed 15 modules by name, and
     four later canvases (aiml, infra, noc, pmc) reintroduced the exact same
     stdout banners without tripping this guard. Globbing means a new canvas is
     covered the moment it lands.
+
+    Both layouts are globbed. Canvases put the module at ``<name>/db/
+    init_db.py``, but ``govcon``, ``kanban`` and ``studio`` put it directly at
+    ``<name>/init_db.py`` — a ``*/db/*`` glob cannot see those, which is how
+    ``tools/studio/init_db.py`` kept printing to stdout from library scope
+    while this guard stayed green.
 
     Each tree is globbed separately on purpose. Whether a module is *present*
     in both trees is ``check_icdev_mirror_parity``'s job; duplicating it here
@@ -50,9 +56,13 @@ def _banner_modules(tree: str) -> list[str]:
     """
     root = REPO_ROOT / tree
     found = sorted(
-        p.relative_to(root).as_posix() for p in root.glob("*/db/init_db.py")
+        {
+            p.relative_to(root).as_posix()
+            for pattern in ("*/db/init_db.py", "*/init_db.py")
+            for p in root.glob(pattern)
+        }
     )
-    assert found, f"no {tree}/*/db/init_db.py found — REPO_ROOT is wrong"
+    assert found, f"no {tree}/**/init_db.py found — REPO_ROOT is wrong"
     return found + [m for m in EXTRA_MODULES if (root / m).exists()]
 
 

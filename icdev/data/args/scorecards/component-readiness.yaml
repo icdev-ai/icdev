@@ -1,0 +1,190 @@
+# CUI // SP-CTI
+# Component Readiness — scorecard-as-code over ICDEV's own component registry.
+#
+# Consumed by tools/idp/scorecard.py. Everything here is configuration:
+# adding a rule, a level, or a whole new scorecard file needs NO Python change.
+#
+# Rule language is IQE (tools/iqe) — the same language the dashboard query
+# widget and `python -m tools.iqe.run` speak. Any expression below can be
+# pasted straight into either one:
+#
+#   python -m tools.iqe.run --query-string \
+#     'foreach c in idp.components where c.has_e2e_spec == true select c.key'
+#
+# The entities a rule's query RETURNS are the entities that PASS it.
+#
+# Scoring vs. the ladder:
+#   * every applicable rule contributes its `weight` to the component's score
+#   * only rules that declare a `level` gate ladder progression
+#   * un-levelled rules still score but can never hold a component back —
+#     that is what keeps this a ladder rather than one big pass/fail
+#
+# Facts come from tools/iqe/adapters/idp.py (collection `idp.components`).
+# Every field used below is measurable today.
+
+key: component-readiness
+name: Component Readiness
+description: >-
+  Grades every component in args/component_registry.yaml on whether it is
+  wired, queryable, proven by a test, and owned. Bronze is "it exists and is
+  safe"; Platinum is "someone is accountable for it and it is passing its
+  probes".
+
+collection: idp.components
+entity_key: key
+
+evaluation:
+  # How fresh an evaluation is considered. Score history (idp-score-03) uses
+  # this to decide when a re-run is due.
+  window: 24h
+
+ladder:
+  levels:
+  - name: Bronze
+    rank: 1
+    color: '#cd7f32'
+    description: Registered, routable, and free of RLS bypasses.
+  - name: Silver
+    rank: 2
+    color: '#c0c0c0'
+    description: Queryable — carries an IQE adapter and seed queries.
+  - name: Gold
+    rank: 3
+    color: '#ffd700'
+    description: Proven — an E2E spec exists and the 8-point gate passes.
+  - name: Platinum
+    rank: 4
+    color: '#e5e4e2'
+    description: Owned and healthy — a named owner and no failing probes.
+
+rules:
+
+# ── Bronze ────────────────────────────────────────────────────────────────
+- identifier: blueprint-present
+  title: Declared module resolves to a real blueprint file
+  level: Bronze
+  weight: 15
+  expression: foreach c in idp.components where c.has_blueprint == true select c.key
+  # Features and core extensions may legitimately declare no module at all;
+  # this rule only applies to components that claim one.
+  filter: foreach c in idp.components where c.module != "" select c.key
+  failureMessage: >-
+    The registry names a module for this component but no blueprint file was
+    found at that path. Fix `module:` in args/component_registry.yaml or add
+    the blueprint.
+
+- identifier: rls-clean
+  title: No canvas RLS-bypass coherence violation
+  level: Bronze
+  weight: 15
+  expression: foreach c in idp.components where c.rls_clean == true select c.key
+  failureMessage: >-
+    Canvas DB access bypasses row-level security. Use get_canvas_connection()
+    in this canvas's db/init_db.py — see tools/ai_augmentation/db/init_db.py.
+
+# ── Silver ────────────────────────────────────────────────────────────────
+- identifier: iqe-adapter
+  title: Has an IQE adapter so its data is queryable
+  level: Silver
+  weight: 10
+  expression: foreach c in idp.components where c.has_iqe_adapter == true select c.key
+  failureMessage: >-
+    No tools/iqe/adapters/<key>.py. Without an adapter this component's data is
+    invisible to the query widget, to /ask-icdev, and to scorecards.
+
+- identifier: iqe-seed-queries
+  title: Ships at least one seed query
+  level: Silver
+  weight: 5
+  expression: foreach c in idp.components where c.has_seed_queries == true select c.key
+  failureMessage: >-
+    No .iqe files under context/iqe/queries/<key>/. The 8-point gate asks for
+    at least three.
+
+# ── Gold ──────────────────────────────────────────────────────────────────
+- identifier: e2e-spec
+  title: Has a Playwright E2E spec
+  level: Gold
+  weight: 20
+  expression: foreach c in idp.components where c.has_e2e_spec == true select c.key
+  failureMessage: >-
+    No tests/e2e/<key>*.spec.ts. This is the single largest readiness gap in
+    the platform — a component with no E2E spec has never been proven to render.
+
+- identifier: completeness-gate
+  title: Passes the 8-point canvas completeness gate
+  level: Gold
+  weight: 20
+  expression: foreach c in idp.components where c.completeness_passed == true select c.key
+  # Only canvases are in scope for the 8-point gate; child apps, features and
+  # core extensions are not graded on it and must not be held back by it.
+  filter: foreach c in idp.components where c.completeness_declared == true select c.key
+  failureMessage: >-
+    Fails the 8-point dashboard-page gate (template, icdev mirror, route,
+    backing module, constants, migration, nav link, IQE integration). Run
+    validate_canvas_completeness for the per-point breakdown.
+
+# ── Platinum ──────────────────────────────────────────────────────────────
+- identifier: has-owner
+  title: Has a named owner or owning team
+  level: Platinum
+  weight: 25
+  expression: foreach c in idp.components where c.has_owner == true select c.key
+  failureMessage: >-
+    No `owner:` in args/component_registry.yaml. The field was added by
+    idp-cat-01 and is deliberately unpopulated — the repo has no CODEOWNERS or
+    team roster to backfill from, and a wrong owner routes an incident to nobody
+    while reading as answered. Placeholders (`TBD`, `unassigned`, …) are scrubbed
+    to unowned, so this rule cannot be satisfied by a stub.
+
+- identifier: probes-healthy
+  title: No failing awareness health probes on its routes
+  level: Platinum
+  weight: 15
+  expression: foreach c in idp.components where c.failing_probes == 0 select c.key
+  # Only grade components whose routes have actually been probed — never
+  # measured must not read as healthy.
+  filter: foreach c in idp.components where c.health_probed == true select c.key
+  failureMessage: >-
+    One or more routes under this component's url_prefix failed their most
+    recent HTTP probe. See awareness_component_health / the drift detector.
+
+# ── Scored but not gating ─────────────────────────────────────────────────
+# These carry no `level`, so they move the score without blocking the ladder.
+# This is the distinction that makes the ladder usable: aspirational checks can
+# ship immediately without stalling every component behind them.
+
+- identifier: nav-reachable
+  title: Declares navigation metadata
+  weight: 5
+  expression: foreach c in idp.components where c.has_nav == true select c.key
+  failureMessage: >-
+    No `nav:` block, so the component is not reachable from the registry-driven
+    menu. Not every component needs a menu entry, so this scores but does not gate.
+
+- identifier: on-call-named
+  title: Has an on-call contact
+  weight: 5
+  expression: foreach c in idp.components where c.on_call != "" select c.key
+  failureMessage: >-
+    No `on_call:` contact. Aspirational — scores but does not gate, so it can
+    be adopted incrementally.
+
+- identifier: owner-reachable
+  title: Owner has a contact address
+  weight: 5
+  expression: foreach c in idp.components where c.has_owner_contact == true select c.key
+  failureMessage: >-
+    No `owner_contact:`. An owner nobody can reach is only marginally better
+    than no owner. Scores but does not gate.
+
+# Exemptions waive one rule for one component. `expires` is optional; an
+# expired exemption stops applying automatically. Approval + audit trail for
+# these lands in idp-score-04.
+#
+#   exemptions:
+#   - identifier: e2e-spec
+#     entity: some-component
+#     reason: Headless component with no rendered page.
+#     expires: '2026-12-31'
+exemptions: []

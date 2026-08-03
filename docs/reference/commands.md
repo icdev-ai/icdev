@@ -807,6 +807,16 @@ python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis 
 # Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
 python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
 
+# Kanban — clear a stale done-gate block without re-dispatching (kpr-rvfy-02)
+python tools/kanban/cli.py --reverify <task-id> --dry-run     # Compute the verdict, write nothing
+python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh verification row
+# Exit 0=passed, 1=failed, 2=no such task. pr_watcher's enforced done-gate reads only the
+# LATEST kanban_verifications row and nothing writes one except a dispatch, so a task that
+# verified badly once cannot auto-merge until it is re-dispatched — which opens a SECOND PR.
+# This recomputes the verdict from the branch's real state (remote refs only, so it does not
+# depend on the dispatching process still being alive) and appends it. It does not weaken the
+# gate: a branch with no work still fails.
+
 # Kanban task_factory — loop_type and adversarial fields
 # Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
 python -c "
@@ -3976,3 +3986,103 @@ page's own parser:
 The middle one is the state that had `/updates` advertising 1.2.37 while the
 package shipped 1.2.39. The last exists because notes that read as written but
 say nothing are worse than none.
+
+---
+
+## IDP Scorecard-as-Code (idp-score-02)
+
+Grades every component in `args/component_registry.yaml` against a ladder of
+ranked levels. Rules are **IQE queries**, not a bespoke DSL — see
+[tools/manifest/idp-scorecards.md](../../tools/manifest/idp-scorecards.md).
+
+```bash
+# List the shipped scorecards, their ladders, and how many rules gate them
+python tools/idp/scorecard.py --list
+python tools/idp/scorecard.py --list --json
+
+# Evaluate every scorecard in args/scorecards/ (human table)
+python tools/idp/scorecard.py
+
+# One scorecard, machine-readable — per-entity level, score, and rule outcomes
+python tools/idp/scorecard.py --scorecard component-readiness --json
+
+# Why is one component stuck at its level?
+python tools/idp/scorecard.py --scorecard component-readiness --component ndc
+
+# Evaluate scorecards from somewhere else (a tenant overlay, a test fixture)
+python tools/idp/scorecard.py --dir /path/to/scorecards --json
+```
+
+### Portal surface (idp-ui-02)
+
+The same catalog and scorecards rendered as a dashboard page, mounted at the
+`url_prefix` declared in `args/component_registry.yaml`. It grades itself: the
+portal appears in its own catalog and passes the 8-point completeness gate it
+surfaces for every other canvas.
+
+| Route | Purpose |
+|-------|---------|
+| `/idp/` | Ladder, rule coverage, catalog, and the portal's own grade |
+| `/idp/catalog` | Same page, catalog section |
+| `/idp/scorecards` | Same page, scorecard section |
+| `/idp/component/<key>` | One component: facts, per-rule outcomes, 8-point breakdown |
+| `GET /idp/api/catalog` | JSON catalog (`?scorecard=`, `?refresh=1`) |
+| `GET /idp/api/scorecard` | JSON scorecard report |
+| `GET /idp/api/component/<key>` | JSON component detail |
+| `POST /idp/api/iqe-query` | IQE natural-language query over `idp.components` |
+
+The view models are a library, not a CLI — import them:
+
+```python
+from tools.idp.portal import portal_overview, component_detail, self_check
+
+portal_overview()               # everything /idp renders
+component_detail("ndc")         # one component's facts, rules and 8 points
+self_check()["completeness"]    # the portal's own 8-point breakdown
+```
+
+Any rule expression is a standalone IQE query, so it can be run by hand against
+the same collection the scorecard grades:
+
+```bash
+python -m tools.iqe.run --query-string \
+  'foreach c in idp.components where c.has_e2e_spec == true select c.key'
+```
+
+Adding a rule or a level is a YAML edit under `args/scorecards/` — no Python
+change. `python tools/idp/scorecard.py --list` reflects it immediately.
+
+### Score history (idp-score-03)
+
+`scorecard.py` computes a standing and throws it away. `score_history.py` keeps
+it, so "is this component getting better or worse" becomes answerable. One row
+per component per evaluation in the append-only `idp_scorecard_history`, each
+carrying the attained ladder level — a promotion or demotion is a comparison of
+two adjacent rows, not a re-evaluation of historical rule sets.
+
+```bash
+# Record a point for every scorecard (always writes)
+python tools/idp/score_history.py --record
+
+# Record only if the scorecard's evaluation.window has rolled over —
+# how the scheduled reflex calls it, so a 3h cadence feeds a 24h window
+# without writing eight identical rows a day
+python tools/idp/score_history.py --record --if-due
+
+# One scorecard only
+python tools/idp/score_history.py --record --scorecard component-readiness
+
+# Read one component's series back (oldest-first, with delta and direction)
+python tools/idp/score_history.py --trend ndc
+python tools/idp/score_history.py --trend ndc --json --limit 30
+
+# Every ladder promotion/demotion across the estate
+python tools/idp/score_history.py --level-changes
+python tools/idp/score_history.py --level-changes --since 2026-08-01 --json
+```
+
+An explicit `--record` always writes, so re-scoring right after a fix shows the
+improvement immediately instead of waiting out the window. The scheduled writer
+is the Genesis reflex `idp_score_recorder` (3h, GREEN tier — see
+`args/genesis_config.yaml`); the window in `args/scorecards/<key>.yaml` decides
+whether each cycle actually records, so changing granularity is a YAML edit.

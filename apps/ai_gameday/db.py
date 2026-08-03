@@ -189,22 +189,33 @@ _ADD_COLUMNS = [
 _migrated = False
 
 
+def _split_statements(script: str) -> list[str]:
+    """Split a DDL script on `;`, ignoring semicolons inside `--` comments.
+
+    A bare `split(";")` breaks as soon as a comment contains a semicolon: the
+    text after it loses its `--` marker and is handed to the driver as SQL. The
+    comment `-- Migration 325 is the shared fix; these blocks ...` did exactly
+    that, so `CREATE TABLE ttx_registrations` (and everything after it) raised
+    `near "these": syntax error` and was never created.
+    """
+    body = "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("--")
+    )
+    return [stmt.strip() for stmt in body.split(";") if stmt.strip()]
+
+
 def migrate() -> None:
     global _migrated
     if _migrated:
         return
     conn = get_connection()
-    for stmt in _DDL.strip().split(";"):
-        stmt = stmt.strip()
-        if stmt:
+    for stmt in _split_statements(_DDL):
+        conn.execute(stmt)
+    for stmt in _split_statements(_INDEXES):
+        try:
             conn.execute(stmt)
-    for stmt in _INDEXES.strip().split(";"):
-        stmt = stmt.strip()
-        if stmt:
-            try:
-                conn.execute(stmt)
-            except Exception:
-                pass
+        except Exception:
+            pass
     conn.commit()
 
     # Guarded column adds for tables that predate the column. CREATE TABLE

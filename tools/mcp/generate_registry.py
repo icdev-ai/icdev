@@ -728,7 +728,12 @@ GAP_HANDLER_TOOLS = {
         "category": "misc",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_nlq_query",
-        "description": "Run natural language compliance query (NLQ to SQL).",
+        "description": (
+            "Run a natural language compliance query (NLQ to SQL) via the governed Cortex "
+            "Analyst (cortex.ask mode='nlq') — SELECT-only safety screen + cortex_audit row "
+            "per call. project_id is accepted and IGNORED (no analyst seam); it is echoed "
+            "back in ignored_params."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"query": {"type": "string"}, "project_id": {"type": "string"}},

@@ -18,11 +18,16 @@ import json
 import os
 import subprocess
 import sys
-from tools.db.storage import get_connection, list_tables
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
+
+# Classification marker stamped on every Cortex-backed handler response, matching
+# tools/mcp/cortex_server.py so the cot_invoke / cod_invoke / nlq_query adapters
+# are indistinguishable from the native cortex_* tools downstream.
+CORTEX_CLASSIFICATION = "CUI // SP-CTI"
 
 logger = get_logger("mcp.gap_handlers")
 
@@ -773,21 +778,55 @@ def handle_worktree_manage(args: dict) -> dict:
 
 
 def handle_nlq_query(args: dict) -> dict:
-    """Execute natural language compliance query."""
+    """Execute a natural-language query through the governed Cortex Analyst.
+
+    Retargeted at ``cortex.ask(mode='nlq')`` (cxo-adopt-04). The previous body
+    never invoked an LLM — it listed tables and told the caller to use the
+    dashboard — so the tool advertised NL->SQL and delivered none. The facade
+    runs the real NL->SQL path behind the shared injection / SELECT-only safety
+    screen and writes the append-only ``cortex_audit`` row.
+
+    ``project_id`` stays in the input_schema (public contract) but has no seam
+    on the analyst path; it is accepted and ignored, and echoed back in
+    ``ignored_params``.
+    """
+    query = args.get("query", "")
+    if not query:
+        return {"error": "query is required"}
+
+    ignored = ["project_id"] if args.get("project_id") is not None else []
+
     try:
-        conn = get_connection()
-        # Simple passthrough — NLQ requires LLM which is not invoked here.
-        # Return available tables for the user to formulate queries.
-        # Backend-aware table listing (pgrt-sweep-06) — no sqlite_master/translation reliance.
-        tables = list_tables(conn)
-        conn.close()
+        from tools.cortex import ask
+        from tools.cortex.analyst import CortexAnalystError, CortexQueryBlocked
+
+        try:
+            result = ask(query, mode="nlq")
+        except CortexQueryBlocked as exc:
+            governance = getattr(exc, "governance", None)
+            return {
+                "classification": CORTEX_CLASSIFICATION,
+                "status": "blocked",
+                "error": str(exc),
+                "blocked": True,
+                "governance": governance.to_dict() if hasattr(governance, "to_dict") else {},
+                "ignored_params": ignored,
+            }
+        except CortexAnalystError as exc:
+            return {"status": "error", "error": str(exc), "ignored_params": ignored}
+
         return {
-            "status": "info",
-            "message": "NLQ queries require the dashboard (/query page) or direct SQL. Available tables listed.",
-            "tables": tables,
-            "table_count": len(tables),
+            "classification": CORTEX_CLASSIFICATION,
+            "status": "ok",
+            "query": query,
+            "ignored_params": ignored,
+            **result.to_dict(),
         }
+    except ImportError as exc:
+        logger.warning("handle_nlq_query: Cortex analyst unavailable: %s", exc)
+        return {"error": f"Cortex analyst subsystem not available: {exc}"}
     except Exception as exc:
+        logger.warning("handle_nlq_query: %s", exc)
         return {"error": str(exc)}
 
 
@@ -1710,38 +1749,76 @@ def handle_system_graph_stats(args: dict) -> dict:
 # Category: chain_orchestration (CoT / CoD)
 # ===========================================================================
 
+# Params the pre-Cortex cot_invoke / cod_invoke schemas advertised that the
+# governed facade has no seam for. They stay in the input_schema (MCP tool
+# names and schemas are a public contract) but are accepted and ignored: the
+# handlers they were declared for never existed, so no caller can have been
+# depending on them. Echoed back in ``ignored_params`` so the no-op is visible
+# in the response rather than silent.
+_REASON_IGNORED_PARAMS = (
+    "max_rounds",
+    "self_consistency_runs",
+    "num_debaters",
+    "debate_rounds",
+)
+
+
+def _cortex_reason_adapter(args: dict, mode: str, tool: str) -> dict:
+    """Shared cot_invoke / cod_invoke body — one governed ``cortex.reason`` call.
+
+    ``mode`` is the Cortex reasoning strategy ("cot" | "debate"). Routing the
+    call through the facade (rather than ChainOrchestrator directly) is what
+    puts the invocation through the TRUST chain — injection screen, input /
+    output redaction, provenance — and writes the append-only ``cortex_audit``
+    row for it.
+    """
+    prompt = args.get("prompt", "")
+    if not prompt:
+        return {"error": "prompt is required"}
+
+    ignored = [p for p in _REASON_IGNORED_PARAMS if args.get(p) is not None]
+
+    try:
+        from tools.cortex import reason
+        from tools.cortex.governance import GovernanceBlockedError
+
+        try:
+            result = reason(
+                prompt,
+                mode=mode,
+                function=args.get("function") or "default",
+                system_prompt=args.get("system_prompt") or "",
+            )
+        except GovernanceBlockedError as exc:
+            report = getattr(exc, "report", None)
+            return {
+                "classification": CORTEX_CLASSIFICATION,
+                "error": str(exc),
+                "blocked": True,
+                "blocked_gate": getattr(exc, "gate", ""),
+                "governance": report.to_dict() if hasattr(report, "to_dict") else {},
+                "ignored_params": ignored,
+            }
+
+        return {
+            "classification": CORTEX_CLASSIFICATION,
+            # ``content`` mirrors the ChainOrchestrator field name the schema
+            # was written against; ``text`` is the CortexResult field.
+            "content": result.text,
+            "ignored_params": ignored,
+            **result.to_dict(),
+        }
+    except ImportError as exc:
+        logger.warning("%s: Cortex reason facade unavailable: %s", tool, exc)
+        return {"error": f"Cortex reason subsystem not available: {exc}"}
+    except Exception as exc:
+        logger.warning("%s: %s", tool, exc)
+        return {"error": str(exc)}
+
 
 def handle_cot_invoke(args: dict) -> dict:
-    """Invoke Chain of Thought via ChainOrchestrator."""
-    try:
-        from tools.llm.chain_orchestrator import ChainOrchestrator
-        from tools.llm.provider import LLMRequest
-
-        orchestrator = ChainOrchestrator()
-        request = LLMRequest(
-            messages=[{"role": "user", "content": args.get("prompt", "")}],
-            system_prompt=args.get("system_prompt", ""),
-        )
-        result = orchestrator.invoke_chain_of_thought(
-            args.get("function", "default"),
-            request,
-        )
-        return {
-            "content": result.content,
-            "chain_mode": result.chain_mode,
-            "models_used": result.models_used,
-            "total_cost_usd": result.total_cost_usd,
-            "total_input_tokens": result.total_input_tokens,
-            "total_output_tokens": result.total_output_tokens,
-            "total_duration_ms": result.total_duration_ms,
-            "stop_reason": result.stop_reason,
-            "trace_id": result.trace_id,
-            "confidence": result.confidence,
-            "rounds": result.rounds,
-        }
-    except Exception as exc:
-        logger.warning("handle_cot_invoke: %s", exc)
-        return {"error": str(exc)}
+    """Chain of Thought reasoning via the governed Cortex facade (mode='cot')."""
+    return _cortex_reason_adapter(args, "cot", "handle_cot_invoke")
 
 
 def handle_reasoned_codegen_advise(args: dict) -> dict:
@@ -2145,36 +2222,8 @@ def handle_ace_abort(args: dict) -> dict:
 
 
 def handle_cod_invoke(args: dict) -> dict:
-    """Invoke Chain of Debate via ChainOrchestrator."""
-    try:
-        from tools.llm.chain_orchestrator import ChainOrchestrator
-        from tools.llm.provider import LLMRequest
-
-        orchestrator = ChainOrchestrator()
-        request = LLMRequest(
-            messages=[{"role": "user", "content": args.get("prompt", "")}],
-            system_prompt=args.get("system_prompt", ""),
-        )
-        result = orchestrator.invoke_chain_of_debate(
-            args.get("function", "default"),
-            request,
-        )
-        return {
-            "content": result.content,
-            "chain_mode": result.chain_mode,
-            "models_used": result.models_used,
-            "total_cost_usd": result.total_cost_usd,
-            "total_input_tokens": result.total_input_tokens,
-            "total_output_tokens": result.total_output_tokens,
-            "total_duration_ms": result.total_duration_ms,
-            "stop_reason": result.stop_reason,
-            "trace_id": result.trace_id,
-            "confidence": result.confidence,
-            "rounds": result.rounds,
-        }
-    except Exception as exc:
-        logger.warning("handle_cod_invoke: %s", exc)
-        return {"error": str(exc)}
+    """Chain of Debate reasoning via the governed Cortex facade (mode='debate')."""
+    return _cortex_reason_adapter(args, "debate", "handle_cod_invoke")
 
 
 def handle_divergence_invoke(args: dict) -> dict:
@@ -2727,29 +2776,38 @@ def handle_council_query(args: dict) -> dict:
     peer-review each other, and a chairman synthesizes a structured verdict.
     See tools.llm.chain_orchestrator.ChainOrchestrator.invoke_council. Primary
     caller is cross-repo (e.g. idea_lab), pressure-testing a validated idea
-    before committing to it."""
+    before committing to it.
+
+    Routed through the governed ``cortex.reason`` facade (mode="council") rather
+    than calling ``router.invoke_council`` directly, so the call carries the full
+    TRUST chain — input injection screen + input redaction, output redaction,
+    provenance record, and an append-only cortex_audit row — instead of being an
+    ungoverned LLM egress. ``reason`` resolves "council" to the same
+    ``invoke_council`` orchestration and the same ``idealab_council_query``
+    routing function, and the response shape here is unchanged for the live
+    cross-repo callers: the chairman verdict is ``result.text``, and the chain
+    telemetry is on ``result.data``."""
     try:
         question = (args.get("question") or "").strip()
         context = args.get("context") or ""
         if not question:
             return {"error": "question is required"}
 
-        from tools.llm import get_router
-        from tools.llm.provider import LLMRequest
+        from tools.cortex import api as cortex_api
 
-        router = get_router()
         user_content = f"Context:\n{context}\n\nQuestion:\n{question}" if context else question
-        response = router.invoke_council(
-            "idealab_council_query",
-            LLMRequest(messages=[{"role": "user", "content": user_content}]),
+        result = cortex_api.reason(
+            user_content,
+            mode="council",
+            function="idealab_council_query",
         )
         return {
-            "verdict": (response.content or "").strip(),
+            "verdict": (result.text or "").strip(),
             "advisor_rounds": [
-                r for r in (getattr(response, "chain_rounds", None) or [])
+                r for r in (result.data.get("chain_rounds") or [])
                 if str(r.get("step", "")).startswith("advisor:")
             ],
-            "stop_reason": response.stop_reason,
+            "stop_reason": result.data.get("stop_reason"),
         }
     except Exception as exc:
         logger.warning("handle_council_query: %s", exc)

@@ -451,7 +451,6 @@ def _audit(conn, action: str, details: str = "") -> None:
             "(created_at, event_type, actor, action, details, session_id) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 datetime.now(timezone.utc).isoformat(),
                 "govcon.clause_risk",
                 "clause_risk_engine",
