@@ -163,6 +163,7 @@ REFLEX_NAMES = [
     "sag_skill_curator",  # sag-skl-01: archives (never deletes) idle unpinned auto-skills; pin support; HITL promotion stays separate
     "review_loop",
     "memory_maintenance_reflex",  # mem-embed: scheduled memory upkeep — flush buffer + backfill embeddings (bounded, non-destructive); closes the 0%-embedding scheduling gap oss2-meas-01 measured
+    "idp_delivery_events",  # idp-intel-01: 6h DORA delivery-event sync — /api/sre/dora reads a rolling 30d window, so a one-off backfill decays back to metrics_assessed: 0
 ]
 
 # Backward-compat aliases for module-level access used by other code
