@@ -19,6 +19,7 @@ pins it.
 | Scorecard evaluator | tools/idp/scorecard.py | Loads `args/scorecards/*.yaml`, runs one IQE query per rule (plus one per `filter`) over the declared collection, and assigns every entity a weighted score, a per-dimension breakdown, an A–F letter grade and a ladder level. An entity with no applicable rule scores `None` (unassessed), never `0`. Public API: `load_scorecards(dir)`, `load_scorecard(key, dir)`, `parse_scorecard(mapping)`, `evaluate(scorecard, conn) -> report dict`, `evaluate_all(dir, conn)`, `Scorecard.letter_grade(score)`, `Scorecard.dimension_order()`. Raises `ScorecardError` on a malformed file, an unknown level, a duplicate rule identifier, an unparseable expression, or a rule that reads a collection the scorecard does not declare. | `--list \| --scorecard <key> \| --component <key> \| --dir <path> \| --json` | JSON report or human table |
 | Score history | tools/idp/score_history.py | Persists one `idp_scorecard_history` row per component per evaluation, carrying the attained ladder level so level CHANGES are detectable and not just score drift, and reads the series back. A component the scorecard did not assess is **skipped** rather than stored as a `0.0` measurement, and the count is returned as `skipped_unassessed`. Public API: `persist_evaluation(report, conn)`, `record_scorecard(card, conn, if_due=)`, `record_all(conn, if_due=)`, `get_score_trend(component, scorecard_key, conn)`, `get_level_changes(scorecard_key, conn)`, `is_due(card, conn)`, `parse_window(str)`, `window_start(dt, seconds)`. `window_start` is `evaluated_at` floored to the scorecard's `evaluation.window`, anchored on the epoch, so two processes agree on the bucket without coordinating; `if_due=True` skips a bucket already recorded. Raises `ScoreHistoryError` on an unparseable window. | `--record [--if-due] \| --trend <component> \| --level-changes [--since] \| --scorecard <key> \| --dir <path> \| --limit N \| --json` | JSON or human table |
 | Score recorder reflex | tools/genesis/reflexes/idp_score_recorder.py | GREEN-tier Genesis reflex on the awareness 3h cadence (`args/genesis_config.yaml: reflexes.idp_score_recorder`) that calls `record_all(if_due=True)`. Awareness refreshes `awareness_component_health`, the source of the `probes-healthy` facts, so a point lands against fresh probe data. `metric_value` is rows written; a cycle that correctly skips an already-recorded window reports 0 and still succeeds (`gte 0`). | reflex config (`if_due`, `scorecard_dir`) | `{success, metric_value, details}` |
+| Rule exemptions | tools/idp/exemptions.py | Rule-level exemptions with an approval step and an append-only audit log (`idp_rule_exemptions`, migration `20260803030514`, registered in `APPEND_ONLY_TABLES`). Every state change appends an event; the current state is the highest `event_index` row, so an approver can never be edited out and revoking is an event rather than a deletion. Each event is additionally mirrored best-effort to `component_audit_log` via `log_component_audit()`. Public API: `request_exemption()`, `approve_exemption()`, `deny_exemption()`, `revoke_exemption()`, `history()`, `current_states()`, `active_grants()`, `attribution_defect()`, `notify_targets()`, `exemption_key()`, `parse_target()`, `table_ready()`, `ExemptionPolicy`, `INSERT_COLUMNS`. Raises `ExemptionError` on a missing reason/requester/approver, an invalid transition, a duplicate live request, or a scorecard with `exemptions.enabled: false`. Readers degrade to "no exemptions" when the table is absent. | `--list \| --history [RULE:COMPONENT] \| --request \| --approve \| --deny \| --revoke \| --scorecard <key> \| --reason \| --requested-by \| --by \| --decision-reason \| --expires \| --tenant \| --json` | JSON or human table |
 | Gap seeder | tools/idp/gap_seeder.py | Turns every `status == "fail"` outcome into one gated kanban task — one per (scorecard, component, rule). Description is the rule's `failureMessage`; acceptance criteria is the IQE query that measured the failure plus an instruction not to satisfy it by editing the rule. Public API: `load_config(path)`, `collect_gaps(conn, directory=, scorecard_key=) -> (gaps, keys)`, `gaps_from_report(scorecard, report)`, `filter_gaps(gaps, config)`, `prioritize(gaps)`, `apply_caps(gaps, per_component, per_run) -> (kept, truncation)`, `build_task_spec(gap, config)`, `gate_spec(id)`, `existing_idempotency_keys(conn, keys)`, `gate_state(conn, id)`, `seed(conn, dry_run=True, ...)`. Seeds through `task_factory.create_tasks`, never a raw INSERT. Raises `GapSeederError` on an unknown scorecard key or a `gate_task_id` that does not end in `-gate-00`. | `[--seed \| --dry-run] \| --scorecard <key> \| --dir <path> \| --config <path> \| --max-per-run N \| --max-per-component N \| --force \| --json` | JSON report or human table |
 | IDP component facts | tools/iqe/adapters/idp.py | Registers the IQE collection `idp.components` — one row per entry in `args/component_registry.yaml` (all kinds), carrying the facts a rule can assert on: ownership (`has_owner`, `owner`, `owner_contact`, `on_call`, `has_owner_contact`), wiring (`has_blueprint`, `has_e2e_spec`, `has_iqe_adapter`, `has_seed_queries`, `has_nav`, `iqe_collections`), the 8-point gate (`completeness_declared`, `completeness_passed`, `completeness_points`), and live signals (`rls_clean`, `failing_probes`, `probed_routes`, `health_probed` — the last two are **per component**, so a component whose own routes have no probe row reads as unmeasured rather than healthy). Also exposes `probe_evidence(route, conn)`, the raw probe rows behind `failing_probes`. Memoized per process; call `reset_cache()` after changing registry or tree state. Mirrored to `icdev/tools/iqe/adapters/idp.py` (mirror-parity root). | (auto-registered) | list[dict] |
 
@@ -54,7 +55,7 @@ E2E: `tests/e2e/idp_portal.spec.ts`. Unit: `tests/test_idp_portal.py`,
 | `dimensions[]` | `key`, `label`, `description`, `column` (the `developer_scorecards` column a persisted score lands in). Defaults to the five columns that table already has. `unassigned` is reserved. |
 | `grading.bands[]` | `letter` + `min`, highest first. Bands the overall and per-dimension scores into an A–F grade. An unassessed score gets **no** letter. |
 | `rules[]` | `identifier` (unique), `expression` (an IQE query — the entities it returns are the entities that pass), `weight`, optional `level`, `dimension`, `title`, `failureMessage`, `evidence` (prose naming the source), and optional `filter` (also an IQE query) naming the entities the rule applies to at all. |
-| `exemptions[]` | `identifier` + `entity` + `reason` + optional `expires` (an expired exemption stops applying on its own). An exemption credits its weight like a pass. |
+| `exemptions` | Mapping of `enabled` / `autoApprove` / `userSpecificNotifications` plus `grants[]`. A bare list is still accepted as the grant list (pre-idp-score-04 shape). Each grant is `identifier` + `entity` + `reason` + `approvedBy` + optional `approvedAt`, `expires`. A grant missing an approver or a reason is **inert** — reported, but waiving nothing. See "Exemptions" below. |
 
 ### Scoring vs. the ladder
 
@@ -98,6 +99,43 @@ rather than replaying a stored verdict, attaching the raw
 breakdown for the 8-point gate. An empty source set reports `measured: false` —
 absent evidence is reported absent, not summarised as a pass.
 
+### Exemptions (Phase: idp-score-04)
+
+A scorecard carrying one unfair rule does not get that rule fixed — it gets the
+whole scorecard ignored, and an ignored scorecard is worse than none because it
+still reads as governance. An exemption is the pressure valve: it takes ONE
+component out of ONE rule.
+
+**An exemption is not a pass.** The component is neither passing nor failing —
+the rule stops applying, exactly like a `filter` that does not select it, so the
+rule leaves the score's **denominator** instead of paying out its weight.
+Crediting a waiver would make waiving a rule the cheapest way to raise a score,
+which is the incentive a scorecard exists to remove. (This changed in
+idp-score-04; exemptions previously credited their weight.)
+
+**An exempt rule does not hold the ladder.** `RuleOutcome.gating` excludes
+`exempt` alongside `not_applicable`, so progression continues past the rung the
+waiver was granted on. The vacuous-truth guard still applies: a component with
+*nothing* gating left is unranked, not crowned.
+
+**Every exemption names who approved it and why.** Enforced at evaluation time,
+not just at write time — a grant missing an approver or a reason is reported as
+`INERT` and waives nothing, so the failure mode is "the rule still fails" rather
+than "the rule was quietly skipped by nobody in particular". `TBD`-style
+placeholders are scrubbed with the registry's `UNOWNED_SENTINELS`.
+
+Grants come from two stores, merged: the scorecard's `exemptions.grants` block
+(approved by merging the edit) and the append-only approval log. **The log wins**
+for the same (rule, entity) — otherwise revoking a waiver would need a code
+change to take effect. `autoApprove` ships **off**; a request sits at `pending`
+and waives nothing until approved. With it on, the request and the approval are
+still two separate events, so "nobody reviewed this" stays visible, and
+`self_approved` is recorded rather than blocked.
+
+The report carries `exemptions.{policy, active, inert, active_count,
+inert_count}`, each rule carries an `exempt` count, and each exempt outcome
+carries its approver — an exemption is reported, never implicit.
+
 ## Closing the loop (Phase: idp-gap)
 
 `gap_seeder.py` is the half a catalog product cannot ship: a failing rule
@@ -109,7 +147,7 @@ becomes a kanban task instead of a red cell someone has to notice. Config is
 | `enabled` | Ships **false**. `--seed` is refused until it is flipped (or `--force` is passed), so the caps get proven by a dry run first. |
 | `max_tasks_per_component` | Applied **first**, so one badly scoring component cannot consume the run budget and starve the estate. |
 | `max_tasks_per_run` | Hard ceiling per run. Measured on the live board: 311 failing rules → 10 tasks. |
-| `only_gating_rules`, `include_rules`, `exclude_rules` | Rule selection. Prefer a scorecard `exemption` when the intent is "this is accepted" — that credits the weight too. |
+| `only_gating_rules`, `include_rules`, `exclude_rules` | Rule selection. Prefer an approved exemption when the intent is "this rule does not apply here" — that is attributed and audited, whereas an exclude is an anonymous config edit. |
 | `gate_task_id` | Must end in `-gate-00` or `gate_state()` raises; otherwise the kanban sweeps treat the sentinel as work and complete it. |
 | `status`, `priority_by_level`, `default_priority` | `critical` is clamped to `high` in code — a critical card is auto-promoted out of `suggested` by the deadlock-breaker. |
 

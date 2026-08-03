@@ -4143,6 +4143,46 @@ is the Genesis reflex `idp_score_recorder` (3h, GREEN tier — see
 `args/genesis_config.yaml`); the window in `args/scorecards/<key>.yaml` decides
 whether each cycle actually records, so changing granularity is a YAML edit.
 
+### Rule exemptions — approval and audit (idp-score-04)
+
+An exemption takes ONE component out of ONE rule. It is **not** a pass: the rule
+stops applying, so it leaves the score's denominator rather than paying out its
+weight, and it does not hold the component back on the ladder. Every exemption
+must name **who approved it** and **why** — one that does not is reported as
+`INERT` and waives nothing.
+
+`autoApprove` ships **off** (`args/scorecards/<key>.yaml`, `exemptions:`), so a
+request waives nothing until somebody approves it. Every state change appends a
+row to `idp_rule_exemptions` (append-only); revoking is an event, not a delete.
+
+```bash
+# File a request — lands at `pending`, waives nothing yet
+python tools/idp/exemptions.py --request e2e-spec:my-canvas \
+    --scorecard component-readiness \
+    --reason "Headless component; renders no page for Playwright to drive." \
+    --requested-by alice --expires 2026-12-31
+
+# Approve it — this is the event that makes it apply
+python tools/idp/exemptions.py --approve e2e-spec:my-canvas \
+    --by platform-lead --decision-reason "Confirmed headless with the owner."
+
+# Deny, or withdraw a live one (the rule starts applying again)
+python tools/idp/exemptions.py --deny e2e-spec:my-canvas --by platform-lead \
+    --decision-reason "A smoke spec is feasible here."
+python tools/idp/exemptions.py --revoke e2e-spec:my-canvas --by platform-lead \
+    --decision-reason "Owner assigned; spec landed."
+
+# Read: current state of each exemption, or the full append-only history
+python tools/idp/exemptions.py --list
+python tools/idp/exemptions.py --history --json
+python tools/idp/exemptions.py --history e2e-spec:my-canvas
+```
+
+Grants may also be declared in the scorecard YAML under `exemptions.grants[]`
+with a required `approvedBy` and `reason`. When both stores name the same
+(rule, component), **the approval log wins** — otherwise revoking a waiver
+would require a code change to take effect.
+
 ### Gap seeder — a failing rule becomes a kanban task (idp-gap-01)
 
 A catalog product surfaces a red cell and stops. ICDEV owns `kanban_tasks` and
