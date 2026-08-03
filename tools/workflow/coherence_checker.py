@@ -238,6 +238,16 @@ def _blueprint_has_route(bp_file: Path) -> bool:
 def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
     """Extract table_name → [column_names] from SQL CREATE TABLE statements."""
     tables: Dict[str, List[str]] = {}
+    # Drop comment-only lines BEFORE matching. The body capture below is
+    # non-greedy up to the first `);`, so a `);` occurring inside a `--` comment
+    # ends the match early and silently truncates the column list — every column
+    # after the comment then reads as "not in the schema". Stripping the comments
+    # afterwards (as the per-segment pass does) is too late to help. Only whole
+    # comment lines are removed, never a mid-line `--`, which could sit inside a
+    # Python string literal in the surrounding source (swp-scan-01).
+    sql_text = "\n".join(
+        line for line in sql_text.splitlines() if not line.lstrip().startswith("--")
+    )
     pattern = re.compile(
         r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\);",
         re.DOTALL | re.IGNORECASE,
@@ -407,6 +417,12 @@ def _extract_function_calls(source: str) -> List[Tuple[str, int, int, List[str]]
 #: is inert — the opposite of what the pinning is for.
 _SCHEMA_CODE_BACKEND_PINNED = frozenset({
     "tools/rag/sqlite_vector_store.py",
+    # Builds each affected table in its *pre*-migration-329 shape on a throwaway
+    # SQLite database in order to assert the INSERT fails before the migration and
+    # succeeds after. Its simulation_results INSERT names the Network Canvas columns
+    # on purpose — that is the shape being migrated away from, so measuring it
+    # against the post-migration DDL in init_icdev_db.py is the wrong comparison.
+    "tests/test_insert_column_schema_parity.py",
 })
 
 
@@ -5892,8 +5908,41 @@ def _is_sqlite_connect(call: ast.AST) -> bool:
     )
 
 
+def _safe_connection_names(tree: ast.AST, safe_factories: Set[str]) -> Set[str]:
+    """Extend the safe factories with local names bound to a translating connection.
+
+    ``real_conn = _storage_conn(db_path)`` followed by
+    ``recording_conn = _RecordingConn(real_conn)`` is the SQL-recorder pattern:
+    the proxy sits in FRONT of the storage wrapper, so what reaches runtime code
+    still translates ``%s``. Resolving only the factory call would flag the
+    proxy — rejecting the remedy again, one indirection later.
+
+    Propagation is transitive but bounded, and an assignment that reaches
+    ``sqlite3.connect`` anywhere in its value stays raw, so wrapping a raw
+    connection in a proxy is still caught.
+    """
+    safe = set(safe_factories)
+    for _ in range(3):  # factory -> connection -> proxy is the deepest real chain
+        grew = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not targets or all(t in safe for t in targets):
+                continue
+            if any(_is_sqlite_connect(sub) for sub in ast.walk(node.value)):
+                continue
+            refs = {sub.id for sub in ast.walk(node.value) if isinstance(sub, ast.Name)}
+            if refs & safe:
+                safe.update(targets)
+                grew = True
+        if not grew:
+            break
+    return safe
+
+
 def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
-    """Names of local factories that hand back a ``tests/_sql_compat`` connection.
+    """Names of local factories that hand back a placeholder-translating connection.
 
     ``_sql_compat.connect``/``translating`` ARE the sanctioned wrapper — they
     delegate to the same ``translate_sql`` the runtime uses. A file that fixes one
@@ -5901,20 +5950,39 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
     elsewhere for schema setup or for its own assertions, and that residue must
     not keep the file flagged: doing so makes the gate reject its own remedy.
 
+    ``tools.db.storage.get_connection`` counts for the same reason, and more
+    strongly: it is not a stand-in for the runtime wrapper, it IS the runtime
+    wrapper, so a fixture built on it cannot drift from production at all. A
+    factory returning one was still being flagged, which is the remedy-rejection
+    this function exists to prevent.
+
     Only the factory actually named in the patch call is cleared. A second,
     still-raw factory in the same file stays a violation.
     """
     compat_calls: Set[str] = set()
+    # Names bound to the real storage factory: `from tools.db.storage import
+    # get_connection as _real` and `import tools.db.storage as s` both appear.
+    storage_calls: Set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("_sql_compat"):
-            for alias in node.names:
-                compat_calls.add(alias.asname or alias.name)
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.endswith("_sql_compat"):
+                for alias in node.names:
+                    compat_calls.add(alias.asname or alias.name)
+            elif module.endswith("db.storage"):
+                for alias in node.names:
+                    if alias.name in ("get_connection", "get_canvas_connection"):
+                        storage_calls.add(alias.asname or alias.name)
 
     def _is_compat_call(sub: ast.AST) -> bool:
         if not isinstance(sub, ast.Call):
             return False
         fname = sub.func
-        if isinstance(fname, ast.Name) and fname.id in compat_calls:
+        # `storage_calls` too: get_connection/get_canvas_connection ARE the
+        # sanctioned translating factories (CLAUDE.md), so a fixture that hands
+        # one back is as safe as one wrapping _sql_compat — flagging it sent
+        # authors toward the raw connect this check exists to stop.
+        if isinstance(fname, ast.Name) and fname.id in (compat_calls | storage_calls):
             return True
         return (
             isinstance(fname, ast.Attribute)
@@ -5992,7 +6060,14 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
 
 
 def _patch_replacement_names(node: ast.Call) -> Set[str]:
-    """Names supplied as the replacement in a patch/setattr call."""
+    """Names supplied as the replacement in a patch/setattr call.
+
+    The replacement is usually the factory itself (``side_effect=_conn``), but
+    a factory that needs the tmp path is passed wrapped —
+    ``side_effect=lambda *a, **kw: _storage_conn(db_path)``. Both name the same
+    safe factory, so the wrapped form is unwrapped by collecting the names it
+    calls; treating it as unrecognised flags the fix as the bug.
+    """
     names: Set[str] = set()
 
     def _add(value: ast.AST) -> None:
@@ -6064,7 +6139,12 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
         # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
         # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
         # runtime %s query then hits an untranslated raw sqlite3 connection.
-        safe_factories = _sql_compat_factory_names(tree)
+        # Trigger 1 wants the file-wide set: a patch replacement may name a
+        # connection bound anywhere in the file. Trigger 2 must NOT reuse it --
+        # it resolves per scope, and a file-wide set already contains the very
+        # names it needs to judge, which would clear every one of them.
+        compat_factories = _sql_compat_factory_names(tree)
+        safe_factories = _safe_connection_names(tree, compat_factories)
 
         flagged = False
         for node in ast.walk(tree):
@@ -6090,25 +6170,77 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
 
         # Trigger 2: a raw-sqlite-bound name passed as conn=<name> into a call while
         # %s SQL literals are present in the file.
+        #
+        # Resolved per function scope, not file-wide. `conn` is the obvious name for
+        # a connection, so one test binding it to sqlite3.connect for a read-only
+        # assertion and another binding it to a translating fixture is normal and
+        # correct. Pooling both into one set made the first taint the second and
+        # flagged the fixture that IS the fix -- the gate rejecting its own remedy,
+        # which is what tests/unit/test_audit_trail.py hit.
         if has_pct_s:
-            raw_names: Set[str] = set()
-            for node in ast.walk(tree):
+            # Module scope is the only shared scope: a name bound at module level IS
+            # visible to every function, so it is resolved once and inherited. Both
+            # halves -- raw and safe -- must come from `tree.body` alone. Reusing the
+            # file-wide `safe_factories` here would re-open the very leak this block
+            # closes, one level down: `conn = _factory()` inside ONE test would enter
+            # that set and clear `conn` for every other test in the file.
+            module_body = ast.Module(
+                body=[n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))],
+                type_ignores=[],
+            )
+            module_raw: Set[str] = set()
+            for node in module_body.body:
                 if isinstance(node, ast.Assign) and _is_sqlite_connect(node.value):
                     for tgt in node.targets:
                         if isinstance(tgt, ast.Name):
-                            raw_names.add(tgt.id)
-            if raw_names:
-                for node in ast.walk(tree):
-                    if not isinstance(node, ast.Call):
-                        continue
-                    for kw in node.keywords:
-                        if kw.arg == "conn" and isinstance(kw.value, ast.Name) and kw.value.id in raw_names:
-                            violations.append(
-                                f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
-                                f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
-                                f"Wrap in StorageConnection(conn, 'sqlite')."
-                            )
-                            break
+                            module_raw.add(tgt.id)
+            # Factory *functions* stay file-wide -- they are defs, not connections,
+            # so they cannot carry a per-test binding across scopes.
+            module_safe = _safe_connection_names(module_body, compat_factories)
+
+            # ast.walk is breadth-first, so the OUTERMOST enclosing function wins the
+            # setdefault. That is the conservative direction: a call inside a nested
+            # helper is judged against the whole outer test, whose scope walk already
+            # includes the helper's raw bindings.
+            enclosing: Dict[int, ast.AST] = {}
+            for fn in ast.walk(tree):
+                if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for sub in ast.walk(fn):
+                        enclosing.setdefault(id(sub), fn)
+
+            raw_cache: Dict[int, Set[str]] = {}
+
+            def _raw_in_scope(scope: ast.AST) -> Set[str]:
+                cached = raw_cache.get(id(scope))
+                if cached is not None:
+                    return cached
+                raw = set(module_raw)
+                if scope is not tree:
+                    for sub in ast.walk(scope):
+                        if isinstance(sub, ast.Assign) and _is_sqlite_connect(sub.value):
+                            for tgt in sub.targets:
+                                if isinstance(tgt, ast.Name):
+                                    raw.add(tgt.id)
+                    # A name rebound from a translating factory in this scope is not raw.
+                    raw -= _safe_connection_names(scope, module_safe)
+                raw_cache[id(scope)] = raw
+                return raw
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "conn"
+                        and isinstance(kw.value, ast.Name)
+                        and kw.value.id in _raw_in_scope(enclosing.get(id(node), tree))
+                    ):
+                        violations.append(
+                            f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
+                            f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
+                            f"Wrap in StorageConnection(conn, 'sqlite')."
+                        )
+                        break
 
     if violations:
         tier = "fail" if changed_files else "warn"

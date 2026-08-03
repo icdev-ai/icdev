@@ -47,6 +47,21 @@ def test_message_queue_fifo_roundtrip(monkeypatch, tmp_path):
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def _pin_text_only_dispatch(monkeypatch):
+    """Pin _dispatch_via_llm_router to the text-only path these tests cover.
+
+    Its first statement is a Phase 3b opt-in: when ``KANBAN_RUBRIC_LOOP`` is
+    truthy it hands off to ``_dispatch_via_rubric_loop`` and returns, so the
+    injected LLMRouter is never invoked and the drain loop under test never
+    runs. The toggle is read from ``os.environ`` at call time, and the kanban
+    scheduler exports it — so these tests pass in a plain shell and fail in
+    any process that inherits the scheduler's environment, with no fixture
+    difference to explain it. Delete it for the duration of the test rather
+    than stubbing ``_rubric_loop_enabled``, so the real branch is exercised.
+    """
+    monkeypatch.delenv("KANBAN_RUBRIC_LOOP", raising=False)
+
+
 class _FakeResponse:
     def __init__(self, content):
         self.content = content
@@ -79,6 +94,7 @@ class _FakeRouter:
 
 def test_executor_loop_drains_queue(monkeypatch, tmp_path):
     monkeypatch.setattr(hook_compat, "MESSAGE_QUEUE_DIR", tmp_path)
+    _pin_text_only_dispatch(monkeypatch)
 
     fake_router = _FakeRouter()
 
@@ -134,6 +150,7 @@ def test_executor_loop_drains_queue(monkeypatch, tmp_path):
 def test_executor_loop_stops_when_queue_empty(monkeypatch, tmp_path):
     """If no messages are queued, the loop exits after exactly one call."""
     monkeypatch.setattr(hook_compat, "MESSAGE_QUEUE_DIR", tmp_path)
+    _pin_text_only_dispatch(monkeypatch)
 
     class _QuietRouter:
         def __init__(self):

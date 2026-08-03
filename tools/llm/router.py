@@ -1267,6 +1267,7 @@ class LLMRouter:
         detection_count: int = 0,
         entity_types: Optional[list] = None,
         impact_level: str = "IL4",
+        text_length: int = 0,
     ):
         """Log redaction event to append-only redaction_audit table."""
         if not redaction_session or detection_count == 0:
@@ -1277,17 +1278,22 @@ class LLMRouter:
         try:
             conn = get_connection()
             conn.execute(
+                # swp-scan-01: the live columns are `module`, `entity_types` and
+                # `timestamp` — not function/entity_types_json/created_at. The
+                # statement also omitted `text_length`, which is NOT NULL with no
+                # default, so it would have failed even with the names corrected.
                 """
                 INSERT INTO redaction_audit
-                    (id, session_id, function, detection_count,
-                     entity_types_json, impact_level, action, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (id, session_id, module, detection_count, text_length,
+                     entity_types, impact_level, action, timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
                     f"raud-{redaction_session[:8]}-{function[:20]}",
                     redaction_session,
                     function,
                     detection_count,
+                    text_length,
                     json.dumps(entity_types or []),
                     impact_level,
                     "redacted",

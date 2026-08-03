@@ -25,7 +25,7 @@ import re
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -53,6 +53,46 @@ def _detect_engine() -> str:
         return "sqlite"
 
 MIGRATIONS_DIR = BASE_DIR / "tools" / "db" / "migrations"
+
+# ---------------------------------------------------------------------------
+# Migration id shapes (mvs-alloc-01)
+# ---------------------------------------------------------------------------
+# LEGACY: a 3-digit sequence, 001..341. Frozen — nothing new should use it.
+#
+# TIMESTAMP: 14-digit UTC, YYYYMMDDHHMMSS. This is what `migrate.py --create`
+# now generates and what every new migration must use.
+#
+# Why the change: a sequential counter cannot be allocated safely by several
+# sessions at once. Each picks "highest on main + 1" from a view of main that is
+# already stale by the time CI runs, so two branches routinely choose the same
+# number. Measured 2026-08-02 — one branch collided three times in a single
+# session (329, 330, 333) and one of those collisions broke main for every other
+# PR. On main at that point: 379 migrations, 317 distinct versions, 48 versions
+# carrying duplicates, and 60 migrations that can never run because the runner
+# keeps only the first entry per version.
+#
+# A timestamp removes the coordination entirely: two sessions would have to
+# allocate within the same second AND choose the same slug.
+LEGACY_VERSION_DIGITS = 3
+TIMESTAMP_VERSION_DIGITS = 14
+TIMESTAMP_VERSION_FORMAT = "%Y%m%d%H%M%S"
+
+#: Accept either shape. Deliberately NOT `\d+` — an arbitrary digit run would
+#: silently admit typos like a 4- or 15-digit id, and a migration whose id the
+#: runner cannot order correctly is worse than one it rejects outright.
+_VERSION_PATTERN = rf"(\d{{{LEGACY_VERSION_DIGITS}}}|\d{{{TIMESTAMP_VERSION_DIGITS}}})"
+_VERSION_DIR_RE = rf"^{_VERSION_PATTERN}_(.+)$"
+_VERSION_FILE_RE = rf"^{_VERSION_PATTERN}_(.+)\.sql$"
+
+
+def new_timestamp_version(now: Optional[datetime] = None) -> str:
+    """Allocate a migration version. UTC so two machines cannot disagree."""
+    return (now or datetime.now(timezone.utc)).strftime(TIMESTAMP_VERSION_FORMAT)
+
+
+def is_timestamp_version(version: str) -> bool:
+    """True for the 14-digit timestamp shape (as opposed to a legacy 3-digit)."""
+    return bool(re.fullmatch(rf"\d{{{TIMESTAMP_VERSION_DIGITS}}}", str(version)))
 
 SCHEMA_MIGRATIONS_DDL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -171,15 +211,44 @@ class MigrationRunner:
     # Migration discovery
     # ------------------------------------------------------------------
     def discover_migrations(self) -> List[Dict[str, Any]]:
-        """Discover all migration directories, sorted by version."""
+        """Discover all migration entries, ordered oldest-first.
+
+        Two id shapes are accepted:
+
+          * ``NNN_slug``            — the legacy 3-digit sequence (001..341)
+          * ``YYYYMMDDHHMMSS_slug`` — the 14-digit UTC timestamp used for
+            everything created from 2026-08 onward (mvs-alloc-01)
+
+        Sequential integers stopped working once several sessions built
+        concurrently: each picks "highest on main + 1" from a view of main that
+        is already stale, so two branches routinely choose the same number. One
+        branch hit THREE collisions in a single session (329, 330, 333). A
+        timestamp cannot collide that way — two sessions would have to allocate
+        in the same second, and even then the slug differs.
+
+        ORDERING is the subtle part. Sorting entry NAMES lexicographically
+        happens to put "010_" before "20260802..." (because '0' < '2'), but it
+        would put a hypothetical "999_" AFTER a timestamp — silently running a
+        legacy migration out of order. Sorting on (digit-count, digits) instead
+        makes the rule explicit and total: every 3-digit legacy version precedes
+        every 14-digit timestamp, whatever the digits are, and within each family
+        the numeric order is the natural one.
+        """
         migrations = []
         if not self.migrations_dir.exists():
             return migrations
 
-        for entry in sorted(self.migrations_dir.iterdir()):
-            # Flat SQL file: NNN_description.sql
+        def _order_key(entry) -> tuple:
+            m = re.match(r"^(\d+)_", entry.name)
+            digits = m.group(1) if m else ""
+            # Shorter id family first (legacy 3-digit before 14-digit
+            # timestamps), then numerically within the family.
+            return (len(digits), digits, entry.name)
+
+        for entry in sorted(self.migrations_dir.iterdir(), key=_order_key):
+            # Flat SQL file: <version>_description.sql
             if entry.is_file() and entry.suffix == ".sql":
-                flat_match = re.match(r"^(\d{3})_(.+)\.sql$", entry.name)
+                flat_match = re.match(_VERSION_FILE_RE, entry.name)
                 if flat_match:
                     version = flat_match.group(1)
                     name = flat_match.group(2)
@@ -201,8 +270,8 @@ class MigrationRunner:
 
             if not entry.is_dir():
                 continue
-            # Match NNN_description pattern
-            match = re.match(r"^(\d{3})_(.+)$", entry.name)
+            # Match <version>_description — legacy NNN or NNNNNNNNNNNNNN timestamp
+            match = re.match(_VERSION_DIR_RE, entry.name)
             if not match:
                 continue
 
@@ -652,14 +721,26 @@ class MigrationRunner:
         """
         self.migrations_dir.mkdir(parents=True, exist_ok=True)
 
-        # Find next version number
-        existing = self.discover_migrations()
-        next_version = "001"
-        if existing:
-            last = int(existing[-1]["version"])
-            next_version = f"{last + 1:03d}"
+        # A UTC timestamp, not "highest + 1" (mvs-alloc-01). The old scheme read
+        # the current maximum and incremented it, which is a read-modify-write
+        # across every concurrent session with no lock between them — so two
+        # branches created the same version whenever they scaffolded around the
+        # same time, and the loser was silently never run.
+        next_version = new_timestamp_version()
 
         slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+        # Same second AND same slug is the only way to collide now. Bump by a
+        # second rather than overwrite: an existing directory holds someone's
+        # work.
+        while (self.migrations_dir / f"{next_version}_{slug}").exists():
+            next_version = new_timestamp_version(
+                datetime.strptime(next_version, TIMESTAMP_VERSION_FORMAT).replace(
+                    tzinfo=timezone.utc
+                )
+                + timedelta(seconds=1)
+            )
+
         dir_name = f"{next_version}_{slug}"
         mdir = self.migrations_dir / dir_name
         mdir.mkdir(parents=True)

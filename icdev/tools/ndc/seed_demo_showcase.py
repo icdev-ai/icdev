@@ -545,9 +545,11 @@ def ensure_devices(conn) -> dict:
         try:
             conn.execute(
                 """INSERT OR IGNORE INTO ni_devices
+                   -- rack_location/criticality_score are not columns; the live
+                   -- names are rack/criticality (swp-scan-01).
                    (id, topology_id, node_id, label, device_type, vendor, model,
-                    firmware_version, eol_date, eos_date, site, rack_location,
-                    criticality_score, downstream_count, notes, properties_json, created_at, updated_at)
+                    firmware_version, eol_date, eos_date, site, rack,
+                    criticality, downstream_count, notes, properties_json, created_at, updated_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (dev_id, topo_id, node_id, label, dtype, vendor, model, fw, eol, eos, site, rack, crit, ds, notes, props,
                  NOW_ISO, NOW_ISO),

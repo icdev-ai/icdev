@@ -9,7 +9,7 @@ import argparse
 import json
 import sqlite3
 import struct
-from tools.db.storage import get_connection
+from tools.db.storage import StorageConnection, get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -42,7 +42,12 @@ def _compartments_allowed(entry_compartments: str, user_compartments: list[str] 
 
 def _connect():
     if DB_PATH is not None:
-        return sqlite3.connect(str(DB_PATH))
+        # DB_PATH is a stand-in for get_connection(), which returns a
+        # StorageConnection that rewrites PostgreSQL ``%s`` placeholders to
+        # ``?`` for SQLite. Returning the bare sqlite3 connection made the seam
+        # lie: every parameterised statement raised ``near "%": syntax error``,
+        # and callers that swallow write failures reported a no-op as success.
+        return StorageConnection(sqlite3.connect(str(DB_PATH)), "sqlite")
     return get_connection()
 
 

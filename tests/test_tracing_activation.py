@@ -164,3 +164,43 @@ def test_helper_noop_for_falsey_values(val):
         tracer = enable_tracing_if_enabled()
     assert tracer is None
     assert isinstance(get_tracer().actual, NullTracer)
+
+
+# ============================================================
+# Entry points that must ACTIVATE tracing (obs-cov-04)
+# ============================================================
+#
+# The machinery above works and always did. otel_spans was nevertheless empty on
+# the live PostgreSQL board — measured 2026-08-02, 0 rows — because activation
+# is opt-in per process and only tools/dashboard/app.py and
+# tools/mcp/base_server.py ever called it.
+#
+# Every `tracer.start_span(...)` in tools/llm/router.py and
+# tools/agent/bedrock_client.py was therefore a silent no-op inside the kanban
+# scheduler: the process where most of this board's LLM traffic originates. The
+# writer was never the problem — SQLiteTracer.flush() succeeds on PostgreSQL
+# because translate_sql rewrites its `INSERT OR IGNORE` into an ON CONFLICT
+# form (verified by inserting and reading back a probe span).
+#
+# Asserted against the source rather than by booting the scheduler: booting it
+# needs a populated board and a free single-instance lock, while the property
+# under test is only that the entry point activates tracing before it runs
+# cycles.
+
+_ENTRY_POINTS_REQUIRING_ACTIVATION = (
+    "tools/genesis/kanban_scheduler.py",
+    "tools/dashboard/app.py",
+    "tools/mcp/base_server.py",
+)
+
+
+@pytest.mark.parametrize("rel_path", _ENTRY_POINTS_REQUIRING_ACTIVATION)
+def test_entry_point_activates_tracing(rel_path):
+    """A long-running entry point must activate tracing, or its spans vanish."""
+    src = (Path(__file__).resolve().parent.parent / rel_path).read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert "enable_tracing_if_enabled" in src, (
+        f"{rel_path} does not activate tracing — every start_span() it reaches "
+        f"is a no-op and otel_spans goes empty again"
+    )

@@ -62,7 +62,7 @@ def get_savings_stats(conn: Any = None) -> dict:
         return _empty()
 
     by_function = []
-    t_entries = t_hits = t_cw = t_cr = 0
+    t_entries = t_hits = t_avoided = t_cw = t_cr = 0
     t_resp_saved = t_ctx_saved = t_ctx_premium = 0.0
 
     for row in rows:
@@ -74,7 +74,9 @@ def get_savings_stats(conn: Any = None) -> dict:
         cw      = row[5] or 0
         cr      = row[6] or 0
 
-        # Each repeat hit (beyond the first) avoided a full LLM call
+        # hit_count DEFAULTS TO 1 at insert and increments per hit, so SUM(hit_count)
+        # is total REQUESTS (one store + n hits), not hits. Each repeat hit beyond
+        # that first store avoided a full LLM call.
         avoided = max(0, hits - entries)
         resp_saved = avoided * (inp * _IN + out * _OUT)
 
@@ -82,7 +84,9 @@ def get_savings_stats(conn: Any = None) -> dict:
         ctx_premium = cw * (_CW - _IN)
         net_ctx     = max(0.0, ctx_saved - ctx_premium)
 
-        hit_rate = round(hits / entries * 100, 1) if entries else 0.0
+        # Rate is avoided_calls / requests. It was hits/entries, which is
+        # requests-per-entry: one entry served three times reported "300%".
+        hit_rate = round(avoided / hits * 100, 1) if hits else 0.0
 
         by_function.append({
             "function":              fn,
@@ -99,14 +103,18 @@ def get_savings_stats(conn: Any = None) -> dict:
 
         t_entries += entries
         t_hits    += hits
+        t_avoided += avoided
         t_cw      += cw
         t_cr      += cr
         t_resp_saved  += resp_saved
         t_ctx_saved   += net_ctx
         t_ctx_premium += ctx_premium
 
-    platform_hit_rate = round(t_hits / t_entries * 100, 1) if t_entries else 0.0
-    miss_count = max(0, t_entries - t_hits)
+    # hit_count + miss_count == t_hits (total requests), so the rate below is the
+    # same number the two counts imply — they used to disagree: miss_count was
+    # max(0, entries - hits), which is 0 for every possible input.
+    platform_hit_rate = round(t_avoided / t_hits * 100, 1) if t_hits else 0.0
+    miss_count = t_entries
 
     try:
         from tools.llm.response_cache import _load_config
@@ -124,7 +132,7 @@ def get_savings_stats(conn: Any = None) -> dict:
         "summary": {
             "total_entries":           t_entries,
             "total_hits":              t_hits,
-            "hit_count":               t_hits,
+            "hit_count":               t_avoided,
             "miss_count":              miss_count,
             "hit_rate_pct":            platform_hit_rate,
             "cache_write_tokens":      t_cw,

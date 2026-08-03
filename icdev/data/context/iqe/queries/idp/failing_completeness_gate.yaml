@@ -1,0 +1,17 @@
+# CUI // SP-CTI
+collection: idp.components
+query: "Which canvases fail the 8-point completeness gate?"
+description: >-
+  Canvases that do not pass validate_canvas_completeness(). Filtered to
+  completeness_declared == true because the 8-point gate is a dashboard-page
+  gate — child apps, features and core extensions are out of scope and must not
+  be counted as failures. completeness_points shows how many of the 8 are
+  present, so a near-miss is distinguishable from an unstarted page.
+iqe: >-
+  foreach c in idp.components
+  where c.completeness_declared == true and c.completeness_passed == false
+  select c.key, c.completeness_points, c.route
+example_questions:
+  - "Which canvases fail the completeness gate?"
+  - "Show incomplete dashboard pages"
+  - "What is missing from the 8-point gate?"

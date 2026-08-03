@@ -3,6 +3,8 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
+from tests._sql_compat import connect as translating_connect
+
 
 # ---------------------------------------------------------------------------
 # Migration
@@ -78,9 +80,14 @@ def test_session_indexer_importable():
 
 
 def _make_sqlite_db():
-    """Return an in-memory SQLite conn with memory_entries + memory_fts."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
+    """Return an in-memory SQLite conn with memory_entries + memory_fts.
+
+    ``session_indexer`` authors PostgreSQL ``%s`` placeholders and swallows
+    failures, so a bare sqlite3 connection makes ``search_history`` raise
+    ``near "%": syntax error`` inside its except block and return ``[]`` —
+    the test then asserts against a no-op it caused itself.
+    """
+    conn = translating_connect(":memory:")
     conn.execute("""
         CREATE TABLE memory_entries (
             id TEXT PRIMARY KEY,

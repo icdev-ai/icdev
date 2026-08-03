@@ -19,6 +19,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests import _sql_compat  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Minimal in-memory NDC SQLite DB (mirrors the tools/network vuln schema)
@@ -41,34 +43,27 @@ CREATE TABLE IF NOT EXISTS nc_vuln_findings (
 """
 
 
-class _ShimConn:
-    """Thin wrapper translating PG-style %s placeholders to SQLite ?."""
+def _shim_conn():
+    """In-memory NDC DB that translates %s -> ? the way the runtime does.
 
-    def __init__(self):
-        self._db = sqlite3.connect(":memory:")
-        self._db.row_factory = sqlite3.Row
-        self._db.executescript(_SCHEMA)
-        self._db.commit()
-
-    def execute(self, sql, params=()):
-        return self._db.execute(sql.replace("%s", "?"), params)
-
-    def commit(self):
-        self._db.commit()
-
-    def close(self):  # pragma: no cover - closing shared shim would break asserts
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        self.commit()
+    ``unclosable`` because bus_subscriber writes through a connection it then
+    closes; TranslatingConnection.__exit__/close() would drop the in-memory
+    database before the test reads the row back.
+    """
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    raw.executescript(_SCHEMA)
+    raw.commit()
+    return _sql_compat.translating(raw, unclosable=True)
 
 
 @pytest.fixture
 def shim():
-    return _ShimConn()
+    conn = _shim_conn()
+    yield conn
+    # close the raw handle: the wrapper is unclosable by design, so nothing
+    # else rolls back a statement that left a write transaction open.
+    conn._conn.close()
 
 
 def _patch_conn(shim):

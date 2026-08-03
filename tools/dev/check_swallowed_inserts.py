@@ -1,35 +1,35 @@
 #!/usr/bin/env python3
 # [TEMPLATE: CUI // SP-CTI]
-"""Standalone CLI gate for swallowed INSERTs (swp-swallow-01-d1).
+"""Fail if any ``except Exception: pass`` guards an INSERT in ``tools/``.
 
-Finds every ``except Exception: pass`` block guarding a ``try`` that runs an
-``INSERT``, under ``tools/`` and excluding ``migrations/``. Prints one
-``file:line`` per violation and exits 1; exits 0 when the tree is clean.
+Standalone counterpart to the coherence gate
+(``coherence_checker.check_swallowed_persistence``). The gate walks the whole
+repository (7,245 files, ~93s); this defaults to ``tools/`` (~71s) and takes
+``--path`` to scope a single subtree — ``--path tools/govcon`` is ~1s, which is
+what makes it usable as an inner-loop check while editing one subsystem.
 
-Why this is a wrapper and not a second scanner
-----------------------------------------------
-The AST detection rules already live in
-:mod:`tools.refactor.swallowed_persistence`, which is imported by *both* the
-codemod (``tools/refactor/fix_swallowed_persistence.py``) and the coherence
-gate (``coherence_checker.check_swallowed_persistence``). Re-implementing the
-walk here would create a third, drifting definition of "violation" — the exact
-failure the shared detector was written to prevent. This module owns only the
-command-line contract: argument parsing, ``file:line`` rendering, exit codes.
+The gate remains the thing that blocks a build. This is the developer-facing
+front end to the same detector, with ``file:line`` output and a plain exit code.
 
-Relationship to the coherence gate
-----------------------------------
-``coherence_checker.py --check swallowed_persistence`` is the in-pipeline gate
-and scans ``tools/`` plus the ``icdev/tools/`` mirror. This script is the
-standalone equivalent for a shell, a pre-commit hook, or an air-gapped CI stage
-that cannot load the whole coherence harness. Same detector, same verdict.
+It deliberately owns **no** detection logic of its own. Both the fixer, the
+coherence gate and this script import :func:`find_sites` from
+:mod:`tools.refactor.swallowed_persistence`, so the three can never disagree
+about what counts as a violation. Adding a second definition of the pattern
+here is the one change that would defeat the purpose of the check.
 
-Usage
------
-    python tools/dev/check_swallowed_inserts.py                  # scan tools/
-    python tools/dev/check_swallowed_inserts.py --path tools/govcon
+Exit codes:
+    0 — clean
+    1 — violations found (each printed as ``file:line``)
+    2 — the shared detector could not be imported
+
+Exit 2 is distinct on purpose: a check that reports "clean" because its
+detector vanished is the exact silent-failure mode this card exists to close.
+
+Usage::
+
+    python tools/dev/check_swallowed_inserts.py
     python tools/dev/check_swallowed_inserts.py --json
-
-Exit codes: 0 clean, 1 violations found, 2 bad invocation.
+    python tools/dev/check_swallowed_inserts.py --path tools/govcon
 """
 
 from __future__ import annotations
@@ -38,143 +38,152 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+#: Repo root resolved from this file, never from ``os.getcwd()`` — the CLI is
+#: routinely run from a git worktree or a subdirectory (see CLAUDE.md).
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Own checkout wins over any ambient PYTHONPATH: running this by path from a
-# worktree must scan *that* worktree's detector, not a shared checkout's.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from tools.refactor.swallowed_persistence import SwallowSite, find_sites  # noqa: E402
-
-#: Scanned when the caller names no path. ``migrations/`` (and ``tests/``,
-#: ``__pycache__``, ``.tmp``, ``node_modules``) are dropped by the shared
-#: detector itself, so this stays a plain directory.
-DEFAULT_PATHS: Sequence[str] = ("tools",)
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 EXIT_CLEAN = 0
 EXIT_VIOLATIONS = 1
+EXIT_NO_DETECTOR = 2
+# Same code as EXIT_NO_DETECTOR: both mean "this run proved nothing", which a
+# caller must not read as a pass. Named separately because the causes differ.
 EXIT_USAGE = 2
 
 
-def format_site(site: SwallowSite) -> str:
-    """Render one violation as ``file:line: <what is wrong>``.
-
-    The line reported is the ``except`` clause, not the ``try`` — that is the
-    line an author has to edit to fix it.
-    """
-    where = site.func_name or "<module>"
-    table = site.table or "<unknown table>"
-    return (
-        f"{site.rel}:{site.handler_lineno}: "
-        f"`except Exception: pass` swallows INSERT INTO {table} "
-        f"(in {where})"
-    )
-
-
-def scan(paths: Sequence[Path], root: Path) -> List[SwallowSite]:
-    """Return every swallowed-INSERT site under ``paths``, sorted for stable output."""
-    sites = find_sites(list(paths), root)
-    return sorted(sites, key=lambda s: (s.rel, s.handler_lineno))
-
-
-def _resolve_paths(raw: Sequence[str], root: Path) -> List[Path]:
-    """Turn CLI path arguments into absolute paths, rejecting ones that don't exist."""
-    resolved: List[Path] = []
+def _resolve_paths(raw: Sequence[str]) -> List[Path]:
+    """Turn CLI ``--path`` values into absolute paths, defaulting to ``tools/``."""
+    if not raw:
+        return [REPO_ROOT / "tools"]
+    resolved = []
     for item in raw:
         candidate = Path(item)
-        if not candidate.is_absolute():
-            candidate = root / candidate
-        if not candidate.exists():
-            raise FileNotFoundError(item)
-        resolved.append(candidate)
+        resolved.append(candidate if candidate.is_absolute() else REPO_ROOT / candidate)
     return resolved
 
 
-def build_parser() -> argparse.ArgumentParser:
+def _rel(path: Path) -> str:
+    """Repo-relative POSIX path, falling back to the absolute path when outside."""
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def scan(paths: Sequence[Path]) -> List[dict]:
+    """Return one dict per swallowed-INSERT site, sorted by file then line.
+
+    :raises ImportError: if the shared detector is unavailable.
+    """
+    from tools.refactor.swallowed_persistence import find_sites
+
+    existing = [p for p in paths if p.exists()]
+    sites = find_sites(existing, REPO_ROOT)
+    findings = [
+        {
+            "file": site.rel,
+            "line": site.handler_lineno,
+            "pass_line": site.pass_lineno,
+            "function": site.func_name,
+            "table": site.table,
+        }
+        for site in sites
+    ]
+    findings.sort(key=lambda f: (f["file"], f["line"]))
+    return findings
+
+
+def format_text(findings: Sequence[dict], scanned: Sequence[Path]) -> str:
+    """Render findings as ``file:line`` lines plus a one-line summary."""
+    lines = [
+        "{}:{}: except Exception: pass guards INSERT INTO {}{}".format(
+            f["file"],
+            f["line"],
+            f["table"] or "?",
+            " (in {})".format(f["function"]) if f["function"] else "",
+        )
+        for f in findings
+    ]
+    where = ", ".join(p.name for p in scanned) or "tools"
+    if findings:
+        lines.append("")
+        lines.append(
+            "FAIL: {} swallowed INSERT site(s) in {}. "
+            "Log the exception instead of passing; "
+            "`python tools/refactor/fix_swallowed_persistence.py --write` applies the rewrite.".format(
+                len(findings), where
+            )
+        )
+    else:
+        lines.append("OK: no swallowed INSERT sites in {}.".format(where))
+    return "\n".join(lines)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="check_swallowed_inserts",
-        description=(
-            "Fail when an `except Exception: pass` block guards an INSERT. "
-            "Best-effort persistence is fine; silent best-effort persistence "
-            "is a write that can fail forever with nothing to show for it."
-        ),
+        description="Fail if an `except Exception: pass` guards an INSERT in tools/.",
     )
     parser.add_argument(
         "--path",
         action="append",
-        dest="paths",
+        default=[],
         metavar="PATH",
-        help=(
-            "File or directory to scan, relative to the repo root. Repeatable. "
-            f"Default: {', '.join(DEFAULT_PATHS)}"
-        ),
+        help="File or directory to scan, relative to the repo root (repeatable). Default: tools/",
     )
-    parser.add_argument(
-        "--root",
-        default=str(PROJECT_ROOT),
-        help="Repo root used to compute reported relative paths (default: this checkout).",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        dest="as_json",
-        help="Emit a machine-readable report instead of text.",
-    )
-    return parser
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    args = parser.parse_args(argv)
 
+    paths = _resolve_paths(args.path)
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    root = Path(args.root).resolve()
-
-    try:
-        targets = _resolve_paths(args.paths or list(DEFAULT_PATHS), root)
-    except FileNotFoundError as exc:
-        print(f"error: no such path: {exc}", file=sys.stderr)
+    # A path that does not exist is a usage error, not a clean tree. Scanning
+    # nothing found nothing, and this printed "OK: no swallowed INSERT sites"
+    # and exited 0 — so `--path tools/gvocon` (a typo) reported the subsystem
+    # clean. A gate that answers "fine" for a target it never looked at is the
+    # exact silent pass it exists to prevent.
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        message = "path does not exist: {}".format(", ".join(_rel(p) for p in missing))
+        if args.json:
+            print(json.dumps(
+                {"status": "error", "error": message, "violations": []}, indent=2))
+        else:
+            print("ERROR: {}".format(message), file=sys.stderr)
         return EXIT_USAGE
 
-    sites = scan(targets, root)
-    violations = [format_site(site) for site in sites]
+    try:
+        findings = scan(paths)
+    except ImportError as exc:
+        message = (
+            "cannot import tools.refactor.swallowed_persistence — the detector "
+            "this check depends on is missing: {}".format(exc)
+        )
+        if args.json:
+            print(json.dumps({"status": "error", "error": message, "violations": []}, indent=2))
+        else:
+            print("ERROR: {}".format(message), file=sys.stderr)
+        return EXIT_NO_DETECTOR
 
-    if args.as_json:
+    if args.json:
         print(
             json.dumps(
                 {
-                    "clean": not sites,
-                    "count": len(sites),
-                    "scanned": [p.as_posix() for p in targets],
-                    "violations": [
-                        {
-                            "file": site.rel,
-                            "line": site.handler_lineno,
-                            "try_line": site.try_lineno,
-                            "function": site.func_name,
-                            "table": site.table,
-                        }
-                        for site in sites
-                    ],
+                    "status": "fail" if findings else "pass",
+                    "count": len(findings),
+                    "scanned": [_rel(p) for p in paths],
+                    "violations": findings,
                 },
                 indent=2,
             )
         )
     else:
-        for line in violations:
-            print(line)
-        if sites:
-            print(
-                f"\n{len(sites)} swallowed INSERT site(s). Keep the best-effort "
-                "behaviour and add a logger.warning (see "
-                "tools/canvas/event_bus.py::_audit_event), or narrow the handler.",
-                file=sys.stderr,
-            )
-        else:
-            print("clean: no `except Exception: pass` guarding an INSERT")
+        print(format_text(findings, paths))
 
-    return EXIT_VIOLATIONS if sites else EXIT_CLEAN
+    return EXIT_VIOLATIONS if findings else EXIT_CLEAN
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

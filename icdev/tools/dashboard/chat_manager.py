@@ -759,19 +759,116 @@ def _build_chat_cortex_ctx(ctx):
         user_id=getattr(ctx, "user_id", "") or "",
         classification=DEFAULT_CLASSIFICATION,
         session_id=getattr(ctx, "context_id", "") or "",
-        # A conversation must not be blocked because a reply cites nothing;
-        # the grounding gates are skipped entirely below (retrieval=False), and
-        # the injection pre-check blocks regardless of this setting.
+        # Set explicitly so chat stays attributable in cortex_audit.agent_id.
+        # Without it _build_request derives "cortex:<tenant>", which is
+        # indistinguishable from any other caller — and once the plain branch
+        # audits as cortex.complete rather than chat.message, the operation name
+        # no longer identifies it either.
+        agent_id="chat",
+        # A conversation must NEVER be blocked for weak grounding. Grounded
+        # turns are now graded rather than skipped (cxo-adopt-02), so the
+        # gates can genuinely warn — an explicit False here wins over
+        # `governance.fail_closed` in args/cortex_config.yaml, which keeps
+        # every grounding outcome advisory. The injection pre-check still
+        # blocks regardless of this setting.
         fail_closed=False,
     )
 
 
-def governed_chat_invoke(invoke, prompt: str, ctx):
+def _chat_context_sources(rag_results, *blocks) -> list:
+    """The evidence this turn actually injected, as governance sources.
+
+    RAG hits are numbered ``1..N`` to match the ``[1] [2] ...`` labels the
+    prompt shows them under, so a citation the model emits validates against the
+    same id the model was given. The extra blocks (KG, live compliance) carry
+    non-numeric ids: their text belongs in the content-grounding corpus — a
+    claim drawn from the KG is grounded, not hallucinated — but the prompt never
+    offers them as a numbered source, so no reply should ever cite one.
+
+    Returns [] when nothing was injected, which is what keeps an ungrounded turn
+    on the ``skip`` path.
+    """
+    sources = [
+        {"source_id": str(i), "content": r.get("content", "")}
+        for i, r in enumerate(rag_results or [], 1)
+    ]
+    sources += [{"source_id": label, "content": text} for label, text in blocks if text]
+    return sources
+
+
+def _split_history(conversation: list, prompt: str) -> list:
+    """Everything before the CURRENT user turn, for ``complete(history=...)``.
+
+    Split at the LAST user message rather than ``conversation[:-1]`` — that is
+    the same element ``_invoke_model`` substitutes the governed text into, so
+    the two paths agree on which message is "the current turn" even if the
+    assembled list does not end with it.
+    """
+    for i in range(len(conversation) - 1, -1, -1):
+        if conversation[i].get("role") == "user":
+            return conversation[:i]
+    return list(conversation)
+
+
+def complete_via_cortex(conversation: list, prompt: str, ctx, fallback, context_sources=None):
+    """Run a plain chat turn through ``cortex_api.complete``.
+
+    Why this replaces the ``governed_chat_invoke`` wrapper on this branch: the
+    facade runs the SAME GovernancePipeline internally, so wrapping it too would
+    double-govern — two audit rows per turn, doubled cost on /cortex/metrics, and
+    input redaction applied over an already-masked string.
+
+    The comment this supersedes said ``complete()`` "takes a bare prompt and
+    would drop" the assembled context. That was true of the pre-9ec85e124
+    facade; that commit added ``history=`` and ``model=`` expressly as the chat
+    enabler and deferred this adoption only to avoid a merge conflict. The
+    system message and prior turns now ride in ``history`` (``_sanitize_history``
+    accepts role="system"), and the governed prompt is re-appended as the final
+    user message — which is exactly what ``_invoke_model`` did by hand.
+
+    ``context_sources`` (the RAG/KG evidence this turn injected, see
+    :func:`_chat_context_sources`) is forwarded so the citation and content
+    grounding gates GRADE a turn that had retrieval instead of skipping it.
+    Empty/None means the turn was generative and the gates skip, unchanged.
+
+    Raises GovernanceBlockedError so the caller can render a refusal. Falls back
+    to *fallback* only when Cortex is not importable: Cortex is optional
+    infrastructure and its absence must not take chat down. Gate failures are
+    already fail-open inside the pipeline, so they need no handling here.
+    """
+    try:
+        from tools.cortex import api as cortex_api
+    except Exception as exc:
+        logger.debug("cortex facade unavailable (%s) — ungoverned chat turn", exc)
+        return fallback(prompt)
+
+    cortex_ctx = _build_chat_cortex_ctx(ctx)
+    if cortex_ctx is None:
+        return fallback(prompt)
+
+    result = cortex_api.complete(
+        prompt,
+        function="chat_response",
+        ctx=cortex_ctx,
+        history=_split_history(conversation, prompt),
+        model=getattr(ctx, "agent_model", None) or None,
+        context_sources=context_sources or None,
+    )
+    text = getattr(result, "text", "") or ""
+    return text if text else fallback(prompt)
+
+
+def governed_chat_invoke(invoke, prompt: str, ctx, context_sources=None):
     """Run ``invoke(governed_prompt)`` inside the Cortex TRUST chain.
 
     Returns ``(reply, blocked)``. ``invoke`` receives the screened/redacted
     prompt — not the original — so input redaction actually takes effect
     instead of merely being recorded.
+
+    ``context_sources`` is the evidence this turn injected (see
+    :func:`_chat_context_sources`); supplying it grades the two grounding gates
+    instead of skipping them. It stays advisory — ``_build_chat_cortex_ctx``
+    pins ``fail_closed=False``, so a grounding warn never blocks a conversation.
 
     A failure anywhere in the governance layer degrades to an ungoverned call:
     a Cortex outage must not break every conversation on the platform.
@@ -806,11 +903,13 @@ def governed_chat_invoke(invoke, prompt: str, ctx):
             _tracked,
             cortex_ctx,
             prompt=prompt,
-            # A conversational turn is generative, not retrieval-grounded.
-            # Scoring it against no sources would manufacture a defect every
-            # turn and make governance look broken.
-            context_sources=None,
-            retrieval=False,
+            # Grade the turns that actually retrieved; skip the ones that did
+            # not. Scoring a purely generative turn against no sources would
+            # manufacture a defect every turn and make governance look broken —
+            # which is why this is keyed on the evidence, not hardcoded either
+            # way (cxo-adopt-02).
+            context_sources=context_sources or None,
+            retrieval=bool(context_sources),
             attach=False,
         )
         return result, False
@@ -1532,6 +1631,14 @@ class ChatManager:
         except Exception:  # bridge not installed/disabled
             CLIJobDeferred = ()
 
+        # Same pattern for the governance refusal: Cortex is optional, so when
+        # it is absent the name becomes an empty tuple and the ``except`` clause
+        # below simply never matches.
+        try:
+            from tools.cortex.governance import GovernanceBlockedError
+        except Exception:  # cortex not installed/disabled
+            GovernanceBlockedError = ()
+
         try:
             from tools.llm.router import LLMRouter
 
@@ -1555,6 +1662,11 @@ class ChatManager:
             # --- RAG context injection (D-RAG-2) ---
             user_content = msg.get("content", "")
             rag_results = []
+            # Initialized here, not just inside the branch below: they are the
+            # turn's evidence record and are read after it to decide whether the
+            # grounding gates grade this turn or skip it.
+            kg_block = ""
+            compliance_block = ""
             if user_content and msg.get("role") == "user":
                 rag_results = _rag_retrieve(
                     query=user_content,
@@ -1675,7 +1787,31 @@ class ChatManager:
                 response = router.invoke("chat_response", req)
                 return response.content if response.content else str(response)
 
-            result, _blocked = governed_chat_invoke(_invoke_model, user_content, ctx)
+            # Plain turns — the ~95% path — go through the governed facade
+            # itself. The reasoned-codegen branch keeps the wrapper: cortex.reason
+            # is NOT equivalent to generate_reasoned_code (no project_id, no
+            # section kill-switch, no rc.code contract), and building a facade
+            # for a rare opt-in branch would be a new abstraction for no gain.
+            # Both paths run the identical GovernancePipeline; only the audit
+            # operation label differs.
+            #
+            # Both are handed the evidence this turn injected, so a retrieval-
+            # backed answer is GRADED by the citation/content grounding gates
+            # rather than skipped (cxo-adopt-02). Expect turns with weak RAG
+            # hits to start recording `warn` on /cortex/metrics — that is the
+            # gate working, not a regression. Nothing blocks: the chat context
+            # pins fail_closed=False.
+            context_sources = _chat_context_sources(
+                rag_results, ("kg", kg_block), ("compliance", compliance_block),
+            )
+            if reasoning_mode == "off":
+                result = complete_via_cortex(
+                    conversation, user_content, ctx, _invoke_model, context_sources,
+                )
+            else:
+                result, _blocked = governed_chat_invoke(
+                    _invoke_model, user_content, ctx, context_sources,
+                )
 
             # Store RAG sources in metadata for attribution display
             if rag_results:
@@ -1693,6 +1829,19 @@ class ChatManager:
                 ctx.context_id,
             )
             return self._persist_pending_placeholder(ctx, getattr(exc, "job_id", ""))
+
+        except GovernanceBlockedError as exc:
+            # MUST precede the catch-all below. Without this a governance
+            # refusal falls into the echo fallback and the user is told
+            # "[Agent x] Acknowledged: ..." — a blocked turn rendered as a
+            # normal reply, invisible to the user and to anyone reading the
+            # transcript. The refusal wording is shared with the reasoned
+            # branch so both paths look identical to a reader.
+            logger.warning(
+                "chat turn blocked by governance gate %s for context %s: %s",
+                exc.gate, ctx.context_id, exc.reason,
+            )
+            return _CHAT_BLOCKED_TEMPLATE.format(gate=exc.gate, reason=exc.reason)
 
         except (ImportError, Exception) as exc:
             logger.debug("LLM unavailable for chat: %s — using echo fallback", exc)

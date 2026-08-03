@@ -81,6 +81,51 @@ class TestTestDbIsolation:
         r = cc.check_test_db_isolation(None)
         assert r.status == "warn", r.message
 
+    def test_raw_conn_in_another_function_does_not_taint(self, repo):
+        """`conn` bound raw in one test must not flag a safe `conn` in another.
+
+        `conn` is the obvious name for a connection, so a read-only assertion
+        connection in one test and a translating fixture in the next is normal.
+        Resolving the name file-wide made the first taint the second and flagged
+        the fixture that IS the remedy (tests/unit/test_audit_trail.py).
+        """
+        f = _write(
+            repo / "tests" / "test_mixed_conn.py",
+            "import sqlite3\n"
+            "from _sql_compat import connect as _tconnect\n"
+            "def _factory():\n"
+            "    return _tconnect('db')\n"
+            "def test_reads_raw():\n"
+            "    conn = sqlite3.connect(':memory:')\n"
+            "    conn.execute('SELECT 1')\n"
+            "def test_passes_safe_conn():\n"
+            "    conn = _factory()\n"
+            "    from tools.audit.audit_logger import log_event\n"
+            "    log_event(conn=conn)\n"
+            "    _ = 'SELECT * FROM t WHERE a=%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "pass", r.message
+
+    def test_raw_conn_in_same_function_still_fails(self, repo):
+        """Guard the fix: scoping must not blind the check to a real violation."""
+        f = _write(
+            repo / "tests" / "test_same_scope.py",
+            "import sqlite3\n"
+            "from _sql_compat import connect as _tconnect\n"
+            "def _factory():\n"
+            "    return _tconnect('db')\n"
+            "def test_safe_elsewhere():\n"
+            "    conn = _factory()\n"
+            "def test_bad():\n"
+            "    conn = sqlite3.connect(':memory:')\n"
+            "    from tools.audit.audit_logger import log_event\n"
+            "    log_event(conn=conn)\n"
+            "    _ = 'SELECT * FROM t WHERE a=%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "fail", r.message
+
 
 # ---------------------------------------------------------------------------
 # check_migration_numbering (kph-C)

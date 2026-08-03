@@ -172,23 +172,23 @@ class TestPostNegativeEventCreate:
         args, _ = mock_record.call_args
         assert args[0] == _CONTRACT_ID
 
+    # record_event's signature is positional —
+    # record_event(contract_id, event_type, severity, description, **kwargs) —
+    # so the blueprint unpacks the request body rather than forwarding a dict.
     def test_record_called_with_payload_containing_event_type(self, api_app):
         _, mock_record = self._call(api_app)
         args, _ = mock_record.call_args
-        data_arg = args[1]
-        assert data_arg.get("event_type") == _EVENT_TYPE
+        assert args[1] == _EVENT_TYPE
 
     def test_record_called_with_payload_containing_severity(self, api_app):
         _, mock_record = self._call(api_app)
         args, _ = mock_record.call_args
-        data_arg = args[1]
-        assert "severity" in data_arg
+        assert args[2] == _SEVERITY
 
     def test_record_called_with_payload_containing_description(self, api_app):
         _, mock_record = self._call(api_app)
         args, _ = mock_record.call_args
-        data_arg = args[1]
-        assert "description" in data_arg
+        assert args[3] == _DESCRIPTION
 
     def test_event_type_value_is_delinquent_delivery(self, api_app):
         resp, _ = self._call(api_app)
@@ -303,5 +303,6 @@ class TestPostNegativeEventEdgeCases:
             with api_app.test_client() as c:
                 _post(c, _CONTRACT_ID, _FULL_PAYLOAD)
         args, _ = mock_record.call_args
-        data_arg = args[1]
-        assert data_arg.get("contract_id") == _CONTRACT_ID
+        # The contract id comes from the URL path, not the JSON body, and the
+        # blueprint forwards it as record_event's first positional argument.
+        assert args[0] == _CONTRACT_ID

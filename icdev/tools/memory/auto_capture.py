@@ -15,7 +15,7 @@ import argparse
 import hashlib
 import json
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import StorageConnection, get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -64,7 +64,14 @@ def _get_connection(db_path=None):
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        # This module authors PostgreSQL ``%s`` placeholders and relies on
+        # StorageConnection to rewrite them for SQLite. Returning the bare
+        # sqlite3 connection bypassed that layer, so every parameterised
+        # statement in capture()/flush_buffer() raised ``near "%": syntax
+        # error`` into the surrounding except block and was reported as an
+        # error count rather than surfacing -- heartbeat_daemon's periodic
+        # buffer flush (which passes db_path) has been a silent no-op.
+        return StorageConnection(conn, "sqlite")
     return get_connection()
 
 

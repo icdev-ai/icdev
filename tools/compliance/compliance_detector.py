@@ -318,9 +318,12 @@ def apply_detection(
 
         for fw in detection["required_frameworks"]:
             conn.execute(
+                # The live columns are confidence and detection_rule, not
+                # detection_confidence/detection_reason (swp-scan-01) — no
+                # auto-detected framework was ever recorded.
                 """INSERT OR REPLACE INTO framework_applicability
                    (project_id, framework_id, source, confirmed,
-                    detection_confidence, detection_reason, created_at)
+                    confidence, detection_rule, created_at)
                    VALUES (%s, %s, 'auto_detected', 0, %s, %s, %s)""",
                 (
                     project_id,
@@ -336,7 +339,7 @@ def apply_detection(
             conn.execute(
                 """INSERT OR IGNORE INTO framework_applicability
                    (project_id, framework_id, source, confirmed,
-                    detection_confidence, detection_reason, created_at)
+                    confidence, detection_rule, created_at)
                    VALUES (%s, %s, 'auto_detected', 0, %s, %s, %s)""",
                 (
                     project_id,

@@ -1358,7 +1358,10 @@ def check_dashboard_health() -> AuditCheck:
     try:
         conn = get_connection()
         conn.execute(
-            "INSERT OR IGNORE INTO dashboard_users (id, email, name, role, status) "
+            # The column is display_name; `name` has never existed on this table,
+            # so the audit user was never created and every authenticated page
+            # check below silently degraded to an unauthenticated one (swp-scan-01).
+            "INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role, status) "
             "VALUES ('audit-user', 'audit@icdev.local', 'Audit', 'admin', 'active')"
         )
         import hashlib

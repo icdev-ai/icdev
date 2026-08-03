@@ -31,7 +31,6 @@ import hashlib
 import json
 import os
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -148,7 +147,6 @@ def _audit(conn, action: str, details: str = "", project_id: str = "") -> None:
             "(created_at, event_type, actor, action, details, session_id, project_id) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
-                str(uuid.uuid4()),
                 _now(),
                 "govcon.lifecycle",
                 "opportunity-lifecycle",

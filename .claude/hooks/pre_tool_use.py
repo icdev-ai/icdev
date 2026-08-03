@@ -8,7 +8,7 @@ Pre-tool-use hook that validates tool calls before execution.
 Blocks:
     - Dangerous rm -rf commands
     - Access to .env files containing secrets
-    - UPDATE/DELETE/DROP/TRUNCATE on all 32 append-only tables (D6, NIST AU)
+    - UPDATE/DELETE/DROP/TRUNCATE on every append-only table (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
     - Deletion of CUI-marked artifacts without explicit approval
 
@@ -24,6 +24,39 @@ import subprocess
 import sys
 from fnmatch import fnmatch
 from pathlib import Path
+
+# Cheap pre-guard for the append-only table check. Every protected-table pattern
+# requires one of these verbs, so a command containing none of them cannot match
+# and we can skip the (much larger) alternation entirely. The overwhelming
+# majority of Bash calls are not SQL at all.
+_SQL_MUTATION_VERB_RE = re.compile(r"\b(?:update|delete|drop|truncate)\b")
+
+# Built once per process from APPEND_ONLY_TABLES, then reused. Previously this
+# check compiled three f-string regexes per table per call — 350+ tables, so
+# ~1000 patterns per Bash call. re's internal cache holds 512, so it was blown
+# and flushed on every single invocation and nothing was ever reused.
+_APPEND_ONLY_PATTERNS = None
+
+
+def _append_only_patterns(tables):
+    """Compile (and memoize) the protected-table patterns.
+
+    One alternation per SQL shape instead of three regexes per table. Matching
+    is equivalent: the original returned True if ANY table matched ANY shape.
+    """
+    global _APPEND_ONLY_PATTERNS
+    if _APPEND_ONLY_PATTERNS is None:
+        # De-duplicated (the source list has a few repeats) and longest-first so
+        # the alternation prefers the most specific table name.
+        alt = "|".join(
+            re.escape(t) for t in sorted(set(tables), key=lambda t: (-len(t), t))
+        )
+        _APPEND_ONLY_PATTERNS = (
+            re.compile(rf"(?:update|delete)\s+(?:from\s+)?(?:{alt})"),
+            re.compile(rf"drop\s+table\s+.*(?:{alt})"),
+            re.compile(rf"truncate\s+.*(?:{alt})"),
+        )
+    return _APPEND_ONLY_PATTERNS
 
 
 def is_dangerous_rm_command(command: str) -> bool:
@@ -86,6 +119,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Core audit
         "audit_trail",
         "hook_events",
+        # Approval-gate verdicts for irreversible agent actions (ars-appr-01,
+        # migration 342). A decision has no lifecycle: someone authorised an
+        # irreversible action once, for a stated reason. An UPDATE here rewrites
+        # who is answerable for a force-push that already happened, so a
+        # correction is a new row.
+        "agent_approval_log",
         # Cortex canvas governance/facade audit (ctx-canvas-01)
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)
@@ -460,6 +499,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Awareness run log + health snapshots (NIST AU, append-only)
         "awareness_run_log",
         "awareness_component_health",
+        # IDP per-component scorecard history (idp-score-03, migration
+        # 20260802222900). A trend line you can UPDATE is not a trend line —
+        # a wrong point is corrected by recording a new one, never by editing
+        # the old one, or "is this component getting better" stops being
+        # answerable from the data.
+        "idp_scorecard_history",
         # Observability Canvas integration (D-OC audit trail, NIST AU)
         "od_audit",
         "nc_audit",
@@ -681,26 +726,69 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # for competition integrity; append-only in fact (only engine.log_api_receipt
         # inserts, every other reference is a SELECT). Rows never UPDATE/DELETE.
         "ttx_api_log",
+        # AI GameDay League (gdx-aud-01, migration 136, NIST AU) — of the 8 gd_ai_*
+        # tables only these three are append-only IN FACT. Every write site was
+        # audited; each of the three has INSERT-only call sites and no upsert:
+        #   gd_ai_artifacts      — db.py::save_artifact (INSERT ... RETURNING)
+        #   gd_ai_llmops_events  — db.py::log_llmops_event (INSERT)
+        #   gd_ai_training_pairs — db.py::save_training_pair, nova_hook.py
+        #                          ::_persist_to_ft_datasets (both plain INSERT)
+        # The other five are MUTABLE BY DESIGN and are deliberately NOT listed —
+        # registering them would break the league:
+        #   gd_ai_tournaments — db.py::update_tournament UPDATEs status/current_round
+        #   gd_ai_teams       — db.py::update_team_scores UPDATEs cumulative deltas
+        #   gd_ai_rounds      — db.py::update_round UPDATEs status/started/completed
+        #   gd_ai_judge_evals — db.py::save_judge_eval ON CONFLICT DO UPDATE (re-judge)
+        #   gd_ai_leaderboard — db.py::upsert_leaderboard ON CONFLICT DO UPDATE
+        #                       (a recomputed snapshot, not an audit record)
+        # Kept in sync with the migration 136 docstring by
+        # tests/test_gdx_gameday_append_only.py.
+        "gd_ai_artifacts",
+        "gd_ai_llmops_events",
+        "gd_ai_training_pairs",
     ]
+    # NOTE: runtime_invocations (migration 341) is deliberately NOT listed. It
+    # is telemetry with a genuine lifecycle — the recorder opens a row 'running'
+    # and UPDATEs it closed with duration and status — so it is not append-only
+    # and claiming otherwise here would both misdescribe it and block legitimate
+    # repair. Audit EVIDENCE belongs above; operational telemetry does not.
 
     if tool_name == "Bash":
         command = tool_input.get("command", "").lower()
-        for table in APPEND_ONLY_TABLES:
-            # Block SQL UPDATE/DELETE on protected table
-            if re.search(rf"(update|delete)\s+(from\s+)?{table}", command):
-                return True
-            # Block DROP TABLE on protected table
-            if re.search(rf"drop\s+table\s+.*{table}", command):
-                return True
-            # Block TRUNCATE on protected table
-            if re.search(rf"truncate\s+.*{table}", command):
+        # Every pattern below requires one of these verbs, so a command without
+        # any of them cannot match. Skipping the alternation here is what keeps
+        # this hook off the critical path for ordinary (non-SQL) shell commands.
+        if not _SQL_MUTATION_VERB_RE.search(command):
+            return False
+        # UPDATE/DELETE, DROP TABLE, and TRUNCATE against any protected table.
+        for pattern in _append_only_patterns(APPEND_ONLY_TABLES):
+            if pattern.search(command):
                 return True
 
     return False
 
 
+_FILE_ACCESS_TIERS_CACHE = None  # sentinel below distinguishes "not loaded" from "None"
+_FILE_ACCESS_TIERS_LOADED = False
+
+
 def _load_file_access_tiers():
-    """Load file access tier config from args/file_access_tiers.yaml."""
+    """Load file access tier config from args/file_access_tiers.yaml.
+
+    Memoized: this is called for every tool call, and re-parsing the YAML from
+    disk each time bought nothing — the hook is a short-lived process, so the
+    config cannot change underneath a single invocation.
+    """
+    global _FILE_ACCESS_TIERS_CACHE, _FILE_ACCESS_TIERS_LOADED
+    if _FILE_ACCESS_TIERS_LOADED:
+        return _FILE_ACCESS_TIERS_CACHE
+    _FILE_ACCESS_TIERS_LOADED = True
+    _FILE_ACCESS_TIERS_CACHE = _read_file_access_tiers()
+    return _FILE_ACCESS_TIERS_CACHE
+
+
+def _read_file_access_tiers():
+    """Uncached read of the tier config. Returns None when absent or disabled."""
     try:
         import yaml
     except ImportError:

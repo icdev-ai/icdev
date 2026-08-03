@@ -627,7 +627,31 @@ class GovernancePipeline:
                 OUTCOME_PASS if registry_id else OUTCOME_WARN,
                 registry_id or "registry insert returned no id",
             )
+        except ValueError as exc:
+            # A ValueError from register_citation means the citation_type is not
+            # in CITATION_TYPES — a PROGRAMMING error, not a runtime degradation,
+            # and the two must not look alike. Recorded as "fail" rather than
+            # "warn" so the audit trail distinguishes "provenance is misconfigured"
+            # from "provenance was briefly unavailable".
+            #
+            # This is what hid the cxo-trust-01 bug: the gate recorded warn for a
+            # bad vocabulary value, warn reads as degradation, and the subsystem
+            # wrote 0 of 285 registry rows for its entire existence while looking
+            # merely flaky. cxo-trust-02's linter now catches this at authoring
+            # time; this is the runtime backstop for anything that slips past.
+            #
+            # Still NOT blocking. governance.fail_closed stays false and this
+            # gate is documented as never blocking — changing that is a separate,
+            # platform-wide decision. The fix is to make the failure legible, not
+            # to start refusing traffic.
+            logger.error(
+                "cortex governance provenance MISCONFIGURED (not a transient "
+                "failure): %s", exc,
+            )
+            self._record(report, GATE_PROVENANCE, OUTCOME_FAIL, str(exc))
         except Exception as exc:
+            # Genuine operational failure — connection refused, timeout, table
+            # missing. Degrades to warn, which is the fail-open posture.
             logger.warning("cortex governance provenance record failed: %s", exc)
             self._record(report, GATE_PROVENANCE, OUTCOME_WARN, str(exc))
         self._audit(report, ctx, provenance_id=registry_id or "", result=result)

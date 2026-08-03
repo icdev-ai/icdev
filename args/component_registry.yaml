@@ -26,6 +26,28 @@
 #   - min_il + default_roles: RBAC metadata mirrored from args/canvas_registry.yaml.
 #   - completeness: 8-point canvas completeness gate requirements.
 #
+# Ownership (idp-cat-01) — ALL THREE FIELDS ARE OPTIONAL:
+#   - owner:         team or individual ACCOUNTABLE for the component.
+#   - owner_contact: how to reach them — email, chat handle, list, or URL.
+#   - on_call:       rotation or escalation handle for production issues.
+#
+#   `owner` is NOT `default_roles`. default_roles is an RBAC access list (who
+#   may USE the canvas); owner is who answers for it when it breaks.
+#
+#   The fields are optional on purpose: making one required would fail the
+#   whole registry load for every entry that has no owner yet. A component that
+#   omits them — or that carries a placeholder such as "TBD", "unassigned" or
+#   "none" — is reported as UNOWNED by
+#   `ComponentRegistry.list_unowned()` / `get_ownership_summary()`. It is never
+#   attributed to a default team, because a wrong owner routes an incident to
+#   nobody while reading as answered.
+#
+#   Current state: 0 of 66 components declare an owner. That is a measured
+#   baseline, not an oversight — this repository has no CODEOWNERS file, no
+#   team roster and no maintainer metadata beyond a single pyproject author, so
+#   there was nothing to backfill from without guessing. Populate these fields
+#   as real accountability is assigned; the IDP scorecard grades the gap.
+#
 # Phase 5 update: nav.links added for all Canvases-menu entries so the dashboard
 # menu is data-driven instead of hardcoded in base.html.
 
@@ -1871,6 +1893,55 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/canvas_health/
+# Internal Developer Portal (idp-ui-02). Declared here FIRST, per the CLAUDE.md
+# registry rule: blueprint registration, the Canvases menu entry, the CLI
+# toggle, the /api/iqe/dispatch mapping and the client-side PATH_CANVAS regex
+# are all DERIVED from this block — no Python list in app.py, cli/enable.py or
+# base.html was touched to add this page.
+#
+# `owner` is deliberately absent. The portal grades the platform's ownership
+# gap (component-readiness/has-owner), and this repo still has no CODEOWNERS or
+# team roster to backfill from. Naming a placeholder owner here would make the
+# one component whose job is to report that gap the one component that lies
+# about it — so the portal reports itself as UNOWNED, which is true.
+- key: idp
+  kind: canvas
+  cli_name: idp
+  display_name: Internal Developer Portal
+  description: Catalog and scorecards over ICDEV's own registered components.
+  env_flag: ICDEV_IDP_ENABLED
+  default_enabled: true
+  module: tools.idp.blueprint
+  blueprint_attr: bp
+  url_prefix: /idp
+  min_il: IL4
+  min_tier: community
+  default_roles:
+  - developer
+  - admin
+  nav:
+    section: Canvases
+    label: Developer Portal
+    links:
+    - label: 🧭 Developer Portal
+      href: /idp/
+      style: color:#7ad1a8;
+    - label: Component Catalog
+      href: /idp/catalog
+    - label: Scorecards
+      href: /idp/scorecards
+  iqe:
+    adapter_module: tools.iqe.adapters.idp
+    collections:
+    - idp.components
+  completeness:
+    template: tools/dashboard/templates/idp/page.html
+    blueprint: true
+    constants: tools/idp/constants.py
+    db_migration: tools/idp/db/init_db.py
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/idp/
 - key: cwk
   kind: canvas
   display_name: Co-Workers

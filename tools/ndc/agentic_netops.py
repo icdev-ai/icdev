@@ -112,25 +112,32 @@ def _create_kanban_task(title: str, description: str, priority: str = "high",
                          canvas: str = "ndc", epic_key: str = "ndc-modernize",
                          depends_on: str = "") -> str:
     """Insert a task into ICDEV Kanban. Returns task_id."""
+    # swp-scan-01: this named `tasks`, not the `kanban_tasks` board, and of the
+    # columns it listed only title/description/status/priority exist there at
+    # all — `task_id` is `id`, and `canvas`/`epic_key` exist on no board table.
+    # It also used SQLite-only `INSERT OR IGNORE`, unparseable on PostgreSQL.
+    # Every call failed into the bare `except`, so NDC never filed a task.
+    # canvas/epic_key have no column to land in, so they are recorded in the
+    # description rather than silently dropped.
     task_id = f"ndc-{uuid.uuid4().hex[:8]}"
-    now = _NOW_UTC.isoformat()
-    conn = _icdev_conn()
-    if not conn:
-        return task_id
     try:
-        conn.execute(
-            """INSERT OR IGNORE INTO tasks
-               (task_id, title, description, status, priority, canvas,
-                epic_key, depends_on_task_id, scheduled_at, created_at, updated_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (task_id, title, description, "backlog", priority, canvas,
-             epic_key, depends_on or None, now, now, now),
+        from tools.kanban.task_factory import create_tasks
+
+        create_tasks(
+            [
+                {
+                    "id": task_id,
+                    "title": title,
+                    "description": f"{description}\n\n[canvas: {canvas} | epic: {epic_key}]",
+                    "status": "backlog",
+                    "priority": priority,
+                    "depends_on_task_id": depends_on or None,
+                    "dispatch_source": "ndc_agentic_netops",
+                }
+            ]
         )
-        conn.commit()
     except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
-        logger.warning("_create_kanban_task: best-effort INSERT into tasks failed (non-blocking): %s", exc)
-    finally:
-        conn.close()
+        logger.warning("_create_kanban_task: best-effort task creation failed (non-blocking): %s", exc)
     return task_id
 
 

@@ -485,11 +485,17 @@ def _seed_default_coa() -> None:
             conn.close()
             return
         now = _utcnow_iso()
+        # title/description are not columns on sg_coa_options (swp-scan-01);
+        # the live names are coa_name/course_description, and updated_at is
+        # NOT NULL. The seed therefore never landed, so the reflex kept finding
+        # zero active COAs and re-running this same failing insert.
         conn.execute(
-            "INSERT INTO sg_coa_options (id, title, description, resource_allocation, status, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s)" if is_pg() else
-            "INSERT INTO sg_coa_options (id, title, description, resource_allocation, status, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "INSERT INTO sg_coa_options "
+            "(id, coa_name, course_description, resource_allocation, status, created_at, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)" if is_pg() else
+            "INSERT INTO sg_coa_options "
+            "(id, coa_name, course_description, resource_allocation, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
             (
                 "coa-seed-01",
                 "COA Alpha — Force Projection",
@@ -502,6 +508,7 @@ def _seed_default_coa() -> None:
                     "space": 0.05,
                 }),
                 "active",
+                now,
                 now,
             ),
         )

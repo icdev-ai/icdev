@@ -84,8 +84,10 @@ class CSPHealthChecker:
                 return
             entry_id = f"csp-{uuid.uuid4().hex[:12]}"
             conn.execute(
+                # The column is details, not error_message — every CSP health
+                # sample was silently dropped by the debug-level except (swp-scan-01).
                 "INSERT INTO cloud_provider_status "
-                "(id, provider, service, status, latency_ms, error_message, checked_at) "
+                "(id, provider, service, status, latency_ms, details, checked_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     entry_id,
