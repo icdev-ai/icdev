@@ -27,7 +27,13 @@ Content patterns escalate **before** the per-tool tier and win, because a generi
 shell tool is only as reversible as the string it is handed, and a tool schema's
 own ``is_read_only`` flag is an assertion by the caller rather than a fact. They
 only *downgrade* for a tool named in ``command_tools`` — a pattern that can make
-any call look safe is an allowlist that fails open by accident. See
+any call look safe is an allowlist that fails open by accident.
+
+The single exception is a tool the **policy** enumerates ``reversible`` that is
+not a generic executor: it is exempt from escalation entirely, because a tool
+that does not execute its arguments cannot be made irreversible by them. That
+assertion lives in the operator's policy file rather than in developer-authored
+schema, which is what makes it trustworthy where ``is_read_only`` was not. See
 :func:`classify`.
 
 Precedent reused rather than reinvented:
@@ -251,8 +257,12 @@ def classify(
     Order is deliberate, and the asymmetry between escalation and downgrade is
     the whole safety property:
 
-    1. **Irreversible content patterns escalate anything.** ``run_command`` is
-       not a tier; the string it is handed is. A shell tool the caller marked
+    0. **A tool the policy enumerates ``reversible`` is exempt from escalation**,
+       unless it is a generic executor. Its arguments are data it reads, not a
+       command it runs, so scanning them for ``git push`` is a category error —
+       and one that made ``read_file`` prompt for confirmation on a docstring.
+    1. **Irreversible content patterns escalate anything else.** ``run_command``
+       is not a tier; the string it is handed is. A shell tool the caller marked
        read-only can still carry ``git push``.
     2. Then the per-tool tier from the policy.
     3. **Downgrade patterns apply only to declared generic executors**
@@ -269,6 +279,39 @@ def classify(
     require = set(policy.get("require_approval_tiers") or [IRREVERSIBLE, UNKNOWN])
     blob = f"{tool_name} {flatten_input(tool_input)}"
     patterns = _compiled_patterns(policy)
+    lname = (tool_name or "").lower()
+    command_tools = _command_tools(policy)
+
+    # 0. A tool the POLICY declares reversible is not escalated by its own
+    #    arguments. For a tool that does not execute what it is handed, the
+    #    input is data being read, not a command being run — matching an
+    #    irreversible pattern against it is a category error. Without this,
+    #    read_file("how do I git push safely") halted for human approval, and a
+    #    gate that prompts on a read teaches operators to approve reflexively,
+    #    which costs more safety than the escalation buys.
+    #
+    #    This is narrower than trusting a tool schema's own is_read_only flag
+    #    (which the parallel ars-appr-01 implementation did, and which this
+    #    module rejected as "an assertion by the caller rather than a fact").
+    #    The assertion here comes from args/agent_approval_policy.yaml — the
+    #    operator's file, already the source of truth for every other tier — not
+    #    from developer-authored schema shipped alongside the tool.
+    #
+    #    A generic executor is excluded, always: for anything in command_tools
+    #    the input IS the command, so the exemption would be exactly the
+    #    smuggling hole rule 1 exists to close. Listing a shell as `reversible`
+    #    is an incoherent claim and is ignored rather than honoured.
+    if _tool_tiers(policy).get(lname) == REVERSIBLE and lname not in command_tools:
+        return Classification(
+            tool_name=tool_name,
+            tier=REVERSIBLE,
+            rule="reversible_tool",
+            detail=(
+                f"{tool_name} is enumerated reversible in {POLICY_FILENAME} and is "
+                f"not a generic executor, so its arguments are data, not commands"
+            ),
+            requires_approval=REVERSIBLE in require,
+        )
 
     # 1. Escalation — unconditional, for every tool.
     for tier, rx, detail in patterns:
