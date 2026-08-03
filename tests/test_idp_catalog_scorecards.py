@@ -160,6 +160,12 @@ def test_entity_with_no_applicable_rule_is_unassessed():
         assert row["score"] is None, f"{entity} was scored with no applicable rule"
         assert row["letter_grade"] is None
         assert row["assessed"] is False
+        # The ladder has to agree with the score. Asserting score/grade alone
+        # let the level half of the same bug survive: the rung walk treats a
+        # rung with no applicable rules as vacuously met, so an entity with
+        # nothing applicable cleared every rung and came out at the TOP.
+        assert row["level"] is None, f"{entity} was ranked {row['level']!r} with no applicable rule"
+        assert row["level_rank"] == 0
 
     # And the histogram keeps them in their own bucket rather than under F.
     assert report["grade_distribution"]["unassessed"] == 2
@@ -193,6 +199,99 @@ def test_a_measured_zero_stays_a_zero():
     assert row["score"] == 0.0
     assert row["assessed"] is True
     assert row["letter_grade"] == "F"
+
+
+def test_the_top_rung_cannot_be_reached_by_never_being_measured():
+    """A gated ladder must not be climbable by having no applicable rule.
+
+    ``_assign_level`` walks the rungs bottom-up and treats a rung whose rules
+    are all not-applicable as met — deliberately, so a non-canvas can reach
+    Gold on ``e2e-spec`` while the canvas-only ``completeness-gate`` sits out.
+    But ``all([])`` is ``True``, so when EVERY leveled rule is filtered out the
+    walk runs clean to the highest rung and awards it. Reproduced 2026-08-02
+    against the live registry: 30 of 67 components came back at the top rung
+    with ``assessed=False`` — the exact "unassessed reads as passing" failure
+    the portal exists to prevent, on the one field an operator triages by.
+    """
+    yaml_text = """
+    key: gated-but-inapplicable
+    name: Gated But Inapplicable
+    collection: test.components
+    adapter_module: tools.iqe
+    dimensions:
+    - {key: security, label: Security}
+    ladder:
+      levels:
+      - name: Bronze
+        rank: 1
+      - name: Gold
+        rank: 3
+    rules:
+    - identifier: bronze-gate
+      dimension: security
+      level: Bronze
+      weight: 10
+      expression: foreach c in test.components where c.rls_clean == true select c.key
+      filter: foreach c in test.components where c.kind == "nonexistent" select c.key
+    - identifier: gold-gate
+      dimension: security
+      level: Gold
+      weight: 10
+      expression: foreach c in test.components where c.rls_clean == true select c.key
+      filter: foreach c in test.components where c.kind == "nonexistent" select c.key
+    """
+    report = evaluate(_card(yaml_text), conn=None)
+    row = _result(report, "alpha")
+    assert row["level"] is None, f"unmeasured entity was awarded {row['level']!r}"
+    assert row["level_rank"] == 0
+    assert row["assessed"] is False
+
+    # The ladder chart must not count it as a rung-holder either, and must not
+    # bury it under "unranked" — which means "measured, did not clear Bronze".
+    dist = report["level_distribution"]
+    assert dist["Gold"] == 0
+    assert dist["Bronze"] == 0
+    assert dist["unranked"] == 0
+    assert dist["unassessed"] == len(report["results"])
+
+
+def test_a_vacuous_rung_still_lets_a_measured_entity_climb():
+    """The mirror image: the vacuous-rung allowance must survive the fix.
+
+    A component that IS measured somewhere must still clear a rung whose rules
+    are all not-applicable to it — otherwise the fix above would silently
+    demote every non-canvas that the canvas-only rules do not touch.
+    """
+    yaml_text = """
+    key: vacuous-rung
+    name: Vacuous Rung
+    collection: test.components
+    adapter_module: tools.iqe
+    dimensions:
+    - {key: security, label: Security}
+    ladder:
+      levels:
+      - name: Bronze
+        rank: 1
+      - name: Gold
+        rank: 3
+    rules:
+    - identifier: bronze-inapplicable
+      dimension: security
+      level: Bronze
+      weight: 10
+      expression: foreach c in test.components where c.rls_clean == true select c.key
+      filter: foreach c in test.components where c.kind == "nonexistent" select c.key
+    - identifier: gold-passes
+      dimension: security
+      level: Gold
+      weight: 10
+      expression: foreach c in test.components select c.key
+    """
+    row = _result(evaluate(_card(yaml_text), conn=None), "alpha")
+    assert row["assessed"] is True
+    assert row["level"] == "Gold", "a measured entity lost its vacuous rung"
+    assert row["level_rank"] == 3
 
 
 def test_unassessed_and_failing_are_distinguishable_in_the_catalog():

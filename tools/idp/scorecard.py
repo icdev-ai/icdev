@@ -720,12 +720,26 @@ def _assign_level(
 
     Only leveled rules gate. A rule that is not applicable to this entity
     cannot hold it back. Returns ``(level_name, rank)``; ``(None, 0)`` when the
-    entity does not clear the lowest rung.
+    entity does not clear the lowest rung *or* when nothing measured it.
+
+    A rung whose rules are all not-applicable is met vacuously, which is what
+    lets a non-canvas reach Gold on ``e2e-spec`` alone while the canvas-only
+    ``completeness-gate`` sits out. But when *every* leveled rule is
+    not-applicable, that same vacuous-truth walk runs clean to the TOP of the
+    ladder and hands the highest rung to an entity nothing ever looked at —
+    ``all([])`` is ``True`` at every rung. Measured 2026-08-02 against a
+    canvas-filtered scorecard: 30 of 67 components were awarded the top rung
+    with ``assessed=False``. An empty ``by_level`` is therefore the "no
+    evidence at all" case and returns unranked, so the ladder cannot be
+    climbed by never being looked at.
     """
     by_level: dict[str, list[RuleOutcome]] = {}
     for outcome in outcomes:
         if outcome.level and outcome.status != "not_applicable":
             by_level.setdefault(outcome.level, []).append(outcome)
+
+    if not by_level:
+        return (None, 0)
 
     attained: Level | None = None
     for level in ladder:
@@ -932,11 +946,19 @@ def _dimension_results(
 
 
 def _level_distribution(results: list[EntityResult], ladder: list[Level]) -> dict[str, int]:
-    dist = {"unranked": 0}
+    """Ladder histogram. ``unassessed`` is its own bucket, never folded into
+    ``unranked`` — "measured and did not clear Bronze" and "nothing measured
+    it" are different facts, and the ladder chart is the one place a reader
+    counts components per rung.
+    """
+    dist = {"unranked": 0, "unassessed": 0}
     for level in ladder:
         dist[level.name] = 0
     for result in results:
-        dist[result.level or "unranked"] += 1
+        if not result.assessed:
+            dist["unassessed"] += 1
+        else:
+            dist[result.level or "unranked"] += 1
     return dist
 
 
