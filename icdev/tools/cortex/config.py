@@ -85,12 +85,17 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
         # the security model (key folds tenant/classification/domain/air_gap).
         "enabled": False,
         "max_entries": 512,
-        "operations": ["cortex.complete", "cortex.search", "cortex.ask"],
+        "operations": [
+            "cortex.complete", "cortex.search", "cortex.ask",
+            "cortex.classify", "cortex.extract",
+        ],
         "ttl_seconds": {
             "default": 300,
             "cortex.complete": 900,
             "cortex.search": 120,
             "cortex.ask": 30,
+            "cortex.classify": 600,
+            "cortex.extract": 900,
         },
     },
 }

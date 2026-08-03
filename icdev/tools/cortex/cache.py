@@ -9,9 +9,16 @@ governance. A cache HIT still emits a ``cortex_audit`` row (``cache_hit=True``,
 zero incremental cost) so the append-only NIST-AU trail and /cortex/metrics stay
 complete.
 
-Covers the operations in ``cache.operations`` (default complete/search/ask).
+Covers the operations in ``cache.operations`` (default complete/search/ask/
+classify/extract). ``classify`` and ``extract`` are the most deterministic and
+highest-repeat of the six — pure functions of (text, labels|schema, function)
+with no DB or corpus state behind them.
+
 NOTE: ``ask`` caches LIVE analyst answers over changing DB state, so its TTL is
-deliberately short — enable it knowingly.
+deliberately short — enable it knowingly. ``classify`` DEGRADES to a
+query_classifier heuristic when the router is unavailable and that result is not
+blocked, so it is cacheable too; its shorter TTL bounds how long a transient
+outage can pin a degraded label.
 """
 from __future__ import annotations
 
@@ -32,8 +39,13 @@ _DEFAULT_TTL = {
     "cortex.complete": 900.0,
     "cortex.search": 120.0,
     "cortex.ask": 30.0,
+    "cortex.classify": 600.0,
+    "cortex.extract": 900.0,
 }
-_DEFAULT_OPERATIONS = ("cortex.complete", "cortex.search", "cortex.ask")
+_DEFAULT_OPERATIONS = (
+    "cortex.complete", "cortex.search", "cortex.ask",
+    "cortex.classify", "cortex.extract",
+)
 
 
 def _cache_cfg() -> dict:
