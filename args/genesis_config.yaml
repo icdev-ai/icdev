@@ -109,7 +109,16 @@ trust_kernel:
   circuit_breaker:
     max_consecutive_failures: 3
     cooldown_minutes: 60
-    auto_reenable: false  # human must re-enable after trip
+    # xbm-wake-01: was `false`, which made the breaker a permanent latch — a
+    # reflex tripped by a transient external fault stayed off until a human ran
+    # `daemon.py --reset`, emitting NO audit row and NO alert while off. Three
+    # reflexes were latched exactly that way (research, docs, kanban), and all
+    # three recorded the useless last_error "metric_threshold_not_met". A
+    # transient outage must not be a permanent shutdown: now one half-open probe
+    # is allowed per cooldown, doubling up to max_cooldown_minutes per failed
+    # probe, so a recovered dependency re-enables its reflex unattended.
+    auto_reenable: true
+    max_cooldown_minutes: 1440  # cap the exponential backoff at one probe/day
     notify_on_trip: true
 
   # Kill switch

@@ -293,6 +293,61 @@ def is_due(schedule: Dict[str, Any], last_run: Optional[str]) -> bool:
     return False
 
 
+def circuit_probe_due(
+    state: Dict[str, Any],
+    cb_config: Dict[str, Any],
+    now: Optional[datetime] = None,
+) -> bool:
+    """Return True when an OPEN circuit breaker has cooled down enough to allow
+    one half-open probe run (xbm-wake-01).
+
+    Before this existed the breaker was a LATCH, not a breaker: ``run_due_reflexes``
+    skipped every open-breaker reflex with a bare ``continue`` — no audit row, no
+    alert, no retry — so a transient external fault disabled a reflex permanently
+    and silently. Three reflexes were sitting in exactly that state when
+    xbm-wake-01 measured them (``research`` since 2026-03-16, ``docs`` since
+    2026-03-17, ``kanban`` since 2026-05-16), each with three consecutive failures
+    and the uninformative last_error "metric_threshold_not_met" — so the latch hid
+    both the outage and its reason. Nothing short of a human running
+    ``daemon.py --reset`` would ever have run them again.
+
+    Backoff is exponential in the failures accrued BEYOND the trip threshold, so a
+    reflex that is genuinely broken converges to one cheap probe per
+    ``max_cooldown_minutes`` instead of retrying every cycle, while a reflex whose
+    external dependency recovered closes its breaker on the next probe.
+
+    Set ``auto_reenable: false`` to restore the old latch-until-human behavior.
+    """
+    if not state.get("circuit_breaker_open", 0):
+        return False
+    if not cb_config.get("auto_reenable", True):
+        return False
+
+    now = now or utcnow()
+    tripped_at = state.get("circuit_breaker_tripped_at")
+    if not tripped_at:
+        # Breaker open with no trip timestamp — treat as immediately probeable
+        # rather than stranding the reflex on missing bookkeeping.
+        return True
+    try:
+        tripped = datetime.fromisoformat(str(tripped_at).replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return True
+    if tripped.tzinfo is None:
+        tripped = tripped.replace(tzinfo=timezone.utc)
+
+    base_minutes = float(cb_config.get("cooldown_minutes", 60))
+    max_minutes = float(cb_config.get("max_cooldown_minutes", 1440))
+    max_failures = int(cb_config.get("max_consecutive_failures", 3))
+    consecutive = int(state.get("consecutive_failures", 0) or 0)
+
+    # Each failed probe adds one to consecutive_failures, doubling the next wait.
+    extra = max(0, consecutive - max_failures)
+    wait_minutes = min(base_minutes * (2 ** min(extra, 20)), max_minutes)
+
+    return (now - tripped).total_seconds() >= wait_minutes * 60.0
+
+
 def evaluate_metric(metric_config: Dict[str, Any], value: float) -> bool:
     """Evaluate a success metric against its threshold."""
     if "composite" in metric_config:
@@ -409,7 +464,13 @@ class ReflexStateBase:
             conn.close()
 
     def record_success(self, metric_value: float = None) -> None:
-        """Record a successful run."""
+        """Record a successful run.
+
+        Also CLOSES the circuit breaker (xbm-wake-01). A half-open probe that
+        succeeds must clear the latch, otherwise the reflex would run once, be
+        marked healthy, and then be skipped again on the next cycle because
+        ``circuit_breaker_open`` was still 1.
+        """
         with self._lock:
             now = utcnow_iso()
             conn = get_connection()
@@ -418,6 +479,8 @@ class ReflexStateBase:
                     f"""
                     UPDATE {self.state_table} SET
                         last_run_at = %s, consecutive_failures = 0,
+                        circuit_breaker_open = 0,
+                        circuit_breaker_tripped_at = NULL,
                         total_runs = total_runs + 1,
                         total_successes = total_successes + 1,
                         last_metric_value = %s, last_error = NULL, updated_at = %s
@@ -697,7 +760,8 @@ class DaemonBase(abc.ABC):
                 "circuit_breaker": {
                     "max_consecutive_failures": 3,
                     "cooldown_minutes": 60,
-                    "auto_reenable": False,
+                    "auto_reenable": True,
+                    "max_cooldown_minutes": 1440,
                 },
             },
             "reflexes": {name: {"enabled": False, "risk_tier": RISK_GREEN} for name in cls.reflex_names},
@@ -812,8 +876,13 @@ class DaemonBase(abc.ABC):
         for state in self.reflex_states.values():
             state.load()
 
-    def run_reflex(self, name: str) -> Dict[str, Any]:
-        """Run a single reflex with full lifecycle management."""
+    def run_reflex(self, name: str, probe: bool = False) -> Dict[str, Any]:
+        """Run a single reflex with full lifecycle management.
+
+        ``probe=True`` admits a half-open circuit-breaker probe: the reflex runs
+        despite an open breaker, and ``record_success`` closes it on recovery
+        (xbm-wake-01).
+        """
         reflex_config = self.config.get("reflexes", {}).get(name, {})
         state = self.reflex_states.get(name)
         if not state:
@@ -823,9 +892,13 @@ class DaemonBase(abc.ABC):
         cb_config = self.config.get("trust_kernel", {}).get("circuit_breaker", {})
 
         # Pre-flight checks
-        if state.is_circuit_open():
+        if state.is_circuit_open() and not probe:
             self.log_audit(f"{self.event_prefix}.reflex.skipped", name, risk_tier, {"reason": "circuit_breaker_open"})
             return {"status": "skipped", "reason": "circuit_breaker_open"}
+        if probe:
+            self.log_audit(
+                f"{self.event_prefix}.circuit_breaker.probe", name, risk_tier, {"reason": "cooldown_elapsed"}
+            )
 
         current_state = state.load()
         if not current_state.get("enabled", 1):
@@ -874,7 +947,15 @@ class DaemonBase(abc.ABC):
                     "details": details,
                 }
             else:
-                error_msg = details.get("error", "metric_threshold_not_met")
+                # xbm-wake-01: only claim "metric_threshold_not_met" when the reflex
+                # actually SUCCEEDED and merely missed its threshold. A reflex that
+                # reported failure without an explicit `error` key used to be filed
+                # under the metric excuse too — which is why every latched reflex on
+                # this platform recorded a threshold miss and none recorded a cause.
+                if success:
+                    error_msg = details.get("error", "metric_threshold_not_met")
+                else:
+                    error_msg = details.get("error", "reflex_reported_failure")
                 tripped = state.record_failure(error_msg, cb_config)
                 event = (
                     f"{self.event_prefix}.circuit_breaker.tripped" if tripped else f"{self.event_prefix}.reflex.failed"
@@ -927,12 +1008,14 @@ class DaemonBase(abc.ABC):
         """Run all reflexes that are currently due."""
         results = []
         due_reflexes = []
+        probe_reflexes: set = set()  # names admitted as half-open breaker probes
 
         # Active hours gate — skip entire cycle if outside window
         if not in_active_hours(self.config):
             return results
 
         # First pass: determine which reflexes are due
+        cb_config = self.config.get("trust_kernel", {}).get("circuit_breaker", {})
         for name in self.reflex_names:
             schedule = self.schedules.get(name)
             if not schedule:
@@ -941,6 +1024,14 @@ class DaemonBase(abc.ABC):
             if not state.get("enabled", 1):
                 continue
             if state.get("circuit_breaker_open", 0):
+                # xbm-wake-01: a tripped breaker used to be a permanent, silent
+                # latch. Allow one half-open probe once the (exponentially backed
+                # off) cooldown has elapsed so a recovered dependency re-enables
+                # the reflex on its own — and so a still-broken one keeps emitting
+                # failure telemetry instead of going quiet forever.
+                if circuit_probe_due(state, cb_config):
+                    probe_reflexes.add(name)
+                    due_reflexes.append(name)
                 continue
             if is_due(schedule, state.get("last_run_at")):
                 due_reflexes.append(name)
@@ -962,7 +1053,8 @@ class DaemonBase(abc.ABC):
             if self._shutdown_event.is_set():
                 break
 
-            print(f"INFO: Running reflex '{name}' (due)")
+            is_probe = name in probe_reflexes
+            print(f"INFO: Running reflex '{name}' ({'half-open breaker probe' if is_probe else 'due'})")
 
             # SSE progress broadcast (best-effort)
             try:
@@ -979,7 +1071,7 @@ class DaemonBase(abc.ABC):
             except Exception:
                 pass
 
-            result = self.run_reflex(name)
+            result = self.run_reflex(name, probe=is_probe)
             results.append(result)
             # Hook for pipeline chain triggering
             self.on_reflex_completed(name, result)
