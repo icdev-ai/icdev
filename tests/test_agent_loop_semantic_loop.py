@@ -370,6 +370,38 @@ class TestAgentLoopIntegration:
         assert result.final_content == "all modules updated"
         assert result.loop_detection == {}
 
+    def test_detection_reaches_the_harness_decision_row(self, monkeypatch):
+        """The loop/budget distinction has to survive into telemetry, not just the return value."""
+        import icdev.tools.llm.agent_loop as _al
+
+        captured: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            _al,
+            "_record_codegen_decision",
+            lambda **kw: captured.append(kw),
+        )
+
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": path}}]
+            for i, path in enumerate(_LOOP_SPELLINGS)
+        ]
+        router = ScriptedRouter(calls + ["done"])
+        run_agent_loop(
+            router,
+            system_prompt="s",
+            user_prompt="u",
+            tools=[_tool("read")],
+            tool_handlers={"read": lambda inp, stop: "identical output"},
+            max_iterations=len(_LOOP_SPELLINGS) + 1,
+            memory_enabled=False,
+        )
+
+        assert len(captured) == 1
+        recorded = captured[0]["result"]
+        assert recorded.result_subtype == ResultSubtype.error_semantic_loop
+        assert recorded.truncation_reason == "semantic_loop"
+        assert recorded.loop_detection["detected"] is True
+
     def test_detection_can_be_disabled_per_call(self):
         calls = [
             [{"id": f"c{i}", "name": "read", "input": {"path": path}}]

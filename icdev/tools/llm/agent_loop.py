@@ -566,6 +566,9 @@ def _record_codegen_decision(
         "llm_function": llm_function,
         "session_id": session_id,
         "result_subtype": result.result_subtype,
+        # Carried into harness_eval so "agent was stuck" stays separable from
+        # "task exhausted its budget" once the run is only a telemetry row.
+        "truncation_reason": result.truncation_reason,
         "done": result.done,
         "truncated": result.truncated,
         "turns": result.turns,
@@ -573,6 +576,8 @@ def _record_codegen_decision(
         "total_output_tokens": result.total_output_tokens,
         "total_cost_usd": result.total_cost_usd,
     }
+    if result.loop_detection:
+        metadata["loop_detection"] = result.loop_detection
     if rubric_verdict is not None:
         metadata["rubric_verdict"] = rubric_verdict
     if grading_attempts is not None:
