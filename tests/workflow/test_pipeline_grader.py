@@ -20,9 +20,15 @@ def patch_collab(monkeypatch):
         "conf_calls": [],
     }
 
-    def _vwt(cwd, modified_files=None, compare_to_main=True, run_e2e=True, run_companion=True):
+    # Signature tracks validated_commit.validate_working_tree. A stub that drops a
+    # real parameter turns every call into a TypeError the grader swallows as
+    # ``grader_error`` — which is how ``budget_sec`` went untested after it was
+    # added upstream. Record it too, so the next addition fails loudly instead.
+    def _vwt(cwd, modified_files=None, compare_to_main=True, run_e2e=True,
+             run_companion=True, budget_sec=None):
         state["vwt_calls"].append(
-            {"cwd": cwd, "files": modified_files, "run_e2e": run_e2e, "companion": run_companion}
+            {"cwd": cwd, "files": modified_files, "run_e2e": run_e2e,
+             "companion": run_companion, "budget_sec": budget_sec}
         )
         if isinstance(state["vwt"], Exception):
             raise state["vwt"]
@@ -120,3 +126,17 @@ def test_run_e2e_passthrough(patch_collab):
     grader = pg.make_pipeline_grader("/wt", "t-1", ["a.py"], run_e2e=True)
     grader(None)
     assert patch_collab["vwt_calls"][0]["run_e2e"] is True
+
+
+def test_budget_sec_passthrough(patch_collab):
+    """The kanban runner derives this from the task's dispatch budget; if it stops
+    reaching the gate suite, validation can outspend the build it is judging."""
+    grader = pg.make_pipeline_grader("/wt", "t-1", ["a.py"], budget_sec=42.0)
+    grader(None)
+    assert patch_collab["vwt_calls"][0]["budget_sec"] == 42.0
+
+
+def test_budget_sec_defaults_to_none(patch_collab):
+    grader = pg.make_pipeline_grader("/wt", "t-1", ["a.py"])
+    grader(None)
+    assert patch_collab["vwt_calls"][0]["budget_sec"] is None

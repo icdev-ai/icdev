@@ -92,6 +92,9 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("fathomdesk_news_patterns", SUPPORT, 4.0, "FathomDesk news pattern detection"),
     ReflexEntry("fathomdesk_correlation_monitor", SUPPORT, 4.0, "FathomDesk cross-asset correlation"),
     ReflexEntry("bdc_isa_expiry",     SUPPORT, 24.0, "BDC ISA expiry tracking"),
+    ReflexEntry("idp_delivery_events", SUPPORT, 6.0,
+                "Emit DORA delivery events from the kanban merge ledger so the "
+                "rolling 30-day window at /api/sre/dora stays measurable"),
     ReflexEntry("coherence_sweep",    SUPPORT, 6.0,
                 "Full-tier coherence sweep on main — runs the whole-app checks the "
                 "per-task fast-tier gate defers, and refreshes its baseline"),

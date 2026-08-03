@@ -206,9 +206,26 @@ cache:
   # hit rate at temperature 0). search = retrieval fan-out (corpus drifts -> keep
   # TTL short). ask = LIVE analyst NL->SQL answers over changing DB state -> very
   # short TTL, and the riskiest to cache; drop it from this list to disable.
-  operations: [cortex.complete, cortex.search, cortex.ask]
+  #
+  # classify + extract are the most deterministic and highest-repeat operations:
+  # both are pure functions of (text, labels|schema, function) with no DB or
+  # corpus state behind them, and callers drive them in batch loops over the same
+  # inputs (tools/bom/taxonomy.py::classify_lines re-issues an identical
+  # extract(prompt, ASSIGN_SCHEMA, ctx) for every batch of a re-uploaded
+  # workbook). Their non-boundary args are folded into the key by the facade
+  # decorator — a different label list or a different JSON schema is a different
+  # entry, never a shared one.
+  operations: [cortex.complete, cortex.search, cortex.ask, cortex.classify, cortex.extract]
   ttl_seconds:
     default: 300
     cortex.complete: 900
     cortex.search: 120
     cortex.ask: 30
+    # classify DEGRADES rather than raising: when the router is unavailable it
+    # returns a query_classifier heuristic label (provider="deterministic"), and
+    # that result is not blocked, so it IS cacheable. The shorter TTL bounds how
+    # long a transient outage can pin a degraded label.
+    cortex.classify: 600
+    # extract lets router errors propagate, so only genuine model output is ever
+    # stored — same class as complete.
+    cortex.extract: 900

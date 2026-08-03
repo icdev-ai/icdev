@@ -290,8 +290,18 @@ def _run_single_agent(
 ):
     """Late-bound single-agent loop for goal execution.
 
-    Imports the canonical ``icdev.tools.llm.agent_loop`` directly (not the healed
-    root shim). When ``rubric`` is true the loop is graded in real time by the
+    Imports the canonical ``icdev.tools.llm.agent_loop`` directly. The ``icdev.``
+    prefix is deliberate and is the form the repo's import convention calls
+    canonical: in a source checkout the root ``tools/`` shim and
+    ``icdev/tools/`` load as *separate*
+    module objects, so only the canonical spelling is guaranteed to bind the same
+    object the rest of the platform holds. ``tools/llm/agent_loop.py`` happens to
+    preserve identity today (it is a pure re-export shim, added in dba8d4b59
+    after the physical copy it replaced had drifted out of sync), but that is a
+    property of one file rather than of the namespace. See
+    docs/features/cortex-unified-ai-layer.md, "Import namespace".
+
+    When ``rubric`` is true the loop is graded in real time by the
     delivery-pipeline rubric (build -> gates -> revise) via
     ``run_agent_loop_with_rubric``; conformance review is off (no kanban
     acceptance criteria for an ad-hoc goal). Returns an ``AgentLoopResult`` in

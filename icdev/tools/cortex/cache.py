@@ -9,9 +9,16 @@ governance. A cache HIT still emits a ``cortex_audit`` row (``cache_hit=True``,
 zero incremental cost) so the append-only NIST-AU trail and /cortex/metrics stay
 complete.
 
-Covers the operations in ``cache.operations`` (default complete/search/ask).
+Covers the operations in ``cache.operations`` (default complete/search/ask/
+classify/extract). ``classify`` and ``extract`` are the most deterministic and
+highest-repeat of the six — pure functions of (text, labels|schema, function)
+with no DB or corpus state behind them.
+
 NOTE: ``ask`` caches LIVE analyst answers over changing DB state, so its TTL is
-deliberately short — enable it knowingly.
+deliberately short — enable it knowingly. ``classify`` DEGRADES to a
+query_classifier heuristic when the router is unavailable and that result is not
+blocked, so it is cacheable too; its shorter TTL bounds how long a transient
+outage can pin a degraded label.
 """
 from __future__ import annotations
 
@@ -32,8 +39,13 @@ _DEFAULT_TTL = {
     "cortex.complete": 900.0,
     "cortex.search": 120.0,
     "cortex.ask": 30.0,
+    "cortex.classify": 600.0,
+    "cortex.extract": 900.0,
 }
-_DEFAULT_OPERATIONS = ("cortex.complete", "cortex.search", "cortex.ask")
+_DEFAULT_OPERATIONS = (
+    "cortex.complete", "cortex.search", "cortex.ask",
+    "cortex.classify", "cortex.extract",
+)
 
 
 def _cache_cfg() -> dict:
@@ -150,16 +162,21 @@ def audit_hit(operation: str, ctx) -> None:
     A pre-pipeline hit skips GovernancePipeline.wrap, so without this the
     append-only NIST-AU trail and /cortex/metrics would silently undercount
     served responses. Best-effort — a metrics write must never break serving.
+
+    Routed through ``record_governed_call`` so a hit costs ONE connection, not
+    one per write (cxo-perf-03) — otherwise the cache saves the LLM call but not
+    the DB round-trip it was meant to make cheap.
     """
     try:
-        from .db.init_db import record_audit
-        record_audit({
+        from .db.init_db import record_governed_call
+        record_governed_call({
             "operation": operation,
             "tenant_id": getattr(ctx, "tenant_id", "") or "default",
             "classification": getattr(ctx, "classification", "") or "CUI",
             "user_id": getattr(ctx, "user_id", "") or "",
             "session_id": getattr(ctx, "session_id", "") or "",
             "domain": getattr(ctx, "domain", "") or "",
+            "air_gap": bool(getattr(ctx, "air_gap", False)),
             "outcomes": {"cache": "pass"},
             "blocked": False,
             "cache_hit": True,

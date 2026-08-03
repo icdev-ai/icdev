@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block title %}Internal Developer Portal{% endblock %}
+{% block content %}
+<div class="cui-banner">CUI // SP-CTI</div>
+
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center flex-wrap mb-2 gap-2">
+    <h2 class="mb-0">Internal Developer Portal</h2>
+    <span class="badge bg-secondary fs-6">{{ totals.components }} components</span>
+    <span class="badge bg-primary fs-6">{{ totals.assessed }} assessed</span>
+    {% if totals.unassessed %}
+      <span class="badge bg-secondary fs-6" title="No rule in this scorecard applied to these components. Not assessed is not the same as failing.">{{ totals.unassessed }} not assessed</span>
+    {% endif %}
+    <span class="badge bg-warning text-dark fs-6">{{ totals.unowned }} unowned</span>
+    <span class="text-muted small ms-auto">
+      {{ scorecard_name }}{% if evaluated_on %} &middot; evaluated {{ evaluated_on }}{% endif %}{% if window %} &middot; window {{ window }}{% endif %}
+    </span>
+    <a href="/idp/?scorecard={{ scorecard_key }}&amp;refresh=1" class="btn btn-sm btn-outline-secondary">Refresh facts</a>
+  </div>
+
+  <p class="text-muted small mb-3">
+    Catalog and scorecards over ICDEV's own registered components. Facts come from
+    <code>args/component_registry.yaml</code> and the repo tree via the IQE collection
+    <code>idp.components</code>; grades come from <code>args/scorecards/{{ scorecard_key }}.yaml</code>.
+    Adding a rule or a level is a YAML edit — see
+    <a href="/health/canvases">Canvas Health</a> for the file-existence view of the same tree.
+  </p>
+
+  {% if scorecards | length > 1 %}
+  <div class="mb-3">
+    {% for sc in scorecards %}
+      <a href="/idp/?scorecard={{ sc.key }}"
+         class="btn btn-sm {% if sc.key == scorecard_key %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ sc.name }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Scope + isolation posture (idp-mt-01). Shown only for a tenant-scoped
+     read: the platform's own view covers every registered component, so an
+     "unapproved for external offering" notice on it would be noise about a
+     thing that is not happening. #}
+  {% if tenancy and tenancy.scoped %}
+  <div class="alert {% if tenancy.external_offering_approved %}alert-info{% else %}alert-warning{% endif %} py-2 mb-3">
+    <strong>Scoped to tenant {{ tenancy.tenant_id }}.</strong>
+    Showing the {{ tenancy.scope_size }} component(s) this tenant has enabled, not the full platform estate.
+    {% if tenancy.notice %}
+      <div class="small mt-1">{{ tenancy.notice }}</div>
+    {% endif %}
+    <div class="small mt-1">
+      Isolation posture: <code>{{ tenancy.isolation_posture }}</code>
+      {% if tenancy.decision_record %}
+        &middot; decision record: <code>{{ tenancy.decision_record }}</code>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if scorecard_error %}
+  <div class="alert alert-danger py-2 mb-3">
+    <strong>Scorecard could not be evaluated.</strong>
+    <div class="small font-monospace mt-1">{{ scorecard_error }}</div>
+    <div class="small mt-1">The catalog below still lists every registered component; only the grades are missing.</div>
+  </div>
+  {% endif %}
+
+  <!-- ── The portal's own grade (dogfood) ──────────────────────────────── -->
+  <div class="card mb-3 border-info">
+    <div class="card-body py-2">
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <strong class="me-1">This page grades itself</strong>
+        {% if self_report.in_catalog %}
+          <span class="badge bg-success">in its own catalog</span>
+        {% else %}
+          <span class="badge bg-danger">missing from its own catalog</span>
+        {% endif %}
+        {% if self_report.level %}
+          <span class="badge" style="background-color: {{ self_report.row.level_color }}; color:#111;">{{ self_report.level }}</span>
+        {% else %}
+          <span class="badge bg-secondary">unranked</span>
+        {% endif %}
+        {% if self_report.score is not none %}
+          <span class="badge bg-dark">{{ self_report.score | round(0) | int }}%</span>
+        {% endif %}
+        {% if self_report.completeness_passed %}
+          <span class="badge bg-success">8-point gate: pass</span>
+        {% else %}
+          <span class="badge bg-danger">8-point gate: fail</span>
+        {% endif %}
+        <a href="/idp/component/{{ self_report.key }}" class="btn btn-sm btn-outline-info ms-auto">Full breakdown &rarr;</a>
+      </div>
+      {% if self_report.completeness.items %}
+      <div class="mt-2 small">
+        {% for item in self_report.completeness['items'] %}
+          <span class="me-2" title="{{ item.message }}">
+            {% if item.present %}✅{% elif item.required %}❌{% else %}➖{% endif %}
+            <span class="font-monospace">{{ item.point }}</span>
+          </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Ladder ────────────────────────────────────────────────────────── -->
+  <div class="d-flex flex-wrap gap-2 mb-3" id="ladder">
+    {% for level in ladder %}
+      <div class="card flex-fill" style="min-width:180px;">
+        <div class="card-body py-2">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge" style="background-color: {{ level.color or '#6c757d' }}; color:#111;">{{ level.name }}</span>
+            <span class="fs-5 fw-bold">{{ level_distribution.get(level.name, 0) }}</span>
+          </div>
+          <div class="text-muted small mt-1">{{ level.description }}</div>
+        </div>
+      </div>
+    {% else %}
+      <div class="text-muted small">No ladder — the scorecard did not load.</div>
+    {% endfor %}
+    <div class="card flex-fill" style="min-width:180px;">
+      <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-secondary">unranked</span>
+          <span class="fs-5 fw-bold">{{ level_distribution.get('unranked', 0) }}</span>
+        </div>
+        <div class="text-muted small mt-1">Measured, and has not cleared the lowest rung.</div>
+      </div>
+    </div>
+    <div class="card flex-fill border-secondary" style="min-width:180px;">
+      <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-light text-dark border">not assessed</span>
+          <span class="fs-5 fw-bold">{{ level_distribution.get('unassessed', 0) }}</span>
+        </div>
+        <div class="text-muted small mt-1">
+          No rule in this scorecard applied. Counted apart from "unranked" — nothing
+          measured these, so they are neither passing nor failing.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Letter grades ─────────────────────────────────────────────────── -->
+  <div class="d-flex flex-wrap gap-2 mb-3 align-items-center" id="grades">
+    <span class="text-muted small me-1">Letter grade:</span>
+    {% for band in grade_bands %}
+      <span class="badge {{ grade_badge.get(band.letter, 'bg-secondary') }} fs-6"
+            title="Overall score &ge; {{ band.min }}%">
+        {{ band.letter }} &middot; {{ grade_distribution.get(band.letter, 0) }}
+      </span>
+    {% endfor %}
+    <span class="badge {{ unassessed_badge }} fs-6"
+          title="No applicable rule, so there is no score to grade. Deliberately not an F.">
+      {{ unassessed_label }} &middot; {{ grade_distribution.get('unassessed', 0) }}
+    </span>
+    <span class="text-muted small">
+      Bands are configuration &mdash; <code>grading.bands</code> in
+      <code>args/scorecards/{{ scorecard_key }}.yaml</code>.
+    </span>
+  </div>
+
+  <!-- ── Dimensions ────────────────────────────────────────────────────── -->
+  {% if dimensions %}
+  <div class="mb-3 small">
+    <span class="text-muted me-2">Dimensions:</span>
+    {% for dim in dimensions %}
+      <span class="badge bg-dark me-1"
+            title="{{ dim.description }}{% if dim.column %} — persists to developer_scorecards.{{ dim.column }}{% else %} — report-only, no column{% endif %}">
+        {{ dim.label }}
+      </span>
+    {% endfor %}
+    <span class="text-muted">
+      Each component's score breaks down across these; every cell links to the
+      rules and the evidence behind it.
+    </span>
+  </div>
+  {% endif %}
+
+  <!-- ── Signal availability ───────────────────────────────────────────── -->
+  {% if schema_status %}
+  <div class="mb-3 small">
+    <span class="text-muted me-2">Backing signals:</span>
+    {% for row in schema_status %}
+      <span class="badge {% if row.present %}bg-success{% else %}bg-secondary{% endif %} me-1"
+            title="{{ row.purpose }}{% if row.error %} — {{ row.error }}{% endif %}">
+        {{ row.table }}{% if not row.present %} (absent){% endif %}
+      </span>
+    {% endfor %}
+    <span class="text-muted">A signal that is absent renders as "not measured", never as a pass.</span>
+  </div>
+  {% endif %}
+
+  <!-- ── Rules ─────────────────────────────────────────────────────────── -->
+  <h5 class="mt-4" id="scorecard">Rules &mdash; {{ scorecard_name }}</h5>
+  <div class="table-responsive mb-4">
+    <table class="table table-sm table-hover align-middle border">
+      <thead class="table-dark">
+        <tr>
+          <th>Rule</th>
+          <th>Gates</th>
+          <th class="text-end">Weight</th>
+          <th class="text-end">Passing</th>
+          <th class="text-end">Applicable</th>
+          <th style="width:22%;">Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in rules %}
+        <tr>
+          <td>
+            <strong>{{ rule.title or rule.identifier }}</strong>
+            <div class="text-muted small font-monospace">{{ rule.identifier }}</div>
+            {# The rule IS its evidence: this is the exact IQE the evaluator ran,
+               paste-able into the query widget below. #}
+            <details class="small mt-1">
+              <summary class="text-muted" style="cursor:pointer;">how it is measured</summary>
+              <div class="font-monospace mt-1" style="font-size:.75rem; word-break:break-all;">{{ rule.expression }}</div>
+              {% if rule.filter_expression %}
+                <div class="text-muted mt-1" style="font-size:.75rem;">applies to:
+                  <span class="font-monospace" style="word-break:break-all;">{{ rule.filter_expression }}</span>
+                </div>
+              {% endif %}
+              {% if rule.evidence_note %}<div class="text-muted mt-1" style="font-size:.75rem;">{{ rule.evidence_note }}</div>{% endif %}
+            </details>
+          </td>
+          <td>
+            {% if rule.gates_ladder %}
+              <span class="badge bg-dark">{{ rule.level }}</span>
+            {% else %}
+              <span class="text-muted small">scores only</span>
+            {% endif %}
+            <div class="text-muted small">{{ rule.dimension }}</div>
+          </td>
+          <td class="text-end">{{ rule.weight }}</td>
+          <td class="text-end">{{ rule.passing }}</td>
+          <td class="text-end">{{ rule.applicable }}</td>
+          <td>
+            {% set _pct = (rule.passing / rule.applicable * 100) if rule.applicable else 0 %}
+            <div class="progress" style="height:14px;">
+              <div class="progress-bar {% if _pct >= 80 %}bg-success{% elif _pct >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                   style="width: {{ _pct | round(0) | int }}%;">{{ _pct | round(0) | int }}%</div>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-muted">No rules loaded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Catalog ───────────────────────────────────────────────────────── -->
+  <h5 class="mt-4" id="catalog">Component catalog</h5>
+  <p class="text-muted small mb-2">
+    {{ totals.canvases }} canvases are in scope for the 8-point dashboard-page gate;
+    {{ totals.completeness_passing }} pass it. Components outside that scope are not graded on it.
+  </p>
+  {% for group in groups %}
+  <h6 class="mt-3 text-muted">{{ group.label }} <span class="badge bg-secondary">{{ group.rows | length }}</span></h6>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle border">
+      <thead class="table-dark">
+        <tr>
+          <th>Component</th>
+          <th>Owner</th>
+          <th>Level</th>
+          <th class="text-center">Grade</th>
+          <th class="text-end">Score</th>
+          {% for dim in dimensions %}
+            <th class="text-center small" title="{{ dim.description }}">{{ dim.label }}</th>
+          {% endfor %}
+          {% for col_key, col_header, col_bool in columns %}
+            {% if col_key != 'owner' %}
+              <th {% if col_bool %}class="text-center"{% endif %}>{{ col_header }}</th>
+            {% endif %}
+          {% endfor %}
+          <th>Failing rules</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in group.rows %}
+        <tr>
+          <td>
+            <a href="/idp/component/{{ row.key }}"><strong>{{ row.display_name }}</strong></a>
+            <div class="text-muted small font-monospace">{{ row.key }}</div>
+          </td>
+          <td class="small">
+            {% if row.owner %}
+              {{ row.owner }}
+              {% if row.owner_contact %}<div class="text-muted font-monospace" style="font-size:.75rem;">{{ row.owner_contact }}</div>{% endif %}
+              {% if row.on_call %}<div class="text-muted" style="font-size:.75rem;">on-call: {{ row.on_call }}</div>{% endif %}
+            {% else %}
+              <span class="text-warning">unowned</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.level %}
+              <span class="badge" style="background-color: {{ row.level_color }}; color:#111;">{{ row.level }}</span>
+            {% elif row.assessed %}
+              <span class="badge bg-secondary">unranked</span>
+            {% else %}
+              <span class="text-muted small">{{ unassessed_label }}</span>
+            {% endif %}
+          </td>
+          {# Grade and score are blank-with-a-word, never 0/F, when unassessed:
+             an F is a measured verdict and this component has none. #}
+          <td class="text-center">
+            {% if row.letter_grade %}
+              <span class="badge {{ row.grade_class }}">{{ row.letter_grade }}</span>
+            {% else %}
+              <span class="badge {{ unassessed_badge }}" title="{{ unassessed_label }} — no applicable rule">&mdash;</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if row.score is not none %}{{ row.score | round(0) | int }}%
+            {% else %}<span class="text-muted small" title="{{ unassessed_label }}">n/a</span>{% endif %}
+          </td>
+          {% for cell in row.dimensions %}
+            <td class="text-center">
+              {% if cell.assessed %}
+                <a class="text-decoration-none"
+                   href="/idp/component/{{ row.key }}?scorecard={{ scorecard_key }}#dim-{{ cell.key }}"
+                   title="{{ cell.label }}: {{ cell.score | round(0) | int }}% ({{ cell.letter_grade }}){% if cell.failure_count %} — {{ cell.failure_count }} failing rule(s){% endif %}. Click for the rules and evidence.">
+                  <span class="badge {{ cell.grade_class }}">{{ cell.score | round(0) | int }}%</span>
+                </a>
+              {% else %}
+                <span class="text-muted small" title="{{ cell.label }}: {{ unassessed_label }} — no rule in this dimension applies to this component">n/a</span>
+              {% endif %}
+            </td>
+          {% endfor %}
+          {% for col_key, col_header, col_bool in columns %}
+            {% if col_key == 'owner' %}
+              {# rendered as its own column above #}
+            {% elif col_bool %}
+              <td class="text-center">{% if row.facts.get(col_key) %}✅{% else %}❌{% endif %}</td>
+            {% elif col_key == 'route' %}
+              <td>{% if row.route %}<a href="{{ row.route }}" class="font-monospace small">{{ row.route }}</a>{% else %}<span class="text-muted small">&mdash;</span>{% endif %}</td>
+            {% else %}
+              <td class="small">{{ row.facts.get(col_key) or '—' }}</td>
+            {% endif %}
+          {% endfor %}
+          <td class="small text-muted">
+            {% if row.failures %}{{ row.failures | join(', ') }}{% else %}&mdash;{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-warning py-2">
+    No components found. <code>args/component_registry.yaml</code> could not be read.
+  </div>
+  {% endfor %}
+
+  <div class="text-muted small mt-3">
+    Facts are memoized per process; <a href="/idp/?scorecard={{ scorecard_key }}&amp;refresh=1">refresh</a> re-reads the registry and the tree.
+    Every score above traces to <code>{{ adapter_module }}</code> via the rules in
+    <code>{{ scorecard_source }}</code>; a dimension marked <em>n/a</em> was not measured, not passed.
+    JSON: <code>/idp/api/catalog</code>, <code>/idp/api/scorecard</code>, <code>/idp/api/component/&lt;key&gt;</code>,
+    <code>/idp/api/evidence?component=&lt;key&gt;&amp;rule=&lt;id&gt;</code>.
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+{# /idp/catalog and /idp/scorecards are the same page with a different entry
+   point — three nav links, one template, one set of facts. Jumping to the
+   section beats maintaining three near-identical templates that drift. #}
+{% if focus in ('catalog', 'scorecard') %}
+<script>
+  (function () {
+    var el = document.getElementById({{ focus | tojson }});
+    if (el) el.scrollIntoView();
+  })();
+</script>
+{% endif %}
+{% endblock %}

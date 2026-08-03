@@ -168,9 +168,20 @@ repo. Not gate-blocking; not a regression from any recent change. Left as tracke
 raise. This is a broad, pre-existing test-harness pattern (cf. MEMORY "tests w/ raw sqlite3 bypass
 %s→? translator"). WARN-only; fixing belongs with each test's owner, not a triage PR.
 
-### canvas_completeness (WARN, 1) — INTENTIONAL / legacy
+### canvas_completeness (WARN, 1) — RESOLVED (idp-score-05, 2026-08)
 `aiify_compat` missing a `nav_link` — a legacy compat canvas; WARN notes "legacy canvases may need
 registry updates." Registry decision for the aiify owner, not triage.
+
+**Resolved.** The finding was a validator bug, not a registry gap. The `completeness` block
+declares APPLICABILITY ("7. nav_link — applies -> `nav_link: true`"), but the validator read
+`aiify_compat`'s explicit `nav_link: false` as "declared and missing" rather than "does not apply",
+so the one canvas that correctly opted out could never pass. `aiify_compat` is a 301-redirect alias
+(/ai-augmentation → /ai-ify/) whose sidebar link is owned by the real `aiify` canvas; giving it a
+nav section re-emits the duplicate "AI-ify" entry cnr-nav-01 removed. `nav_link` is now `required`
+only when the point applies — a MISSING key still means required, so the opt-out cannot be silent.
+With the last finding cleared, the check was promoted WARN → **FAIL** and declared `blocking` in
+`args/security_gates.yaml`, matching its filesystem-driven twin `new_page_completeness`. The two
+implementations of the CLAUDE.md 8-component rule no longer disagree on severity.
 
 ---
 
@@ -191,4 +202,4 @@ registry updates." Registry decision for the aiify owner, not triage.
 | template_variable_parity | WARN(514) | INTENTIONAL — known WARN-only noise |
 | runtime_placeholder_style | WARN(269) | INTENTIONAL — known WARN-only noise |
 | test_db_isolation | WARN(194) | INTENTIONAL — pre-existing raw-sqlite test pattern |
-| canvas_completeness | WARN(1) | INTENTIONAL — legacy `aiify_compat` nav registry |
+| canvas_completeness | WARN(1) | **RESOLVED** (idp-score-05) — validator bug, not a registry gap; check promoted to FAIL + blocking |

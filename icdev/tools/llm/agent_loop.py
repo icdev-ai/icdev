@@ -61,8 +61,11 @@ from __future__ import annotations
 import concurrent.futures as _futures
 import json
 import math
+import os
 import threading
+import time
 import uuid as _uuid
+from collections import deque as _deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -118,6 +121,18 @@ class ResultSubtype:
     error_max_budget_cost = "error_max_budget_cost"
     """Cumulative cost exceeded ``max_cost_usd``."""
 
+    error_max_wall_clock = "error_max_wall_clock"
+    """Total elapsed session time exceeded ``max_wall_clock_seconds``.
+
+    Distinct from every other budget subtype on purpose. ``tool_timeout_seconds``
+    and ``llm_call_timeout_seconds`` are PER-CALL ceilings: a session can stay
+    under both of them, under the token budget and under the cost budget, and
+    still run for hours — which is what a slow external dependency or a patient
+    loop produces. Reporting that as ``error_max_budget_tokens`` (or, worse, as
+    an external kill with no result at all) reads as "task too big" rather than
+    "ran too long".
+    """
+
     error_stop_event = "error_stop_event"
     """External ``stop_event`` was set before the loop finished."""
 
@@ -132,6 +147,15 @@ class ResultSubtype:
 
     error_stalled = "error_stalled"
     """No novel successful tool call for ``stall_threshold`` consecutive turns."""
+
+    error_semantic_loop = "error_semantic_loop"
+    """Recent tool calls were semantically equivalent — the agent was looping.
+
+    Distinct from :attr:`error_max_budget_tokens` on purpose: an undetected loop
+    burns the token budget to its ceiling and then reports budget exhaustion,
+    which reads as "task too big" rather than "agent was stuck". See
+    :mod:`icdev.tools.llm.loop_detector`.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +181,8 @@ class AgentLoopResult:
         total_cost_usd:      Cumulative cost across all turns (when provider reports it).
         compression_events:  List of context-compression events applied to messages.
         truncation_reason:   Why the loop stopped: ``completed``, ``max_iterations``,
-            ``max_total_tokens``, ``max_cost_usd``, or ``stop_event``.
+            ``max_total_tokens``, ``max_cost_usd``, ``max_wall_clock_seconds``,
+            or ``stop_event``.
             Kept for backward compat — prefer ``result_subtype``.
         session_id:  UUID generated at loop start. Pass as ``resume_session_id`` to
             a subsequent :func:`run_agent_loop` call to restore this conversation.
@@ -175,6 +200,8 @@ class AgentLoopResult:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cost_usd: float = 0.0
+    elapsed_seconds: float = 0.0
+    """Wall-clock seconds from loop start to termination (all exit paths)."""
     compression_events: list[dict[str, Any]] = field(default_factory=list)
     truncation_reason: str = ""
     model_id: str = ""
@@ -191,6 +218,12 @@ class AgentLoopResult:
     """Correlation ID threaded through memory writes, evals, and OTel spans (migration 229)."""
     output_redacted: bool = False
     """True when output_redactor replaced PII/credentials in final_content (IL4/IL5)."""
+    loop_detection: dict[str, Any] = field(default_factory=dict)
+    """Details of the semantic-loop detection that ended the run (empty if none).
+
+    Shape: :meth:`icdev.tools.llm.loop_detector.LoopDetection.as_dict` — tool
+    name, cluster size, window size, distinct turns, mean similarity, reason.
+    """
 
 
 # Type aliases for callback hooks.
@@ -261,6 +294,8 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["tool_result_max_chars"] = int(budgets["tool_result_max_chars"])
         if "llm_call_timeout_seconds" in budgets:
             defaults["llm_call_timeout_seconds"] = float(budgets["llm_call_timeout_seconds"])
+        if "max_wall_clock_seconds" in budgets:
+            defaults["max_wall_clock_seconds"] = float(budgets["max_wall_clock_seconds"])
         if "stall_threshold" in budgets:
             defaults["stall_threshold"] = int(budgets["stall_threshold"])
         mem_cfg = raw.get("agent_loop", {}).get("memory", {})
@@ -278,6 +313,47 @@ def _load_budget_defaults() -> dict[str, Any]:
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
+
+
+def _wall_clock_deadline(max_wall_clock_seconds: float | None) -> float | None:
+    """Absolute ``time.monotonic()`` deadline for a session, or ``None``.
+
+    A budget of ``None`` or ``<= 0`` disables the ceiling. Callers that carve a
+    shared budget into per-round slices (:func:`run_agent_loop_with_rubric`,
+    :func:`run_staged_agent_loop`) must check for an exhausted budget
+    themselves rather than passing ``<= 0`` down — otherwise "no time left"
+    would silently mean "run forever".
+    """
+    if not max_wall_clock_seconds or max_wall_clock_seconds <= 0:
+        return None
+    return time.monotonic() + float(max_wall_clock_seconds)
+
+
+def _stop_for_wall_clock(
+    result: "AgentLoopResult",
+    messages: list[dict[str, Any]],
+    *,
+    budget: float,
+    elapsed: float,
+) -> None:
+    """Mark *result* as ended by the session wall-clock ceiling."""
+    result.truncated = True
+    result.result_subtype = ResultSubtype.error_max_wall_clock
+    result.truncation_reason = "max_wall_clock_seconds"
+    logger.warning(
+        "agent_loop: wall-clock budget exhausted — elapsed=%.0fs > max_wall_clock_seconds=%.0fs",
+        elapsed,
+        budget,
+    )
+    messages.append(
+        {
+            "role": "system",
+            "content": (
+                f"Agent loop stopped: exceeded max_wall_clock_seconds={budget:.0f} "
+                f"(elapsed={elapsed:.0f}s)."
+            ),
+        }
+    )
 
 
 def _retrieve_memory_context(user_prompt: str, top_k: int, tier: str) -> str:
@@ -483,6 +559,66 @@ def _build_read_only_set(tools: list[dict[str, Any]]) -> set[str]:
     return read_only
 
 
+def _resolve_approval_gate(
+    approval_gate: "PreToolUseHook | bool | None",
+) -> "PreToolUseHook | None":
+    """Turn the ``approval_gate`` argument into a hook, or ``None`` (ars-appr-01).
+
+    ``True`` / env-enabled builds the default reversibility gate; a callable is
+    taken as-is; ``False`` disables it. See :func:`run_agent_loop` for why the
+    default is env-resolved rather than always-on.
+    """
+    if approval_gate is False:
+        return None
+    if callable(approval_gate):
+        return approval_gate
+    if approval_gate is None:
+        mode = (os.environ.get("ICDEV_AGENT_APPROVAL_MODE") or "").strip().lower()
+        if not mode or mode == "off":
+            return None
+    try:
+        from tools.agent_runtime.approval_gate import build_approval_hook
+
+        return build_approval_hook()
+    except Exception as exc:  # noqa: BLE001
+        # The gate was asked for and could not be built. Refusing every tool call
+        # is the fail-closed answer: an operator who set ICDEV_AGENT_APPROVAL_MODE
+        # did not ask for "run unsupervised if the gate is broken".
+        logger.error("agent_loop: approval gate unavailable, denying all tools: %s", exc)
+        # Bind the message now: Python unbinds `exc` at the end of the except
+        # block, so a closure over it raises NameError when the hook fires.
+        why = f"{type(exc).__name__}: {exc}"
+
+        def _deny(name: str, _input: dict[str, Any]) -> str:
+            return (
+                f"BLOCKED: the approval gate was requested but could not be loaded "
+                f"({why}), so {name} cannot be authorised. Fix the gate or unset "
+                "ICDEV_AGENT_APPROVAL_MODE."
+            )
+
+        return _deny
+
+
+def _compose_pre_tool_hooks(
+    *hooks: "PreToolUseHook | None",
+) -> "PreToolUseHook | None":
+    """Chain pre-tool hooks in order; the first non-empty block message wins."""
+    active = [h for h in hooks if h is not None]
+    if not active:
+        return None
+    if len(active) == 1:
+        return active[0]
+
+    def _chained(name: str, tool_input: dict[str, Any]) -> "str | None":
+        for hook in active:
+            msg = hook(name, tool_input)
+            if msg:
+                return msg
+        return None
+
+    return _chained
+
+
 # ---------------------------------------------------------------------------
 # Continuous Harness feed — record a codegen decision per loop run
 # ---------------------------------------------------------------------------
@@ -550,13 +686,21 @@ def _record_codegen_decision(
         "llm_function": llm_function,
         "session_id": session_id,
         "result_subtype": result.result_subtype,
+        # Carried into harness_eval so "agent was stuck" stays separable from
+        # "task exhausted its budget" once the run is only a telemetry row.
+        "truncation_reason": result.truncation_reason,
         "done": result.done,
         "truncated": result.truncated,
         "turns": result.turns,
         "total_input_tokens": result.total_input_tokens,
         "total_output_tokens": result.total_output_tokens,
         "total_cost_usd": result.total_cost_usd,
+        # Wall-clock duration, so a run that stayed under every token/cost cap
+        # but burned hours is separable in the harness record (ars-wall-01).
+        "elapsed_seconds": round(result.elapsed_seconds, 3),
     }
+    if result.loop_detection:
+        metadata["loop_detection"] = result.loop_detection
     if rubric_verdict is not None:
         metadata["rubric_verdict"] = rubric_verdict
     if grading_attempts is not None:
@@ -596,8 +740,10 @@ def run_agent_loop(
     on_pre_tool_use: PreToolUseHook | None = None,
     on_post_tool_use: PostToolUseHook | None = None,
     on_stop: StopHook | None = None,
+    approval_gate: PreToolUseHook | bool | None = None,
     max_total_tokens: int | None = None,
     max_cost_usd: float | None = None,
+    max_wall_clock_seconds: float | None = None,
     context_window_tokens: int | None = None,
     compression_budget_tokens: int | None = None,
     tool_timeout_seconds: float | None = None,
@@ -608,6 +754,7 @@ def run_agent_loop(
     max_consecutive_errors: int | None = 3,
     llm_call_timeout_seconds: float | None = None,
     stall_threshold: int | None = None,
+    loop_detection: dict[str, Any] | None = None,
     memory_enabled: bool | None = None,
     memory_top_k: int | None = None,
     memory_tier: str | None = None,
@@ -633,7 +780,8 @@ def run_agent_loop(
 
     Termination: end_turn (no tool_calls), a ``DONE`` sentinel from a handler,
     ``stop_event`` set, ``max_iterations`` reached (→ ``truncated=True``), or a
-    hard budget cap exceeded (``max_total_tokens`` / ``max_cost_usd``).
+    hard budget cap exceeded (``max_total_tokens`` / ``max_cost_usd`` /
+    ``max_wall_clock_seconds``).
 
     Args:
         router:        An ``LLMRouter`` instance.
@@ -658,8 +806,39 @@ def run_agent_loop(
                        called after each tool execution for audit/sidecar use.
         on_stop:       Optional ``hook(result)`` called once when the loop ends,
                        regardless of exit reason, before returning to the caller.
+        approval_gate: Reversibility gate for irreversible tool calls
+                       (ars-appr-01). ``True`` builds the default gate from
+                       :func:`tools.agent_runtime.approval_gate.build_approval_hook`;
+                       a callable is used as-is (same contract as
+                       ``on_pre_tool_use``); ``False`` disables it. The default
+                       ``None`` resolves from ``ICDEV_AGENT_APPROVAL_MODE``: the
+                       gate is built when that env var is set to anything other
+                       than ``off``, and is otherwise absent.
+
+                       Absent-by-default is a deliberate, stated choice, not an
+                       oversight. Every existing caller passes its own tool
+                       vocabulary, and the gate's policy is fail-closed
+                       (unenumerated tool -> halt), so switching it on globally
+                       would deny every call in every caller that has not yet
+                       classified its tools. Turning it on is one env var; a
+                       runtime that executes real irreversible operations —
+                       ``tools/agent_runtime`` already gates its dispatch via
+                       :func:`tools.agent_runtime.safety.build_safety_gate` —
+                       must set it. When it runs, it composes *before*
+                       ``on_pre_tool_use``: the gate's block wins.
         max_total_tokens: Hard cap on cumulative input+output tokens across turns.
         max_cost_usd:     Hard cap on cumulative USD cost (when providers report it).
+        max_wall_clock_seconds: Hard cap on TOTAL elapsed session time, checked at
+            each turn boundary. ``tool_timeout_seconds`` and
+            ``llm_call_timeout_seconds`` are per-CALL ceilings — a session can
+            stay under both, under the token budget and under the cost budget,
+            and still run for hours. Exceeding this ends the run with
+            ``ResultSubtype.error_max_wall_clock`` and
+            ``truncation_reason="max_wall_clock_seconds"``, deliberately distinct
+            from the token/cost reasons. ``None`` loads
+            ``args/llm_config.yaml`` ``agent_loop.budgets.max_wall_clock_seconds``;
+            ``0`` (or negative) disables the ceiling entirely. Elapsed time is
+            always reported in :attr:`AgentLoopResult.elapsed_seconds`.
         context_window_tokens: Soft threshold; if message history exceeds this,
             it is compressed before the next LLM turn.
         compression_budget_tokens: Target token budget used when compression is
@@ -691,6 +870,16 @@ def run_agent_loop(
             ``ResultSubtype.error_consecutive_tool_failures``. ``None`` disables
             this guard. Default 3. Loaded from
             ``args/llm_config.yaml`` ``agent_loop.budgets.max_consecutive_errors``.
+        loop_detection: Overrides for the semantic-loop detector (see
+            :mod:`icdev.tools.llm.loop_detector`). ``None`` reads
+            ``args/llm_config.yaml`` ``agent_loop.loop_detection``. Pass
+            ``{"enabled": False}`` to disable, or tune ``window`` /
+            ``similarity_threshold`` / ``min_cluster_size`` /
+            ``min_distinct_turns`` / ``coverage_ratio`` per call. When a loop is
+            detected the run ends with ``ResultSubtype.error_semantic_loop`` and
+            ``truncation_reason="semantic_loop"`` — deliberately distinct from
+            the budget-exhaustion reasons, since an undetected loop otherwise
+            just spends the token budget and reports ``max_total_tokens``.
         initial_messages: Pre-built message history to start from, taking
             precedence over both ``resume_session_id`` and ``user_prompt``-based
             seeding. Used by :func:`run_agent_loop_with_rubric` to resume a
@@ -724,6 +913,8 @@ def run_agent_loop(
         max_total_tokens = budget_defaults["max_total_tokens"]
     if max_cost_usd is None and "max_cost_usd" in budget_defaults:
         max_cost_usd = budget_defaults["max_cost_usd"]
+    if max_wall_clock_seconds is None and "max_wall_clock_seconds" in budget_defaults:
+        max_wall_clock_seconds = budget_defaults["max_wall_clock_seconds"]
     if context_window_tokens is None and "context_window_tokens" in budget_defaults:
         context_window_tokens = budget_defaults["context_window_tokens"]
     if compression_budget_tokens is None and "compression_budget_tokens" in budget_defaults:
@@ -740,6 +931,18 @@ def run_agent_loop(
         stall_threshold = int(budget_defaults["stall_threshold"])
     if stall_threshold is None:
         stall_threshold = 3
+    # Semantic loop detector — config file supplies the defaults, the caller may
+    # override any key (including turning it off entirely).
+    from icdev.tools.llm.loop_detector import (
+        ToolCallRecord as _ToolCallRecord,
+        detect_semantic_loop as _detect_semantic_loop,
+        load_detector_config as _load_detector_config,
+    )
+
+    _loop_cfg = _load_detector_config()
+    _loop_cfg.update(loop_detection or {})
+    _loop_detection_enabled = bool(_loop_cfg.get("enabled", True))
+    _loop_window = max(1, int(_loop_cfg.get("window", 8)))
     # max_consecutive_errors: Python default=3, None=explicitly disabled.
     # Do NOT load from budget_defaults — None must mean "disable", not "use config".
 
@@ -759,6 +962,13 @@ def run_agent_loop(
 
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)
+
+    # Compose the approval gate (ars-appr-01) in front of the caller's own hook.
+    # The gate runs first so an irreversible call halts even when the caller's
+    # hook would have waved it through.
+    on_pre_tool_use = _compose_pre_tool_hooks(
+        _resolve_approval_gate(approval_gate), on_pre_tool_use
+    )
 
     # Assign a unique session ID so callers can persist and resume this loop.
     session_id = str(_uuid.uuid4())
@@ -809,6 +1019,11 @@ def run_agent_loop(
     else:
         messages = [{"role": "user", "content": user_prompt}]
 
+    # Session wall-clock ceiling (ars-wall-01). Monotonic so a clock adjustment
+    # mid-run cannot extend or collapse the budget.
+    _loop_started = time.monotonic()
+    _wall_deadline = _wall_clock_deadline(max_wall_clock_seconds)
+
     tool_call_log: list[dict[str, Any]] = []
     result = AgentLoopResult(messages=messages, session_id=session_id)
     result.parent_session_id = parent_session_id
@@ -828,9 +1043,24 @@ def run_agent_loop(
     _DUPLICATE_ERROR_THRESHOLD = 5
     _last_progress_turn: int = -1
     _seen_call_keys: set[str] = set()
+    # Control 6: rolling window of executed calls for semantic-loop detection.
+    _recent_calls: _deque[Any] = _deque(maxlen=_loop_window)
     with _futures.ThreadPoolExecutor(max_workers=16) as executor:
         for turn in range(max_iterations):
             if stop_event is not None and stop_event.is_set():
+                break
+
+            # Control 7: Session wall-clock ceiling — checked BEFORE the LLM
+            # call so a run that is already over budget does not start another
+            # turn it cannot afford. Checked again after the turn's tools so a
+            # single long turn is caught on the same turn it blew the budget.
+            if _wall_deadline is not None and time.monotonic() >= _wall_deadline:
+                _stop_for_wall_clock(
+                    result,
+                    messages,
+                    budget=max_wall_clock_seconds,
+                    elapsed=time.monotonic() - _loop_started,
+                )
                 break
 
             # Control 5: Stall detector — abort if no novel successful call for N turns.
@@ -841,8 +1071,32 @@ def run_agent_loop(
                     turn - _last_progress_turn, _last_progress_turn, turn,
                 )
                 result.result_subtype = ResultSubtype.error_stalled
+                result.truncation_reason = "stalled"
                 result.truncated = True
                 break
+
+            # Control 6: Semantic loop detector — abort when recent tool calls are
+            # equivalent-but-not-identical (control 3 only sees exact duplicates,
+            # and the stall detector only sees *no* progress). Runs before the LLM
+            # call so a loop stops well short of the token ceiling.
+            if _loop_detection_enabled and len(_recent_calls) >= 2:
+                _detection = _detect_semantic_loop(_recent_calls, config=_loop_cfg)
+                if _detection.detected:
+                    logger.warning("agent_loop: semantic loop detected — %s", _detection.reason)
+                    result.result_subtype = ResultSubtype.error_semantic_loop
+                    result.truncation_reason = "semantic_loop"
+                    result.loop_detection = _detection.as_dict()
+                    result.truncated = True
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Agent loop stopped: semantic loop detected — "
+                                f"{_detection.reason}."
+                            ),
+                        }
+                    )
+                    break
 
             # Control 2: Budget pressure — inject 'N turns remaining' in last 20% of budget.
             _turns_remaining = max_iterations - turn
@@ -1082,6 +1336,20 @@ def run_agent_loop(
                     except Exception:
                         pass  # non-fatal
 
+                # Control 6: feed the semantic-loop window. Errors are included —
+                # re-running a failing command with cosmetic variation is the
+                # canonical loop — but the DONE sentinel is not a real result.
+                if _loop_detection_enabled and out_text is not DONE and out_text != DONE:
+                    _recent_calls.append(
+                        _ToolCallRecord(
+                            turn=turn,
+                            name=tc_name,
+                            arguments=tc_input,
+                            result=out_text,
+                            is_error=is_error,
+                        )
+                    )
+
                 entry: dict[str, Any] = {
                     "turn": turn,
                     "name": tc_name,
@@ -1168,6 +1436,15 @@ def run_agent_loop(
                             f"(current={result.total_cost_usd:.4f})."
                         ),
                     }
+                )
+                break
+
+            if _wall_deadline is not None and time.monotonic() >= _wall_deadline:
+                _stop_for_wall_clock(
+                    result,
+                    messages,
+                    budget=max_wall_clock_seconds,
+                    elapsed=time.monotonic() - _loop_started,
                 )
                 break
 
@@ -1299,6 +1576,10 @@ def run_agent_loop(
         except Exception:
             pass  # non-fatal
 
+    # Total session duration, measured on ALL exit paths (including the
+    # post-loop structured-output retries, which are part of the session).
+    result.elapsed_seconds = time.monotonic() - _loop_started
+
     # Continuous Harness feed — record a codegen decision on ALL exit paths
     # (success, truncated, budget, stall, error) so kanban outcomes can attach.
     # Suppressed for run_agent_loop_with_rubric's inner loops (it records once
@@ -1423,6 +1704,8 @@ def run_staged_agent_loop(
             fired after each stage completes (pass or fail).
         **kwargs:      Forwarded to each :func:`run_agent_loop` call (e.g.
             ``max_total_tokens``, ``on_pre_tool_use``, ``output_schema``).
+            ``max_wall_clock_seconds`` is the exception: it is a budget for the
+            WHOLE pipeline, so each stage receives only the time remaining.
 
     Returns:
         :class:`StagedLoopResult`.
@@ -1430,9 +1713,29 @@ def run_staged_agent_loop(
     staged = StagedLoopResult(session_id=str(_uuid.uuid4()))
     prev_output: str = ""
 
+    # Session wall-clock ceiling (ars-wall-01) is a PIPELINE budget, not a
+    # per-stage one — forwarding it verbatim through **kwargs would multiply it
+    # by len(stages). Resolve one deadline here and hand each stage only the
+    # time actually left.
+    _wall_budget = kwargs.pop("max_wall_clock_seconds", None)
+    if _wall_budget is None:
+        _wall_budget = _load_budget_defaults().get("max_wall_clock_seconds")
+    _wall_deadline = _wall_clock_deadline(_wall_budget)
+
     for idx, stage in enumerate(stages):
         if stop_event is not None and stop_event.is_set():
             break
+
+        if _wall_deadline is not None:
+            _remaining = _wall_deadline - time.monotonic()
+            if _remaining <= 0:
+                logger.warning(
+                    "run_staged_agent_loop: wall-clock budget of %.0fs exhausted before stage %s",
+                    _wall_budget, stage.name,
+                )
+                staged.stages_failed.append(stage.name)
+                break
+            kwargs["max_wall_clock_seconds"] = _remaining
 
         # Build stage-specific system prompt.
         stage_system = system_prompt
@@ -1722,6 +2025,11 @@ def run_agent_loop_with_rubric(
         **kwargs: Forwarded to :func:`run_agent_loop` (``system_prompt``,
             ``user_prompt``, ``tools``, ``tool_handlers``, etc.). Must not
             include ``initial_messages`` — it is managed internally.
+            ``max_wall_clock_seconds`` is treated as a budget for the ENTIRE
+            rubric run (all rounds plus the grading between them), not per
+            round: each round receives only the time remaining, and a run whose
+            budget is exhausted between rounds stops with
+            ``result.truncation_reason == "max_wall_clock_seconds"``.
 
     Returns:
         :class:`RubricLoopResult`.
@@ -1755,11 +2063,38 @@ def run_agent_loop_with_rubric(
     effective_grader_function = grader_llm_function or agent_llm_function
     effort = kwargs.get("effort", "medium")
 
+    # Session wall-clock ceiling (ars-wall-01) spans the WHOLE rubric run —
+    # every agent-loop round AND the grading between them. Passing the caller's
+    # budget to each round verbatim would let a 3-round rubric run for 3× the
+    # ceiling, which is precisely the "loop-level and task-level budgets race
+    # each other" failure this bound exists to remove.
+    _wall_budget = kwargs.pop("max_wall_clock_seconds", None)
+    if _wall_budget is None:
+        _wall_budget = budget_defaults.get("max_wall_clock_seconds")
+    _wall_deadline = _wall_clock_deadline(_wall_budget)
+
     loop_result = RubricLoopResult()
     prior_messages: list[dict[str, Any]] | None = None
 
     for attempt in range(1, max_grading_iterations + 1):
         call_kwargs = dict(kwargs)
+        if _wall_deadline is not None:
+            _remaining = _wall_deadline - time.monotonic()
+            if _remaining <= 0:
+                # Budget spent by earlier rounds (or their grading). Report it
+                # on the result with the loop's own reason rather than letting
+                # the caller's external kill timer decide.
+                _elapsed = float(_wall_budget) - _remaining
+                _stop_for_wall_clock(
+                    loop_result.result,
+                    loop_result.result.messages,
+                    budget=float(_wall_budget),
+                    elapsed=_elapsed,
+                )
+                loop_result.result.done = False
+                loop_result.result.elapsed_seconds = _elapsed
+                break
+            call_kwargs["max_wall_clock_seconds"] = _remaining
         if prior_messages is not None:
             call_kwargs["initial_messages"] = prior_messages
         # Suppress per-round recording — one decision is recorded post-loop

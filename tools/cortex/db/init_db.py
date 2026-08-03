@@ -32,6 +32,7 @@ import json
 import os
 import sys
 import uuid
+from types import SimpleNamespace
 from typing import Optional
 
 from tools.logging.icdev_logger import get_logger
@@ -332,6 +333,59 @@ def record_audit(payload: dict, conn=None) -> str:
         )
         conn.commit()
         return audit_id
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def _session_ctx_from_payload(payload: dict):
+    """Adapt a governance audit payload to the attribute shape ensure_session reads.
+
+    The governed hot path assembles a dict, not a CortexContext; ``ensure_session``
+    reads its fields via getattr. This keeps the ``_gate_record_audit(payload)``
+    seam single-argument so the eight existing test doubles for it stay valid.
+    """
+    return SimpleNamespace(
+        session_id=payload.get("session_id") or "",
+        tenant_id=payload.get("tenant_id") or "default",
+        classification=payload.get("classification") or "CUI",
+        user_id=payload.get("user_id") or None,
+        domain=payload.get("domain") or None,
+        air_gap=bool(payload.get("air_gap", False)),
+    )
+
+
+def record_governed_call(payload: dict, conn=None) -> str:
+    """Persist one governed Cortex call's session + audit rows over ONE connection.
+
+    ``ensure_session`` and ``record_audit`` each open, commit and close their own
+    connection when called standalone. The governed hot path needs both, and the
+    cache-hit path needs the audit row too, so opening a single connection here
+    and threading it through both collapses the per-call DB round-trips to one.
+
+    Session bookkeeping is best-effort and is rolled back on failure: on
+    PostgreSQL a failed statement poisons the whole transaction, so without the
+    rollback a broken session write would take the append-only ``cortex_audit``
+    INSERT down with it. The audit row is the compliance artifact and wins.
+
+    Returns the audit row id. Raises on a hard audit-write error so the caller's
+    best-effort guard can log it — the audit write must never silently vanish.
+    """
+    own_conn = conn is None
+    if own_conn:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+    try:
+        if payload.get("session_id"):
+            try:
+                ensure_session(_session_ctx_from_payload(payload), conn=conn)
+            except Exception as exc:  # noqa: BLE001 — audit row must still land
+                logger.warning("cortex session bookkeeping failed: %s", exc)
+                try:
+                    conn.rollback()
+                except Exception:  # noqa: BLE001 — rollback is itself best-effort
+                    pass
+        return record_audit(payload, conn=conn)
     finally:
         if own_conn:
             conn.close()

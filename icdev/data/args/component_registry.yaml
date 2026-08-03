@@ -42,7 +42,7 @@
 #   attributed to a default team, because a wrong owner routes an incident to
 #   nobody while reading as answered.
 #
-#   Current state: 0 of 66 components declare an owner. That is a measured
+#   Current state: 0 of 68 components declare an owner. That is a measured
 #   baseline, not an oversight — this repository has no CODEOWNERS file, no
 #   team roster and no maintainer metadata beyond a single pyproject author, so
 #   there was nothing to backfill from without guessing. Populate these fields
@@ -1424,6 +1424,57 @@ components:
       href: /govlift/audit
     section: Canvases
     label: Cloud Migration
+# idp-cat-03 — the catalog viewer was missing from the catalog.
+#
+# /components-map and /ask-icdev are the Internal Awareness Engine's two pages.
+# Both were hardcoded `@app.route` definitions in tools/dashboard/app.py and
+# appeared nowhere in this file, so every registry-driven consumer — the IDP
+# catalog and its scorecards, ownership reporting, tenant overrides, the
+# `icdev enable/disable/status` surface, the `icdev setup` TUI, the generated
+# .env — was blind to the page whose whole job is to show what the platform is
+# made of. Declaring it here is the fix; it is a subsystem, not chrome.
+#
+# `kind: core_extension` (not `canvas`) because the routes live in app.py
+# rather than a blueprint module, exactly like ai_observatory and ontology
+# below. That also keeps it out of the 8-point canvas completeness gate, which
+# grades canvases only.
+#
+# Honesty note on the toggle: ICDEV_AWARENESS_ENABLED reaches the CLI, the TUI
+# and the generated .env, but it does NOT gate route registration — app.py
+# registers /components-map unconditionally. That is the same limitation
+# ai_observatory, ontology and cache_savings already carry, and it is recorded
+# here rather than implied. Making the flag load-bearing means extracting the
+# ~450 inline route lines into tools/awareness/blueprint.py; that is a separate
+# change, not a silent assumption.
+#
+# `url_prefix: /components-map` is deliberate where the neighbours use ''. It
+# is inert for blueprint registration (no `module:`), but it is what
+# tools/iqe/adapters/idp.py matches awareness_component_health probe rows
+# against — so this component is graded on its own live route health instead of
+# reading as never-measured.
+- key: awareness
+  kind: core_extension
+  cli_name: awareness
+  display_name: Internal Awareness Engine
+  description: >-
+    Self-awareness component map (/components-map) and Ask-ICDEV Q&A
+    (/ask-icdev) over ICDEV's own component graph. Indexed by
+    tools/awareness/component_indexer.py into the kg-icdev-self-awareness graph.
+  env_flag: ICDEV_AWARENESS_ENABLED
+  default_enabled: true
+  url_prefix: /components-map
+  min_il: IL4
+  default_roles:
+  - developer
+  - admin
+  nav:
+    section: Intelligence
+    label: Awareness
+    links:
+    - label: Component Map
+      href: /components-map
+    - label: Ask ICDEV
+      href: /ask-icdev
 - key: ai_observatory
   kind: core_extension
   display_name: AI Observatory
@@ -1893,6 +1944,55 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/canvas_health/
+# Internal Developer Portal (idp-ui-02). Declared here FIRST, per the CLAUDE.md
+# registry rule: blueprint registration, the Canvases menu entry, the CLI
+# toggle, the /api/iqe/dispatch mapping and the client-side PATH_CANVAS regex
+# are all DERIVED from this block — no Python list in app.py, cli/enable.py or
+# base.html was touched to add this page.
+#
+# `owner` is deliberately absent. The portal grades the platform's ownership
+# gap (component-readiness/has-owner), and this repo still has no CODEOWNERS or
+# team roster to backfill from. Naming a placeholder owner here would make the
+# one component whose job is to report that gap the one component that lies
+# about it — so the portal reports itself as UNOWNED, which is true.
+- key: idp
+  kind: canvas
+  cli_name: idp
+  display_name: Internal Developer Portal
+  description: Catalog and scorecards over ICDEV's own registered components.
+  env_flag: ICDEV_IDP_ENABLED
+  default_enabled: true
+  module: tools.idp.blueprint
+  blueprint_attr: bp
+  url_prefix: /idp
+  min_il: IL4
+  min_tier: community
+  default_roles:
+  - developer
+  - admin
+  nav:
+    section: Canvases
+    label: Developer Portal
+    links:
+    - label: 🧭 Developer Portal
+      href: /idp/
+      style: color:#7ad1a8;
+    - label: Component Catalog
+      href: /idp/catalog
+    - label: Scorecards
+      href: /idp/scorecards
+  iqe:
+    adapter_module: tools.iqe.adapters.idp
+    collections:
+    - idp.components
+  completeness:
+    template: tools/dashboard/templates/idp/page.html
+    blueprint: true
+    constants: tools/idp/constants.py
+    db_migration: tools/idp/db/init_db.py
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/idp/
 - key: cwk
   kind: canvas
   display_name: Co-Workers

@@ -1,0 +1,12 @@
+# CUI // SP-CTI
+collection: idp.components
+query: "Show every registered component with its kind and route"
+description: >-
+  The catalog itself — one row per entry in args/component_registry.yaml,
+  across every kind (canvas, child app, feature, core extension). This is the
+  universe the component-readiness scorecard grades.
+iqe: foreach c in idp.components select c.key, c.display_name, c.kind, c.route
+example_questions:
+  - "What components does ICDEV have?"
+  - "List every canvas and its route"
+  - "Show the component catalog"

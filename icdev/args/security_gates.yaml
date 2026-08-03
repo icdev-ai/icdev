@@ -18,6 +18,7 @@ merge_gates:
     # Use ClassificationResolver.enforce_cui_marking_gate to check at runtime.
     - missing_cui_markings_if_required
     - secrets_detected
+    - incomplete_canvas_page          # new_page_completeness gate failure
   warn_on:
     - cat2_stig_finding
     - medium_vulnerability
@@ -87,18 +88,64 @@ db_abstraction_lint:
     backup_manager.py, */init_db.py.  Suppress a single line with # sqlite3-ok
     only when a direct connection genuinely cannot be avoided.
 
-# OpenAPI ↔ Route Parity gate — blocks when the generated OpenAPI spec diverges
-# from app.url_map for /api/v1/* routes (undocumented or phantom paths).
-# Run: python tools/workflow/coherence_checker.py --check openapi_parity --json --gate
-api_contract_drift:
+# Citation-type vocabulary gate (cxo-trust-02) — blocks a citation_type literal
+# that is not in tools/provenance/citation_types.py::CITATION_TYPES.
+#
+# register_citation() validates the vocabulary BEFORE the INSERT and raises
+# ValueError; every caller swallows it, so an unknown value means the citation is
+# never written — silently, forever. Two subsystems shipped exactly that and
+# neither was noticed: tools/cortex/governance.py ("cortex") wrote 0 of 285
+# registry rows while its gate recorded "warn", and tools/blockchain/
+# asset_ledger.py ("asset_token") left anchor_status "skipped" so GovChain asset
+# tokenization never anchored. Two subsystems, one missing gate.
+# Run: python tools/lint/citation_type_linter.py --json --gate
+citation_type_vocabulary:
   blocking:
-    - api_contract_drift   # url_map /api/v1/* routes not mirrored in generated OpenAPI spec
+    - unknown_citation_type   # citation_type="..." absent from CITATION_TYPES
   note: >
-    Violations are detected by tools/workflow/coherence_checker.py::check_openapi_parity.
-    missing_from_spec: routes registered in Flask but absent from the spec — add them to
-    tools/dashboard/api/openapi_generator.py or the ENDPOINT_DOCS override dict.
-    phantom_in_spec: spec paths with no live url_map rule — remove or reroute them.
-    Gracefully skips when Flask/dashboard deps are unavailable (air-gap environments).
+    Detected by tools/lint/citation_type_linter.py. Fix by adding the value to
+    CITATION_TYPES and shipping a migration rendered from check_constraint_sql(),
+    or by correcting the typo — never by widening the linter. tests/ are exempt
+    (a test may assert a bogus type is rejected) and a single line can be
+    suppressed with # citation-type-ok when the value is validated elsewhere.
+
+# New Page Completeness Gate (TCH — True Completion Hardening)
+# Blocks merges when a new dashboard page ships without all 8 required components
+# (template, icdev/ mirror, blueprint route, backing module, nav link, IQE adapter,
+# seed queries, IQE widget include). The sub-check also enforces icdev/ mirror
+# parity for every .html file in canvas template directories.
+# Run: python tools/workflow/coherence_checker.py --check new_page_completeness --json --gate
+new_page_completeness:
+  blocking:
+    - incomplete_canvas_page          # page.html exists but required component(s) missing
+    - icdev_mirror_gap                # icdev/ package mirror missing for canvas template
+  warning:
+    - template_missing_iqe_widget      # page.html lacks iqe_query_widget include
+  note: >
+    Violations are detected by tools/workflow/coherence_checker.py::check_new_page_completeness.
+    Whitelisted canvases are skipped via args/page_completeness_whitelist.yaml.
+    Canvas directories without page.html are checked by the mirror-parity sub-check.
+    Its registry-driven twin is `canvas_completeness` below — same rule, same severity.
+
+# Canvas Completeness Gate (idp-score-05) — registry-driven twin of the gate above.
+# `new_page_completeness` walks tools/dashboard/templates/*/page.html; this one walks
+# args/component_registry.yaml and runs
+# component_registry.py::validate_canvas_completeness over every `kind: canvas` entry.
+# The two enumerate the same CLAUDE.md 8-component rule from opposite directions, so a
+# canvas the filesystem walk cannot see (no page.html under its own key) is only ever
+# caught here. This check returned `warn` while its twin returned `fail`, which made the
+# rule CLAUDE.md calls mandatory unenforceable from the registry side; both now block.
+# Run: python tools/workflow/coherence_checker.py --check canvas_completeness --json --gate
+canvas_completeness:
+  blocking:
+    - incomplete_canvas_page          # a required completeness point is declared but absent
+  note: >
+    Violations are detected by tools/workflow/coherence_checker.py::check_canvas_completeness.
+    A point is only enforced when it applies: `db_migration` and `iqe` are required only when
+    the registry declares them, and `nav_link` is skipped when the component explicitly declares
+    `completeness.nav_link: false` (a MISSING key still means required). Grandfathering shares
+    one list with the twin gate — args/page_completeness_whitelist.yaml. Do not add entries to
+    get a commit through; declare the point N/A in the registry or ship the component.
 
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:
@@ -135,6 +182,37 @@ unit_tests:
 # Aggregation Guard Gate — blocks when a result set's derived classification exceeds
 # the surface ceiling or the requesting user's clearance_level.
 # Run: python tools/security/aggregation_guard.py --gate --json
+aggregation_guard:
+  blocking:
+    - derived_classification_exceeds_surface_ceiling   # guard_result() returned action='block'
+    - derived_classification_exceeds_user_clearance    # derived > user clearance_level
+  warning:
+    - aggregation_rule_fired_warn                      # SCG rule matched; derived within ceiling
+    - user_volume_throttle_approaching                 # row×entity×time-window near limit
+  note: >
+    Detected by tools/security/aggregation_guard.py (guard_result / evaluate_rules).
+    SCG rules live in args/classification_aggregation.yaml.  Events are written to
+    the append-only aggregation_events table (NIST AU-9/AU-10); never UPDATE/DELETE.
+
+dynamic_finding_reproduction:
+  blocking:
+    - confirmed_dynamic_finding_at_blocking_severity   # replay fired; severity in gate.blocking_severities
+  warning:
+    - dynamic_finding_without_reproduction             # no PoC stored — reported as a lead, never blocks
+    - dynamic_finding_replay_indecisive                # unavailable / error / refused — nothing was learned
+    - dynamic_finding_reproduction_not_discriminating  # fires against the fixed build too; it is a tautology
+  note: >
+    Enforced by tools/security/reproduction_validator.py (enforce / --gate).
+    Reproduce-or-drop (oss-poc-01, adapted from STRIX): a DYNAMIC finding blocks
+    only when a stored reproduction replays and its vulnerability predicate
+    fires. Unreproducible findings are 'unconfirmed' and are structurally
+    incapable of blocking — the only way to change that is
+    gate.block_on_unconfirmed in args/reproduction_policy.yaml, which exists so
+    that re-admitting them is a visible configuration act. STATIC findings
+    (bandit/CVSS/STIG) are out of scope and keep their existing thresholds
+    below. Replay targets are default-deny allowlisted (own targets only);
+    evidence lands in dynamic_findings + the append-only
+    finding_replay_attempts (migration 295, NIST AU).
 
 thresholds:
   sast:
@@ -200,6 +278,9 @@ thresholds:
     max_failed_criteria: 0
     max_error_pages: 0
     require_acceptance_criteria: true
+  aggregation_guard:
+    max_daily_block_events: 0       # any block event trips the gate
+    max_warn_rate_per_hour: 50      # high warn rate triggers policy review
 
 fedramp:
   blocking:
@@ -541,6 +622,34 @@ cross_platform:
     max_path_violations: 0
     require_gitattributes: true
     require_timezone_aware_datetime: true
+
+# URL Scheme Validation Gate (Bandit B310 — urllib_urlopen non-HTTP schemes)
+# Blocks code that passes non-HTTP(S) URLs to urllib.request.urlopen or similar
+# functions, which Bandit flags as B310. file:/, ftp:/, custom URI schemes must
+# not appear in external interface calls without an explicit allowlist exception.
+# Run: python -m bandit -r tools/ --test B310 --severity-level medium --json
+url_scheme_validation:
+  description: "Block non-HTTP(S) schemes in external interface calls (Bandit B310)"
+  blocking:
+    - b310_non_http_scheme_in_urlopen         # file:/, ftp:/, data:, custom:// in urlopen calls
+    - file_scheme_in_external_call            # file:/ URI reaching external-interface functions
+    - custom_scheme_without_allowlist         # non-standard URI scheme with no documented exception
+  warning:
+    - ftp_scheme_detected                     # ftp:/ URI — prefer https:/ equivalent
+    - scheme_validation_not_enforced          # urllib call has no scheme pre-check
+  thresholds:
+    permitted_schemes:
+      - http
+      - https
+    max_b310_findings: 0
+    require_scheme_allowlist: true
+    scheme_check_required_for_user_input: true
+  note: >
+    B310 violations are detected by Bandit test B310 (urllib_urlopen).
+    To suppress a single call that is genuinely safe (e.g., test fixtures),
+    add # nosec B310 with a justification comment on the same line.
+    New external-interface modules MUST pre-validate the URL scheme before
+    calling urlopen/requests.get/httpx or any equivalent.
 
 # Endpoint Security Gates (D-EPSEC-2)
 endpoint_security:
@@ -1006,6 +1115,36 @@ blueprint_integrity:
     require_digest_for_marketplace: true
     verification_max_age_days: 30
 
+# SIPA Integrity Gate (Software Integrity & Provenance Assessor)
+# Maps a SIPA assessment verdict to a CI / pre-merge exit-code policy. Wired to
+# `python -m tools.integrity.engine ... --gate`, which returns a non-zero exit
+# code (GATE_BLOCK=1) when the verdict is in `block_on` and zero (GATE_OK=0)
+# otherwise (including warn-only verdicts). The engine's own source of truth is
+# args/integrity_config.yaml -> gate.{block_on,warn_on}; this entry mirrors that
+# policy into the central gate catalog so reviewers see it alongside the other
+# merge/deploy gates. Keep the two in sync: block on QUARANTINE, warn on REVIEW.
+integrity_gate:
+  description: "SIPA software-integrity verdict gate — block on QUARANTINE, warn on REVIEW (engine --gate)"
+  blocking:
+    - integrity_verdict_quarantine          # assessment verdict == QUARANTINE (malicious / unauthorized code)
+  warning:
+    - integrity_verdict_review              # assessment verdict == REVIEW (needs HITL adjudication)
+  thresholds:
+    # Verdict-to-exit-code policy consumed by tools/integrity/engine.py --gate.
+    # Mirror of args/integrity_config.yaml -> gate; ALLOW always clears the gate.
+    block_on:
+      - QUARANTINE
+    warn_on:
+      - REVIEW
+    require_assessment_before_merge: false  # advisory until SIPA is wired into the merge pipeline
+  note: >
+    Run `python -m tools.integrity.engine --source <target> --gate` (optionally
+    `--json`) in CI to enforce this gate; exit code 1 means a QUARANTINE verdict
+    blocked the build. REVIEW is non-blocking (warn) so a human can adjudicate.
+    SIPA is static-only: it never executes the assessed target (see
+    docs/security/sandbox-coverage.md Gap 16 and the no-shell/no-exec regression
+    test tests/test_integrity_no_shell_exec.py).
+
 # Evolution Daemon Lifecycle Gates (Phase 36, D-EVO-1 through D-EVO-8)
 evolution_lifecycle:
   blocking:
@@ -1055,10 +1194,69 @@ coherence:
     - signature_call_risk
     - manifest_incomplete
     - import_unused
+    - canvas_execute_uses_question_mark_placeholder
   thresholds:
     max_schema_mismatches: 0
     max_fixture_mismatches: 0
     coherence_required: true
+
+# Canvas Connection Placeholder Style Gate (D-WF-8 sub-check)
+# Detects bare ? SQL parameter placeholders in execute() calls inside files
+# that import get_canvas_connection. psycopg2 requires %s; ? raises
+# ProgrammingError that broad except blocks may silently swallow.
+# Run: python tools/workflow/coherence_checker.py --check canvas_placeholder_style --gate
+canvas_placeholder_style:
+  description: "Detect bare ? SQL placeholders in canvas execute() calls — use %s for psycopg2"
+  blocking: []
+  warning:
+    - canvas_execute_uses_question_mark_placeholder
+  note: >
+    Violations detected by tools/workflow/coherence_checker.py::check_canvas_placeholder_style.
+    Replace ? with %s in any execute() SQL string in files importing get_canvas_connection.
+    The coherence checker returns FAIL (exits 1 with --gate) on any violation so CI blocks
+    the merge before the ProgrammingError reaches production.
+
+# Swallowed Persistence Gate (swp-swallow-01, D-WF-8 sub-check)
+# The other half of canvas_placeholder_style above: that gate catches the SQL
+# that raises, this one catches the handler that eats it. A broad `except` whose
+# body is exactly `pass` over a try block containing an INSERT means the write
+# can fail on every call, forever, with nothing to show for it — which is how a
+# batch of persistence defects survived long enough to need a card.
+# Run: python tools/workflow/coherence_checker.py --check swallowed_persistence --gate
+swallowed_persistence:
+  description: "Detect `except Exception: pass` guarding an INSERT — best-effort is fine, silent is not"
+  blocking:
+    - insert_guarded_by_bare_pass_handler
+  warning: []
+  thresholds:
+    max_swallowed_insert_sites: 0
+  note: >
+    Violations detected by tools/workflow/coherence_checker.py::check_swallowed_persistence,
+    which shares its AST detector with tools/refactor/swallowed_persistence.py so the gate and
+    the fixer cannot disagree. The fix keeps the best-effort behaviour and adds the report:
+    `except Exception as exc:` + `logger.warning("<fn>: best-effort INSERT into <table> failed
+    (non-blocking): %s", exc)` — see tools/canvas/event_bus.py::_audit_event. Narrowing the
+    handler to the exception actually expected is equally acceptable. Run
+    `python tools/refactor/fix_swallowed_persistence.py --write --json` to apply the rewrite.
+    The check runs in BOTH the fast (per-task) and full (nightly) tiers; a full-tier-only gate
+    would not block the build that reintroduces the pattern.
+
+foundry_self_vet:
+  description: "ACF Autonomous Capability Foundry — self-vet gate before autonomous build (acf-engine-03)"
+  blocking:
+    - acf_emitted_task_missing_integrity_gate
+    - sipa_gate_failed_on_acf_patch
+    - security_gate_failed_on_acf_patch
+    - coherence_gate_failed_on_acf_patch
+    - circuit_breaker_open
+  warning:
+    - self_vet_score_below_threshold
+    - vv_fail_rate_elevated
+  thresholds:
+    require_integrity_gate: true
+    require_security_gate: true
+    vv_fail_rate_threshold: 0.5
+    circuit_window: 10
 
 # Engineering Review Board Gate (Phase 67, D-RB-1 through D-RB-7)
 review_board:
@@ -1384,3 +1582,354 @@ system_graph:
     empty node list for its source (awareness_kg, canvas_kg, kanban_deps, goals,
     migrations, codebase). Check DB connectivity and table existence.
     system_graph_build_slow fires when stats.build_ms > 10000 on an uncached request.
+
+# AI Traceability gate — warn if canvas_ai_decisions table is empty after 24h of activity
+# Evaluated by coherence_checker.py or a daily health probe.
+ai_trace:
+  warning:
+    - canvas_ai_decisions_empty   # no AI decisions recorded after >24h of canvas use
+  note: >
+    canvas_ai_decisions_empty fires when the table is empty more than 24 hours after
+    any canvas blueprint has been accessed (evidence that traceability hooks are not firing).
+    Check canvas blueprint wiring in tools/network/blueprint.py and peers.
+
+# Security Framework Gates (Phase 74 — sec-fnd)
+security_framework:
+  description: "Multi-layer security framework gates — context, ABAC, MAC, RLS, column, field, encryption, mTLS"
+  blocking:
+    - missing_security_context
+    - abac_policy_violation_unresolved
+    - classification_violation
+    - missing_rls_on_classification_table
+    - mtls_not_enforced_for_il5_plus
+    - encryption_not_configured_for_secret
+  warning:
+    - security_context_incomplete
+    - compartment_bypass_attempt
+    - pdp_cache_stale
+    - field_filtering_disabled
+  thresholds:
+    require_security_context: true
+    require_abac_for_il4_plus: true
+    require_rls_for_classified_tables: true
+    require_mtls_for_il5: true
+    require_encryption_for_secret: true
+    pdp_cache_ttl_seconds: 60
+
+# Ontology Validation Gate
+ontology:
+  description: "Validates ontology federation integrity — ensures class alignment, property consistency, and subclass closure freshness"
+  blocking:
+    - ontology_build_failed
+    - ontology_alignment_conflict
+    - ontology_property_range_violation
+  warning:
+    - ontology_class_count_below_threshold
+    - ontology_closure_stale_over_7_days
+    - ontology_external_mapping_outdated
+  thresholds:
+    min_classes: 10
+    closure_max_age_days: 7
+    require_external_mappings_current: true
+
+# Adversarial Verify Loop Gate (loop-eng — D-LOOP-1 through D-LOOP-3)
+# Governs the second-pass Claude CLI session that reviews completed kanban work.
+# fail_open: true means a timeout or unreachable reviewer does NOT block the task.
+loop_engineering:
+  adversarial_verify_timeout_seconds: 180
+  adversarial_verify_fail_open: true
+  gepa_min_composite_score: 0.60
+  gepa_min_score_delta: 0.05
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MCP tool allowlist for Studio workflow steps (dwo-mcp-02)
+#
+# A `node_type: mcp` workflow step dispatches an MCP tool in-process through
+# tools/mcp/tool_registry.py. That registry exposes 500+ tools, many of them
+# destructive or classification-sensitive, so the workflow surface is
+# DEFAULT-DENY: a tool is callable from a workflow step only when it is named
+# below. Anything else is refused before import/dispatch and audited.
+#
+#   default            — policy for any tool not named here. Always `deny`.
+#   allowed            — dispatched with no human gate. Read-only / advisory
+#                        tools only: they must not mutate state, spend money,
+#                        deploy, or move data across a classification boundary.
+#   requires_approval  — dispatched only after an approved `node_type: human`
+#                        gate in the same run. State-changing, destructive,
+#                        or egress-bearing tools.
+#
+# Rules for editing this list:
+#   * Names must match tool_registry.py keys exactly — a typo silently reads as
+#     "not allowlisted" and the step is refused at runtime, not at edit time.
+#   * A tool appears in at most ONE of the two lists.
+#   * Adding a tool that writes, deletes, deploys, or egresses to `allowed` is
+#     a gate violation; it belongs in `requires_approval`.
+#   * IL and role limits are NOT restated here. They come from the tool's own
+#     registry metadata plus args/component_registry.yaml (min_il /
+#     default_roles), evaluated per-dispatch alongside this allowlist.
+#   * Refusals and approvals are both audited append-only with tool name,
+#     params digest, run id, step id and actor.
+mcp_workflow_tools:
+  default: deny
+  nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
+
+  # Read-only: query, inspect, report. Safe to run unattended inside a workflow.
+  allowed:
+    - health_check          # platform health probe, no writes
+    - get_status            # project/agent status read
+    - project_status        # compliance + deployment posture read
+    - rag_search            # retrieval over the existing index
+    - kg_search             # knowledge-graph query
+    - search_knowledge      # learning knowledge-base lookup
+    - trace_query           # requirement/artifact traceability read
+    - nist_lookup           # control catalog lookup
+    - crosswalk_query       # framework crosswalk read
+    - stig_check            # STIG evaluation, report-only
+    - code_analyze          # static analysis, report-only
+    - scan_dependencies     # dependency audit, report-only
+    - classification_check  # marking validation, report-only
+    - kanban_list_tasks     # board read
+    - kanban_get_task       # board read
+    - studio_list_workflows # workflow catalog read
+
+  # State-changing, destructive, or egress-bearing: a human gate must be
+  # approved in the same run before the executor dispatches these.
+  requires_approval:
+    - terraform_apply       # mutates cloud infrastructure
+    - k8s_deploy            # deploys workloads to a cluster
+    - ansible_run           # executes playbooks against hosts
+    - rollback              # tears down / reverts a deployment
+    - self_heal             # applies unattended remediation
+    - kanban_delete_task    # destructive board write
+    - rag_delete_source     # destructive index write
+    - sandbox_execute       # runs caller-supplied code
+    - send_command          # issues a command to a remote agent
+    - install_asset         # installs third-party marketplace code
+    - publish_asset         # publishes outward to the marketplace
+    - emass_sync            # egress of compliance data to eMASS
+    - xacta_sync            # egress of compliance data to Xacta
+
+# Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
+gates:
+  - id: AI-TRACE-001
+    name: Canvas AI Traceability Gate
+    description: Warns when canvas_ai_decisions table is empty after 24h of canvas activity — indicates AI traceability hooks are not firing
+    severity: WARN
+    block_on: []
+    warn_on: [canvas_ai_decisions_empty]
+    table: canvas_ai_decisions
+    nist_controls: [AU-2, AU-3, SI-4]
+    dod_rai: [Traceable]
+    nist_ai_rmf: [MEASURE-2.5, MEASURE-2.7, MEASURE-2.8]
+
+  - id: MCP-SEC-001
+    name: MCP Server Security Gate
+    description: Blocks on HIGH severity MCP server findings (unauthenticated transport, missing TLS, privilege escalation tools)
+    severity: HIGH
+    block_on: [unauthenticated_transport, privilege_escalation]
+    warn_on: [no_tls, missing_classification]
+    tool: tools/mcp/mcp_scanner.py
+    nist_controls: [SC-8, AC-3, AU-12]
+
+  - id: MCP-WF-001
+    name: MCP Workflow Tool Allowlist Gate
+    description: Refuses a workflow step that dispatches an MCP tool absent from mcp_workflow_tools.allowed, blocks a mcp_workflow_tools.requires_approval tool until its human gate is approved, and refuses a caller whose impact level or roles do not meet the limits the tool's owning component declares in args/component_registry.yaml. Policy lives in the mcp_workflow_tools section of this file.
+    severity: HIGH
+    block_on:
+      - mcp_tool_not_allowlisted
+      - mcp_tool_awaiting_human_approval
+      - mcp_tool_approval_rejected
+      - mcp_tool_approval_gate_unavailable
+      - mcp_tool_exceeds_caller_il
+      - mcp_tool_missing_required_role
+    warn_on:
+      - mcp_tool_unknown_to_registry
+    policy: mcp_workflow_tools
+    nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
+
+  - id: URL-SEC-001
+    name: URL Scheme Validation Gate (B310)
+    description: Blocks non-HTTP(S) URI schemes (file:/, ftp:/, custom://) in external interface calls. Detects Bandit B310 — urllib_urlopen called with a scheme outside the http/https allowlist.
+    severity: HIGH
+    block_on:
+      - b310_non_http_scheme_in_urlopen
+      - file_scheme_in_external_call
+      - custom_scheme_without_allowlist
+    warn_on:
+      - ftp_scheme_detected
+      - scheme_validation_not_enforced
+    permitted_schemes: [http, https]
+    tool: "python -m bandit -r tools/ --test B310 --severity-level medium --json"
+    nist_controls: [SI-10, SC-8, SA-11]
+    bandit_test: B310
+
+  # NOC Operations Canvas gates
+  - id: NOC-OPS-001
+    name: P1 Incident Unacknowledged
+    description: Warns when a P1 (critical) NOC incident has been open for more than 15 minutes without acknowledgement.
+    severity: WARN
+    warn_on: [noc_p1_unacknowledged]
+    threshold_minutes: 15
+    table: noc_incidents
+    query: "SELECT COUNT(*) FROM noc_incidents WHERE severity='p1' AND status='open' AND created_at < NOW() - INTERVAL '15 minutes'"
+    nist_controls: [IR-6, SI-4]
+
+  # PMC (Peering Management Canvas) gates
+  - id: PMC-RPKI-001
+    name: RPKI Invalid High-Traffic Peer
+    description: Warns when a high-traffic peer (95th-pct ≥ 1 Gbps) has any RPKI-invalid prefix registered.
+    severity: WARN
+    warn_on: [pmc_rpki_invalid_high_traffic]
+    threshold_traffic_gbps: 1.0
+    table: peering_prefixes
+    nist_controls: [SC-5, SI-3, RA-5]
+
+  - id: PMC-IRR-001
+    name: IRR Unregistered Open Peer
+    description: Warns when an active peer with open peering policy has more than 20% of routes unregistered in IRR.
+    severity: WARN
+    warn_on: [irr_unregistered_open_peer]
+    threshold_unregistered_pct: 20
+    table: peering_peers
+    nist_controls: [SC-5, CM-8]
+
+  # CCC (Circuit & Capacity Canvas) gates
+  - id: CCC-UTIL-001
+    name: Circuit Critical Utilization
+    description: Warns when any active circuit reaches 85% utilization — indicates immediate upgrade needed.
+    severity: WARN
+    warn_on: [ccc_circuit_critical_utilization]
+    threshold_utilization_pct: 85
+    table: ccc_circuits
+    nist_controls: [CP-2, SA-9, SC-5]
+
+  - id: CCC-EXPIRY-001
+    name: Circuit Contract Expiring
+    description: Warns when an active circuit contract expires within 90 days with no renewal record.
+    severity: WARN
+    warn_on: [ccc_contract_expiring_soon]
+    threshold_days: 90
+    table: ccc_circuits
+    nist_controls: [CP-2, SA-9]
+
+  # DSOC (DDoS & Security Ops Canvas) gates
+  - id: DSOC-RTBH-001
+    name: RTBH Entries Without Auto-Withdraw
+    description: Warns when active RTBH entries have no auto_withdraw_minutes set — risk of indefinite null-routing.
+    severity: WARN
+    warn_on: [dsoc_rtbh_no_auto_withdraw]
+    threshold_auto_withdraw_minutes: 0
+    table: dsoc_rtbh_entries
+    nist_controls: [SC-5, IR-4, CP-2]
+
+  - id: DSOC-SCRUB-001
+    name: Scrubbing Center Critical Utilization
+    description: Warns when any scrubbing center exceeds 85% of its rated capacity — mitigation may overflow.
+    severity: WARN
+    warn_on: [dsoc_scrubbing_critical_utilization]
+    threshold_utilization_pct: 85
+    table: dsoc_scrubbing_centers
+    nist_controls: [SC-5, CP-2, SA-9]
+
+  - id: DSOC-THREAT-001
+    name: High-Confidence Active Threats Without Mitigation
+    description: Warns when threats with confidence >= 90% have no associated active mitigation.
+    severity: WARN
+    warn_on: [dsoc_unmitigated_high_confidence_threats]
+    threshold_confidence_pct: 90
+    table: dsoc_threats
+    nist_controls: [IR-4, SI-3, SC-5]
+
+  # ACE (Autonomous Coding Engine) HITL gates
+  - id: ACE-HITL-001
+    name: ace_stale_hitl
+    description: ACE team awaiting HITL approval for > 24h -- resolve before deploy
+    severity: WARN
+    warn_on: [ace_stale_hitl_pending]
+    action: block deploy
+    condition: "any ace_instances row with state=hitl_pending and started_at < NOW() - INTERVAL '24 hours'"
+    table: ace_instances
+    query: "SELECT COUNT(*) FROM ace_instances WHERE state='hitl_pending' AND started_at < NOW() - INTERVAL '24 hours'"
+    nist_controls: [CA-7, IR-4, SI-4]
+
+  # PVM — Predictive Vulnerability Management HITL gates
+  - id: PVM-TRIAGE-001
+    name: pvm_stale_triage_pending
+    description: Advisory triage items with priority_score >= 0.75 awaiting HITL approval for > 48h
+    severity: WARN
+    warn_on: [pvm_stale_high_priority_triage]
+    action: block deploy
+    condition: "any nc_triage_queue row with status=pending and priority_score >= 0.75 and created_at < NOW() - INTERVAL '48 hours'"
+    table: nc_triage_queue
+    query: "SELECT COUNT(*) FROM nc_triage_queue WHERE status='pending' AND priority_score >= 0.75 AND created_at < NOW() - INTERVAL '48 hours'"
+    nist_controls: [RA-5, SI-2, CA-7]
+
+  - id: PVM-PREDICT-001
+    name: pvm_critical_risk_unreviewed
+    description: Vulnerability predictions with composite risk >= 0.90 older than 24h without triage entry
+    severity: WARN
+    warn_on: [pvm_unreviewed_critical_risk]
+    action: notify
+    condition: "nc_vuln_predictions with risk_score_composite >= 0.90 and no matching nc_triage_queue row and created_at < NOW() - INTERVAL '24 hours'"
+    table: nc_vuln_predictions
+    query: "SELECT COUNT(*) FROM nc_vuln_predictions p WHERE p.risk_score_composite >= 0.90 AND NOT EXISTS (SELECT 1 FROM nc_triage_queue t WHERE t.advisory_id = p.advisory_id) AND p.predicted_at < NOW() - INTERVAL '24 hours'"
+    nist_controls: [RA-5, IR-4, SI-2]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constitutional AI rule set (agx-verify-02)
+#
+# The SINGLE-SOURCE, data-driven encoding of the constitutional rules that
+# tools/quality/constitutional_ai.py critiques LLM-drafted artifacts against,
+# rule-by-rule. This is NOT a new parallel policy: each rule restates an
+# invariant that already exists elsewhere (the merge_gates block_on/warn_on keys
+# above, the CUI/classification marking rules, and the TRUST invariants —
+# citation/placeholder/numeric-consistency). `source` names the origin.
+#
+# severity mirrors the gate lists: `block` = mandatory control (any failure fails
+# the artifact — see compose_overall's any-block-fail policy); `warn` = advisory.
+# applies_to filters which drafted artifact types the rule is critiqued against.
+constitution:
+  vocabulary_version: const-1.0
+  rules:
+    - id: missing_cui_markings_if_required
+      severity: block
+      source: "merge_gates.block_on + classification marking rules"
+      applies_to: [any]
+      principle: >-
+        The artifact must carry the required CUI (or higher) marking/banner when
+        its classification requires it. A CUI artifact without its banner fails.
+    - id: classification_markings_inconsistent
+      severity: warn
+      source: "merge_gates.warn_on + classification marking rules"
+      applies_to: [any]
+      principle: >-
+        Classification markings must be internally consistent — no section may
+        carry a banner that conflicts with the artifact's declared classification.
+    - id: uncited_claim
+      severity: block
+      source: "TRUST invariant (citation_guard / citation_grounding)"
+      applies_to: [proposal, rfi, dic, tech_writer]
+      principle: >-
+        Every factual or quantitative claim must carry an inline [source: ...]
+        citation attributable to the provided evidence. Unsourced claims fail.
+    - id: unresolved_placeholder
+      severity: block
+      source: "TRUST invariant (placeholder_guard / content_grounding)"
+      applies_to: [proposal, rfi, dic, tech_writer]
+      principle: >-
+        The artifact must contain no unresolved [BRACKETED] placeholder tokens
+        (e.g. [UEI_NUMBER]); every placeholder must be filled or removed.
+    - id: numeric_contradiction
+      severity: warn
+      source: "TRUST invariant (content_grounding.check_numeric_claims)"
+      applies_to: [proposal, rfi]
+      principle: >-
+        Numeric claims that recur across sections (ROM totals, prototype
+        timelines) must agree; contradictory figures must be reconciled.
+    - id: unsupported_superlative
+      severity: warn
+      source: "Karpathy pre-design heuristic (state assumptions; avoid overreach)"
+      applies_to: [proposal, rfi, dic, tech_writer]
+      principle: >-
+        Absolute or superlative claims ("guaranteed", "the only", "always")
+        must be evidenced or softened; unsupported superlatives are flagged.

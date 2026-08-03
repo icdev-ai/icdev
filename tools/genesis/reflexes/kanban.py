@@ -2026,6 +2026,104 @@ def _ensure_pr_base(pr_ref: str, task_id: str) -> str | None:
         return None
 
 
+def _open_prs_for_task(task_id: str, repo_root, *, exclude_branch: str = "") -> list:
+    """Open PRs whose head branch belongs to ``task_id``.
+
+    Returns ``[{"url", "number", "branch"}, ...]``, newest first.
+
+    A task's work does not always live on ``kanban/<task_id>``: workers
+    routinely push a descriptive suffix (``kanban/<id>-land``) or another prefix
+    (``fix/<id>-...``), which is why `_branches_for_task` exists. Asking gh only
+    about the canonical branch therefore misses the PR a worker already opened,
+    and the dispatcher goes on to open a second one for the same task.
+    """
+    import json as _json
+    import subprocess as _sp
+
+    out = []
+    for branch in _branches_for_task(task_id, repo_root):
+        short = branch.split("origin/", 1)[-1]
+        if exclude_branch and short == exclude_branch:
+            continue
+        try:
+            r = _sp.run(
+                ["gh", "pr", "list", "--head", short, "--state", "open",
+                 "--json", "url,number,headRefName,createdAt"],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode != 0:
+                continue
+            for pr in _json.loads(r.stdout or "[]"):
+                if any(p["number"] == pr.get("number") for p in out):
+                    continue
+                out.append({
+                    "url": pr.get("url", ""), "number": pr.get("number"),
+                    "branch": pr.get("headRefName", short),
+                    "createdAt": pr.get("createdAt", ""),
+                })
+        except Exception as exc:  # noqa: BLE001 — best-effort discovery
+            logger.debug("PR flow: open-PR lookup failed for %s: %s", short, exc)
+    return sorted(out, key=lambda p: p.get("createdAt") or "", reverse=True)
+
+
+def _supersede_stale_prs(task_id: str, keep_url: str, keep_branch: str, repo_root) -> list:
+    """Close a task's OTHER open PRs once ``keep_url`` carries the work.
+
+    A retry works on a fresh branch, so without this a task accumulates competing
+    PRs — gdx-aud-01 reached three (#1135, #1220, #1221), and pr_linker could only
+    guess which one mattered.
+
+    Refuses to close a PR whose branch holds commits the surviving branch does
+    not: ``git cherry`` compares by patch-id, so a rebase or cherry-pick of the
+    same work does not count as unique. If anything is genuinely only on the old
+    branch, the PR is left open and a warning is logged — losing committed work
+    to tidy the board would be a far worse bug than a duplicate PR.
+
+    Returns the list of closed PR URLs.
+    """
+    import subprocess as _sp
+
+    closed = []
+    for pr in _open_prs_for_task(task_id, repo_root, exclude_branch=keep_branch):
+        if pr["url"] == keep_url:
+            continue
+        try:
+            cherry = _sp.run(
+                ["git", "cherry", keep_branch, f"origin/{pr['branch']}"],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
+            )
+            if cherry.returncode != 0:
+                logger.warning(
+                    "PR flow: cannot compare %s against %s for task %s — leaving "
+                    "PR %s open", pr["branch"], keep_branch, task_id, pr["url"],
+                )
+                continue
+            unique = [ln for ln in cherry.stdout.splitlines() if ln.startswith("+")]
+            if unique:
+                logger.warning(
+                    "PR flow: NOT closing %s for task %s — its branch %s has %d "
+                    "commit(s) absent from %s",
+                    pr["url"], task_id, pr["branch"], len(unique), keep_branch,
+                )
+                continue
+            _sp.run(
+                ["gh", "pr", "close", str(pr["number"]), "--comment",
+                 f"Superseded by {keep_url} — the same task ({task_id}) was retried "
+                 f"on `{keep_branch}`, and every commit on `{pr['branch']}` is "
+                 f"already present there (compared by patch-id). Closing so the "
+                 f"task has exactly one open PR."],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=60,
+            )
+            closed.append(pr["url"])
+            logger.info(
+                "PR flow: closed superseded PR %s for task %s (kept %s)",
+                pr["url"], task_id, keep_url,
+            )
+        except Exception as exc:  # noqa: BLE001 — never block the PR flow
+            logger.warning("PR flow: supersede failed for %s: %s", pr["url"], exc)
+    return closed
+
+
 def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     """Push the kanban branch to origin and open a GitHub PR.
 
@@ -2079,6 +2177,30 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
         "---\n🤖 Generated by ICDEV Kanban Scheduler\n"
         "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
     )
+    # One task, one PR (kpr-dup-02). A retry runs on a fresh branch, so
+    # `gh pr create` happily opens a SECOND PR for a task that already has one
+    # — the create below only fails when a PR exists for THIS exact head.
+    # gdx-aud-01 reached three open PRs that way. If an open PR already carries
+    # this branch's commits, reuse it instead of adding another.
+    for _existing in _open_prs_for_task(task_id, _repo_root, exclude_branch=branch_name):
+        try:
+            _cherry = _sp.run(
+                ["git", "cherry", f"origin/{_existing['branch']}", branch_name],
+                cwd=str(_repo_root), capture_output=True, text=True, timeout=30,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if _cherry.returncode != 0:
+            continue
+        if any(ln.startswith("+") for ln in _cherry.stdout.splitlines()):
+            continue  # this branch has work that PR does not — a new PR is right
+        logger.info(
+            "PR flow: task %s already has open PR %s carrying these commits — "
+            "reusing it instead of opening a second", task_id, _existing["url"],
+        )
+        _ensure_pr_base(_existing["url"], task_id)
+        return _existing["url"]
+
     create = _sp.run(
         ["gh", "pr", "create",
          "--title", pr_title,
@@ -2101,6 +2223,10 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     pr_url = create.stdout.strip()
     _ensure_pr_base(pr_url, task_id)
     logger.info("PR flow: opened PR %s for task %s", pr_url, task_id)
+    # A new PR was warranted (this branch had work the others lacked), so the
+    # earlier attempts are superseded. Close only the ones whose commits are all
+    # present here — anything with unique work stays open and gets a warning.
+    _supersede_stale_prs(task_id, pr_url, branch_name, _repo_root)
     return pr_url
 
 
@@ -4634,11 +4760,21 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
             fh.write(f"[work_dir {work_dir}]\n\n")
 
             tools_schema, tool_handlers = build_worktree_toolset(work_dir)
+            _task_budget = _get_task_timeout(task_id)
             # Cap one gate sweep at a quarter of the task's dispatch budget.
             # The rubric loop grades up to max_grading_iterations times before
             # post-task validation runs again, so an ungoverned gate could (and
             # did) spend the whole dispatch window judging instead of building.
-            _gate_budget = max(60.0, _get_task_timeout(task_id) * 0.25)
+            _gate_budget = max(60.0, _task_budget * 0.25)
+            # Session wall-clock ceiling (ars-wall-01). _get_task_timeout is the
+            # SAME number the reaper uses to kill this task — and it already
+            # honours kanban_tasks.max_runtime_seconds ahead of every heuristic,
+            # so the loop-level and task-level ceilings derive from one source
+            # instead of racing. Held slightly under the kill timer so the loop
+            # stops itself and returns a real result with
+            # truncation_reason="max_wall_clock_seconds"; being killed from
+            # outside yields no result and no reason at all.
+            _wall_budget = max(60.0, _task_budget * 0.9)
             grader = make_pipeline_grader(
                 cwd=work_dir,
                 task_id=task_id,
@@ -4680,6 +4816,8 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 llm_function="code_generation",
                 max_iterations=12,
                 stop_event=stop_event,
+                # Budget for the WHOLE rubric run (all rounds + grading).
+                max_wall_clock_seconds=_wall_budget,
                 # Continuous Harness: key the recorded codegen decision on the
                 # kanban task id so record_outcome() (fired on the task's status
                 # transition) attaches to a real decision row.
@@ -4691,7 +4829,9 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 f"\n[rubric-loop done] satisfied={result.satisfied} "
                 f"grading_attempts={result.grading_attempts} "
                 f"loop_done={getattr(ar, 'done', None)} "
-                f"cost_usd={getattr(ar, 'total_cost_usd', 0)}\n"
+                f"cost_usd={getattr(ar, 'total_cost_usd', 0)} "
+                f"elapsed_s={getattr(ar, 'elapsed_seconds', 0):.0f}/{_wall_budget:.0f} "
+                f"truncation_reason={getattr(ar, 'truncation_reason', '')}\n"
             )
             if not result.satisfied:
                 # In-session revision exhausted without passing the gates. Signal

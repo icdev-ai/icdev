@@ -14,6 +14,36 @@ Returns:
         "confidence": float,         # 0.0–1.0
         "reason": str
     }
+
+Boundary — there are three distinct "classify" surfaces; do not merge them
+(cxo-adopt-07):
+
+  1. THIS module — *which canvas* a chat message belongs to (intake or one of
+     the nine design canvases). It is an LLM call path on the low-confidence
+     fallback, so it goes through ``cortex_api.classify`` and inherits the
+     gateway pre-check, redaction, budget gate and audit row.
+  2. ``tools.cortex.intent_router`` — *which Cortex facade* serves a message
+     (search / ask / complete / agent). Deterministic keyword rules that consume
+     THIS module's output as the agent-intent signal. No provider call of its
+     own; see that module's docstring.
+  3. ``tools.rag.query_classifier`` (MCP ``query_classify``) — *what shape of
+     answer* a RAG query needs (fact_single / summary / reasoning /
+     unanswerable). Fully deterministic, no provider; ``cortex_api.classify``
+     degrades to this same classifier when no provider is reachable.
+
+Only (1) reaches a provider, so only (1) is TRUST-chain relevant. (2) and (3)
+are rule engines and must NOT be retargeted onto a governed LLM facade —
+doing so buys no governance and costs a provider round-trip per turn.
+
+The related retrieval boundary: ``search_knowledge`` / ``rag_search`` /
+``kg_search`` / ``dic_search`` are single-backend MCP retrieval tools whose
+schemas expose backend-specific knobs (``pattern_type``, ``source_type``,
+``profile``, ``collection_id``) that ``cortex_search`` has no equivalent for.
+They are not LLM call paths either. Prefer ``cortex_search`` for cross-backend
+retrieval with citations; retargeting the four onto it would be a lossy
+contract change, not a consolidation. CUI egress from any of them to an
+external MCP client is a gateway concern — it belongs in
+``tools/gateway/security_chain.py``, which already wraps all gateway traffic.
 """
 from __future__ import annotations
 

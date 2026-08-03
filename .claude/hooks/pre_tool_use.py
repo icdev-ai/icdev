@@ -8,7 +8,7 @@ Pre-tool-use hook that validates tool calls before execution.
 Blocks:
     - Dangerous rm -rf commands
     - Access to .env files containing secrets
-    - UPDATE/DELETE/DROP/TRUNCATE on all 32 append-only tables (D6, NIST AU)
+    - UPDATE/DELETE/DROP/TRUNCATE on every append-only table (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
     - Deletion of CUI-marked artifacts without explicit approval
 
@@ -119,6 +119,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Core audit
         "audit_trail",
         "hook_events",
+        # Approval-gate verdicts for irreversible agent actions (ars-appr-01,
+        # migration 342). A decision has no lifecycle: someone authorised an
+        # irreversible action once, for a stated reason. An UPDATE here rewrites
+        # who is answerable for a force-push that already happened, so a
+        # correction is a new row.
+        "agent_approval_log",
         # Cortex canvas governance/facade audit (ctx-canvas-01)
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)
@@ -493,6 +499,19 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Awareness run log + health snapshots (NIST AU, append-only)
         "awareness_run_log",
         "awareness_component_health",
+        # IDP per-component scorecard history (idp-score-03, migration
+        # 20260802222900). A trend line you can UPDATE is not a trend line —
+        # a wrong point is corrected by recording a new one, never by editing
+        # the old one, or "is this component getting better" stops being
+        # answerable from the data.
+        "idp_scorecard_history",
+        # IDP rule-level scorecard exemptions (idp-score-04, migration
+        # 20260803030514). The log IS the record: an exemption is an authority
+        # claim, and the only thing that makes one reviewable later is knowing
+        # who approved it and why. An UPDATE would overwrite the approver and a
+        # DELETE would erase the fact that anyone waived anything, so every
+        # state change — request, approval, denial, revocation — appends.
+        "idp_rule_exemptions",
         # Observability Canvas integration (D-OC audit trail, NIST AU)
         "od_audit",
         "nc_audit",
@@ -714,6 +733,26 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # for competition integrity; append-only in fact (only engine.log_api_receipt
         # inserts, every other reference is a SELECT). Rows never UPDATE/DELETE.
         "ttx_api_log",
+        # AI GameDay League (gdx-aud-01, migration 136, NIST AU) — of the 8 gd_ai_*
+        # tables only these three are append-only IN FACT. Every write site was
+        # audited; each of the three has INSERT-only call sites and no upsert:
+        #   gd_ai_artifacts      — db.py::save_artifact (INSERT ... RETURNING)
+        #   gd_ai_llmops_events  — db.py::log_llmops_event (INSERT)
+        #   gd_ai_training_pairs — db.py::save_training_pair, nova_hook.py
+        #                          ::_persist_to_ft_datasets (both plain INSERT)
+        # The other five are MUTABLE BY DESIGN and are deliberately NOT listed —
+        # registering them would break the league:
+        #   gd_ai_tournaments — db.py::update_tournament UPDATEs status/current_round
+        #   gd_ai_teams       — db.py::update_team_scores UPDATEs cumulative deltas
+        #   gd_ai_rounds      — db.py::update_round UPDATEs status/started/completed
+        #   gd_ai_judge_evals — db.py::save_judge_eval ON CONFLICT DO UPDATE (re-judge)
+        #   gd_ai_leaderboard — db.py::upsert_leaderboard ON CONFLICT DO UPDATE
+        #                       (a recomputed snapshot, not an audit record)
+        # Kept in sync with the migration 136 docstring by
+        # tests/test_gdx_gameday_append_only.py.
+        "gd_ai_artifacts",
+        "gd_ai_llmops_events",
+        "gd_ai_training_pairs",
     ]
     # NOTE: runtime_invocations (migration 341) is deliberately NOT listed. It
     # is telemetry with a genuine lifecycle — the recorder opens a row 'running'

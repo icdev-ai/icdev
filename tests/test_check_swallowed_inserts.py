@@ -145,6 +145,31 @@ def test_missing_detector_exits_2_not_0(monkeypatch, capsys):
     assert "cannot import" in capsys.readouterr().err
 
 
+
+def test_a_path_that_does_not_exist_is_a_usage_error(capsys):
+    """Scanning nothing must not report clean.
+
+    Ported from the parallel swp-swallow-01-d1 implementation, which had this
+    assertion where this suite did not. It was right: `--path does/not/exist`
+    printed "OK: no swallowed INSERT sites" and exited 0, so a typo'd subtree
+    (`--path tools/gvocon`) reported the subsystem clean. A gate that answers
+    "fine" about a target it never looked at is the silent pass it exists to
+    prevent.
+    """
+    code = checker.main(["--path", "does/not/exist"])
+    assert code == checker.EXIT_USAGE
+    assert code != checker.EXIT_CLEAN
+    assert "does not exist" in capsys.readouterr().err
+
+
+def test_a_missing_path_is_a_usage_error_in_json_too(capsys):
+    code = checker.main(["--path", "does/not/exist", "--json"])
+    assert code == checker.EXIT_USAGE
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert payload["violations"] == []
+
+
 # Deliberately absent: a whole-tree scan. `tools/` takes ~90s to walk, which
 # exceeds the per-test budget — and on Windows pytest-timeout only has the
 # thread method, so it kills the interpreter and blames the wrong file (TSH).

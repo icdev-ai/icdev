@@ -63,6 +63,17 @@ else:
 os.environ.setdefault("ICDEV_CSRF_ENFORCE", "0")
 os.environ.setdefault("ICDEV_CANVAS_ACCESS_OPEN", "true")
 
+# sdt-auth-01: the slides canvas is `default_enabled: false` in
+# args/component_registry.yaml, so tools/slides/blueprint.py is only mounted when
+# ICDEV_SLIDES_ENABLED is on — and that toggle lives in the repo .env, which a fresh
+# worktree does not have. tests/slides/test_blueprint.py therefore passed on the
+# shared checkout and 404'd everywhere else: ambient state the test never declared.
+# It has to be set HERE, not in the test module: tools.dashboard.app is imported by
+# other modules during collection and blueprint registration happens at app import,
+# so by the time tests/slides/ is collected the app object is already built. Setting
+# it in tests/slides/conftest.py is too late for the same reason.
+os.environ.setdefault("ICDEV_SLIDES_ENABLED", "true")
+
 
 MINIMAL_ICDEV_SCHEMA = """
 -- Runtime invocation telemetry (migration 341). Present here so any test that
@@ -574,6 +585,25 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     hash TEXT,
     previous_hash TEXT,
     signature TEXT
+);
+-- ars-appr-01 / migration 342. Append-only: every approval-gate verdict for an
+-- irreversible or unenumerated agent tool call, with the actor and the reason.
+CREATE TABLE IF NOT EXISTS agent_approval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decided_at TEXT NOT NULL,
+    session_id TEXT,
+    actor TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    tier TEXT NOT NULL,
+    rule TEXT,
+    decision TEXT NOT NULL,
+    reason TEXT,
+    mode TEXT,
+    arg_keys TEXT,
+    input_sha256 TEXT,
+    detail TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,

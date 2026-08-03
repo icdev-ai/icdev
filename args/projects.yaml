@@ -7394,3 +7394,77 @@ projects:
   - key: stale
     title: STALE — Refresh green PRs gone stale against main
     priority: medium
+- key: sdt
+  name: SDT - Slides Deck-Type Vocabulary Repair
+  description: 'Carded out of TSR. tsr-dash-01-d5 found, and its merged report
+    (docs/testing/tsr-dash-01-d5-ambient-fixtures.md section 3) documented, a
+    production defect it deliberately left unfixed because the repair is a
+    schema change outside a test-remediation card: tools/slides/blueprint.py
+    persists deck_type="template_fill" for every template-fill deck, and
+    "template_fill" is not in tools/slides/constants.py::DECK_TYPES, from which
+    CHECK_DECK_TYPE and therefore the slides_decks CHECK constraint derive. The
+    route cannot persist a deck against a correctly-created schema; it only
+    appears to work on a database whose slides_decks predates the constraint,
+    which is why a clean checkout surfaces it and the shared checkout does not.
+    PREMISE CORRECTION verified 2026-08-03 on origin/main: the reported symptom
+    has already changed. All 9 tests in tests/slides/test_blueprint.py
+    TestTemplateFillRoutes now fail with 401, not with the CHECK violation,
+    because the write routes gained require_role(*_SLIDES_WRITE_ROLES) while the
+    client fixture never authenticates - _upload returns None and every
+    downstream assertion dies on a NoneType subscript. The deck_type defect is
+    real but latent behind the auth wall, so it is reachable only after the
+    fixture is fixed. Two independent defects, one test file. SECOND CORRECTION:
+    the d5 report prescribes editing the hardcoded list in
+    tools/slides/db/migrations/002_rich_slides.sql, which cannot work - the
+    slides applier skips any migration whose version is not greater than the
+    stored one, so an already-applied file never re-runs. Existing databases
+    need a NEW migration. DESIGN CONSTRAINT: DECK_TYPES is not only the CHECK
+    vocabulary, it is also passed to the index and new-deck templates as the
+    user-facing deck-type picker (blueprint.py lines 131 and 141). A
+    template-fill deck is produced by uploading a .pptx and filling its shapes,
+    never chosen from a menu, so appending it to DECK_TYPES would fix the
+    constraint by polluting the wizard. The persisted vocabulary and the
+    selectable vocabulary have to become two constants.'
+  task_prefix: sdt-
+  default_open: true
+  briefs:
+  - 'AUTH: the client fixture in tests/slides/test_blueprint.py predates the
+    require_role gate on the seven slides write routes, so all 9
+    TestTemplateFillRoutes tests 401 before reaching the code they test. Fix the
+    fixture, not the routes - the gate is correct and deliberate (costly LLM
+    spend and destructive upload/edit/delete belong to authoring roles). Follow
+    tests/bi_dashboard/test_routes_auth.py, which mirrors _auth_before_request
+    by populating g.current_user, and keep the unauthenticated cases that assert
+    400 on a bad upload honest rather than blanket-authenticating the whole file
+    (sdt-auth-01)'
+  - 'VOCAB: split the deck-type vocabulary in tools/slides/constants.py -
+    DECK_TYPES stays the selectable set the picker renders, a new
+    SYSTEM_DECK_TYPES carries template_fill, and CHECK_DECK_TYPE derives from
+    the union so a system-generated deck satisfies the constraint without
+    appearing in the wizard. Mirror to icdev/tools/slides/constants.py. Do NOT
+    fix this by changing the test expectation or by having the route persist
+    "custom" - the deck_type is the provenance of how the deck was made and
+    flattening it loses that (sdt-vocab-01)'
+  - 'MIG: a new slides migration for databases that already carry the old CHECK.
+    PostgreSQL takes DROP CONSTRAINT / ADD CONSTRAINT; SQLite cannot alter a
+    CHECK in place and needs the create-copy-drop-rename rebuild. Note the
+    applier splits on semicolons and swallows every statement error, so a
+    half-applied rebuild would be silent - verify the end state rather than the
+    absence of an exception (sdt-mig-01)'
+  - 'VV: a regression test proving both halves - a template_fill deck persists
+    against a freshly initialised schema, AND template_fill is absent from the
+    picker vocabulary the templates receive. The first assertion alone would be
+    satisfied by the naive fix this card exists to avoid (sdt-vv-01)'
+  epics:
+  - key: auth
+    title: AUTH — Test fixture reaches the gated routes
+    priority: critical
+  - key: vocab
+    title: VOCAB — Split persisted from selectable deck types
+    priority: critical
+  - key: mig
+    title: MIG — Existing databases
+    priority: high
+  - key: vv
+    title: VV — Regression proof
+    priority: high

@@ -1,0 +1,7 @@
+{
+  "description": "idp_rule_exemptions",
+  "date": "2026-08-03",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

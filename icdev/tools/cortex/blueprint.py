@@ -127,6 +127,11 @@ def index():
 
 
 # ── Observability panel (read-only over the cortex_audit trail) ──────────────────
+#
+# All three routes below call the same ``metrics.summarize()``, which memoizes
+# successful results for a few seconds keyed by window + RLS boundary. Rendering
+# the page while the home tile polls therefore costs ONE scan of cortex_audit,
+# not three.
 
 def _metrics_window() -> int:
     try:
@@ -172,6 +177,10 @@ def api_metrics_tile():
         "redactions": s["redactions"],
         "cost_usd": s["cost_usd"],
         "cache_hits": s["cache_hits"],
+        # calls/blocked/block_rate are exact over the whole window; cost is
+        # derived from the bounded gates_json detail read, so say when that read
+        # was capped rather than let a partial spend figure read as the total.
+        "detail_truncated": bool((stats.get("detail") or {}).get("truncated")),
     })
 
 
@@ -232,6 +241,12 @@ def _propose_roles(question: str) -> list[dict]:
     advisory: any failure yields an empty roster and the proposal still renders.
     """
     try:
+        # Canonical namespace, and here it is load-bearing rather than stylistic:
+        # in a source checkout `tools.ace.problem_classifier` loads a *second*
+        # copy of the module, whose `ProblemClassifierLens` is a different class
+        # object from the one `icdev.tools.ace.*` (i.e. ACE itself) uses, with its
+        # own role-loader state. Keep the `icdev.` prefix. See
+        # docs/features/cortex-unified-ai-layer.md, "Import namespace".
         from icdev.tools.ace.problem_classifier import ProblemClassifierLens
 
         lens = ProblemClassifierLens(question)

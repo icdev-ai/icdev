@@ -12,6 +12,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 17
@@ -28,6 +30,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [
         "MCP tool `write_tests` MCP tool from icdev-builder:",
@@ -52,6 +56,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 17
@@ -68,6 +74,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [
         "MCP tool `terraform_plan` MCP tool from icdev-infra:",
@@ -81,7 +89,7 @@
     "icdev-divergence": {
       "name": "icdev-divergence",
       "path": ".agents\\skills\\icdev-divergence\\SKILL.md",
-      "description": "Run Divergent Ideation \u2014 a single isolated generative fan-out that produces many candidate ideas, then a separate critic scores them on novelty/viability/fit and flags seductive-but-broken traps. Use at a consequential decision point when a single-shot answer risks tunnel vision. OPT-IN and higher-cost than a direct answer.",
+      "description": "Run Divergent Ideation \u2014 a single isolated generative fan-out that produces many candidate ideas, then a separate critic scores them on novelty/viability/fit and flags seductive-but-broken traps. Use when a single-shot answer risks tunnel vision at a consequential decision point. OPT-IN and higher-cost than a direct answer.",
       "allowed_tools": [
         "Bash",
         "Read",
@@ -90,6 +98,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [
         "python tools/llm/chain_orchestrator.py --divergence --function capability_deliberation --prompt \"How should we reduce cold-start latency in the enclave?\" --json",
         "python tools/quality/divergence_critic.py --function capability_deliberation --pool-file .tmp/idea_pool.md --json"
@@ -111,6 +121,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [
         "python tools/audit/audit_query.py --project-id <UUID> --recent 5"
       ],
@@ -127,15 +139,17 @@
       "path": ".agents\\skills\\icdev-innovate\\SKILL.md",
       "description": "Run the ICDEV\u2122 Innovation Engine for autonomous self-improvement through web intelligence and competitive monitoring. Use when triggering an innovation or self-improvement cycle.",
       "allowed_tools": [
-        "[\"Bash\"",
-        "\"Read\"",
-        "\"Write\"",
-        "\"Edit\"",
-        "\"Glob\"",
-        "\"Grep\"",
-        "\"Task\"",
-        "\"TodoWrite\"]"
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Task",
+        "TodoWrite"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 7
@@ -152,6 +166,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 18
@@ -161,6 +177,8 @@
       "path": ".agents\\skills\\icdev-integrate\\SKILL.md",
       "description": "Sync requirements with Jira, ServiceNow, GitLab, and DOORS NG. Use when bidirectionally syncing project requirements with external tools.",
       "allowed_tools": [],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 5
@@ -177,6 +195,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 20
@@ -193,6 +213,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [
         "python tools/maintenance/dependency_scanner.py --project-id <id> [--offline]",
         "python tools/maintenance/vulnerability_checker.py --project-id <id>",
@@ -212,15 +234,17 @@
       "path": ".agents\\skills\\icdev-market\\SKILL.md",
       "description": "Manage the ICDEV\u2122 Federated FORGE Asset Marketplace \u2014 publish, install, search, and sync skills and compliance extensions. Use when publishing or installing marketplace assets.",
       "allowed_tools": [
-        "[\"Bash\"",
-        "\"Read\"",
-        "\"Write\"",
-        "\"Edit\"",
-        "\"Glob\"",
-        "\"Grep\"",
-        "\"Task\"",
-        "\"TodoWrite\"]"
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Task",
+        "TodoWrite"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 6
@@ -237,6 +261,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 17
@@ -246,6 +272,8 @@
       "path": ".agents\\skills\\icdev-modernize\\SKILL.md",
       "description": "Modernize legacy DoD applications using the 7 Rs of Migration Strategy. Analyzes legacy code, generates documentation, recommends migration strategy, creates migration plans, generates code, and tracks progress. Use when invoking /icdev-modernize.",
       "allowed_tools": [],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 1
@@ -262,6 +290,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [
         "python tools/monitor/health_checker.py --project-id <id>",
         "python tools/monitor/log_analyzer.py --project-id <id> --since <timeframe>",
@@ -284,6 +314,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 16
@@ -293,6 +325,8 @@
       "path": ".agents\\skills\\icdev-query\\SKILL.md",
       "description": "Query the ICDEV\u2122 compliance database using natural language. Converts questions to safe SQL queries and returns formatted results. Use when invoking /icdev-query.",
       "allowed_tools": [],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 1
@@ -309,6 +343,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [
         "python tools/security/vuln_scanner.py --project-dir <path>",
         "python tools/compliance/cui_marker.py --verify --directory <path>"
@@ -333,6 +369,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [
         "python tools/security/sast_runner.py --project-dir <path>",
         "python tools/security/dependency_auditor.py --project-dir <path>",
@@ -350,6 +388,8 @@
       "path": ".agents\\skills\\icdev-simulate\\SKILL.md",
       "description": "Run Digital Program Twin simulations and generate COAs for requirements. Use when simulating program scenarios or generating courses of action.",
       "allowed_tools": [],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 6
@@ -366,6 +406,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [
         "python tools/project/session_context_builder.py --format markdown"
       ],
@@ -389,6 +431,8 @@
         "Glob",
         "Grep"
       ],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [
         "MCP tool `run_tests` MCP tool from icdev-builder:",
@@ -401,11 +445,14 @@
       "path": ".agents\\skills\\icdev-worktree\\SKILL.md",
       "description": "Create and manage isolated git worktrees for parallel ICDEV\u2122 task execution. Use when invoking /icdev-worktree.",
       "allowed_tools": [],
+      "paths": [],
+      "tools": [],
       "commands": [],
       "mcp_references": [],
       "body_line_count": 1
     }
   },
   "count": 23,
+  "schema_version": 2,
   "generated_from": ".agents\\skills"
 }

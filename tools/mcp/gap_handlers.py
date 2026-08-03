@@ -3943,3 +3943,94 @@ def handle_databridge_sources(args: dict) -> dict:
     from icdev.tools.databridge import broker
 
     return {"sources": broker.list_available(str(args.get("agent_id") or ""))}
+
+
+# ---------------------------------------------------------------------------
+# Analyzer dispatch (anz-disp-01)
+# ---------------------------------------------------------------------------
+# One entry point for observables. Which analyzers exist is read from
+# args/analyzer_contract.yaml, so declaring a new analyzer there exposes it
+# through these two MCP tools with no handler and no registry change.
+
+
+def handle_analyzer_dispatch(args: dict) -> dict:
+    """MCP: fan an observable out to every analyzer that accepts its type.
+
+    Returns one report per matched declaration, each taxonomy-tagged and
+    status-carrying. ``partial`` is true when any analyzer timed out, raised,
+    or could not run — the response never omits an analyzer that did not
+    answer, because "timed out" and "found nothing" must not look alike.
+
+    That invariant is why ``rate_limit_wait_seconds`` defaults to 0 here rather
+    than blocking a gateway call: an analyzer that is out of quota is *reported*
+    as ``rate_limited`` with ``retry_after_seconds``, so the caller can re-submit
+    deliberately. Pass a positive value to queue for a slot instead. Neither
+    path drops the analyzer.
+    """
+    try:
+        from tools.analyzers.contract import ContractError, UnknownObservableType
+        from tools.analyzers.dispatch import dispatch
+
+        observable_type = str(args.get("observable_type") or "").strip()
+        if not observable_type:
+            return {"error": "observable_type is required"}
+        if "value" not in args or args.get("value") is None:
+            return {"error": "value is required"}
+
+        context = args.get("context") or {}
+        if not isinstance(context, dict):
+            return {"error": "context must be an object"}
+
+        kinds = ("analyzer", "responder") if args.get("include_responders") else ("analyzer",)
+        timeout = args.get("timeout_seconds")
+
+        try:
+            rate_limit_wait = float(args.get("rate_limit_wait_seconds") or 0.0)
+        except (TypeError, ValueError):
+            return {"error": "rate_limit_wait_seconds must be a number"}
+
+        try:
+            result = dispatch(
+                observable_type,
+                args["value"],
+                context=context,
+                kinds=kinds,
+                analyzers=args.get("analyzers") or None,
+                timeout_seconds=int(timeout) if timeout else None,
+                rate_limit_wait_seconds=rate_limit_wait,
+            )
+        except UnknownObservableType as exc:
+            # Name the legal values rather than returning an empty report set,
+            # which would read as "no analyzer applies to this observable".
+            from tools.analyzers.contract import observable_types
+
+            return {"error": str(exc), "observable_types": list(observable_types())}
+        except ContractError as exc:
+            return {"error": f"analyzer contract is invalid: {exc}"}
+
+        return result.to_dict()
+    except Exception as exc:
+        logger.warning("handle_analyzer_dispatch: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_analyzer_capabilities(args: dict) -> dict:
+    """MCP: the observable vocabulary and which analyzers accept each type.
+
+    A caller needs this to know what analyzer_dispatch will accept. Derived
+    from the contract, so a newly declared analyzer appears here immediately.
+    """
+    try:
+        from tools.analyzers.contract import UnknownObservableType
+        from tools.analyzers.dispatch import capabilities
+
+        observable_type = str(args.get("observable_type") or "").strip() or None
+        try:
+            return capabilities(observable_type)
+        except UnknownObservableType as exc:
+            from tools.analyzers.contract import observable_types
+
+            return {"error": str(exc), "observable_types": list(observable_types())}
+    except Exception as exc:
+        logger.warning("handle_analyzer_capabilities: %s", exc)
+        return {"error": str(exc)}
