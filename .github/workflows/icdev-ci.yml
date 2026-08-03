@@ -151,6 +151,7 @@ jobs:
             tests/test_init_goals_and_selective.py \
             tests/test_coherence_swallowed_persistence.py \
             tests/test_analyzer_contract.py \
+            tests/test_agent_approval_gate.py \
             tests/test_analyzer_dispatch.py \
             tests/test_cxo_adopt_04_mcp_cortex_adapters.py \
             -v --tb=short -x
