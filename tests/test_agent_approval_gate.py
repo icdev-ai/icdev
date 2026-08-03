@@ -121,10 +121,27 @@ class TestClassification:
         assert cls.tier == IRREVERSIBLE, command
         assert cls.requires_approval is True
 
-    def test_content_pattern_beats_a_read_only_tool_name(self):
-        """`is_read_only` is an assertion by the caller, not a fact."""
-        cls = classify("read_file", {"path": "x", "then": "git push --force"})
+    def test_content_pattern_beats_a_merely_asserted_read_only_tool(self):
+        """A tool's own claim to be read-only is not a fact; the policy's is.
+
+        This test used to assert that ``read_file`` escalates on an argument
+        containing ``git push --force``. That conflated two different claims:
+
+        * a *tool schema* declaring itself ``is_read_only`` — untrusted, because
+          it ships with the tool and asserts its own safety; and
+        * the *operator* enumerating a tool under ``reversible`` in
+          args/agent_approval_policy.yaml — trusted, because that file is
+          already the source of truth for every other tier.
+
+        ``read_file`` is the second kind, so it is now exempt (see
+        TestReversibleToolsAreNotEscalatedByTheirArguments). The property this
+        test actually protects — that a tool the operator has NOT vouched for
+        cannot escape escalation by looking harmless — is pinned here with a
+        subject that is genuinely unvouched.
+        """
+        cls = classify("totally_safe_reader", {"path": "x", "then": "git push --force"})
         assert cls.tier == IRREVERSIBLE
+        assert cls.requires_approval is True
 
     def test_reversible_and_recoverable_do_not_halt(self):
         assert classify("read_file", {"path": "a"}).tier == REVERSIBLE
@@ -199,6 +216,74 @@ class TestClassification:
         # With no tool enumerated, even a plain read needs a human.
         assert classify("read_file", {}, policy=policy).requires_approval is True
 
+
+
+class TestReversibleToolsAreNotEscalatedByTheirArguments:
+    """A tool that cannot act cannot be made irreversible by its arguments.
+
+    Before this, `read_file("how do I git push safely")` classified irreversible
+    and halted for a human. A gate that prompts on a read teaches operators to
+    approve reflexively, which costs more than the escalation buys.
+
+    The trust boundary is what makes it safe: the claim comes from
+    args/agent_approval_policy.yaml, the operator's own file, not from a tool
+    schema's self-declared is_read_only flag.
+    """
+
+    @pytest.mark.parametrize("tool", ["read_file", "list_dir", "grep"])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "how do I git push safely",
+            "git push --force",
+            "rm -rf /",
+            "drop table audit_trail",
+        ],
+    )
+    def test_a_read_only_tool_is_not_escalated_by_its_input(self, tool, text):
+        cls = classify(tool, {"q": text})
+        assert cls.tier == REVERSIBLE
+        assert cls.requires_approval is False
+        assert cls.rule == "reversible_tool"
+
+    def test_a_generic_executor_never_gets_the_exemption(self):
+        """The smuggling hole this must not open: for a shell the input IS the command."""
+        policy = load_policy(refresh=True)
+        policy = dict(policy)
+        tools = {k: list(v) for k, v in (policy.get("tools") or {}).items()}
+        tools.setdefault(REVERSIBLE, []).append("run_command")   # incoherent claim
+        policy["tools"] = tools
+        cls = classify("run_command", {"command": "git push --force"}, policy=policy)
+        assert cls.tier == IRREVERSIBLE, "a shell listed reversible must still escalate"
+        assert cls.requires_approval is True
+
+    def test_an_irreversible_tool_is_unaffected(self):
+        cls = classify("git_push", {"note": "read only, honest"})
+        assert cls.tier == IRREVERSIBLE
+        assert cls.requires_approval is True
+
+    def test_an_unenumerated_tool_still_defaults_to_unknown(self):
+        """The exemption is an allowlist, not a fallback — rule 4 is untouched."""
+        cls = classify("some_new_tool", {"q": "hello"})
+        assert cls.tier == UNKNOWN
+        assert cls.requires_approval is True
+
+    def test_a_recoverable_tool_is_still_escalated(self):
+        """Only `reversible` is exempt. A tool that mutates can be made worse by input."""
+        policy = load_policy(refresh=True)
+        rec = (policy.get("tools") or {}).get(RECOVERABLE) or []
+        if not rec:
+            pytest.skip("no recoverable tools enumerated")
+        cls = classify(rec[0], {"command": "git push --force"})
+        assert cls.tier == IRREVERSIBLE
+
+    def test_exemption_disappears_with_the_policy(self):
+        """It is granted by the operator's file, so an empty policy grants nothing."""
+        import tools.agent_runtime.approval_gate as ag
+
+        cls = classify("read_file", {"q": "git push"}, policy=dict(ag._FALLBACK_POLICY))
+        assert cls.tier == UNKNOWN
+        assert cls.requires_approval is True
 
 # ---------------------------------------------------------------------------
 # 2. The gate halts
