@@ -1620,17 +1620,25 @@ def seed_mission_catalog() -> None:
                 json.dumps(m.get("prereqs", [])), m.get("order_idx", 0),
                 m.get("difficulty", "intermediate"), m.get("estimated_minutes", 30),
                 m.get("source_credit", ""),
+                # aca-trn-03: a declared objective wins; otherwise read it out of the
+                # mission's own first step. NULL, never "", so "no objective authored"
+                # is one state in the database rather than two.
+                (m.get("learning_objective")
+                 or objective_for_mission(discovered.get(m["slug"]))) or None,
             )
             for m in catalog
         ]
         conn.executemany(
             """INSERT INTO fa_missions
                (slug,title,tagline,tier,topic,role_filter,mission_type,xp_reward,
-                prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                prereq_slugs_json,order_idx,difficulty,estimated_minutes,source_credit,
+                learning_objective)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT(slug) DO UPDATE SET
                  title=excluded.title, tagline=excluded.tagline,
-                 xp_reward=excluded.xp_reward, order_idx=excluded.order_idx""",
+                 xp_reward=excluded.xp_reward, order_idx=excluded.order_idx,
+                 learning_objective=COALESCE(excluded.learning_objective,
+                                             fa_missions.learning_objective)""",
             rows,
         )
         conn.commit()
@@ -1787,6 +1795,184 @@ def _title_head(title: str | None) -> str:
             text = text.split(sep, 1)[0]
             break
     return " ".join(text.lower().split())
+
+
+# ---------------------------------------------------------------------------
+# Learning objectives (aca-trn-03)
+# ---------------------------------------------------------------------------
+# A mission card advertises XP, estimated minutes and difficulty — three costs —
+# and never states what the learner will be able to DO afterwards. For training
+# used in a compliance context the objective is the auditable unit: "this learner
+# was trained on X" needs an X, and a tagline ("The difference between a chatbot
+# and a weapon is the prompt.") is marketing copy, not one.
+#
+# This is an EXTRACTION pass, not an authoring one. Nothing here writes an
+# objective an author did not: where the content states one it is surfaced, and
+# where it does not the column stays NULL and both surfaces omit the line. A
+# plausible-looking objective synthesised from a tagline would put un-authored
+# text on the surface that most needs to be true — the aca-hon-* failure mode
+# (mechanical slug titles, step-type badges that did not match the steps) applied
+# to an auditable field. An absent objective is a visible content gap; an invented
+# one is an invisible false record.
+#
+# Two sources, in priority order:
+#   1. ``learning_objective:`` in the step's frontmatter — the explicit channel,
+#      for an author stating it outright. Nothing carries it yet; it exists so
+#      authoring one does not require touching this module.
+#   2. The lead paragraph of an objective-bearing section in the mission's FIRST
+#      step. No file uses a literal "## Learning Objective" heading today, but 29
+#      missions open with "## What You'll Build" and 8 with "## Mission Brief",
+#      and those paragraphs are already written as "you're building X that does Y".
+
+#: Section headings whose lead paragraph states what the learner will produce.
+#: Ordered: an explicit objective heading beats a build/brief section describing
+#: the same thing more loosely.
+_OBJECTIVE_HEADINGS = (
+    "learning objective", "learning objectives",
+    "objective", "objectives",
+    "mission brief", "your mission",
+    "what you'll learn", "what you will learn",
+    "what you'll build", "what you will build",
+    "what you'll do", "what you will do",
+    # The most common objective-bearing heading in this catalogue by a wide margin
+    # (48 first steps). Imperative rather than declarative — "Build a X that does
+    # Y" instead of "you will be able to build a X" — but it is the author stating
+    # the outcome, which is what an extraction pass is here to surface. Ranked last
+    # so a mission carrying both a brief and a task list surfaces the brief.
+    "your task", "your tasks",
+)
+
+#: Below this a match is a sentence fragment, not a statement of capability.
+#: Better absent — and visibly so — than truncated into something unauditable.
+_OBJECTIVE_MIN_CHARS = 40
+#: A card line, not an essay. Longer text is cut back to a sentence boundary.
+_OBJECTIVE_MAX_CHARS = 320
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_MARKS_RE = re.compile(r"(\*\*|__|`|~~)")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def _normalise_heading(text: str) -> str:
+    """`## What You'll Build` body -> `what you'll build`, typographic quotes folded."""
+    cleaned = (text or "").replace("’", "'").replace("‘", "'")
+    cleaned = cleaned.strip().strip("#").strip().rstrip(":").strip()
+    return " ".join(cleaned.lower().split())
+
+
+def _flatten_markdown(text: str) -> str:
+    """Markdown prose -> one clean line: links to their label, emphasis dropped."""
+    flat = _MD_LINK_RE.sub(r"\1", text or "")
+    flat = _MD_MARKS_RE.sub("", flat)
+    # Single '*' / '_' only between word characters is emphasis; leave snake_case
+    # identifiers alone, because they are usually the thing being taught.
+    flat = re.sub(r"(?<!\w)[*_](?=\w)|(?<=\w)[*_](?!\w)", "", flat)
+    return " ".join(flat.split()).strip()
+
+
+def _trim_to_sentence(text: str) -> str:
+    """Cut over-long prose back to a sentence boundary, else an ellipsis."""
+    if len(text) <= _OBJECTIVE_MAX_CHARS:
+        return text
+    window = text[:_OBJECTIVE_MAX_CHARS]
+    cut = max(window.rfind(". "), window.rfind("! "), window.rfind("? "))
+    if cut >= _OBJECTIVE_MIN_CHARS:
+        return window[: cut + 1].strip()
+    cut = window.rfind(" ")
+    return (window[:cut] if cut > 0 else window).strip() + "…"
+
+
+def _lead_paragraph(lines: list[str], start: int) -> str:
+    """First prose paragraph after ``start``, skipping non-prose blocks.
+
+    Stops at the next heading so a section with no prose of its own (straight into
+    a code block or a list) yields nothing rather than borrowing the next
+    section's text.
+    """
+    para: list[str] = []
+    in_fence = False
+    for line in lines[start + 1:]:
+        stripped = line.strip()
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            if para:
+                break
+            continue
+        if in_fence:
+            continue
+        if stripped.startswith("#"):
+            break
+        if not stripped:
+            if para:
+                break
+            continue
+        # Lists, tables, quotes and images are structure, not a prose statement.
+        if stripped[0] in "-*+>|!" or re.match(r"^\d+[.)]\s", stripped):
+            if para:
+                break
+            continue
+        para.append(stripped)
+    return _flatten_markdown(" ".join(para))
+
+
+def extract_learning_objective(raw: str) -> str:
+    """The learning objective stated by one step's markdown, or "" if none is.
+
+    ``raw`` is the whole file including frontmatter. Returns "" rather than a
+    guess: the caller stores NULL and the UI omits the line.
+    """
+    fm, body = _parse_frontmatter(raw or "")
+    declared = _flatten_markdown(str(fm.get("learning_objective") or ""))
+    if declared:
+        return _trim_to_sentence(declared)
+
+    lines = (body or "").splitlines()
+    headings: dict[str, int] = {}
+    in_fence = False
+    for idx, line in enumerate(lines):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence or not line.strip().startswith("#"):
+            continue
+        name = _normalise_heading(line)
+        # First occurrence wins; a heading repeated later is a different section.
+        headings.setdefault(name, idx)
+
+    for wanted in _OBJECTIVE_HEADINGS:
+        idx = headings.get(wanted)
+        if idx is None:
+            continue
+        para = _lead_paragraph(lines, idx)
+        # A trailing colon means the paragraph introduces a list or code block.
+        # The sentence still reads as an objective once the colon is dropped.
+        para = para.rstrip(":").strip()
+        if len(para) < _OBJECTIVE_MIN_CHARS:
+            continue
+        # A paragraph carrying a question is the exercise being posed, not the
+        # capability being claimed — "identify: what listen_topics does it
+        # subscribe to?" is what the learner does DURING the mission. Surfacing
+        # it as the objective would put a quiz item on the field an audit reads,
+        # so the mission falls through to NULL and states none. This bites the
+        # "your task" sections hardest, which is where it is needed.
+        if "?" in para:
+            continue
+        return _trim_to_sentence(para)
+    return ""
+
+
+def objective_for_mission(steps: list | None) -> str:
+    """A mission's objective: the one its first step states, else "".
+
+    Later steps state per-step tasks, not the mission's outcome, so only step 1 is
+    consulted. Steps are expected in ``step_num`` order (``discover_steps`` sorts).
+    """
+    for step in steps or []:
+        objective = (step.get("learning_objective") or "").strip()
+        if objective:
+            return objective
+        break  # only the first step speaks for the mission
+    return ""
 
 
 def mission_type_from_steps(steps: list | None) -> str:
@@ -1992,6 +2178,9 @@ def discover_steps() -> dict:
             "xp_partial": _DEFAULT_XP,
             "skill_tag": str(fm.get("skill_tag") or ""),
             "estimated_seconds": _DEFAULT_SECONDS,
+            # aca-trn-03: carried on every step, read from step 1 only
+            # (objective_for_mission). "" where the content states none.
+            "learning_objective": extract_learning_objective(raw),
         })
 
     for slug, steps in found.items():
@@ -2131,6 +2320,7 @@ def discover_missions(discovered: dict | None = None) -> list:
             "estimated_minutes": max(5, (len(steps) * _DEFAULT_SECONDS) // 60),
             "prereqs": [],
             "source_credit": _DERIVED_CREDIT,
+            "learning_objective": objective_for_mission(steps),
         })
     return out
 
