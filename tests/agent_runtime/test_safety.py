@@ -86,8 +86,35 @@ def test_heuristic_risk_write_is_medium():
     assert _heuristic_risk("write_file", {"path": "x.txt", "content": "y"}) == "medium"
 
 
-def test_heuristic_risk_low_default():
-    assert _heuristic_risk("run_command", {"command": "python tools/status.py"}) == "low"
+def test_heuristic_risk_low_for_an_enumerated_reversible_tool():
+    assert _heuristic_risk("read_file", {"path": "tools/status.py"}) == "low"
+
+
+def test_heuristic_risk_no_longer_low_by_default():
+    """ars-appr-01: an unprovable command is not "low" just because it looks tame.
+
+    This previously asserted that ``run_command`` with ``python tools/status.py``
+    was low risk, because ``_heuristic_risk`` ended in ``return "low"`` for
+    anything that was not ``write_file`` and carried no destructive keyword. But
+    that is an arbitrary interpreter invocation through a generic shell —
+    ``python tools/deploy.py`` is the same shape — so "low" was an assertion
+    about the string's appearance, not about what it does. In ``smart`` mode
+    that auto-approved it.
+
+    The heuristic now defers to the reversibility classifier, whose default tier
+    for anything unenumerated is ``unknown``. Escalating is the recoverable
+    error here; auto-approving is not.
+    """
+    assert _heuristic_risk("run_command", {"command": "python tools/status.py"}) == "high"
+    # A command the policy CAN prove recoverable is still not escalated.
+    #
+    # NB `git commit`, not `git add` — the pre-existing `_HIGH_RISK_KEYWORDS`
+    # entry `"dd "` (for the `dd` disk utility) substring-matches inside
+    # `"git add "`, so that command short-circuits to "high" before the
+    # classifier is ever consulted. Left alone deliberately: the false positive
+    # over-escalates, which fails safe, and narrowing a security keyword list is
+    # not this card's scope.
+    assert _heuristic_risk("run_command", {"command": "git commit -m x"}) == "medium"
 
 
 # ---------------------------------------------------------------------------

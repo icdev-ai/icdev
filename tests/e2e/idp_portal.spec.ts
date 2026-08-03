@@ -108,5 +108,115 @@ test.describe('Internal Developer Portal', () => {
     const link = page.locator('a[href="/idp/"]');
     expect(await link.count()).toBeGreaterThan(0);
   });
+
+  // ── idp-ui-01: catalog + scorecards ───────────────────────────────────────
+
+  test('catalog lists every registered component with owner, grade and level', async ({ page }) => {
+    const resp = await page.request.get('/idp/api/catalog');
+    expect(resp.ok()).toBeTruthy();
+    const data = await resp.json();
+
+    expect(data.count).toBeGreaterThanOrEqual(60);
+    for (const row of data.components) {
+      // Present on every row whether or not it is populated — a missing key
+      // renders as a blank cell that reads like a passing one.
+      expect(row).toHaveProperty('owner');
+      expect(row).toHaveProperty('letter_grade');
+      expect(row).toHaveProperty('level');
+      expect(Array.isArray(row.dimensions)).toBeTruthy();
+
+      // No score without a grade, no grade without a score.
+      expect(row.score === null).toBe(row.letter_grade === null);
+    }
+  });
+
+  test('an unassessed dimension reads as unassessed, never as a zero', async ({ page }) => {
+    const resp = await page.request.get('/idp/api/catalog');
+    const data = await resp.json();
+
+    for (const row of data.components) {
+      for (const cell of row.dimensions) {
+        if (!cell.assessed) {
+          // The load-bearing assertion: unmeasured must be null, not 0, and
+          // must not be coloured like a failure.
+          expect(cell.score, `${row.key}.${cell.key} scored while unassessed`).toBeNull();
+          expect(cell.letter_grade).toBeNull();
+          expect(cell.grade_class).not.toContain('danger');
+        } else {
+          expect(typeof cell.score).toBe('number');
+        }
+      }
+    }
+  });
+
+  test('the catalog page renders grade and dimension columns', async ({ page }) => {
+    await page.goto('/idp/');
+    await page.waitForLoadState('domcontentloaded');
+
+    const bodyText = await page.textContent('body');
+    expect(bodyText).toContain('Grade');
+    expect(bodyText).toContain('Code Quality');
+    expect(bodyText).toContain('Test Coverage');
+    // The vocabulary itself is the feature — "Not assessed" must be a word the
+    // page is willing to say.
+    expect(bodyText).toContain('Not assessed');
+
+    await page.screenshot({
+      path: '.tmp/test_runs/screenshots/idp_portal_04_catalog_grades.png',
+      fullPage: true,
+    });
+  });
+
+  test('every dimension links to the evidence behind its score', async ({ page }) => {
+    const resp = await page.request.get('/idp/api/component/idp');
+    const detail = await resp.json();
+
+    expect(detail.dimensions.length).toBeGreaterThan(0);
+    let outcomes = 0;
+    for (const dim of detail.dimensions) {
+      for (const outcome of dim.outcomes) {
+        expect(outcome.evidence_url).toContain('/idp/evidence?');
+        expect(outcome.evidence.expression, 'evidence names no query').toBeTruthy();
+        expect(outcome.evidence.adapter_module).toBeTruthy();
+        outcomes += 1;
+      }
+    }
+    expect(outcomes).toBeGreaterThan(0);
+  });
+
+  test('the evidence page re-derives one rule from source', async ({ page }) => {
+    await page.goto('/idp/evidence?component=idp&rule=has-owner');
+    await page.waitForLoadState('domcontentloaded');
+
+    const bodyText = await page.textContent('body');
+    expect(bodyText).toContain('The check');
+    expect(bodyText).toContain('Observed facts');
+    expect(bodyText).toContain('idp.components');
+
+    // No absolute host path may leak into the rendered page.
+    expect(bodyText).not.toMatch(/[A-Z]:\\/);
+
+    await page.screenshot({
+      path: '.tmp/test_runs/screenshots/idp_portal_05_evidence.png',
+      fullPage: true,
+    });
+  });
+
+  test('absent probe evidence is reported absent, not summarised as healthy', async ({ page }) => {
+    const resp = await page.request.get('/idp/api/evidence?component=idp&rule=probes-healthy');
+    expect(resp.ok()).toBeTruthy();
+    const data = await resp.json();
+
+    const probes = data.sources.find((s: any) => s.kind === 'probe_rows');
+    expect(probes, 'probes-healthy must link to its probe rows').toBeTruthy();
+    expect(probes.table).toBe('awareness_component_health');
+    // measured must track the rows, so an empty set can never read as a pass.
+    expect(probes.measured).toBe(probes.rows.length > 0);
+  });
+
+  test('the evidence endpoint rejects an unknown rule', async ({ page }) => {
+    const resp = await page.request.get('/idp/api/evidence?component=idp&rule=no-such-rule');
+    expect(resp.status()).toBe(404);
+  });
 });
 // CUI // SP-CTI

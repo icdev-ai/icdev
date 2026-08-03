@@ -263,6 +263,29 @@ python tools/analyzers/contract.py --observable cve      # who accepts this obse
 python tools/analyzers/contract.py --check-sql observable_type   # CHECK clause for a migration
 ```
 
+### Observable dispatch (anz-disp-01)
+
+One entry point. Submitting an observable fans it out to **every** analyzer that
+declared it accepts that type — concurrently, with a per-analyzer timeout — and
+returns taxonomy-tagged reports. An analyzer that timed out is reported as
+`timeout`, never omitted: a fan-out that dropped it would read identically to
+one where it found nothing. Exit code is 2 when the result is partial.
+
+```bash
+python tools/analyzers/dispatch.py --observables                          # vocabulary + who accepts what
+python tools/analyzers/dispatch.py --type ip --value 198.51.100.7         # fan out to every ip analyzer
+python tools/analyzers/dispatch.py --type cve --value CVE-2024-3094 \
+    --context '{"project_id":"p1","component":"xz","cvss_score":10.0,"severity":"critical","description":"backdoor"}'
+python tools/analyzers/dispatch.py --type vendor --value Acme --json      # machine-readable reports
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --analyzer threat_intel_match
+python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+```
+
+MCP (existing gateway, category `analyzers`, no new server):
+`analyzer_dispatch` (params: `observable_type`, `value`, `context`,
+`analyzers`, `include_responders`, `timeout_seconds`) and
+`analyzer_capabilities` (param: `observable_type`).
+
 ---
 
 ## Browser Automation & Agent Scope Controls
@@ -296,6 +319,46 @@ try:
 finally:
     driver.quit()
 ```
+
+---
+
+## Agent Approval Gate — Irreversible Action Confirmation (ars-appr-01)
+
+Classifies an agent tool call by **reversibility** and halts the irreversible
+ones for confirmation. Policy: `args/agent_approval_policy.yaml`.
+
+```bash
+# Classify a tool call (exit 0; read the JSON for the verdict)
+python tools/agent_runtime/approval_gate.py --classify git_push --json
+python tools/agent_runtime/approval_gate.py --classify run_command \
+    --input '{"command": "git push --force"}' --json
+python tools/agent_runtime/approval_gate.py --list-policy --json
+```
+
+Tiers: `reversible` and `recoverable` run unattended; `irreversible` and
+`unknown` halt. **A tool must be named in the policy to run unattended** —
+`default_tier` is `unknown` and `unknown` requires approval, so an allowlist gap
+fails closed rather than open. A missing or unreadable policy file makes every
+tool `unknown`.
+
+Wire it into a loop with `approval_gate=True`, or set the env var:
+
+```python
+from icdev.tools.llm.agent_loop import run_agent_loop
+
+run_agent_loop(router, system_prompt=..., user_prompt=..., tools=..., 
+               tool_handlers=..., approval_gate=True)      # or a custom hook
+```
+
+```bash
+export ICDEV_AGENT_APPROVAL_MODE=enforce   # enforce (default) | dry_run | off
+export ICDEV_APPROVAL_ACTOR="jane.doe"     # recorded with every decision
+```
+
+Every approval **and** denial is appended to `agent_approval_log` (migration
+342, append-only) with the actor and the reason. Argument **values are never
+stored** — only argument key names and a SHA-256 of the input, because tool
+arguments can carry CUI. `dry_run` and `off` still write the audit row.
 
 ---
 
@@ -3985,21 +4048,45 @@ surfaces for every other canvas.
 | `/idp/` | Ladder, rule coverage, catalog, and the portal's own grade |
 | `/idp/catalog` | Same page, catalog section |
 | `/idp/scorecards` | Same page, scorecard section |
-| `/idp/component/<key>` | One component: facts, per-rule outcomes, 8-point breakdown |
+| `/idp/component/<key>` | One component: facts, per-dimension cards, 8-point breakdown |
+| `/idp/evidence?component=<key>&rule=<id>` | Why one rule landed as it did, re-derived live (idp-ui-01) |
 | `GET /idp/api/catalog` | JSON catalog (`?scorecard=`, `?refresh=1`) |
 | `GET /idp/api/scorecard` | JSON scorecard report |
 | `GET /idp/api/component/<key>` | JSON component detail |
+| `GET /idp/api/evidence?component=<key>&rule=<id>` | JSON rule evidence |
 | `POST /idp/api/iqe-query` | IQE natural-language query over `idp.components` |
 
 The view models are a library, not a CLI — import them:
 
 ```python
-from tools.idp.portal import portal_overview, component_detail, self_check
+from tools.idp.portal import (
+    portal_overview, component_detail, rule_evidence, self_check,
+)
 
 portal_overview()               # everything /idp renders
-component_detail("ndc")         # one component's facts, rules and 8 points
+component_detail("ndc")         # facts, per-dimension scores, evidence links
+rule_evidence("ndc", "e2e-spec")  # re-runs that rule live and returns its sources
 self_check()["completeness"]    # the portal's own 8-point breakdown
 ```
+
+### Catalog and scorecards (idp-ui-01)
+
+Every component is listed with its owner, ladder level and A—F letter grade,
+and every grade decomposes into per-dimension scores that link to the evidence
+behind them.
+
+```bash
+# Per-dimension columns and letter grades in the CLI table
+python tools/idp/scorecard.py --scorecard component-readiness
+
+# One component's dimensions, grade, and per-rule evidence
+python tools/idp/scorecard.py --scorecard component-readiness --component ndc --json
+```
+
+A component (or a single dimension) that no rule applies to reports
+`score: null`, `letter_grade: null`, `assessed: false` and renders as
+**"Not assessed"** — never as `0%` or `F`. A measured zero still reads as a
+zero; the two are different claims and the surface keeps them apart.
 
 Any rule expression is a standalone IQE query, so it can be run by hand against
 the same collection the scorecard grades:
@@ -4011,3 +4098,79 @@ python -m tools.iqe.run --query-string \
 
 Adding a rule or a level is a YAML edit under `args/scorecards/` — no Python
 change. `python tools/idp/scorecard.py --list` reflects it immediately.
+
+### Score history (idp-score-03)
+
+`scorecard.py` computes a standing and throws it away. `score_history.py` keeps
+it, so "is this component getting better or worse" becomes answerable. One row
+per component per evaluation in the append-only `idp_scorecard_history`, each
+carrying the attained ladder level — a promotion or demotion is a comparison of
+two adjacent rows, not a re-evaluation of historical rule sets.
+
+```bash
+# Record a point for every scorecard (always writes)
+python tools/idp/score_history.py --record
+
+# Record only if the scorecard's evaluation.window has rolled over —
+# how the scheduled reflex calls it, so a 3h cadence feeds a 24h window
+# without writing eight identical rows a day
+python tools/idp/score_history.py --record --if-due
+
+# One scorecard only
+python tools/idp/score_history.py --record --scorecard component-readiness
+
+# Read one component's series back (oldest-first, with delta and direction)
+python tools/idp/score_history.py --trend ndc
+python tools/idp/score_history.py --trend ndc --json --limit 30
+
+# Every ladder promotion/demotion across the estate
+python tools/idp/score_history.py --level-changes
+python tools/idp/score_history.py --level-changes --since 2026-08-01 --json
+```
+
+An explicit `--record` always writes, so re-scoring right after a fix shows the
+improvement immediately instead of waiting out the window. The scheduled writer
+is the Genesis reflex `idp_score_recorder` (3h, GREEN tier — see
+`args/genesis_config.yaml`); the window in `args/scorecards/<key>.yaml` decides
+whether each cycle actually records, so changing granularity is a YAML edit.
+
+### Gap seeder — a failing rule becomes a kanban task (idp-gap-01)
+
+A catalog product surfaces a red cell and stops. ICDEV owns `kanban_tasks` and
+an autonomous build pipeline, so a failing rule can become work. One task per
+failing rule per component, with the rule's `failureMessage` as the description
+and the IQE query that measured the failure as the acceptance criteria.
+
+```bash
+# Dry run — the default. Reads everything, applies every cap, writes nothing.
+python tools/idp/gap_seeder.py
+python tools/idp/gap_seeder.py --json
+
+# Try different caps before committing to them
+python tools/idp/gap_seeder.py --max-per-run 3 --max-per-component 1
+
+# One scorecard only
+python tools/idp/gap_seeder.py --scorecard component-readiness
+
+# Actually write (refused until args/idp_gap_seeder.yaml has enabled: true)
+python tools/idp/gap_seeder.py --seed --json
+python tools/idp/gap_seeder.py --seed --force        # one-off, ignores enabled: false
+```
+
+Caps live in `args/idp_gap_seeder.yaml`. `max_tasks_per_component` is applied
+**before** `max_tasks_per_run` so one badly scoring component cannot consume the
+whole budget; both truncations are logged at WARNING, printed to stderr, and
+reported as `truncated` in the JSON — a silent truncation would read as
+"nothing left to do". Measured on the live board: 311 failing rules → 10 tasks.
+
+Re-running seeds nothing. The idempotency key is
+`idp-gap:<scorecard>:<component>:<rule>` and already-seeded gaps are filtered
+out *before* the cap is applied, so the same ten are not re-offered forever.
+
+Nothing dispatches without confirmation: tasks land as `suggested` **and** carry
+`depends_on_task_id = idpgap-gate-00`, a `*-gate-00` sentinel held `in_progress`.
+The dependency edge is the hold that is enforced in code
+(`promote_backlog_to_scheduled::_deps_satisfied`); `suggested` alone is not,
+because the kanban deadlock-breaker can promote a card out of it. Release the
+whole batch by setting the gate to `done`. Seeding is refused outright if the
+gate has already been released.

@@ -444,13 +444,13 @@ def test_probe_read_is_bounded_and_filtered():
     conn.commit()
 
     routes, probed = _latest_failing_routes(conn)
-    assert probed is True
+    assert probed == {"/ndc", "/pdc"}, "probed set must carry every route probed, not just failures"
     assert routes == {"/pdc"}, "recovered route still counted, or wrong probe type read"
     assert _PROBE_WINDOW > 0
 
 
 def test_never_probed_is_not_reported_as_healthy():
-    """An empty probe table yields probed=False so the rule filters out, not passes."""
+    """An empty probe table yields an empty probed set, so the rule filters out."""
     import sqlite3
 
     from tools.iqe.adapters.idp import _latest_failing_routes
@@ -463,7 +463,50 @@ def test_never_probed_is_not_reported_as_healthy():
     conn.commit()
     routes, probed = _latest_failing_routes(conn)
     assert routes == set()
-    assert probed is False
+    assert probed == set()
+
+
+def test_health_probed_is_per_component_not_platform_wide():
+    """A component whose OWN routes were never probed is unmeasured, not healthy.
+
+    The regression this pins (idp-ui-01): ``health_probed`` used to be one
+    global boolean — true as soon as *any* route anywhere had a probe row. The
+    `probes-healthy` rule filters on it and passes on ``failing_probes == 0``,
+    and an unprobed route contributes no failures, so every unprobed component
+    passed a health check nothing had run against it. Measured on the live
+    PostgreSQL board 2026-08-02: 60 of 67 components had zero probe rows and
+    all 60 read as passing.
+    """
+    import sqlite3
+
+    from tools.iqe.adapters.idp import _latest_failing_routes, _routes_under
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE awareness_component_health "
+        "(node_id TEXT, probe_type TEXT, status TEXT, probed_at TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO awareness_component_health VALUES (?, ?, ?, ?)",
+        [("route::/ndc", "http_head", "pass", "2026-06-01T00:00:00Z")],
+    )
+    conn.commit()
+    failing, probed = _latest_failing_routes(conn)
+
+    # /ndc was probed and is healthy — it may be graded.
+    assert _routes_under("/ndc", probed) == 1
+    assert _routes_under("/ndc", failing) == 0
+
+    # /pdc was never probed. It must NOT inherit /ndc's probe as evidence.
+    assert _routes_under("/pdc", probed) == 0, (
+        "an unprobed component still reads as probed — the health rule will "
+        "pass it on zero evidence"
+    )
+
+    # A component with no url_prefix owns no route subtree; "/" must not match
+    # every route on the platform.
+    assert _routes_under("", probed) == 0
+    assert _routes_under("/", probed) == 0
 
 
 def test_rls_fact_shares_the_dashboard_mapping():
