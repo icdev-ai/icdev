@@ -28,6 +28,7 @@ Checks:
  18. mirror_drift    — WARN when tools/<pkg> and icdev/tools/<pkg> diverge for hot packages (byte-compare; skips re-export shims)
  19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
  20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
+ 21. vendor_parity   — declared stdlib-only modules stay a subset of their OUT-OF-REPO vendored copies (cxo-doc-03)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -5428,13 +5429,30 @@ def check_component_cli_reachability(
 
 
 def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
-    """Run the 8-point completeness gate against every registered canvas."""
+    """Run the 8-point completeness gate against every registered canvas.
+
+    BLOCKING (idp-score-05). This is the registry-driven half of the CLAUDE.md
+    8-component new-page gate; ``check_new_page_completeness`` is the
+    filesystem-driven half. The two enumerate the same rule from opposite
+    directions — one from ``args/component_registry.yaml``, one from
+    ``tools/dashboard/templates/*/page.html`` — so they must agree on severity
+    or the weaker one launders the rule. This one returned ``warn`` while its
+    sibling returned ``fail`` and was declared blocking in
+    ``args/security_gates.yaml``, which meant a canvas visible only to the
+    registry could ship incomplete. Both now fail, and both honour the same
+    ``args/page_completeness_whitelist.yaml`` grandfather list.
+    """
     missing_issues: List[str] = []
+    whitelisted: List[str] = []
     try:
         from tools.config.component_registry import get_registry
 
+        whitelist = _load_page_completeness_whitelist()
         registry = get_registry()
         for comp in registry.iter_canvases():
+            if comp.key in whitelist:
+                whitelisted.append(comp.key)
+                continue
             report = registry.validate_canvas_completeness(comp.key)
             if not report.passed:
                 for item in report.items:
@@ -5459,23 +5477,29 @@ def check_canvas_completeness(changed_files: Optional[List[Path]] = None) -> Coh
         return CoherenceCheck(
             check_id="canvas_completeness",
             check_name="Canvas Completeness Gate",
-            status="warn",
+            status="fail",
             expected=["All canvases pass 8-point completeness gate"],
             actual=[f"{len(missing_issues)} missing component(s)"],
             missing=sorted(missing_issues),
             extra=[],
-            message=f"{len(missing_issues)} canvas completeness issue(s) found (legacy canvases may need registry updates)",
+            message=(
+                f"{len(missing_issues)} canvas completeness issue(s) found — ship the "
+                "missing component(s), declare the point N/A in the registry's "
+                "completeness block, or grandfather the canvas in "
+                "args/page_completeness_whitelist.yaml"
+            ),
         )
 
+    suffix = f" ({len(whitelisted)} whitelisted)" if whitelisted else ""
     return CoherenceCheck(
         check_id="canvas_completeness",
         check_name="Canvas Completeness Gate",
         status="pass",
         expected=["All canvases pass 8-point completeness gate"],
-        actual=["All canvases complete"],
+        actual=[f"All canvases complete{suffix}"],
         missing=[],
-        extra=[],
-        message="All registered canvases pass the 8-point completeness gate",
+        extra=sorted(whitelisted),
+        message=f"All registered canvases pass the 8-point completeness gate{suffix}",
     )
 
 
@@ -5908,8 +5932,41 @@ def _is_sqlite_connect(call: ast.AST) -> bool:
     )
 
 
+def _safe_connection_names(tree: ast.AST, safe_factories: Set[str]) -> Set[str]:
+    """Extend the safe factories with local names bound to a translating connection.
+
+    ``real_conn = _storage_conn(db_path)`` followed by
+    ``recording_conn = _RecordingConn(real_conn)`` is the SQL-recorder pattern:
+    the proxy sits in FRONT of the storage wrapper, so what reaches runtime code
+    still translates ``%s``. Resolving only the factory call would flag the
+    proxy — rejecting the remedy again, one indirection later.
+
+    Propagation is transitive but bounded, and an assignment that reaches
+    ``sqlite3.connect`` anywhere in its value stays raw, so wrapping a raw
+    connection in a proxy is still caught.
+    """
+    safe = set(safe_factories)
+    for _ in range(3):  # factory -> connection -> proxy is the deepest real chain
+        grew = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not targets or all(t in safe for t in targets):
+                continue
+            if any(_is_sqlite_connect(sub) for sub in ast.walk(node.value)):
+                continue
+            refs = {sub.id for sub in ast.walk(node.value) if isinstance(sub, ast.Name)}
+            if refs & safe:
+                safe.update(targets)
+                grew = True
+        if not grew:
+            break
+    return safe
+
+
 def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
-    """Names of local factories that hand back a ``tests/_sql_compat`` connection.
+    """Names of local factories that hand back a placeholder-translating connection.
 
     ``_sql_compat.connect``/``translating`` ARE the sanctioned wrapper — they
     delegate to the same ``translate_sql`` the runtime uses. A file that fixes one
@@ -5917,20 +5974,39 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
     elsewhere for schema setup or for its own assertions, and that residue must
     not keep the file flagged: doing so makes the gate reject its own remedy.
 
+    ``tools.db.storage.get_connection`` counts for the same reason, and more
+    strongly: it is not a stand-in for the runtime wrapper, it IS the runtime
+    wrapper, so a fixture built on it cannot drift from production at all. A
+    factory returning one was still being flagged, which is the remedy-rejection
+    this function exists to prevent.
+
     Only the factory actually named in the patch call is cleared. A second,
     still-raw factory in the same file stays a violation.
     """
     compat_calls: Set[str] = set()
+    # Names bound to the real storage factory: `from tools.db.storage import
+    # get_connection as _real` and `import tools.db.storage as s` both appear.
+    storage_calls: Set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("_sql_compat"):
-            for alias in node.names:
-                compat_calls.add(alias.asname or alias.name)
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.endswith("_sql_compat"):
+                for alias in node.names:
+                    compat_calls.add(alias.asname or alias.name)
+            elif module.endswith("db.storage"):
+                for alias in node.names:
+                    if alias.name in ("get_connection", "get_canvas_connection"):
+                        storage_calls.add(alias.asname or alias.name)
 
     def _is_compat_call(sub: ast.AST) -> bool:
         if not isinstance(sub, ast.Call):
             return False
         fname = sub.func
-        if isinstance(fname, ast.Name) and fname.id in compat_calls:
+        # `storage_calls` too: get_connection/get_canvas_connection ARE the
+        # sanctioned translating factories (CLAUDE.md), so a fixture that hands
+        # one back is as safe as one wrapping _sql_compat — flagging it sent
+        # authors toward the raw connect this check exists to stop.
+        if isinstance(fname, ast.Name) and fname.id in (compat_calls | storage_calls):
             return True
         return (
             isinstance(fname, ast.Attribute)
@@ -6008,7 +6084,14 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
 
 
 def _patch_replacement_names(node: ast.Call) -> Set[str]:
-    """Names supplied as the replacement in a patch/setattr call."""
+    """Names supplied as the replacement in a patch/setattr call.
+
+    The replacement is usually the factory itself (``side_effect=_conn``), but
+    a factory that needs the tmp path is passed wrapped —
+    ``side_effect=lambda *a, **kw: _storage_conn(db_path)``. Both name the same
+    safe factory, so the wrapped form is unwrapped by collecting the names it
+    calls; treating it as unrecognised flags the fix as the bug.
+    """
     names: Set[str] = set()
 
     def _add(value: ast.AST) -> None:
@@ -6080,7 +6163,12 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
         # Trigger 1: the file patches a DB connection factory (setattr / mock.patch /
         # patch.object naming get_connection/_get_db/...) — the smoking gun. Any
         # runtime %s query then hits an untranslated raw sqlite3 connection.
-        safe_factories = _sql_compat_factory_names(tree)
+        # Trigger 1 wants the file-wide set: a patch replacement may name a
+        # connection bound anywhere in the file. Trigger 2 must NOT reuse it --
+        # it resolves per scope, and a file-wide set already contains the very
+        # names it needs to judge, which would clear every one of them.
+        compat_factories = _sql_compat_factory_names(tree)
+        safe_factories = _safe_connection_names(tree, compat_factories)
 
         flagged = False
         for node in ast.walk(tree):
@@ -6106,25 +6194,77 @@ def check_test_db_isolation(changed_files: Optional[List[Path]] = None) -> Coher
 
         # Trigger 2: a raw-sqlite-bound name passed as conn=<name> into a call while
         # %s SQL literals are present in the file.
+        #
+        # Resolved per function scope, not file-wide. `conn` is the obvious name for
+        # a connection, so one test binding it to sqlite3.connect for a read-only
+        # assertion and another binding it to a translating fixture is normal and
+        # correct. Pooling both into one set made the first taint the second and
+        # flagged the fixture that IS the fix -- the gate rejecting its own remedy,
+        # which is what tests/unit/test_audit_trail.py hit.
         if has_pct_s:
-            raw_names: Set[str] = set()
-            for node in ast.walk(tree):
+            # Module scope is the only shared scope: a name bound at module level IS
+            # visible to every function, so it is resolved once and inherited. Both
+            # halves -- raw and safe -- must come from `tree.body` alone. Reusing the
+            # file-wide `safe_factories` here would re-open the very leak this block
+            # closes, one level down: `conn = _factory()` inside ONE test would enter
+            # that set and clear `conn` for every other test in the file.
+            module_body = ast.Module(
+                body=[n for n in tree.body if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))],
+                type_ignores=[],
+            )
+            module_raw: Set[str] = set()
+            for node in module_body.body:
                 if isinstance(node, ast.Assign) and _is_sqlite_connect(node.value):
                     for tgt in node.targets:
                         if isinstance(tgt, ast.Name):
-                            raw_names.add(tgt.id)
-            if raw_names:
-                for node in ast.walk(tree):
-                    if not isinstance(node, ast.Call):
-                        continue
-                    for kw in node.keywords:
-                        if kw.arg == "conn" and isinstance(kw.value, ast.Name) and kw.value.id in raw_names:
-                            violations.append(
-                                f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
-                                f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
-                                f"Wrap in StorageConnection(conn, 'sqlite')."
-                            )
-                            break
+                            module_raw.add(tgt.id)
+            # Factory *functions* stay file-wide -- they are defs, not connections,
+            # so they cannot carry a per-test binding across scopes.
+            module_safe = _safe_connection_names(module_body, compat_factories)
+
+            # ast.walk is breadth-first, so the OUTERMOST enclosing function wins the
+            # setdefault. That is the conservative direction: a call inside a nested
+            # helper is judged against the whole outer test, whose scope walk already
+            # includes the helper's raw bindings.
+            enclosing: Dict[int, ast.AST] = {}
+            for fn in ast.walk(tree):
+                if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for sub in ast.walk(fn):
+                        enclosing.setdefault(id(sub), fn)
+
+            raw_cache: Dict[int, Set[str]] = {}
+
+            def _raw_in_scope(scope: ast.AST) -> Set[str]:
+                cached = raw_cache.get(id(scope))
+                if cached is not None:
+                    return cached
+                raw = set(module_raw)
+                if scope is not tree:
+                    for sub in ast.walk(scope):
+                        if isinstance(sub, ast.Assign) and _is_sqlite_connect(sub.value):
+                            for tgt in sub.targets:
+                                if isinstance(tgt, ast.Name):
+                                    raw.add(tgt.id)
+                    # A name rebound from a translating factory in this scope is not raw.
+                    raw -= _safe_connection_names(scope, module_safe)
+                raw_cache[id(scope)] = raw
+                return raw
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "conn"
+                        and isinstance(kw.value, ast.Name)
+                        and kw.value.id in _raw_in_scope(enclosing.get(id(node), tree))
+                    ):
+                        violations.append(
+                            f"{rel}:{getattr(node, 'lineno', 0)}: passes a raw sqlite3 connection "
+                            f"as conn= into a call while %s SQL is present — bypasses translate_sql. "
+                            f"Wrap in StorageConnection(conn, 'sqlite')."
+                        )
+                        break
 
     if violations:
         tier = "fail" if changed_files else "warn"
@@ -7323,6 +7463,235 @@ def check_insert_schema_parity(changed_files: Optional[List[Path]] = None) -> Co
 
 
 # ---------------------------------------------------------------------------
+# check_vendor_parity (cxo-doc-03) — out-of-repo VENDORED copies
+# ---------------------------------------------------------------------------
+
+_VENDOR_PARITY_CONFIG = "args/vendor_parity.yaml"
+_VENDOR_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _vendor_parity_config() -> Dict[str, Any]:
+    """Declared vendor targets. Empty dict when the config is absent/unreadable."""
+    cfg = PROJECT_ROOT / _VENDOR_PARITY_CONFIG
+    if not cfg.exists():
+        return {}
+    try:
+        import yaml  # lazy — yaml isn't a top-level import here
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _resolve_vendor_path(raw: str, defaults: Dict[str, str]) -> Optional[Path]:
+    """Expand ``${VAR}`` from the environment, then *defaults*.
+
+    Returns None when a placeholder resolves to nothing — that consumer is then
+    SKIPPED rather than failed, which is what keeps this check green on a
+    machine (or CI runner) where the standalone repos are not checked out.
+    """
+    unresolved: List[str] = []
+
+    def _sub(match: "re.Match[str]") -> str:
+        name = match.group(1)
+        value = os.environ.get(name) or defaults.get(name)
+        if not value:
+            unresolved.append(name)
+            return ""
+        return str(value)
+
+    expanded = _VENDOR_PLACEHOLDER_RE.sub(_sub, raw or "")
+    if unresolved or not expanded.strip():
+        return None
+    path = Path(expanded).expanduser()
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _public_api(source: str) -> Set[str]:
+    """Public API surface of a module: classes, functions, methods + parameters.
+
+    Compares the CALLABLE SURFACE, not bytes. A vendored copy legitimately
+    differs from canonical by a provenance header and by line endings (canonical
+    is LF, the standalone consumers are CRLF under core.autocrlf=true), so a
+    byte/line comparison would be pure noise. Annotations, default VALUES and
+    docstrings are ignored for the same reason; parameter NAMES are kept because
+    every call site in a consumer depends on them.
+    """
+    tree = ast.parse(source)
+
+    def _sig(fn) -> str:
+        args = fn.args
+        parts: List[str] = []
+        posonly = list(getattr(args, "posonlyargs", []) or [])
+        positional = posonly + list(args.args)
+        first_default = len(positional) - len(args.defaults)
+        for index, arg in enumerate(positional):
+            parts.append(arg.arg + ("=..." if index >= first_default else ""))
+            if posonly and index == len(posonly) - 1:
+                parts.append("/")
+        if args.vararg:
+            parts.append("*" + args.vararg.arg)
+        elif args.kwonlyargs:
+            parts.append("*")
+        for arg, default in zip(args.kwonlyargs, args.kw_defaults):
+            parts.append(arg.arg + ("=..." if default is not None else ""))
+        if args.kwarg:
+            parts.append("**" + args.kwarg.arg)
+        return "(" + ", ".join(parts) + ")"
+
+    api: Set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("_"):
+                api.add(f"{node.name}{_sig(node)}")
+        elif isinstance(node, ast.ClassDef):
+            if node.name.startswith("_"):
+                continue
+            api.add(f"class {node.name}")
+            for sub in node.body:
+                if not isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if sub.name.startswith("_") and sub.name != "__init__":
+                    continue
+                api.add(f"{node.name}.{sub.name}{_sig(sub)}")
+    return api
+
+
+def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Flag a declared stdlib-only module whose out-of-repo VENDORED copies lag it.
+
+    Some modules (tools/cortex/client.py, ctx-expose-06) are deliberately
+    dependency-free so standalone apps in SEPARATE repos can copy them verbatim.
+    Nothing tied the copies to canonical, and the drift is LATENT — the copies
+    were missing methods no consumer called yet, so nothing broke and nobody
+    noticed (measured 2026-08-02: canonical 24 public methods, compass 22,
+    idea_lab 19).
+
+    Targets live in ``args/vendor_parity.yaml``; adding one needs no code change.
+    FAIL when a CHANGED declared source's public API is not a subset of a
+    present vendored copy's; WARN on the full-repo sweep. A consumer path that
+    does not exist on this machine is SKIPPED with a note, never failed.
+    """
+    check_id = "vendor_parity"
+    check_name = "Vendored Copy Parity"
+    expected = ["Canonical public API is a subset of every declared vendored copy's API"]
+
+    config = _vendor_parity_config()
+    entries = [e for e in (config.get("vendored_copies") or []) if isinstance(e, dict)]
+    defaults = {str(k): str(v) for k, v in (config.get("path_defaults") or {}).items()}
+
+    if not entries:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no vendored copies declared"],
+            missing=[],
+            extra=[],
+            message=f"No vendor targets declared in {_VENDOR_PARITY_CONFIG}.",
+        )
+
+    severity = "warn"
+    if changed_files:
+        severity = "fail"
+        touched = [str(p).replace("\\", "/") for p in changed_files]
+        in_scope = []
+        for entry in entries:
+            source = str(entry.get("source") or "").strip()
+            if source and any(t == source or t.endswith("/" + source) for t in touched):
+                in_scope.append(entry)
+        if not in_scope:
+            return CoherenceCheck(
+                check_id=check_id,
+                check_name=check_name,
+                status="pass",
+                expected=expected,
+                actual=["no declared vendored source in the changed set"],
+                missing=[],
+                extra=[],
+                message="No declared vendored source changed.",
+            )
+        entries = in_scope
+
+    drift: List[str] = []
+    skipped: List[str] = []
+    verified: List[str] = []
+
+    for entry in entries:
+        source = str(entry.get("source") or "").strip()
+        canonical = PROJECT_ROOT / source
+        if not source or not canonical.exists():
+            drift.append(f"{source or '<unnamed>'}: declared vendored source does not exist")
+            continue
+        try:
+            canonical_api = _public_api(canonical.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, ValueError) as exc:
+            drift.append(f"{source}: canonical source could not be parsed ({exc})")
+            continue
+
+        for consumer in entry.get("consumers") or []:
+            if not isinstance(consumer, dict):
+                continue
+            raw = str(consumer.get("path") or "")
+            name = str(consumer.get("name") or raw)
+            path = _resolve_vendor_path(raw, defaults)
+            if path is None or not path.exists():
+                skipped.append(
+                    f"{source} -> {name}: consumer not present on this machine "
+                    f"({path or raw}) — skipped"
+                )
+                continue
+            try:
+                copy_api = _public_api(path.read_text(encoding="utf-8", errors="replace"))
+            except (OSError, SyntaxError, ValueError) as exc:
+                skipped.append(f"{source} -> {name}: could not be parsed ({exc}) — skipped")
+                continue
+            behind = sorted(canonical_api - copy_api)
+            if behind:
+                shown = ", ".join(behind[:8]) + (" …" if len(behind) > 8 else "")
+                drift.append(
+                    f"{source} -> {name} ({path}): vendored copy is missing "
+                    f"{len(behind)} public member(s): {shown}"
+                )
+            else:
+                verified.append(
+                    f"{source} -> {name}: in sync ({len(canonical_api)} public members)"
+                )
+
+    actual = verified + skipped
+    if drift:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status=severity,
+            expected=expected,
+            actual=actual,
+            missing=drift,
+            extra=[],
+            message=(
+                f"{len(drift)} vendored copy(ies) lag their canonical source — "
+                "re-copy the file into the consumer repo (keep only its provenance "
+                f"header) or update {_VENDOR_PARITY_CONFIG}."
+            ),
+        )
+
+    note = f"{len(verified)} copy(ies) in sync"
+    if skipped:
+        note += f", {len(skipped)} skipped (consumer repo absent on this machine)"
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=actual or ["no consumer paths resolved"],
+        missing=[],
+        extra=[],
+        message=f"Vendored copies match their canonical source — {note}.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -7375,6 +7744,7 @@ CHECK_REGISTRY = {
     "test_db_isolation": check_test_db_isolation,
     "migration_numbering": check_migration_numbering,
     "icdev_mirror_parity": check_icdev_mirror_parity,
+    "vendor_parity": check_vendor_parity,
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
     "insert_schema_parity": check_insert_schema_parity,
