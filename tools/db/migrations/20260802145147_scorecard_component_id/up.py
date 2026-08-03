@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Migration 343 — re-key developer_scorecards from the project to the COMPONENT (idp-score-01-d1).
+"""Migration 20260802145147 — re-key developer_scorecards from the project to the COMPONENT (idp-score-01-d1).
 
 ``developer_scorecards`` (tools/db/init_icdev_db.py:8484) was designed as
 exactly the thing an IDP vendor sells — overall_score, letter_grade A-F, five
@@ -69,7 +69,7 @@ from __future__ import annotations
 from tools.db.storage import column_exists, get_connection, is_pg, table_exists
 
 _TABLE = "developer_scorecards"
-_TAG = "[343_scorecard_component_id]"
+_TAG = "[20260802145147_scorecard_component_id]"
 
 # The rebuilt SQLite definition: the original DDL from init_icdev_db.py with
 # component_id/evaluated_at appended and the three NOT NULLs dropped. Kept
