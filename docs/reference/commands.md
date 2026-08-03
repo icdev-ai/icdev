@@ -36,6 +36,15 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# Semantic loop detection for the agent loop (ars-loop-01)
+# Library: tools/llm/loop_detector.py — detect_semantic_loop(records, config=) -> LoopDetection
+#   Config: args/llm_config.yaml -> agent_loop.loop_detection (enabled, window, similarity_threshold,
+#           min_cluster_size, min_distinct_turns, min_distinct_variants, coverage_ratio)
+#   Wired: run_agent_loop control 6 -> ResultSubtype.error_semantic_loop, truncation_reason="semantic_loop"
+python tools/llm/loop_detector_tune.py --transcripts <dir>                            # replay real transcripts
+python tools/llm/loop_detector_tune.py --transcripts <dir> --threshold 0.75 --json    # tune / inspect flags
+python tools/llm/loop_detector_tune.py --transcripts <dir> --max-flag-rate 0.0        # regression gate
+
 # Reasoned Codegen (CoT/CoD + adversary critique + verify/repair)
 # Library: tools/llm/reasoned_codegen.py — generate_reasoned_code(function=, request=, verifier=, mode=)
 #   Config: args/llm_config.yaml -> reasoned_codegen (section kill-switch + per_function mode/critique)

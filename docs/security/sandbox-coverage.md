@@ -1054,3 +1054,19 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Line endings and file encoding are preserved (`read_source` normalises to LF for parsing and restores the original newline on write).
   - `tests/test_coherence_swallowed_persistence.py` pins the detector in both directions and asserts the real tree is clean.
 - **Revisit if:** the fixer gains an LLM-authored rewrite path (source text becoming model output rather than a deterministic transform), starts writing to a path derived from file content, or is wired into an unattended reflex that runs `--write` without review.
+
+### Gap 45 — Semantic loop detection and transcript replay (`tools/llm/loop_detector.py`, `loop_detector_tune.py`)
+
+**Modules:** `tools/llm/loop_detector.py`, `tools/llm/loop_detector_tune.py` (ars-loop-01).
+
+**Ingress path:** Two. (1) The detector is handed every executed tool call's **arguments and result text** by `run_agent_loop` — result text is model- and environment-influenced, and for a tool that fetches remote content it is attacker-influenceable. (2) The tuner reads recorded agent transcripts (`*.jsonl` / `*.json`) from an operator-supplied path; those files contain the same untrusted tool output, persisted.
+
+- **Decision:** **trusted-first-party** (detector) / **bypass-documented** (tuner)
+- **Rationale:** Neither module interprets what it reads. The detector's entire contact with tool content is string comparison: `str.replace`, `re.sub` over three fixed patterns, `str.split`, `difflib.SequenceMatcher`, and set intersection. There is no `exec`/`eval`/`compile`, no `subprocess`, no `importlib`, no deserialization of content (`json.dumps` is used to *emit* a comparison key, never `json.loads` on tool output), no SQL, and no path derived from content — the only filesystem read is `args/llm_config.yaml` via the canonical `resolve_llm_config_path()`. The tuner adds `json.loads` per transcript line, which builds data, not code, and a per-file `try/except` so a malformed transcript is skipped rather than aborting the sweep.
+- **Guardrails:**
+  - Result text is sampled to `result_sample_chars` (400 head + tail) before comparison, so a multi-megabyte tool result cannot drive an unbounded comparison.
+  - Comparison windows are bounded by `window` (8 calls), making the O(n²) clustering trivially bounded regardless of transcript size.
+  - `load_detector_config()` catches every exception and falls back to `DEFAULT_CONFIG` — a malformed config file can neither crash a running agent nor silently disable the control with attacker-chosen thresholds.
+  - The detector is pure: it returns a verdict, and only `run_agent_loop` acts on it (ending the run). Content it reads never reaches a handler, a prompt, or a write.
+  - The tuner is operator-invoked, read-only, and writes nothing outside stdout.
+- **Revisit if:** the detector gains an LLM-based similarity judge (tool output would then become prompt content and needs the injection posture that applies to `tool_result_sanitizer`), or the tuner grows a `--fix`/`--write` mode that edits config from what it read.
