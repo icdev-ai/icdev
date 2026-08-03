@@ -7,7 +7,7 @@ The Innovation Engine (`goals/innovation_engine.md`) scans external sources, sco
 
 `tools/innovation/kanban_promoter.py` closes that gap. It is deliberately *narrow*: it promotes benchmark findings only, and only when the benchmarked subsystem is one `docs/research/external-benchmark-map.md` judged deficient.
 
-**Why so narrow.** `innovation_signals` holds ~1,179 rows, of which 574 are CVEs and 410 are CLI-harmonization findings — 259 CVEs carry `triage_result='approved'`. Promoting on triage state alone would queue hundreds of tasks in one run. There is direct prior art for an unbounded seeder producing 353 branches. Scope first (`source_types`), gate on verdict second, rate-limit third.
+**Why so narrow.** `innovation_signals` is dominated by non-benchmark rows. Measured 2026-08-03: 588 CVEs and 410 CLI-harmonization findings out of ~1,179 total, with **266 CVEs carrying `triage_result='approved'`**. Promoting on triage state alone would queue hundreds of tasks in one run. (These counts grow; re-measure rather than trusting them.) There is direct prior art for an unbounded seeder producing 353 branches. Scope first (`source_types`), gate on verdict second, rate-limit third.
 
 ## Workflow
 1. `python tools/innovation/kanban_promoter.py --list --json` — show candidates with the subsystem each maps to and its benchmark verdict.

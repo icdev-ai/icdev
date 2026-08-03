@@ -13,10 +13,11 @@
 # ---------------------------------------------------------------------------
 # Scope — which signals are benchmark findings at all
 # ---------------------------------------------------------------------------
-# innovation_signals holds 1,179 rows, most of which are NOT benchmark
-# findings: 574 cve, 410 cli_harmonization, 25 unused_tools. Those have
+# innovation_signals is dominated by rows that are NOT benchmark findings.
+# Measured 2026-08-03: 588 cve, 410 cli_harmonization, 30 unused_tools out
+# of ~1,179 total. These counts grow — re-measure, do not trust them. Those
 # their own pipelines (triage_engine, maintenance audit). Promoting on
-# triage_result alone would have queued 259 approved CVEs in one run —
+# triage_result alone would have queued 266 approved CVEs in one run —
 # the unbounded-seeder failure that produced 353 branches. Scope first,
 # then rate-limit.
 source_types:
