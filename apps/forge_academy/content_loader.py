@@ -1815,7 +1815,7 @@ def _title_head(title: str | None) -> str:
 # to an auditable field. An absent objective is a visible content gap; an invented
 # one is an invisible false record.
 #
-# Two sources, in priority order:
+# Three sources, in priority order:
 #   1. ``learning_objective:`` in the step's frontmatter — the explicit channel,
 #      for an author stating it outright. Nothing carries it yet; it exists so
 #      authoring one does not require touching this module.
@@ -1823,6 +1823,19 @@ def _title_head(title: str | None) -> str:
 #      step. No file uses a literal "## Learning Objective" heading today, but 29
 #      missions open with "## What You'll Build" and 8 with "## Mission Brief",
 #      and those paragraphs are already written as "you're building X that does Y".
+#   3. (aca-trn-03-d2) The mission-statement sentence of the step's OPENING
+#      paragraph — the prose under the H1, before any section heading. Source 2
+#      finds nothing in a "## What you'll build" that opens straight into a code
+#      fence or a bullet list, which is how 5 missions author it; but 6 of those
+#      files state the objective outright one paragraph earlier ("In this mission
+#      you'll build an agent that monitors a CI/CD pipeline…"). That paragraph is
+#      part hook and part claim, so unlike source 2 it is NOT taken whole: only
+#      from the sentence carrying a first/second-person mission cue onward. The
+#      hook ("Attackers don't target your code — they target your AI's behavior.")
+#      is motivation, and it is also what a 320-char trim would otherwise keep
+#      while dropping the claim. Requiring the cue is what keeps this an
+#      extraction: a paragraph that merely opens the topic states no objective and
+#      yields none.
 
 #: Section headings whose lead paragraph states what the learner will produce.
 #: Ordered: an explicit objective heading beats a build/brief section describing
@@ -1847,6 +1860,19 @@ _OBJECTIVE_HEADINGS = (
 _OBJECTIVE_MIN_CHARS = 40
 #: A card line, not an essay. Longer text is cut back to a sentence boundary.
 _OBJECTIVE_MAX_CHARS = 320
+
+#: A sentence in the opening paragraph that claims the mission's outcome rather
+#: than setting up its motivation. Deliberately narrow — an author writing "the
+#: pipeline fails" is describing the problem, not the objective.
+_MISSION_CUE_RE = re.compile(
+    r"\b(?:in this mission|by the end|this mission"
+    r"|you(?:'|’)?(?:ll| will) (?:build|learn|write|implement|ship|design))\b",
+    re.IGNORECASE,
+)
+
+#: Sentence boundary for splitting a paragraph. Kept crude on purpose: a false
+#: split costs the objective a leading clause, never a wrong claim.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!])\s+")
 
 _MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_MARKS_RE = re.compile(r"(\*\*|__|`|~~)")
@@ -1915,6 +1941,31 @@ def _lead_paragraph(lines: list[str], start: int) -> str:
     return _flatten_markdown(" ".join(para))
 
 
+def _opening_claim(lines: list[str]) -> str:
+    """The mission-statement sentence of the prose under the step's H1, or "".
+
+    Returns the cue-carrying sentence *and everything after it* in that paragraph
+    — "In this mission you'll build X. It runs against Y." is one claim — but
+    drops whatever preceded it, which is the hook.
+    """
+    h1 = next(
+        (i for i, line in enumerate(lines)
+         if line.strip().startswith("# ") and not line.strip().startswith("##")),
+        None,
+    )
+    if h1 is None:
+        return ""
+    para = _lead_paragraph(lines, h1).rstrip(":").strip()
+    # Same reason as the heading path: a question is the exercise, not the claim.
+    if not para or "?" in para:
+        return ""
+    sentences = _SENTENCE_SPLIT_RE.split(para)
+    for idx, sentence in enumerate(sentences):
+        if _MISSION_CUE_RE.search(sentence):
+            return " ".join(sentences[idx:]).strip()
+    return ""
+
+
 def extract_learning_objective(raw: str) -> str:
     """The learning objective stated by one step's markdown, or "" if none is.
 
@@ -1958,6 +2009,13 @@ def extract_learning_objective(raw: str) -> str:
         if "?" in para:
             continue
         return _trim_to_sentence(para)
+
+    # aca-trn-03-d2: no objective-bearing section yielded prose. Fall back to the
+    # claim in the opening paragraph, which is where a mission whose "what you'll
+    # build" is a code fence or a bullet list tends to have stated it.
+    claim = _opening_claim(lines)
+    if len(claim) >= _OBJECTIVE_MIN_CHARS:
+        return _trim_to_sentence(claim)
     return ""
 
 
