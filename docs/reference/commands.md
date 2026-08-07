@@ -2391,6 +2391,17 @@ python tools/innovation/kanban_promoter.py --list --json       # candidates + su
 python tools/innovation/kanban_promoter.py --promote --json    # write status='suggested' cards
 python tools/innovation/kanban_promoter.py --promote-id <signal_id> --json
 
+# ICDEV's own half of a benchmark comparison, per subsystem tag (xbm-cmp-01-d1)
+python tools/innovation/icdev_evidence.py --subsystem observability --json
+python tools/innovation/icdev_evidence.py --all --json
+python tools/innovation/icdev_evidence.py --audit            # patterns matching nothing
+
+# Which ICDEV subsystem does an external project benchmark? (xbm-cmp-01-d2)
+python tools/innovation/subsystem_map.py --project langgraph --json
+python tools/innovation/subsystem_map.py --subsystem observability --json
+python tools/innovation/subsystem_map.py --all --json        # the comparison map
+python tools/innovation/subsystem_map.py --validate          # cross-file integrity
+
 # Introspective analysis (air-gap safe)
 python tools/innovation/introspective_analyzer.py --analyze --all --json
 
