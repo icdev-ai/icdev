@@ -174,3 +174,108 @@ was written at the time of the run.
 neither `REFLEX_NAMES` nor `EXEMPT`, so it is **never dispatched** — the same class of
 failure as this task, at the registration layer rather than the breaker layer. It needs
 an owner decision (register vs. mark on-demand), so it is flagged rather than guessed at.
+
+---
+
+# Addendum — the reflex's own half of the contract
+
+*Added after the fix above landed. Same task (xbm-wake-01), second PR.*
+
+## 1. `idp_score_recorder`: decision taken — register it
+
+The flag above asked for an owner decision. Taken: **registered**, added to
+`REFLEX_NAMES` in `tools/genesis/daemon.py`.
+
+The evidence made the choice easy rather than a judgement call. Its state row read
+`total_runs: 0, last_run_at: None` — it had not run once, ever. Meanwhile
+`args/genesis_config.yaml` declared it `enabled: true` on `schedule: "every 3h"`, and
+`tools/genesis/reflexes/idp_score_recorder.py` imports and exposes a callable `run`.
+Config said "run me every three hours", the module was ready, and the daemon never
+named it. Nothing about that reads as an intentional on-demand exemption; a reflex
+someone meant to invoke by hand does not carry a 3-hour schedule.
+
+This is not re-tested here. `tests/test_reflex_registration.py` already owns the
+register-or-exempt guard — it fails on `main` naming exactly `idp_score_recorder`, and
+passes with the one-line registration. That RED→GREEN is the proof.
+
+## 2. `classify_failure` can only report a cause the reflex supplies
+
+The fix above stopped the daemon from *inventing* a cause. It cannot invent a good one
+either — `classify_failure` falls back to `reflex_reported_failure: repos_scouted=0.0`
+when the reflex hands it no `details['error']`. True, and better than a threshold lie,
+but it still does not say what went wrong.
+
+`scout._github_api()` was swallowing that information at the source: every exception
+became a bare `None` plus a `print()` that no log captures. It now classifies HTTP
+failures and threads them back through `_get_repo_info` / `_get_latest_release` into
+`run()`:
+
+| Reason | Meaning | Correct response |
+|---|---|---|
+| `http_401_bad_github_token` | the configured `GITHUB_TOKEN` is stale/revoked | replace the token — an anonymous call would have worked |
+| `http_403_rate_limited` / `http_429_rate_limited` | running **anonymously**, 60 req/hr per-IP budget spent | set a valid `GITHUB_TOKEN`; retrying will not help |
+| `http_404` | repo renamed or deleted | fix the watchlist entry |
+| `network_URLError` &c. | egress/DNS/TLS | environment, not GitHub |
+
+401 and 403 are the two that matter, and they need **opposite** fixes — which is why
+collapsing them into one "github failed" string was expensive. Pinned by
+`tests/test_scout_error_visibility.py`.
+
+## 3. Partial failures now report reasons too
+
+A run where *some* repos succeed is scored a success, and that is correct — ordinary
+rate limiting degrades scout rather than breaking it, and must not trip the breaker
+(§ the budget note above). But previously a partial failure recorded nothing at all,
+which means **the run immediately before a total loss looked identical to a healthy
+one.** That is the blind spot that let this build up unseen for five weeks.
+
+`details['api_error_reasons']` and `['api_error_counts']` are now populated whenever
+anything failed; `details['error']` is still set only on a total loss, so the
+success/failure scoring is unchanged.
+
+Measured on a live run, 2026-08-07:
+
+```json
+{"success": true, "repos_scouted": 30, "repos_failed": 23,
+ "error": null, "api_error_counts": {"http_403_rate_limited": 23}}
+```
+
+Scout is healthy and its cadence has been restored — `genesis_reflex_state` shows
+`last_run_at: 2026-08-07T17:31:26Z` (against `2026-06-28` when this task was written),
+`consecutive_failures: 0`, breaker closed. But 23 of 53 watchlist repos are being
+dropped every pass to the anonymous rate limit, and until this addendum **no operator
+could have known that from any row or log.** The watchlist has outgrown the
+unauthenticated budget: a valid `GITHUB_TOKEN` is the fix.
+
+## 4. Confirmed: the latch is genuinely broken, on live state
+
+`research` and `kanban` both still carry `circuit_breaker_open = 1` from June/August
+trips. Under the old signature `is_circuit_open()` returns `True` for both — dormant
+forever. Under the config-aware one:
+
+```
+research: open=1 tripped=2026-08-06T01:25:41Z -> is_circuit_open(cb)=False  last_error='watchdog_timeout_90s'
+kanban:   open=1 tripped=2026-06-12T01:44:16Z -> is_circuit_open(cb)=False  last_error='metric_threshold_not_met'
+```
+
+Both are now admitted as half-open probes. `kanban` still carrying the old
+`metric_threshold_not_met` string is a useful marker: any row still showing it was
+written before this fix.
+
+## 5. Still open — `reflex_registry.py` schedules nothing
+
+`tools/genesis/reflex_registry.py` documents itself as the *"authoritative list of all
+reflexes and their tiers"*. **No dispatcher imports it.** The only non-test reference
+outside its own module is a string in a kanban seed script. Listing a reflex there
+does not schedule it, despite the file's own claim.
+
+Eight reflexes are enabled in `genesis_config.yaml`, have working modules, and appear
+only there — `govcon_scan`, `socmint`, `failure_triage`, `fathomdesk_trap_sweep`,
+`nocc_sla_watcher`, `peering_agreement_renewal`, `quality`, plus `fathomdesk_pc_ratio`
+which is not even in the registry. They are all currently covered by `EXEMPT` in
+`tests/test_reflex_registration.py`, several as "unverified — inherited exemption".
+
+Not fixed here, deliberately: registering eight DOMAIN reflexes that reach external
+services is a scheduling and blast-radius decision with an owner, not a drive-by. But
+"authoritative list that dispatches nothing" is the same shape of defect as everything
+above — a registry that lists what it cannot run. **Follow-up card needed.**

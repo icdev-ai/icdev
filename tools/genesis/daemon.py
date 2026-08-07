@@ -164,6 +164,7 @@ REFLEX_NAMES = [
     "review_loop",
     "memory_maintenance_reflex",  # mem-embed: scheduled memory upkeep — flush buffer + backfill embeddings (bounded, non-destructive); closes the 0%-embedding scheduling gap oss2-meas-01 measured
     "idp_delivery_events",  # idp-intel-01: 6h DORA delivery-event sync — /api/sre/dora reads a rolling 30d window, so a one-off backfill decays back to metrics_assessed: 0
+    "idp_score_recorder",  # idp-score-03: 3h scorecard-history append. Enabled with `schedule: "every 3h"` in args/genesis_config.yaml and its module exists, but it was absent from THIS list — and this list is what the daemon iterates, so it was never once dispatched (found by xbm-wake-01)
 ]
 
 # Backward-compat aliases for module-level access used by other code

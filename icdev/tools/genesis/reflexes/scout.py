@@ -18,7 +18,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -142,8 +142,26 @@ def _load_targets() -> List[Dict[str, Any]]:
     return []
 
 
-def _github_api(endpoint: str, timeout: int = _REFLEX_DEFAULTS["api_timeout_seconds"]) -> Optional[Dict]:
-    """Call GitHub public API.  Returns None on failure."""
+def _github_api(
+    endpoint: str,
+    timeout: int = _REFLEX_DEFAULTS["api_timeout_seconds"],
+    error_sink: Optional[List[str]] = None,
+) -> Optional[Dict]:
+    """Call GitHub public API.  Returns None on failure.
+
+    Failures append a short machine-readable reason to *error_sink* so the caller
+    can report WHY the scan came up empty (xbm-wake-01). Previously every failure
+    mode collapsed to a bare ``None`` plus a ``print()`` that no log captured, so a
+    total outage was indistinguishable from a healthy scan that found nothing new —
+    and the daemon then filed it as a metric-threshold miss.
+
+    The distinction this draws is load-bearing, because the two live failure modes
+    need opposite responses: 401 means the configured GITHUB_TOKEN is stale and must
+    be replaced, while 403/429 means we are running ANONYMOUSLY and have exhausted
+    the 60-request/hour per-IP budget — which a token would fix and a retry would
+    not. Scouting the full watchlist costs 16-32 calls, so anonymous runs exhaust
+    that budget routinely and the reflex fails for a reason no operator could see.
+    """
     url = f"https://api.github.com{endpoint}"
     headers = {
         "User-Agent": "ICDEV-Genesis/2.0",
@@ -154,12 +172,28 @@ def _github_api(endpoint: str, timeout: int = _REFLEX_DEFAULTS["api_timeout_seco
     if token:
         headers["Authorization"] = f"token {token}"
 
+    def _record(reason: str, detail: str) -> None:
+        logger.warning("GitHub API failed for %s: %s (%s)", endpoint, reason, detail)
+        if error_sink is not None:
+            error_sink.append(reason)
+
     try:
         req = Request(url, headers=headers)
         with urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return json.loads(resp.read().decode("utf-8"))
+    except HTTPError as e:
+        # 401 → the configured GITHUB_TOKEN is stale/revoked (an ANONYMOUS call
+        # would have succeeded). 403/429 → rate limited. 404 → repo gone/renamed.
+        if e.code == 401:
+            reason = "http_401_bad_github_token"
+        elif e.code in (403, 429):
+            reason = f"http_{e.code}_rate_limited"
+        else:
+            reason = f"http_{e.code}"
+        _record(reason, str(e))
+        return None
     except (URLError, OSError, json.JSONDecodeError) as e:
-        print(f"  WARN: GitHub API failed for {endpoint}: {e}")
+        _record(f"network_{type(e).__name__}", str(e))
         return None
 
 
@@ -167,9 +201,10 @@ def _get_repo_info(
     owner_repo: str,
     description_max_chars: int = _REFLEX_DEFAULTS["description_max_chars"],
     timeout: int = _REFLEX_DEFAULTS["api_timeout_seconds"],
+    error_sink: Optional[List[str]] = None,
 ) -> Optional[Dict]:
     """Fetch repo metadata: stars, description, language, updated_at."""
-    data = _github_api(f"/repos/{owner_repo}", timeout=timeout)
+    data = _github_api(f"/repos/{owner_repo}", timeout=timeout, error_sink=error_sink)
     if not data:
         return None
     return {
@@ -189,9 +224,10 @@ def _get_latest_release(
     owner_repo: str,
     body_max_chars: int = _REFLEX_DEFAULTS["release_body_max_chars"],
     timeout: int = _REFLEX_DEFAULTS["api_timeout_seconds"],
+    error_sink: Optional[List[str]] = None,
 ) -> Optional[Dict]:
     """Fetch latest release info."""
-    data = _github_api(f"/repos/{owner_repo}/releases/latest", timeout=timeout)
+    data = _github_api(f"/repos/{owner_repo}/releases/latest", timeout=timeout, error_sink=error_sink)
     if not data:
         return None
     return {
@@ -346,6 +382,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     targets_data = []
     manual_targets = []
     errors = 0
+    api_errors: List[str] = []
 
     for target in targets:
         repo = target.get("repo", "")
@@ -357,7 +394,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         print(f"  Scouting: {repo}")
-        info = _get_repo_info(repo, description_max_chars=desc_max, timeout=api_timeout)
+        info = _get_repo_info(
+            repo, description_max_chars=desc_max, timeout=api_timeout, error_sink=api_errors
+        )
         if not info:
             errors += 1
             targets_data.append(
@@ -405,7 +444,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         release = None
         watch = target.get("watch", [])
         if "releases" in watch:
-            release = _get_latest_release(repo, body_max_chars=body_max, timeout=api_timeout)
+            release = _get_latest_release(
+                repo, body_max_chars=body_max, timeout=api_timeout, error_sink=api_errors
+            )
             # Scan release notes for injection
             if release and release.get("body"):
                 rel_findings = scan_text(release["body"], source=f"github:{repo}/releases")
@@ -453,14 +494,44 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     promotion = _promote_findings(reflex_cfg)
 
+    # xbm-wake-01: when NOTHING was scouted the reflex is reporting failure, so it
+    # must say why. Without this the daemon fell back to a generic
+    # "metric_threshold_not_met" — the exact string every silently-dead reflex on
+    # this platform was carrying. The dominant reason is enough to route the fix
+    # (bad token vs rate limit vs network) without dumping 16 near-identical
+    # strings into last_error.
+    details: Dict[str, Any] = {
+        "repos_scouted": successful,
+        "repos_failed": errors,
+        "manual_review_entries": len(manual_targets),
+        "brief_file": str(brief_file),
+    }
+    # Record the reasons whenever anything failed, not only on total loss. A
+    # PARTIAL failure is scored a success (any repo scouted clears the threshold),
+    # and that is correct — ordinary rate limiting degrades scout rather than
+    # breaking it, and must not trip the breaker. But "23 of 53 repos failed and
+    # nobody can say why" is how this went unnoticed for five weeks in the first
+    # place: the run before a total loss looks exactly like a healthy one.
+    if api_errors:
+        details["api_error_reasons"] = sorted(set(api_errors))
+        details["api_error_counts"] = {r: api_errors.count(r) for r in sorted(set(api_errors))}
+
+    # Only a total loss is a FAILURE, and a failure must name its cause — otherwise
+    # the daemon files it as the generic string every silently-dead reflex on this
+    # platform was carrying. The dominant reason is enough to route the fix (bad
+    # token vs rate limit vs network) without dumping 50 near-identical strings
+    # into last_error.
+    if successful == 0 and errors > 0:
+        top_reason = max(set(api_errors), key=api_errors.count) if api_errors else "unknown"
+        details["error"] = (
+            f"github_api_unavailable: {top_reason} ({errors}/{len(targets_data)} repos failed)"
+        )
+
     return {
         "success": successful > 0,
         "metric_value": float(successful),
         "details": {
-            "repos_scouted": successful,
-            "repos_failed": errors,
-            "manual_review_entries": len(manual_targets),
-            "brief_file": str(brief_file),
+            **details,
             "anomalies_detected": len(anomaly_repos),
             "anomaly_repos": anomaly_repos,
             "promotion": promotion,
