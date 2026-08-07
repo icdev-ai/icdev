@@ -177,6 +177,8 @@ jobs:
             tests/workflow/test_vendor_parity.py \
             tests/quality/test_run_component_scoring.py \
             tests/slides/test_blueprint.py \
+            tests/test_invocation_store.py \
+            tests/dashboard/test_runtime_invocations_panel.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
