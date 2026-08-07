@@ -26,6 +26,40 @@
 #            as an error.
 #   note     Why the mapping is what it is, where that is not obvious.
 #
+# ── Schema: the `benchmark` block ────────────────────────────────────
+# Read by tools/innovation/benchmark_compare.py (xbm-cmp-01-d3), which turns
+# the measurements above into a verdict. Every key is optional; a subsystem
+# with no block is measured against the defaults and reports "not benchmarked"
+# unless the watchlist carries an open adaptation for it.
+#
+#   module_floor  Below this many modules the subsystem reads `thin`; zero
+#                 reads `absent`. Default 5. This is a smoke floor — evidence
+#                 that something is there — not a quality bar. A subsystem
+#                 being above it proves nothing except that it exists.
+#   row_floor     Below this many rows the subsystem reads `unfed` — built but
+#                 with nothing running through it. Default 1.
+#   data_expected false => its tables fill per engagement, so an empty table on
+#                 a dev instance says nothing. Default true.
+#   owned         false => ICDEV does not hold this subsystem in this tree, so
+#                 `absent` is correct rather than a deficit. Default true.
+#   finding       What the benchmark map measured LOCALLY, in its own words.
+#                 The external half is not restated here — it lives in
+#                 args/innovation_promoter.yaml `benchmarked_against`.
+#   closes_when   The measurable condition that retires `finding`. Only
+#                 `tables: {name: min_rows}` is supported, because every
+#                 retirable finding in the map is "this table is empty".
+#                 OMIT IT when the finding is architectural or a judgment about
+#                 proportion — the comparator then says so in
+#                 measurement_limits instead of inventing a threshold. Omitting
+#                 it is the honest default, not an oversight.
+#   outstanding   The map's "Adapt." items, one string each. An explicit `[]`
+#                 means a pass looked and found nothing to take — that is what
+#                 licenses the `no_adaptation_needed` verdict. An ABSENT key
+#                 means nobody has looked, which is a different statement and
+#                 must not be written as `[]` to make a subsystem look clean.
+#                 Open `adaptation` blocks in the watchlist are merged in on
+#                 top of this list at runtime.
+#
 # ── This is not a partition ──────────────────────────────────────────
 # Subsystems overlap on purpose. `llm_judge_evaluations` counts under both
 # `llm_infrastructure` (by prefix) and `evaluation` (by name), because it is
@@ -55,6 +89,22 @@ subsystems:
       - idp_*
       - marketplace_*
       - component_*
+      # developer_scorecards is named individually because §1's finding is
+      # about that one table being empty. A finding cited against a table the
+      # evidence never counts cannot be retired by measurement.
+      - developer_scorecards
+    benchmark:
+      finding: >-
+        developer_scorecards ships A-F grading across five dimensions and holds
+        0 rows, with zero writers and zero readers.
+      closes_when:
+        tables:
+          developer_scorecards: 1
+      outstanding:
+        - >-
+          Cortex.io's scorecard-as-code — a ladder of ranked levels, weighted
+          rules, per-rule exemptions with approval, and evaluation windows, with
+          IQE as the rule language rather than a new DSL.
 
   observability:
     title: Observability / LLM telemetry
@@ -68,6 +118,16 @@ subsystems:
       - observability_*
       - odc_*
       - sre_slo*
+    benchmark:
+      finding: >-
+        Already OTel-GenAI-native. tools/observability/ carries a dedicated
+        genai_attributes.py and otel_tracer.py, and tools/llm/router.py — the
+        path effectively all routed calls take — emits gen_ai.* spans.
+      # The map's §2 verdict is "No adaptation needed" verbatim. The one
+      # opportunity it names — exporting the existing spans to a third-party
+      # OTel backend — it classifies as config and packaging rather than
+      # something to adapt from Langfuse, so it is not listed here.
+      outstanding: []
 
   agent_runtime:
     title: Agent runtime & orchestration
@@ -86,6 +146,21 @@ subsystems:
       - a2a_*
       - hitl_*
       - workflow_*
+    benchmark:
+      finding: >-
+        Both layers of the 2026 two-layer pattern are already present — the
+        agent_loop.py inner loop and the completed DWO card for durable outer
+        execution — with budgets more mature than expected.
+      # Measured by grep over agent_loop.py, not by a table, so no closes_when.
+      outstanding:
+        - >-
+          Semantic loop detection — stall_threshold catches no progress, not
+          steady progress through equivalent actions (0 hits).
+        - Approval workflow in the agent loop (0 hits).
+        - >-
+          Session wall-clock ceiling — per-call timeouts exist, total duration
+          does not (0 hits).
+        - Path/tool scoping in skill frontmatter, taken from xichan96/cortex.
 
   security_ops:
     title: Security ops / threat analysis
@@ -106,6 +181,22 @@ subsystems:
       - security_*
       - dsoc_*
       - sbom_*
+    benchmark:
+      finding: >-
+        ~79 analyzer-shaped modules across tools/strategos/, tools/security/ and
+        tools/supply_chain/ with no shared base class among them; every feed,
+        importer, scorer and triage path is hand-wired and the outputs share no
+        vocabulary.
+      # No closes_when: "these modules share no contract" is architectural. A
+      # module count cannot retire it and neither can a row count, so the
+      # comparator reports it as not re-measurable rather than guessing. The
+      # anz card tracks the fix; when it lands, a human re-reads §4.
+      outstanding:
+        - >-
+          TheHive Cortex's analyzer contract — declared observable types, a
+          per-analyzer rate limit and a taxonomy-tagged report — expressed as
+          data rather than as a base class, since 79 modules will not be
+          rewritten to adopt one.
 
   rag_knowledge_graph:
     title: RAG & knowledge graph
@@ -119,6 +210,18 @@ subsystems:
       - kg_*
       - knowledge_*
       - ontology_*
+    benchmark:
+      finding: >-
+        Retrieval is mature; the gap is the graph. kg_edges was 0 for the
+        self-awareness graph and derive_edges() implemented one heuristic —
+        nodes without the relationships GraphRAG's premise rests on.
+      closes_when:
+        tables:
+          kg_edges: 1
+      outstanding:
+        - >-
+          Microsoft GraphRAG's community detection and hierarchical summaries,
+          sequenced behind the edges existing.
 
   compliance_ato:
     title: Compliance & ATO
@@ -134,6 +237,20 @@ subsystems:
       - ssp_*
       - poam*
       - control_*
+    benchmark:
+      # An SSP exists because someone authorised a system, not because the
+      # platform is running. Zero rows on a dev instance is not a finding here,
+      # and scoring it as one would manufacture a gap out of an idle instance.
+      data_expected: false
+      finding: >-
+        OSCAL generate/validate/convert/profile-resolve, FedRAMP 20x KSI, CMMC,
+        eMASS and Xacta sync, STIG checking, SSP/POAM/SBOM generation, a
+        multi-framework crosswalk, cATO monitoring, IL4-IL6 classification and
+        append-only NIST AU audit.
+      # The map's §6 conclusion in full: the benchmark found no external project
+      # worth adapting FROM. That is the strongest form of "no adaptation
+      # needed" — not an unexamined blank.
+      outstanding: []
 
   delivery_pipeline:
     title: Delivery pipeline
@@ -152,6 +269,15 @@ subsystems:
       - pipeline*
       - ci_pipeline_*
       - devsecops_*
+    benchmark:
+      finding: >-
+        kanban -> worktree -> build -> PR -> CI -> merge-verified done, with a
+        real dated build ledger behind it. None of the external tools close the
+        loop from detected gap to merged fix.
+      # The map's §7 "Adapt." line is "Nothing external." Its one open item —
+      # worktree reclamation — is a local hygiene fix tracked as ars-wt-01, not
+      # something to take from Temporal or Argo, so it is not listed here.
+      outstanding: []
 
   data_lineage:
     title: Data quality & lineage
@@ -163,6 +289,26 @@ subsystems:
       - data_nodes
       - data_edges
       - data_designs
+      # dm_* is the data-mesh half — domains, products, contracts and ports.
+      # §8's finding is cited against dm_domains and dm_data_products, so the
+      # evidence has to count them for the finding to be checkable at all.
+      - dm_*
+    benchmark:
+      finding: >-
+        The engines are there — profiler, quality engine, anomaly detector,
+        freshness guardian, PII scanner, plus a data-mesh model. The gap is
+        data, not code: dm_domains held 4 rows and dm_data_products 8, and the
+        cf_applications and mc_app_inventory inventories were empty.
+      # No closes_when: §8 is a judgment about PROPORTION — sophisticated
+      # machinery with nothing running through it — not a threshold. Picking a
+      # row count that "closes" it would be numerology, and picking one low
+      # enough for 4 and 8 to clear would retire the finding while it is still
+      # true. The comparator reports the live counts and says a human must
+      # re-read it.
+      outstanding:
+        - >-
+          OpenLineage's event spec, so lineage is emitted in a standard format
+          and the existing engines become interoperable.
 
   evaluation:
     title: LLM evaluation & red teaming
@@ -187,6 +333,20 @@ subsystems:
       - ft_evaluations
       - finetune_eval_results
       - red_team*
+    benchmark:
+      finding: >-
+        tools/evaluation/ holds 2 modules against 38 in tools/rag/ — the
+        thinnest major subsystem measured. ATLAS red-teaming and an
+        OWASP-agentic assessor mean SECURITY evaluation exists; systematic
+        QUALITY evaluation does not.
+      # No closes_when: the finding is a ratio against a peer subsystem plus a
+      # kind of evaluation that is missing, neither of which a row count
+      # retires. The module floor below is the smoke check, not the bar §9 set.
+      outstanding:
+        - >-
+          promptfoo's eval-as-config model with CI gating — it fits the
+          args-over-code convention, and context/iqe/queries/ already
+          establishes config-declared test corpora.
 
   iac:
     title: IaC & infrastructure
@@ -197,6 +357,16 @@ subsystems:
       - tools/cloud/*.py
     tables:
       - infra_*
+    benchmark:
+      finding: >-
+        IDC canvas with Terraform/Pulumi emitters, tf_state / pulumi_state / AWS
+        Resource Groups Tagging importers, Ansible, K8s deploy, Helm, Iron Bank,
+        SLSA and SBOM — comparable coverage with better compliance integration.
+      # §10's "Adapt." line is "Nothing urgent", and it defers Checkov's
+      # policy-pack model behind IaC policy scanning becoming a priority. A
+      # deferred item is not an outstanding one; when it is picked up it goes on
+      # the watchlist as an adaptation candidate and shows up here that way.
+      outstanding: []
 
   # ── ICDEV subsystems the benchmark map did not cover ──────────────
 
@@ -261,3 +431,8 @@ subsystems:
       subsystem look covered.
     modules: []
     tables: []
+    benchmark:
+      # The only `owned: false` in the file. It is what stops the comparator
+      # scoring an intentional absence as a deficit: `absent` here is the
+      # correct reading, so no verdict is emitted at all.
+      owned: false
