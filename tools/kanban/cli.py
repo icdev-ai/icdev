@@ -152,6 +152,7 @@ def _record_manual_transition(conn, task_id: str, from_status, to_status: str,
     primary status update.
     """
     try:
+        from tools.kanban.transition_reason import resolve_transition_reason
         conn.execute(
             "INSERT INTO kanban_status_transitions "
             "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
@@ -159,7 +160,11 @@ def _record_manual_transition(conn, task_id: str, from_status, to_status: str,
             (
                 "kst-" + secrets.token_hex(6),
                 task_id, from_status, to_status, "manual",
-                reason or "tools/kanban/cli.py --set-status", _now(),
+                resolve_transition_reason(
+                    reason or "tools/kanban/cli.py --set-status",
+                    from_status=from_status, to_status=to_status, actor="manual",
+                ),
+                _now(),
             ),
         )
     except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised

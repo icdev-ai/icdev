@@ -149,12 +149,17 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
             (status, datetime.now(timezone.utc).isoformat(), task_id),
         )
         try:
+            from tools.kanban.transition_reason import resolve_transition_reason
+            _reason = resolve_transition_reason(
+                reason, from_status="pr_opened", to_status=status,
+                actor="pr_watcher",
+            )[:200]
             conn.execute(
                 "INSERT INTO kanban_status_transitions "
                 "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 ("kst-" + uuid.uuid4().hex[:12], task_id, "pr_opened", status,
-                 "pr_watcher", reason[:200],
+                 "pr_watcher", _reason,
                  datetime.now(timezone.utc).isoformat()),
             )
         except Exception as _exc:  # noqa: BLE001 — audit row is best-effort

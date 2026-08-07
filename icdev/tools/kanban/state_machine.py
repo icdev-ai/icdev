@@ -338,12 +338,16 @@ def transition(
     try:
         from tools.db.storage import get_connection
         import secrets as _secrets
+        from tools.kanban.transition_reason import resolve_transition_reason
         conn = get_connection()
-        kst_reason = reason
+        kst_reason = resolve_transition_reason(
+            reason, from_status=from_state.value, to_status=to_state.value,
+            actor=actor,
+        )
         if cot_trace_id:
             kst_reason = json.dumps({
                 "cot_trace_id": cot_trace_id,
-                "rationale": reason,
+                "rationale": kst_reason,
                 "label": label,
             })
         conn.execute(
