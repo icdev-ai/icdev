@@ -420,6 +420,181 @@ def test_cli_list_types(store, monkeypatch, capsys):
     assert "build_started" in capsys.readouterr().out
 
 
+# ------------------------------------------ CLI --source runtime_invocations
+
+def test_cli_runtime_source_prints_rows_in_the_audit_row_format(
+        runtime_store, monkeypatch, capsys):
+    """The acceptance criterion: same columns as an audit_trail row.
+
+    Asserted positionally rather than by substring, because "prints something
+    containing the name" would also pass for a JSON blob or a traceback.
+    """
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    rc = audit_tail.main(["--source", "runtime_invocations", "--limit", "5",
+                          "--no-color"])
+    out = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+
+    assert rc == 0 and len(out) == 4
+    newest = out[-1]                               # oldest-first on screen
+    assert newest[:19] == "2026-08-02 10:00:04", "timestamp column"
+    assert newest[21:26] == "run  ", "source column, padded to audit/hook width"
+    assert newest[28:].startswith("builder"), "invocation name in the event column"
+    assert "agent" in newest, "surface in the actor column"
+
+
+def test_cli_runtime_rows_are_oldest_first_like_the_audit_feed(
+        runtime_store, monkeypatch, capsys):
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--no-color"]) == 0
+    stamps = [ln[:19] for ln in capsys.readouterr().out.strip().splitlines()]
+    assert stamps == sorted(stamps), "screen order must be oldest-first"
+
+
+def test_cli_runtime_row_timestamp_is_started_at_not_insert_time(
+        runtime_store, monkeypatch, capsys):
+    """started_at is what the store orders and --follow resumes on.
+
+    inv-4 STARTED before inv-3 but is a child of it; if the CLI rendered any
+    other timestamp the screen order and the cursor would disagree.
+    """
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    audit_tail.main(["--source", "runtime_invocations", "--json"])
+    rows = [json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines()]
+    by_id = {r["id"]: r for r in rows}
+    assert by_id["inv-4"]["created_at"] == by_id["inv-4"]["started_at"]
+    assert by_id["inv-4"]["created_at"] == "2026-08-02T10:00:03+00:00"
+
+
+def test_cli_runtime_summary_carries_outcome_duration_and_error(
+        runtime_store, monkeypatch, capsys):
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    audit_tail.main(["--source", "runtime_invocations", "--json"])
+    rows = {r["id"]: r for r in
+            (json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines())}
+
+    assert rows["inv-2"]["summary"] == "error 40ms ValueError: bad query"
+    assert rows["inv-1"]["summary"] == "ok 1200ms (query, limit)"
+    assert rows["inv-3"]["summary"] == "running", "no duration yet — say nothing"
+
+
+def test_cli_runtime_error_rows_are_the_only_ones_marked_severe(
+        runtime_store, monkeypatch, capsys):
+    """Colour has to mean something; a table of running rows is not a warning."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    audit_tail.main(["--source", "runtime_invocations", "--json"])
+    rows = {r["id"]: r for r in
+            (json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines())}
+    assert rows["inv-2"]["severity"] == "high"
+    assert {rows[i]["severity"] for i in ("inv-1", "inv-3", "inv-4")} == {"info"}
+
+
+def test_cli_runtime_json_has_the_feed_keys_plus_the_runtime_columns(
+        runtime_store, monkeypatch, capsys):
+    """--json must stay a superset: the terminal view is lossy, the stream is not."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--json"]) == 0
+    rows = [json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines()]
+    assert len(rows) == 4
+    for row in rows:
+        assert set(row) >= {"id", "source", "created_at", "event_type", "actor",
+                            "summary", "severity", "project_id", "session_id"}
+        assert set(row) >= {"surface", "name", "status", "duration_ms",
+                            "arg_keys", "parent_id", "started_at", "completed_at"}
+        assert row["source"] == "runtime_invocations"
+
+
+def test_cli_runtime_event_type_filters_on_the_invocation_name(
+        runtime_store, monkeypatch, capsys):
+    """What you filter is what the event-type column shows."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--event-type",
+                            "rag_search", "--json"]) == 0
+    rows = [json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines()]
+    assert [r["id"] for r in rows] == ["inv-1", "inv-2"]
+
+
+def test_cli_runtime_actor_filters_on_the_surface(runtime_store, monkeypatch, capsys):
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--actor", "agent",
+                            "--json"]) == 0
+    rows = [json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines()]
+    assert [r["id"] for r in rows] == ["inv-3"]
+
+
+def test_cli_runtime_project_and_since_filters_reach_the_store(
+        runtime_store, monkeypatch, capsys):
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--project", "proj-b",
+                            "--since", "2026-08-02T10:00:03+00:00", "--json"]) == 0
+    rows = [json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines()]
+    assert [r["id"] for r in rows] == ["inv-3"]
+
+
+def test_cli_runtime_limit_is_applied(runtime_store, monkeypatch, capsys):
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--limit", "2",
+                            "--json"]) == 0
+    rows = [json.loads(ln) for ln in capsys.readouterr().out.strip().splitlines()]
+    assert [r["id"] for r in rows] == ["inv-4", "inv-3"], "newest 2, oldest-first"
+
+
+def test_cli_runtime_source_refuses_to_be_mixed_with_the_audit_feed(
+        runtime_store, monkeypatch, capsys):
+    """Hundreds of MCP calls per session would bury the audit rows asked for."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    rc = audit_tail.main(["--source", "runtime_invocations", "--source", "audit_trail"])
+    assert rc == 1
+    assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_cli_runtime_source_refuses_multiple_event_types(
+        runtime_store, monkeypatch, capsys):
+    """The reader filters a single `name =`; dropping the rest would mislead."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    rc = audit_tail.main(["--source", "runtime_invocations",
+                          "--event-type", "a", "--event-type", "b"])
+    assert rc == 1
+    assert "single --event-type" in capsys.readouterr().err
+
+
+def test_cli_runtime_source_rejects_list_types_instead_of_answering_wrongly(
+        runtime_store, monkeypatch, capsys):
+    """--list-types reads audit_trail; returning it here would be a lie."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--list-types"]) == 1
+    assert "icdev runtime top" in capsys.readouterr().err
+
+
+def test_cli_runtime_follow_resumes_from_the_last_started_at(
+        runtime_store, monkeypatch, capsys):
+    """--follow must poll the runtime reader too, with a working cursor."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: runtime_store)
+    seen = []
+    real = runtime_store.read_runtime_invocations
+
+    def spy(limit=100, **filters):
+        seen.append(filters)
+        if len(seen) > 1:
+            raise KeyboardInterrupt
+        return real(limit=limit, **filters)
+
+    monkeypatch.setattr(runtime_store, "read_runtime_invocations", spy)
+    monkeypatch.setattr(audit_tail.time, "sleep", lambda _s: None)
+
+    assert audit_tail.main(["--source", "runtime_invocations", "--follow",
+                            "--no-color"]) == 0
+    assert seen[0]["since"] is None
+    assert seen[1]["since"] == "2026-08-02T10:00:04+00:00", "cursor is newest started_at"
+
+
+def test_cli_runtime_empty_result_still_names_the_database(
+        store, monkeypatch, capsys):
+    """The feed DB has no runtime_invocations — say which DB was read."""
+    monkeypatch.setattr("tools.audit.store.AuditStore", lambda *a, **k: store)
+    assert audit_tail.main(["--source", "runtime_invocations", "--no-color"]) == 0
+    assert "read from" in capsys.readouterr().err
+
+
 # ------------------------------------------------- PostgreSQL (primary backend)
 
 def _pg_available() -> bool:

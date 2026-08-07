@@ -121,6 +121,15 @@ icdev audit tail --project <id> --event-type <type> --since <iso8601>
 icdev audit tail --source hook_events     # Restrict source (repeatable)
 icdev audit export --framework soc2 --tenant-id <tid> --output report.html
 
+# Runtime invocations through the same reader — rows, not the `runtime top` rollup.
+# Requested on its own: it is telemetry, not audit evidence, and merging hundreds of
+# MCP calls per session into the feed would bury the audit rows you asked for.
+# Columns map onto the feed: invocation name -> event type, surface -> actor.
+icdev audit tail --source runtime_invocations --limit 5
+icdev audit tail --source runtime_invocations --event-type rag_search   # one name
+icdev audit tail --source runtime_invocations --actor mcp               # one surface
+icdev audit tail --source runtime_invocations --follow --json
+
 # Runtime invocation telemetry — what actually ran (runtime_invocations, migration 341).
 # `audit tail` answers "what happened"; `runtime top` answers "what is slow / failing".
 # --limit bounds the number of NAMES shown, not the invocations scanned.
