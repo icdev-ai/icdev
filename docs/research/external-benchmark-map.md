@@ -324,7 +324,7 @@ stands**, and states the orphan condition as history rather than as the current 
 
 ## A.1 `kanban_promoter.py` — structure, and what "orphaned" meant
 
-Pipeline, in `run_promotion()` (`kanban_promoter.py:525`), `dry_run=True` by default:
+Pipeline, in `promote_findings_to_kanban()`, `dry_run=True` by default:
 
 | Stage | Function | Behaviour |
 |---|---|---|
@@ -352,7 +352,7 @@ nothing calls does not run, so approved benchmark findings accumulated in
   `.claude/plans/external-repo-adaptation-scan.md:99`. Writing requires `--promote`; the
   bare invocation is a preview.
 * *Scout reflex* — `tools/genesis/reflexes/scout.py::_promote_findings` (:288) calls
-  `run_promotion()` and never raises, so a promotion failure cannot wedge the reflex loop.
+  `promote_findings_to_kanban()` and never raises, so a promotion failure cannot wedge the loop.
   It is gated on `promotion.enabled` in `args/scout_config.yaml:217`, which is **`false`
   today**. So the autonomous path exists but is off: nothing writes cards unattended until
   someone flips that flag. Note that when flipped, the shipped `dry_run: false` beneath it
@@ -436,8 +436,8 @@ Dedup is two sequential SELECTs per spec: existing `id`, then existing `idempote
 if one is supplied. `kanban_promoter` feeds both from the signal id and nothing else:
 
 ```python
-stable_task_id(sid)  -> f"task-innov-{sha256(sid)[:10]}"      # :94
-idempotency_key(sid) -> f"innovation-promoter:{sid}"          # :106
+stable_task_id(sid)  -> f"task-innov-{sha256(sid)[:10]}"
+idempotency_key(sid) -> f"innovation-promoter:{source_table}:{sid}"
 ```
 
 Both are derived from the signal id, never from the clock — a timestamp-seeded id makes

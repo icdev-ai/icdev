@@ -29,12 +29,14 @@ Findings on subsystems ICDEV is *ahead* on (observability, compliance/ATO) or at
 - `max_per_run` (default 5) — hard ceiling on cards created per invocation.
 - `max_per_subsystem` (default 2) — no single subsystem consumes the whole run.
 
+Both come from `args/innovation_promoter.yaml`. A single run can tighten or loosen them without editing the file — `--max-per-run` / `--max-per-subsystem` on the CLI, or the `max_findings_per_run` / `max_per_subsystem` arguments to `promote_findings_to_kanban()`. Passing nothing keeps the configured values; the override never becomes the new default.
+
 Highest-scoring findings survive a cap; the rest stay eligible for the next run. When a cap truncates, it is logged at **WARNING** (`CAP TRUNCATED: …`) and reported in the result payload under `truncated`, `dropped_by_run_cap` and `dropped_by_subsystem_cap`, listed by signal id. A cap that drops findings silently is indistinguishable from a promoter that found nothing.
 
 ## Idempotency
 Writes go through `tools.kanban.task_factory.create_tasks` — never a raw INSERT. Each spec carries:
 - a **stable task id** — `task-innov-<sha256(signal_id)[:10]>`, derived from the signal, never from the clock
-- a **stable idempotency key** — `innovation-promoter:<signal_id>`
+- a **stable idempotency key** — `innovation-promoter:<source_table>:<signal_id>`. Row ids are unique within a table, not across them, so the key names the table it means.
 
 `create_tasks` skips on either collision, so a re-run creates zero rows. The query also excludes signals already present in `kanban_tasks.source_prediction_id`.
 

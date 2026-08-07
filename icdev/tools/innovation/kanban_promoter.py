@@ -24,8 +24,8 @@ Three properties are load-bearing and are what the tests pin:
   second promotion path.
 
 Writes go through ``tools.kanban.task_factory.create_tasks`` with a stable
-``idempotency_key`` derived from the signal id, so a second run over the
-same findings creates nothing.
+``idempotency_key`` derived from ``(source_table, finding_id)``, so a second
+run over the same findings creates nothing.
 
 Usage:
     python tools/innovation/kanban_promoter.py --dry-run --json
@@ -60,6 +60,10 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_promoter.yaml"
 # The only status this module may write. A promoter that can reach 'backlog'
 # is a promoter that can dispatch an agent without a human ever looking.
 SUGGESTED_STATUS = "suggested"
+
+# The findings table this module reads. Part of every idempotency key so a
+# future second source table cannot collide with this one on a shared row id.
+SOURCE_TABLE = "innovation_signals"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "source_types": ["external_repo_scouting", "external_framework_analysis"],
@@ -103,9 +107,16 @@ def stable_task_id(signal_id: str) -> str:
     return f"task-innov-{digest[:10]}"
 
 
-def idempotency_key(signal_id: str) -> str:
-    """Stable key so a retried or re-scheduled run is a no-op."""
-    return f"innovation-promoter:{signal_id}"
+def idempotency_key(finding_id: str, source_table: str = SOURCE_TABLE) -> str:
+    """Stable key so a retried or re-scheduled run is a no-op.
+
+    Derived from ``(source_table, finding_id)`` rather than the finding id
+    alone. Today every finding comes from ``innovation_signals``, so the
+    table component is constant — it is here so that a second findings
+    table cannot collide with this one on a shared row id. Ids are only
+    unique within their table; the key has to say which table it means.
+    """
+    return f"innovation-promoter:{source_table}:{finding_id}"
 
 
 def _priority_for_score(score: float | None, thresholds: dict[str, float]) -> str:
@@ -313,7 +324,7 @@ def apply_caps(signals: list[dict], config: dict) -> dict[str, Any]:
 # The promotion contract, as one readable SELECT
 # ---------------------------------------------------------------------------
 # This constant is DOCUMENTATION AND A DIAGNOSTIC. It is not on the write path
-# and nothing in ``run_promotion`` executes it. The runtime pipeline is still
+# and nothing in ``promote_findings_to_kanban`` executes it. The runtime pipeline is still
 # ``find_promotable_signals`` (coarse SQL) -> ``classify_signals`` (gap gate,
 # reading args/innovation_promoter.yaml) -> ``apply_caps`` -> ``promote_signals``.
 # It exists because that pipeline spreads one contract across SQL, YAML and three
@@ -342,7 +353,7 @@ def apply_caps(signals: list[dict], config: dict) -> dict[str, Any]:
 #     DRIFT HAZARD, stated plainly: this makes a THIRD copy of the verdict map.
 #     args/innovation_promoter.yaml remains the single source of truth for the
 #     runtime gate. If they disagree, the YAML is right and this constant is stale.
-#     ``tests/test_innovation_kanban_promoter.py`` pins them to each other.
+#     ``tests/innovation/test_kanban_promoter.py`` pins them to each other.
 #
 #     One deliberate simplification: ``resolve_subsystem`` prefers
 #     ``metadata.subsystem`` over ``category`` when the tag is present. That
@@ -352,9 +363,9 @@ def apply_caps(signals: list[dict], config: dict) -> dict[str, Any]:
 #     benchmark finding — but a tagged signal could classify differently in Python
 #     than here. Another reason this is the diagnostic and not the gate.
 #
-#   Idempotency, derived from the signal id and never from the clock
+#   Idempotency, derived from the finding's identity and never from the clock
 #     task_id         = 'task-innov-' || first 10 hex chars of sha256(s.id)
-#     idempotency_key = 'innovation-promoter:' || s.id
+#     idempotency_key = 'innovation-promoter:' || source_table || ':' || s.id
 #     These reproduce ``stable_task_id`` and ``idempotency_key`` exactly; PG's
 #     sha256(bytea) and Python's hashlib.sha256 agree, verified on live data.
 #
@@ -418,7 +429,7 @@ SELECT
     -- kanban_tasks.id — deterministic, so a re-run collides instead of duplicating
     'task-innov-' || substr(encode(sha256(s.id::bytea), 'hex'), 1, 10) AS task_id,
     -- kanban_tasks.idempotency_key — advisory (the column has no UNIQUE index)
-    'innovation-promoter:' || s.id                                     AS idempotency_key,
+    'innovation-promoter:innovation_signals:' || s.id                  AS idempotency_key,
     left('INNOV-' || substr(s.id, 1, 8) || ': '
          || coalesce(s.title, 'Signal ' || substr(s.id, 1, 8)), 120)   AS title,
     s.id                                                               AS source_prediction_id,
@@ -699,17 +710,31 @@ def promote_signals(signals: list[dict], config: dict, dry_run: bool = False) ->
     }
 
 
-def run_promotion(
+def promote_findings_to_kanban(
     config: dict | None = None,
     dry_run: bool = True,
     query_limit: int = 200,
+    max_findings_per_run: int | None = None,
+    max_per_subsystem: int | None = None,
 ) -> dict:
     """Full pipeline: query -> gap gate -> caps -> suggested cards.
 
     ``dry_run`` defaults to True. A promoter whose default is to write is a
     promoter that writes by accident.
+
+    ``max_findings_per_run`` and ``max_per_subsystem`` are per-call overrides
+    of the rate limit. Both default to ``None`` meaning "use the configured
+    value" — ``args/innovation_promoter.yaml`` ships 5 and 2, and a caller
+    that passes nothing gets those rather than a number hardcoded here.
+    Pass an int only to tighten or loosen one specific run.
     """
     config = config or load_config()
+
+    # Per-call overrides win over the YAML; absent, the YAML wins over DEFAULT_CONFIG.
+    if max_findings_per_run is not None:
+        config = {**config, "max_per_run": int(max_findings_per_run)}
+    if max_per_subsystem is not None:
+        config = {**config, "max_per_subsystem": int(max_per_subsystem)}
 
     triage = tuple(config.get("triage_results") or ("approved",))
     sources = tuple(config.get("source_types") or ("external_repo_scouting",))
@@ -765,6 +790,21 @@ def run_promotion(
     }
 
 
+def run_promotion(
+    config: dict | None = None,
+    dry_run: bool = True,
+    query_limit: int = 200,
+) -> dict:
+    """Deprecated alias for :func:`promote_findings_to_kanban`.
+
+    Kept because this module ships in the ``icdev`` wheel and the name was
+    public before the rename.
+    """
+    return promote_findings_to_kanban(
+        config=config, dry_run=dry_run, query_limit=query_limit
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -780,6 +820,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Query-size guard, NOT the rate limit (see max_per_run)")
     p.add_argument("--min-innovation-score", type=float, default=None)
     p.add_argument("--max-per-run", type=int, default=None)
+    p.add_argument("--max-per-subsystem", type=int, default=None)
     p.add_argument("--json", action="store_true")
     p.add_argument("--promote-id", type=str, default=None,
                    help="Promote one signal by id (still gap-gated)")
@@ -798,6 +839,8 @@ def main(argv: list[str] | None = None) -> int:
         config["min_innovation_score"] = args.min_innovation_score
     if args.max_per_run is not None:
         config["max_per_run"] = args.max_per_run
+    if args.max_per_subsystem is not None:
+        config["max_per_subsystem"] = args.max_per_subsystem
 
     # Writing requires --promote. Absent it, this is a preview.
     dry_run = not args.promote
@@ -900,7 +943,9 @@ def main(argv: list[str] | None = None) -> int:
                       f"{str(item['verdict'] or '-'):<24}{str(item['title'])[:60]}")
         return 0
     else:
-        result = run_promotion(config=config, dry_run=dry_run, query_limit=args.limit)
+        result = promote_findings_to_kanban(
+            config=config, dry_run=dry_run, query_limit=args.limit
+        )
 
     if args.json:
         print(json.dumps(result, indent=2, default=str))
