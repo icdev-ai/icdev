@@ -121,6 +121,14 @@ icdev audit tail --project <id> --event-type <type> --since <iso8601>
 icdev audit tail --source hook_events     # Restrict source (repeatable)
 icdev audit export --framework soc2 --tenant-id <tid> --output report.html
 
+# Runtime invocation telemetry — what actually ran (runtime_invocations, migration 341).
+# `audit tail` answers "what happened"; `runtime top` answers "what is slow / failing".
+# --limit bounds the number of NAMES shown, not the invocations scanned.
+icdev runtime top                         # Top 20 names by call count, all surfaces
+icdev runtime top --limit 50
+icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
+icdev runtime top --json                  # Machine-readable rollup
+
 # Core enterprise profiles
 icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)

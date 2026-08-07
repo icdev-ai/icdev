@@ -48,6 +48,9 @@ Subcommands:
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
+  audit tail [--follow]    Tail the audit feed (audit_trail + hook_events).
+  runtime top [--surface]  Rank MCP tools / agents / personas / roles by calls,
+                           with error counts and avg/max duration.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -125,6 +128,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "audit":
         from tools.cli.audit import main as audit_main
         return audit_main(rest)
+
+    if sub == "runtime":
+        from tools.cli.runtime import main as runtime_main
+        return runtime_main(rest)
 
     if sub == "demo":
         return _demo_main(rest)
