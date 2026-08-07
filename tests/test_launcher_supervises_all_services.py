@@ -174,6 +174,60 @@ def test_service_is_terminated_on_shutdown(starter):
     )
 
 
+DECOY_PROBE = r'''
+import importlib.util, subprocess, sys, time
+
+spec = importlib.util.spec_from_file_location("_launcher", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)          # note: launcher chdir()s at import
+from tools.compat.platform_utils import find_pids_by_cmdline
+
+SENTINEL = "zzsentinel_not_a_real_service"
+decoy = subprocess.Popen(
+    [sys.executable, "-c", "import time; time.sleep(30)  # " + SENTINEL])
+try:
+    for _ in range(50):
+        if decoy.pid in find_pids_by_cmdline(SENTINEL):
+            break
+        time.sleep(0.1)
+    else:
+        print("INCONCLUSIVE decoy never appeared"); raise SystemExit(0)
+    # The naive matcher sees it; the launcher's predicate must spare it.
+    print("SPARED" if mod._is_inline_snippet(decoy.pid, SENTINEL) else "WOULD_KILL")
+finally:
+    decoy.kill()
+'''
+
+
+def test_a_shell_merely_mentioning_a_service_is_not_killed():
+    """``-c`` snippets that name a service must not be treated as that service.
+
+    ``find_pids_by_cmdline`` substring-matches the joined command line, so a
+    shell running ``bash -c '... pr_watcher ...'`` matches a service it only
+    mentions. Measured on the live process table: the fragment "pr_watcher"
+    matched 5 processes, 4 of them diagnostic shells. The same held for
+    "kanban_scheduler.py" and "tools/dashboard/app.py" (4 matched, 3 spurious).
+
+    Runs out-of-process because launcher.py calls os.chdir() at import, which
+    would relocate the whole pytest session.
+    """
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-c", DECOY_PROBE, str(LAUNCHER)],
+        capture_output=True, text=True, timeout=120,
+        cwd=str(LAUNCHER.parents[2]),
+    )
+    out = (proc.stdout or "") + (proc.stderr or "")
+    if "INCONCLUSIVE" in out:
+        pytest.skip("decoy process was not observable on this host")
+    assert "SPARED" in out, (
+        "a process that merely mentions the service in a -c snippet would be "
+        f"killed:\n{out[-1500:]}"
+    )
+
+
 def test_postgres_readiness_is_awaited_before_services_start():
     """PG-dependent services must not boot into a recovering database.
 

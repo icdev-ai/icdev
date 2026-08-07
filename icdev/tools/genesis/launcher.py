@@ -206,6 +206,29 @@ def _start_proposal_genesis():
     return proc, pg_log
 
 
+def _is_inline_snippet(pid: int, fragment: str) -> bool:
+    """True if *pid* only matches because *fragment* appears inside a -c snippet.
+
+    ``find_pids_by_cmdline`` substring-matches the whole joined command line, so
+    any shell or interpreter invoked as ``bash -c '... pr_watcher ...'`` matches
+    a script it merely mentions. Measured: the fragment "pr_watcher" matched five
+    processes, four of which were diagnostic shells that had simply typed the
+    name. Killing those would take out unrelated work.
+
+    Everything after ``-c`` is code, not a program name, so it is excluded from
+    the match. Fails closed: if the process cannot be inspected, it is treated as
+    an inline snippet and spared.
+    """
+    try:
+        import psutil
+        argv = psutil.Process(pid).cmdline() or []
+    except Exception:
+        return True
+    if "-c" in argv:
+        argv = argv[: argv.index("-c")]
+    return fragment not in " ".join(argv)
+
+
 def _kill_stale_instances(script_name: str) -> None:
     """Kill any existing instances of a script before starting a fresh one.
 
@@ -218,6 +241,8 @@ def _kill_stale_instances(script_name: str) -> None:
     try:
         for pid in find_pids_by_cmdline(script_name):
             if pid == own_pid:
+                continue
+            if _is_inline_snippet(pid, script_name):
                 continue
             try:
                 if kill_process(pid):
