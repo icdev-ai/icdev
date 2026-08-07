@@ -123,7 +123,9 @@ icdev audit export --framework soc2 --tenant-id <tid> --output report.html
 
 # Runtime invocation rollup — what the runtime actually ran (runtime_invocations).
 # Per-surface totals (calls / errors / err% / avg / max ms) plus a per-name table
-# for MCP tools, agents, personas and roles. Same data as the SRE dashboard panel.
+# for MCP tools, agents, personas and roles. Same data as the SRE dashboard panel
+# (/sre), which windows to 30 days by default; the CLI is all-time — use --since
+# to window it.
 icdev runtime top                         # Every surface, top 20 names by calls
 icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
 icdev runtime top --errors-only           # Only names that have actually failed

@@ -63,10 +63,17 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 
 | Surface | Entry point |
 |---------|-------------|
-| CLI | `icdev runtime top [--surface mcp] [--errors-only] [--json]` |
-| Dashboard | `/sre` — "Runtime Invocations" panel, fed by `GET /api/sre/invocations?surface=&since=&limit=` (`tools/dashboard/api/sre.py::api_sre_invocations`) |
+| CLI | `icdev runtime top [--surface mcp] [--errors-only] [--json]` — **all time** by default |
+| Dashboard | `/sre` — "Runtime Invocations" panel, fed by `GET /api/sre/invocations?surface=&days=&since=&limit=` (`tools/dashboard/api/sre.py::api_sre_invocations`) — **30-day window** by default, echoed as `window_days` and shown in the panel heading |
 
 Both render `InvocationStore.report`, so the terminal and the panel cannot disagree.
+
+The default-window asymmetry is deliberate: `runtime_invocations` has no entry in
+`args/retention_policies.yaml`, so it grows without bound and the rollup is a `GROUP BY`
+with no ceiling. Acceptable for a report an operator asked for once; not acceptable on a
+page that re-runs it on every load. `started_at` is indexed
+(`idx_runtime_inv_surface_started`), so the window is also the cheap filter. Passing an
+explicit `since` hands the range back to the caller and reports `window_days: null`.
 
 Instrumented choke points — one per surface, chosen so a single wrap covers everything on it:
 

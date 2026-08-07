@@ -793,6 +793,17 @@ def api_sre_invocations():
     global auth hook still applies. Backed by the same
     ``InvocationStore.report`` the ``icdev runtime top`` CLI uses, so the panel
     and the terminal cannot drift apart or disagree about the arithmetic.
+
+    Windowed to ``days`` (default 30) where the CLI defaults to all time, and
+    the asymmetry is deliberate. ``runtime_invocations`` has no entry in
+    ``args/retention_policies.yaml``, so it grows without bound, and the rollup
+    is a ``GROUP BY`` with no natural ceiling. That is fine for a one-off
+    report an operator asked for; it is not fine on a page that re-runs it on
+    every load. ``started_at`` is the indexed column
+    (``idx_runtime_inv_surface_started``), so the window is also the cheap
+    filter. The window is echoed back as ``window_days`` and rendered in the
+    panel heading — a windowed number presented as a lifetime total would be a
+    quiet lie.
     """
     try:
         from tools.observability.invocation_store import (
@@ -801,11 +812,17 @@ def api_sre_invocations():
         )
 
         limit = max(1, min(int(request.args.get("limit", 15)), 200))
+        days = max(1, min(int(request.args.get("days", 30)), 3650))
+        since = request.args.get("since") or (
+            datetime.now(timezone.utc) - timedelta(days=days)
+        ).isoformat()
+
         report = InvocationStore().report(InvocationFilter(
             surface=request.args.get("surface") or None,
-            since=request.args.get("since") or None,
+            since=since,
             limit=limit,
         ))
+        report["window_days"] = days if not request.args.get("since") else None
         return jsonify(report)
     except Exception as exc:  # noqa: BLE001 — a telemetry panel must not 500 the page
         logger.warning("sre invocations rollup failed: %s", exc)

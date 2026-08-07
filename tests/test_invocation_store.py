@@ -479,6 +479,57 @@ def test_dashboard_endpoint_honours_surface_and_limit(obs_db):
     assert payload["surfaces"][0]["calls"] == 5, "totals must survive the limit"
 
 
+def test_dashboard_endpoint_windows_by_default_and_says_so(obs_db):
+    """The panel re-runs this on every load; an unbounded GROUP BY must not be
+    the default. And the window has to be visible, or a 30-day count reads as a
+    lifetime total.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    recent = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+    _insert("mcp", "recent_tool", duration_ms=5, started_at=recent)
+    _insert("mcp", "ancient_tool", duration_ms=5, started_at=old)
+
+    payload = _api_client().get("/api/sre/invocations").get_json()
+    assert payload["window_days"] == 30
+    assert [r["name"] for r in payload["names"]] == ["recent_tool"]
+    assert payload["surfaces"][0]["calls"] == 1, "the 200-day-old row was counted"
+
+    wide = _api_client().get("/api/sre/invocations?days=365").get_json()
+    assert wide["window_days"] == 365
+    assert wide["surfaces"][0]["calls"] == 2
+
+
+def test_dashboard_endpoint_explicit_since_overrides_the_window(obs_db):
+    """An explicit --since means the caller owns the range; report no window."""
+    _insert("mcp", "t", duration_ms=1, started_at="2020-01-01T00:00:00+00:00")
+
+    payload = _api_client().get(
+        "/api/sre/invocations?since=2019-01-01T00:00:00%2B00:00").get_json()
+    assert payload["window_days"] is None
+    assert payload["surfaces"][0]["calls"] == 1
+
+
+def test_cli_is_all_time_by_default(obs_db, capsys):
+    """The CLI deliberately does NOT window — an operator asked for this once.
+
+    Pins the asymmetry with the dashboard so a future edit that "harmonises"
+    the two has to do it on purpose.
+    """
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from tools.cli.runtime import main as runtime_main
+
+    old = (datetime.now(timezone.utc) - timedelta(days=900)).isoformat()
+    _insert("mcp", "ancient_tool", duration_ms=5, started_at=old)
+
+    assert runtime_main(["--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["surfaces"][0]["calls"] == 1
+
+
 def test_dashboard_endpoint_does_not_500_when_the_table_is_absent(tmp_path, monkeypatch):
     """A telemetry panel must never take the SRE page down with it."""
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")

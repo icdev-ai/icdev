@@ -84,7 +84,11 @@ function invErrColor(rate) {
 
 function renderInvocations(inv) {
   const surfaces = (inv && inv.surfaces) || [];
-  let html = '<div class="sre-section">Runtime Invocations — MCP tools, agents, personas, roles</div>';
+  // Say the window out loud. These are NOT lifetime totals (the endpoint
+  // defaults to 30 days), and a windowed count presented as a total is a lie.
+  const win = (inv && inv.window_days) ? ` (${inv.window_days}-day window)` : '';
+  let html = '<div class="sre-section">Runtime Invocations — MCP tools, agents, personas, roles'
+    + win + '</div>';
 
   if (inv && inv.error) {
     return html + '<div class="sre-grid"><div class="sre-card"><p style="color:#f39c12">'
