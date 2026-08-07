@@ -55,6 +55,7 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 |------|------|-------------|-------|--------|
 | Invocation Recorder | tools/observability/invocation_recorder.py | `record()` context manager observing MCP tools, agents, personas and roles. Never raises; records argument KEY NAMES only, never values. Disable with `ICDEV_OBS_INVOCATIONS=0`. | surface, name, arg_keys, session_id, project_id, parent_id | Row in `runtime_invocations` |
 | Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration | surface (optional), limit | List of rollup dicts |
+| Runtime Top CLI | tools/cli/runtime.py | `icdev runtime top` — terminal view of the rollup above. Authors no SQL; renders `summary()` so the CLI and the coverage check cannot disagree. `--limit` bounds NAMES shown, not invocations scanned. | --limit, --surface, --json, --no-color | Aligned table (errors in red) or JSON |
 
 Instrumented choke points — one per surface, chosen so a single wrap covers everything on it:
 
