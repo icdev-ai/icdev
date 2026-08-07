@@ -1014,6 +1014,11 @@ reflexes:
       operator: gte  # 0 firing = healthy; >0 surfaces real failures (always succeeds)
     refresh_probes: [http_head]   # cheap probes re-run live each cycle; others reused from awareness
     min_fail_to_alert: 1          # static fallback: per-category failing count before an alert fires
+    # Persist this cycle's numbers to metric_snapshots. The table's other two
+    # writers (metric_collector, log_analyzer) are CLI-only and need a metrics
+    # backend that is not deployed, so this reflex is its live producer.
+    record_metrics: true
+    metrics_project_id: icdev-tools-rtm
     max_failure_rows: 200         # cap failure_log inserts per cycle
     max_snapshot_age_hours: 168   # ignore failures whose latest probe is >7d old (stale/abandoned)
     # Adaptive min_fail_to_alert — threshold moved from hardcoded Python constant so the

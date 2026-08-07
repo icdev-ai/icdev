@@ -61,6 +61,11 @@ try:
 except ImportError:  # pragma: no cover - slim env
     _prober_run_all = None  # type: ignore[assignment]
 
+try:
+    from tools.monitor.metric_collector import store_snapshot as _store_snapshot
+except ImportError:  # pragma: no cover - slim env
+    _store_snapshot = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Defaults (overridable from genesis_config.yaml reflex entry)
 # ---------------------------------------------------------------------------
@@ -106,6 +111,30 @@ SOURCE_PREFIX = "self_monitor"
 # LLM anomaly detection — disabled by default; enable via genesis_config.yaml:
 #   anomaly_detection: {enabled: true, llm_enabled: true, baseline_hours: 72}
 DEFAULT_ANOMALY_BASELINE_HOURS = 72
+
+# metric_snapshots persistence.
+#
+# metric_snapshots had two INSERT sites (metric_collector.store_snapshot and
+# log_analyzer._record_findings) and zero rows: both are reachable only from
+# their own CLI, and both need a metrics backend (Prometheus / ELK) that is not
+# deployed here. Meanwhile four reader surfaces — project_status, infra_status,
+# the dashboard metrics API, and mcp/core_server — query the table.
+#
+# This reflex is the one monitoring path that actually runs on a cadence, and it
+# already computes the numbers below every cycle before throwing them away into
+# a threshold check. Persisting them through the existing store_snapshot writer
+# gives the table a live producer without inventing a new surface.
+DEFAULT_RECORD_METRICS = True
+
+# metric_snapshots.project_id is NOT NULL (and FK-constrained to projects(id) on
+# SQLite), so platform self-telemetry needs a project row. 'icdev-tools-rtm' is
+# the platform's own project and the convention already used by
+# tools/genesis/reflexes/integrity_monitor.py.
+DEFAULT_METRICS_PROJECT_ID = "icdev-tools-rtm"
+
+# Source label written to metric_snapshots.source, so these rows are
+# distinguishable from prometheus / log_analyzer rows.
+METRICS_SOURCE = "self_monitor"
 
 # Per-category guidance thresholds for the LLM anomaly classifier.
 # Configurable via genesis_config.yaml: self_monitor.anomaly_detection.category_thresholds
@@ -633,6 +662,37 @@ def _refresh_probes(probe_types: List[str]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _record_metrics(
+    project_id: str,
+    total_failing: int,
+    alert_counts: Dict[str, int],
+    failures_logged: int,
+    elapsed_ms: int,
+) -> int:
+    """Persist this cycle's numbers to metric_snapshots. Returns rows written.
+
+    Never raises: losing a metrics row must not fail the reflex, whose primary
+    job is alerting. The count is returned so the caller can report an honest
+    0 instead of implying a write that did not happen.
+    """
+    if _store_snapshot is None:
+        return 0
+
+    metrics = {
+        "self_monitor_failing_components": float(total_failing),
+        "self_monitor_alerts_firing": float(alert_counts.get("firing", 0)),
+        "self_monitor_alerts_opened": float(alert_counts.get("opened", 0)),
+        "self_monitor_alerts_resolved": float(alert_counts.get("resolved", 0)),
+        "self_monitor_failures_logged": float(failures_logged),
+        "self_monitor_cycle_ms": float(elapsed_ms),
+    }
+    try:
+        return int(_store_snapshot(project_id, metrics, source=METRICS_SOURCE))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("self_monitor: metric_snapshots write failed: %s", exc)
+        return 0
+
+
 def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str, Any]:
     """Execute one self-monitor cycle. Daemon calls this on the reflex cadence."""
     config = config or {}
@@ -690,11 +750,23 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
     elapsed_ms = int((time.time() - start) * 1000)
     by_category = {cat: len(items) for cat, items in failures_by_cat.items()}
 
+    metrics_recorded = 0
+    if config.get("record_metrics", DEFAULT_RECORD_METRICS):
+        metrics_recorded = _record_metrics(
+            config.get("metrics_project_id") or DEFAULT_METRICS_PROJECT_ID,
+            total_failing,
+            alert_counts,
+            failures_logged,
+            elapsed_ms,
+        )
+
     LOG.info(
         "self_monitor: %d failing component(s) across %d categor(ies); "
-        "alerts opened=%d updated=%d resolved=%d firing=%d; failure_log +%d; %dms",
+        "alerts opened=%d updated=%d resolved=%d firing=%d; failure_log +%d; "
+        "metric_snapshots +%d; %dms",
         total_failing, len(failures_by_cat), alert_counts["opened"], alert_counts["updated"],
-        alert_counts["resolved"], alert_counts["firing"], failures_logged, elapsed_ms,
+        alert_counts["resolved"], alert_counts["firing"], failures_logged, metrics_recorded,
+        elapsed_ms,
     )
 
     return {
@@ -709,6 +781,7 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
             "alerts_resolved": alert_counts["resolved"],
             "alerts_firing": alert_counts["firing"],
             "failures_logged": failures_logged,
+            "metrics_recorded": metrics_recorded,
             "min_fail_to_alert": min_fail,
             "adaptive_threshold": ad_cfg.get("enabled", False),
             "llm_anomaly_detection": ad_cfg.get("llm_enabled", False),

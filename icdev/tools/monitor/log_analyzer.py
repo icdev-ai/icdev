@@ -823,14 +823,24 @@ def analyze_logs(
     }
 
     # ---------- Record findings in metric_snapshots ----------
-    if project_id and (db_path or DB_PATH.exists()):
-        _record_findings(project_id, result, db_path)
+    # Gated on project_id alone. The previous guard also required the SQLite
+    # file data/icdev.db to exist on disk, which silently dropped every write
+    # on a PostgreSQL-primary stack — where that file is absent by design and
+    # the real target is PG. The row count is surfaced so a caller can tell
+    # persistence apart from a no-op.
+    if project_id:
+        result["metrics_recorded"] = _record_findings(project_id, result, db_path)
 
     return result
 
 
-def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> None:
-    """Store analysis findings as metric snapshots in the database."""
+def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> int:
+    """Store analysis findings as metric snapshots in the database.
+
+    Returns the number of rows written; 0 if the write failed. Never raises —
+    a metrics-recording failure must not discard the analysis itself.
+    """
+    conn = None
     try:
         conn = _get_db(db_path)
         now = datetime.now(timezone.utc).isoformat()
@@ -860,9 +870,16 @@ def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> N
                 ),
             )
         conn.commit()
-        conn.close()
+        return len(metrics)
     except Exception as exc:
         print(f"[log-analyzer] Warning: failed to record findings: {exc}")
+        return 0
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
