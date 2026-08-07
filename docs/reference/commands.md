@@ -2384,6 +2384,13 @@ python tools/innovation/triage_engine.py --triage-all --json
 python tools/innovation/trend_detector.py --detect --json
 python tools/innovation/solution_generator.py --generate-all --json
 
+# Promote benchmark findings to the kanban board as suggested cards (xbm-promote-01)
+# Gap-gated, rate-limited, idempotent. Never writes backlog — that is an operator action.
+python tools/innovation/kanban_promoter.py --dry-run --json    # preview (the default)
+python tools/innovation/kanban_promoter.py --list --json       # candidates + subsystem verdicts
+python tools/innovation/kanban_promoter.py --promote --json    # write status='suggested' cards
+python tools/innovation/kanban_promoter.py --promote-id <signal_id> --json
+
 # Introspective analysis (air-gap safe)
 python tools/innovation/introspective_analyzer.py --analyze --all --json
 

@@ -96,7 +96,7 @@ Produce final summary markdown under `.tmp/external_repo_adaptation_report.md` w
 
 ## Phase 6 — Optional Follow-through
 
-If any signal/gap crosses the auto-queue threshold and is not blocked, promote to kanban via `tools/innovation/kanban_promoter.py --triage-result --json` or create a memory entry for the finding.
+If any signal/gap crosses the auto-queue threshold and is not blocked, preview with `python tools/innovation/kanban_promoter.py --dry-run --json` and then promote with `--promote --json` (cards land as `suggested`, gap-gated and rate-limited), or create a memory entry for the finding.
 
 ## Risks & Notes
 
