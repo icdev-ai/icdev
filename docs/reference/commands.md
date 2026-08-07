@@ -121,6 +121,17 @@ icdev audit tail --project <id> --event-type <type> --since <iso8601>
 icdev audit tail --source hook_events     # Restrict source (repeatable)
 icdev audit export --framework soc2 --tenant-id <tid> --output report.html
 
+# Runtime invocation telemetry — read runtime_invocations from the terminal.
+# What actually ran: MCP tools, agents, personas, roles. Same rollup as the
+# Runtime Invocations panel on /activity.
+icdev runtime top                         # Per-surface rollup + top 20 by calls
+icdev runtime top --surface mcp           # One surface (mcp|agent|persona|role)
+icdev runtime top --sort errors           # Which tools are failing
+icdev runtime top --sort duration         # Which tools are slow
+icdev runtime top --hours 24              # Only the last N hours
+icdev runtime top --since <iso8601>       # Absolute window (wins over --hours)
+icdev runtime top --limit 50 --json       # Whole rollup as one JSON object
+
 # Core enterprise profiles
 icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)

@@ -29,6 +29,104 @@
     </div>
 </div>
 
+<!-- Runtime invocations (obs-cov-02) — what actually ran, from runtime_invocations.
+     Same rollup as `icdev runtime top`; both read tools/observability/invocation_store.py. -->
+<h2 style="margin-top:2rem;">Runtime Invocations</h2>
+<p class="text-muted">
+    MCP tools, agents, personas and roles — calls, errors and durations.
+    CLI equivalent: <code>icdev runtime top</code>.
+</p>
+
+{% if inv_error %}
+{# A failed query and an idle deployment both render as an empty table. Say
+   which one this is, rather than letting "no rows" imply "nothing ran". #}
+<div class="alert alert-warning" role="alert" style="margin-bottom:1rem;">
+    <strong>Rollup unavailable.</strong>
+    Could not read <code>runtime_invocations</code>: {{ inv_error }}
+</div>
+{% elif not inv_by_surface %}
+<p class="text-muted"><em>No invocations recorded yet. Telemetry is off when
+    <code>ICDEV_OBS_INVOCATIONS=0</code>; if the table is missing, run
+    <code>python tools/db/migrate.py --up</code>.</em></p>
+{% else %}
+<div class="table-container">
+    <table class="data-table" id="runtime-invocations-surface">
+        <thead>
+            <tr>
+                <th>Surface</th><th>Names</th><th>Calls</th><th>Errors</th>
+                <th>Error Rate</th><th>Running</th><th>Avg ms</th><th>Max ms</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in inv_by_surface %}
+            <tr>
+                <td>{{ row.surface }}</td>
+                <td>{{ row.names }}</td>
+                <td>{{ row.calls }}</td>
+                <td>{{ row.errors }}</td>
+                {# >=10% failing is worth colouring; below that it is noise. #}
+                <td{% if row.error_rate_pct >= 10 %} style="color:var(--danger, #c0392b);"{% endif %}>
+                    {{ row.error_rate_pct }}%
+                </td>
+                <td>{{ row.running }}</td>
+                {# avg/max are over COMPLETED calls only — a surface with nothing
+                   finished shows an em dash, never a misleading 0. #}
+                <td>{{ row.avg_ms if row.avg_ms is not none else '—' }}</td>
+                <td>{{ row.max_ms if row.max_ms is not none else '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 style="margin-top:1.5rem;">Slowest (by max duration)</h3>
+<div class="table-container">
+    <table class="data-table" id="runtime-invocations-slowest">
+        {# One header row only. A `<tr><th colspan>` title row inside <thead>
+           gets picked up by the shared data-table sorter and CSV export as if
+           it were the column header. #}
+        <thead>
+            <tr><th>Surface</th><th>Name</th><th>Calls</th><th>Avg ms</th><th>Max ms</th></tr>
+        </thead>
+        <tbody>
+            {% for row in inv_slowest %}
+            <tr>
+                <td>{{ row.surface }}</td>
+                <td>{{ row.name }}</td>
+                <td>{{ row.calls }}</td>
+                <td>{{ row.avg_ms if row.avg_ms is not none else '—' }}</td>
+                <td>{{ row.max_ms if row.max_ms is not none else '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3 style="margin-top:1.5rem;">Failing</h3>
+<div class="table-container">
+    <table class="data-table" id="runtime-invocations-failing">
+        <thead>
+            <tr><th>Surface</th><th>Name</th><th>Calls</th><th>Errors</th><th>Error Rate</th></tr>
+        </thead>
+        <tbody>
+            {% for row in inv_failing %}
+            <tr>
+                <td>{{ row.surface }}</td>
+                <td>{{ row.name }}</td>
+                <td>{{ row.calls }}</td>
+                <td>{{ row.errors }}</td>
+                <td style="color:var(--danger, #c0392b);">{{ row.error_rate_pct }}%</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="color:var(--text-secondary);">No failures recorded.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<h2 style="margin-top:2rem;">Events</h2>
+
 <!-- Filters -->
 <div class="activity-filters">
     <select id="filter-source" aria-label="Filter by source">

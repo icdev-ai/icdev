@@ -3873,8 +3873,36 @@ def create_app(testing: bool = False) -> Flask:
 
     @app.route("/activity")
     def activity_page():
-        """Activity feed — merged audit + hook events with real-time updates."""
-        return render_template("activity.html")
+        """Activity feed — merged audit + hook events with real-time updates.
+
+        Also carries the ``runtime_invocations`` rollup (obs-cov-02): the same
+        per-surface / per-tool counts, error rates and durations that
+        ``icdev runtime top`` prints, so a slow or failing MCP tool is visible
+        without a SQL client. Rendered server-side rather than fetched — the
+        panel is a snapshot, and the event table below it already owns the
+        live-update machinery.
+        """
+        from tools.observability.invocation_store import InvocationStore
+
+        store = InvocationStore()
+        by_surface = store.by_surface()
+        # Captured before the second read overwrites it; either failing means
+        # the panel is degraded rather than empty.
+        error = store.last_error
+        slowest = store.by_name(limit=10, order_by="duration")
+        failing = store.by_name(limit=10, order_by="errors")
+        error = error or store.last_error
+
+        return render_template(
+            "activity.html",
+            inv_by_surface=by_surface,
+            inv_slowest=slowest,
+            # Only tools that have actually failed; the errors sort returns the
+            # busiest rows as a tiebreak once it runs out of real failures, and
+            # listing a clean tool under "failing" would be a lie.
+            inv_failing=[r for r in failing if r["errors"]],
+            inv_error=error,
+        )
 
     @app.route("/usage")
     def usage_page():

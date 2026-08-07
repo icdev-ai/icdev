@@ -54,7 +54,16 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Invocation Recorder | tools/observability/invocation_recorder.py | `record()` context manager observing MCP tools, agents, personas and roles. Never raises; records argument KEY NAMES only, never values. Disable with `ICDEV_OBS_INVOCATIONS=0`. | surface, name, arg_keys, session_id, project_id, parent_id | Row in `runtime_invocations` |
-| Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration | surface (optional), limit | List of rollup dicts |
+| Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration. Thin wrapper over `InvocationStore.by_name` — the SQL lives in the store. | surface, limit, since | List of rollup dicts |
+| Invocation Store | tools/observability/invocation_store.py | Read-only rollups over `runtime_invocations`, mirroring `tools/audit/store.py`. `by_surface()` and `by_name(order_by=calls\|errors\|duration)`. Never raises; a failed query lands on `.last_error` so an empty rollup is distinguishable from a broken one. | since, surface, limit, order_by | List of rollup dicts |
+| Runtime Top CLI | tools/cli/runtime_top.py | `icdev runtime top` — per-surface and per-name rollup in the terminal. Exit 1 when the query failed. | --surface, --sort, --since/--hours, --limit, --json | Text table or JSON |
+
+Read surfaces (obs-cov-02) — both render the same store, so they cannot disagree:
+
+| Surface | Entry point |
+|---------|-------------|
+| CLI | `icdev runtime top` (`tools/cli/runtime_top.py`, dispatched from `tools/cli/__main__.py`) |
+| Dashboard | "Runtime Invocations" panel on `/activity` (`activity_page()` in `tools/dashboard/app.py`) |
 
 Instrumented choke points — one per surface, chosen so a single wrap covers everything on it:
 

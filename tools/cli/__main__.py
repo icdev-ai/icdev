@@ -49,6 +49,8 @@ Subcommands:
                            scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events).
+  runtime top [--surface]  Rollup of runtime_invocations — calls, errors and
+                           durations per MCP tool / agent / persona / role.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -127,11 +129,34 @@ def main(argv: list[str] | None = None) -> int:
         from tools.cli.audit import main as audit_main
         return audit_main(rest)
 
+    if sub == "runtime":
+        return _runtime_main(rest)
+
     if sub == "demo":
         return _demo_main(rest)
 
     print(f"icdev: unknown subcommand '{sub}'\n\n{USAGE}", file=sys.stderr)
     return 2
+
+
+def _runtime_main(args: list[str]) -> int:
+    """Handle 'icdev runtime <cmd> [opts]'.
+
+    ``top`` owns a rich flag set of its own, so it is dispatched before any
+    parser here sees the arguments — same shape as `icdev audit tail`, and it
+    lets `icdev runtime top --help` print top's own help rather than this index.
+    """
+    if args and args[0] == "top":
+        from tools.cli.runtime_top import main as top_main
+        return top_main(args[1:])
+
+    print("Usage: icdev runtime top [--surface mcp|agent|persona|role] "
+          "[--sort calls|errors|duration] [--since ISO | --hours N] "
+          "[--limit N] [--json]\n\n"
+          "  top    Rollup of runtime_invocations: calls, errors and durations\n"
+          "         per surface and per MCP tool / agent / persona / role.",
+          file=sys.stderr if args else sys.stdout)
+    return 2 if args else 0
 
 
 def _demo_main(args: list[str]) -> int:
