@@ -174,6 +174,54 @@ def test_service_is_terminated_on_shutdown(starter):
     )
 
 
+def _service_signatures(mod: ast.Module) -> dict[str, tuple[str | None, str]]:
+    """``_start_x`` -> (its _kill_stale_instances fragment, its Popen argv joined)."""
+    out: dict[str, tuple[str | None, str]] = {}
+    for node in mod.body:
+        if not (isinstance(node, ast.FunctionDef) and node.name.startswith("_start_")):
+            continue
+        fragment: str | None = None
+        argv = ""
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            fn = call.func
+            if isinstance(fn, ast.Name) and fn.id == "_kill_stale_instances":
+                if call.args and isinstance(call.args[0], ast.Constant):
+                    fragment = call.args[0].value
+            elif isinstance(fn, ast.Attribute) and fn.attr == "Popen":
+                for arg in call.args:
+                    if isinstance(arg, ast.List):
+                        argv = " ".join(
+                            e.value for e in arg.elts
+                            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                        )
+        out[node.name] = (fragment, argv)
+    return out
+
+
+def test_no_service_kill_fragment_matches_another_service():
+    """A stale-kill fragment must identify exactly one service.
+
+    ``_kill_stale_instances`` substring-matches, so an under-specified fragment
+    takes down a sibling. Real instance: ``"genesis/daemon.py"`` is a substring
+    of ``tools/proposal_genesis/daemon.py``, so every restart of the Genesis
+    daemon also killed the healthy Proposal Genesis daemon — which the monitor
+    loop then restarted, turning one crash into two.
+    """
+    sigs = _service_signatures(_module())
+    collisions = []
+    for starter, (fragment, _) in sigs.items():
+        if not fragment:
+            continue
+        for other, (_, argv) in sigs.items():
+            if other == starter or not argv:
+                continue
+            if fragment in argv:
+                collisions.append(f"{starter}'s fragment {fragment!r} matches {other} ({argv!r})")
+    assert not collisions, "under-specified stale-kill fragment(s):\n  " + "\n  ".join(collisions)
+
+
 DECOY_PROBE = r'''
 import importlib.util, subprocess, sys, time
 

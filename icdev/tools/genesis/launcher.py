@@ -175,7 +175,8 @@ def _start_dashboard():
 
 def _start_daemon():
     """Start Genesis Daemon subprocess."""
-    _kill_stale_instances("genesis/daemon.py")
+    # "genesis/daemon.py" would also match tools/proposal_genesis/daemon.py.
+    _kill_stale_instances("tools/genesis/daemon.py")
     daemon_log = open(os.path.join(ROOT, ".tmp", "genesis", "daemon.log"), "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/genesis/daemon.py"],
