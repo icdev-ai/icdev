@@ -905,6 +905,13 @@ def _increment_retry_count(task_id: str) -> int:
             count = 0
     count += 1
     retry_file.write_text(str(count), encoding="utf-8")
+    # The two counters are the only places the runner decides an execution gets
+    # another go, so they are where agent_execution_retried belongs. Emitting at
+    # the re-dispatch instead would conflate a retry with a first attempt, since
+    # dispatch cannot see why it was called.
+    _audit_agent_execution(
+        "agent_execution_retried", task_id, reason="token_exhaustion", attempt=count,
+    )
     return count
 
 
@@ -938,6 +945,9 @@ def _increment_timeout_count(task_id: str) -> int:
             count = 0
     count += 1
     timeout_file.write_text(str(count), encoding="utf-8")
+    _audit_agent_execution(
+        "agent_execution_retried", task_id, reason="timeout", attempt=count,
+    )
     return count
 
 
@@ -4307,6 +4317,46 @@ except Exception:  # noqa: BLE001
     def _close_agent_invocation(*_a, **_kw):  # type: ignore[misc]
         return None
 
+
+def _audit_agent_execution(event_type: str, task_id: str, **details) -> None:
+    """Write one agent_execution_* row to the audit trail. Never raises.
+
+    VALID_EVENT_TYPES declared four agent_execution_* types and nothing in the
+    tree wrote any of them; the single agent_execution_completed row on the
+    board was hand-written in June 2026. So the CHECK constraint advertised a
+    lifecycle the code could not produce, and querying the schema read as
+    coverage.
+
+    They are wired to the same choke points as the runtime_invocations handle
+    above, and for the same reason: this subprocess IS the agent execution.
+    Attaching them to tools/agent/agent_executor.py::execute_agent would look
+    tidier and observe nothing, which is the mistake #1196 made and #1304
+    corrected.
+
+    runtime_invocations already records duration and status, so this is not a
+    duplicate for its own sake --- the audit trail is the append-only NIST AU
+    record with a retention guarantee and a hash chain, and runtime_invocations
+    is operational telemetry. An auditor asking "when did agents run and which
+    failed" has to be able to answer it from audit_trail alone.
+
+    Dispatch must survive a broken audit path, so every failure here is
+    swallowed: an agent that cannot build because the audit table is locked
+    would be a far worse outcome than a missing row.
+    """
+    try:
+        from tools.audit.audit_logger import log_event
+
+        log_event(
+            event_type=event_type,
+            actor="kanban-runner",
+            action=f"{event_type} for {task_id}",
+            details={"task_id": task_id, **details},
+            classification="CUI",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("agent execution audit failed for %s: %s", task_id, exc)
+
+
 # Semaphore counter for EXEC_OLLAMA_LOCAL concurrent dispatch limit.
 _ollama_running_count: int = 0
 
@@ -4742,6 +4792,12 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         )
         _agent_invocations[task_id] = _open_agent_invocation(
             _SURFACE_AGENT, task_id,
+            project_id=str(task.get("project_id") or ""),
+        )
+        _audit_agent_execution(
+            "agent_execution_started", task_id,
+            pid=proc.pid,
+            executor="claude-cli",
             project_id=str(task.get("project_id") or ""),
         )
         print(f"  Kanban: dispatched {task_id} to claude CLI (PID {proc.pid})")
@@ -8940,6 +8996,12 @@ def _check_completed():
                 _agent_invocations.pop(task_id, None),
                 status="ok" if ret == 0 else "error",
                 error_class=None if ret == 0 else f"exit_{ret}",
+            )
+            _audit_agent_execution(
+                "agent_execution_completed" if ret == 0 else "agent_execution_failed",
+                task_id,
+                exit_code=ret,
+                executor="claude-cli",
             )
             # Continuous Harness feed — the claude-cli executor is the PRIMARY
             # build path but records nothing at dispatch, so its later
