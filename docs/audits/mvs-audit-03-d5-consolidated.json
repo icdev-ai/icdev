@@ -1,0 +1,164 @@
+{
+  "metadata": {
+    "task": "mvs-audit-03-d5",
+    "generated": "2026-08-07",
+    "classification": "CUI // SP-CTI",
+    "report": "docs/audits/mvs-audit-03-d5-consolidated.md",
+    "merges": [
+      "docs/audits/mvs-audit-03-d1-shadowed-migrations.json",
+      "docs/audits/mvs-audit-03-d3-first-20-replay.json",
+      "docs/audits/mvs-audit-03-d4-remaining-40-replay.json"
+    ],
+    "cross_referenced": {
+      "pr_1199": {"state": "MERGED", "merged_at": "2026-08-02T15:18:07Z", "entry_overlap": 0},
+      "pr_1296": {"state": "OPEN", "branch": "feat/mvs-audit-03-shadowed-audit", "entry_overlap": 8, "contradictions": 0}
+    },
+    "deciding_oracle": "tools/db/schema/pg_consolidated.sql (through_version 301)"
+  },
+  "totals": {
+    "shadowed_migrations": 60,
+    "benign": 10,
+    "gap_sqlite_chain_only": 39,
+    "gap_on_postgresql": 11,
+    "safe_to_remain_grandfathered": 49
+  },
+  "postgresql_gaps_by_cost": {
+    "live_consumers_no_remediation": 2,
+    "live_consumers_fix_on_unmerged_pr_1296": 4,
+    "index_only": 3,
+    "inert": 2
+  },
+  "action_required": [
+    {
+      "priority": 1,
+      "migration": "207_tenant_component_overrides",
+      "shadowed_by": "207_mcip_dat_tables.sql",
+      "missing": ["tenant_component_overrides", "idx_tco_tenant", "idx_tco_component"],
+      "gap_evidence": "grep -c tenant_component_overrides pg_consolidated.sql = 0; only other declaration is tools/db/init_icdev_db.py:11077 (SQLite-only path); no runtime creator",
+      "consumers": [
+        "tools/config/component_registry.py:534,575,622,653",
+        "tools/idp/tenancy.py",
+        "tools/iqe/adapters/admin_console.py",
+        "tools/iqe/adapters/idp.py"
+      ],
+      "failure_mode": "fails open — read path at component_registry.py:531-547 catches UndefinedTable, logs at DEBUG, returns env_enabled; a per-tenant disable reads as enabled when the global default is on",
+      "remediation": "new timestamped migration creating the table + 2 indexes",
+      "covered_by": null
+    },
+    {
+      "priority": 1,
+      "migration": "257_idr_dic_doc_link.sql",
+      "shadowed_by": "257_doc_modernization.sql",
+      "missing": ["dic_documents.source_wg_result_id", "dic_documents.source_idr_session_id"],
+      "gap_evidence": "grep -c 'source_wg_result_id|source_idr_session_id' pg_consolidated.sql = 0; dic_documents column block carries only source_id. The idr_sessions columns the same migration adds ARE present, so the loss is partial",
+      "consumers": ["tools/document_intelligence/blueprint.py:921 (UPDATE)", "tools/document_intelligence/blueprint.py:964 (INSERT)"],
+      "failure_mode": "hard HTTP 500 — every path through the docgen->Tech Writer import route touches a missing column; handler logs at WARNING and returns 500",
+      "remediation": "new timestamped migration adding the 2 dic_documents columns ONLY; do not re-apply the idr_sessions half",
+      "covered_by": null
+    },
+    {
+      "priority": 2,
+      "migration": "139_govlift_rbac_roles + 247_dashboard_users_role_check",
+      "shadowed_by": "139_fisma_ir / 247_cpmp_int_coverage_tenant_id.sql",
+      "missing": ["dashboard_users.role CHECK values: migration_engineer, component_admin, auditor, ciso"],
+      "gap_evidence": "dashboard_users_role_check in pg_consolidated.sql lists 10 values; tools/dashboard/auth.py:357 VALID_DASHBOARD_ROLES lists 14. Invisible to a table/column diff — only pg_constraint separates a no-op from an already-satisfied migration",
+      "consumers": ["tools/dashboard/auth.py:119 create_user()", "tools/govlift/rbac.py:28", "tools/dashboard/api/sre.py:37"],
+      "failure_mode": "CHECK violation on create_user() for four roles the RBAC matrix hands out; backend-divergent (SQLite accepts all 14)",
+      "remediation": "merge PR #1296",
+      "covered_by": "20260803204235_mvs_audit_03_shadowed_gaps"
+    },
+    {
+      "priority": 2,
+      "migration": "210_sso",
+      "shadowed_by": "210_showcase_apps.sql",
+      "missing": ["sso_providers", "sso_sessions", "idx_sso_providers_tenant", "idx_sso_sessions_tenant", "idx_sso_sessions_provider"],
+      "gap_evidence": "grep -c sso_providers pg_consolidated.sql = 0; grep -c sso_sessions = 0; only other declaration is tests/conftest.py:2387",
+      "consumers": ["tools/admin/blueprint.py:234-344", "tools/auth/blueprint.py:116", "tools/auth/oidc.py:26", "tools/auth/saml.py", "tools/auth/session.py", "tools/compliance/gdpr_eraser.py"],
+      "failure_mode": "enterprise SSO has never worked on a new PostgreSQL deployment",
+      "remediation": "merge PR #1296 — fold, do NOT renumber: up.py:6 declares def up() with no parameter while migration_runner.py:452 calls mod.up(conn)",
+      "covered_by": "20260803204235_mvs_audit_03_shadowed_gaps"
+    },
+    {
+      "priority": 2,
+      "migration": "236_rfi_workbench.sql",
+      "shadowed_by": "236_personal_rag.sql",
+      "missing": ["rfi_workbench_sessions", "rfi_workbench_sections", "rfi_workbench_exports", "idx_rfi_sections_session", "idx_rfi_exports_session"],
+      "gap_evidence": "grep -c for each of the three tables in pg_consolidated.sql = 0; no runtime creator. Self-sealing: migrations 237/238/239/241/249/255 all ALTER these tables and are below through_version, so bootstrap marks them applied without running",
+      "consumers": ["tools/govcon/rfi_workbench.py", "rfi_demand.py", "rfi_engine_runner.py", "rfi_style_engine.py", "capture_strategy.py", "evidence_corpus.py", "rfi_canvas_blueprint.py", "tools/iqe/adapters/rfi_canvas.py", "tools/rag/source_registry.py"],
+      "failure_mode": "the entire RFI Workbench canvas is absent from a fresh PostgreSQL deployment",
+      "remediation": "merge PR #1296",
+      "covered_by": "20260803204235_mvs_audit_03_shadowed_gaps"
+    },
+    {
+      "priority": 3,
+      "migration": "057_sg_raw_signals_processed",
+      "missing": ["idx_sg_raw_signals_processed"],
+      "gap_evidence": "grep -c idx_sg_raw_signals_processed pg_consolidated.sql = 0; sg_raw_signals.processed is present in snapshot and live PG",
+      "failure_mode": "index only — no functional break",
+      "remediation": "fold into the P1 migration",
+      "covered_by": null
+    },
+    {
+      "priority": 3,
+      "migration": "136_qdc_metrics",
+      "missing": ["idx_qdc_metrics_key"],
+      "gap_evidence": "grep -c idx_qdc_metrics_key pg_consolidated.sql = 0; qdc_metrics table present (15 hits)",
+      "failure_mode": "index only — no functional break",
+      "remediation": "fold into the P1 migration",
+      "covered_by": null
+    },
+    {
+      "priority": 3,
+      "migration": "189_genesis_phase_log",
+      "missing": ["idx_gpl_started_at"],
+      "gap_evidence": "grep -c idx_gpl_started_at pg_consolidated.sql = 0; genesis_phase_log present, idx_gpl_tenant present at pg_consolidated.sql:15526",
+      "failure_mode": "index only — no functional break",
+      "remediation": "fold into the P1 migration",
+      "covered_by": null
+    },
+    {
+      "priority": 4,
+      "migration": "139_mfa_enforcement",
+      "missing": ["dashboard_users.mfa_enabled", ".totp_secret", ".mfa_backup_codes", ".mfa_verified_at"],
+      "gap_evidence": "dashboard_users column block in pg_consolidated.sql has no mfa/totp column; the only totp_secret* in the file is ad_user_mfa.totp_secret_encrypted:3811",
+      "failure_mode": "inert — MFA was reimplemented on a separate table; nothing reads these columns",
+      "remediation": "record delete-don't-run",
+      "covered_by": "PR #1296 allowlist"
+    },
+    {
+      "priority": 4,
+      "migration": "184_creative_gap_innovation_signal.sql",
+      "missing": ["creative_gap", "innovation_signal", "8 indexes"],
+      "gap_evidence": "no CREATE TABLE for either in pg_consolidated.sql (only innovation_signals, a different and present table at :17344); creative_gap matches only the column creative_gap_id:32023",
+      "failure_mode": "inert — DOWNGRADED BY d5 from d4's 'live consumers'. Word-bounded FROM/INTO/UPDATE/JOIN search finds zero SQL against either table. The engine writes creative_feature_gaps (tools/creative/gap_scorer.py:710,791,815)",
+      "remediation": "record delete-don't-run",
+      "covered_by": null
+    },
+    {
+      "priority": null,
+      "migration": "215_user_preferences",
+      "missing": [],
+      "gap_evidence": "up.py:30 declares def up() -> None while migration_runner.py:452 calls mod.up(conn) — same defect PR #1199 fixed in 211_soc2_evidence",
+      "failure_mode": "would raise TypeError on first contact with the runner; unreachable today because shadowed",
+      "remediation": "fix the signature to def up(conn=None) before any future un-shadowing",
+      "covered_by": null
+    }
+  ],
+  "corrections_to_d4": [
+    "184_creative_gap_innovation_signal.sql has no consumers — the live-consumer count among the 11 PostgreSQL gaps is 6, not 7, and the inert count is 2, not 1. Totals (10/39/11) unchanged.",
+    "Consumer surface is wider than d4 reported: sso_* 6 modules (not 3), rfi_workbench_* 9 (not 5), tenant_component_overrides 4 (not 1). Raises blast radius; changes no verdict."
+  ],
+  "sqlite_residue_ruling": {
+    "scope": "47 tables / 86 indexes declared only by a shadowed entry (8 tables + 37 indexes from d3, 39 tables + 49 indexes from d4)",
+    "verdict": "no action — bounded to a hand-built local SQLite install",
+    "evidence": [
+      "init_db() at tools/db/init_icdev_db.py:11402 runs SCHEMA_SQL and returns; SCHEMA_SQL does not create schema_migrations, so init alone never replays the chain",
+      "a subsequent migrate.py --up does replay the chain, but shadowed entries still never run; init's 527 tables are a strict subset of the chain's 872, so build order does not matter",
+      "tests/conftest.py builds from MINIMAL_ICDEV_SCHEMA (line 78, applied line 3937), not from init and not from the chain — the residue cannot explain a test failure"
+    ]
+  },
+  "out_of_scope_open_items": [
+    "269_kg_empty_graph_counts.sql lost a DATA correction, not schema: 39 kg_graphs rows claiming 59 phantom entities, summed directly by the dashboard. Still open; not a schema question.",
+    "173_white_team_review_type.py and 179_kanban_task_revivals.py are never DISCOVERED (bare NNN_name.py files; migration_runner.py:271 skips non-directories). Gate-accuracy defect, not a schema gap; schema outcome benign for both."
+  ]
+}
