@@ -298,3 +298,146 @@ Individual canvases and engines (~25+), which is the exhaustive sweep. This map 
 direct it: the sweep is most likely to pay off in **data canvases** (engines built, no data)
 and **evaluation surfaces**, and least likely to pay off in compliance and observability,
 which this pass found healthy.
+
+---
+
+# Appendix A — Promotion path: how a finding in this map becomes a card
+
+Research note for `xbm-promote-01-d1`, written 2026-08-07 against
+`tools/innovation/kanban_promoter.py`, `tools/awareness/suggested_card_writer.py`,
+and `tools/kanban/task_factory.py` at commit `bc35e50bb`.
+
+**Sequencing caveat.** This card was scheduled as the research that precedes
+`xbm-promote-01` wiring, but the wiring shipped first (commit `10836c035`, merged via
+PR #1301 on 2026-08-06). What follows therefore describes the promoter **as it now
+stands**, and states the orphan condition as history rather than as the current state.
+
+## A.1 `kanban_promoter.py` — structure, and what "orphaned" meant
+
+Pipeline, in `run_promotion()` (`kanban_promoter.py:525`), `dry_run=True` by default:
+
+| Stage | Function | Behaviour |
+|---|---|---|
+| 1. Query | `find_promotable_signals` (:312) | SQL over `innovation_signals` LEFT JOIN `innovation_solutions`; filters `triage_result`, `source_type`, `innovation_score >= min`, and `id NOT IN (SELECT source_prediction_id FROM kanban_tasks)`. `limit` is a query-size guard, **not** the rate limit. |
+| 2. Gap gate | `classify_signals` (:196) | Maps each signal to a subsystem (`metadata.subsystem` first, then `category`), reads that subsystem's verdict from `args/innovation_promoter.yaml`, keeps only verdicts in `gap_verdicts`. Unmapped and non-gap signals are counted and reported, never silently dropped. |
+| 3. Caps | `apply_caps` (:242) | `max_per_subsystem` then `max_per_run`, applied to a score-descending sort. |
+| 4. Write | `promote_signals` (:470) | Builds specs via `build_kanban_task` (:354), re-asserts `status == 'suggested'`, then calls `task_factory.create_tasks`. |
+| 5. Audit | `_write_audit` (:434) | Best-effort append-only `audit_trail` row; failures are logged, never raised. |
+
+The verdicts in `args/innovation_promoter.yaml` are a **hand transcription of the summary
+table above**. There is no automatic link — editing a verdict in §1–§10 does not change
+what the promoter treats as a gap. Note also that `ahead_weak_hygiene` (§7) is deliberately
+*not* in `gap_verdicts`, because those hygiene gaps are already tracked by live `kpr`/`tch`
+cards.
+
+**The orphan condition.** The module was complete and correct but *reachable by nothing*:
+no reflex, no MCP tool registration, no scheduler entry, no goal, no
+CLAUDE.md/commands.md line. Its only inbound reference was its own test file. A tool that
+nothing calls does not run, so approved benchmark findings accumulated in
+`innovation_signals` and never became work.
+
+**Current wiring (post-`10836c035`).** Two entry points, both bounded:
+
+* *Operator CLI* — `goals/innovation_to_kanban.md`, `docs/reference/commands.md:2389-2392`,
+  `.claude/plans/external-repo-adaptation-scan.md:99`. Writing requires `--promote`; the
+  bare invocation is a preview.
+* *Scout reflex* — `tools/genesis/reflexes/scout.py::_promote_findings` (:288) calls
+  `run_promotion()` and never raises, so a promotion failure cannot wedge the reflex loop.
+  It is gated on `promotion.enabled` in `args/scout_config.yaml:217`, which is **`false`
+  today**. So the autonomous path exists but is off: nothing writes cards unattended until
+  someone flips that flag. Note that when flipped, the shipped `dry_run: false` beneath it
+  means the reflex writes on its first pass — the enable flag is the only thing standing
+  between the scout and live card creation. There is still no MCP registration.
+
+## A.2 `suggested_card_writer.py` — the pattern being mirrored
+
+The awareness writer is the reference implementation for "machine proposes, human
+disposes". Three properties carry over; one deliberately does not.
+
+* **`status='suggested'` is a hard ceiling.** Cards land in `suggested`; only an operator
+  action (board move, or `--promote-all`) reaches `backlog`. Nothing dispatchable is
+  created without a human. `kanban_promoter` enforces this twice — the `SUGGESTED_STATUS`
+  constant and a `ValueError` raised in `promote_signals` if any spec's status differs
+  (:480-485), because `task_factory` will happily insert whatever status it is handed.
+* **Layered dedup.** Open-card by `source_prediction_id`, then by exact title, then
+  subject-level `(prediction_type, subject_id)` against all `OPEN_STATUSES`
+  (`backlog/scheduled/in_progress/suggested`), plus a re-verify step that re-runs the gap
+  rule and drops predictions whose gap has since been fixed.
+* **Volume control by consolidation, not by a cap.** >N findings for one rule become one
+  batch card (`consolidation.threshold`, default 5), and cards idle in `suggested` past
+  `auto_dismiss.stale_days` (default 30) are auto-dismissed. There is no per-run ceiling.
+  `kanban_promoter` chose explicit caps instead — see A.3.
+
+**Divergence worth knowing:** `suggested_card_writer._insert_card` (:485) writes
+`kanban_tasks` with a **raw INSERT**, not `task_factory.create_tasks`, and so has no
+`idempotency_key` at all — its idempotency comes entirely from the query-side dedup plus
+marking `oracle_predictions.outcome = 'promoted:<task_id>'`. `kanban_promoter` does *not*
+copy that; it goes through the factory. Do not treat the awareness writer's INSERT as the
+pattern to reuse.
+
+## A.3 Cap semantics — the exact evaluation order
+
+`apply_caps` sorts by `innovation_score` descending (missing score sorts as `0.0`), then
+walks the list once:
+
+1. If `per_subsystem[subsystem] >= max_per_subsystem` → drop to `dropped_by_subsystem_cap`,
+   `continue`. **This check runs first**, so a signal held back by a full subsystem never
+   consumes run-cap budget and is never attributed to the run cap.
+2. Else if `len(kept) >= max_per_run` → drop to `dropped_by_run_cap`.
+3. Else keep, and increment that subsystem's counter.
+
+Consequences to reason with, not around:
+
+* Defaults are `max_per_run: 5`, `max_per_subsystem: 2`. Effective ceiling per run is
+  `min(5, 2 × number_of_gap_subsystems)`. With five gap-verdict subsystems configured
+  today (`developer_portal`, `agent_runtime`, `security_ops`, `data_quality_lineage`,
+  `llm_evaluation`), the binding constraint is `max_per_run`.
+* **Caps defer, they do not discard.** Dropped signals are untouched in
+  `innovation_signals` and are re-queried next run. Truncation is logged at WARNING and
+  surfaced as `truncated: true` with per-id drop lists — the stated rationale is that a
+  cap which silently slices is indistinguishable from a promoter that found nothing.
+* Caps are applied **after** the gap gate, on purpose: capping at query time would let
+  non-gap findings eat the budget.
+* Caps are **per invocation**, with no cross-run or time-window memory. Two runs in one
+  hour create up to 10 cards.
+
+## A.4 `task_factory.create_tasks` — the exact call contract
+
+```python
+from tools.kanban.task_factory import create_tasks
+created: list[str] = create_tasks(task_specs: list[dict])
+```
+
+Returns **only the ids actually inserted** — so `len(specs) - len(created)` is the skipped
+duplicate count, which is precisely how `promote_signals` computes `skipped_existing`
+(:509). Calls `init_kanban_tables()` first, opens one connection, inserts each spec, then a
+single `commit()`; any exception rolls back and **re-raises**.
+
+Recognised spec keys (defaults in parentheses): `id` **(required — a spec with no id is
+warned and skipped)**, `title` (`"Untitled task"`, truncated to 255), `description` (`""`),
+`task_type` (`build`), `priority` (`high`), `status` (`backlog`), `depends_on_task_id`,
+`source_prediction_id`, `source_doc_id`, `source_collection_id`, `dispatch_source`
+(`dic_notebook`), `idempotency_key`, `max_retries` (`5`), `max_runtime_seconds`,
+`loop_type` (`deterministic`), `adversarial_enabled` (`0`), `acceptance_criteria`.
+`executor_type` is **not** settable through the factory — the column default
+(`claude_cli`) applies.
+
+Dedup is two sequential SELECTs per spec: existing `id`, then existing `idempotency_key`
+if one is supplied. `kanban_promoter` feeds both from the signal id and nothing else:
+
+```python
+stable_task_id(sid)  -> f"task-innov-{sha256(sid)[:10]}"      # :94
+idempotency_key(sid) -> f"innovation-promoter:{sid}"          # :106
+```
+
+Both are derived from the signal id, never from the clock — a timestamp-seeded id makes
+every re-run look novel and defeats the dedup entirely. Re-running the promoter over the
+same findings therefore creates nothing.
+
+**Known limit — dedup is advisory, not enforced.** `kanban_tasks.idempotency_key` is a
+plain `TEXT` column with a non-unique index (`tools/kanban/init_db.py:46,160`). The check
+is read-then-write inside one transaction with no unique constraint behind it, so two
+concurrent promoter runs can both read "absent" and both insert. In practice the `id`
+collision catches this (the id is equally deterministic and `id` *is* the primary key), so
+the second insert fails the transaction rather than creating a duplicate card — but the
+idempotency key alone is not what saves it.
