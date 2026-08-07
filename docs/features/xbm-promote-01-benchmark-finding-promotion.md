@@ -40,7 +40,8 @@ without a human ever looking.
 ## Idempotency
 
 Writes go through `tools.kanban.task_factory.create_tasks` with an
-`idempotency_key` derived from the signal id (`innovation-promoter:<signal_id>`)
+`idempotency_key` derived from the source table and finding id
+(`innovation-promoter:innovation_signals:<signal_id>`)
 and a task id derived the same way — never from the clock. A clock-seeded id
 makes every re-run look like new work and defeats the factory's dedup.
 
@@ -90,13 +91,13 @@ reason the counts are in the payload.
 
 ## Wiring
 
-`tools/genesis/reflexes/scout.py` calls `run_promotion()` after each scout
+`tools/genesis/reflexes/scout.py` calls `promote_findings_to_kanban()` after each scout
 pass, **off by default** (`args/scout_config.yaml` → `genesis_reflex.promotion.enabled: false`).
 The brief is the reflex's contract; writing to the board is an escalation an
 operator opts into. The call never raises — a promotion failure must not wedge
 the reflex loop behind it.
 
-`run_promotion()` itself defaults to `dry_run=True`, and the CLI requires an
+`promote_findings_to_kanban()` itself defaults to `dry_run=True`, and the CLI requires an
 explicit `--promote` to write. A promoter whose default is to write is a
 promoter that writes by accident.
 

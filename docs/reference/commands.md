@@ -2423,6 +2423,8 @@ python tools/innovation/kanban_promoter.py --dry-run --json    # preview (the de
 python tools/innovation/kanban_promoter.py --list --json       # candidates + subsystem verdicts
 python tools/innovation/kanban_promoter.py --promote --json    # write status='suggested' cards
 python tools/innovation/kanban_promoter.py --promote-id <signal_id> --json
+# Tighten (or loosen) the rate limit for one run; absent, args/innovation_promoter.yaml wins
+python tools/innovation/kanban_promoter.py --promote --max-per-run 3 --max-per-subsystem 1 --json
 # The whole contract as one reviewable SELECT — source tables, gap-verdict filter,
 # idempotency derivation, columns→task fields. Read-only, PostgreSQL only (xbm-promote-01-d2)
 python tools/innovation/kanban_promoter.py --contract-sql --json

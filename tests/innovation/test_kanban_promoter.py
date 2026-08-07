@@ -242,6 +242,20 @@ def test_idempotency_key_is_stable_and_signal_scoped():
     assert kp.idempotency_key("sig-1") != kp.idempotency_key("sig-2")
 
 
+def test_idempotency_key_is_scoped_by_source_table():
+    """Ids are unique within a table, not across them. Two findings that
+    share a row id in different tables must not collide on one key."""
+    assert kp.idempotency_key("42", "innovation_signals") != kp.idempotency_key(
+        "42", "benchmark_findings"
+    )
+    assert kp.idempotency_key("42").startswith("innovation-promoter:innovation_signals:")
+
+
+def test_idempotency_key_defaults_to_the_module_source_table():
+    assert kp.idempotency_key("sig-9") == kp.idempotency_key("sig-9", kp.SOURCE_TABLE)
+    assert kp.SOURCE_TABLE == "innovation_signals"
+
+
 def test_rerun_creates_nothing(recorded_create_tasks):
     gated = kp.classify_signals([_sig("sig-rerun", "developer_experience")], CONFIG)
 
@@ -257,7 +271,7 @@ def test_spec_carries_idempotency_key_and_source_link(recorded_create_tasks):
     gated = kp.classify_signals([_sig("sig-k", "developer_experience")], CONFIG)
     kp.promote_signals(gated["eligible"], CONFIG, dry_run=False)
     spec = recorded_create_tasks[0][0]
-    assert spec["idempotency_key"] == "innovation-promoter:sig-k"
+    assert spec["idempotency_key"] == "innovation-promoter:innovation_signals:sig-k"
     assert spec["source_prediction_id"] == "sig-k"
     assert spec["id"] == kp.stable_task_id("sig-k")
 
@@ -499,8 +513,8 @@ def test_contract_sql_derivations_match_python():
     assert kp.stable_task_id("sig-x").startswith("task-innov-")
     assert "'task-innov-' || substr(encode(sha256(s.id::bytea), 'hex'), 1, 10)" \
         in kp.PROMOTION_CONTRACT_SQL
-    assert kp.idempotency_key("sig-x") == "innovation-promoter:sig-x"
-    assert "'innovation-promoter:' || s.id" in kp.PROMOTION_CONTRACT_SQL
+    assert kp.idempotency_key("sig-x") == "innovation-promoter:innovation_signals:sig-x"
+    assert "'innovation-promoter:innovation_signals:' || s.id" in kp.PROMOTION_CONTRACT_SQL
 
 
 def test_contract_sql_only_writes_suggested_status():
@@ -644,7 +658,9 @@ def test_real_write_creates_exactly_one_suggested_task(real_db):
     assert rows[0]["status"] == "suggested"
     assert rows[0]["dispatch_source"] == "innovation_promoter"
     assert rows[0]["source_prediction_id"] == "sig-real-0001"
-    assert rows[0]["idempotency_key"] == "innovation-promoter:sig-real-0001"
+    assert rows[0]["idempotency_key"] == (
+        "innovation-promoter:innovation_signals:sig-real-0001"
+    )
     # Nothing may reach the dispatchable column without a human.
     assert not [r for r in rows if r["status"] == "backlog"]
 
@@ -661,3 +677,106 @@ def test_real_write_rerun_creates_nothing(real_db):
     assert second["created"] == 0
     assert second["skipped_existing"] == 1
     assert len(_rows(real_db)) == 1
+
+
+# ---------------------------------------------------------------------------
+# The named entry point and its per-call rate-limit overrides
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def stub_pipeline(real_db, monkeypatch):
+    """Run promote_findings_to_kanban against a throwaway database.
+
+    The gap gate, the caps and the dry-run branch are all pure functions of
+    the rows handed back by find_promotable_signals, so stubbing the query
+    exercises the real pipeline without needing schema.
+
+    Only the query is stubbed. The connection stays the real one — the
+    ``real_db`` fixture redirects ICDEV_DB_PATH at a tmp file, so
+    ``get_connection`` still returns a translating StorageConnection.
+    Monkeypatching the factory to a bare sqlite3 handle would defeat
+    translate_sql and prove nothing about the promoter's own SQL.
+    """
+    def _install(signals):
+        monkeypatch.setattr(
+            kp, "find_promotable_signals", lambda conn, **kw: list(signals)
+        )
+
+    return _install
+
+
+def test_promote_findings_to_kanban_defaults_to_dry_run(stub_pipeline):
+    """A promoter whose default is to write is one that writes by accident."""
+    stub_pipeline([_sig("sig-d1", "developer_experience")])
+
+    result = kp.promote_findings_to_kanban(config=CONFIG)
+
+    assert result["dry_run"] is True
+    assert result["created"] == 0
+    assert result["would_create"] == 1
+
+
+def test_run_promotion_alias_still_delegates(stub_pipeline):
+    """The old public name ships in the wheel; it must keep working."""
+    stub_pipeline([_sig("sig-d2", "developer_experience")])
+
+    assert kp.run_promotion(config=CONFIG)["would_create"] == 1
+
+
+def test_max_findings_per_run_override_truncates_and_warns(
+    stub_pipeline, promoter_warnings
+):
+    """Criterion: the cap stops at the limit AND says so at WARNING."""
+    stub_pipeline([
+        _sig("sig-o1", "developer_experience", score=0.95),
+        _sig("sig-o2", "dx", score=0.90),
+        _sig("sig-o3", "ai_tooling", score=0.85),
+    ])
+
+    result = kp.promote_findings_to_kanban(config=CONFIG, max_findings_per_run=1)
+
+    assert result["after_caps"] == 1                    # stopped at the limit
+    assert result["max_per_run"] == 1                   # override beat the config
+    assert result["truncated"] is True
+    assert len(result["dropped_by_run_cap"]) == 2       # every drop accounted for
+    assert any("CAP TRUNCATED" in m for m in promoter_warnings)
+    assert any("per-run cap" in m for m in promoter_warnings)
+
+
+def test_max_per_subsystem_override_truncates_and_warns(
+    stub_pipeline, promoter_warnings
+):
+    stub_pipeline([
+        _sig(f"sig-s{i}", "developer_experience", score=0.9 - i / 100)
+        for i in range(3)
+    ])
+
+    result = kp.promote_findings_to_kanban(config=CONFIG, max_per_subsystem=1)
+
+    assert result["after_caps"] == 1
+    assert result["max_per_subsystem"] == 1
+    assert result["truncated"] is True
+    assert any("per-subsystem cap" in m for m in promoter_warnings)
+
+
+def test_overrides_absent_means_configured_caps_apply(stub_pipeline):
+    """No override must not silently substitute a number of its own."""
+    stub_pipeline([
+        _sig(f"sig-c{i}", f"cat{i}", score=0.9) for i in range(6)
+    ])
+
+    result = kp.promote_findings_to_kanban(config=CONFIG)
+
+    assert result["max_per_run"] == CONFIG["max_per_run"]
+    assert result["max_per_subsystem"] == CONFIG["max_per_subsystem"]
+
+
+def test_override_does_not_mutate_the_caller_config(stub_pipeline):
+    """The override is per-call; a shared config dict must survive it."""
+    stub_pipeline([_sig("sig-m1", "developer_experience")])
+    before = dict(CONFIG)
+
+    kp.promote_findings_to_kanban(config=CONFIG, max_findings_per_run=1)
+
+    assert CONFIG == before

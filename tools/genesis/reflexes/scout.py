@@ -302,9 +302,9 @@ def _promote_findings(reflex_cfg: Dict[str, Any]) -> Dict[str, Any]:
         return {"enabled": False}
 
     try:
-        from tools.innovation.kanban_promoter import run_promotion
+        from tools.innovation.kanban_promoter import promote_findings_to_kanban
 
-        result = run_promotion(dry_run=bool(promo_cfg.get("dry_run", False)))
+        result = promote_findings_to_kanban(dry_run=bool(promo_cfg.get("dry_run", False)))
         return {
             "enabled": True,
             "dry_run": result.get("dry_run"),
