@@ -100,6 +100,42 @@ the reflex loop behind it.
 explicit `--promote` to write. A promoter whose default is to write is a
 promoter that writes by accident.
 
+### The innovation engine runner (xbm-promote-01-d4)
+
+The scout reflex is one producer of benchmark signals; the innovation engine
+pipeline is the other, and it ended at GENERATE. `run_full_pipeline()` now
+closes with a PROMOTE stage:
+
+```
+DISCOVER → SCORE → TRIAGE → GENERATE → PROMOTE
+```
+
+Placement is load-bearing rather than incidental. The promoter's candidate
+query filters on `triage_result` and left-joins `innovation_solutions` for the
+card body, so promoting before TRIAGE and GENERATE have persisted would query
+a half-built row — an empty run indistinguishable from "nothing to promote".
+
+The stage calls one function, `kanban_promoter.promote_findings_to_kanban()`,
+which is the promoter's entry point for automated callers and adds exactly two
+things to `run_promotion()`:
+
+* **Off by default.** `KANBAN_PROMOTE_ENABLED` (unset / `false` / `0` / `no` /
+  `off`) short-circuits *before* `get_connection()` — a disabled promoter opens
+  no connection, so "off" can never be confused with "ran and found nothing".
+  The variable is read per call, so a long-lived daemon sees the switch flip
+  without a restart.
+* **Cannot fail its caller.** Any exception is logged and returned as
+  `{"enabled": True, "created": 0, "error": ...}`. The pipeline's own stages
+  already degrade this way; a promotion failure must not wedge the run.
+
+Everything that bounds a write is unchanged and not re-implemented at the call
+site: the gap-verdict gate, `max_per_run`, `max_per_subsystem`, the
+truncation report, and the `status='suggested'` invariant all still live in
+`run_promotion()` / `promote_signals()`. Two switches now guard the same
+promoter for two different runners — `genesis_reflex.promotion.enabled` in
+`args/scout_config.yaml` for the reflex, `KANBAN_PROMOTE_ENABLED` for the
+pipeline — and both default to off.
+
 ## Commands
 
 ```bash
@@ -111,10 +147,19 @@ python tools/innovation/kanban_promoter.py --promote-id <signal_id>
 
 ## Tests
 
-43 tests in `tests/innovation/test_kanban_promoter.py` covering the four
+69 tests in `tests/innovation/test_kanban_promoter.py`. 43 cover the four
 acceptance criteria: one gap verdict produces exactly one suggested task; a
 re-run produces none; the caps are enforced and logged when they truncate; and
 nothing can reach `backlog` without confirmation.
+
+The rest pin the runner entry point (d4): off with the env unset — including
+one that fails the test if `get_connection` is so much as called while
+disabled; off for each negative spelling; on for each affirmative one, with
+`dry_run` passed through; an exploding `run_promotion` returned rather than
+raised; and the switch honoured per call rather than at import. Two more assert
+the wiring itself — that `stage_promote` delegates to the promoter, and that
+`run_full_pipeline` runs it *after* TRIAGE and GENERATE, since ordering is the
+only reason the stage sits where it does.
 
 41 of those assert against a recorded `create_tasks`. That is fast and precise
 about the specs, but it cannot catch a spec whose columns the real

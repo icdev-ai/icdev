@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -60,6 +61,11 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_promoter.yaml"
 # The only status this module may write. A promoter that can reach 'backlog'
 # is a promoter that can dispatch an agent without a human ever looking.
 SUGGESTED_STATUS = "suggested"
+
+# Env switch read by ``promote_findings_to_kanban`` — the entry point an
+# automated runner (the innovation pipeline, a reflex, a cron) calls. Default
+# is off: a promoter that writes the moment it is wired in writes by accident.
+PROMOTE_ENABLED_ENV = "KANBAN_PROMOTE_ENABLED"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "source_types": ["external_repo_scouting", "external_framework_analysis"],
@@ -763,6 +769,52 @@ def run_promotion(
         "per_subsystem_counts": capped["per_subsystem_counts"],
         **written,
     }
+
+
+def _promote_enabled() -> bool:
+    """True only when ``KANBAN_PROMOTE_ENABLED`` is explicitly affirmative.
+
+    Read at call time, not at import: a long-lived runner must be able to have
+    the switch flipped without a restart.
+    """
+    return os.environ.get(PROMOTE_ENABLED_ENV, "false").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def promote_findings_to_kanban(dry_run: bool = False) -> dict:
+    """Entry point for automated runners. Off unless the env switch is on.
+
+    Wraps :func:`run_promotion` with the two properties a caller inside a
+    pipeline needs and ``run_promotion`` deliberately does not provide:
+
+    * **Opt-in.** Returns ``{"enabled": False}`` without opening a connection
+      unless ``KANBAN_PROMOTE_ENABLED`` is set. Wiring the promoter into a
+      runner must not, by itself, start writing cards.
+    * **Never raises.** Promotion is additive to whatever the caller was
+      already doing; a promoter failure must not fail the pipeline behind it.
+
+    The caps (``max_per_run``, ``max_per_subsystem``), the gap gate and the
+    ``status='suggested'`` invariant all still apply — they live in
+    ``run_promotion``/``promote_signals`` and are not bypassed here.
+    """
+    if not _promote_enabled():
+        logger.info(
+            "promote: skipped — %s is not affirmative (default off)", PROMOTE_ENABLED_ENV
+        )
+        return {
+            "enabled": False,
+            "created": 0,
+            "reason": f"{PROMOTE_ENABLED_ENV} is not set to an affirmative value",
+        }
+
+    try:
+        result = run_promotion(dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001 - promotion must not wedge its caller
+        logger.warning("promote: failed (non-blocking): %s", exc)
+        return {"enabled": True, "created": 0, "error": str(exc)[:200]}
+
+    return {"enabled": True, **result}
 
 
 # ---------------------------------------------------------------------------
