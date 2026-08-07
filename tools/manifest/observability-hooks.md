@@ -54,7 +54,19 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Invocation Recorder | tools/observability/invocation_recorder.py | `record()` context manager observing MCP tools, agents, personas and roles. Never raises; records argument KEY NAMES only, never values. Disable with `ICDEV_OBS_INVOCATIONS=0`. | surface, name, arg_keys, session_id, project_id, parent_id | Row in `runtime_invocations` |
-| Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration | surface (optional), limit | List of rollup dicts |
+| Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration. Thin wrapper over `InvocationStore.by_name` — kept for existing callers. | surface (optional), limit | List of rollup dicts |
+| Invocation Store | tools/observability/invocation_store.py | Read-only query layer (mirrors `tools/audit/store.py`). `by_name()` per-(surface,name) rollup, `by_surface()` per-surface totals, `report()` both from one read. Injectable `connection_factory`; rolls back an aborted PG transaction; returns `[]` on an un-migrated DB. | InvocationFilter(surface, name, status, since, limit) | Rollup dicts |
+| Invocation Rollup Fold | tools/observability/invocation_store.py::rollup_by_surface | Pure fold from per-name rows to per-surface totals. `avg_ms` is weighted by `timed` (rows that HAVE a duration), not by `calls` — an in-flight invocation has no duration and must not drag the mean. | list of per-name rows | Per-surface rows |
+| Runtime Top CLI | tools/cli/runtime.py | `icdev runtime top` — per-surface totals + per-name table. Flags: `--surface --name --status --since --limit --sort --errors-only --surfaces-only --json`. Names the backend it read when empty. | argv | stdout table / JSON |
+
+### Reading it (obs-cov-02)
+
+| Surface | Entry point |
+|---------|-------------|
+| CLI | `icdev runtime top [--surface mcp] [--errors-only] [--json]` |
+| Dashboard | `/sre` — "Runtime Invocations" panel, fed by `GET /api/sre/invocations?surface=&since=&limit=` (`tools/dashboard/api/sre.py::api_sre_invocations`) |
+
+Both render `InvocationStore.report`, so the terminal and the panel cannot disagree.
 
 Instrumented choke points — one per surface, chosen so a single wrap covers everything on it:
 

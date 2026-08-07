@@ -49,6 +49,8 @@ Subcommands:
                            scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events).
+  runtime top [--surface S] Rollup of runtime_invocations — calls, errors and
+                           durations per MCP tool / agent / persona / role.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).
@@ -126,6 +128,20 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "audit":
         from tools.cli.audit import main as audit_main
         return audit_main(rest)
+
+    if sub == "runtime":
+        from tools.cli.runtime import main as runtime_main
+
+        # `top` is the only verb today. It is accepted explicitly (so adding a
+        # second verb later is not a breaking change) and a bare
+        # `icdev runtime` means it, because there is nothing else to mean.
+        if rest and rest[0] == "top":
+            rest = rest[1:]
+        elif rest and not rest[0].startswith("-"):
+            print(f"icdev runtime: unknown verb '{rest[0]}' (expected: top)",
+                  file=sys.stderr)
+            return 2
+        return runtime_main(rest)
 
     if sub == "demo":
         return _demo_main(rest)

@@ -61,14 +61,82 @@ function loadSreDashboard() {
   Promise.all([
     fetch('/api/sre/dashboard').then(r => r.json()),
     fetch('/api/sre/dora').then(r => r.json()),
-  ]).then(([dashboard, dora]) => {
-    renderSreDashboard(dashboard, dora);
+    fetch('/api/sre/invocations?limit=15').then(r => r.json()),
+  ]).then(([dashboard, dora, invocations]) => {
+    renderSreDashboard(dashboard, dora, invocations);
   }).catch(err => {
     document.getElementById('sre-data').innerHTML = '<div style="padding:30px;color:#e74c3c;">Error loading SRE data: ' + err + '</div>';
   });
 }
 
-function renderSreDashboard(d, dora) {
+// A duration of null means "nothing has completed yet", which is a different
+// fact from "it completed in 0ms". Render it as a dash, never as a number.
+function invMs(v) {
+  if (v === null || v === undefined) return '-';
+  return v >= 10000 ? (v / 1000).toFixed(1) + 's' : v.toFixed(1);
+}
+
+function invErrColor(rate) {
+  if (rate >= 0.10) return '#e74c3c';
+  if (rate > 0) return '#f39c12';
+  return '#27ae60';
+}
+
+function renderInvocations(inv) {
+  const surfaces = (inv && inv.surfaces) || [];
+  let html = '<div class="sre-section">Runtime Invocations — MCP tools, agents, personas, roles</div>';
+
+  if (inv && inv.error) {
+    return html + '<div class="sre-grid"><div class="sre-card"><p style="color:#f39c12">'
+      + 'Invocation telemetry unavailable: ' + inv.error + '</p></div></div>';
+  }
+  if (!surfaces.length) {
+    // Distinguish "nothing ran" from "the table is not there yet" — an operator
+    // seeing an empty panel otherwise cannot tell which.
+    return html + '<div class="sre-grid"><div class="sre-card"><p style="color:#7a8cb0">'
+      + 'No invocations recorded. Migration 341 may not have run, or '
+      + 'ICDEV_OBS_INVOCATIONS is set to 0.</p></div></div>';
+  }
+
+  html += '<div class="sre-grid">';
+  surfaces.forEach(s => {
+    html += `<div class="sre-card">
+      <h3>${s.surface}</h3>
+      <div class="sre-metric"><span class="lbl">Calls</span><span class="val">${s.calls}</span></div>
+      <div class="sre-metric"><span class="lbl">Names</span><span class="val">${s.names}</span></div>
+      <div class="sre-metric"><span class="lbl">Errors</span><span class="val" style="color:${invErrColor(s.error_rate)}">${s.errors} (${(s.error_rate * 100).toFixed(1)}%)</span></div>
+      <div class="sre-metric"><span class="lbl">Avg</span><span class="val">${invMs(s.avg_ms)} ms</span></div>
+      <div class="sre-metric"><span class="lbl">Max</span><span class="val">${invMs(s.max_ms)} ms</span></div>
+    </div>`;
+  });
+  html += '</div>';
+
+  const names = (inv.names || []);
+  if (names.length) {
+    html += `<div class="sre-section" style="font-size:13px;">Busiest ${names.length} of ${inv.total_names}</div>`;
+    html += '<div style="padding:0 30px 30px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<tr style="color:#7a8cb0;text-align:left;">'
+      + '<th style="padding:4px;">Surface</th><th style="padding:4px;">Name</th>'
+      + '<th style="padding:4px;text-align:right;">Calls</th>'
+      + '<th style="padding:4px;text-align:right;">Errors</th>'
+      + '<th style="padding:4px;text-align:right;">Avg ms</th>'
+      + '<th style="padding:4px;text-align:right;">Max ms</th></tr>';
+    names.forEach(r => {
+      html += `<tr style="border-top:1px solid rgba(255,255,255,0.05);">
+        <td style="padding:4px;color:#7a8cb0;">${r.surface}</td>
+        <td style="padding:4px;font-family:'Cascadia Code',monospace;">${r.name}</td>
+        <td style="padding:4px;text-align:right;">${r.calls}</td>
+        <td style="padding:4px;text-align:right;color:${invErrColor(r.error_rate)}">${r.errors}</td>
+        <td style="padding:4px;text-align:right;">${invMs(r.avg_ms)}</td>
+        <td style="padding:4px;text-align:right;">${invMs(r.max_ms)}</td>
+      </tr>`;
+    });
+    html += '</table></div>';
+  }
+  return html;
+}
+
+function renderSreDashboard(d, dora, inv) {
   // Stats bar
   const statsEl = document.getElementById('sre-stats');
   const activeSev1 = (d.active_incidents || []).filter(i => i.severity === 'sev1').length;
@@ -179,6 +247,9 @@ function renderSreDashboard(d, dora) {
   });
   if (!(d.runbooks || []).length) html += '<div class="sre-card"><p style="color:#7a8cb0">No runbooks defined.</p></div>';
   html += '</div>';
+
+  // Runtime invocations (obs-cov-02) — slow or failing MCP tools without a SQL client.
+  html += renderInvocations(inv);
 
   document.getElementById('sre-data').innerHTML = html;
 }

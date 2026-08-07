@@ -121,6 +121,17 @@ icdev audit tail --project <id> --event-type <type> --since <iso8601>
 icdev audit tail --source hook_events     # Restrict source (repeatable)
 icdev audit export --framework soc2 --tenant-id <tid> --output report.html
 
+# Runtime invocation rollup — what the runtime actually ran (runtime_invocations).
+# Per-surface totals (calls / errors / err% / avg / max ms) plus a per-name table
+# for MCP tools, agents, personas and roles. Same data as the SRE dashboard panel.
+icdev runtime top                         # Every surface, top 20 names by calls
+icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
+icdev runtime top --errors-only           # Only names that have actually failed
+icdev runtime top --sort avg_ms           # Slowest rather than busiest
+icdev runtime top --surfaces-only         # Headline totals only, no per-name table
+icdev runtime top --since <iso8601> --limit 50
+icdev runtime top --json                  # Whole report as one JSON object
+
 # Core enterprise profiles
 icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)

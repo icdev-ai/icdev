@@ -785,6 +785,34 @@ def api_sre_dashboard():
     return jsonify(result)
 
 
+@sre_api.route("/invocations", methods=["GET"])
+def api_sre_invocations():
+    """Runtime invocation rollup — which MCP tools / agents are slow or failing.
+
+    Read-only, so it carries no ``require_role`` mutation gate; the dashboard's
+    global auth hook still applies. Backed by the same
+    ``InvocationStore.report`` the ``icdev runtime top`` CLI uses, so the panel
+    and the terminal cannot drift apart or disagree about the arithmetic.
+    """
+    try:
+        from tools.observability.invocation_store import (
+            InvocationFilter,
+            InvocationStore,
+        )
+
+        limit = max(1, min(int(request.args.get("limit", 15)), 200))
+        report = InvocationStore().report(InvocationFilter(
+            surface=request.args.get("surface") or None,
+            since=request.args.get("since") or None,
+            limit=limit,
+        ))
+        return jsonify(report)
+    except Exception as exc:  # noqa: BLE001 — a telemetry panel must not 500 the page
+        logger.warning("sre invocations rollup failed: %s", exc)
+        return jsonify({"surfaces": [], "names": [], "total_names": 0,
+                        "error": str(exc)})
+
+
 @sre_api.route("/health", methods=["GET"])
 def api_sre_health():
     """Overall SRE health check."""

@@ -248,31 +248,24 @@ def _session_id() -> str:
 
 
 def summary(surface: Optional[str] = None, limit: int = 20) -> Sequence[Dict[str, Any]]:
-    """Per-name rollup: calls, errors, median-ish duration. Read-only.
+    """Per-name rollup: calls, errors, avg/max duration. Read-only.
 
-    Backs ``icdev audit tail``-adjacent reporting and the coverage check; kept
-    here so callers do not hand-roll SQL against the telemetry table.
+    The query itself now lives in ``tools/observability/invocation_store.py``
+    alongside the per-surface rollup and the ``icdev runtime top`` /  dashboard
+    readers, so there is ONE statement against this table rather than a copy
+    per consumer. This stays as the recorder's own convenience accessor and its
+    result shape is unchanged (plus ``timed`` / ``error_rate``, which are
+    additive).
     """
     try:
-        from tools.db.storage import get_connection
+        from tools.observability.invocation_store import (
+            InvocationFilter,
+            InvocationStore,
+        )
 
-        where, params = "", []
-        if surface:
-            where = "WHERE surface = %s "
-            params.append(surface)
-        conn = get_connection()
-        try:
-            rows = conn.execute(
-                "SELECT surface, name, count(*) AS calls, "
-                "       sum(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors, "
-                "       avg(duration_ms) AS avg_ms, max(duration_ms) AS max_ms "
-                "FROM runtime_invocations " + where +
-                "GROUP BY surface, name ORDER BY calls DESC LIMIT %s",
-                tuple(params + [int(limit)]),
-            ).fetchall()
-            return [dict(r) for r in rows]
-        finally:
-            conn.close()
+        return InvocationStore().by_name(
+            InvocationFilter(surface=surface, limit=int(limit))
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("invocation summary failed: %s", exc)
         return []
