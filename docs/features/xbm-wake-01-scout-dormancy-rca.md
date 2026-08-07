@@ -262,7 +262,43 @@ Both are now admitted as half-open probes. `kanban` still carrying the old
 `metric_threshold_not_met` string is a useful marker: any row still showing it was
 written before this fix.
 
-## 5. Still open — `reflex_registry.py` schedules nothing
+## 5. Two more ways the breaker could still strand a reflex
+
+The half-open probe above fixed the config-flag route to permanent dormancy. Two
+narrower routes survived it.
+
+### Broken bookkeeping was as fatal as a broken config
+
+`is_circuit_open()` returned `True` — stay shut — when `circuit_breaker_tripped_at`
+was missing or unparseable. That reads as the safe choice and is not: with no
+timestamp there is no cooldown to measure, so "stay shut" means **the reflex never
+runs again**. The permanent dormancy this whole task exists to end, reachable through
+a `NULL` column instead of a config flag.
+
+Now fails *open* — one probe is allowed. The failure fail-closed guards against
+(hammering) cannot occur here, because the probe's outcome repairs the state within a
+single cycle either way:
+
+* success → `record_success` clears `circuit_breaker_open`
+* failure → `record_failure` writes `circuit_breaker_tripped_at = now` (the breaker is
+  already open, so `failures >= max_consecutive_failures` and `tripped` is `True`),
+  after which the timestamp parses and normal backoff resumes
+
+So fail-open costs at most one extra run; fail-closed costs an unbounded number of
+skipped ones. Asserted, not assumed, by
+`test_a_failed_probe_restores_backoff_after_bad_state`.
+
+### A flat cooldown means a dead reflex probes forever at a fixed rate
+
+Cheap, but it re-trips the breaker and rewrites state every hour indefinitely. Probe
+waits now double per failure accrued *beyond* the trip threshold, capped at
+`max_cooldown_minutes: 1440` — a genuinely dead reflex converges to one probe per day.
+
+The recovery case is deliberately untouched: a reflex that just tripped has no failures
+beyond the threshold, so it still probes after exactly `cooldown_minutes`. Backoff
+slows down the hopeless case without slowing down the one it exists to serve.
+
+## 6. Still open — `reflex_registry.py` schedules nothing
 
 `tools/genesis/reflex_registry.py` documents itself as the *"authoritative list of all
 reflexes and their tiers"*. **No dispatcher imports it.** The only non-test reference

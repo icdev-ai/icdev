@@ -120,6 +120,11 @@ trust_kernel:
     max_consecutive_failures: 3
     cooldown_minutes: 60
     auto_reenable: true   # half-open retry after cooldown_minutes
+    # Each failed probe doubles the next wait, capped here. A reflex whose
+    # dependency is genuinely gone converges to one probe per day instead of one
+    # per hour forever; a reflex whose dependency recovered is unaffected,
+    # because it has accrued no failures beyond max_consecutive_failures.
+    max_cooldown_minutes: 1440
     notify_on_trip: true
 
   # Kill switch
