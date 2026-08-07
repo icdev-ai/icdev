@@ -13,7 +13,9 @@ task_factory. task_factory's own dedup is covered by its own tests.
 """
 from __future__ import annotations
 
+import inspect
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -427,6 +429,102 @@ def test_shipped_config_every_subsystem_has_a_verdict():
     cfg = kp.load_config()
     for key, spec in cfg["benchmark_subsystems"].items():
         assert spec.get("verdict"), f"{key} has no verdict"
+
+
+# ---------------------------------------------------------------------------
+# PROMOTION_CONTRACT_SQL — pinned to the YAML it transcribes
+# ---------------------------------------------------------------------------
+# The constant restates the verdict map in SQL for reviewability. That is a
+# third copy (map doc -> YAML -> SQL), so these tests are what stop it drifting.
+
+
+def _contract_verdict_triples() -> set[tuple[str, str, str]]:
+    """Parse the benchmark_verdict VALUES rows out of the SQL constant."""
+    block = kp.PROMOTION_CONTRACT_SQL.split("benchmark_verdict", 1)[1].split(")\nSELECT", 1)[0]
+    rows = re.findall(
+        r"\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*(\d+)\s*,\s*'([^']+)'\s*\)", block
+    )
+    return {(cat, sub, verdict) for cat, sub, _section, verdict in rows}
+
+
+def _yaml_verdict_triples(cfg: dict) -> set[tuple[str, str, str]]:
+    return {
+        (str(cat).strip().lower(), key, str(spec["verdict"]).strip().lower())
+        for key, spec in cfg["benchmark_subsystems"].items()
+        for cat in (spec.get("categories") or [])
+    }
+
+
+def test_contract_sql_verdict_map_matches_yaml():
+    cfg = kp.load_config()
+    sql_map, yaml_map = _contract_verdict_triples(), _yaml_verdict_triples(cfg)
+    assert sql_map, "no VALUES rows parsed out of PROMOTION_CONTRACT_SQL"
+    assert sql_map == yaml_map, (
+        "PROMOTION_CONTRACT_SQL has drifted from args/innovation_promoter.yaml; "
+        f"only in SQL: {sorted(sql_map - yaml_map)}; only in YAML: {sorted(yaml_map - sql_map)}"
+    )
+
+
+def test_contract_sql_sections_match_yaml():
+    cfg = kp.load_config()
+    block = kp.PROMOTION_CONTRACT_SQL.split("benchmark_verdict", 1)[1].split(")\nSELECT", 1)[0]
+    for _cat, subsystem, section, _verdict in re.findall(
+        r"\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*(\d+)\s*,\s*'([^']+)'\s*\)", block
+    ):
+        assert int(section) == int(cfg["benchmark_subsystems"][subsystem]["section"])
+
+
+def test_contract_sql_gap_filter_matches_yaml_gap_verdicts():
+    cfg = kp.load_config()
+    clause = re.search(r"v\.verdict IN \(([^)]*)\)", kp.PROMOTION_CONTRACT_SQL)
+    assert clause, "PROMOTION_CONTRACT_SQL has no gap-verdict filter"
+    assert set(re.findall(r"'([^']+)'", clause.group(1))) == {
+        str(v).strip().lower() for v in cfg["gap_verdicts"]
+    }
+
+
+def test_contract_sql_scope_matches_yaml():
+    cfg = kp.load_config()
+    for source_type in cfg["source_types"]:
+        assert f"'{source_type}'" in kp.PROMOTION_CONTRACT_SQL
+    for triage in cfg["triage_results"]:
+        assert f"'{triage}'" in kp.PROMOTION_CONTRACT_SQL
+    assert f">= {cfg['min_innovation_score']}" in kp.PROMOTION_CONTRACT_SQL
+    assert f">= {cfg['priority_thresholds']['high']} THEN 'high'" in kp.PROMOTION_CONTRACT_SQL
+    assert f">= {cfg['priority_thresholds']['medium']} THEN 'medium'" in kp.PROMOTION_CONTRACT_SQL
+    assert f"'{cfg['default_task_type']}'" in kp.PROMOTION_CONTRACT_SQL
+
+
+def test_contract_sql_derivations_match_python():
+    assert kp.stable_task_id("sig-x").startswith("task-innov-")
+    assert "'task-innov-' || substr(encode(sha256(s.id::bytea), 'hex'), 1, 10)" \
+        in kp.PROMOTION_CONTRACT_SQL
+    assert kp.idempotency_key("sig-x") == "innovation-promoter:sig-x"
+    assert "'innovation-promoter:' || s.id" in kp.PROMOTION_CONTRACT_SQL
+
+
+def test_contract_sql_only_writes_suggested_status():
+    assert f"'{kp.SUGGESTED_STATUS}'" in kp.PROMOTION_CONTRACT_SQL
+    assert "'backlog'" not in kp.PROMOTION_CONTRACT_SQL
+
+
+def test_contract_sql_is_read_only():
+    upper = kp.PROMOTION_CONTRACT_SQL.upper()
+    # \b, because s.created_at contains the substring CREATE.
+    for verb in ("INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "CREATE", "ALTER", "MERGE"):
+        assert not re.search(rf"\b{verb}\b", upper), \
+            f"PROMOTION_CONTRACT_SQL is a diagnostic; found {verb!r}"
+    # Strip quoted literals first — acceptance_criteria legitimately contains a ';'.
+    assert ";" not in re.sub(r"'[^']*'", "''", upper), "must remain a single statement"
+
+
+def test_contract_sql_reports_rather_than_filters_already_promoted():
+    # The runtime anti-join lives in find_promotable_signals. Here it is a
+    # column, so "0 candidates" is distinguishable from "0 findings".
+    assert "AS already_promoted" in kp.PROMOTION_CONTRACT_SQL
+    assert "NOT IN" not in kp.PROMOTION_CONTRACT_SQL.upper()
+    assert "NOT IN (\n              SELECT source_prediction_id" in \
+        inspect.getsource(kp.find_promotable_signals)
 
 
 def test_default_config_shape():

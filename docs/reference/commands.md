@@ -2390,6 +2390,9 @@ python tools/innovation/kanban_promoter.py --dry-run --json    # preview (the de
 python tools/innovation/kanban_promoter.py --list --json       # candidates + subsystem verdicts
 python tools/innovation/kanban_promoter.py --promote --json    # write status='suggested' cards
 python tools/innovation/kanban_promoter.py --promote-id <signal_id> --json
+# The whole contract as one reviewable SELECT — source tables, gap-verdict filter,
+# idempotency derivation, columns→task fields. Read-only, PostgreSQL only (xbm-promote-01-d2)
+python tools/innovation/kanban_promoter.py --contract-sql --json
 
 # ICDEV's own half of a benchmark comparison, per subsystem tag (xbm-cmp-01-d1)
 python tools/innovation/icdev_evidence.py --subsystem observability --json
