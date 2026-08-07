@@ -81,6 +81,10 @@ _RETRY_SUFFIX_RE = re.compile(r"^-r\d+$")
 
 DEFAULT_TIMEOUT = 180
 
+# Committer identity used ONLY when the environment has none configured.
+FALLBACK_IDENTITY_NAME = "icdev-rebase-recovery"
+FALLBACK_IDENTITY_EMAIL = "icdev-rebase-recovery@localhost"
+
 
 def _git(
     args: List[str],
@@ -128,6 +132,30 @@ def branch_is_task_owned(branch: str, task_id: str) -> Tuple[bool, str]:
     if tail.startswith(task_id) and _RETRY_SUFFIX_RE.match(tail[len(task_id):]):
         return True, "retry branch for this task"
     return False, f"branch '{branch}' does not belong to task '{task_id}'"
+
+
+def _identity_args(repo_root: str, runner: Optional[Callable]) -> List[str]:
+    """`git -c` overrides supplying a committer identity, or [] if one exists.
+
+    A rebase RE-COMMITS, so it needs a committer identity, and a recovery tool
+    that only works where someone happened to run `git config --global user.email`
+    is not a recovery tool. A bare CI runner has none and the rebase dies with
+    ``fatal: empty ident name`` — which surfaces as "conflict" and escalates a
+    PR that had no conflict at all.
+
+    The fallback is applied only when git cannot resolve an identity, so a
+    configured environment is never overridden. It affects the COMMITTER only:
+    rebase preserves each replayed commit's original author, and recording this
+    tool as the committer is simply true.
+    """
+    probe = _git(["config", "--get", "user.email"], cwd=repo_root, runner=runner)
+    if getattr(probe, "returncode", 1) == 0 and _out(probe):
+        return []
+    logger.debug("rebase_recovery: no git identity configured — using fallback")
+    return [
+        "-c", f"user.name={FALLBACK_IDENTITY_NAME}",
+        "-c", f"user.email={FALLBACK_IDENTITY_EMAIL}",
+    ]
 
 
 def _verdict(**kw: Any) -> Dict[str, Any]:
@@ -224,7 +252,8 @@ def rebase_and_push(
         )
 
     try:
-        reb = _git(["rebase", f"origin/{base}"], cwd=tmp, runner=runner)
+        ident = _identity_args(tmp, runner)
+        reb = _git([*ident, "rebase", f"origin/{base}"], cwd=tmp, runner=runner)
         if getattr(reb, "returncode", 1) != 0:
             detail = (_err(reb) or _out(reb)).splitlines()
             _git(["rebase", "--abort"], cwd=tmp, runner=runner)

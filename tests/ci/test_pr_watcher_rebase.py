@@ -78,11 +78,22 @@ class _FakeGit:
         self._ahead = ahead
         self._push_rc = push_rc
 
+    @staticmethod
+    def _subcommand(cmd):
+        """The git subcommand, skipping any leading `-c key=value` overrides."""
+        i = 1
+        while i < len(cmd) and cmd[i] == "-c":
+            i += 2
+        return cmd[i] if i < len(cmd) else ""
+
     def __call__(self, cmd, **kwargs):
         self.calls.append(list(cmd))
-        sub = cmd[1] if len(cmd) > 1 else ""
+        sub = self._subcommand(cmd)
+        if sub == "config":
+            # No identity configured — exercise the fallback path by default.
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
         if sub == "rebase":
-            if len(cmd) > 2 and cmd[2] == "--abort":
+            if "--abort" in cmd:
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
             return SimpleNamespace(
                 returncode=self._rebase_rc, stdout="",
@@ -90,7 +101,7 @@ class _FakeGit:
                 else "CONFLICT (content): Merge conflict in tools/x.py",
             )
         if sub == "rev-parse":
-            sha = OLD_SHA if "refs/remotes/origin/" in cmd[2] else NEW_SHA
+            sha = OLD_SHA if any("refs/remotes/origin/" in a for a in cmd) else NEW_SHA
             return SimpleNamespace(returncode=0, stdout=sha + "\n", stderr="")
         if sub == "rev-list":
             return SimpleNamespace(returncode=0, stdout=self._ahead + "\n", stderr="")
@@ -102,7 +113,7 @@ class _FakeGit:
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     def cmds(self, sub):
-        return [c for c in self.calls if len(c) > 1 and c[1] == sub]
+        return [c for c in self.calls if self._subcommand(c) == sub]
 
 
 def test_clean_rebase_force_pushes_with_lease_pinned_to_observed_sha():
@@ -125,8 +136,7 @@ def test_clean_rebase_force_pushes_with_lease_pinned_to_observed_sha():
     # The rebase ran in a scratch worktree, never in the repo root.
     add = git.cmds("worktree")[0]
     assert add[2] == "add" and "--detach" in add
-    rebase_cwd_ok = any(c[1] == "rebase" for c in git.calls)
-    assert rebase_cwd_ok
+    assert git.cmds("rebase"), "the rebase itself must have run"
 
 
 def test_conflicting_rebase_aborts_and_never_pushes():
@@ -188,6 +198,42 @@ def test_rejected_lease_is_reported_not_swallowed():
     assert verdict["attempted"] is True
     assert verdict["pushed"] is False
     assert "rejected" in verdict["reason"]
+
+
+def test_rebase_supplies_a_committer_identity_when_none_is_configured():
+    """A rebase re-commits; a bare CI runner has no identity configured.
+
+    Without this, git dies with `fatal: empty ident name`, the module reports
+    it as a conflict, and a PR with NO conflict escalates to a human.
+    """
+    git = _FakeGit(rebase_rc=0, ahead="1")  # its `config` probe returns nothing
+    verdict = rr.rebase_and_push(
+        "kax-conflict-01", "kanban/kax-conflict-01", base="main",
+        repo_root=str(ROOT), runner=git,
+    )
+    assert verdict["pushed"] is True
+    rebase_cmd = git.cmds("rebase")[0]
+    assert f"user.email={rr.FALLBACK_IDENTITY_EMAIL}" in rebase_cmd
+    assert f"user.name={rr.FALLBACK_IDENTITY_NAME}" in rebase_cmd
+
+
+def test_configured_identity_is_never_overridden():
+    """A real identity must win — this tool does not rewrite who authored work."""
+
+    class _Configured(_FakeGit):
+        def __call__(self, cmd, **kwargs):
+            if self._subcommand(cmd) == "config":
+                self.calls.append(list(cmd))
+                return SimpleNamespace(returncode=0, stdout="dev@example.com\n",
+                                       stderr="")
+            return super().__call__(cmd, **kwargs)
+
+    git = _Configured(rebase_rc=0, ahead="1")
+    rr.rebase_and_push(
+        "kax-conflict-01", "kanban/kax-conflict-01", base="main",
+        repo_root=str(ROOT), runner=git,
+    )
+    assert "-c" not in git.cmds("rebase")[0]
 
 
 def test_scratch_worktree_is_always_cleaned_up():
@@ -441,18 +487,33 @@ def _git_real(*args, cwd, env):
 
 
 @pytest.fixture
-def drifted_repo(tmp_path):
+def drifted_repo(tmp_path, monkeypatch):
     """origin + clone with two branches behind main: one clean, one conflicting.
 
     Returns ``(work_dir, git, env, old_shas)``. Mirrors the real situation: the
     branches were cut, main moved on, and only one of them actually collides.
+
+    The AMBIENT git identity is deliberately removed (empty global/system config
+    files) so the module runs the way a bare CI runner runs it. Without that,
+    a developer's `~/.gitconfig` silently supplies the committer identity a
+    rebase needs, and `_identity_args` is never exercised locally — which is
+    exactly how "fatal: empty ident name" reached CI. Setup commits carry their
+    identity in explicit env vars, which the module does NOT inherit.
     """
     if shutil.which("git") is None:  # pragma: no cover
         pytest.skip("git not on PATH")
 
+    empty_cfg = tmp_path / "empty.gitconfig"
+    empty_cfg.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_cfg))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(empty_cfg))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for leaked in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+                   "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.delenv(leaked, raising=False)
+
     env = dict(os.environ, GIT_AUTHOR_NAME="T", GIT_AUTHOR_EMAIL="t@t",
-               GIT_COMMITTER_NAME="T", GIT_COMMITTER_EMAIL="t@t",
-               GIT_CONFIG_NOSYSTEM="1")
+               GIT_COMMITTER_NAME="T", GIT_COMMITTER_EMAIL="t@t")
     origin = tmp_path / "origin.git"
     work = tmp_path / "work"
     _git_real("init", "-q", "--bare", "-b", "main", str(origin), cwd=tmp_path, env=env)
@@ -498,7 +559,7 @@ def drifted_repo(tmp_path):
 
 def test_a_real_git_drifted_branch_is_rebased_and_then_merges_cleanly(drifted_repo):
     """(a) The end state that matters: the PR merges with no human action."""
-    work, git, _env, old = drifted_repo
+    work, git, env, old = drifted_repo
 
     verdict = rr.rebase_and_push(
         "smoke-ok", "kanban/smoke-ok", base="main", repo_root=str(work),
@@ -511,12 +572,14 @@ def test_a_real_git_drifted_branch_is_rebased_and_then_merges_cleanly(drifted_re
     git("fetch", "-q", "origin")
     assert git("rev-list", "--count", "origin/kanban/smoke-ok..origin/main") == "0"
 
+    # `env` carries the fixture's own identity — the ambient one is deliberately
+    # absent (see the fixture) so the module has to supply its own.
     merge = subprocess.run(
         ["git", "merge", "--no-commit", "--no-ff", "origin/kanban/smoke-ok"],
-        cwd=str(work), capture_output=True, text=True, timeout=60,
+        cwd=str(work), capture_output=True, text=True, timeout=60, env=env,
     )
     subprocess.run(["git", "merge", "--abort"], cwd=str(work),
-                   capture_output=True, timeout=60)
+                   capture_output=True, timeout=60, env=env)
     assert merge.returncode == 0, (merge.stderr or merge.stdout)
 
     # …and the work is still there. A "clean merge" of an emptied branch would
