@@ -99,7 +99,17 @@ def _build_watcher(*, hold, merge_calls, shared_file="tools/cortex/blueprint.py"
             "sibling_conflict_check": True,
             "hold_on_sibling_conflict": hold,
         },
-        get_connection=_fake_connection_factory(tasks),
+        # A PASSED done-verification, so the enforced done-gate is satisfied and
+        # the SIBLING guard is what decides — which is what these tests assert.
+        # Without it, a session that inherits KANBAN_PIPELINE_ENFORCE=1 from .env
+        # (every kanban-scheduler session does) holds every merge on "awaiting
+        # ICDEV done-verification" and all four poll_once tests below fail, while
+        # a developer shell with the variable unset sees them pass. Same fix
+        # test_pr_watcher.py already carries for the base-branch guard tests.
+        get_connection=_fake_connection_factory(
+            tasks,
+            verifications=[{"task_id": "task-s", "result": "pass", "review_passed": 1}],
+        ),
         queue_message=lambda *a, **kw: {"queued": True},
         fetch_state=lambda url, **kw: state_map[url],
         fetch_logs=lambda url, **kw: "",

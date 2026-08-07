@@ -569,6 +569,7 @@ class PRWatcher:
         auto_merge_runner=None,
         default_branch_resolver=None,
         pr_list_runner=None,
+        rebase_fn=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -580,6 +581,7 @@ class PRWatcher:
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
         self._pr_list_runner = pr_list_runner or subprocess.run
+        self._rebase_fn = rebase_fn
         self._default_branch_resolver = (
             default_branch_resolver or repo_default_branch
         )
@@ -804,30 +806,30 @@ class PRWatcher:
         logger.info("pr_watcher: reclaimed worktree for %s at %s", task_id, path)
         return {"reclaimed": True, "path": str(path)}
 
-    def _resume_cycle(self, task_id: str) -> int:
-        """Best-effort count of prior pr_watcher resume events for this
-        task. Reads audit_trail details JSON."""
+    def _count_audit_actions(self, task_id: str, actions: Tuple[str, ...]) -> int:
+        """Best-effort count of prior pr_watcher audit rows for this task.
+
+        Reads audit_trail details JSON. The `action` filter is what keeps the
+        resume budget and the rebase budget separate ledgers: a rebase attempt
+        writes `pr_watcher.rebase*` and is therefore invisible to
+        `_resume_cycle`, which is exactly the "a rebase must not spend a resume"
+        requirement, enforced by the storage layout rather than by convention.
+        """
         get_conn = self._connection()
         try:
             conn = get_conn()
         except Exception:
             return 0
         try:
+            placeholders = ", ".join(["%s"] * len(actions))
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
-            if _pg:
-                rows = conn.execute(
-                    "SELECT details FROM audit_trail "
-                    "WHERE action = 'pr_watcher.resume' "
-                    "AND details::text LIKE %s",
-                    (f"%{task_id}%",),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT details FROM audit_trail "
-                    "WHERE action = 'pr_watcher.resume' "
-                    "AND details LIKE %s",
-                    (f"%{task_id}%",),
-                ).fetchall()
+            details_col = "details::text" if _pg else "details"
+            rows = conn.execute(
+                f"SELECT details FROM audit_trail "
+                f"WHERE action IN ({placeholders}) "
+                f"AND {details_col} LIKE %s",
+                (*actions, f"%{task_id}%"),
+            ).fetchall()
             return len(rows)
         except Exception:
             return 0
@@ -836,6 +838,70 @@ class PRWatcher:
                 conn.close()
             except Exception:
                 pass
+
+    def _resume_cycle(self, task_id: str) -> int:
+        """Count of prior pr_watcher resume events for this task."""
+        return self._count_audit_actions(task_id, ("pr_watcher.resume",))
+
+    def _rebase_attempts(self, task_id: str) -> int:
+        """Count of prior auto-rebase attempts (successful or not) for this task."""
+        return self._count_audit_actions(
+            task_id, ("pr_watcher.rebase", "pr_watcher.rebase_failed"),
+        )
+
+    def _maybe_rebase(self, task: dict, state: dict) -> Dict[str, Any]:
+        """Try the cheap recovery for a DIRTY PR: rebase the branch onto its base.
+
+        A DIRTY PR is a resume class today, so a branch that is merely stale
+        burns all five LLM resumes on a conflict a plain rebase would have
+        cleared, and then lands in a permanent human queue. Rebase first; only
+        fall through to the resume/escalate path when the rebase cannot help.
+
+        Returns a verdict dict (never raises). ``attempted`` False means the
+        rebase was declined before any git ran, so no attempt is consumed.
+        """
+        task_id = task["id"]
+        if not self.config.get("auto_rebase_on_conflict", True):
+            return {"attempted": False, "pushed": False,
+                    "reason": "auto_rebase_on_conflict=false"}
+
+        cap = int(self.config.get("max_rebase_attempts_per_task", 2))
+        attempts = self._rebase_attempts(task_id)
+        if attempts >= cap:
+            return {"attempted": False, "pushed": False,
+                    "reason": f"rebase attempts exhausted ({attempts}/{cap})"}
+
+        branch = (state.get("headRefName") or "").strip()
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+
+        from tools.kanban.rebase_recovery import branch_is_task_owned
+
+        owned, why = branch_is_task_owned(branch, task_id)
+        if not owned:
+            # Not this task's branch — never force-push it. Declining (rather
+            # than "attempting and failing") keeps the budget for a branch that
+            # could actually be recovered.
+            logger.warning(
+                "pr_watcher: refusing auto-rebase for %s — %s", task_id, why,
+            )
+            return {"attempted": False, "pushed": False, "reason": f"refused: {why}"}
+
+        if self._rebase_fn is None and self.dry_run:
+            return {"attempted": False, "pushed": False,
+                    "reason": f"dry-run: would rebase {branch} onto origin/{base}"}
+
+        rebase = self._rebase_fn
+        if rebase is None:
+            from tools.kanban.rebase_recovery import rebase_and_push
+
+            rebase = rebase_and_push
+
+        try:
+            return rebase(task_id, branch, base=base)
+        except Exception as exc:  # noqa: BLE001 — must never stop the poll
+            logger.warning("pr_watcher: auto-rebase errored for %s: %s", task_id, exc)
+            return {"attempted": True, "pushed": False,
+                    "reason": f"rebase errored: {exc}"}
 
     def _audit(self, action: WatcherAction) -> None:
         if self.dry_run:
@@ -1150,6 +1216,44 @@ class PRWatcher:
                 report.actions.append(action)
                 self._audit(action)
                 continue
+
+            # A DIRTY PR gets the cheap recovery BEFORE any resume is spent:
+            # rebase the branch onto its base and let CI re-run. Most drifted
+            # branches merge fine afterwards, and the five resumes they would
+            # otherwise burn end in a permanent human queue (xbm-wake-01 sat
+            # 95.7h). A rebase that hits a REAL conflict is aborted, nothing is
+            # pushed, and we fall straight through to the escalation below —
+            # i.e. genuinely conflicting branches behave exactly as before.
+            if classification == KanbanState.MERGE_CONFLICT:
+                verdict = self._maybe_rebase(task, state)
+                if verdict.get("pushed"):
+                    action = WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="rebase",
+                        reason=verdict.get("reason", "rebased onto base"),
+                        # Deliberately the UNCHANGED resume count: a rebase is
+                        # not a resume and must not consume that budget.
+                        resume_cycle=cycle,
+                    )
+                    report.actions.append(action)
+                    self._audit(action)
+                    continue
+                if verdict.get("attempted"):
+                    # The attempt is spent — audit it so the rebase cap is
+                    # durable across restarts — then escalate/resume as today.
+                    self._audit(WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="rebase_failed",
+                        reason=verdict.get("reason", "rebase failed"),
+                        resume_cycle=cycle,
+                    ))
+                else:
+                    logger.debug(
+                        "pr_watcher: no auto-rebase for %s — %s",
+                        task["id"], verdict.get("reason"),
+                    )
 
             # Resume classes: CI_FAILED / MERGE_CONFLICT / CHANGES_REQUESTED
             if cycle >= max_cycles:

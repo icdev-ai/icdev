@@ -14,6 +14,19 @@ auto_merge_require_approval: false
 # Truncate CI log excerpts before injecting as resume context
 ci_log_max_chars: 4000
 
+# Auto-rebase a DIRTY PR before spending a resume (kax-conflict-01).
+# A branch that has merely drifted behind main goes DIRTY, and today that is a
+# resume class: the PR burns all max_resume_cycles_per_task LLM resumes on a
+# conflict a plain `git rebase origin/main` would have cleared, then lands in a
+# permanent human queue. When enabled, the watcher rebases the branch in an
+# isolated scratch worktree and force-with-lease-pushes it — but ONLY when the
+# rebase applies cleanly and ONLY for kanban/<task-id> (or its -rN retry
+# sibling). A rebase with real conflicts aborts, pushes nothing, and escalates
+# exactly as before. Rebase attempts are counted separately from resumes, so
+# this never eats into the resume budget.
+auto_rebase_on_conflict: true
+max_rebase_attempts_per_task: 2
+
 # Sibling-file-conflict guard (kph): before auto-merging a PR, fetch every open
 # PR's changed files and flag when the candidate races another open PR on the same
 # SOURCE file (union-merged coordination files are excluded). Warn + audit always;
