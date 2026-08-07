@@ -164,6 +164,16 @@ REFLEX_NAMES = [
     "review_loop",
     "memory_maintenance_reflex",  # mem-embed: scheduled memory upkeep — flush buffer + backfill embeddings (bounded, non-destructive); closes the 0%-embedding scheduling gap oss2-meas-01 measured
     "idp_delivery_events",  # idp-intel-01: 6h DORA delivery-event sync — /api/sre/dora reads a rolling 30d window, so a one-off backfill decays back to metrics_assessed: 0
+    # xbm-wake-02: reflex_registry.py listed nine reflexes as live that nothing
+    # dispatched — enabled:true, working modules, and zero genesis_reflex_state rows.
+    # Each was audited individually rather than registered as a batch (see
+    # docs/features/xbm-wake-02-reflex-dispatch-audit.md). Only this one cleared:
+    # GREEN, internal-only, no external service, 3h cadence with its own
+    # timeout_seconds, and tools/manifest/idp-scorecards.md already documented it as
+    # live. Verified before registering: 68 rows written, success=True.
+    # The other eight stay out, each with a measured blocker recorded in
+    # tests/test_reflex_registration.py EXEMPT.
+    "idp_score_recorder",
 ]
 
 # Backward-compat aliases for module-level access used by other code

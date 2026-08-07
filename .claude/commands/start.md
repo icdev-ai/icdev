@@ -184,7 +184,7 @@ with get_connection() as conn:
    echo "PR watcher PID: $($pw.Id)"
    ```
 
-9. Check if the Genesis daemon (failure_triage, oracle_triage, awareness, heal, and 20+ other reflexes) is running.
+9. Check if the Genesis daemon (awareness, heal, scout, ingest, and 90+ other reflexes) is running. Note: `failure_triage` and `oracle_triage` are NOT daemon-dispatched — see `tests/test_reflex_registration.py` EXEMPT.
    Write a temp check script (avoids PowerShell quote-escaping):
    ```powershell
    @'
@@ -223,7 +223,7 @@ else:
      - Log: `.tmp/api_gateway.log`
    - **Poll Trigger**: `.tmp/poll_trigger.log`
    - **Kanban Scheduler**: `.tmp/kanban_scheduler.log` (promotes backlog → in_progress, dispatches to Claude CLI every 60s)
-   - **Genesis Daemon**: `.tmp/genesis_daemon.log` (failure_triage every 30m, oracle_triage/awareness every 3h, heal every 5m, 20+ reflexes)
+   - **Genesis Daemon**: `.tmp/genesis_daemon.log` (heal every 5m, awareness every 3h, scout every 2h, 90+ reflexes in `daemon.REFLEX_NAMES`)
    - To stop dashboard: `Get-Process python | Where-Object { $_.CommandLine -like "*dashboard/app*" } | Stop-Process -Force`
    - To stop portal: `Get-Process python | Where-Object { $_.CommandLine -like "*api_gateway*" } | Stop-Process -Force`
    - To stop poll trigger: `Get-Process python | Where-Object { $_.CommandLine -like "*poll_trigger*" } | Stop-Process -Force`

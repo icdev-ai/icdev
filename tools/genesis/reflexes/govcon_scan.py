@@ -104,22 +104,29 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         results["sam_scan"] = {"error": str(e)}
 
     # Step 2: Extract demand signals from opportunities
+    new_high: list = []   # bound up-front: step 3 reads it even if this block raises
     try:
         from tools.pulse.engine.demand_detector import (
             aggregate_demand_signals,
             get_high_demand_signals,
         )
 
-        # Aggregate from all sources (SAM.gov, existing pain points)
-        agg = aggregate_demand_signals()
-        high = get_high_demand_signals()
-        new_high = [s for s in high if not s.get("article_generated")]
+        # Aggregate from all sources (SAM.gov, existing pain points).
+        # Both helpers return a *dict*, not a list (see demand_detector's `-> dict`
+        # annotations). Iterating the dict yielded its str keys, so the
+        # `s.get("article_generated")` below raised AttributeError on every run —
+        # which bumped `errors` and made this reflex return success=False 100% of
+        # the time. xbm-wake-02 measured that before registering it.
+        agg = aggregate_demand_signals() or {}
+        high = get_high_demand_signals() or {}
+        high_signals = high.get("signals", [])
+        new_high = [s for s in high_signals if not s.get("article_generated")]
         results["demand_signals"] = {
-            "total": len(agg) if agg else 0,
-            "high_demand": len(high) if high else 0,
+            "total": agg.get("total", 0),
+            "high_demand": high.get("count", len(high_signals)),
             "pending_articles": len(new_high),
         }
-        print(f"  GovCon: Demand signals — {len(high) if high else 0} high demand, {len(new_high)} pending articles")
+        print(f"  GovCon: Demand signals — {len(high_signals)} high demand, {len(new_high)} pending articles")
     except Exception as e:
         errors += 1
         print(f"  GovCon: Demand detection failed — {e}")

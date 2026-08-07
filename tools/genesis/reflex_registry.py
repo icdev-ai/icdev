@@ -1,7 +1,35 @@
 # CUI // SP-CTI
-"""Genesis Reflex Registry — authoritative list of all reflexes and their tiers.
+"""Genesis Reflex Catalogue — a DESCRIPTIVE inventory of reflexes and their tiers.
 
-Tiers control scheduling priority and deployment constraints:
+.. warning::
+
+   **This file schedules nothing.** No dispatcher imports it. Listing a reflex
+   here does not make it run, and removing one does not make it stop.
+
+   Dispatch requires BOTH of the following, and neither reads this module:
+
+   1. the reflex name in ``REFLEX_NAMES`` in :mod:`tools.genesis.daemon` —
+      ``DaemonBase.run_due_reflexes`` only iterates that list; and
+   2. a config block in ``args/genesis_config.yaml`` with ``enabled: true`` and
+      a **parseable ``schedule:``** — ``DaemonBase.__init__`` builds
+      ``self.schedules`` from it, and ``run_due_reflexes`` skips any reflex with
+      no schedule entry.
+
+   Until xbm-wake-02 this docstring called itself the "authoritative list of all
+   reflexes", which was false and actively misleading: eight reflexes were
+   ``enabled: true``, had working modules, appeared here — and had never run
+   once (zero rows in ``genesis_reflex_state``). Same defect class as the
+   permanently-latched circuit breaker xbm-wake-01 fixed: a registry that lists
+   what it cannot run, so a capability quietly never fires and nothing goes red.
+
+   The register-or-exempt invariant is enforced by
+   ``tests/test_reflex_registration.py`` (against ``REFLEX_NAMES``, not this
+   list) and the ``reflex_registry`` coherence check
+   (``coherence_checker.py::check_reflex_registry``, which likewise reads
+   ``REFLEX_NAMES``). Use this module for tier/cadence documentation and
+   lookups; use those two for "does it actually run?".
+
+Tiers describe intended scheduling priority and deployment constraints:
   CORE      — always-on, runs in every deployment mode
   STRATEGOS — intelligence/OSINT reflexes; require TIER_INTERNET, TIER_GITLAB,
                or TIER_FILE_INBOX resolution before executing
@@ -64,6 +92,10 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("fathomdesk_trap_sweep",          DOMAIN, 4.0,  "FathomDesk trap detection sweep"),
     ReflexEntry("fathomdesk_openbb_refresh",      DOMAIN, 6.0,  "Refresh OpenBB market data cache"),
     ReflexEntry("fathomdesk_fundamentals_sweep",  DOMAIN, 23.0, "Daily PE/P/B/ROE fundamentals refresh from yfinance"),
+    # xbm-wake-02: catalogued (was module + config block only, absent from this list).
+    # NOT dispatched — its ad_pc_ratio_history DDL is SQLite-only, see the EXEMPT
+    # reason in tests/test_reflex_registration.py.
+    ReflexEntry("fathomdesk_pc_ratio",            DOMAIN, 24.0, "CBOE equity put/call ratio snapshot → ad_pc_ratio_history"),
     ReflexEntry("govcon_scan",                DOMAIN, 6.0,  "GovCon/SAM.gov opportunity scan"),
     ReflexEntry("migration_intel",            DOMAIN, 6.0,  "Migration intelligence signal harvester"),
     ReflexEntry("socmint",                    DOMAIN, 6.0,  "SOCMINT harvester — Telegram milblog → sg_socmint_signals"),
@@ -157,15 +189,19 @@ _BY_NAME = {e.name: e for e in REGISTRY}
 
 
 def get(name: str) -> ReflexEntry:
-    """Return registry entry for the given reflex name. Raises KeyError if missing."""
+    """Return the catalogue entry for a reflex name. Raises KeyError if missing.
+
+    Presence here says nothing about whether the reflex is dispatched — see the
+    module docstring.
+    """
     return _BY_NAME[name]
 
 
 def by_tier(tier: str) -> List[ReflexEntry]:
-    """Return all registered reflexes for a given tier."""
+    """Return all catalogued reflexes for a given tier (not necessarily dispatched)."""
     return [e for e in REGISTRY if e.tier == tier]
 
 
 def list_reflexes() -> List[ReflexEntry]:
-    """Return all registered reflexes."""
+    """Return all catalogued reflexes (not necessarily dispatched)."""
     return list(REGISTRY)
