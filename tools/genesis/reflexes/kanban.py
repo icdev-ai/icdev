@@ -35,6 +35,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.transition_reason import (  # noqa: E402
+    resolve_transition_reason as _resolve_transition_reason,
+)
 from tools.strategos import tier_resolver  # noqa: E402
 
 PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
@@ -3267,9 +3270,21 @@ def _record_status_transition(
     incident where investigators had no forensic trail for the rogue
     status=done UPDATE. Never raises — audit log failure must not block
     the primary state transition.
+
+    ``reason`` stays optional in the signature so no caller has to change, but
+    a blank one never reaches the table: it is replaced with a string naming
+    the call site that omitted it (see tools/kanban/transition_reason.py).
+    #1183 closed the reason-less call sites and blank rows kept arriving
+    anyway, because the boundary — here — still accepted them.
     """
     try:
         import secrets as _secrets  # noqa: PLC0415
+        # skip_frames=1 hides this function so the synthesized text names
+        # _move_task and the code that called it, not this writer.
+        reason = _resolve_transition_reason(
+            reason, from_status=from_status, to_status=to_status,
+            actor=actor, skip_frames=1,
+        )
         conn = get_connection()
         try:
             conn.execute(
@@ -5322,7 +5337,8 @@ def _poll_github_actions_completions() -> None:
                 _conclusion = _data.get("conclusion", "")
                 if _conclusion == "success":
                     logger.info("kanban: GA run %s for %s succeeded → done", run_id, task_id)
-                    _move_task(task_id, "done")
+                    _move_task(task_id, "done",
+                               reason=f"GitHub Actions run {run_id} concluded 'success'")
                 else:
                     logger.warning(
                         "kanban: GA run %s for %s conclusion=%s → backlog", run_id, task_id, _conclusion
@@ -5871,7 +5887,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         logger.info("kanban: %s auto-resolved pre-dispatch: %s", task_id, resolution_reason)
         _write_verification_log(task_id, True, f"AUTO-RESOLVED (pre-dispatch): {resolution_reason}")
         try:
-            _move_task(task_id, "done")
+            _move_task(task_id, "done",
+                       reason=f"auto-resolved pre-dispatch: {resolution_reason}")
         except Exception:
             pass
         return  # No notification — false-positive resolves are scheduler noise
@@ -5988,7 +6005,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 _set_executor_type(task_id, "github_actions")
                 # Move to in_progress immediately — GA is async and the
                 # _github_actions_dispatched in-memory set is lost on restart.
-                _move_task(task_id, "in_progress")
+                _move_task(task_id, "in_progress",
+                           reason="dispatched via GitHub Actions (async executor)")
                 _github_actions_dispatched.add(task_id)
                 print(f"  Kanban: dispatched {task_id} via GitHub Actions → in_progress")
                 dispatched = True
@@ -8308,7 +8326,9 @@ def _reclaim_zombie_tasks() -> None:
                 task_id, silence_hours,
             )
             try:
-                _move_task(task_id, "token_exhausted")
+                _move_task(task_id, "token_exhausted",
+                           reason=(f"zombie reclaim: heartbeat silent >{silence_hours}h "
+                                   f"— demoted for retry"))
                 conn.execute(
                     "UPDATE kanban_tasks "
                     "SET failure_count = failure_count + 1, "
@@ -9092,7 +9112,9 @@ def _check_completed():
                     )
                 else:
                     # Park in token_exhausted — scheduler will retry at resume_at
-                    _move_task(task_id, "token_exhausted")
+                    _move_task(task_id, "token_exhausted",
+                               reason=(f"token exhaustion: parked for retry "
+                                       f"{retry_count + 1}/{TOKEN_MAX_RETRY_COUNT}"))
                     resume_at = _parse_resume_at(reset_hint)
                     _save_resume_at(task_id, resume_at)
                     wait_seconds = max(0, (resume_at - datetime.now(timezone.utc)).total_seconds())
@@ -9516,7 +9538,9 @@ def _check_token_exhausted_tasks() -> list:
                     "Task %s circuit-broken (fc=%d >= max=%d) — parking in 'suggested' for HITL",
                     task_id, _task_failures, _task_max_retries,
                 )
-                _move_task(task_id, "suggested")
+                _move_task(task_id, "suggested",
+                           reason=(f"circuit-broken: fc={_task_failures} >= max="
+                                   f"{_task_max_retries} — parked for HITL review"))
                 _clear_retry_count(task_id)
                 _clear_resume_at(task_id)
                 _send_notification(task, event="circuit_broken")
@@ -10387,7 +10411,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 prompt_path = str(prompt_path)
             _dispatch_to_claude(task, prompt_path)
             if task["id"] in _running:
-                _move_task(task["id"], "in_progress")
+                _move_task(task["id"], "in_progress",
+                           reason="token-retry: resume_at reached, re-dispatched to claude CLI")
                 _send_notification(task, event="in_progress")
                 token_retry_dispatched = True
             else:
@@ -10557,7 +10582,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if task["id"] in _ollama_completed:
                 # Synchronous Ollama dispatch — completed immediately, mark done
                 _ollama_completed.discard(task["id"])
-                _move_task(task["id"], "done")
+                _move_task(task["id"], "done",
+                           reason="Ollama synchronous dispatch completed in-cycle")
                 _send_notification(task, event="done")
                 processed.append(
                     {
@@ -10571,7 +10597,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # Async GitHub Actions dispatch — move to in_progress;
                 # completion is tracked externally (GitHub Actions run).
                 _github_actions_dispatched.discard(task["id"])
-                _move_task(task["id"], "in_progress")
+                _move_task(task["id"], "in_progress",
+                           reason="dispatched via GitHub Actions (completion tracked externally)")
                 _send_notification(task)
                 processed.append(
                     {
@@ -10583,7 +10610,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress (GitHub Actions)")
             elif task["id"] in _running:
                 # Async Claude/LLM subprocess launched — move to in_progress
-                _move_task(task["id"], "in_progress")
+                _move_task(task["id"], "in_progress",
+                           reason="dispatched: agent subprocess launched")
                 _send_notification(task)
                 processed.append(
                     {

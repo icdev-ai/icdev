@@ -152,8 +152,12 @@ class TestSetStatusRecordsManualTransition:
         db_path = tmp_path / "no_audit_table.db"
         conn = sqlite3.connect(str(db_path))
         conn.execute(
+            # last_failure_reason is in the real schema and the CLI's status
+            # UPDATE clears it; omitting it here failed the UPDATE for a reason
+            # that had nothing to do with the missing-transitions-table case
+            # this test is actually about.
             "CREATE TABLE kanban_tasks (id TEXT PRIMARY KEY, title TEXT, status TEXT, "
-            "updated_at TEXT, completed_at TEXT)"
+            "updated_at TEXT, completed_at TEXT, last_failure_reason TEXT)"
         )
         conn.execute("INSERT INTO kanban_tasks (id, title, status) VALUES ('t1', 'T', 'backlog')")
         conn.commit()

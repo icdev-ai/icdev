@@ -8,6 +8,10 @@ import sys
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+
+logger = get_logger(__name__)
+
 
 def _kanban_cli(*args, **kwargs):
     from tools.kanban.cli import main as kanban_main
@@ -89,10 +93,41 @@ def handle_kanban_move_task(params: dict) -> dict:
         status = params.get("status")
         if not task_id or not status:
             return {"error": "task_id and status are required"}
+        import secrets as _sec
+        from datetime import datetime, timezone
+
         from tools.db.storage import get_connection
+        from tools.kanban.transition_reason import resolve_transition_reason
         conn = get_connection()
         cur = conn.cursor()
+        # Read the prior status first: this handler used to UPDATE and return,
+        # leaving no kanban_status_transitions row at all. That is worse than a
+        # blank reason — an MCP-driven move was simply invisible to the audit
+        # timeline, so a status change nobody could account for looked like it
+        # had never happened.
+        cur.execute("SELECT status FROM kanban_tasks WHERE id = %s", (task_id,))
+        _prior_row = cur.fetchone()
+        _prior = _prior_row[0] if _prior_row else None
         cur.execute("UPDATE kanban_tasks SET status = %s WHERE id = %s", (status, task_id))
+        try:
+            cur.execute(
+                "INSERT INTO kanban_status_transitions "
+                "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (
+                    "kst-" + _sec.token_hex(6), task_id, _prior, status, "mcp",
+                    resolve_transition_reason(
+                        params.get("reason"), from_status=_prior,
+                        to_status=status, actor="mcp",
+                    ),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        except Exception as _exc:  # noqa: BLE001 - audit row is best-effort
+            logger.warning(
+                "handle_kanban_move_task: best-effort INSERT into "
+                "kanban_status_transitions failed (non-blocking): %s", _exc,
+            )
         conn.commit()
         conn.close()
         return {"moved": task_id, "status": status}

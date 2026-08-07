@@ -1523,6 +1523,9 @@ def move_task(task_id):
 
     bypass = bool(data.get("bypass_verification"))
     bypass_reason = (data.get("bypass_reason") or "").strip()
+    # Optional cause for the audit row. Distinct from bypass_reason, which only
+    # exists on a verification override and left every ordinary move blank.
+    move_reason = (data.get("reason") or "").strip()
 
     now = _utcnow()
     conn = get_connection()
@@ -1642,6 +1645,16 @@ def move_task(task_id):
         # HTTP move path previously skipped it, leaving current_attempt_started_at=None.
         try:
             import secrets as _sec
+
+            from tools.kanban.transition_reason import resolve_transition_reason
+            # `bypass_reason or None` wrote a blank on every ordinary move —
+            # only a verification bypass carries one. Fall back to naming the
+            # surface, so a dashboard-driven move is never anonymous.
+            _reason = resolve_transition_reason(
+                bypass_reason or move_reason,
+                from_status=existing["status"], to_status=new_status,
+                actor="dashboard",
+            )
             conn.execute(
                 "INSERT INTO kanban_status_transitions "
                 "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
@@ -1652,7 +1665,7 @@ def move_task(task_id):
                     existing["status"],
                     new_status,
                     "dashboard",
-                    bypass_reason or None,
+                    _reason,
                     now,
                 ),
             )

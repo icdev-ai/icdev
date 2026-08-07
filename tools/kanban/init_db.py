@@ -286,8 +286,6 @@ def init_kanban_tables(conn=None) -> dict:
         conn.execute(_KANBAN_VERIFICATIONS_DDL)
         conn.execute(_KANBAN_STATUS_TRANSITIONS_DDL)
         conn.execute(_KANBAN_TASK_SUBSCRIPTIONS_DDL)
-        for idx in _KANBAN_INDEXES:
-            conn.execute(idx)
         for idx in _KANBAN_SUBSCRIPTIONS_INDEXES:
             conn.execute(idx)
         # Backfill missing columns — only ALTER when the column is actually
@@ -317,6 +315,17 @@ def init_kanban_tables(conn=None) -> dict:
                 conn.execute(alter)
             except Exception:
                 pass
+        # Indexes LAST. `CREATE TABLE IF NOT EXISTS` never alters an existing
+        # table, so a kanban_tasks created by an older DDL reaches this function
+        # without idempotency_key / last_heartbeat_at — and indexing a column
+        # that does not exist yet raised, aborting init before any of the
+        # backfills above could run. Ordering them after the ALTERs makes the
+        # index and its column arrive together.
+        for idx in _KANBAN_INDEXES:
+            try:
+                conn.execute(idx)
+            except Exception:
+                pass  # column still absent on a partial legacy table
         conn.commit()
         return {"status": "ok"}
     finally:
