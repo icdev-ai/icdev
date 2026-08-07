@@ -82,17 +82,33 @@ def test_normalise_coerces_decimal_and_null_aggregates():
     json.dumps(rows)
 
 
-def test_render_columns_are_aligned_and_null_durations_show_a_dash():
+def test_render_right_aligns_numbers_under_their_header():
+    """Digits must line up, or the table is a list of words, not a table."""
     lines = runtime.render(runtime.normalise([
         {"surface": "mcp", "name": "a-very-long-tool-name", "calls": 2,
-         "errors": 0, "avg_ms": None, "max_ms": None},
-        {"surface": "agent", "name": "b", "calls": 1, "errors": 0,
+         "errors": 0, "avg_ms": 7, "max_ms": 9},
+        {"surface": "agent", "name": "b", "calls": 1234, "errors": 0,
          "avg_ms": 5, "max_ms": 5},
     ]))
-    header, rule = lines[0], lines[1]
-    assert header.startswith("SURFACE") and set(rule) <= {"-", " "}
-    assert len(rule) == len(header.rstrip()) or len(rule) >= len(header)
-    assert lines[2].split()[-2:] == ["-", "-"], "NULL durations must render as -"
+    header, rule, *body = lines
+    assert set(rule) <= {"-", " "}, "second line must be the rule"
+
+    # A right-aligned column ends where its header ends, whatever the digit count.
+    for label in ("CALLS", "ERRORS", "AVG MS", "MAX MS"):
+        end = header.index(label) + len(label)
+        for row in body:
+            assert row[end - 1] != " " and row[end:end + 1] in ("", " "), \
+                f"{label!r} not right-aligned at column {end} in {row!r}"
+
+
+def test_render_shows_a_dash_for_still_running_groups():
+    """avg/max are NULL until a row closes — that is not zero milliseconds."""
+    row = runtime.render(runtime.normalise([
+        {"surface": "mcp", "name": "a", "calls": 2, "errors": 0,
+         "avg_ms": None, "max_ms": None},
+    ]))[2]
+    assert row.split()[-2:] == ["-", "-"]
+    assert "0" not in row.split()[-2:], "NULL must not be rendered as 0 ms"
 
 
 def test_render_truncates_long_names_but_json_keeps_them(populated, capsys):
