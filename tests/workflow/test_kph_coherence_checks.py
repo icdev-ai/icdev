@@ -126,6 +126,47 @@ class TestTestDbIsolation:
         r = cc.check_test_db_isolation([f])
         assert r.status == "fail", r.message
 
+    def test_storage_connection_factory_is_the_prescribed_remedy(self, repo):
+        """The failure message says "Wrap in StorageConnection(conn, 'sqlite')".
+
+        A fixture that does exactly that — including via a module alias, which
+        is how a shim-aware test reaches tools.db.storage — must pass, or the
+        gate rejects its own remedy.
+        """
+        f = _write(
+            repo / "tests" / "test_storage_conn_factory.py",
+            "import importlib, sqlite3\n"
+            "_storage = importlib.import_module('tools.db.storage')\n"
+            "def _connect(path):\n"
+            "    raw = sqlite3.connect(str(path))\n"
+            "    return _storage.StorageConnection(raw, 'sqlite')\n"
+            "def _mount(path, monkeypatch):\n"
+            "    def _fake(*a, **kw):\n"
+            "        return _connect(path)\n"
+            "    monkeypatch.setattr(_storage, 'get_connection', _fake)\n"
+            "def test_reads():\n"
+            "    _ = 'SELECT * FROM t WHERE a=%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "pass", r.message
+
+    def test_bare_sqlite_factory_still_fails_alongside_a_storage_one(self, repo):
+        """Guard the fix: recognising StorageConnection must not clear a raw one."""
+        f = _write(
+            repo / "tests" / "test_storage_conn_mixed.py",
+            "import sqlite3\n"
+            "from tools.db.storage import StorageConnection\n"
+            "def _safe(path):\n"
+            "    return StorageConnection(sqlite3.connect(path), 'sqlite')\n"
+            "def _raw(path):\n"
+            "    return sqlite3.connect(path)\n"
+            "def test_patches_raw(monkeypatch):\n"
+            "    monkeypatch.setattr('tools.db.storage.get_connection', _raw)\n"
+            "    _ = 'SELECT * FROM t WHERE a=%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "fail", r.message
+
 
 # ---------------------------------------------------------------------------
 # check_migration_numbering (kph-C)

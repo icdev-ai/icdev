@@ -54,8 +54,10 @@ CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Invocation Recorder | tools/observability/invocation_recorder.py | `record()` context manager observing MCP tools, agents, personas and roles. Never raises; records argument KEY NAMES only, never values. Disable with `ICDEV_OBS_INVOCATIONS=0`. | surface, name, arg_keys, session_id, project_id, parent_id | Row in `runtime_invocations` |
-| Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration | surface (optional), limit | List of rollup dicts |
+| Invocation Summary | tools/observability/invocation_recorder.py::summary | Per-name rollup: calls, errors, avg/max duration. Pass `conn=` to read through a connection with no row-security context — `runtime_invocations` has no `tenant_id`, so an injected predicate makes the rollup fail and the swallowed error reads as "no invocations". | surface (optional), limit, conn (optional) | List of rollup dicts |
 | Runtime Top CLI | tools/cli/runtime.py | `icdev runtime top` — terminal view of the rollup above. Authors no SQL; renders `summary()` so the CLI and the coverage check cannot disagree. `--limit` bounds NAMES shown, not invocations scanned. | --limit, --surface, --json, --no-color | Aligned table (errors in red) or JSON |
+| Runtime Performance API | tools/dashboard/api/runtime_invocations.py | `GET /api/runtime-invocations/summary` (also `/api/v1/…`) — the same rollup over HTTP, shaped by `tools.cli.runtime.normalise` so JSON and the terminal round identically. Reports `available` (probed with `table_exists`) and `backend` so an un-migrated DB is distinguishable from an idle one. | surface (optional), limit (≤1000) | `{rows, totals, by_surface, available, backend, truncated}` |
+| Runtime Performance panel | tools/dashboard/templates/monitoring/_runtime_performance.html | The "Runtime Performance" table on `/monitoring`. Sortable by any column, filterable by surface, loaded async so a slow telemetry read cannot delay the alerts above it. | — | Rendered panel |
 
 Instrumented choke points — one per surface, chosen so a single wrap covers everything on it:
 
