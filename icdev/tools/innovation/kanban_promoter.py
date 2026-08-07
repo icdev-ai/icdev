@@ -309,6 +309,183 @@ def apply_caps(signals: list[dict], config: dict) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# The promotion contract, as one readable SELECT
+# ---------------------------------------------------------------------------
+# This constant is DOCUMENTATION AND A DIAGNOSTIC. It is not on the write path
+# and nothing in ``run_promotion`` executes it. The runtime pipeline is still
+# ``find_promotable_signals`` (coarse SQL) -> ``classify_signals`` (gap gate,
+# reading args/innovation_promoter.yaml) -> ``apply_caps`` -> ``promote_signals``.
+# It exists because that pipeline spreads one contract across SQL, YAML and three
+# Python functions, and a reviewer asking "which rows are benchmark findings with
+# a real gap verdict, and what card would each become?" had nowhere to look.
+#
+#   Source tables
+#     innovation_signals s              — the findings themselves
+#     innovation_solutions sol          — LEFT JOIN, optional generated spec
+#     kanban_tasks kt                   — correlated EXISTS only, for already_promoted
+#     innovation_trends / innovation_competitor_scans are NOT joined: neither
+#     carries a signal_id, so neither can narrow or enrich a per-finding row.
+#
+#   Scope filter (mirrors source_types / triage_results / min_innovation_score)
+#     source_type IN ('external_repo_scouting','external_framework_analysis')
+#     triage_result IN ('approved')  AND  coalesce(innovation_score,0) >= 0.5
+#
+#   Gap verdict filter
+#     The ``benchmark_verdict`` VALUES list is the category -> subsystem -> verdict
+#     map from args/innovation_promoter.yaml, which is itself a hand transcription
+#     of the summary table in docs/research/external-benchmark-map.md. The JOIN is
+#     the gap gate: an unmapped category drops out via the inner JOIN, and a mapped
+#     one survives only if its verdict is in ('gap','parity_with_named_gaps').
+#     ``ahead_weak_hygiene`` (section 7) is deliberately excluded — see the YAML.
+#
+#     DRIFT HAZARD, stated plainly: this makes a THIRD copy of the verdict map.
+#     args/innovation_promoter.yaml remains the single source of truth for the
+#     runtime gate. If they disagree, the YAML is right and this constant is stale.
+#     ``tests/test_innovation_kanban_promoter.py`` pins them to each other.
+#
+#     One deliberate simplification: ``resolve_subsystem`` prefers
+#     ``metadata.subsystem`` over ``category`` when the tag is present. That
+#     precedence is not reproduced here, because ``innovation_signals.metadata`` is
+#     TEXT rather than jsonb and an unguarded ``::jsonb`` cast raises on any
+#     malformed row. It changes nothing today — metadata is NULL on every approved
+#     benchmark finding — but a tagged signal could classify differently in Python
+#     than here. Another reason this is the diagnostic and not the gate.
+#
+#   Idempotency, derived from the signal id and never from the clock
+#     task_id         = 'task-innov-' || first 10 hex chars of sha256(s.id)
+#     idempotency_key = 'innovation-promoter:' || s.id
+#     These reproduce ``stable_task_id`` and ``idempotency_key`` exactly; PG's
+#     sha256(bytea) and Python's hashlib.sha256 agree, verified on live data.
+#
+#   Columns mapped to kanban_tasks fields (via task_factory.create_tasks)
+#     task_id -> id                     idempotency_key -> idempotency_key
+#     title -> title                    source_prediction_id -> source_prediction_id
+#     task_type -> task_type            priority -> priority
+#     status -> status ('suggested', the only status this module may write)
+#     dispatch_source -> dispatch_source     acceptance_criteria -> acceptance_criteria
+#     The trailing columns (subsystem/section/verdict/category/url/description/
+#     spec_content/estimated_effort) are the *ingredients* of the card body, not a
+#     field: ``build_kanban_task`` assembles the markdown description from them.
+#
+#   Why the not-yet-promoted check is a column and not a WHERE clause
+#     ``find_promotable_signals`` applies it as ``s.id NOT IN (SELECT
+#     source_prediction_id FROM kanban_tasks ...)``. Applied that way here the
+#     query returns ZERO rows, and that is correct rather than broken: all 11
+#     approved benchmark findings were already promoted by an earlier
+#     genesis_scheduler path (cards titled ``INNOV-<sig-id>: …``,
+#     idempotency_key NULL), so the anti-join is doing its job. Exposing it as
+#     ``already_promoted`` keeps the population visible, so a future reader who
+#     sees "candidates: 0" can tell dedup from an empty table without loosening
+#     the filters and re-promoting eleven finished cards.
+#
+#   Measured 2026-08-07 against the live PostgreSQL instance: 8 rows, all with
+#   already_promoted = true. The 8 match ``classify_signals`` exactly — same ids,
+#   subsystems, verdicts, task_ids and priorities. The 3 approved findings it
+#   excludes are excluded for stated reasons: categories 'performance' and 'ui'
+#   map to no benchmark subsystem, and 'knowledge' maps to rag_knowledge_graph,
+#   whose verdict is 'parity'.
+#
+#   PostgreSQL only — sha256(bytea) is a PG 11+ builtin with no SQLite equivalent.
+#   Run it with ``python tools/innovation/kanban_promoter.py --contract-sql``.
+#   It is read-only: one SELECT, no writes, no side effects.
+PROMOTION_CONTRACT_SQL = """
+WITH benchmark_verdict(category, subsystem, section, verdict) AS (
+    VALUES
+        ('developer_experience', 'developer_portal',    1,  'gap'),
+        ('dx',                   'developer_portal',    1,  'gap'),
+        ('platform_engineering', 'developer_portal',    1,  'gap'),
+        ('observability',        'observability',       2,  'ahead'),
+        ('ai_tooling',           'agent_runtime',       3,  'parity_with_named_gaps'),
+        ('workflow',             'agent_runtime',       3,  'parity_with_named_gaps'),
+        ('architecture',         'agent_runtime',       3,  'parity_with_named_gaps'),
+        ('security',             'security_ops',        4,  'gap'),
+        ('threat_intel',         'security_ops',        4,  'gap'),
+        ('knowledge',            'rag_knowledge_graph', 5,  'parity'),
+        ('rag',                  'rag_knowledge_graph', 5,  'parity'),
+        ('compliance_gap',       'compliance_ato',      6,  'ahead'),
+        ('compliance',           'compliance_ato',      6,  'ahead'),
+        ('ci_cd',                'delivery_pipeline',   7,  'ahead_weak_hygiene'),
+        ('delivery',             'delivery_pipeline',   7,  'ahead_weak_hygiene'),
+        ('data_quality',         'data_lineage',        8,  'gap'),
+        ('lineage',              'data_lineage',        8,  'gap'),
+        ('llm_evaluation',       'evaluation',          9,  'gap'),
+        ('red_teaming',          'evaluation',          9,  'gap'),
+        ('infrastructure',       'iac',                 10, 'parity'),
+        ('iac',                  'iac',                 10, 'parity')
+)
+SELECT
+    -- kanban_tasks.id — deterministic, so a re-run collides instead of duplicating
+    'task-innov-' || substr(encode(sha256(s.id::bytea), 'hex'), 1, 10) AS task_id,
+    -- kanban_tasks.idempotency_key — advisory (the column has no UNIQUE index)
+    'innovation-promoter:' || s.id                                     AS idempotency_key,
+    left('INNOV-' || substr(s.id, 1, 8) || ': '
+         || coalesce(s.title, 'Signal ' || substr(s.id, 1, 8)), 120)   AS title,
+    s.id                                                               AS source_prediction_id,
+    'research'                                                         AS task_type,
+    CASE WHEN coalesce(s.innovation_score, 0) >= 0.7 THEN 'high'
+         WHEN coalesce(s.innovation_score, 0) >= 0.5 THEN 'medium'
+         ELSE 'low' END                                                AS priority,
+    'suggested'                                                        AS status,
+    'innovation_promoter'                                              AS dispatch_source,
+    'Adapt or explicitly reject the benchmark finding for subsystem '
+        || v.subsystem || '; record the decision.'                     AS acceptance_criteria,
+    -- description ingredients: build_kanban_task assembles these into markdown
+    v.subsystem, v.section, v.verdict,
+    s.category, s.source_type, s.triage_result, s.innovation_score,
+    s.url, s.description, sol.spec_content, sol.estimated_effort,
+    -- reported, not filtered on — see the note above
+    EXISTS (SELECT 1 FROM kanban_tasks kt
+            WHERE kt.source_prediction_id = s.id)                      AS already_promoted
+FROM innovation_signals s
+LEFT JOIN innovation_solutions sol ON sol.signal_id = s.id
+JOIN benchmark_verdict v ON v.category = lower(trim(coalesce(s.category, '')))
+WHERE s.source_type IN ('external_repo_scouting', 'external_framework_analysis')
+  AND s.triage_result IN ('approved')
+  AND coalesce(s.innovation_score, 0) >= 0.5
+  AND v.verdict IN ('gap', 'parity_with_named_gaps')
+ORDER BY s.innovation_score DESC NULLS LAST, s.created_at DESC
+"""
+
+
+def run_contract_query(conn=None) -> list[dict]:
+    """Execute PROMOTION_CONTRACT_SQL read-only and log what it found.
+
+    Diagnostic only — one SELECT, no writes, nothing cached. Raises on a
+    non-PostgreSQL backend rather than returning an empty list, because a
+    diagnostic that answers "0 rows" when it never ran is worse than one
+    that fails.
+    """
+    from tools.db.storage import is_pg
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+    try:
+        if not is_pg(conn):
+            raise RuntimeError(
+                "PROMOTION_CONTRACT_SQL is PostgreSQL-only (sha256(bytea) has no "
+                "SQLite equivalent); current backend is not PostgreSQL"
+            )
+        cur = conn.cursor()
+        cur.execute(PROMOTION_CONTRACT_SQL)
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        if owns_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    already = sum(1 for r in rows if r.get("already_promoted"))
+    logger.info(
+        "contract SQL: %d benchmark finding(s) with a gap verdict; %d already have a "
+        "card, %d would be new candidates for find_promotable_signals",
+        len(rows), already, len(rows) - already,
+    )
+    return rows
+
+
 def find_promotable_signals(
     conn,
     triage_results: tuple[str, ...] = ("approved",),
@@ -608,6 +785,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Promote one signal by id (still gap-gated)")
     p.add_argument("--list", action="store_true",
                    help="List candidates with their subsystem and verdict")
+    p.add_argument("--contract-sql", action="store_true",
+                   help="Run the read-only PROMOTION_CONTRACT_SQL diagnostic (never writes)")
     return p.parse_args(argv)
 
 
@@ -622,6 +801,19 @@ def main(argv: list[str] | None = None) -> int:
 
     # Writing requires --promote. Absent it, this is a preview.
     dry_run = not args.promote
+
+    if args.contract_sql:
+        rows = run_contract_query()
+        if args.json:
+            print(json.dumps(rows, indent=2, default=str))
+        else:
+            for r in rows:
+                flag = "have-card" if r["already_promoted"] else "NEW      "
+                print(f"  {flag}  {r['task_id']}  {r['subsystem']:<20}"
+                      f"{r['verdict']:<24}{r['priority']:<7}{str(r['title'])[:52]}")
+            print(f"{len(rows)} gap-verdict benchmark finding(s); "
+                  f"{sum(1 for r in rows if not r['already_promoted'])} not yet promoted")
+        return 0
 
     if args.promote_id:
         conn = get_connection()

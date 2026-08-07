@@ -390,8 +390,8 @@ Consequences to reason with, not around:
 
 * Defaults are `max_per_run: 5`, `max_per_subsystem: 2`. Effective ceiling per run is
   `min(5, 2 × number_of_gap_subsystems)`. With five gap-verdict subsystems configured
-  today (`developer_portal`, `agent_runtime`, `security_ops`, `data_quality_lineage`,
-  `llm_evaluation`), the binding constraint is `max_per_run`.
+  today (`developer_portal`, `agent_runtime`, `security_ops`, `data_lineage`,
+  `evaluation`), the binding constraint is `max_per_run`.
 * **Caps defer, they do not discard.** Dropped signals are untouched in
   `innovation_signals` and are re-queried next run. Truncation is logged at WARNING and
   surfaced as `truncated: true` with per-id drop lists — the stated rationale is that a
@@ -441,3 +441,60 @@ concurrent promoter runs can both read "absent" and both insert. In practice the
 collision catches this (the id is equally deterministic and `id` *is* the primary key), so
 the second insert fails the transaction rather than creating a duplicate card — but the
 idempotency key alone is not what saves it.
+
+## A.5 The contract as one SELECT — which rows are actually gap-verdict findings
+
+Research note for `xbm-promote-01-d2`, 2026-08-07, measured against the live PostgreSQL
+instance. A.1–A.4 describe the pipeline; this section answers the narrower question a
+reviewer actually asks — *which rows in `innovation_signals` are benchmark findings with a
+real gap verdict, and what card would each become?*
+
+That answer was previously spread across one SQL query, one YAML file and three Python
+functions. It is now also stated as a single reviewable SELECT:
+`PROMOTION_CONTRACT_SQL` in `tools/innovation/kanban_promoter.py`, runnable read-only via
+`python tools/innovation/kanban_promoter.py --contract-sql`.
+
+**Scope of the source table.** `innovation_signals` holds 1,179 rows; only 79 carry a
+benchmark `source_type`, and only **11** of those are `approved` — every one of the 11
+scores ≥ 0.5, so the score gate does no filtering on today's data. The other 68 are
+`blocked` (64), `suggested` (3) and `logged` (1). `innovation_trends` and
+`innovation_competitor_scans` are deliberately **not** joined: neither carries a
+`signal_id`, so neither can narrow or enrich a per-finding row. `innovation_solutions` is a
+LEFT JOIN — it supplies `spec_content` and `estimated_effort` to the card body when a spec
+exists, and must not drop a finding when one does not.
+
+**The gap gate, measured.** Of the 11 approved findings, **8** carry a gap verdict:
+
+| Category | → subsystem | Verdict | Count |
+|---|---|---|---|
+| `developer_experience` | `developer_portal` | `gap` | 3 |
+| `ai_tooling`, `workflow`, `architecture` | `agent_runtime` | `parity_with_named_gaps` | 5 |
+
+The 3 excluded are excluded for stated reasons, not silently: `performance` and `ui` map to
+no benchmark subsystem at all, and `knowledge` maps to `rag_knowledge_graph`, whose verdict
+is `parity` (§5). The SQL constant and `classify_signals()` were run side by side over the
+same rows and agree exactly — same ids, subsystems, verdicts, task ids and priorities.
+
+**`metadata.subsystem` is currently dead weight.** `resolve_subsystem` prefers it over
+`category` (A.1), but the column is **NULL on all 11** approved findings, so classification
+runs entirely on `category` today. The SQL constant therefore reproduces only the category
+path; a tagged signal could classify differently in Python than in the constant, which is
+one of the reasons the constant is a diagnostic and not the gate.
+
+**Idempotency, verified across the language boundary.** PostgreSQL's
+`substr(encode(sha256(s.id::bytea),'hex'),1,10)` and Python's `hashlib.sha256(...)` produce
+identical task ids on live rows, so the SQL restatement of `stable_task_id` is exact rather
+than approximate. Both keys derive from the signal id alone — never the clock.
+
+**Why the query reports `already_promoted` instead of filtering on it.** All 8 gap-verdict
+findings already have cards, from the predecessor `genesis_scheduler` path described in
+A.1. Applied as the runtime's `NOT IN` anti-join the query returns **zero** rows, which is
+correct rather than broken. Exposing the check as a column keeps the population visible, so
+a future reader who sees `candidates: 0` can tell working dedup from an empty table —
+without loosening the filters and re-promoting eleven finished cards.
+
+**The cost of writing it down.** The verdict map now exists in three places: this document,
+`args/innovation_promoter.yaml`, and the SQL constant. The YAML remains the single source
+of truth for the runtime gate; `tests/innovation/test_kanban_promoter.py` pins the constant
+to it — category map, section numbers, gap-verdict list, scope filters, score thresholds
+and both key derivations — so drift fails a test rather than misleading a reviewer.
