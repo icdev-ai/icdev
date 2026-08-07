@@ -3140,9 +3140,27 @@ def _record_status_transition(
     incident where investigators had no forensic trail for the rogue
     status=done UPDATE. Never raises — audit log failure must not block
     the primary state transition.
+
+    ``reason`` stays optional in the signature so no caller has to change, but
+    a blank one never reaches the table: it is replaced with a string naming
+    the call site that omitted it (see tools/kanban/transition_reason.py).
+    #1183 closed the reason-less call sites and blank rows kept arriving
+    anyway, because the boundary — here — still accepted them.
     """
     try:
         import secrets as _secrets  # noqa: PLC0415
+        # Imported here, not at module scope: this mirror is divergent from the
+        # root copy, so a top-level import would widen the diff that keeps the
+        # two files out of sync.
+        from tools.kanban.transition_reason import (  # noqa: PLC0415
+            resolve_transition_reason as _resolve_transition_reason,
+        )
+        # skip_frames=1 hides this function so the synthesized text names
+        # _move_task and the code that called it, not this writer.
+        reason = _resolve_transition_reason(
+            reason, from_status=from_status, to_status=to_status,
+            actor=actor, skip_frames=1,
+        )
         conn = get_connection()
         try:
             conn.execute(

@@ -37,6 +37,16 @@ WRITERS = [
     "tools/mcp/kanban_server.py",
 ]
 
+# The same six under the canonical ``icdev.tools.*`` namespace. These are not
+# redundant: ``tools.X`` and ``icdev.tools.X`` are separate module objects in a
+# checkout, and a wheel ships only the ``icdev/`` copy. The first cut of this
+# file scanned ``tools/`` alone, so ``icdev/tools/genesis/reflexes/kanban.py``
+# and ``icdev/tools/ci/pr_watcher.py`` kept writing blank reasons with every
+# root-namespace test passing — the mirror is where this hole reopens.
+ICDEV_WRITERS = ["icdev/" + rel for rel in WRITERS]
+
+ALL_WRITERS = WRITERS + ICDEV_WRITERS
+
 
 # ── the boundary ──────────────────────────────────────────────────────────
 
@@ -190,24 +200,29 @@ def test_no_reflex_call_site_omits_a_reason():
 
 
 def _writers_on_disk():
-    """Every module that INSERTs into the table, found rather than assumed."""
+    """Every module that INSERTs into the table, found rather than assumed.
+
+    Scans BOTH namespaces. Scanning only ``tools/`` is what let the two
+    ``icdev/`` mirrors write blank reasons unnoticed.
+    """
     found = []
-    for path in REPO_ROOT.joinpath("tools").rglob("*.py"):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        if "INSERT INTO kanban_status_transitions" in text:
-            found.append(path.relative_to(REPO_ROOT).as_posix())
+    for root in ("tools", "icdev/tools"):
+        for path in REPO_ROOT.joinpath(root).rglob("*.py"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if "INSERT INTO kanban_status_transitions" in text:
+                found.append(path.relative_to(REPO_ROOT).as_posix())
     return sorted(found)
 
 
 def test_writer_inventory_is_current():
-    """If someone adds a sixth writer, this fails and they must extend the list."""
-    assert _writers_on_disk() == sorted(WRITERS)
+    """If someone adds a seventh writer, this fails and they must extend the list."""
+    assert _writers_on_disk() == sorted(ALL_WRITERS)
 
 
-@pytest.mark.parametrize("rel", WRITERS)
+@pytest.mark.parametrize("rel", ALL_WRITERS)
 def test_every_writer_routes_through_the_boundary(rel):
     """A writer that builds its own INSERT can reintroduce blanks; forbid it."""
     text = (REPO_ROOT / rel).read_text(encoding="utf-8")
@@ -310,3 +325,92 @@ def test_mcp_move_keeps_an_explicit_reason(tmp_path, monkeypatch):
     ).fetchone())["reason"]
     conn.close()
     assert reason == "operator requeued after a bad merge"
+
+
+# ── the canonical namespace ───────────────────────────────────────────────
+
+
+def test_icdev_mirror_reflex_replaces_a_blank_reason(tmp_path, monkeypatch):
+    """The grep guard above proves the import exists; this proves it fires.
+
+    ``icdev.tools.genesis.reflexes.kanban`` is a distinct module object from
+    ``tools.genesis.reflexes.kanban`` and is the only copy a wheel ships. It
+    wrote ``reason`` straight through to the INSERT, so every blank this task
+    set out to remove was still reachable through the canonical namespace with
+    the whole root-namespace suite green.
+    """
+    db = tmp_path / "mirror.db"
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(db))
+
+    import tools.db.storage as storage_mod
+
+    real = storage_mod.get_connection
+    conn = real(str(db))
+    conn.execute(
+        "CREATE TABLE kanban_status_transitions ("
+        "id TEXT PRIMARY KEY, task_id TEXT, from_status TEXT, to_status TEXT, "
+        "actor TEXT, reason TEXT, recorded_at TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    import importlib
+
+    mirror = importlib.import_module("icdev.tools.genesis.reflexes.kanban")
+    monkeypatch.setattr(mirror, "get_connection", lambda *a, **kw: real(str(db)))
+
+    mirror._record_status_transition(
+        "obs-cov-05-mirror", "in_progress", "backlog", actor="scheduler",
+    )
+
+    conn = real(str(db))
+    row = conn.execute(
+        "SELECT reason FROM kanban_status_transitions WHERE task_id = %s",
+        ("obs-cov-05-mirror",),
+    ).fetchone()
+    conn.close()
+
+    assert row is not None, "the mirror wrote no row at all"
+    reason = dict(row)["reason"]
+    assert reason and reason.strip(), "the mirror wrote a blank reason"
+    assert reason.startswith(UNATTRIBUTED_PREFIX)
+    assert "in_progress->backlog" in reason
+    assert "scheduler" in reason
+
+
+def test_icdev_mirror_reflex_keeps_an_explicit_reason(tmp_path, monkeypatch):
+    """Attribution must never overwrite a cause the caller actually knew."""
+    db = tmp_path / "mirror2.db"
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(db))
+
+    import tools.db.storage as storage_mod
+
+    real = storage_mod.get_connection
+    conn = real(str(db))
+    conn.execute(
+        "CREATE TABLE kanban_status_transitions ("
+        "id TEXT PRIMARY KEY, task_id TEXT, from_status TEXT, to_status TEXT, "
+        "actor TEXT, reason TEXT, recorded_at TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    import importlib
+
+    mirror = importlib.import_module("icdev.tools.genesis.reflexes.kanban")
+    monkeypatch.setattr(mirror, "get_connection", lambda *a, **kw: real(str(db)))
+
+    mirror._record_status_transition(
+        "obs-cov-05-mirror2", "in_progress", "backlog",
+        actor="scheduler", reason="claude CLI exited 1: timeout",
+    )
+
+    conn = real(str(db))
+    reason = dict(conn.execute(
+        "SELECT reason FROM kanban_status_transitions WHERE task_id = %s",
+        ("obs-cov-05-mirror2",),
+    ).fetchone())["reason"]
+    conn.close()
+    assert reason == "claude CLI exited 1: timeout"
