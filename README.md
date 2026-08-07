@@ -286,7 +286,7 @@ One developer built this. Imagine what your team could do with it.
 - **MITRE ATT&CK matrix dashboard** — ODC gets a full attack matrix page (`/security/ask`) with drill-through, Sigma rule generator, Splunk SPL export, and Caldera REST adapter.
 - **IaC generation** — IDC emits Terraform, CloudFormation, Pulumi, Ansible, and Helm artifacts from canvas designs. CLI: `python -m tools.infra_canvas.emit`.
 - **Instant KG freshness** — Save-hooks on every canvas design `POST`/`PUT` re-index the knowledge graph in <1s. 6-hour `canvas_indexer` Genesis reflex as safety net.
-- **Failure Triage auto-fix loop** — Genesis daemon runs `failure_triage` on a 30-min cadence. Two-tier LLM routing: Claude diagnoses, Ollama generates patches. Confidence threshold 0.85, 5-apply/hour rate cap. Opt-in via `ICDEV_AUTOFIX_ENABLED=true`.
+- **Failure Triage auto-fix loop** — `failure_triage` diagnoses failed kanban tasks with two-tier LLM routing: Claude diagnoses, Ollama generates patches. Confidence threshold 0.85, 5-apply/hour rate cap. Opt-in via `ICDEV_AUTOFIX_ENABLED=true`. Invoked on demand (`python -m tools.genesis.reflexes.failure_triage`); it is configured for a 30-min Genesis cadence but is **not** in `daemon.REFLEX_NAMES`, so the daemon does not currently dispatch it — see `tests/test_reflex_registration.py` (xbm-wake-02).
 
 ---
 
