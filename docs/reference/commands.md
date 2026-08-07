@@ -1560,6 +1560,22 @@ python tools/db/migrate.py --create "add_feature_table"           # Scaffold new
 python tools/db/migrate.py --mark-applied 001                    # Mark existing DB as migrated
 python tools/db/migrate.py --up --all-tenants                    # Apply to all tenant DBs
 
+# Shadowed migrations — entries that share a version and therefore never run
+python tools/db/migration_versions.py --shadowed --json          # List what is being skipped
+# Is a shadowed entry's schema actually MISSING? Replay it against a throwaway
+# SQLite db built from the migrations that DO run, and diff the result.
+python tools/db/shadowed_migration_replay.py --list
+python tools/db/shadowed_migration_replay.py --sample 3          # verdict for the first 3
+python tools/db/shadowed_migration_replay.py --migration 010_network_intelligence_schema
+python tools/db/shadowed_migration_replay.py --all --json        # all 60, machine-readable
+# The baseline takes ~13s to build; --baseline-db caches it across runs.
+python tools/db/shadowed_migration_replay.py --all --baseline-db /tmp/base.db
+# Verdicts: schema_gap_detected | schema_already_exists | inconclusive.
+# SQLite-only oracle — a PG-only entry is inconclusive, never "already exists".
+# A gap means the MIGRATION CHAIN lacks the object; canvases that create tables
+# at app startup are not modelled, so confirm a declaring source in the tree
+# before treating a gap as a defect.
+
 # Database Backup/Restore (D152)
 python tools/db/backup.py --backup [--db icdev] [--json]         # Backup single database
 python tools/db/backup.py --backup --all [--json]                # Backup all databases
