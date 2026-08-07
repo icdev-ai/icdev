@@ -2403,6 +2403,15 @@ python tools/innovation/innovation_manager.py --daemon --json
 
 # Feedback calibration
 python tools/innovation/signal_ranker.py --calibrate --json
+
+# Benchmark comparison — what a tracked project means FOR ICDEV (xbm-cmp-01)
+# Joins each watchlist project to the ICDEV subsystem it benchmarks and measures
+# that subsystem locally (modules off disk, rows off the DB). Read-only.
+# "ahead — no adaptation needed" is a real outcome, not just a deficit report.
+python tools/innovation/benchmark_compare.py --markdown
+python tools/innovation/benchmark_compare.py --json
+python tools/innovation/benchmark_compare.py --subsystem observability --json
+python tools/innovation/benchmark_compare.py --no-db --markdown   # code half only
 ```
 
 ---

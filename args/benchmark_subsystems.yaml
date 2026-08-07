@@ -1,0 +1,475 @@
+# CUI // SP-CTI
+# Benchmark subsystem catalogue — the ICDEV side of the external comparison.
+#
+# `tools/genesis/reflexes/scout.py` reports what an external project is doing.
+# On its own that is trivia. `tools/innovation/benchmark_compare.py` joins each
+# tracked project to the ICDEV subsystem it benchmarks (the `subsystem:` tag in
+# context/genesis/competitors.yaml) and attaches what is measurably true here,
+# so a finding arrives as "LangGraph shipped X, and ICDEV's agent runtime is
+# 39 modules with 5 sessions recorded" rather than as a headline.
+#
+# This file is the declared half. Everything numeric is measured at run time —
+# module counts off disk, row counts off the live database. Nothing below
+# states a count; stating one would let it rot.
+#
+# ── Verdict vocabulary ───────────────────────────────────────────────
+#   ahead    Built, and no external project on the watchlist has a concept
+#            ICDEV has not adopted. Rendered "ahead — no adaptation needed".
+#            This outcome MUST stay reachable: a comparator that can only
+#            report deficits misrepresents the platform and gets ignored.
+#   parity   Built and running, but at least one outstanding adaptation is
+#            named below.
+#   gap      Not built, thin against `min_modules`, or built-but-unfed.
+#   unmapped A tracked project whose subsystem tag matches nothing here. Always
+#            reported, never dropped — an unroutable finding is a finding about
+#            this file.
+#
+# The verdict is computed, not declared. `adaptations` supplies the external
+# half (a concept some project has that ICDEV does not); disk and database
+# supply the local half. See benchmark_compare.assess_subsystem for the rules.
+#
+# ── Field reference ──────────────────────────────────────────────────
+#   title         Human name; matches the benchmark map heading.
+#   map_section   Section number in docs/research/external-benchmark-map.md.
+#                 Null for subsystems the map never covered.
+#   modules       Directories whose non-__init__ .py files are counted.
+#   min_modules   Floor below which the subsystem is `thin` — a measured
+#                 statement that the code is too small to be the thing it
+#                 claims to be. Set from the map's own reasoning, not rounded
+#                 to taste; the note on each entry says why.
+#   tables        Tables whose row counts are the data-liveness evidence.
+#   data_expected Whether emptiness is a finding. FALSE means artefacts are
+#                 produced per engagement, so an empty table on a dev instance
+#                 says nothing about the subsystem (see compliance_ato).
+#   data_floor    Rows across all `tables` at or below which the subsystem is
+#                 `unfed`. Default 0 (any row counts as fed). Raise it only
+#                 with a note — see data_lineage, where single-digit demo rows
+#                 were exactly what the benchmark map called out.
+#   adaptations   External concepts ICDEV has not fully adopted. `status`:
+#                 open (outstanding), deferred (outstanding, consciously not
+#                 scheduled — still blocks `ahead`, because the concept is
+#                 still unadopted), done (adopted; kept for the record).
+#   caveats       Internal follow-ups. Reported, but they do NOT flip a
+#                 verdict: they are not something an external project has.
+#   owned         Default true. False means no module tree in THIS repository
+#                 owns the subsystem, so "no modules found" is a fact about
+#                 scope rather than a deficit. Such a subsystem reports
+#                 `out_of_scope`, never `gap`.
+
+version: 1
+
+# Watchlists written before the `subsystem:` tag existed carry only `category`.
+# Routing by category keeps those entries actionable instead of silently
+# unmapped; the report records which key was used so a fallback never passes
+# itself off as an explicit tag.
+category_fallback:
+  platform_engineering: developer_portal
+  observability: observability
+  agent_framework: agent_runtime
+  agent_frameworks: agent_runtime
+  security: security_ops
+  threat_intel: security_ops
+  rag: rag_knowledge_graph
+  knowledge_graph: rag_knowledge_graph
+  compliance: compliance_ato
+  devsecops: delivery_pipeline
+  policy_as_code: delivery_pipeline
+  data_lineage: data_lineage
+  data_quality: data_lineage
+  evaluation: evaluation
+  iac: iac
+  autonomous_research: autonomous_research
+  llm_infrastructure: llm_infrastructure
+  mlops: mlops
+  embedded: embedded
+  rtos: embedded
+
+subsystems:
+
+  # ── §1 ─────────────────────────────────────────────────────────────
+  developer_portal:
+    title: Developer portal / catalog
+    map_section: 1
+    modules:
+      - tools/idp
+      - tools/awareness
+    min_modules: 8
+    min_modules_note: >-
+      A catalog with a scorecard needs a registry reader, dimension
+      extractors, a persistence path and a surface. Below eight modules one
+      of those is missing.
+    tables:
+      - developer_scorecards
+      - idp_scorecard_history
+    data_expected: true
+    data_note: >-
+      Scorecards grade components that exist right now, so an empty table is
+      the finding the benchmark map recorded: A-F grading with zero rows,
+      zero writers, zero readers.
+    adaptations:
+      - name: Scorecard-as-code — ranked ladder, weighted rules, per-rule exemptions with approval
+        source: Cortex.io / OpsLevel
+        status: open
+        tracked: idp-score-01..05
+      - name: Entity/blueprint model with ownership and on-call per component
+        source: Backstage / Port
+        status: open
+        tracked: idp
+    caveats:
+      - The execution layer — a failing rule becoming a kanban task and getting built — is
+        the thing no portal vendor sells. It is an ICDEV advantage inside a gap subsystem.
+
+  # ── §2 ─────────────────────────────────────────────────────────────
+  observability:
+    title: Observability / LLM telemetry
+    map_section: 2
+    modules:
+      - tools/observability
+    min_modules: 6
+    min_modules_note: >-
+      OTel-GenAI coverage needs at minimum a tracer, GenAI attribute mapping,
+      exporters and collectors.
+    tables:
+      - otel_spans
+      - prov_activities
+      - llm_chain_telemetry
+    data_expected: true
+    data_note: >-
+      Telemetry is emitted by ordinary operation, so an entirely empty set here
+      would mean nothing is instrumented in practice.
+    adaptations: []
+    adaptations_note: >-
+      Deliberately empty, and this is the point of the file. ICDEV independently
+      landed on the OpenTelemetry GenAI semantic conventions the market
+      standardised: tools/llm/router.py emits gen_ai.* spans on the main LLM
+      path. Langfuse, the open-source leader, is OTel-native too — there is no
+      concept here to adopt.
+    caveats:
+      - Because the telemetry is already standards-compliant it could be exported to any
+        OTel backend rather than only rendered in ICDEV dashboards. Config and packaging,
+        not engineering, and not something an external project has that ICDEV lacks.
+
+  # ── §3 ─────────────────────────────────────────────────────────────
+  agent_runtime:
+    title: Agent runtime & orchestration
+    map_section: 3
+    modules:
+      - tools/agent
+      - tools/agent_runtime
+      - tools/workflow_hitl
+    min_modules: 20
+    min_modules_note: >-
+      Two layers — inner reasoning loop and durable outer execution — plus a
+      human-in-the-loop surface.
+    tables:
+      - agent_loop_sessions
+      - agent_executions
+      - agent_execution_traces
+    data_expected: true
+    data_note: An agent runtime that has never run a session is a library, not a runtime.
+    adaptations:
+      - name: Approval workflow — a step that suspends for human sign-off mid-loop
+        source: LangGraph interrupts / Temporal signals
+        status: open
+        tracked: ars
+      - name: Semantic loop detection — steady progress through equivalent actions
+        source: LangGraph
+        status: done
+        tracked: ars-loop-01
+      - name: Session wall-clock ceiling distinct from per-call timeouts
+        source: Temporal
+        status: done
+        tracked: ars-wall-01
+      - name: Path and tool scoping declared in skill frontmatter
+        source: xichan96/cortex
+        status: done
+        tracked: ars-scope-01
+    caveats: []
+
+  # ── §4 ─────────────────────────────────────────────────────────────
+  security_ops:
+    title: Security ops / threat analysis
+    map_section: 4
+    modules:
+      - tools/analyzers
+      - tools/threat_analysis
+      - tools/strategos
+      - tools/security
+      - tools/supply_chain
+    min_modules: 40
+    min_modules_note: >-
+      The external reference point is TheHive Cortex at 39+ analyzers; the floor
+      is set there so "fewer analyzer-shaped modules than Cortex has analyzers"
+      registers as thin.
+    tables:
+      - threat_findings
+      - cve_triage
+      - dsoc_threats
+    data_expected: true
+    data_note: Analyzers that have never produced a finding have never been run in anger.
+    adaptations:
+      - name: Declared analyzer contract — accepted observable types, per-analyzer rate limit, taxonomy-tagged report
+        source: TheHive Cortex
+        status: done
+        tracked: anz
+      - name: MISP/STIX taxonomy alignment so threat output is interoperable rather than bespoke
+        source: MISP / OpenCTI
+        status: deferred
+        tracked: null
+    caveats: []
+
+  # ── §5 ─────────────────────────────────────────────────────────────
+  rag_knowledge_graph:
+    title: RAG & knowledge graph
+    map_section: 5
+    modules:
+      - tools/rag
+      - tools/knowledge_graph
+    min_modules: 30
+    min_modules_note: >-
+      Two-stage retrieval, corrective loops, fusion, chunking, retention and a
+      graph layer; the map measured 38 and 16 and called the subsystem mature.
+    tables:
+      - rag_chunks
+      - kg_nodes
+      - kg_edges
+    data_expected: true
+    data_note: >-
+      kg_edges is the one that matters. The benchmark map found it at 0 against
+      2,432 nodes and called that the whole gap — GraphRAG's premise is that
+      relationships carry the signal. Re-measure rather than quote the map.
+    adaptations:
+      - name: Community detection and hierarchical summarisation over the graph
+        source: Microsoft GraphRAG
+        status: open
+        tracked: null
+    caveats: []
+
+  # ── §6 ─────────────────────────────────────────────────────────────
+  compliance_ato:
+    title: Compliance & ATO
+    map_section: 6
+    modules:
+      - tools/compliance
+      - tools/ato_compliance
+    min_modules: 40
+    min_modules_note: >-
+      OSCAL generate/validate/convert/profile-resolve, FedRAMP, CMMC, eMASS,
+      Xacta, STIG, SSP/POAM/SBOM and a crosswalk engine.
+    tables:
+      - oscal_artifacts
+      - ssp_documents
+      - poam_items
+      - stig_findings
+    data_expected: false
+    data_note: >-
+      These tables fill per engagement — an SSP exists because someone
+      authorised a system, not because the platform is running. A development
+      instance with zero rows says nothing about the subsystem, so emptiness is
+      reported and is deliberately NOT read as a gap. Contrast data_lineage,
+      where emptiness is exactly the finding.
+    adaptations: []
+    adaptations_note: >-
+      Empty because the benchmark found no external project worth adapting
+      from. OSCAL is the standard and ICDEV implements it; compliance-trestle
+      is the reference tooling and is narrower; commercial GRC is document
+      management with workflow. This is the strongest genuine differentiator
+      measured, and saying so is as much the comparator's job as naming gaps.
+    caveats: []
+
+  # ── §7 ─────────────────────────────────────────────────────────────
+  delivery_pipeline:
+    title: Delivery pipeline
+    map_section: 7
+    modules:
+      - tools/kanban
+      - tools/ci
+    min_modules: 20
+    min_modules_note: Task factory, dispatch, worktrees, verification, promotion and CI glue.
+    tables:
+      - kanban_tasks
+      - kanban_verifications
+    data_expected: true
+    data_note: >-
+      A build ledger is the evidence. These two tables are the closed
+      gap-to-merged-fix loop actually having run.
+    adaptations: []
+    adaptations_note: >-
+      Temporal has durable execution and Argo has Kubernetes-native pipelines,
+      but neither closes the loop from detected gap to merged fix. Nothing
+      external to adopt.
+    caveats:
+      - Worktree reclamation. Creation is bounded, reclamation is not; the map measured 109
+        registered worktrees rising to 117 within hours. An internal hygiene defect, not an
+        unadopted external concept, so it does not move the verdict off ahead.
+
+  # ── §8 ─────────────────────────────────────────────────────────────
+  data_lineage:
+    title: Data quality & lineage
+    map_section: 8
+    modules:
+      - tools/data_canvas
+    min_modules: 10
+    min_modules_note: Profiler, quality engine, anomaly detector, freshness guardian, PII scanner.
+    tables:
+      - dm_domains
+      - dm_data_products
+      - dd_lineage
+    data_expected: true
+    data_floor: 50
+    data_note: >-
+      The floor is 50 rather than 0 deliberately. The benchmark map's finding
+      was "sophisticated machinery with nothing running through it", and it
+      reached that conclusion with dm_domains at 4 and dm_data_products at 8 —
+      non-zero but plainly a demo. A floor of 0 would score those as fed and
+      lose the finding.
+    adaptations:
+      - name: Emit lineage in a standard event format rather than a bespoke one
+        source: OpenLineage
+        status: open
+        tracked: null
+      - name: Declarative expectation suites for data quality
+        source: Great Expectations
+        status: deferred
+        tracked: null
+    caveats: []
+
+  # ── §9 ─────────────────────────────────────────────────────────────
+  evaluation:
+    title: LLM evaluation & red teaming
+    map_section: 9
+    modules:
+      - tools/evaluation
+    min_modules: 5
+    min_modules_note: >-
+      The floor that makes the thinnest measured subsystem register as thin.
+      The map counted 2 modules here against 38 in tools/rag, guarding LLM
+      output that ships into compliance artefacts.
+    tables:
+      - agent_evals
+      - goveval_results
+      - rag_evaluation_results
+      - atlas_red_team_results
+    data_expected: true
+    data_note: An evaluation suite that has never produced a result is not gating anything.
+    adaptations:
+      - name: Eval-as-config with CI gating on regression
+        source: promptfoo
+        status: open
+        tracked: null
+      - name: Research-backed metric library — faithfulness, relevance, safety
+        source: DeepEval
+        status: open
+        tracked: null
+      - name: Vulnerability scanning of models as a standing suite
+        source: Giskard
+        status: deferred
+        tracked: null
+    caveats:
+      - Security evaluation does exist — ATLAS red teaming and an OWASP-agentic assessor.
+        The gap is systematic quality evaluation, not security evaluation.
+
+  # ── §10 ────────────────────────────────────────────────────────────
+  iac:
+    title: IaC & infrastructure
+    map_section: 10
+    modules:
+      - tools/idc
+      - tools/infra
+      - tools/infra_canvas
+      - tools/devops
+    min_modules: 15
+    min_modules_note: Terraform/Pulumi emitters, state importers, Ansible, K8s, Helm, Iron Bank.
+    tables:
+      - idc_infra_resources
+      - idc_infra_snapshots
+      - idc_assessments
+    data_expected: true
+    data_note: An IaC canvas with no imported resources has never been pointed at real infrastructure.
+    adaptations:
+      - name: Policy-pack model for IaC scanning
+        source: Checkov / Terrascan
+        status: deferred
+        tracked: null
+    caveats: []
+
+  # ── Subsystems the benchmark map never covered ─────────────────────
+  # Carried because the watchlist tags targets with them. Measured on the same
+  # terms; `map_section: null` marks that no research pass has judged them, so
+  # their adaptation lists are empty for lack of a pass rather than because a
+  # pass found nothing. The report distinguishes the two.
+  autonomous_research:
+    title: Genesis / autonomous research loops
+    map_section: null
+    modules:
+      - tools/genesis
+      - tools/autoresearch
+    min_modules: 10
+    tables:
+      - innovation_signals
+    data_expected: true
+    adaptations: []
+    caveats:
+      - Never benchmarked. An empty adaptation list here means unexamined, not clean.
+
+  design_quality:
+    title: Generated-UI & presentation quality
+    map_section: null
+    modules:
+      - tools/viz
+      - tools/slides
+      - tools/creative
+    min_modules: 15
+    min_modules_note: >-
+      A renderer, a template layer and a spec/quality layer, across three
+      surfaces (visualisation, decks, creative briefs).
+    tables:
+      - slides_decks
+      - slides_slides
+      - creative_specs
+    data_expected: true
+    adaptations: []
+    caveats:
+      - Never benchmarked. An empty adaptation list here means unexamined, not clean.
+
+  llm_infrastructure:
+    title: Local model serving & LLM routing
+    map_section: null
+    modules:
+      - tools/llm
+    min_modules: 20
+    tables:
+      - llm_chain_telemetry
+    data_expected: true
+    adaptations: []
+    caveats:
+      - Never benchmarked. An empty adaptation list here means unexamined, not clean.
+
+  mlops:
+    title: Model lifecycle
+    map_section: null
+    modules:
+      - tools/finetune
+      - tools/ohc
+    min_modules: 10
+    tables:
+      - model_snapshots
+      - ft_evaluations
+    data_expected: true
+    adaptations: []
+    caveats:
+      - Never benchmarked. An empty adaptation list here means unexamined, not clean.
+
+  embedded:
+    title: Embedded / RTOS
+    map_section: null
+    owned: false
+    modules: []
+    min_modules: 0
+    tables: []
+    data_expected: false
+    adaptations: []
+    caveats:
+      - No ICDEV module tree owns this. The watchlist tracks esp-idf and FreeRTOS for
+        SparkPilot, which lives outside this repository — so the honest local measurement
+        is "absent here", not "gap".
