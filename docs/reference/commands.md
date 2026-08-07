@@ -2402,6 +2402,14 @@ python tools/innovation/subsystem_map.py --subsystem observability --json
 python tools/innovation/subsystem_map.py --all --json        # the comparison map
 python tools/innovation/subsystem_map.py --validate          # cross-file integrity
 
+# Verdict engine — ahead / parity / gap / no adaptation needed (xbm-cmp-01-d3)
+# `position` (ahead|parity|behind|unknown) is where ICDEV stands; `verdict` is
+# what to do about it. A subsystem can be position=ahead AND verdict=no_adaptation_needed.
+python tools/innovation/benchmark_compare.py --subsystem observability --json
+python tools/innovation/benchmark_compare.py --project langfuse --json   # a finding -> a verdict
+python tools/innovation/benchmark_compare.py --all --json
+python tools/innovation/benchmark_compare.py --all --verdict gap
+
 # Introspective analysis (air-gap safe)
 python tools/innovation/introspective_analyzer.py --analyze --all --json
 
