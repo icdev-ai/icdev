@@ -427,6 +427,22 @@ CREATE TABLE IF NOT EXISTS kanban_status_transitions (
     reason       TEXT,
     recorded_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+-- Operator alert surface (mirrors tools/db/init_icdev_db.py::alerts).
+CREATE TABLE IF NOT EXISTS alerts (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id     TEXT,
+    severity       TEXT NOT NULL CHECK(severity IN ('critical', 'warning', 'info')),
+    source         TEXT NOT NULL,
+    title          TEXT NOT NULL,
+    description    TEXT,
+    status         TEXT DEFAULT 'firing' CHECK(status IN ('firing', 'acknowledged', 'resolved')),
+    acknowledged_by TEXT,
+    resolved_at    TIMESTAMP,
+    auto_healed    BOOLEAN DEFAULT FALSE,
+    healing_event_id INTEGER,
+    watchcon_tier  INTEGER DEFAULT 4 CHECK(watchcon_tier IN (2,3,4)),
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- Continuous Harness eval table (mirrors tools/db/schema/pg_consolidated.sql).
 CREATE TABLE IF NOT EXISTS harness_eval (
     id             TEXT PRIMARY KEY,

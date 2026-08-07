@@ -40,6 +40,21 @@
     </a>
 </div>
 
+{# Board throughput stall banner (kax-stall-01) — the board going quiet for four
+   days was previously invisible until a human happened to ask. Rendered directly
+   above the Task Board it describes; source rows come from the self_monitor reflex. #}
+{% for a in board_alerts %}
+<div style="background: rgba(217, 74, 74, 0.10); border: 1px solid rgba(217, 74, 74, 0.45); border-left-width: 4px; border-radius: 10px; padding: 14px 20px; margin-bottom: 16px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <div>
+            <strong style="color: var(--accent-red, #d94a4a);">&#9888; {{ a.title }}</strong>
+            <div class="text-secondary" style="font-size:13px; margin-top:6px;">{{ a.description }}</div>
+        </div>
+        <a href="/monitoring" class="btn" style="white-space:nowrap;">Monitoring &rarr;</a>
+    </div>
+</div>
+{% endfor %}
+
 <!-- Task Kanban Board -->
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
     <h2 style="margin:0;">Task Board

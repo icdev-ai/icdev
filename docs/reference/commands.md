@@ -877,7 +877,38 @@ python tools/genesis/feedback_collector.py --priorities --json # Reflex priority
 python tools/genesis/reporter.py --generate --json            # Generate weekly report
 python tools/genesis/reporter.py --latest                     # Show latest report
 python tools/genesis/reporter.py --list --json                # List all reports
+
+# Self-monitor reflex (includes the kax-stall-01 board throughput stall rule)
+python tools/genesis/reflexes/self_monitor.py --json          # Full cycle: probes + board throughput
+python tools/genesis/reflexes/self_monitor.py --no-refresh --json   # Skip the live probe refresh
 ```
+
+### Board throughput stall rule (kax-stall-01)
+
+Fires one `board_throughput:done_flatline` alert when no kanban task reached
+`done` inside the configured window WHILE tasks sat in `scheduled`/`in_progress`.
+An empty board reads as idle, not stalled. Surfaced as a banner above the Task
+Board on Home (`/`) and on `/monitoring`.
+
+```bash
+# Read the raw signal (read-only; safe against the live board)
+python tools/kanban/metrics.py --stall                        # {stalled, reason, completed_in_window, ...}
+python tools/kanban/metrics.py --stall --window-hours 72       # widen the window
+
+# Runtime proof on the AMBIENT backend — refuses to run on a non-empty database
+ICDEV_DATABASE_URL=postgresql://icdev:PW@localhost:5432/icdev_stall_verify \
+ICDEV_STORAGE_BACKEND=postgresql ICDEV_PG_NO_FALLBACK=1 \
+  python tools/db/bootstrap_pg.py                             # build the throwaway PG first
+ICDEV_DATABASE_URL=postgresql://icdev:PW@localhost:5432/icdev_stall_verify \
+ICDEV_STORAGE_BACKEND=postgresql ICDEV_PG_NO_FALLBACK=1 \
+  python tools/testing/verify_board_stall_rule.py --json
+```
+
+Config lives in `args/genesis_config.yaml` under `self_monitor.board_throughput`
+(`enabled`, `window_hours`, `min_active_tasks`, `cooldown_hours`, `severity`).
+Env overrides win over YAML: `ICDEV_BOARD_STALL_ENABLED`,
+`ICDEV_BOARD_STALL_WINDOW_HOURS`, `ICDEV_BOARD_STALL_MIN_ACTIVE`,
+`ICDEV_BOARD_STALL_COOLDOWN_HOURS`, `ICDEV_BOARD_STALL_SEVERITY`.
 
 ---
 

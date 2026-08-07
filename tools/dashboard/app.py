@@ -3524,6 +3524,22 @@ def create_app(testing: bool = False) -> Flask:
             # Open POAM count = open canvas findings (excludes declined/accepted_risk/remediated)
             open_poam = sum(1 for _f in _all_findings if _f.get("decision") not in _excluded)
 
+            # Board-health alerts (kax-stall-01) — rendered as a banner directly
+            # above the Task Board. Board throughput going to zero for four days
+            # was previously visible nowhere a human actually looks.
+            try:
+                board_alerts = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT id, severity, title, description, created_at FROM alerts "
+                        "WHERE status = 'firing' AND source LIKE %s "
+                        "ORDER BY created_at DESC LIMIT 5",
+                        ("board_throughput:%",),
+                    ).fetchall()
+                ]
+            except Exception:
+                board_alerts = []
+
             # Group projects by status for Kanban columns
             kanban_columns = {
                 "planning": [],
@@ -3549,6 +3565,7 @@ def create_app(testing: bool = False) -> Flask:
                 recent_audit=[dict(r) for r in recent_audit],
                 recent_activity=recent_activity,
                 firing_alerts=firing_alerts,
+                board_alerts=board_alerts,
                 open_poam=open_poam,
             )
         finally:

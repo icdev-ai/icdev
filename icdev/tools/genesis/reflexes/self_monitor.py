@@ -37,6 +37,7 @@ IMPLEMENTATION_STATUS = "full"
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -107,6 +108,33 @@ SEVERITY_MAP: Dict[str, Dict[str, str]] = {
 # dedup + auto-resolve only our own rows without touching alerts from other
 # subsystems (vuln_scanner, watchcon, alert_correlator).
 SOURCE_PREFIX = "self_monitor"
+
+# Board throughput stall alerts get their OWN source prefix, deliberately not
+# under SOURCE_PREFIX: _sync_alerts() auto-resolves every firing 'self_monitor:*'
+# alert whose category is absent from the probe results, which would resolve a
+# real stall alert on the very next cycle. Separate prefix, separate lifecycle.
+STALL_SOURCE_PREFIX = "board_throughput"
+STALL_SOURCE = f"{STALL_SOURCE_PREFIX}:done_flatline"
+
+# --- Board throughput stall rule (kax-stall-01) -----------------------------
+# Documented defaults only. The live values come from genesis_config.yaml
+# (self_monitor.board_throughput) with per-key env overrides below, so an
+# operator can retune or kill the rule without a code change.
+DEFAULT_STALL_ENABLED = True
+DEFAULT_STALL_WINDOW_HOURS = 24.0      # no 'done' in this long ⇒ candidate stall
+DEFAULT_STALL_MIN_ACTIVE_TASKS = 1     # ... but only with this much active work
+DEFAULT_STALL_COOLDOWN_HOURS = 12.0    # don't re-open the same stall this soon
+DEFAULT_STALL_SEVERITY = "critical"    # alerts CHECK: critical | warning | info
+
+# env key → (config key, coercion). Env wins over YAML so an operator can
+# silence or retune the rule on a running daemon.
+_STALL_ENV_OVERRIDES = {
+    "ICDEV_BOARD_STALL_ENABLED": ("enabled", "bool"),
+    "ICDEV_BOARD_STALL_WINDOW_HOURS": ("window_hours", "float"),
+    "ICDEV_BOARD_STALL_MIN_ACTIVE": ("min_active_tasks", "int"),
+    "ICDEV_BOARD_STALL_COOLDOWN_HOURS": ("cooldown_hours", "float"),
+    "ICDEV_BOARD_STALL_SEVERITY": ("severity", "str"),
+}
 
 # LLM anomaly detection — disabled by default; enable via genesis_config.yaml:
 #   anomaly_detection: {enabled: true, llm_enabled: true, baseline_hours: 72}
@@ -639,6 +667,188 @@ def _sync_alerts(
 
 
 # ---------------------------------------------------------------------------
+# Rule: board throughput stall (kax-stall-01)
+# ---------------------------------------------------------------------------
+
+
+def _stall_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve board_throughput settings: defaults ← genesis_config.yaml ← env."""
+    cfg: Dict[str, Any] = {
+        "enabled": DEFAULT_STALL_ENABLED,
+        "window_hours": DEFAULT_STALL_WINDOW_HOURS,
+        "min_active_tasks": DEFAULT_STALL_MIN_ACTIVE_TASKS,
+        "cooldown_hours": DEFAULT_STALL_COOLDOWN_HOURS,
+        "severity": DEFAULT_STALL_SEVERITY,
+    }
+    cfg.update(config.get("board_throughput") or {})
+    for env_key, (cfg_key, kind) in _STALL_ENV_OVERRIDES.items():
+        raw = os.getenv(env_key)
+        if raw is None or raw.strip() == "":
+            continue
+        try:
+            if kind == "bool":
+                cfg[cfg_key] = raw.strip().lower() in ("1", "true", "yes", "on")
+            elif kind == "float":
+                cfg[cfg_key] = float(raw)
+            elif kind == "int":
+                cfg[cfg_key] = int(raw)
+            else:
+                cfg[cfg_key] = raw.strip()
+        except ValueError:
+            LOG.warning("ignoring malformed %s=%r", env_key, raw)
+    return cfg
+
+
+def _last_stall_alert(conn: Any) -> Optional[Dict[str, Any]]:
+    """Most recent board-throughput alert row, whatever its status."""
+    try:
+        rows = conn.execute(
+            "SELECT id, status, title, created_at FROM alerts "
+            "WHERE source = %s ORDER BY created_at DESC, id DESC LIMIT 1",
+            (STALL_SOURCE,),
+        ).fetchall()
+    except Exception as exc:
+        LOG.warning("read board-throughput alerts failed: %s", exc)
+        return None
+    if not rows:
+        return None
+    r = rows[0]
+    return dict(r) if hasattr(r, "keys") else {
+        "id": r[0], "status": r[1], "title": r[2], "created_at": r[3],
+    }
+
+
+def _check_board_throughput(conn: Any, config: Dict[str, Any]) -> Dict[str, Any]:
+    """Open / refresh / resolve the single board-throughput stall alert.
+
+    Fires when nothing reached 'done' inside the window WHILE tasks were
+    scheduled or in_progress. Exactly one alert row exists per stall episode:
+
+      * already firing  → refresh the text in place, never a second row
+      * recently opened → suppressed by cooldown, even if a human resolved it
+      * board recovers  → the firing alert is resolved
+    """
+    cfg = _stall_config(config)
+    if not cfg.get("enabled", True):
+        return {"enabled": False, "action": "disabled"}
+
+    try:
+        from tools.kanban.metrics import throughput_stall_check
+    except ImportError as exc:  # pragma: no cover - slim env
+        LOG.warning("board throughput check unavailable: %s", exc)
+        return {"enabled": True, "action": "unavailable", "error": str(exc)[:200]}
+
+    try:
+        signal = throughput_stall_check(
+            conn=conn,
+            window_hours=float(cfg["window_hours"]),
+            min_active_tasks=int(cfg["min_active_tasks"]),
+        )
+    except Exception as exc:
+        LOG.warning("board throughput check failed: %s", exc)
+        return {"enabled": True, "action": "error", "error": str(exc)[:200]}
+
+    now = _utcnow_iso()
+    latest = _last_stall_alert(conn)
+    result: Dict[str, Any] = {"enabled": True, "signal": signal}
+
+    # --- Recovered: resolve the open alert, if any -------------------------
+    if not signal["stalled"]:
+        if latest and latest.get("status") == "firing":
+            try:
+                conn.execute(
+                    "UPDATE alerts SET status = 'resolved', resolved_at = %s WHERE id = %s",
+                    (now, latest["id"]),
+                )
+                conn.commit()
+                result["action"] = "resolved"
+                LOG.info("board throughput recovered (%s); stall alert resolved", signal["reason"])
+                return result
+            except Exception as exc:
+                LOG.warning("stall alert resolve failed: %s", exc)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                result["action"] = "resolve_failed"
+                return result
+        result["action"] = "healthy"
+        return result
+
+    # --- Stalled -----------------------------------------------------------
+    hours = signal.get("hours_since_last_done")
+    since = f"{hours:.0f}h" if isinstance(hours, (int, float)) else "ever"
+    title = (
+        f"Board throughput stalled — nothing done in {signal['window_hours']:.0f}h "
+        f"with {signal['active_tasks']} task(s) active"
+    )
+    description = (
+        f"No kanban task reached 'done' in the last {signal['window_hours']:.0f} hours while "
+        f"{signal['active_tasks']} task(s) sat in {list(signal['active_by_status'].keys()) or 'scheduled/in_progress'}. "
+        f"Last completion: {signal.get('last_done_at') or 'none on record'} ({since} ago). "
+        f"Active breakdown: {json.dumps(signal['active_by_status'], ensure_ascii=False)}. "
+        "The scheduler, the PR watcher, or the executors are not moving work through."
+    )
+
+    # Already firing → refresh in place. This is the no-duplicate guarantee.
+    if latest and latest.get("status") == "firing":
+        if latest.get("title") == title:
+            result["action"] = "unchanged"
+            return result
+        try:
+            conn.execute(
+                "UPDATE alerts SET title = %s, description = %s, severity = %s WHERE id = %s",
+                (title, description, cfg["severity"], latest["id"]),
+            )
+            conn.commit()
+            result["action"] = "updated"
+        except Exception as exc:
+            LOG.warning("stall alert refresh failed: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            result["action"] = "update_failed"
+        return result
+
+    # Cooldown: a human may have acknowledged/resolved the alert while the stall
+    # continues. Re-opening on the next cycle would be exactly the every-cycle
+    # noise the rule is supposed to avoid.
+    cooldown_hours = float(cfg["cooldown_hours"])
+    if latest and cooldown_hours > 0:
+        opened = _parse_ts(latest.get("created_at"))
+        if opened is not None:
+            age_h = (datetime.now(timezone.utc) - opened).total_seconds() / 3600.0
+            if age_h < cooldown_hours:
+                LOG.info(
+                    "board stall persists but last alert is %.1fh old (< %.1fh cooldown); suppressed",
+                    age_h, cooldown_hours,
+                )
+                result["action"] = "cooldown"
+                result["cooldown_age_hours"] = round(age_h, 2)
+                return result
+
+    try:
+        conn.execute(
+            "INSERT INTO alerts "
+            "(project_id, severity, source, title, description, status, auto_healed, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, 'firing', %s, %s)",
+            (None, cfg["severity"], STALL_SOURCE, title, description, False, now),
+        )
+        conn.commit()
+        result["action"] = "opened"
+        LOG.warning("BOARD THROUGHPUT STALLED: %s", title)
+    except Exception as exc:
+        LOG.warning("stall alert insert failed: %s", exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        result["action"] = "open_failed"
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Refresh: re-run cheap probes for current truth
 # ---------------------------------------------------------------------------
 
@@ -741,6 +951,8 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
         total_failing = sum(len(v) for v in failures_by_cat.values())
         failures_logged = _record_failures(conn, failures_by_cat, cap)
         alert_counts = _sync_alerts(conn, failures_by_cat, min_fail, breaching_override=llm_breaching)
+        # 3) Board throughput: is the pipeline actually completing work?
+        board_throughput = _check_board_throughput(conn, config)
     finally:
         try:
             conn.close()
@@ -763,17 +975,22 @@ def run(config: Optional[Dict[str, Any]] = None, trust: Any = None) -> Dict[str,
     LOG.info(
         "self_monitor: %d failing component(s) across %d categor(ies); "
         "alerts opened=%d updated=%d resolved=%d firing=%d; failure_log +%d; "
-        "metric_snapshots +%d; %dms",
+        "metric_snapshots +%d; board_throughput=%s; %dms",
         total_failing, len(failures_by_cat), alert_counts["opened"], alert_counts["updated"],
         alert_counts["resolved"], alert_counts["firing"], failures_logged, metrics_recorded,
-        elapsed_ms,
+        board_throughput.get("action"), elapsed_ms,
     )
+
+    # A live stall counts toward the reflex's firing-alert metric so the Genesis
+    # success_metric and the /monitoring header both reflect it.
+    stall_firing = 1 if board_throughput.get("action") in ("opened", "updated", "unchanged") else 0
 
     return {
         "success": True,
         # success_metric: alerts currently firing (gte 0 ⇒ always passes; >0 is signal)
-        "metric_value": float(alert_counts["firing"]),
+        "metric_value": float(alert_counts["firing"] + stall_firing),
         "details": {
+            "board_throughput": board_throughput,
             "total_failing_components": total_failing,
             "by_category": by_category,
             "alerts_opened": alert_counts["opened"],
@@ -825,6 +1042,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"  alerts opened/resolved/firing: "
               f"{d.get('alerts_opened')}/{d.get('alerts_resolved')}/{d.get('alerts_firing')}")
         print(f"  failure_log inserted: {d.get('failures_logged')}")
+        _bt = d.get("board_throughput") or {}
+        _sig = _bt.get("signal") or {}
+        print(f"  board throughput: {_bt.get('action')} "
+              f"(stalled={_sig.get('stalled')}, done in window={_sig.get('completed_in_window')}, "
+              f"active={_sig.get('active_tasks')})")
     return 0 if result.get("success") else 1
 
 

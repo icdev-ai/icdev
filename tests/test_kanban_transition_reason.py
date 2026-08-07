@@ -37,6 +37,16 @@ WRITERS = [
     "tools/mcp/kanban_server.py",
 ]
 
+# Not a production writer: this verification harness seeds synthetic 'done'
+# transitions into a throwaway database to prove the board-throughput stall rule
+# (kax-stall-01) on a live backend. It still routes through the boundary, and
+# still belongs in the inventory — an INSERT the list does not know about is
+# exactly what this file exists to prevent. It has no icdev/ mirror (neither
+# does verify_govcon_audit_writes.py), so it is listed separately from WRITERS.
+VERIFIER_WRITERS = [
+    "tools/testing/verify_board_stall_rule.py",
+]
+
 # The same six under the canonical ``icdev.tools.*`` namespace. These are not
 # redundant: ``tools.X`` and ``icdev.tools.X`` are separate module objects in a
 # checkout, and a wheel ships only the ``icdev/`` copy. The first cut of this
@@ -45,7 +55,7 @@ WRITERS = [
 # root-namespace test passing — the mirror is where this hole reopens.
 ICDEV_WRITERS = ["icdev/" + rel for rel in WRITERS]
 
-ALL_WRITERS = WRITERS + ICDEV_WRITERS
+ALL_WRITERS = WRITERS + ICDEV_WRITERS + VERIFIER_WRITERS
 
 
 # ── the boundary ──────────────────────────────────────────────────────────
