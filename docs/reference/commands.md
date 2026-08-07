@@ -901,6 +901,18 @@ python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh v
 # depend on the dispatching process still being alive) and appends it. It does not weaken the
 # gate: a branch with no work still fails.
 
+# Kanban — rebase a DIRTY PR branch before it burns its resume budget (kax-conflict-01)
+python tools/kanban/rebase_recovery.py --task <task-id> --dry-run --json  # Probe locally, never push
+python tools/kanban/rebase_recovery.py --task <task-id> --json            # Rebase + force-with-lease push
+# A branch that has merely drifted behind main goes DIRTY, and pr_watcher treats that as a
+# resume class — so the PR spends all max_resume_cycles_per_task LLM resumes on a conflict a
+# plain rebase would have cleared, then lands in a permanent human queue. This rebases in an
+# isolated detached worktree and pushes ONLY when the rebase is clean; a real conflict aborts
+# and escalates as before. Only kanban/<task-id> (or its -rN retry sibling) is ever pushed.
+# pr_watcher calls this automatically on MERGE_CONFLICT — see args/pr_watcher_config.yaml
+# (auto_rebase_on_conflict, max_rebase_attempts_per_task). Rebase attempts are a separate
+# ledger from resumes, so recovery never eats the resume budget.
+
 # Kanban task_factory — loop_type and adversarial fields
 # Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
 python -c "

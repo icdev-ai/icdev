@@ -38,3 +38,10 @@ tests/test_audit_event_type_parity.py
 # --follow cursor is a tz-AWARE ISO string, so the comparison that drives
 # --follow is only ever exercised for real here.
 tests/test_audit_tail_cli.py
+# kax-conflict-01: the pr_watcher auto-rebase budget. `_count_audit_actions`
+# carries a PG-only `details::text` cast and builds a multi-placeholder IN
+# clause; neither is exercised on SQLite, so a broken query there would return 0
+# silently — i.e. an unlimited rebase budget — while the SQLite cases stayed
+# green. The PG case seeds rows inside a transaction and ROLLS BACK, so the
+# append-only audit_trail accumulates nothing.
+tests/ci/test_pr_watcher_rebase.py
