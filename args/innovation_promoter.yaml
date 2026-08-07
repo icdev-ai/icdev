@@ -103,21 +103,21 @@ benchmark_subsystems:
     icdev_surface: tools/kanban/
     categories: [ci_cd, delivery]
 
-  data_quality_lineage:
+  data_lineage:
     section: 8
     verdict: gap
     benchmarked_against: OpenLineage, DataHub, Great Expectations
     icdev_surface: tools/data_quality/
     categories: [data_quality, lineage]
 
-  llm_evaluation:
+  evaluation:
     section: 9
     verdict: gap
     benchmarked_against: promptfoo, DeepEval, Giskard
     icdev_surface: tools/genesis/harness/
     categories: [llm_evaluation, red_teaming]
 
-  iac_infrastructure:
+  iac:
     section: 10
     verdict: parity
     benchmarked_against: Crossplane, Checkov, Atlantis
