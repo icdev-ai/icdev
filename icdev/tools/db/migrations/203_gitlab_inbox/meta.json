@@ -1,0 +1,8 @@
+{
+  "description": "gitlab_inbox — durable GitLab issue-note receipt buffer",
+  "date": "2026-08-03",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "note": "Converted from the runner-invisible bare file 203_gitlab_inbox.py (mvs-invisible-04)."
+}

@@ -1,0 +1,263 @@
+# CUI // SP-CTI
+# XBM — what ICDEV itself holds, per subsystem tag (xbm-cmp-01)
+#
+# A scout finding arrives tagged with a `subsystem` (see the vocabulary block in
+# context/genesis/competitors.yaml). Reporting that finding in isolation is what
+# the CMP epic exists to stop: "SigNoz shipped X" is only actionable next to what
+# ICDEV's own observability subsystem contains. This file is the ICDEV half of
+# that comparison — for each subsystem tag, where its code lives and which tables
+# hold its data.
+#
+# Read by tools/innovation/icdev_evidence.py. Adding a subsystem or re-pointing
+# one is a change here, not in Python.
+#
+# ── Schema ───────────────────────────────────────────────────────────
+#   title    Human label. Matches the benchmark map's section heading.
+#   section  Section number in docs/research/external-benchmark-map.md, or
+#            null for the five subsystems that predate the map.
+#   modules  Glob patterns, repo-root relative, counted as files. The map's
+#            "ICDEV today" paragraphs quote these counts, so `tools/rag/*.py`
+#            reproducing 38 is the check that this file still points at what
+#            the map measured. __init__.py IS counted — that is the map's
+#            convention, not an oversight.
+#   tables   Glob patterns matched against live table names (fnmatch, case
+#            sensitive). Matched against the DB catalog once, so a pattern that
+#            matches nothing costs nothing and reports as unmatched rather than
+#            as an error.
+#   note     Why the mapping is what it is, where that is not obvious.
+#
+# ── This is not a partition ──────────────────────────────────────────
+# Subsystems overlap on purpose. `llm_judge_evaluations` counts under both
+# `llm_infrastructure` (by prefix) and `evaluation` (by name), because it is
+# genuinely evidence for both questions. Do not sum across subsystems and expect
+# the repo total; that number is meaningless here.
+#
+# ── Empty is a finding, not a bug ────────────────────────────────────
+# `embedded` declares no modules and no tables. That is correct: the ESP-IDF and
+# FreeRTOS targets benchmark SparkPilot, which is not in this tree. The evidence
+# function reports it `absent`, and `absent` is exactly the answer a comparison
+# needs — it distinguishes "we have nothing here" from "we have not looked".
+
+subsystems:
+
+  # ── §1–§10 map 1:1 onto docs/research/external-benchmark-map.md ────
+
+  developer_portal:
+    title: Developer portal / catalog
+    section: 1
+    modules:
+      - tools/idp/*.py
+      - tools/skillhub/*.py
+      - tools/marketplace/*.py
+      - tools/registry/*.py
+      - tools/system_graph/*.py
+    tables:
+      - idp_*
+      - marketplace_*
+      - component_*
+
+  observability:
+    title: Observability / LLM telemetry
+    section: 2
+    modules:
+      - tools/observability/*.py
+      - tools/observability_canvas/*.py
+      - tools/odc/*.py
+    tables:
+      - otel_*
+      - observability_*
+      - odc_*
+      - sre_slo*
+
+  agent_runtime:
+    title: Agent runtime & orchestration
+    section: 3
+    modules:
+      - tools/agent/*.py
+      - tools/agent_runtime/*.py
+      - tools/agents/*.py
+      - tools/a2a/*.py
+      - tools/orchestration/*.py
+      - tools/workflow_hitl/*.py
+      - tools/ace/*.py
+      - tools/coworkers/*.py
+    tables:
+      - agent_*
+      - a2a_*
+      - hitl_*
+      - workflow_*
+
+  security_ops:
+    title: Security ops / threat analysis
+    section: 4
+    modules:
+      - tools/strategos/*.py
+      - tools/security/*.py
+      - tools/supply_chain/*.py
+      - tools/threat_analysis/*.py
+      - tools/dsoc_canvas/*.py
+      - tools/analyzers/*.py
+    note: >-
+      The map's §4 finding is that these ~79 analyzer-shaped modules share no
+      base class. The module count is therefore the evidence for that finding,
+      not just a size measurement.
+    tables:
+      - threat_*
+      - security_*
+      - dsoc_*
+      - sbom_*
+
+  rag_knowledge_graph:
+    title: RAG & knowledge graph
+    section: 5
+    modules:
+      - tools/rag/*.py
+      - tools/knowledge_graph/*.py
+      - tools/ontology/*.py
+    tables:
+      - rag_*
+      - kg_*
+      - knowledge_*
+      - ontology_*
+
+  compliance_ato:
+    title: Compliance & ATO
+    section: 6
+    modules:
+      - tools/compliance/*.py
+      - tools/ato_compliance/*.py
+      - tools/canvas_compliance/*.py
+    tables:
+      - compliance_*
+      - nist_*
+      - oscal_*
+      - ssp_*
+      - poam*
+      - control_*
+
+  delivery_pipeline:
+    title: Delivery pipeline
+    section: 7
+    modules:
+      - tools/pipeline/*.py
+      - tools/ci/*.py
+      - tools/devops/*.py
+      - tools/devsecops/*.py
+      - tools/kanban/*.py
+    note: >-
+      tools/kanban/ is included because the Governed Delivery Pipeline is ICDEV's
+      delivery pipeline — args/innovation_promoter.yaml points this subsystem's
+      icdev_surface at it for the same reason.
+    tables:
+      - pipeline*
+      - ci_pipeline_*
+      - devsecops_*
+
+  data_lineage:
+    title: Data quality & lineage
+    section: 8
+    modules:
+      - tools/data_canvas/*.py
+    tables:
+      - dd_*
+      - data_nodes
+      - data_edges
+      - data_designs
+
+  evaluation:
+    title: LLM evaluation & red teaming
+    section: 9
+    note: >-
+      The map's sharpest gap: 2 modules against 38 in tools/rag/. Table patterns
+      are named individually because evaluation rows live under the prefix of
+      whatever wrote them, not under an `eval_` prefix — the scatter is itself
+      the finding.
+    modules:
+      - tools/evaluation/*.py
+      - tools/harness/*.py
+      - tools/genesis/harness/*.py
+    tables:
+      - agent_eval*
+      - agent_benchmark_results
+      - capability_evaluations
+      - llm_judge_evaluations
+      - gd_ai_judge_evals
+      - goveval_results
+      - harness_eval
+      - ft_evaluations
+      - finetune_eval_results
+      - red_team*
+
+  iac:
+    title: IaC & infrastructure
+    section: 10
+    modules:
+      - tools/infra/*.py
+      - tools/infra_canvas/*.py
+      - tools/cloud/*.py
+    tables:
+      - infra_*
+
+  # ── ICDEV subsystems the benchmark map did not cover ──────────────
+
+  autonomous_research:
+    title: Genesis / autoresearch loops
+    section: null
+    modules:
+      - tools/genesis/*.py
+      - tools/autoresearch/*.py
+      - tools/research/*.py
+      - tools/oracle/*.py
+      - tools/awareness/*.py
+    note: >-
+      tools/autoresearch/ writes into the genesis_* and research_* tables rather
+      than a prefix of its own, so there is no autoresearch_* pattern to declare.
+    tables:
+      - genesis_*
+      - research_*
+
+  design_quality:
+    title: Generated-UI and presentation quality
+    section: null
+    modules:
+      - tools/viz/*.py
+      - tools/slides/*.py
+      - tools/presentations/*.py
+      - tools/sdc/*.py
+      - tools/quality/*.py
+    tables:
+      - sdc_*
+      - slide*
+
+  llm_infrastructure:
+    title: Local model serving
+    section: null
+    modules:
+      - tools/llm/*.py
+      - tools/cortex/*.py
+    tables:
+      - llm_*
+      - cortex_*
+
+  mlops:
+    title: Model lifecycle
+    section: null
+    modules:
+      - tools/ohc/*.py
+      - tools/finetune/*.py
+    tables:
+      - ohc_*
+      - model_*
+      - ft_*
+      - finetune_*
+
+  embedded:
+    title: SparkPilot / RTOS
+    section: null
+    note: >-
+      Deliberately empty. The esp-idf, FreeRTOS and RuView targets benchmark
+      SparkPilot, which is a separate tree. `absent` is the honest verdict and
+      the one a comparison should surface — do not invent a mapping to make this
+      subsystem look covered.
+    modules: []
+    tables: []

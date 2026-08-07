@@ -905,6 +905,13 @@ def _increment_retry_count(task_id: str) -> int:
             count = 0
     count += 1
     retry_file.write_text(str(count), encoding="utf-8")
+    # The two counters are the only places the runner decides an execution gets
+    # another go, so they are where agent_execution_retried belongs. Emitting at
+    # the re-dispatch instead would conflate a retry with a first attempt, since
+    # dispatch cannot see why it was called.
+    _audit_agent_execution(
+        "agent_execution_retried", task_id, reason="token_exhaustion", attempt=count,
+    )
     return count
 
 
@@ -938,6 +945,9 @@ def _increment_timeout_count(task_id: str) -> int:
             count = 0
     count += 1
     timeout_file.write_text(str(count), encoding="utf-8")
+    _audit_agent_execution(
+        "agent_execution_retried", task_id, reason="timeout", attempt=count,
+    )
     return count
 
 
@@ -4283,6 +4293,70 @@ def _claude_code_available() -> bool:
 # can treat them uniformly.
 _running: Dict[str, Any] = {}
 
+# Open runtime_invocations handles for dispatched agents, keyed by task id.
+# Separate from _running because the invocation outlives its entry there: the
+# completion path deletes from _running while still needing to close the row.
+_agent_invocations: Dict[str, Any] = {}
+
+# Imported defensively — the reflex must still dispatch on a tree where the
+# observability package is unavailable (partial checkout, older wheel).
+try:
+    from tools.observability.invocation_recorder import SURFACE_AGENT as _SURFACE_AGENT
+    from tools.observability.invocation_recorder import (
+        close_invocation as _close_agent_invocation,
+    )
+    from tools.observability.invocation_recorder import (
+        open_invocation as _open_agent_invocation,
+    )
+except Exception:  # noqa: BLE001
+    _SURFACE_AGENT = "agent"
+
+    def _open_agent_invocation(*_a, **_kw):  # type: ignore[misc]
+        return None
+
+    def _close_agent_invocation(*_a, **_kw):  # type: ignore[misc]
+        return None
+
+
+def _audit_agent_execution(event_type: str, task_id: str, **details) -> None:
+    """Write one agent_execution_* row to the audit trail. Never raises.
+
+    VALID_EVENT_TYPES declared four agent_execution_* types and nothing in the
+    tree wrote any of them; the single agent_execution_completed row on the
+    board was hand-written in June 2026. So the CHECK constraint advertised a
+    lifecycle the code could not produce, and querying the schema read as
+    coverage.
+
+    They are wired to the same choke points as the runtime_invocations handle
+    above, and for the same reason: this subprocess IS the agent execution.
+    Attaching them to tools/agent/agent_executor.py::execute_agent would look
+    tidier and observe nothing, which is the mistake #1196 made and #1304
+    corrected.
+
+    runtime_invocations already records duration and status, so this is not a
+    duplicate for its own sake --- the audit trail is the append-only NIST AU
+    record with a retention guarantee and a hash chain, and runtime_invocations
+    is operational telemetry. An auditor asking "when did agents run and which
+    failed" has to be able to answer it from audit_trail alone.
+
+    Dispatch must survive a broken audit path, so every failure here is
+    swallowed: an agent that cannot build because the audit table is locked
+    would be a far worse outcome than a missing row.
+    """
+    try:
+        from tools.audit.audit_logger import log_event
+
+        log_event(
+            event_type=event_type,
+            actor="kanban-runner",
+            action=f"{event_type} for {task_id}",
+            details={"task_id": task_id, **details},
+            classification="CUI",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("agent execution audit failed for %s: %s", task_id, exc)
+
+
 # Semaphore counter for EXEC_OLLAMA_LOCAL concurrent dispatch limit.
 _ollama_running_count: int = 0
 
@@ -4703,6 +4777,29 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
 
         _running[task_id] = proc
         _dispatch_times[task_id] = datetime.now(timezone.utc)
+        # THE agent surface. Not agent_executor.execute_agent — this runner
+        # never calls it. Instrumenting that function left `agent` with zero
+        # rows for its entire existence while the real build path, this
+        # subprocess, went unobserved. Opened here and closed in
+        # _check_completed when proc.poll() returns, so the recorded duration is
+        # the agent's actual wall-clock rather than a scheduler cycle.
+        # Supersede any handle this task left open. A task can be re-dispatched
+        # without its previous invocation ever being closed, and #1188 was
+        # exactly this bug in kanban_executions: the stranded rows sat in
+        # 'running' forever and "what is running now" drifted from the truth.
+        _close_agent_invocation(
+            _agent_invocations.pop(task_id, None), status="superseded",
+        )
+        _agent_invocations[task_id] = _open_agent_invocation(
+            _SURFACE_AGENT, task_id,
+            project_id=str(task.get("project_id") or ""),
+        )
+        _audit_agent_execution(
+            "agent_execution_started", task_id,
+            pid=proc.pid,
+            executor="claude-cli",
+            project_id=str(task.get("project_id") or ""),
+        )
         print(f"  Kanban: dispatched {task_id} to claude CLI (PID {proc.pid})")
     except FileNotFoundError as e:
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
@@ -8684,6 +8781,19 @@ def _check_completed():
     Also enforces MAX_EXECUTION_SECONDS timeout — kills hung processes
     and returns them to backlog.
     """
+    # Reconcile agent invocations against reality before doing anything else.
+    # Eight different paths remove a task from _running (timeout kill, stale
+    # cleanup, zombie reclaim, ...), and instrumenting each one would be a
+    # standing invitation to miss the ninth. Closing whatever no longer has a
+    # live process is one rule that covers all of them, and it runs every cycle.
+    for _stale_id in [t for t in _agent_invocations if t not in _running]:
+        _close_agent_invocation(
+            _agent_invocations.pop(_stale_id, None),
+            status="error",
+            error_class="abandoned",
+            error_message="process left _running without the completion path closing it",
+        )
+
     completed = []
 
     # ── TIMEOUT CHECK: kill hung processes ─────────────────────────
@@ -8878,6 +8988,21 @@ def _check_completed():
     for task_id, proc in list(_running.items()):
         ret = proc.poll()
         if ret is not None:
+            # Close the agent invocation opened at dispatch. Done FIRST, before
+            # verification/remediation/merge, so duration_ms is the agent's own
+            # wall-clock and not the pipeline's — the same reason
+            # _close_execution is called early below.
+            _close_agent_invocation(
+                _agent_invocations.pop(task_id, None),
+                status="ok" if ret == 0 else "error",
+                error_class=None if ret == 0 else f"exit_{ret}",
+            )
+            _audit_agent_execution(
+                "agent_execution_completed" if ret == 0 else "agent_execution_failed",
+                task_id,
+                exit_code=ret,
+                executor="claude-cli",
+            )
             # Continuous Harness feed — the claude-cli executor is the PRIMARY
             # build path but records nothing at dispatch, so its later
             # record_outcome() would attach to no decision row and codegen

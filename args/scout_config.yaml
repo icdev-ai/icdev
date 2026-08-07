@@ -208,3 +208,12 @@ genesis_reflex:
       - stars
       - forks
       - open_issues
+  # Promote benchmark findings to the kanban board after each scout pass.
+  # Disabled by default — the brief is the reflex's contract, and writing to
+  # the board is an escalation an operator opts into by flipping this.
+  # Cards land as status='suggested'; nothing reaches backlog without a human.
+  # The gap-verdict gate and the rate limits (max_per_run, max_per_subsystem)
+  # live in args/innovation_promoter.yaml, not here.
+  promotion:
+    enabled: false
+    dry_run: false

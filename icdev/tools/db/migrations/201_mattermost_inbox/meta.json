@@ -1,0 +1,8 @@
+{
+  "description": "mattermost_inbox — durable MatterMost post receipt buffer",
+  "date": "2026-08-03",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "note": "Converted from the runner-invisible bare file 201_mattermost_inbox.py (mvs-invisible-04)."
+}

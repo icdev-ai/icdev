@@ -1,13 +1,128 @@
 # CUI // SP-CTI
 # Configuration for tools/innovation/kanban_promoter.py
-# Promotes triaged innovation signals into kanban_tasks (status=suggested).
+# Promotes benchmark findings into kanban_tasks (status=suggested).
+#
+# A finding becomes work only when ALL of these hold:
+#   1. its source_type is a benchmark source (source_types below)
+#   2. its triage_result is in triage_results
+#   3. its innovation_score >= min_innovation_score
+#   4. it maps to a benchmark subsystem (metadata.subsystem, else category)
+#   5. that subsystem's verdict is in gap_verdicts
+# Anything that fails a check is counted and logged, never silently dropped.
+
+# ---------------------------------------------------------------------------
+# Scope — which signals are benchmark findings at all
+# ---------------------------------------------------------------------------
+# innovation_signals is dominated by rows that are NOT benchmark findings.
+# Measured 2026-08-03: 588 cve, 410 cli_harmonization, 30 unused_tools out
+# of ~1,179 total. These counts grow — re-measure, do not trust them. Those
+# their own pipelines (triage_engine, maintenance audit). Promoting on
+# triage_result alone would have queued 266 approved CVEs in one run —
+# the unbounded-seeder failure that produced 353 branches. Scope first,
+# then rate-limit.
+source_types:
+  - external_repo_scouting
+  - external_framework_analysis
 
 triage_results:
   - approved                 # only promote approved signals by default
 
 min_innovation_score: 0.5    # skip signals scoring below this (0-1 scale)
-max_per_run: 50              # cap each promotion batch
 default_task_type: research  # signals are exploration candidates
+
+# ---------------------------------------------------------------------------
+# Rate limits — the cap is the point, not a formality
+# ---------------------------------------------------------------------------
+# Truncation is logged at WARNING and reported in the result payload as
+# `truncated`, so a cap that bites is visible rather than a silent drop.
+max_per_run: 5               # hard ceiling on tasks created per invocation
+max_per_subsystem: 2         # no single subsystem may consume the whole run
+
+# ---------------------------------------------------------------------------
+# Benchmark verdict gate
+# ---------------------------------------------------------------------------
+# Verdicts are transcribed from the summary table of
+# docs/research/external-benchmark-map.md (first pass 2026-08-02). A finding
+# that benchmarks a subsystem ICDEV is already ahead on is intelligence, not
+# work — it is recorded and skipped.
+#
+# `ahead_weak_hygiene` (section 7) is deliberately NOT a gap verdict here:
+# that section's hygiene gaps are already tracked by the kpr and tch cards,
+# and promoting them again would duplicate live work.
+gap_verdicts:
+  - gap
+  - parity_with_named_gaps
+
+benchmark_subsystems:
+  developer_portal:
+    section: 1
+    verdict: gap
+    benchmarked_against: Backstage, Cortex.io, Port, OpsLevel
+    icdev_surface: args/component_registry.yaml
+    categories: [developer_experience, dx, platform_engineering]
+
+  observability:
+    section: 2
+    verdict: ahead
+    benchmarked_against: OpenTelemetry GenAI conventions, Langfuse
+    icdev_surface: tools/observability/
+    categories: [observability]
+
+  agent_runtime:
+    section: 3
+    verdict: parity_with_named_gaps
+    benchmarked_against: LangGraph, Temporal, OpenAI Agents SDK
+    icdev_surface: tools/ace/
+    categories: [ai_tooling, workflow, architecture]
+
+  security_ops:
+    section: 4
+    verdict: gap
+    benchmarked_against: TheHive Cortex, MISP, OpenCTI
+    icdev_surface: tools/analyzers/
+    categories: [security, threat_intel]
+
+  rag_knowledge_graph:
+    section: 5
+    verdict: parity
+    benchmarked_against: LlamaIndex, Haystack, Microsoft GraphRAG
+    icdev_surface: tools/rag/
+    categories: [knowledge, rag]
+
+  compliance_ato:
+    section: 6
+    verdict: ahead
+    benchmarked_against: NIST OSCAL, compliance-trestle
+    icdev_surface: tools/compliance/
+    categories: [compliance_gap, compliance]
+
+  delivery_pipeline:
+    section: 7
+    verdict: ahead_weak_hygiene
+    benchmarked_against: Temporal, Argo, GitHub Actions
+    icdev_surface: tools/kanban/
+    categories: [ci_cd, delivery]
+
+  data_lineage:
+    section: 8
+    verdict: gap
+    benchmarked_against: OpenLineage, DataHub, Great Expectations
+    icdev_surface: tools/data_quality/
+    categories: [data_quality, lineage]
+
+  evaluation:
+    section: 9
+    verdict: gap
+    benchmarked_against: promptfoo, DeepEval, Giskard
+    icdev_surface: tools/genesis/harness/
+    categories: [llm_evaluation, red_teaming]
+
+  iac:
+    section: 10
+    verdict: parity
+    benchmarked_against: Crossplane, Checkov, Atlantis
+    icdev_surface: tools/deploy/
+    categories: [infrastructure, iac]
 
 priority_thresholds:          # innovation_score is 0-1 in production
   high: 0.7

@@ -454,7 +454,15 @@ def main():
                 # Always log every cycle so a silent hang is immediately visible.
                 # Previously only logged every 10 idle cycles — that 9-cycle gap
                 # masked scheduler death for up to 9 minutes.
-                logger.info("Cycle %d: idle (no due tasks)", cycle)
+                #
+                # "idle (no due tasks)" is true in six materially different
+                # situations and identical in all of them (kpr-idle-01), so the
+                # heartbeat carries the REASON. The diagnosis is recomputed only
+                # when it changes or every _IDLE_DIAGNOSIS_EVERY cycles: the
+                # heartbeat must stay cheap and unmissable, and a paragraph
+                # every 60s trains people to stop reading it.
+                reason = _idle_reason(cycle)
+                logger.info("Cycle %d: %s", cycle, reason)
         except Exception as exc:
             # guard-6: log FULL traceback, never exit on transient errors
             import traceback
@@ -463,6 +471,39 @@ def main():
             )
 
         time.sleep(args.interval)
+
+
+#: Re-diagnose an unchanged idle state this often (cycles). At the default
+#: 60s interval that is roughly every 30 minutes.
+_IDLE_DIAGNOSIS_EVERY = 30
+
+#: (cycle_last_diagnosed, last_summary) — module state so the reason survives
+#: between cycles without re-querying the board every 60 seconds.
+_idle_state: tuple = (None, None)
+
+
+def _idle_reason(cycle: int) -> str:
+    """A heartbeat that says WHY, degrading to the old line if it cannot.
+
+    Wrapped whole in a try/except on purpose: this is a diagnostic on the
+    liveness heartbeat, and a heartbeat that can be killed by its own
+    diagnostic is worse than one that says nothing. Any failure falls back to
+    the original wording.
+    """
+    global _idle_state
+    last_cycle, last_summary = _idle_state
+    if last_summary is not None and last_cycle is not None:
+        if cycle - last_cycle < _IDLE_DIAGNOSIS_EVERY:
+            return last_summary
+    try:
+        from tools.kanban.idle_advisor import diagnose, summary_line
+
+        summary = summary_line(diagnose())
+    except Exception as exc:  # noqa: BLE001 — never let the advisor stop the heartbeat
+        logger.debug("idle advisor unavailable: %s", exc)
+        summary = "idle (no due tasks)"
+    _idle_state = (cycle, summary)
+    return summary
 
 
 def _cleanup_orphan_processes() -> None:
