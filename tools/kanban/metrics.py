@@ -363,6 +363,129 @@ def cycle_time_metrics(conn=None, weeks: int = 4) -> Dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Board throughput stall detection (kax-stall-01)
+# ---------------------------------------------------------------------------
+# Nothing watched whether the board was actually COMPLETING work: 'done'
+# transitions ran 63 (Aug 1) → 121 (Aug 2) → ZERO for Aug 4, 5 and 6, and the
+# four-day flatline surfaced only because a human happened to ask. This
+# computes the raw signal; tools/genesis/reflexes/self_monitor.py projects it
+# into an operator alert on the existing alert surface.
+
+# Statuses that mean "the board has work it is supposed to be moving". Zero
+# throughput with none of these is an idle board, not a stalled one.
+STALL_ACTIVE_STATUSES = ("scheduled", "in_progress")
+
+# Documented defaults only — the live values come from genesis_config.yaml
+# (self_monitor.board_throughput) / env, never from these constants.
+DEFAULT_STALL_WINDOW_HOURS = 24.0
+DEFAULT_STALL_MIN_ACTIVE_TASKS = 1
+
+# The SQL pre-filter is deliberately loosened by this much before the exact
+# comparison is redone in Python, so a stray timestamp format can never drop a
+# real completion out of the window.
+_STALL_PREFILTER_SLACK_HOURS = 48.0
+
+
+def throughput_stall_check(
+    conn=None,
+    window_hours: Optional[float] = None,
+    min_active_tasks: Optional[int] = None,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Is the board completing work? Reads the append-only transition timeline.
+
+    Stalled ⇔ no task reached 'done' in the last ``window_hours`` WHILE at
+    least ``min_active_tasks`` tasks sat in ``STALL_ACTIVE_STATUSES``. The
+    second clause is what keeps an intentionally-empty board quiet: zero
+    throughput with zero active work is idle, not broken.
+
+    PG/SQLite portable — the cutoff comparison is done in Python (recorded_at
+    is TEXT in both backends), so no date-dialect SQL is involved.
+    """
+    window = float(DEFAULT_STALL_WINDOW_HOURS if window_hours is None else window_hours)
+    min_active = int(DEFAULT_STALL_MIN_ACTIVE_TASKS if min_active_tasks is None else min_active_tasks)
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=window)
+
+    own = conn is None
+    if own:
+        from tools.db.storage import get_connection  # noqa: PLC0415
+        conn = get_connection()
+    try:
+        # Date-prefix pre-filter: cheap, index-friendly, and safe to compare
+        # lexicographically regardless of sub-second/offset formatting.
+        prefilter = (cutoff - timedelta(hours=_STALL_PREFILTER_SLACK_HOURS)).strftime("%Y-%m-%d")
+        done_rows = conn.execute(
+            "SELECT recorded_at FROM kanban_status_transitions "
+            "WHERE to_status = %s AND recorded_at >= %s",
+            ("done", prefilter),
+        ).fetchall()
+
+        placeholders = ",".join(["%s"] * len(STALL_ACTIVE_STATUSES))
+        active_rows = conn.execute(
+            f"SELECT status, COUNT(*) AS cnt FROM kanban_tasks "  # noqa: S608 - placeholders only
+            f"WHERE status IN ({placeholders}) GROUP BY status",
+            list(STALL_ACTIVE_STATUSES),
+        ).fetchall()
+
+        completed = 0
+        newest_in_window: Optional[datetime] = None
+        for r in done_rows:
+            ts = _sla_parse_ts(r["recorded_at"] if isinstance(r, dict) else r[0])
+            if ts is None or ts < cutoff:
+                continue
+            completed += 1
+            if newest_in_window is None or ts > newest_in_window:
+                newest_in_window = ts
+
+        last_done = newest_in_window
+        if last_done is None:
+            # Window is empty — reach past the pre-filter for "how long has it
+            # been?", which is the number an operator actually wants to read.
+            row = conn.execute(
+                "SELECT MAX(recorded_at) AS mx FROM kanban_status_transitions WHERE to_status = %s",
+                ("done",),
+            ).fetchone()
+            if row is not None:
+                last_done = _sla_parse_ts(row["mx"] if isinstance(row, dict) else row[0])
+
+        active_by_status: Dict[str, int] = {}
+        for r in active_rows:
+            d = r if isinstance(r, dict) else {"status": r[0], "cnt": r[1]}
+            active_by_status[d["status"]] = int(d["cnt"])
+    finally:
+        if own:
+            conn.close()
+
+    active_total = sum(active_by_status.values())
+
+    stalled = completed == 0 and active_total >= min_active
+    if completed > 0:
+        reason = "throughput_present"
+    elif active_total < min_active:
+        reason = "board_idle"
+    else:
+        reason = "stalled"
+
+    hours_since = None
+    if last_done is not None:
+        hours_since = round((now - last_done).total_seconds() / 3600.0, 2)
+
+    return {
+        "stalled": stalled,
+        "reason": reason,
+        "window_hours": window,
+        "min_active_tasks": min_active,
+        "completed_in_window": completed,
+        "active_tasks": active_total,
+        "active_by_status": active_by_status,
+        "last_done_at": last_done.isoformat() if last_done else None,
+        "hours_since_last_done": hours_since,
+        "checked_at": now.isoformat(),
+    }
+
+
 def board_metrics(conn=None, weeks: int = 4) -> Dict[str, Any]:
     """Combined SLA + cycle-time snapshot for the board summary API."""
     own = conn is None
@@ -385,8 +508,15 @@ def _main(argv: Optional[List[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(description="Kanban SLA + cycle-time metrics")
     parser.add_argument("--weeks", type=int, default=4)
+    parser.add_argument("--stall", action="store_true",
+                        help="Report only the board throughput stall check")
+    parser.add_argument("--window-hours", type=float, default=None,
+                        help="Stall window override (default: genesis_config self_monitor.board_throughput)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    if args.stall:
+        print(json.dumps(throughput_stall_check(window_hours=args.window_hours), indent=2, default=str))
+        return 0
     print(json.dumps(board_metrics(weeks=args.weeks), indent=2, default=str))
     return 0
 

@@ -155,6 +155,7 @@ jobs:
             tests/test_memory_read_db.py \
             tests/test_memory_tier_measure.py \
             tests/test_notification_worthiness.py \
+            tests/test_kanban_throughput_stall.py \
             tests/test_localai_provider.py \
             tests/browser/test_backend.py \
             tests/browser/test_driver_manager_airgap.py \
