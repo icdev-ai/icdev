@@ -314,6 +314,33 @@ def evaluate_metric(metric_config: Dict[str, Any], value: float) -> bool:
     return True
 
 
+def classify_failure(
+    success: bool,
+    details: Dict[str, Any],
+    metric_name: str,
+    metric_value: float,
+    metric_config: Dict[str, Any],
+) -> str:
+    """Describe *why* a reflex run was scored as a failure.
+
+    A run fails either because the reflex itself reported ``success: False`` or
+    because it succeeded but its metric missed the configured threshold.  These
+    were previously both recorded as the bare string ``metric_threshold_not_met``,
+    which is actively misleading: ``scout`` reached 0 of 16 repos — a total
+    network failure, not a threshold miss — and its state row said the metric
+    had not met a threshold of ``>= 0`` that 0 in fact satisfies.  Anyone
+    debugging from that row was pointed at the wrong subsystem (xbm-wake-01).
+    """
+    if details.get("error"):
+        return str(details["error"])
+    if not success:
+        return f"reflex_reported_failure: {metric_name}={metric_value}"
+    return (
+        f"metric_threshold_not_met: {metric_name}={metric_value} fails "
+        f"{metric_config.get('operator', 'gte')} {metric_config.get('threshold')}"
+    )
+
+
 def topological_reflex_order(
     due_reflexes: List[str], depends_on: Dict[str, List[str]]
 ) -> List[str]:
@@ -409,7 +436,12 @@ class ReflexStateBase:
             conn.close()
 
     def record_success(self, metric_value: float = None) -> None:
-        """Record a successful run."""
+        """Record a successful run.
+
+        A success also closes the circuit breaker.  This is what lets a
+        half-open probe (see ``is_circuit_open``) latch back to closed once
+        the underlying fault clears.
+        """
         with self._lock:
             now = utcnow_iso()
             conn = get_connection()
@@ -418,6 +450,7 @@ class ReflexStateBase:
                     f"""
                     UPDATE {self.state_table} SET
                         last_run_at = %s, consecutive_failures = 0,
+                        circuit_breaker_open = 0, circuit_breaker_tripped_at = NULL,
                         total_runs = total_runs + 1,
                         total_successes = total_successes + 1,
                         last_metric_value = %s, last_error = NULL, updated_at = %s
@@ -429,8 +462,15 @@ class ReflexStateBase:
             finally:
                 conn.close()
 
-    def record_failure(self, error: str, cb_config: Dict) -> bool:
-        """Record a failed run.  Returns True if circuit breaker tripped."""
+    def record_failure(self, error: str, cb_config: Dict, metric_value: float = None) -> bool:
+        """Record a failed run.  Returns True if circuit breaker tripped.
+
+        ``metric_value`` is written even on failure.  Leaving it untouched
+        made the state row lie: a reflex that failed with metric 0.0 kept
+        showing the metric from its last success, so an operator reading
+        ``genesis_reflex_state`` saw a healthy-looking number next to a
+        dormant reflex (xbm-wake-01).
+        """
         with self._lock:
             now = utcnow_iso()
             conn = get_connection()
@@ -451,10 +491,20 @@ class ReflexStateBase:
                         circuit_breaker_tripped_at = %s,
                         total_runs = total_runs + 1,
                         total_failures = total_failures + 1,
+                        last_metric_value = %s,
                         last_error = %s, updated_at = %s
                     WHERE reflex_name = %s
                 """,  # nosec B608 -- table/column names are internal constants, not user input
-                    (now, failures, 1 if tripped else 0, now if tripped else None, error[:2000], now, self.name),
+                    (
+                        now,
+                        failures,
+                        1 if tripped else 0,
+                        now if tripped else None,
+                        metric_value,
+                        error[:2000],
+                        now,
+                        self.name,
+                    ),
                 )
                 conn.commit()
                 return tripped
@@ -480,10 +530,46 @@ class ReflexStateBase:
             finally:
                 conn.close()
 
-    def is_circuit_open(self) -> bool:
-        """Check if circuit breaker is open."""
+    def is_circuit_open(self, cb_config: Dict = None) -> bool:
+        """Check if the circuit breaker is currently blocking execution.
+
+        Without ``auto_reenable`` a tripped breaker latches forever and only a
+        human running ``--reset <reflex>`` clears it.  That is how the ``scout``
+        reflex went dormant for five weeks: three consecutive GitHub-API
+        outages in June 2026 tripped it, and nothing ever closed it again
+        (xbm-wake-01).
+
+        With ``auto_reenable`` on, the breaker goes *half-open* once
+        ``cooldown_minutes`` have elapsed since it tripped — the next scheduled
+        run is let through as a probe.  A successful probe closes the breaker
+        (``record_success``); a failed probe re-trips it and restarts the
+        cooldown, so a genuinely broken reflex retries at most once per
+        cooldown window instead of hammering.
+        """
         state = self.load()
-        return bool(state.get("circuit_breaker_open", 0))
+        if not bool(state.get("circuit_breaker_open", 0)):
+            return False
+
+        cb_config = cb_config or {}
+        if not cb_config.get("auto_reenable", False):
+            return True
+
+        cooldown_min = int(cb_config.get("cooldown_minutes", 0) or 0)
+        if cooldown_min <= 0:
+            return True
+
+        tripped_at = state.get("circuit_breaker_tripped_at")
+        if not tripped_at:
+            return True
+        try:
+            tripped = datetime.fromisoformat(str(tripped_at).replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return True
+        if tripped.tzinfo is None:
+            tripped = tripped.replace(tzinfo=timezone.utc)
+
+        elapsed_min = (utcnow() - tripped).total_seconds() / 60.0
+        return elapsed_min < cooldown_min
 
     def set_enabled(self, enabled: bool) -> None:
         """Enable or disable this reflex."""
@@ -823,7 +909,7 @@ class DaemonBase(abc.ABC):
         cb_config = self.config.get("trust_kernel", {}).get("circuit_breaker", {})
 
         # Pre-flight checks
-        if state.is_circuit_open():
+        if state.is_circuit_open(cb_config):
             self.log_audit(f"{self.event_prefix}.reflex.skipped", name, risk_tier, {"reason": "circuit_breaker_open"})
             return {"status": "skipped", "reason": "circuit_breaker_open"}
 
@@ -874,8 +960,8 @@ class DaemonBase(abc.ABC):
                     "details": details,
                 }
             else:
-                error_msg = details.get("error", "metric_threshold_not_met")
-                tripped = state.record_failure(error_msg, cb_config)
+                error_msg = classify_failure(success, details, metric_name, metric_value, metric_config)
+                tripped = state.record_failure(error_msg, cb_config, metric_value=metric_value)
                 event = (
                     f"{self.event_prefix}.circuit_breaker.tripped" if tripped else f"{self.event_prefix}.reflex.failed"
                 )
@@ -923,6 +1009,63 @@ class DaemonBase(abc.ABC):
                 "duration_ms": duration_ms,
             }
 
+    # How often to re-warn about a single dormant reflex, in seconds.
+    DORMANT_WARN_INTERVAL_S = 3600
+
+    def _warn_reflex_dormant(self, name: str, state: Dict[str, Any]) -> None:
+        """Surface a reflex being skipped because its circuit breaker is open.
+
+        Throttled to once per ``DORMANT_WARN_INTERVAL_S`` per reflex so a
+        long-dead reflex reports itself without flooding the audit table on
+        every daemon cycle.
+        """
+        warned = getattr(self, "_dormant_warned", None)
+        if warned is None:
+            warned = {}
+            self._dormant_warned = warned
+
+        now = time.monotonic()
+        if now - warned.get(name, float("-inf")) < self.DORMANT_WARN_INTERVAL_S:
+            return
+        warned[name] = now
+
+        tripped_at = state.get("circuit_breaker_tripped_at")
+        dormant_days = None
+        if tripped_at:
+            try:
+                tripped = datetime.fromisoformat(str(tripped_at).replace("Z", "+00:00"))
+                if tripped.tzinfo is None:
+                    tripped = tripped.replace(tzinfo=timezone.utc)
+                dormant_days = round((utcnow() - tripped).total_seconds() / 86400.0, 1)
+            except (ValueError, AttributeError):
+                pass
+
+        last_error = state.get("last_error")
+        age = f" ({dormant_days}d)" if dormant_days is not None else ""
+        print(
+            f"WARNING: reflex '{name}' is DORMANT — circuit breaker open since "
+            f"{tripped_at or 'unknown'}{age}; last_error={last_error!r}. "
+            f"Clear it with: python tools/{self.event_prefix}/daemon.py --reset {name}"
+        )
+
+        risk_tier = self.config.get("reflexes", {}).get(name, {}).get("risk_tier", RISK_GREEN)
+        try:
+            self.log_audit(
+                f"{self.event_prefix}.reflex.dormant",
+                name,
+                risk_tier,
+                {
+                    "reason": "circuit_breaker_open",
+                    "tripped_at": tripped_at,
+                    "dormant_days": dormant_days,
+                    "last_error": last_error,
+                    "consecutive_failures": state.get("consecutive_failures"),
+                },
+                success=False,
+            )
+        except Exception:
+            pass
+
     def run_due_reflexes(self) -> List[Dict[str, Any]]:
         """Run all reflexes that are currently due."""
         results = []
@@ -932,6 +1075,8 @@ class DaemonBase(abc.ABC):
         if not in_active_hours(self.config):
             return results
 
+        cb_config = self.config.get("trust_kernel", {}).get("circuit_breaker", {})
+
         # First pass: determine which reflexes are due
         for name in self.reflex_names:
             schedule = self.schedules.get(name)
@@ -940,7 +1085,12 @@ class DaemonBase(abc.ABC):
             state = self.reflex_states[name].load()
             if not state.get("enabled", 1):
                 continue
-            if state.get("circuit_breaker_open", 0):
+            if self.reflex_states[name].is_circuit_open(cb_config):
+                # Do not skip silently.  A bare `continue` here is what made
+                # scout's five-week dormancy invisible: the reflex simply
+                # stopped appearing in every cycle, with nothing logged and
+                # nothing alerted (xbm-wake-01).
+                self._warn_reflex_dormant(name, state)
                 continue
             if is_due(schedule, state.get("last_run_at")):
                 due_reflexes.append(name)

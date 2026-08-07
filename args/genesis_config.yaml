@@ -106,10 +106,20 @@ trust_kernel:
       audit: true
 
   # D-GEN-8: circuit breaker — 3 consecutive failures disables Reflex
+  #
+  # xbm-wake-01: cooldown_minutes was declared here from the start but read by
+  # no code, and auto_reenable:false made the breaker a permanent latch.  Three
+  # transient GitHub-API outages in June 2026 therefore killed the `scout`
+  # reflex outright — it sat dormant for five weeks with nothing logged, and
+  # `research` likewise since 2026-06-13.  The cooldown is now implemented as a
+  # half-open probe (ReflexStateBase.is_circuit_open): after the window the
+  # next scheduled run is allowed through, a success closes the breaker, and a
+  # failure re-trips it and restarts the window.  A permanently broken reflex
+  # thus retries once an hour instead of never, and says so in the audit log.
   circuit_breaker:
     max_consecutive_failures: 3
     cooldown_minutes: 60
-    auto_reenable: false  # human must re-enable after trip
+    auto_reenable: true   # half-open retry after cooldown_minutes
     notify_on_trip: true
 
   # Kill switch
