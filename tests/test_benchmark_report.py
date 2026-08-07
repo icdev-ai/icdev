@@ -232,6 +232,35 @@ def test_no_adaptation_needed_is_stated_not_implied_by_silence(rendered):
     assert "Nothing outstanding" in markdown
 
 
+def test_a_lead_with_nothing_to_take_still_reads_as_a_lead(rendered):
+    """position and verdict are separate questions; a heading must not collapse them.
+
+    §7 is position=ahead with verdict=no_adaptation_needed. A heading reading only
+    "no adaptation needed" would lose that ICDEV leads — the exact choice
+    benchmark_compare split the two fields to avoid.
+    """
+    markdown, result = rendered
+    qualified = [
+        r
+        for r in result["subsystems"].values()
+        if r["verdict"] == "no_adaptation_needed" and r["position"] in ("ahead", "parity")
+    ]
+    assert qualified, "no subsystem exercises the split between position and verdict"
+    for record in qualified:
+        label = br._heading_label(record)
+        assert label != br._verdict_label(record)
+        assert br.POSITION_LABELS[record["position"]] in label
+        assert f"{record['title']} — **{label}**" in markdown
+
+
+def test_every_section_states_its_position(rendered):
+    markdown, result = rendered
+    for record in result["subsystems"].values():
+        assert (
+            f"position **{br.POSITION_LABELS[record['position']]}**" in markdown
+        ), f"{record['subsystem']} does not state its position"
+
+
 def test_the_three_leads_are_named_out_loud(rendered):
     """The map's first ranked recommendation, and the one a generator can reproduce."""
     markdown, result = rendered

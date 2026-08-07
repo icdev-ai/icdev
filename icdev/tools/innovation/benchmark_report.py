@@ -69,6 +69,7 @@ if str(BASE_DIR) not in sys.path:
 from tools.innovation.benchmark_compare import (
     MAP_DOC,
     POSITION_AHEAD,
+    POSITION_PARITY,
     VERDICT_NO_ADAPTATION_NEEDED,
     compare_all,
 )
@@ -211,6 +212,24 @@ def _verdict_label(record: Dict[str, Any]) -> str:
     return VERDICT_LABELS.get(record["verdict"], str(record["verdict"]))
 
 
+def _heading_label(record: Dict[str, Any]) -> str:
+    """The verdict, carrying the position when the two say different things.
+
+    A section heading is the one place the reader gets a single line, and
+    collapsing ``position`` into ``verdict`` there would force the choice
+    ``benchmark_compare`` refuses to make: §7 is ``position: ahead`` with
+    ``verdict: no_adaptation_needed``, and a heading reading only "no adaptation
+    needed" loses that ICDEV leads. Everywhere else the two are redundant —
+    behind/gap, ahead/ahead, parity/parity — so only this case is qualified,
+    which is the same rule the d3 CLI applies.
+    """
+    if record.get("verdict") == VERDICT_NO_ADAPTATION_NEEDED:
+        position = record.get("position")
+        if position in (POSITION_AHEAD, POSITION_PARITY):
+            return f"{POSITION_LABELS[position]}, no adaptation needed"
+    return _verdict_label(record)
+
+
 def _limits(record: Dict[str, Any]) -> List[str]:
     """Measurement limits with the offline sentinel swapped for a truthful sentence.
 
@@ -311,7 +330,7 @@ def _render_summary_table(records: List[Dict[str, Any]], numbered: bool) -> List
 def _render_section(record: Dict[str, Any], targets: List[Dict[str, Any]], live: bool) -> List[str]:
     section = record.get("benchmark_section")
     heading = f"## {section}. {record['title']}" if section is not None else f"## {record['title']}"
-    lines = [f"{heading} — **{_verdict_label(record)}**", ""]
+    lines = [f"{heading} — **{_heading_label(record)}**", ""]
 
     declared = record["declared"]
     against = declared.get("benchmarked_against")
@@ -351,7 +370,11 @@ def _render_section(record: Dict[str, Any], targets: List[Dict[str, Any]], live:
         measurement += f". Surface: `{_flat(surface)}`"
     lines += [measurement + ".", ""]
 
-    lines.append(f"**Verdict.** {_verdict_label(record)} — {_flat(record['rationale'])}.")
+    lines.append(
+        f"**Verdict.** {_verdict_label(record)}; position "
+        f"**{POSITION_LABELS.get(record['position'], record['position'])}** — "
+        f"{_flat(record['rationale'])}."
+    )
     lines.append("")
     for reason in record.get("basis", []):
         lines.append(f"- {_flat(reason)}")

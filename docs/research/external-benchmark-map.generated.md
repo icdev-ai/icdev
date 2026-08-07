@@ -66,7 +66,7 @@ Subsystems the benchmark map has not covered:
 
 Measured: **48 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `args/component_registry.yaml`.
 
-**Verdict.** Gap — the benchmark pass found ICDEV behind and nothing has retired that.
+**Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
 - benchmark pass declared behind
 - code_state=built, data_state=not_assessed
@@ -99,7 +99,7 @@ Measured: **48 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `a
 
 Measured: **31 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/observability/`.
 
-**Verdict.** Ahead, with items outstanding — ICDEV leads and there is still something worth taking.
+**Verdict.** Ahead, with items outstanding; position **Ahead** — ICDEV leads and there is still something worth taking.
 
 - benchmark pass declared ahead
 - code_state=built, data_state=not_assessed
@@ -136,7 +136,7 @@ Measured: **31 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 Measured: **117 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/ace/`.
 
-**Verdict.** Parity, with named work — ICDEV's side clears its floor with named work outstanding.
+**Verdict.** Parity, with named work; position **Parity** — ICDEV's side clears its floor with named work outstanding.
 
 - benchmark pass declared parity
 - code_state=built, data_state=not_assessed
@@ -176,7 +176,7 @@ Measured: **117 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `
 
 Measured: **153 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/analyzers/`.
 
-**Verdict.** Gap — the benchmark pass found ICDEV behind and nothing has retired that.
+**Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
 - benchmark pass declared behind
 - code_state=built, data_state=not_assessed
@@ -210,7 +210,7 @@ Measured: **153 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `
 
 Measured: **61 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/rag/`.
 
-**Verdict.** Parity, with named work — ICDEV's side clears its floor with named work outstanding.
+**Verdict.** Parity, with named work; position **Parity** — ICDEV's side clears its floor with named work outstanding.
 
 - benchmark pass declared parity
 - code_state=built, data_state=not_assessed
@@ -229,7 +229,7 @@ Measured: **61 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 ---
 
-## 6. Compliance & ATO — **No adaptation needed**
+## 6. Compliance & ATO — **Ahead, no adaptation needed**
 
 **External.** NIST OSCAL, compliance-trestle
 
@@ -243,7 +243,7 @@ Measured: **61 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 Measured: **94 modules** (floor 5) → `built`; rows `not_expected`. Surface: `tools/compliance/`.
 
-**Verdict.** No adaptation needed — ICDEV matched or exceeded the field and there is nothing to adapt.
+**Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
 - benchmark pass declared ahead
 - code_state=built, data_state=not_expected
@@ -257,7 +257,7 @@ Measured: **94 modules** (floor 5) → `built`; rows `not_expected`. Surface: `t
 
 ---
 
-## 7. Delivery pipeline — **No adaptation needed**
+## 7. Delivery pipeline — **Ahead, no adaptation needed**
 
 **External.** Temporal, Argo, GitHub Actions
 
@@ -271,7 +271,7 @@ Measured: **94 modules** (floor 5) → `built`; rows `not_expected`. Surface: `t
 
 Measured: **105 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/kanban/`.
 
-**Verdict.** No adaptation needed — ICDEV matched or exceeded the field and there is nothing to adapt.
+**Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
 - benchmark pass declared ahead
 - code_state=built, data_state=not_assessed
@@ -299,7 +299,7 @@ Measured: **105 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `
 
 Measured: **18 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/data_quality/`.
 
-**Verdict.** Gap — the benchmark pass found ICDEV behind and nothing has retired that.
+**Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
 - benchmark pass declared behind
 - code_state=built, data_state=not_assessed
@@ -330,7 +330,7 @@ Measured: **18 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 Measured: **11 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/genesis/harness/`.
 
-**Verdict.** Gap — the benchmark pass found ICDEV behind and nothing has retired that.
+**Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
 - benchmark pass declared behind
 - code_state=built, data_state=not_assessed
@@ -347,7 +347,7 @@ Measured: **11 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 ---
 
-## 10. IaC & infrastructure — **No adaptation needed**
+## 10. IaC & infrastructure — **Parity, no adaptation needed**
 
 **External.** Crossplane, Checkov, Atlantis
 
@@ -362,7 +362,7 @@ Measured: **11 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 Measured: **45 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/deploy/`.
 
-**Verdict.** No adaptation needed — ICDEV matched or exceeded the field and there is nothing to adapt.
+**Verdict.** No adaptation needed; position **Parity** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
 - benchmark pass declared parity
 - code_state=built, data_state=not_assessed
@@ -396,7 +396,7 @@ Declared in the inventory and measured here, but no external pass has judged the
 
 Measured: **54 modules** (floor 5) → `built`; rows `not_assessed`.
 
-**Verdict.** Parity, with named work — ICDEV's side clears its floor with named work outstanding.
+**Verdict.** Parity, with named work; position **Not positioned** — ICDEV's side clears its floor with named work outstanding.
 
 - code_state=built, data_state=not_assessed
 - 2 item(s) still outstanding
@@ -424,7 +424,7 @@ Measured: **54 modules** (floor 5) → `built`; rows `not_assessed`.
 
 Measured: **53 modules** (floor 5) → `built`; rows `not_assessed`.
 
-**Verdict.** Parity, with named work — ICDEV's side clears its floor with named work outstanding.
+**Verdict.** Parity, with named work; position **Not positioned** — ICDEV's side clears its floor with named work outstanding.
 
 - code_state=built, data_state=not_assessed
 - 1 item(s) still outstanding
@@ -453,7 +453,7 @@ Measured: **53 modules** (floor 5) → `built`; rows `not_assessed`.
 
 Measured: **0 modules** (floor 5) → `absent`; rows `not_expected`.
 
-**Verdict.** Not comparable — not owned in this tree, so its absence is intentional, not a deficit.
+**Verdict.** Not comparable; position **Not positioned** — not owned in this tree, so its absence is intentional, not a deficit.
 
 - inventory declares owned: false
 
@@ -479,7 +479,7 @@ Measured: **0 modules** (floor 5) → `absent`; rows `not_expected`.
 
 Measured: **69 modules** (floor 5) → `built`; rows `not_assessed`.
 
-**Verdict.** Not comparable — no benchmark pass has declared what is outstanding here and nothing is queued against it, so there is no external reading to compare against.
+**Verdict.** Not comparable; position **Not positioned** — no benchmark pass has declared what is outstanding here and nothing is queued against it, so there is no external reading to compare against.
 
 - no declared outstanding list and no open adaptation candidate
 
@@ -503,7 +503,7 @@ Measured: **69 modules** (floor 5) → `built`; rows `not_assessed`.
 
 Measured: **33 modules** (floor 5) → `built`; rows `not_assessed`.
 
-**Verdict.** Not comparable — no benchmark pass has declared what is outstanding here and nothing is queued against it, so there is no external reading to compare against.
+**Verdict.** Not comparable; position **Not positioned** — no benchmark pass has declared what is outstanding here and nothing is queued against it, so there is no external reading to compare against.
 
 - no declared outstanding list and no open adaptation candidate
 
