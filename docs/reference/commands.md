@@ -2410,6 +2410,15 @@ python tools/innovation/benchmark_compare.py --project langfuse --json   # a fin
 python tools/innovation/benchmark_compare.py --all --json
 python tools/innovation/benchmark_compare.py --all --verdict gap
 
+# The comparison as a document — docs/research/external-benchmark-map.generated.md (xbm-cmp-01-d4)
+# Offline by default so the checked-in file reproduces byte-for-byte and CI can diff it.
+# It writes BESIDE the hand-written map, never over it: the map is the cited source of
+# every declared reading, and its narrative lives in no config.
+python tools/innovation/benchmark_report.py --write      # regenerate the checked-in report
+python tools/innovation/benchmark_report.py --check      # CI gate: fails on drift, prints a diff
+python tools/innovation/benchmark_report.py --live       # measure rows; retires findings; prints only
+python tools/innovation/benchmark_report.py --json
+
 # Introspective analysis (air-gap safe)
 python tools/innovation/introspective_analyzer.py --analyze --all --json
 

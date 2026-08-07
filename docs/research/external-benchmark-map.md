@@ -14,6 +14,16 @@ plainly as the gaps, because a benchmark that only finds deficits is not a bench
 engine individually — that exhaustive sweep is a separate pass, and this one exists partly
 to tell it where to look.
 
+**This document is now re-checked automatically.** Its measured half — module counts,
+verdicts, and what is still outstanding per subsystem — is regenerated from config into
+[external-benchmark-map.generated.md](external-benchmark-map.generated.md) by
+`python tools/innovation/benchmark_report.py --write`, and CI fails when that file drifts
+from its sources. **Read the generated file for the current numbers**; the numbers quoted
+below are the first pass and are only as fresh as the last hand edit. This file remains the
+source of the *declared* half — what the external projects are, why a finding matters, and
+the ranked recommendations — none of which any config carries, which is why the generator
+writes beside it rather than over it.
+
 ---
 
 ## Summary
