@@ -7,7 +7,11 @@ the dashboard could read it. ``tools/audit/audit_query.py`` reads by project;
 ``tools/cli/audit.py`` exports SOC 2 evidence. Neither answers "what just
 happened", which is the question an operator actually asks.
 
-This module exists to back ``icdev audit tail``. It is deliberately small:
+This module exists to back ``icdev audit tail``, and also reads the
+``runtime_invocations`` telemetry table (migration 341) via
+:meth:`AuditStore.read_runtime_invocations` — that table had a writer and a
+per-name rollup but no row-level reader, so "which call failed, with what
+arguments" needed hand-rolled SQL. It is deliberately small:
 
   * READ ONLY. Nothing here writes. ``audit_trail`` is append-only under NIST AU
     and must never be UPDATEd or DELETEd, so a query layer that cannot write is
@@ -29,6 +33,7 @@ the primary backend and SQLite is the init/test fallback.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
@@ -41,6 +46,29 @@ logger = get_logger(__name__)
 SOURCE_AUDIT = "audit_trail"
 SOURCE_HOOK = "hook_events"
 ALL_SOURCES = (SOURCE_AUDIT, SOURCE_HOOK)
+
+#: ``runtime_invocations`` is deliberately NOT in ``ALL_SOURCES``. It is
+#: telemetry (migration 341: what the runtime ran, how long it took), not NIST AU
+#: evidence, and it is orders of magnitude higher-volume — one agent session
+#: makes hundreds of MCP calls. Folding it into ``tail()`` would silently bury
+#: the audit feed for every existing caller, so it gets its own reader instead.
+SOURCE_RUNTIME = "runtime_invocations"
+
+#: Columns ``read_runtime_invocations`` will filter on, mapped to their SQL
+#: comparison. An allowlist rather than free-form kwargs: the key is interpolated
+#: into the SQL string (only the VALUE is parameterized), so anything outside
+#: this table would be an injection point.
+_RUNTIME_FILTERS = {
+    "surface": "surface = %s",
+    "name": "name = %s",
+    "status": "status = %s",
+    "session_id": "session_id = %s",
+    "project_id": "project_id = %s",
+    "parent_id": "parent_id = %s",
+    "error_class": "error_class = %s",
+    "since": "started_at > %s",       # strictly newer, matching AuditFilter.since
+    "min_duration_ms": "duration_ms >= %s",
+}
 
 
 @dataclass
@@ -64,6 +92,25 @@ def _iso(value: Any) -> str:
             value = value.replace(tzinfo=timezone.utc)
         return value.isoformat()
     return str(value)
+
+
+def _arg_keys(value: Any) -> List[str]:
+    """Decode ``runtime_invocations.arg_keys`` (a JSON array of KEY NAMES).
+
+    Always a list. The writer stores ``NULL`` for non-mapping arguments and the
+    column is plain TEXT, so unparseable content is possible; an empty list is
+    the honest answer for both, since the writer records key names ONLY and
+    never values (see ``invocation_recorder``) — there is nothing to salvage.
+    """
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    try:
+        parsed = json.loads(value)
+    except Exception:  # noqa: BLE001
+        return []
+    return [str(v) for v in parsed] if isinstance(parsed, list) else []
 
 
 def _sort_key(row: Dict[str, Any]) -> tuple:
@@ -146,6 +193,98 @@ class AuditStore:
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
+
+    def read_runtime_invocations(self, limit: int = 100,
+                                 **filters: Any) -> List[Dict[str, Any]]:
+        """Rows from ``runtime_invocations`` (migration 341), newest first.
+
+        The invocation telemetry table had a writer
+        (``tools/observability/invocation_recorder.py``) and a per-name rollup
+        (``invocation_recorder.summary()``), but no way to read the individual
+        rows — so "which call failed, and what were its arguments" was
+        unanswerable without hand-rolled SQL. This is that reader.
+
+        Args:
+            limit: maximum rows. Applied server-side.
+            **filters: any key in :data:`_RUNTIME_FILTERS` —
+                ``surface``, ``name``, ``status``, ``session_id``,
+                ``project_id``, ``parent_id``, ``error_class``,
+                ``since`` (rows strictly newer by ``started_at``), and
+                ``min_duration_ms``. AND-combined; a ``None`` value is dropped
+                so callers can pass optional CLI flags straight through.
+
+        Returns:
+            One dict per row with every column, timestamps normalized to
+            ISO-8601 and ``arg_keys`` decoded from its stored JSON into a list.
+            ``[]`` if the table is absent — the migration may not have run.
+
+        Raises:
+            ValueError: on an unknown filter key. Unlike the row-level failures
+                above this is a caller bug, not a data condition: silently
+                ignoring a mistyped ``status`` would return the WHOLE table and
+                the caller would read it as "everything matched".
+        """
+        where: List[str] = []
+        params: List[Any] = []
+        for key, value in filters.items():
+            if key not in _RUNTIME_FILTERS:
+                raise ValueError(
+                    f"unknown runtime_invocations filter {key!r}; "
+                    f"valid: {', '.join(sorted(_RUNTIME_FILTERS))}"
+                )
+            if value is None:
+                continue
+            where.append(_RUNTIME_FILTERS[key])
+            params.append(value)
+
+        sql = (
+            "SELECT id, surface, name, session_id, project_id, parent_id, "
+            "       started_at, completed_at, duration_ms, status, "
+            "       error_class, error_message, arg_keys, classification, "
+            "       created_at "
+            "FROM runtime_invocations "
+            + ("WHERE " + " AND ".join(where) + " " if where else "")
+            # `id` is a random TEXT uuid, so it is a tiebreak for determinism
+            # only — unlike audit_trail's serial it carries no ordering.
+            + "ORDER BY started_at DESC, id DESC LIMIT %s"
+        )
+        params.append(max(1, int(limit)))
+
+        conn = self._connect()
+        try:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        except Exception as exc:  # noqa: BLE001 — an un-migrated DB is not an error
+            logger.warning("AuditStore: runtime_invocations query failed: %s", exc)
+            self._rollback(conn)
+            return []
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+        out = []
+        for r in rows:
+            d = dict(r)
+            out.append({
+                "id": d.get("id") or "",
+                "source": SOURCE_RUNTIME,
+                "surface": d.get("surface") or "",
+                "name": d.get("name") or "",
+                "session_id": d.get("session_id") or "",
+                "project_id": d.get("project_id") or "",
+                "parent_id": d.get("parent_id") or "",
+                "started_at": _iso(d.get("started_at")),
+                "completed_at": _iso(d.get("completed_at")),
+                "duration_ms": d.get("duration_ms"),
+                "status": d.get("status") or "",
+                "error_class": d.get("error_class") or "",
+                "error_message": d.get("error_message") or "",
+                "arg_keys": _arg_keys(d.get("arg_keys")),
+                "classification": d.get("classification") or "",
+                "created_at": _iso(d.get("created_at")),
+            })
+        return out
 
     # ------------------------------------------------------------------
     # Per-source queries

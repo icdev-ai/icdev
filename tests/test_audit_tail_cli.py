@@ -99,6 +99,60 @@ def store(feed_db):
     return AuditStore(connection_factory=feed_db)
 
 
+@pytest.fixture()
+def runtime_db(tmp_path):
+    """A SQLite DB shaped exactly like migration 341's ``runtime_invocations``.
+
+    Column list and types are copied from the migration DDL rather than
+    minimised, so a column renamed there fails these tests instead of silently
+    reading NULL. Rows cover the states the reader has to distinguish: a closed
+    ok row, a closed error row, a still-``running`` row with no
+    ``completed_at``/``duration_ms``, a child row with a ``parent_id``, and a
+    row whose ``arg_keys`` is NULL because its args were not a mapping.
+    """
+    path = tmp_path / "runtime.db"
+    conn = sqlite3.connect(str(path))
+    conn.execute(
+        "CREATE TABLE runtime_invocations ("
+        " id TEXT PRIMARY KEY, surface TEXT NOT NULL, name TEXT NOT NULL,"
+        " session_id TEXT, project_id TEXT, parent_id TEXT,"
+        " started_at TEXT NOT NULL, completed_at TEXT, duration_ms INTEGER,"
+        " status TEXT NOT NULL DEFAULT 'running', error_class TEXT,"
+        " error_message TEXT, arg_keys TEXT, classification TEXT DEFAULT 'CUI',"
+        " created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+    )
+    conn.executemany(
+        "INSERT INTO runtime_invocations (id, surface, name, session_id, "
+        "project_id, parent_id, started_at, completed_at, duration_ms, status, "
+        "error_class, error_message, arg_keys, classification, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("inv-1", "mcp", "rag_search", "s1", "proj-a", None,
+             "2026-08-02T10:00:00+00:00", "2026-08-02T10:00:01+00:00", 1200,
+             "ok", None, None, '["query", "limit"]', "CUI",
+             "2026-08-02T10:00:00+00:00"),
+            ("inv-2", "mcp", "rag_search", "s1", "proj-a", None,
+             "2026-08-02T10:00:02+00:00", "2026-08-02T10:00:02+00:00", 40,
+             "error", "ValueError", "bad query", '["query"]', "CUI",
+             "2026-08-02T10:00:02+00:00"),
+            ("inv-3", "agent", "builder", "s2", "proj-b", None,
+             "2026-08-02T10:00:04+00:00", None, None, "running", None, None,
+             None, "CUI", "2026-08-02T10:00:04+00:00"),
+            ("inv-4", "role", "reviewer", "s2", "proj-b", "inv-3",
+             "2026-08-02T10:00:03+00:00", "2026-08-02T10:00:05+00:00", 2000,
+             "ok", None, None, "not-json", "CUI", "2026-08-02T10:00:03+00:00"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+    return lambda: _PgStyleSqlite(str(path))
+
+
+@pytest.fixture()
+def runtime_store(runtime_db):
+    return AuditStore(connection_factory=runtime_db)
+
+
 # ---------------------------------------------------------------- AuditStore
 
 def test_tail_merges_both_sources_newest_first(store):
@@ -188,6 +242,105 @@ def test_event_types_counts_are_descending(store):
     counts = [t["count"] for t in types]
     assert counts == sorted(counts, reverse=True)
     assert dict((t["event_type"], t["count"]) for t in types)["build_started"] == 2
+
+
+# ------------------------------------------- AuditStore.read_runtime_invocations
+
+def test_read_runtime_invocations_returns_rows_newest_first(runtime_store):
+    """The acceptance criterion: a plain call returns rows without error."""
+    rows = runtime_store.read_runtime_invocations(limit=10)
+    assert len(rows) == 4
+    stamps = [r["started_at"] for r in rows]
+    assert stamps == sorted(stamps, reverse=True), "must be newest-first"
+    assert {r["source"] for r in rows} == {"runtime_invocations"}
+
+
+def test_read_runtime_invocations_exposes_every_migration_column(runtime_store):
+    """A dropped column would otherwise show up only at a distant call site."""
+    row = runtime_store.read_runtime_invocations(limit=1, name="rag_search",
+                                                 status="ok")[0]
+    assert row["id"] == "inv-1"
+    assert row["surface"] == "mcp"
+    assert row["session_id"] == "s1"
+    assert row["project_id"] == "proj-a"
+    assert row["duration_ms"] == 1200
+    assert row["completed_at"] == "2026-08-02T10:00:01+00:00"
+    assert row["classification"] == "CUI"
+
+
+def test_limit_is_applied_to_runtime_rows(runtime_store):
+    rows = runtime_store.read_runtime_invocations(limit=2)
+    assert len(rows) == 2
+    assert rows[0]["id"] == "inv-3"
+
+
+def test_runtime_filters_are_and_combined(runtime_store):
+    assert [r["id"] for r in runtime_store.read_runtime_invocations(surface="mcp")] \
+        == ["inv-2", "inv-1"]
+    assert [r["id"] for r in
+            runtime_store.read_runtime_invocations(surface="mcp", status="error")] \
+        == ["inv-2"]
+    assert runtime_store.read_runtime_invocations(surface="mcp", status="nope") == []
+
+
+def test_runtime_since_filter_is_strictly_newer(runtime_store):
+    rows = runtime_store.read_runtime_invocations(since="2026-08-02T10:00:02+00:00")
+    assert [r["id"] for r in rows] == ["inv-3", "inv-4"]
+
+
+def test_runtime_parent_id_filter_finds_child_steps(runtime_store):
+    """parent_id is how a role step is tied to the run that issued it."""
+    rows = runtime_store.read_runtime_invocations(parent_id="inv-3")
+    assert [r["id"] for r in rows] == ["inv-4"]
+
+
+def test_min_duration_filter_excludes_running_rows(runtime_store):
+    """A running row has NULL duration_ms; SQL NULL must not pass >=."""
+    rows = runtime_store.read_runtime_invocations(min_duration_ms=1000)
+    assert [r["id"] for r in rows] == ["inv-4", "inv-1"]  # newest-first by started_at
+    assert "inv-3" not in [r["id"] for r in rows], "NULL duration must not match"
+
+
+def test_none_valued_filters_are_dropped_not_matched_against_null(runtime_store):
+    """So a caller can forward optional CLI flags without branching.
+
+    ``project_id=None`` must mean "no filter", not ``project_id = NULL`` — the
+    latter matches nothing in SQL and would look like an empty table.
+    """
+    assert len(runtime_store.read_runtime_invocations(project_id=None,
+                                                      surface=None)) == 4
+
+
+def test_arg_keys_are_decoded_to_a_list(runtime_store):
+    by_id = {r["id"]: r for r in runtime_store.read_runtime_invocations()}
+    assert by_id["inv-1"]["arg_keys"] == ["query", "limit"]
+    assert by_id["inv-3"]["arg_keys"] == [], "NULL arg_keys must be [] not None"
+    assert by_id["inv-4"]["arg_keys"] == [], "unparseable arg_keys must not raise"
+
+
+def test_running_row_keeps_null_duration_rather_than_zero(runtime_store):
+    """0 ms would read as "instantaneous"; None reads as "not finished"."""
+    running = runtime_store.read_runtime_invocations(status="running")[0]
+    assert running["duration_ms"] is None
+    assert running["completed_at"] == ""
+
+
+def test_unknown_runtime_filter_raises(runtime_store):
+    """Silently ignoring it would return the whole table as a false match."""
+    with pytest.raises(ValueError) as exc:
+        runtime_store.read_runtime_invocations(sruface="mcp")
+    assert "sruface" in str(exc.value)
+
+
+def test_runtime_filter_values_are_parameterized(runtime_store):
+    """A quote in a filter value must be data, not SQL."""
+    assert runtime_store.read_runtime_invocations(name="'; DROP TABLE x--") == []
+    assert len(runtime_store.read_runtime_invocations()) == 4
+
+
+def test_missing_runtime_table_returns_empty_not_raises(store):
+    """The feed DB has no runtime_invocations — an un-migrated DB is not an error."""
+    assert store.read_runtime_invocations(limit=10) == []
 
 
 # ---------------------------------------------------------------- CLI
