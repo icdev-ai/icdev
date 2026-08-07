@@ -387,6 +387,26 @@ def _run_init_db(db_path: Path) -> dict[str, Any]:
             "stderr_tail": (proc.stderr or "")[-500:]}
 
 
+@contextlib.contextmanager
+def _pinned_db_path(db_path: Path):
+    """Aim any ambient SQLite resolution at ``db_path`` for the duration.
+
+    ``_get_sqlite_connection`` re-reads ``ICDEV_DB_PATH`` on every call, so this
+    redirects the migrations that call ``get_connection()`` themselves instead of
+    using the connection they were handed. Restores the previous value, including
+    its absence.
+    """
+    previous = os.environ.get(_REPLAY_DB_ENV)
+    os.environ[_REPLAY_DB_ENV] = str(db_path)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(_REPLAY_DB_ENV, None)
+        else:
+            os.environ[_REPLAY_DB_ENV] = previous
+
+
 def build_baseline(
     db_path: Path,
     migrations_dir: Path | None = None,
@@ -425,8 +445,18 @@ def build_baseline(
 
     init_result = _run_init_db(db_path) if with_init_db else None
 
-    runner = MigrationRunner(db_path=db_path, migrations_dir=d, engine="sqlite")
-    result = runner.migrate_up_converge()
+    # The same connection-discarding hazard _apply_py guards against applies to
+    # the baseline itself, and there it is worse: the baseline is the oracle every
+    # verdict is measured against. MigrationRunner is told db_path, but a
+    # migration whose up() does `conn = get_connection()` ignores that and
+    # resolves the environment. Unpinned, 61 tables (sg_conflict_events among
+    # them) landed in the repo's data/icdev.db instead of the baseline, so the
+    # baseline lacked schema the chain really does create and the shadowed entry
+    # that also created it was scored a gap it is not. Measured on the first 20
+    # entries, pinning moves the baseline from 2371 to 2539 objects.
+    with _pinned_db_path(db_path):
+        runner = MigrationRunner(db_path=db_path, migrations_dir=d, engine="sqlite")
+        result = runner.migrate_up_converge()
     return {
         "db_path": str(db_path),
         # Always reported. tools/db/migrations and icdev/tools/db/migrations are
