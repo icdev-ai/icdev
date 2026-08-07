@@ -48,7 +48,8 @@ Subcommands:
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
   audit export             Export SOC 2 (and future framework) evidence reports.
-  audit tail [--follow]    Tail the audit feed (audit_trail + hook_events).
+  audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
+                           --source runtime_invocations for invocation rows.
   runtime top [--surface]  Rank MCP tools / agents / personas / roles by calls,
                            with error counts and avg/max duration.
   demo seed --tenant <slug> [--canvases <c1,c2,...>]

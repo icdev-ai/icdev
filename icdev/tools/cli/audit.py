@@ -6,6 +6,7 @@ Usage:
     icdev audit export --framework soc2 --tenant-id <tid> --output report.html
     icdev audit export --framework soc2 --tenant-id <tid> --format json
     icdev audit tail [--follow] [--json] [--project ID] [--event-type T]
+    icdev audit tail --source runtime_invocations   # invocation telemetry rows
 """
 from __future__ import annotations
 
