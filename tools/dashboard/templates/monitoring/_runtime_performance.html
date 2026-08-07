@@ -1,0 +1,189 @@
+{# CUI // SP-CTI
+   Runtime Performance panel — the runtime_invocations rollup (migration 341).
+
+   Loads from /api/runtime-invocations/summary rather than from the route's
+   template context so a slow or failing telemetry read cannot delay or break
+   the alerts on the rest of /monitoring. Everything below the fetch is
+   client-side: sorting and the surface filter never re-query.
+#}
+{# `.btn` has no `.active` variant in style.css/ux.css, so without this the
+   selected surface filter is indistinguishable from the other four. Scoped to
+   this panel rather than added to the shared sheet — a global `.btn.active`
+   would restyle every button on every page. #}
+<style>
+#rtperf-filters .rtperf-filter { border-color: var(--border-light); }
+#rtperf-filters .rtperf-filter.active {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue-light);
+    background: var(--bg-card-hover);
+}
+#rtperf-head .rtperf-sort { user-select: none; }
+#runtime-performance td { word-break: break-all; }
+</style>
+
+<div class="table-container mt-2" id="runtime-performance">
+    <div class="table-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h2 style="margin-right:auto;">Runtime Performance</h2>
+        <div id="rtperf-filters" role="group" aria-label="Filter by surface">
+            <button type="button" class="btn btn-sm rtperf-filter active" data-surface="">All</button>
+            <button type="button" class="btn btn-sm rtperf-filter" data-surface="mcp">MCP Tools</button>
+            <button type="button" class="btn btn-sm rtperf-filter" data-surface="agent">Agents</button>
+            <button type="button" class="btn btn-sm rtperf-filter" data-surface="persona">Personas</button>
+            <button type="button" class="btn btn-sm rtperf-filter" data-surface="role">Roles</button>
+        </div>
+    </div>
+
+    <div id="rtperf-note" class="text-muted" style="padding:0 1rem 0.5rem;font-size:0.85em;">Loading runtime telemetry&hellip;</div>
+
+    <table>
+        <thead>
+            <tr id="rtperf-head">
+                <th class="rtperf-sort" data-key="surface" scope="col" role="button" tabindex="0">Surface</th>
+                <th class="rtperf-sort" data-key="name" scope="col" role="button" tabindex="0">Name</th>
+                <th class="rtperf-sort" data-key="calls" scope="col" role="button" tabindex="0">Calls</th>
+                <th class="rtperf-sort" data-key="errors" scope="col" role="button" tabindex="0">Errors</th>
+                <th class="rtperf-sort" data-key="error_rate" scope="col" role="button" tabindex="0">Error %</th>
+                <th class="rtperf-sort" data-key="avg_ms" scope="col" role="button" tabindex="0">Avg ms</th>
+                <th class="rtperf-sort" data-key="max_ms" scope="col" role="button" tabindex="0">Max ms</th>
+            </tr>
+        </thead>
+        <tbody id="rtperf-body">
+            <tr class="empty-row"><td colspan="7">Loading&hellip;</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+(function () {
+    var ROWS = [];          // everything the API returned
+    var surface = '';       // '' = all surfaces
+    var sortKey = 'calls';
+    var sortDesc = true;
+
+    var body = document.getElementById('rtperf-body');
+    var note = document.getElementById('rtperf-note');
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // A NULL avg/max means every row in that group is still `running` and has no
+    // duration yet. Rendering it as 0 would claim an instant call; '—' says
+    // "not measured", which is the honest answer and the same one the CLI gives.
+    function ms(value) {
+        return (value === null || value === undefined) ? '<span class="text-muted">&mdash;</span>' : esc(value);
+    }
+
+    function visible() {
+        return surface ? ROWS.filter(function (r) { return r.surface === surface; }) : ROWS.slice();
+    }
+
+    function sorted(rows) {
+        var dir = sortDesc ? -1 : 1;
+        return rows.sort(function (a, b) {
+            var x = a[sortKey], y = b[sortKey];
+            // Nulls (unmeasured durations) sort last in BOTH directions —
+            // otherwise "sort by slowest" puts the rows with no timing on top.
+            if (x === null || x === undefined) { return (y === null || y === undefined) ? 0 : 1; }
+            if (y === null || y === undefined) { return -1; }
+            if (typeof x === 'string' || typeof y === 'string') {
+                return String(x).localeCompare(String(y)) * dir;
+            }
+            return (x - y) * dir;
+        });
+    }
+
+    function render() {
+        var rows = sorted(visible());
+        if (!rows.length) {
+            body.innerHTML = '<tr class="empty-row"><td colspan="7">No invocations recorded'
+                + (surface ? ' for surface &ldquo;' + esc(surface) + '&rdquo;' : '') + '.</td></tr>';
+            return;
+        }
+        body.innerHTML = rows.map(function (r) {
+            var pct = (r.error_rate * 100).toFixed(r.error_rate && r.error_rate < 0.01 ? 2 : 0);
+            return '<tr>'
+                + '<td><span class="badge badge-info">' + esc(r.surface) + '</span></td>'
+                + '<td title="' + esc(r.name) + '">' + esc(r.name) + '</td>'
+                + '<td>' + esc(r.calls) + '</td>'
+                + '<td' + (r.errors ? ' class="text-red"' : '') + '>' + esc(r.errors) + '</td>'
+                + '<td' + (r.errors ? ' class="text-red"' : ' class="text-muted"') + '>' + pct + '%</td>'
+                + '<td>' + ms(r.avg_ms) + '</td>'
+                + '<td>' + ms(r.max_ms) + '</td>'
+                + '</tr>';
+        }).join('');
+    }
+
+    function markSorted() {
+        document.querySelectorAll('#rtperf-head .rtperf-sort').forEach(function (th) {
+            var active = th.dataset.key === sortKey;
+            th.setAttribute('aria-sort', active ? (sortDesc ? 'descending' : 'ascending') : 'none');
+            th.style.textDecoration = active ? 'underline' : '';
+        });
+    }
+
+    function sortBy(key) {
+        // Re-clicking the active column flips direction. A fresh column starts
+        // descending for numbers (biggest first is what you want from "Calls")
+        // and ascending for text.
+        if (sortKey === key) { sortDesc = !sortDesc; }
+        else { sortKey = key; sortDesc = (key !== 'surface' && key !== 'name'); }
+        markSorted();
+        render();
+    }
+
+    document.querySelectorAll('#rtperf-head .rtperf-sort').forEach(function (th) {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', function () { sortBy(th.dataset.key); });
+        th.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sortBy(th.dataset.key); }
+        });
+    });
+
+    document.querySelectorAll('.rtperf-filter').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            surface = btn.dataset.surface || '';
+            document.querySelectorAll('.rtperf-filter').forEach(function (b) {
+                b.classList.toggle('active', b === btn);
+            });
+            render();
+        });
+    });
+
+    function describe(data) {
+        // An empty table and an un-migrated database look identical on screen,
+        // and the second one is easy to hit (a worktree has no .env and falls
+        // back to an empty SQLite file). Naming the source is what tells them
+        // apart without opening a SQL client.
+        if (!data.available) {
+            return 'runtime_invocations is not present in this database ('
+                + esc(data.backend) + ') — run: python tools/db/migrate.py --up';
+        }
+        var t = data.totals;
+        var parts = [t.names + ' name(s)', t.calls + ' call(s)', t.errors + ' error(s)'];
+        var counts = Object.keys(data.by_surface).map(function (s) {
+            return s + ' ' + data.by_surface[s].calls;
+        });
+        var text = parts.join(' · ') + '  —  ' + counts.join(', ') + '  —  read from ' + esc(data.backend);
+        // limit bounds NAMES, not invocations scanned. Say so when it bit.
+        if (data.truncated) { text += '  —  showing the busiest ' + data.limit + ' names only'; }
+        return text;
+    }
+
+    fetch('/api/runtime-invocations/summary?limit=200', {credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data.ok) { throw new Error(data.error || 'request failed'); }
+            ROWS = data.rows || [];
+            note.innerHTML = describe(data);
+            markSorted();
+            render();
+        })
+        .catch(function (err) {
+            note.innerHTML = '<span class="text-red">Could not load runtime telemetry: ' + esc(err.message) + '</span>';
+            body.innerHTML = '<tr class="empty-row"><td colspan="7">Unavailable</td></tr>';
+        });
+}());
+</script>

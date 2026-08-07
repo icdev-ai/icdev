@@ -173,6 +173,13 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     _mount(provenance_api, v1_prefix="/api/v1/provenance")
     _mount(xai_api, v1_prefix="/api/v1/xai")
 
+    # Runtime Performance — the runtime_invocations rollup behind the
+    # /monitoring panel. Kept out of traces_api because it reads a different
+    # table with a different fail-safe story (telemetry, not OTel spans).
+    _dbg_bp("runtime_invocations_api")
+    from tools.dashboard.api.runtime_invocations import runtime_invocations_api
+    _mount(runtime_invocations_api, v1_prefix="/api/v1/runtime-invocations")
+
     # GovChain / blockchain provenance verification API — mounted at
     # /api/govchain-provenance so it no longer shares /api/provenance (and the
     # blueprint name) with the W3C PROV-AGENT provenance_api above.
@@ -495,6 +502,7 @@ ALL_BLUEPRINTS = [
     ("traces_api", "/api/v1/traces", False),
     ("provenance_api", "/api/v1/provenance", False),
     ("xai_api", "/api/v1/xai", False),
+    ("runtime_invocations_api", "/api/v1/runtime-invocations", False),
     ("oscal_api", "/api/v1/oscal", False),
     ("prod_audit_api", "/api/v1/prod-audit", False),
     ("ai_transparency_api", "/api/v1/ai-transparency", False),

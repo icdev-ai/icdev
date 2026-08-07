@@ -6008,6 +6008,17 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
         # authors toward the raw connect this check exists to stop.
         if isinstance(fname, ast.Name) and fname.id in (compat_calls | storage_calls):
             return True
+        # ``StorageConnection(raw, "sqlite")`` — the remedy this check's own
+        # failure message prescribes, and the strongest form of it: not a
+        # stand-in for the runtime wrapper but the wrapper itself, constructed
+        # directly. Recognised as a Name (``from ... import StorageConnection``)
+        # and as an Attribute (``storage.StorageConnection``, the import form a
+        # shim-aware test uses). Without this the gate rejected its own remedy —
+        # the third time that has happened in this function.
+        if isinstance(fname, ast.Name) and fname.id == "StorageConnection":
+            return True
+        if isinstance(fname, ast.Attribute) and fname.attr == "StorageConnection":
+            return True
         return (
             isinstance(fname, ast.Attribute)
             and fname.attr in ("connect", "translating")
