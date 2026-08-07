@@ -119,13 +119,21 @@ def test_session_scratchpad_is_sanctioned(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 # Command parsing — wrong answers here block real work, so it fails open
 
-def _target(cmd):
-    sys.path.insert(0, str(HOOK.parent))
+def _hook_module():
     import importlib.util
     spec = importlib.util.spec_from_file_location("_ptu", HOOK)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod._worktree_add_target(cmd)
+    return mod
+
+
+def _target(cmd):
+    return _hook_module()._worktree_add_target(cmd)
+
+
+def _target_mode(cmd, posix):
+    """Parse under an explicit shlex mode, so both OS branches are testable here."""
+    return _hook_module()._worktree_add_target(cmd, posix=posix)
 
 
 @pytest.mark.parametrize("cmd,expected", [
@@ -223,3 +231,93 @@ def test_guard_can_be_disabled():
     rc, _ = _run_hook(r"git worktree add C:\AI\.worktrees\wt-dup",
                       env_extra={"ICDEV_WORKTREE_GUARD": "0"})
     assert rc == 0, "ICDEV_WORKTREE_GUARD=0 must disable the guard"
+
+
+# ---------------------------------------------------------------------------
+# OS agnosticism — neither shlex mode is correct on both platforms
+
+@pytest.mark.parametrize("cmd,posix,expected", [
+    # POSIX host: backslash escapes, so an escaped space is ONE path
+    (r"git worktree add /tmp/my\ dir", True, "/tmp/my dir"),
+    # Windows host: backslash separates, so the path survives intact
+    (r"git worktree add C:\Users\u\wt", False, r"C:\Users\u\wt"),
+    # Quoted paths must work in BOTH modes — the portable form
+    ('git worktree add "/tmp/a b"', True, "/tmp/a b"),
+    ('git worktree add "/tmp/a b"', False, "/tmp/a b"),
+])
+def test_parsing_is_correct_for_each_platform(cmd, posix, expected):
+    assert _target_mode(cmd, posix) == expected
+
+
+def test_each_shlex_mode_is_wrong_on_the_other_platform():
+    """Why the mode must follow os.name rather than being hardcoded."""
+    assert _target_mode(r"git worktree add C:\Users\u\wt", True) == "C:Usersuwt"
+    assert _target_mode(r"git worktree add /tmp/my\ dir", False) == "/tmp/my\\"
+
+
+# ---------------------------------------------------------------------------
+# LLM agnosticism — the layer that is not Claude-specific
+
+GITHOOK = REPO_ROOT / ".githooks" / "pre-commit"
+
+
+def test_repo_ships_a_git_hook_so_every_tool_is_covered():
+    """Claude's hook only exists inside Claude Code.
+
+    Cursor, Codex, aider, a plain shell and a human all reach git directly, so
+    the cross-tool layer has to be a git hook.
+    """
+    assert GITHOOK.is_file(), "no .githooks/pre-commit — non-Claude tools are ungated"
+    body = GITHOOK.read_text(encoding="utf-8")
+    assert body.startswith("#!/bin/sh"), "must be POSIX sh to run on Windows, Linux and macOS"
+    assert "worktree_paths" in body, "git hook must consult the shared path module"
+    assert "pre_commit_check.py" in body, "must preserve the pre-existing blueprint/nav gate"
+
+
+def test_git_hook_uses_no_bashisms():
+    """Git Bash on Windows and /bin/sh on Linux are not bash."""
+    body = GITHOOK.read_text(encoding="utf-8")
+    for bashism in ("[[", "==", "function ", "source "):
+        assert bashism not in body, f"{bashism!r} is not portable POSIX sh"
+
+
+def test_no_module_invents_its_own_worktree_base():
+    """The failure mode that produced 22 parent directories.
+
+    kanban.py, ci/modules/worktree.py and workflow/failure_triage.py each derived
+    a private base from their own __file__. Any NEW module doing the same
+    re-opens the sprawl, so this is enforced in CI rather than in prose.
+    """
+    import re
+    offenders = []
+    # Must match a PATH-valued assignment, not any constant whose name happens to
+    # contain "WORKTREE". The first draft flagged
+    # `FAILURE_WORKTREE_MISSING = "worktree_missing"` — a status string — so the
+    # right-hand side has to look like path construction.
+    pattern = re.compile(
+        r"^\s*[A-Z_]*(?:WORKTREE|TREES)[A-Z_]*\s*=\s*"
+        r"(?!.*worktree_paths)"
+        r"(?=.*(?:Path\(|BASE_DIR|_repo_root|__file__|/\s*[\"']|\.tmp))",
+        re.M,
+    )
+    allowed = {
+        # Grandfathered: relocating these mid-flight orphans live worktrees.
+        Path("tools/genesis/reflexes/kanban.py"),
+        Path("tools/ci/modules/worktree.py"),
+        Path("tools/workflow/failure_triage.py"),
+        Path("tools/git/worktree_paths.py"),
+    }
+    for py in (REPO_ROOT / "tools").rglob("*.py"):
+        rel = py.relative_to(REPO_ROOT)
+        if rel in allowed or "test" in rel.parts:
+            continue
+        try:
+            src = py.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if pattern.search(src):
+            offenders.append(str(rel))
+    assert not offenders, (
+        "these modules define a private worktree base instead of importing "
+        "tools.git.worktree_paths:\n  " + "\n  ".join(offenders)
+    )

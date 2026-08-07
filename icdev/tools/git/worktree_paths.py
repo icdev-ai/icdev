@@ -209,8 +209,46 @@ def main(argv=None) -> int:
     ap.add_argument("--check", metavar="PATH", help="exit 1 if PATH is not sanctioned")
     ap.add_argument("--audit", action="store_true",
                     help="classify every registered worktree as sanctioned or stray")
+    ap.add_argument("--check-cwd", action="store_true",
+                    help="exit 1 if the CURRENT worktree is not sanctioned")
+    ap.add_argument("--install-hooks", action="store_true",
+                    help="point core.hooksPath at .githooks (enables the LLM-agnostic gate)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.install_hooks:
+        root = canonical_repo_root()
+        hooks_dir = root / ".githooks"
+        if not hooks_dir.is_dir():
+            print(f"no .githooks directory at {hooks_dir}")
+            return 1
+        prev = subprocess.run(  # nosec B603 B607 -- fixed argv, no shell
+            ["git", "-C", str(root), "config", "--get", "core.hooksPath"],
+            capture_output=True, text=True, timeout=30).stdout.strip()
+        subprocess.run(  # nosec B603 B607 -- fixed argv, no shell
+            ["git", "-C", str(root), "config", "core.hooksPath", ".githooks"],
+            capture_output=True, text=True, timeout=30, check=True)
+        # chmod is a no-op on Windows and required on POSIX.
+        for hook in hooks_dir.iterdir():
+            if hook.is_file():
+                try:
+                    hook.chmod(hook.stat().st_mode | 0o111)
+                except OSError:
+                    pass
+        print(f"core.hooksPath: {prev or '(unset)'} -> .githooks")
+        if prev and not (root / prev).exists() and prev != ".githooks":
+            print(f"  note: previous value {prev!r} did not exist — hooks were disabled")
+        return 0
+
+    if args.check_cwd:
+        here = Path.cwd()
+        # The main checkout is not a worktree and is never a violation.
+        if here.resolve() == canonical_repo_root().resolve():
+            return 0
+        if is_sanctioned(here):
+            return 0
+        print(describe_violation(here))
+        return 1
 
     if args.path:
         actor, slug = args.path

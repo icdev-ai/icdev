@@ -1012,21 +1012,32 @@ def run_review_loop_precommit(tool_name: str, tool_input: dict) -> None:
         return  # never break a commit
 
 
-def _worktree_add_target(command: str):
+def _worktree_add_target(command: str, posix=None):
     """Target path of a ``git worktree add`` in *command*, or None.
 
     Returns None whenever the path cannot be determined with confidence — the
     caller treats that as "allow". A parser that guesses would block legitimate
     work, which is strictly worse than failing to catch a stray worktree.
+
+    The shlex mode must follow the OS, because neither mode is correct on both:
+
+        "git worktree add C:\\Users\\u\\wt"   posix=True  -> "C:Usersuwt"     WRONG
+        "git worktree add /tmp/my\\ dir"      posix=False -> ["/tmp/my\\","dir"] WRONG
+
+    On Windows a backslash is a path separator; on POSIX it is an escape. Pick
+    by platform rather than hardcoding either. *posix* is overridable so both
+    branches stay testable on a single host.
     """
     if "worktree" not in command or "add" not in command:
         return None
+    if posix is None:
+        posix = os.name != "nt"
     try:
-        # posix=False: a Windows path is a normal argument here, and POSIX mode
-        # treats every backslash as an escape — "C:\Users\u\wt" parses to
-        # "C:Usersuwt", which then resolves as a RELATIVE path against cwd and
-        # silently looks like whatever directory the session is sitting in.
-        tokens = [t.strip('"').strip("'") for t in shlex.split(command, posix=False)]
+        tokens = shlex.split(command, posix=posix)
+        if not posix:
+            # Non-posix mode leaves quotes attached to the token.
+            tokens = [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t
+                      for t in tokens]
     except ValueError:
         return None
 
