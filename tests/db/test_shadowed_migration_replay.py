@@ -86,6 +86,46 @@ def test_baseline_reports_mode(tmp_path, mini_migrations):
     assert result["applied_total"] >= 3
 
 
+def test_baseline_captures_a_migration_that_opens_its_own_connection(
+    tmp_path, mini_migrations, monkeypatch
+):
+    """A connection-discarding WINNER must still land in the baseline (d3).
+
+    ``MigrationRunner`` is handed the baseline path, but a migration whose
+    ``up()`` does ``conn = get_connection()`` ignores it and resolves
+    ``ICDEV_DB_PATH`` instead. Unpinned during the baseline build, its tables go
+    to whatever database the environment names — leaving the baseline short of
+    schema the chain really does create, so a shadowed entry that declares the
+    same table is scored ``schema_gap_detected`` when it is benign. Measured on
+    the real tree, 61 tables escaped this way and one of the first 20 verdicts
+    rested on the wrong evidence.
+    """
+    elsewhere = tmp_path / "ambient.db"
+    monkeypatch.setenv("ICDEV_DB_PATH", str(elsewhere))
+
+    entry = mini_migrations / "004_selfconn"
+    entry.mkdir()
+    (entry / "up.py").write_text(
+        "from tools.db.storage import get_connection\n"
+        "\n"
+        "def up(conn=None):\n"
+        "    conn = get_connection()\n"
+        "    conn.execute('CREATE TABLE IF NOT EXISTS escaped_rows (id INTEGER)')\n"
+        "    conn.commit()\n"
+        "    conn.close()\n",
+        encoding="utf-8",
+    )
+
+    db = tmp_path / "pinned_baseline.db"
+    smr.build_baseline(db, mini_migrations)
+
+    names = {r[0] for r in sqlite3.connect(str(db)).execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    )}
+    assert "escaped_rows" in names, "the write escaped the baseline"
+    assert not elsewhere.exists(), "the build wrote to the ambient database"
+
+
 # ---------------------------------------------------------------------------
 # The two required verdicts
 # ---------------------------------------------------------------------------
