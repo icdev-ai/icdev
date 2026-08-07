@@ -1,11 +1,16 @@
 from __future__ import annotations
 # CUI // SP-CTI
-"""ICDEV™ Services Launcher — starts Dashboard + Genesis Daemon + Kanban Scheduler.
+"""ICDEV™ Services Launcher — Dashboard + Genesis Daemon + Kanban Scheduler + PR Watcher.
 
 Cross-platform: works on Windows, Linux, and macOS.
 Entry point: python tools/genesis/launch.py  (or start_daemon.bat / start_daemon.ps1 as wrappers)
 All services run as subprocesses with auto-restart on crash.
-Ollama health is checked before daemon start.
+Ollama and PostgreSQL health are checked before dependent services start.
+
+The Kanban Scheduler and the PR Watcher are two halves of one loop: the
+scheduler builds and opens PRs, the watcher merges the green ones and frees the
+task. Starting one without the other yields an open loop that quietly stops
+making progress, so both are supervised here.
 """
 
 import os
@@ -39,6 +44,7 @@ os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 DASHBOARD_PORT = 5050
 TRADING_DASHBOARD_PORT = 5100
+PR_WATCHER_INTERVAL = int(os.environ.get("ICDEV_PR_WATCHER_INTERVAL", "30"))
 LOG_FILE = os.path.join(ROOT, ".tmp", "genesis", "launcher.log")
 _PID_FILE = os.path.join(ROOT, ".tmp", "genesis", "launcher.pid")
 
@@ -97,6 +103,48 @@ def _wait_for_ollama(max_wait: int = 120) -> bool:
             return True
         time.sleep(5)
     _log("WARNING: Ollama not available — Genesis will run with degraded LLM")
+    return False
+
+
+def _check_postgres(timeout: float = 3.0) -> bool:
+    """Return True if PostgreSQL answers a trivial query.
+
+    Uses the same connection path the services themselves use, so a success here
+    means they will connect too — unlike pg_isready, which is not on PATH on
+    every host and does not exercise auth/database selection.
+    """
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        try:
+            conn.execute("SELECT 1").fetchone()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return True
+    except Exception:
+        return False
+
+
+def _wait_for_postgres(max_wait: int = 120) -> bool:
+    """Wait for PostgreSQL before starting services that require it.
+
+    With ICDEV_PG_NO_FALLBACK=true a service that boots while PG is still in
+    recovery dies immediately ("the database system is starting up"). The
+    monitor loop would eventually restart it, but only after a crash-loop that
+    looks like a real outage. Skipped when the backend is not PostgreSQL.
+    """
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() != "postgresql":
+        return True
+    _log(f"Waiting for PostgreSQL (up to {max_wait}s)...")
+    for _ in range(0, max_wait, 5):
+        if _check_postgres():
+            _log("PostgreSQL is ready")
+            return True
+        time.sleep(5)
+    _log("WARNING: PostgreSQL not reachable — services may crash-loop until it recovers")
     return False
 
 
@@ -195,6 +243,29 @@ def _start_kanban_scheduler():
     return proc, kb_log
 
 
+def _start_pr_watcher():
+    """Start the PR Watcher subprocess — the half of the loop that *lands* work.
+
+    Without it the pipeline is open: the scheduler keeps building and opening
+    PRs, nothing merges, tasks stay parked in pr_opened, and the respawn guard
+    eventually withholds every task. That presents as "the dispatcher stopped
+    working" when the dispatcher is in fact idle and correct.
+    """
+    # Matches both "tools/ci/pr_watcher.py" and "-m tools.ci.pr_watcher" invocations.
+    _kill_stale_instances("pr_watcher")
+    pw_log = open(os.path.join(ROOT, ".tmp", "pr_watcher.log"), "a", encoding="utf-8")
+    proc = subprocess.Popen(
+        [sys.executable, "tools/ci/pr_watcher.py", "--daemon",
+         "--interval", str(PR_WATCHER_INTERVAL)],
+        stdout=pw_log,
+        stderr=pw_log,
+        cwd=ROOT,
+        env=_child_env(),
+    )
+    _log(f"PR Watcher started (PID {proc.pid}, interval {PR_WATCHER_INTERVAL}s)")
+    return proc, pw_log
+
+
 def _start_trading_dashboard():
     """Start FathomDesk trading dashboard subprocess."""
     _kill_stale_instances("trading/dashboard/app.py")
@@ -223,6 +294,9 @@ def main():
     # Wait for Ollama (scanner-tier LLM)
     _wait_for_ollama(max_wait=90)
 
+    # Wait for PostgreSQL — every service below reads it at import time
+    _wait_for_postgres(max_wait=120)
+
     # Start Dashboard
     dash_proc, dash_log_f = _start_dashboard()
     time.sleep(3)
@@ -235,6 +309,9 @@ def main():
 
     # Start Kanban Scheduler (autonomous task execution)
     kb_proc, kb_log_f = _start_kanban_scheduler()
+
+    # Start PR Watcher (merges CI-green PRs — closes the autonomous loop)
+    pw_proc, pw_log_f = _start_pr_watcher()
 
     # Start FathomDesk Trading Dashboard
     td_proc, td_log_f = _start_trading_dashboard()
@@ -273,6 +350,13 @@ def main():
                     time.sleep(2)
                     kb_proc, kb_log_f = _start_kanban_scheduler()
 
+                # Check PR Watcher
+                if pw_proc.poll() is not None:
+                    _log(f"PR Watcher exited (code {pw_proc.returncode}), restarting...")
+                    pw_log_f.close()
+                    time.sleep(2)
+                    pw_proc, pw_log_f = _start_pr_watcher()
+
                 # Check FathomDesk Trading Dashboard
                 if td_proc.poll() is not None:
                     _log(f"FathomDesk Dashboard exited (code {td_proc.returncode}), restarting...")
@@ -287,9 +371,9 @@ def main():
         _log("Shutdown requested")
     finally:
         _log("Stopping services...")
-        for proc in [daemon_proc, pg_proc, kb_proc, td_proc, dash_proc]:
+        for proc in [daemon_proc, pg_proc, kb_proc, pw_proc, td_proc, dash_proc]:
             proc.terminate()
-        for proc in [daemon_proc, pg_proc, kb_proc, td_proc, dash_proc]:
+        for proc in [daemon_proc, pg_proc, kb_proc, pw_proc, td_proc, dash_proc]:
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -298,6 +382,7 @@ def main():
         daemon_log_f.close()
         pg_log_f.close()
         kb_log_f.close()
+        pw_log_f.close()
         td_log_f.close()
         _release_pid_lock()
         _log("ICDEV™ Services stopped")
