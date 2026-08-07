@@ -7,7 +7,8 @@
     "total_entries_claiming_a_duplicated_version": 108,
     "shadowed_migrations": 60,
     "shadowing_rule": "MigrationRunner.get_pending_migrations dedupes by version, keeping the FIRST entry by sort order; every later same-version sibling is skipped permanently and silently.",
-    "note": "The header comment in args/migration_duplicate_versions.yaml claims '53 duplicated versions; 70 migrations shadowed'. That comment is STALE: the file's own data, and a live scan of tools/db/migrations, both yield 48 duplicated versions and 60 shadowed migrations."
+    "note": "The header comment in args/migration_duplicate_versions.yaml on main claims '53 duplicated versions; 70 migrations shadowed'. That comment is STALE: the file's own data, and a live scan of tools/db/migrations, both yield 48 duplicated versions and 60 shadowed migrations.",
+    "prior_art": "PR #1296 (branch feat/mvs-audit-03-shadowed-audit, task mvs-audit-03) is OPEN and unmerged as of 2026-08-07. It rewrites the same 60 entries as name -> reason with per-entry verdicts (42 benign, 9 not-actually-shadowed, 3 no-DDL, 6 real gaps since fixed) and adds tools/db/shadowed_migration_audit.py. None of that is on main; this enumeration reflects main."
   },
   "shadowed": [
     {

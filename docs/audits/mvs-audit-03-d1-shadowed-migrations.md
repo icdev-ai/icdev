@@ -37,20 +37,36 @@ So the allowlist is currently an accurate picture of the tree — no collision h
 been introduced without being grandfathered, and no grandfathered collision has
 since been renumbered away.
 
-## The file's own header comment is stale
+## The file's own header comment is stale on `main`
 
-`args/migration_duplicate_versions.yaml` line 17 reads:
+`args/migration_duplicate_versions.yaml` line 17 currently reads:
 
 ```
 # 53 duplicated versions; 70 migrations shadowed.
 ```
 
 Both numbers are wrong for the data in the same file — it holds 48 versions and
-60 shadowed entries, and the live scan confirms 48/60. The comment was not
-updated when entries were removed from the allowlist. Anyone sizing the
-remediation backlog off that comment overstates it by ten migrations. Fixing the
-comment is out of scope for this research task and is left as a follow-up; the
-counts above are the measured ones.
+60 shadowed entries, and the live scan confirms 48/60. Anyone sizing the
+remediation backlog off that comment overstates it by ten migrations. Read the
+data, not the comment.
+
+Already fixed on the open branch below, so this audit does not touch it.
+
+## Prior art — read this before re-investigating
+
+PR **#1296** (`feat/mvs-audit-03-shadowed-audit`, task `mvs-audit-03`) is **open
+and unmerged as of 2026-08-07**. It contains a much deeper pass over the same 60
+entries: each one rewritten as `name: "<reason>"` with a verdict from rebuilding
+both backends from empty (42 benign, 9 not-actually-shadowed, 3 no-DDL, 6 real
+schema gaps since fixed), a `tools/db/shadowed_migration_audit.py` to re-derive
+it, and a `migration_versions.check()::unexplained_entries` gate that fails on a
+reason-less entry.
+
+None of that is on `main`, which is why `main`'s allowlist is still a bare list
+of names and why this task was answerable at all. The enumeration here is the
+three-field view of `main` as it stands; when #1296 merges, its inline reasons
+supersede this file for the "is it harmless?" question, and this file remains
+useful only as the flat machine-readable join key.
 
 ## What is shadowed
 
