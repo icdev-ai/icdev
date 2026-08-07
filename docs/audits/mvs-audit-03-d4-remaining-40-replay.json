@@ -1,0 +1,2005 @@
+{
+  "metadata": {
+    "task": "mvs-audit-03-d4",
+    "scope": "rows 21-60 (the remaining 40) of docs/audits/mvs-audit-03-d1-shadowed-migrations.json",
+    "tool": "tools/db/shadowed_migration_replay.py (mvs-audit-03-d2, with the d3 baseline-pinning fix)",
+    "command": "python tools/db/shadowed_migration_replay.py --json --baseline-db <path outside the repo> --migration <each of the 40>",
+    "measured": "2026-08-07",
+    "baseline": {
+      "db_path": "C:\\Users\\schuo\\AppData\\Local\\Temp\\mvs_d4_baseline.db",
+      "migrations_dir": "C:\\AI\\ICDev\\.tmp\\worktrees\\mvs-audit-03-d4\\tools\\db\\migrations",
+      "mode": "migrations_only",
+      "init_db": null,
+      "applied_total": 256,
+      "remaining_failures": 57,
+      "note": "remaining_failures are migrations SQLite cannot apply (mostly PostgreSQL-only DDL). Objects they would create are absent from this baseline, so a gap verdict resting on such an object is weak.",
+      "reused": false,
+      "objects": 2539
+    },
+    "oracles": [
+      "1. SQLite replay - every migration the runner actually applies, then the shadowed entry against a throwaway copy, diffing normalised sqlite_master DDL.",
+      "2. Live PostgreSQL - information_schema.tables/columns + pg_indexes + pg_constraint on the local icdev database, read-only session.",
+      "3. tools/db/schema/pg_consolidated.sql - what bootstrap_pg.py loads on a FRESH PostgreSQL database. through_version=301 means every migration at or below 301 is marked applied WITHOUT running, so an object absent here is absent from a new deployment for good. This is the oracle that decides.",
+      "4. Declaring-source scan - CREATE TABLE/INDEX across tools/ and apps/ outside the migration trees, to find canvases and reflexes that create their tables at app startup."
+    ],
+    "why_oracle_3_decides": "tools/db/init_icdev_db.py, which declares several of these objects, refuses to run when ICDEV_STORAGE_BACKEND=postgresql. A fresh PostgreSQL database therefore gets its schema from pg_consolidated.sql plus migrations above through_version, and from nowhere else."
+  },
+  "summary": {
+    "audited": 40,
+    "by_classification": {
+      "gap_on_postgresql": 11,
+      "gap_sqlite_chain_only": 22,
+      "benign": 7
+    },
+    "by_postgresql_impact": {
+      "index_only": 3,
+      "none": 29,
+      "live_consumers": 7,
+      "inert": 1
+    },
+    "gap_on_postgresql_with_live_consumers": [
+      "139_govlift_rbac_roles",
+      "184_creative_gap_innovation_signal.sql",
+      "207_tenant_component_overrides",
+      "210_sso",
+      "236_rfi_workbench.sql",
+      "247_dashboard_users_role_check",
+      "257_idr_dic_doc_link.sql"
+    ],
+    "tables_a_chain_built_sqlite_db_would_lack_with_no_other_creator": [
+      "aisg_learning_tracks",
+      "aisg_track_progress",
+      "genesis_phase_log",
+      "govlift_dependencies",
+      "kanban_task_comments",
+      "memory_fts",
+      "memory_fts_config",
+      "memory_fts_content",
+      "memory_fts_data",
+      "memory_fts_docsize",
+      "memory_fts_idx",
+      "qdc_metrics",
+      "rfi_workbench_exports",
+      "rfi_workbench_sections",
+      "rfi_workbench_sessions",
+      "sdc_designs",
+      "sdc_rag_attack_techniques",
+      "sdc_rag_stigs",
+      "sg_aircraft_tracks",
+      "sg_ccir_trigger_events",
+      "sg_ground_vehicle_events",
+      "sg_intsum_paragraphs",
+      "sg_intsums",
+      "sg_leadership_briefs",
+      "sg_pattern_learner_log",
+      "sg_satellite_passes",
+      "sg_sc_edges",
+      "sg_sc_nodes",
+      "sg_theaters",
+      "sg_uas_tracks",
+      "sg_war_council_briefs",
+      "user_challenges",
+      "user_daily_briefings",
+      "user_identity_profiles",
+      "user_integrations",
+      "user_objectives",
+      "user_relationships",
+      "wne_artifacts",
+      "wne_sessions"
+    ],
+    "indexes_nothing_in_the_tree_creates": [
+      "idx_aisg_track_progress_user_track",
+      "idx_briefing",
+      "idx_govlift_dep_dependent",
+      "idx_govlift_dep_workload",
+      "idx_gpl_completed_at",
+      "idx_gpl_design_id",
+      "idx_gpl_started_at",
+      "idx_gpl_tenant",
+      "idx_ktc_created",
+      "idx_ktc_task_id",
+      "idx_qdc_metrics_key",
+      "idx_qdc_metrics_project",
+      "idx_qdc_metrics_project_key",
+      "idx_rfi_exports_session",
+      "idx_rfi_sections_session",
+      "idx_sdc_designs_updated",
+      "idx_sdc_rag_attack_platform",
+      "idx_sdc_rag_attack_tactic",
+      "idx_sdc_rag_stigs_nist",
+      "idx_sdc_rag_stigs_severity",
+      "idx_sg_aircraft_icao24",
+      "idx_sg_aircraft_ts",
+      "idx_sg_ccir_trigger_ccir_id",
+      "idx_sg_ccir_trigger_created",
+      "idx_sg_gv_country",
+      "idx_sg_gv_event_ts",
+      "idx_sg_intsum_para_intsum",
+      "idx_sg_intsums_created",
+      "idx_sg_lb_generated",
+      "idx_sg_lb_theater",
+      "idx_sg_lb_tier",
+      "idx_sg_sat_norad",
+      "idx_sg_sat_pass_start",
+      "idx_sg_sc_edges_src",
+      "idx_sg_sc_edges_tgt",
+      "idx_sg_sc_nodes_crit",
+      "idx_sg_sc_nodes_type",
+      "idx_sg_theaters_code",
+      "idx_sg_theaters_status",
+      "idx_sg_uas_id",
+      "idx_sg_wcb_generated_at",
+      "idx_sg_wcb_theater",
+      "idx_spll_sig",
+      "idx_spll_ts",
+      "idx_user_chal",
+      "idx_user_obj",
+      "idx_user_rel",
+      "idx_wne_artifacts_session_id",
+      "idx_wne_sessions_status"
+    ]
+  },
+  "results": [
+    {
+      "migration": "057_sg_raw_signals_processed",
+      "version": "57",
+      "shadowed_by": "057_ad_backtest_runs.sql",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "index_only",
+      "flags": [],
+      "rationale": "sg_raw_signals.processed is present in live PostgreSQL and the snapshot; only idx_sg_raw_signals_processed is absent from both. The SQLite replay scored it benign because its ALTER raised 'no such table' inside the migration's own `except Exception: pass`",
+      "replay_verdict": "schema_already_exists",
+      "replay_reason": "replay changed nothing; 0 object(s) reported already-exists against the baseline",
+      "declares": {
+        "tables": [],
+        "indexes": [
+          "idx_sg_raw_signals_processed"
+        ],
+        "columns": {
+          "sg_raw_signals": [
+            "processed"
+          ]
+        },
+        "checks": [],
+        "note": "the ALTER is wrapped in `except Exception: pass`; sg_raw_signals is absent from the chain-built baseline (its creator 052_sg_raw_signals is itself shadowed), so the statement raised 'no such table' and was swallowed. The empty delta is the swallow, not an already-present column"
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql_missing": [
+          "index idx_sg_raw_signals_processed"
+        ],
+        "pg_consolidated_snapshot_missing": [
+          "index idx_sg_raw_signals_processed"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "057_sg_sc_graph",
+      "version": "57",
+      "shadowed_by": "057_ad_backtest_runs.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sg_sc_edges_src, index idx_sg_sc_edges_tgt, index idx_sg_sc_nodes_crit, index idx_sg_sc_nodes_type, table sg_sc_edges",
+      "declares": {
+        "tables": [
+          "sg_sc_edges",
+          "sg_sc_nodes"
+        ],
+        "indexes": [
+          "idx_sg_sc_edges_src",
+          "idx_sg_sc_edges_tgt",
+          "idx_sg_sc_nodes_crit",
+          "idx_sg_sc_nodes_type"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "057_sg_signals_actions",
+      "version": "57",
+      "shadowed_by": "057_ad_backtest_runs.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "all three columns and both indexes on sg_prioritized_signals are present in live PostgreSQL and in the snapshot; unreplayable on SQLite only because its parent table (created by the shadowed 056_sg_prioritized_signals) is absent from the chain",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "1 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': OperationalError: no such table: sg_prioritized_signals",
+      "declares": {
+        "tables": [],
+        "indexes": [
+          "idx_sg_pri_promo",
+          "idx_sg_pri_read"
+        ],
+        "columns": {
+          "sg_prioritized_signals": [
+            "annotation",
+            "is_read",
+            "promoted_to_kg"
+          ]
+        },
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "<module>",
+          "error": "OperationalError: no such table: sg_prioritized_signals"
+        }
+      ]
+    },
+    {
+      "migration": "064_sg_pattern_learner_log",
+      "version": "64",
+      "shadowed_by": "064_sg_hitl_items_type",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_spll_sig, index idx_spll_ts, table sg_pattern_learner_log",
+      "declares": {
+        "tables": [
+          "sg_pattern_learner_log"
+        ],
+        "indexes": [
+          "idx_spll_sig",
+          "idx_spll_ts"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "078_workflow_hitl",
+      "version": "78",
+      "shadowed_by": "078_ad_decision_audit",
+      "kind": "sql",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new columns kanban_tasks.hitl_stage; changed DDL on kanban_tasks",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {
+          "kanban_tasks": [
+            "hitl_stage"
+          ]
+        },
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "083_sg_multidomain_tracks",
+      "version": "83",
+      "shadowed_by": "083_cyber_ext_columns",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sg_aircraft_icao24, index idx_sg_aircraft_ts, index idx_sg_gv_country, index idx_sg_gv_event_ts, index idx_sg_sat_norad",
+      "declares": {
+        "tables": [
+          "sg_aircraft_tracks",
+          "sg_ground_vehicle_events",
+          "sg_satellite_passes",
+          "sg_uas_tracks"
+        ],
+        "indexes": [
+          "idx_sg_aircraft_icao24",
+          "idx_sg_aircraft_ts",
+          "idx_sg_gv_country",
+          "idx_sg_gv_event_ts",
+          "idx_sg_sat_norad",
+          "idx_sg_sat_pass_start",
+          "idx_sg_uas_id"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "084_wne_sessions",
+      "version": "84",
+      "shadowed_by": "084_aisg_wizard.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_wne_artifacts_session_id, index idx_wne_sessions_status, table wne_artifacts, table wne_sessions",
+      "declares": {
+        "tables": [
+          "wne_artifacts",
+          "wne_sessions"
+        ],
+        "indexes": [
+          "idx_wne_artifacts_session_id",
+          "idx_wne_sessions_status"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "085_aisg_learning_tracks",
+      "version": "85",
+      "shadowed_by": "085_aadc_versions.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new table aisg_learning_tracks, table aisg_track_progress, index idx_aisg_track_progress_user_track",
+      "declares": {
+        "tables": [
+          "aisg_learning_tracks",
+          "aisg_track_progress"
+        ],
+        "indexes": [
+          "idx_aisg_track_progress_user_track"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "085_sg_ccir_trigger_events",
+      "version": "85",
+      "shadowed_by": "085_aadc_versions.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sg_ccir_trigger_ccir_id, index idx_sg_ccir_trigger_created, table sg_ccir_trigger_events",
+      "declares": {
+        "tables": [
+          "sg_ccir_trigger_events"
+        ],
+        "indexes": [
+          "idx_sg_ccir_trigger_ccir_id",
+          "idx_sg_ccir_trigger_created"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "086_sg_intsums",
+      "version": "86",
+      "shadowed_by": "086_aadc_events.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sg_intsum_para_intsum, index idx_sg_intsums_created, table sg_intsum_paragraphs, table sg_intsums",
+      "declares": {
+        "tables": [
+          "sg_intsum_paragraphs",
+          "sg_intsums"
+        ],
+        "indexes": [
+          "idx_sg_intsum_para_intsum",
+          "idx_sg_intsums_created"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "107_sg_theaters",
+      "version": "107",
+      "shadowed_by": "107_aadc_phase5.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sg_theaters_code, index idx_sg_theaters_status, table sg_theaters",
+      "declares": {
+        "tables": [
+          "sg_theaters"
+        ],
+        "indexes": [
+          "idx_sg_theaters_code",
+          "idx_sg_theaters_status"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "108_sg_war_council_briefs",
+      "version": "108",
+      "shadowed_by": "108_aadc_phase6.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sg_wcb_generated_at, index idx_sg_wcb_theater, table sg_war_council_briefs",
+      "declares": {
+        "tables": [
+          "sg_war_council_briefs"
+        ],
+        "indexes": [
+          "idx_sg_wcb_generated_at",
+          "idx_sg_wcb_theater"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "113_kanban_vibe_tier1",
+      "version": "113",
+      "shadowed_by": "113_aadc_compliance.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_ktc_created, index idx_ktc_task_id, table kanban_task_comments; new columns kanban_tasks.files_changed, kanban_tasks.lines_added, kanban_tasks.lines_removed; changed DDL on kanban_tasks",
+      "declares": {
+        "tables": [
+          "kanban_task_comments"
+        ],
+        "indexes": [
+          "idx_ktc_created",
+          "idx_ktc_task_id"
+        ],
+        "columns": {
+          "kanban_tasks": [
+            "files_changed",
+            "lines_added",
+            "lines_removed",
+            "start_date",
+            "target_date"
+          ]
+        },
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "120_ops_hub",
+      "version": "120",
+      "shadowed_by": "120_kanban_alert_queue",
+      "kind": "py",
+      "classification": "benign",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "targets a separate database (ohc_canvas.db) through tools/ops_hub/db/init_db.py, which the canvas also runs at app startup; it declares nothing in the main ICDEV database",
+      "replay_verdict": "schema_already_exists",
+      "replay_reason": "replay changed nothing; 0 object(s) reported already-exists against the baseline",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {},
+        "checks": [],
+        "note": "targets a SEPARATE database (ohc_canvas.db) via tools/ops_hub/db/init_db.py, not the main ICDEV database; the empty main-DB delta is correct and vacuous. The canvas creates the same tables at app startup"
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "135_sdc_designs",
+      "version": "135",
+      "shadowed_by": "135_ohc_runbooks",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sdc_designs_updated, table sdc_designs",
+      "declares": {
+        "tables": [
+          "sdc_designs"
+        ],
+        "indexes": [
+          "idx_sdc_designs_updated"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "136_qdc_metrics",
+      "version": "136",
+      "shadowed_by": "136_gameday_ai_league",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "index_only",
+      "flags": [],
+      "rationale": "qdc_metrics itself is present; only idx_qdc_metrics_key is absent from live PostgreSQL and the snapshot",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_qdc_metrics_key, index idx_qdc_metrics_project, table qdc_metrics",
+      "declares": {
+        "tables": [
+          "qdc_metrics"
+        ],
+        "indexes": [
+          "idx_qdc_metrics_key",
+          "idx_qdc_metrics_project"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [
+          "index idx_qdc_metrics_key"
+        ],
+        "pg_consolidated_snapshot_missing": [
+          "index idx_qdc_metrics_key"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "139_govlift_map_assessment.sql",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir",
+      "kind": "sql",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new table govlift_dependencies, index idx_govlift_dep_dependent, index idx_govlift_dep_workload",
+      "declares": {
+        "tables": [
+          "govlift_dependencies"
+        ],
+        "indexes": [
+          "idx_govlift_dep_dependent",
+          "idx_govlift_dep_workload"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "-- CUI // SP-CTI\n-- Migration 139: GovLift MAP Assessment Dimensions\n-- Adds 7-dimension MAP scoring columns, dependency tracking, and assessment metadata.\n\n-- \u2500\u2500 Workload assessment dimensions \u2500\u2500\u2500\u2500\u2500\u2500",
+          "error": "no such table: govlift_workloads"
+        },
+        {
+          "statement": "ALTER TABLE govlift_workloads ADD COLUMN dim_business INTEGER DEFAULT 0;",
+          "error": "no such table: govlift_workloads"
+        },
+        {
+          "statement": "ALTER TABLE govlift_workloads ADD COLUMN dim_operational INTEGER DEFAULT 0;",
+          "error": "no such table: govlift_workloads"
+        },
+        {
+          "statement": "ALTER TABLE govlift_workloads ADD COLUMN dim_platform INTEGER DEFAULT 0;",
+          "error": "no such table: govlift_workloads"
+        },
+        {
+          "statement": "ALTER TABLE govlift_workloads ADD COLUMN dim_security INTEGER DEFAULT 0;",
+          "error": "no such table: govlift_workloads"
+        }
+      ]
+    },
+    {
+      "migration": "139_govlift_rbac_roles",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "live_consumers",
+      "flags": [],
+      "rationale": "dashboard_users.role CHECK rejects migration_engineer/component_admin/auditor/ciso in BOTH live PostgreSQL and the snapshot; tools/govlift/rbac.py::GOVLIFT_ROLES, tools/dashboard/auth.py::VALID_DASHBOARD_ROLES and tools/dashboard/api/sre.py all reference them",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "changed DDL on dashboard_users, idx_dashboard_users_email_tenant, idx_dashboard_users_tenant",
+      "declares": {
+        "tables": [],
+        "indexes": [
+          "idx_dashboard_users_email_tenant",
+          "idx_dashboard_users_tenant"
+        ],
+        "columns": {},
+        "checks": [
+          [
+            "dashboard_users",
+            "role",
+            "migration_engineer"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "component_admin"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "auditor"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "ciso"
+          ]
+        ]
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "migration_engineer",
+            "accepted_live_pg": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "component_admin",
+            "accepted_live_pg": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "auditor",
+            "accepted_live_pg": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "ciso",
+            "accepted_live_pg": false
+          }
+        ],
+        "check_values_snapshot": [
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "migration_engineer",
+            "in_snapshot": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "component_admin",
+            "in_snapshot": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "auditor",
+            "in_snapshot": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "ciso",
+            "in_snapshot": false
+          }
+        ],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "139_mfa_enforcement",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "inert",
+      "flags": [],
+      "rationale": "all four dashboard_users MFA columns are absent from live PostgreSQL AND the snapshot, but nothing in the tree reads them \u2014 SaaS MFA uses the separate user_mfa table in tools/saas/auth/mfa.py. Dead schema, no failure",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new columns dashboard_users.mfa_backup_codes, dashboard_users.mfa_enabled, dashboard_users.mfa_verified_at; changed DDL on dashboard_users",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {
+          "dashboard_users": [
+            "mfa_backup_codes",
+            "mfa_enabled",
+            "mfa_verified_at",
+            "totp_secret"
+          ]
+        },
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [
+          "column dashboard_users.mfa_backup_codes",
+          "column dashboard_users.mfa_enabled",
+          "column dashboard_users.mfa_verified_at",
+          "column dashboard_users.totp_secret"
+        ],
+        "pg_consolidated_snapshot_missing": [
+          "column dashboard_users.mfa_backup_codes",
+          "column dashboard_users.mfa_enabled",
+          "column dashboard_users.mfa_verified_at",
+          "column dashboard_users.totp_secret"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "139_qdc_metrics.sql",
+      "version": "139",
+      "shadowed_by": "139_fisma_ir",
+      "kind": "sql",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_qdc_metrics_project, index idx_qdc_metrics_project_key, table qdc_metrics",
+      "declares": {
+        "tables": [
+          "qdc_metrics"
+        ],
+        "indexes": [
+          "idx_qdc_metrics_project",
+          "idx_qdc_metrics_project_key"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "158_sg_leadership_briefs",
+      "version": "158",
+      "shadowed_by": "158_conflict_predictions",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sg_lb_generated, index idx_sg_lb_theater, index idx_sg_lb_tier, table sg_leadership_briefs",
+      "declares": {
+        "tables": [
+          "sg_leadership_briefs"
+        ],
+        "indexes": [
+          "idx_sg_lb_generated",
+          "idx_sg_lb_theater",
+          "idx_sg_lb_tier"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "161_sdc_rag_stigs",
+      "version": "161",
+      "shadowed_by": "161_sdc_compliance_timeline",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_sdc_rag_attack_platform, index idx_sdc_rag_attack_tactic, index idx_sdc_rag_stigs_nist, index idx_sdc_rag_stigs_severity, table sdc_rag_attack_techniques",
+      "declares": {
+        "tables": [
+          "sdc_rag_attack_techniques",
+          "sdc_rag_stigs"
+        ],
+        "indexes": [
+          "idx_sdc_rag_attack_platform",
+          "idx_sdc_rag_attack_tactic",
+          "idx_sdc_rag_stigs_nist",
+          "idx_sdc_rag_stigs_severity"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "163_groups_canvas_access.sql",
+      "version": "163",
+      "shadowed_by": "163_domain_coverage",
+      "kind": "sql",
+      "classification": "benign",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the four CREATE TABLE statements no-op against the baseline (groups/group_members/group_roles/canvas_access_grants already exist) and all four lac_label/coi_tag columns are present in live PostgreSQL and in the snapshot; only the ADD COLUMN IF NOT EXISTS syntax is unreplayable on SQLite",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "4 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': near \"EXISTS\": syntax error",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {
+          "projects": [
+            "coi_tag",
+            "lac_label"
+          ],
+          "a2a_tasks": [
+            "coi_tag",
+            "lac_label"
+          ]
+        },
+        "checks": [],
+        "note": "the four CREATE TABLE IF NOT EXISTS statements executed cleanly against the baseline and changed nothing (groups/group_members/group_roles/canvas_access_grants already exist); only the four ALTER ... ADD COLUMN IF NOT EXISTS are unreplayable on SQLite"
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "-- ============================================================\n-- LAC LABEL COLUMNS  (G-03: Label-Based Access Control)\n-- lac_label = NULL means world-readable within tenant+classification\n-- Prefix",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE a2a_tasks   ADD COLUMN IF NOT EXISTS lac_label TEXT DEFAULT NULL;",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "-- ============================================================\n-- COI TAG COLUMNS  (G-09: Community of Interest, Phase 2)\n-- coi_tag = NULL means accessible to all within tenant+classification\n-- Pre",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE a2a_tasks   ADD COLUMN IF NOT EXISTS coi_tag TEXT DEFAULT NULL;",
+          "error": "near \"EXISTS\": syntax error"
+        }
+      ]
+    },
+    {
+      "migration": "173_white_team_review_type.py",
+      "version": "173",
+      "shadowed_by": "173_cpmp_obligation_periods.py",
+      "kind": "py",
+      "classification": "benign",
+      "postgresql_impact": "none",
+      "flags": [
+        "never_discovered",
+        "superseded"
+      ],
+      "rationale": "superseded by 20260803201015_proposal_reviews_white_team_review_type, which is above through_version and therefore RUNS on a fresh PostgreSQL database; live PG already accepts 'white_team'",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "1 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': no up() function",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {},
+        "checks": [
+          [
+            "proposal_reviews",
+            "review_type",
+            "white_team"
+          ]
+        ]
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [
+          {
+            "table": "proposal_reviews",
+            "column": "review_type",
+            "value": "white_team",
+            "accepted_live_pg": true
+          }
+        ],
+        "check_values_snapshot": [
+          {
+            "table": "proposal_reviews",
+            "column": "review_type",
+            "value": "white_team",
+            "in_snapshot": false
+          }
+        ],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "<module>",
+          "error": "no up() function"
+        }
+      ]
+    },
+    {
+      "migration": "179_kanban_task_revivals.py",
+      "version": "179",
+      "shadowed_by": "179_integrity_tables.py",
+      "kind": "py",
+      "classification": "benign",
+      "postgresql_impact": "none",
+      "flags": [
+        "never_discovered"
+      ],
+      "rationale": "kanban_task_revivals is present in live PostgreSQL and in the snapshot and is created at runtime by tools/genesis/reflexes/kanban.py",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "1 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': TypeError: up() takes 0 positional arguments but 1 was given",
+      "declares": {
+        "tables": [
+          "kanban_task_revivals"
+        ],
+        "indexes": [],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {
+          "kanban_task_revivals": [
+            "tools/genesis/reflexes/kanban.py"
+          ]
+        },
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "<module>",
+          "error": "TypeError: up() takes 0 positional arguments but 1 was given"
+        }
+      ]
+    },
+    {
+      "migration": "184_creative_gap_innovation_signal.sql",
+      "version": "184",
+      "shadowed_by": "184_coworkers_canvas_tables.sql",
+      "kind": "sql",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "live_consumers",
+      "flags": [],
+      "rationale": "creative_gap and innovation_signal (singular \u2014 innovation_signalS is a different table) and their eight indexes are absent from pg_consolidated.sql; the only other declaration is init_icdev_db.py, which refuses to run against PostgreSQL",
+      "replay_verdict": "schema_already_exists",
+      "replay_reason": "replay changed nothing; 0 object(s) reported already-exists against the baseline",
+      "declares": {
+        "tables": [
+          "creative_gap",
+          "innovation_signal"
+        ],
+        "indexes": [
+          "idx_creative_gap_concept",
+          "idx_creative_gap_created",
+          "idx_creative_gap_hash",
+          "idx_creative_gap_score",
+          "idx_innovation_signal_concept",
+          "idx_innovation_signal_created",
+          "idx_innovation_signal_hash",
+          "idx_innovation_signal_score"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "table creative_gap",
+          "table innovation_signal",
+          "index idx_creative_gap_concept",
+          "index idx_creative_gap_created",
+          "index idx_creative_gap_hash",
+          "index idx_creative_gap_score",
+          "index idx_innovation_signal_concept",
+          "index idx_innovation_signal_created",
+          "index idx_innovation_signal_hash",
+          "index idx_innovation_signal_score"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {
+          "creative_gap": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "innovation_signal": [
+            "tools/db/init_icdev_db.py"
+          ]
+        },
+        "non_migration_index_creators": {
+          "idx_creative_gap_concept": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_creative_gap_created": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_creative_gap_hash": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_creative_gap_score": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_innovation_signal_concept": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_innovation_signal_created": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_innovation_signal_hash": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_innovation_signal_score": [
+            "tools/db/init_icdev_db.py"
+          ]
+        }
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "184_memory_fts5",
+      "version": "184",
+      "shadowed_by": "184_coworkers_canvas_tables.sql",
+      "kind": "py",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [
+        "sqlite_only_feature"
+      ],
+      "rationale": "an FTS5 virtual table and its five shadow tables \u2014 a SQLite-only construct with no PostgreSQL equivalent; tools/memory/hybrid_search.py documents and takes a graceful fallback on PostgreSQL",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new table memory_fts, table memory_fts_config, table memory_fts_content, table memory_fts_data, table memory_fts_docsize",
+      "declares": {
+        "tables": [
+          "memory_fts",
+          "memory_fts_config",
+          "memory_fts_content",
+          "memory_fts_data",
+          "memory_fts_docsize",
+          "memory_fts_idx"
+        ],
+        "indexes": [],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [
+          "table memory_fts",
+          "table memory_fts_config",
+          "table memory_fts_content",
+          "table memory_fts_data",
+          "table memory_fts_docsize",
+          "table memory_fts_idx"
+        ],
+        "pg_consolidated_snapshot_missing": [
+          "table memory_fts",
+          "table memory_fts_config",
+          "table memory_fts_content",
+          "table memory_fts_data",
+          "table memory_fts_docsize",
+          "table memory_fts_idx"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "188_genesis_phase_log.sql",
+      "version": "188",
+      "shadowed_by": "188_genesis_outputs",
+      "kind": "sql",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "genesis_phase_log and all three indexes are in the snapshot, so a fresh PostgreSQL database is complete; idx_gpl_tenant is missing from the LIVE database only \u2014 drift in that one deployment, not a deployable gap",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new table genesis_phase_log, index idx_gpl_completed_at, index idx_gpl_design_id, index idx_gpl_tenant",
+      "declares": {
+        "tables": [
+          "genesis_phase_log"
+        ],
+        "indexes": [
+          "idx_gpl_completed_at",
+          "idx_gpl_design_id",
+          "idx_gpl_tenant"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [
+          "index idx_gpl_tenant"
+        ],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "189_genesis_phase_log",
+      "version": "189",
+      "shadowed_by": "189_dd_pii_scans.sql",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "index_only",
+      "flags": [],
+      "rationale": "genesis_phase_log and two of its three indexes are present; idx_gpl_started_at is absent from the snapshot, so a fresh PostgreSQL database lacks it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new table genesis_phase_log, index idx_gpl_completed_at, index idx_gpl_design_id, index idx_gpl_started_at",
+      "declares": {
+        "tables": [
+          "genesis_phase_log"
+        ],
+        "indexes": [
+          "idx_gpl_completed_at",
+          "idx_gpl_design_id",
+          "idx_gpl_started_at"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "index idx_gpl_started_at"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "207_tenant_component_overrides",
+      "version": "207",
+      "shadowed_by": "207_mcip_dat_tables.sql",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "live_consumers",
+      "flags": [],
+      "rationale": "tenant_component_overrides and its two indexes are absent from pg_consolidated.sql; the table is the per-tenant enablement override documented in CLAUDE.md and read by tools/config/component_registry.py, and init_icdev_db.py (which does declare it) refuses to run against PostgreSQL",
+      "replay_verdict": "schema_already_exists",
+      "replay_reason": "replay changed nothing; 0 object(s) reported already-exists against the baseline",
+      "declares": {
+        "tables": [
+          "tenant_component_overrides"
+        ],
+        "indexes": [
+          "idx_tenant_component_overrides_key",
+          "idx_tenant_component_overrides_tenant"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "table tenant_component_overrides",
+          "index idx_tenant_component_overrides_key",
+          "index idx_tenant_component_overrides_tenant"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {
+          "tenant_component_overrides": [
+            "tools/db/init_icdev_db.py"
+          ]
+        },
+        "non_migration_index_creators": {
+          "idx_tenant_component_overrides_key": [
+            "tools/db/init_icdev_db.py"
+          ],
+          "idx_tenant_component_overrides_tenant": [
+            "tools/db/init_icdev_db.py"
+          ]
+        }
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "210_sso",
+      "version": "210",
+      "shadowed_by": "210_showcase_apps.sql",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "live_consumers",
+      "flags": [],
+      "rationale": "sso_providers and sso_sessions and their three indexes are absent from pg_consolidated.sql and no runtime code creates them; tools/admin/blueprint.py, tools/auth/blueprint.py and tools/auth/oidc.py all read and write them",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "1 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': TypeError: up() takes 0 positional arguments but 1 was given",
+      "declares": {
+        "tables": [
+          "sso_providers",
+          "sso_sessions"
+        ],
+        "indexes": [
+          "idx_sso_providers_tenant",
+          "idx_sso_sessions_provider",
+          "idx_sso_sessions_tenant"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "table sso_providers",
+          "table sso_sessions",
+          "index idx_sso_providers_tenant",
+          "index idx_sso_sessions_provider",
+          "index idx_sso_sessions_tenant"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "<module>",
+          "error": "TypeError: up() takes 0 positional arguments but 1 was given"
+        }
+      ]
+    },
+    {
+      "migration": "212_idr_suggested_classification.sql",
+      "version": "212",
+      "shadowed_by": "212_data_residency",
+      "kind": "sql",
+      "classification": "benign",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "all six idr_sessions columns are present in live PostgreSQL and in the snapshot; ADD COLUMN IF NOT EXISTS is PostgreSQL-only syntax, which is why SQLite could not replay it",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "6 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': near \"EXISTS\": syntax error",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {
+          "idr_sessions": [
+            "conflicts_resolved",
+            "last_source_hash",
+            "prior_docs_context",
+            "source_hash_checked_at",
+            "suggested_classification",
+            "suggested_classification_confidence"
+          ]
+        },
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "-- Migration 212: Add AI classification suggestion + Stage 0 extraction columns to idr_sessions\n-- Supports IDR item 9: LLM-suggested classification level + confidence tracking.\n-- Supports IDR item 7",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS suggested_classification TEXT;",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS suggested_classification_confidence REAL;",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS prior_docs_context TEXT;",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS last_source_hash TEXT;",
+          "error": "near \"EXISTS\": syntax error"
+        }
+      ]
+    },
+    {
+      "migration": "215_user_preferences",
+      "version": "215",
+      "shadowed_by": "215_api_keys",
+      "kind": "py",
+      "classification": "benign",
+      "postgresql_impact": "none",
+      "flags": [
+        "signature_incompatible_with_runner"
+      ],
+      "rationale": "user_preferences is present in live PostgreSQL and in the snapshot; note its up() takes no argument while MigrationRunner calls up(conn), so it would raise TypeError even if it were not shadowed",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "1 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': TypeError: up() takes 0 positional arguments but 1 was given",
+      "declares": {
+        "tables": [
+          "user_preferences"
+        ],
+        "indexes": [],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "<module>",
+          "error": "TypeError: up() takes 0 positional arguments but 1 was given"
+        }
+      ]
+    },
+    {
+      "migration": "223_user_identity.sql",
+      "version": "223",
+      "shadowed_by": "223_agent_evals.sql",
+      "kind": "sql",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "the SQLite migration chain does not produce this schema, but every object is present in pg_consolidated.sql and in the live PostgreSQL database, so no PostgreSQL deployment is missing it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_briefing, index idx_user_chal, index idx_user_obj, index idx_user_rel, table user_challenges",
+      "declares": {
+        "tables": [
+          "user_challenges",
+          "user_daily_briefings",
+          "user_identity_profiles",
+          "user_integrations",
+          "user_objectives",
+          "user_relationships"
+        ],
+        "indexes": [
+          "idx_briefing",
+          "idx_user_chal",
+          "idx_user_obj",
+          "idx_user_rel"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "223_wfc_doc_regen.sql",
+      "version": "223",
+      "shadowed_by": "223_agent_evals.sql",
+      "kind": "sql",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "wfc_process_chains and wfc_chain_phases are absent from the snapshot but tools/workflow_canvas/blueprint.py creates both at app startup on either backend",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new table wfc_chain_phases, table wfc_process_chains",
+      "declares": {
+        "tables": [
+          "wfc_chain_phases",
+          "wfc_process_chains"
+        ],
+        "indexes": [],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "table wfc_chain_phases",
+          "table wfc_process_chains"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {
+          "wfc_chain_phases": [
+            "tools/workflow_canvas/blueprint.py"
+          ],
+          "wfc_process_chains": [
+            "tools/workflow_canvas/blueprint.py"
+          ]
+        },
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "-- Migration 223: Process-Ify doc regen columns + Process Chain tables\n\n-- Doc regen columns on studio_workflows\nALTER TABLE studio_workflows ADD COLUMN IF NOT EXISTS source_doc_text TEXT;",
+          "error": "no such table: studio_workflows"
+        },
+        {
+          "statement": "ALTER TABLE studio_workflows ADD COLUMN IF NOT EXISTS style_fingerprint TEXT;",
+          "error": "no such table: studio_workflows"
+        },
+        {
+          "statement": "ALTER TABLE studio_workflows ADD COLUMN IF NOT EXISTS regen_artifact_path TEXT;",
+          "error": "no such table: studio_workflows"
+        }
+      ]
+    },
+    {
+      "migration": "236_rfi_workbench.sql",
+      "version": "236",
+      "shadowed_by": "236_personal_rag.sql",
+      "kind": "sql",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "live_consumers",
+      "flags": [],
+      "rationale": "the three rfi_workbench_* tables and two indexes are absent from pg_consolidated.sql with no runtime creator; migrations 237/238/239/255 ALTER them but are below through_version and so are marked applied without running, which means nothing repairs it",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_rfi_exports_session, index idx_rfi_sections_session, table rfi_workbench_exports, table rfi_workbench_sections, table rfi_workbench_sessions",
+      "declares": {
+        "tables": [
+          "rfi_workbench_exports",
+          "rfi_workbench_sections",
+          "rfi_workbench_sessions"
+        ],
+        "indexes": [
+          "idx_rfi_exports_session",
+          "idx_rfi_sections_session"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "table rfi_workbench_exports",
+          "table rfi_workbench_sections",
+          "table rfi_workbench_sessions",
+          "index idx_rfi_exports_session",
+          "index idx_rfi_sections_session"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "247_dashboard_users_role_check",
+      "version": "247",
+      "shadowed_by": "247_cpmp_int_coverage_tenant_id.sql",
+      "kind": "py",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "live_consumers",
+      "flags": [],
+      "rationale": "the migration written to repair 139's gap on PostgreSQL is itself shadowed; it is PG-only so the SQLite replay no-ops and scores it benign. pg_constraint shows the four GovLift roles still rejected",
+      "replay_verdict": "schema_already_exists",
+      "replay_reason": "replay changed nothing; 0 object(s) reported already-exists against the baseline",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {},
+        "checks": [
+          [
+            "dashboard_users",
+            "role",
+            "migration_engineer"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "component_admin"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "auditor"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "ciso"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "bd"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "capture_mgr"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "contract_mgr"
+          ],
+          [
+            "dashboard_users",
+            "role",
+            "reviewer"
+          ]
+        ]
+      },
+      "oracles": {
+        "sqlite_migration_chain": "present",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "migration_engineer",
+            "accepted_live_pg": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "component_admin",
+            "accepted_live_pg": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "auditor",
+            "accepted_live_pg": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "ciso",
+            "accepted_live_pg": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "bd",
+            "accepted_live_pg": true
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "capture_mgr",
+            "accepted_live_pg": true
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "contract_mgr",
+            "accepted_live_pg": true
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "reviewer",
+            "accepted_live_pg": true
+          }
+        ],
+        "check_values_snapshot": [
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "migration_engineer",
+            "in_snapshot": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "component_admin",
+            "in_snapshot": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "auditor",
+            "in_snapshot": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "ciso",
+            "in_snapshot": false
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "bd",
+            "in_snapshot": true
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "capture_mgr",
+            "in_snapshot": true
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "contract_mgr",
+            "in_snapshot": true
+          },
+          {
+            "table": "dashboard_users",
+            "column": "role",
+            "value": "reviewer",
+            "in_snapshot": true
+          }
+        ],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": []
+    },
+    {
+      "migration": "257_idr_dic_doc_link.sql",
+      "version": "257",
+      "shadowed_by": "257_doc_modernization.sql",
+      "kind": "sql",
+      "classification": "gap_on_postgresql",
+      "postgresql_impact": "live_consumers",
+      "flags": [],
+      "rationale": "dic_documents.source_wg_result_id and .source_idr_session_id are absent from pg_consolidated.sql; tools/document_intelligence/blueprint.py writes both in the docgen -> Tech Writer bridge",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "5 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': near \"EXISTS\": syntax error",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {
+          "idr_sessions": [
+            "dic_doc_id",
+            "final_doc_text",
+            "source_dic_doc_id"
+          ],
+          "dic_documents": [
+            "source_idr_session_id",
+            "source_wg_result_id"
+          ]
+        },
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "column dic_documents.source_idr_session_id",
+          "column dic_documents.source_wg_result_id"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "-- CUI // SP-CTI\n-- 257: docgen -> Tech Writer bridge \u2014 persist the DIC document that generation\n--      creates so the import route can reuse it instead of rebuilding an empty\n--      scaffold (docmo",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS source_dic_doc_id TEXT;",
+          "error": "near \"EXISTS\": syntax error"
+        },
+        {
+          "statement": "ALTER TABLE dic_documents ADD COLUMN IF NOT EXISTS source_wg_result_id TEXT;",
+          "error": "no such table: dic_documents"
+        },
+        {
+          "statement": "ALTER TABLE dic_documents ADD COLUMN IF NOT EXISTS source_idr_session_id TEXT;",
+          "error": "no such table: dic_documents"
+        },
+        {
+          "statement": "-- Safety net: some sites predate migration 217 (final_doc_text); idempotent re-add.\nALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS final_doc_text TEXT;",
+          "error": "near \"EXISTS\": syntax error"
+        }
+      ]
+    },
+    {
+      "migration": "269_kg_empty_graph_counts.sql",
+      "version": "269",
+      "shadowed_by": "269_kg_embedding_vec_backfill",
+      "kind": "sql",
+      "classification": "benign",
+      "postgresql_impact": "none",
+      "flags": [
+        "no_ddl"
+      ],
+      "rationale": "declares no schema at all \u2014 a single UPDATE. Nothing is missing; what never happens is the data correction",
+      "replay_verdict": "inconclusive",
+      "replay_reason": "1 statement(s) could not run on SQLite and produced no schema change \u2014 cannot distinguish 'already present' from 'not replayable here': no such table: kg_graphs",
+      "declares": {
+        "tables": [],
+        "indexes": [],
+        "columns": {},
+        "checks": [],
+        "note": "no DDL at all \u2014 a single UPDATE against kg_graphs. Nothing to compare; the loss is the data correction, not schema"
+      },
+      "oracles": {
+        "sqlite_migration_chain": "not_replayable",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {},
+        "non_migration_index_creators": {}
+      },
+      "replay_hard_errors": [
+        {
+          "statement": "-- Migration 269: stop emptied KG graphs claiming entities they no longer hold\n--\n-- Until #302, rag_to_kg_ingester._create_graph minted a NEW kg_graphs row per\n-- chunk (name = 'rag-chunk-<chunk_id>'",
+          "error": "no such table: kg_graphs"
+        }
+      ]
+    },
+    {
+      "migration": "282_insider_risk_uba.sql",
+      "version": "282",
+      "shadowed_by": "282_docmod_nist_pubs.sql",
+      "kind": "sql",
+      "classification": "gap_sqlite_chain_only",
+      "postgresql_impact": "none",
+      "flags": [],
+      "rationale": "insider_risk_baselines/insider_risk_scores/idx_insider_scores_acct are absent from the snapshot but tools/security/insider_risk.py creates all three at runtime",
+      "replay_verdict": "schema_gap_detected",
+      "replay_reason": "new index idx_insider_scores_acct, table insider_risk_baselines, table insider_risk_scores",
+      "declares": {
+        "tables": [
+          "insider_risk_baselines",
+          "insider_risk_scores"
+        ],
+        "indexes": [
+          "idx_insider_scores_acct"
+        ],
+        "columns": {},
+        "checks": []
+      },
+      "oracles": {
+        "sqlite_migration_chain": "absent",
+        "live_postgresql_missing": [],
+        "pg_consolidated_snapshot_missing": [
+          "table insider_risk_baselines",
+          "table insider_risk_scores",
+          "index idx_insider_scores_acct"
+        ],
+        "check_values_live_pg": [],
+        "check_values_snapshot": [],
+        "non_migration_table_creators": {
+          "insider_risk_baselines": [
+            "tools/security/insider_risk.py"
+          ],
+          "insider_risk_scores": [
+            "tools/security/insider_risk.py"
+          ]
+        },
+        "non_migration_index_creators": {
+          "idx_insider_scores_acct": [
+            "tools/security/insider_risk.py"
+          ]
+        }
+      },
+      "replay_hard_errors": []
+    }
+  ]
+}
