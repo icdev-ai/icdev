@@ -7468,3 +7468,13 @@ projects:
   - key: vv
     title: VV — Regression proof
     priority: high
+- key: kax
+  name: 'KAX - Kanban Autonomy Hardening'
+  description: 'Remove the remaining reasons a human has to touch the board. Scope set from measurement 2026-08-07, not speculation. The first and largest gap is already fixed in PR #1318 (the launcher never started tools/ci/pr_watcher.py, so after its last manual start died on Aug 2 nothing merged CI-green PRs; tasks-reaching-done was 63 on Aug 1 and 121 on Aug 2, then ZERO for Aug 4-6, and it presented as "the dispatcher stopped working" while the dispatcher was idle and correct). What remains are the two failure modes that still require a person. (1) CONFLICT - a PR whose branch has drifted behind main goes DIRTY and no automation rebases it; 2 of 5 open kanban PRs were DIRTY when measured, and xbm-wake-01 sat parked 95.7 hours before escalating "resume cap reached (5/5) - manual intervention required". The escalation itself is correct behaviour; the gap is that nothing attempts the cheap recovery (rebase onto main, push, let CI re-run) before spending a resume, so branches that merge fine after a rebase burn all five attempts and land in a human queue. (2) STALL - nothing watches throughput. The four-day flatline above was found because a human noticed, not because the system said anything, even though an alerts table and a self_monitor reflex already exist. A rule of the shape "no task reached done in N hours while tasks are scheduled" would have fired on day one. Both epics are about making the pipeline notice and repair itself; neither should be built as a new subsystem when the recovery paths and the alerting table already exist - grep first.'
+  epics:
+  - key: conflict
+    title: CONFLICT - Auto-rebase a drifted PR before spending a resume
+    priority: high
+  - key: stall
+    title: STALL - Alert when board throughput goes to zero
+    priority: high
