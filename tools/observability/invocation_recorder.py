@@ -276,3 +276,67 @@ def summary(surface: Optional[str] = None, limit: int = 20) -> Sequence[Dict[str
     except Exception as exc:  # noqa: BLE001
         logger.warning("invocation summary failed: %s", exc)
         return []
+
+
+# ---------------------------------------------------------------------------
+# Long-lived invocations (obs-cov-01 correction)
+# ---------------------------------------------------------------------------
+# `record()` is a context manager, which fits anything that starts and finishes
+# inside one call. The kanban runner's primary build path does not: it spawns a
+# `claude` subprocess in one scheduler cycle and notices the exit in a LATER one,
+# minutes or tens of minutes afterwards. There is no scope to wrap.
+#
+# That mattered more than it sounds. The agent surface was instrumented at
+# `tools/agent/agent_executor.py::execute_agent`, and the kanban runner never
+# calls it — it uses `subprocess.Popen(claude ...)` directly. So the single most
+# important thing to observe, an actual agent build, produced no telemetry at
+# all: `agent` had zero rows for its entire existence while `mcp` recorded fine.
+#
+# These two functions are that missing shape: open when the process starts, close
+# when it is reaped. Same table, same fail-safe rules as `record()` — neither
+# raises, and both no-op when telemetry is disabled.
+
+
+def open_invocation(
+    surface: str,
+    name: str,
+    *,
+    arg_keys: Any = None,
+    session_id: str = "",
+    project_id: str = "",
+    parent_id: Optional[str] = None,
+) -> Optional["_Invocation"]:
+    """Open an invocation that will be closed later, by someone else.
+
+    Returns a handle to pass to :func:`close_invocation`, or None when telemetry
+    is disabled — callers should treat None as "nothing to close" rather than an
+    error.
+    """
+    if not enabled():
+        return None
+    inv = _Invocation(f"inv-{uuid.uuid4().hex[:16]}", surface, str(name))
+    started = _now()
+    # The handle has to carry its own start time: the closer runs in a different
+    # call, often a different scheduler cycle, and cannot know it. `extra` is an
+    # existing slot, so this needs no change to _Invocation itself.
+    inv.extra["started"] = started
+    _safe(_open, inv, session_id or _session_id(), project_id, parent_id,
+          _safe_call(extract_arg_keys, arg_keys), started)
+    return inv
+
+
+def close_invocation(
+    inv: Optional["_Invocation"],
+    *,
+    status: str = STATUS_OK,
+    error_class: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    """Close a handle from :func:`open_invocation`. Safe with None."""
+    if inv is None:
+        return
+    inv.status = status
+    inv.error_class = error_class
+    inv.error_message = error_message
+    started = inv.extra.get("started") or _now()
+    _safe(_close, inv, started)
