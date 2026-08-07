@@ -91,14 +91,114 @@ def test_zero_cooldown_means_latch():
     assert state.is_circuit_open({"auto_reenable": True, "cooldown_minutes": 0}) is True
 
 
-def test_missing_or_unparseable_tripped_at_fails_closed():
+def test_missing_or_unparseable_tripped_at_allows_one_probe():
+    """Broken bookkeeping must not strand a reflex forever.
+
+    This deliberately REVERSES the original fail-closed choice. Fail-closed
+    looks safer, but the failure it protects against does not exist: it was
+    guarding against hammering, and a probe here cannot hammer.
+
+    With ``circuit_breaker_tripped_at`` missing or corrupt there is no cooldown
+    to measure, so fail-closed means the reflex never runs again — which is
+    precisely the permanent dormancy xbm-wake-01 exists to end, now reachable
+    through a NULL column instead of a config flag.
+
+    Fail-open self-repairs within a single cycle, because the probe's outcome
+    rewrites the state either way:
+      * success -> ``record_success`` clears ``circuit_breaker_open``
+      * failure -> ``record_failure`` sets ``circuit_breaker_tripped_at = now``
+        (the breaker is already open, so failures >= max_consecutive_failures
+        and ``tripped`` is True), after which the timestamp parses and the
+        exponential backoff below applies as normal.
+
+    So the cost of fail-open is at most one extra run; the cost of fail-closed
+    is unbounded. See ``test_a_failed_probe_restores_backoff_after_bad_state``.
+    """
     for bad in (None, "", "not-a-timestamp"):
         row = _open_row(tripped_minutes_ago=999)
         row["circuit_breaker_tripped_at"] = bad
         state = _FakeState(row)
-        assert state.is_circuit_open({"auto_reenable": True, "cooldown_minutes": 60}) is True, (
-            f"unparseable tripped_at={bad!r} must keep the breaker shut, not open it"
+        assert state.is_circuit_open({"auto_reenable": True, "cooldown_minutes": 60}) is False, (
+            f"tripped_at={bad!r} must allow one self-repairing probe, not strand "
+            f"the reflex permanently"
         )
+
+
+def test_a_failed_probe_restores_backoff_after_bad_state():
+    """The self-repair claim above, asserted rather than assumed.
+
+    Once ``record_failure`` has written a real timestamp, the breaker blocks
+    again — so the fail-open branch cannot loop.
+    """
+    row = _open_row(tripped_minutes_ago=999)
+    row["circuit_breaker_tripped_at"] = None
+    cfg = {"auto_reenable": True, "cooldown_minutes": 60}
+    assert _FakeState(row).is_circuit_open(cfg) is False       # probe allowed
+
+    repaired = dict(row)
+    repaired["circuit_breaker_tripped_at"] = utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert _FakeState(repaired).is_circuit_open(cfg) is True   # and immediately blocked again
+
+
+# ---------------------------------------------------------------------------
+# Exponential backoff on repeated failed probes
+
+def test_backoff_doubles_per_failure_beyond_the_trip_threshold():
+    cfg = {
+        "auto_reenable": True,
+        "cooldown_minutes": 60,
+        "max_consecutive_failures": 3,
+        "max_cooldown_minutes": 1440,
+    }
+    # 3 failures = just tripped, no extra -> plain 60m window
+    for failures, expected_wait in ((3, 60), (4, 120), (5, 240), (6, 480)):
+        row = _open_row(tripped_minutes_ago=0)
+        row["consecutive_failures"] = failures
+        wait = _FakeState(row)._probe_wait_minutes(row, cfg, 60)
+        assert wait == expected_wait, f"{failures} failures -> {wait}m, expected {expected_wait}m"
+
+
+def test_backoff_is_capped_so_a_dead_reflex_still_probes_daily():
+    cfg = {
+        "auto_reenable": True,
+        "cooldown_minutes": 60,
+        "max_consecutive_failures": 3,
+        "max_cooldown_minutes": 1440,
+    }
+    row = _open_row(tripped_minutes_ago=0)
+    row["consecutive_failures"] = 500          # long-dead reflex
+    wait = _FakeState(row)._probe_wait_minutes(row, cfg, 60)
+    assert wait == 1440, f"backoff must cap at max_cooldown_minutes, got {wait}"
+
+
+def test_recovery_case_is_not_slowed_by_backoff():
+    """A reflex whose dependency came back must still probe on the FIRST window.
+
+    Backoff keys off failures accrued beyond the trip threshold, so the reflex
+    that just tripped waits exactly ``cooldown_minutes`` — the recovery path is
+    unaffected by adding backoff.
+    """
+    cfg = {
+        "auto_reenable": True,
+        "cooldown_minutes": 60,
+        "max_consecutive_failures": 3,
+        "max_cooldown_minutes": 1440,
+    }
+    row = _open_row(tripped_minutes_ago=61)     # one window elapsed, freshly tripped
+    assert _FakeState(row).is_circuit_open(cfg) is False
+
+
+def test_genesis_config_declares_a_backoff_cap():
+    with open(_CFG_PATH, "r", encoding="utf-8") as fh:
+        cfg = yaml.safe_load(fh)
+    cb = cfg["trust_kernel"]["circuit_breaker"]
+    assert int(cb.get("max_cooldown_minutes", 0)) > 0, (
+        "max_cooldown_minutes must be declared, else a permanently dead reflex "
+        "probes at the flat cooldown forever"
+    )
+    assert int(cb["max_cooldown_minutes"]) >= int(cb["cooldown_minutes"]), (
+        "a cap below the base cooldown would shorten the wait instead of capping it"
+    )
 
 
 def test_empty_cb_config_preserves_latch():

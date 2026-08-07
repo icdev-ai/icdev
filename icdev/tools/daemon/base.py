@@ -560,16 +560,41 @@ class ReflexStateBase:
 
         tripped_at = state.get("circuit_breaker_tripped_at")
         if not tripped_at:
-            return True
+            # Breaker open but no trip timestamp — bookkeeping is broken, not the
+            # reflex. Allow the probe: stranding a reflex on a missing column is
+            # the exact permanent dormancy this whole change exists to end.
+            return False
         try:
             tripped = datetime.fromisoformat(str(tripped_at).replace("Z", "+00:00"))
         except (ValueError, AttributeError):
-            return True
+            return False
         if tripped.tzinfo is None:
             tripped = tripped.replace(tzinfo=timezone.utc)
 
         elapsed_min = (utcnow() - tripped).total_seconds() / 60.0
-        return elapsed_min < cooldown_min
+        return elapsed_min < self._probe_wait_minutes(state, cb_config, cooldown_min)
+
+    @staticmethod
+    def _probe_wait_minutes(
+        state: Dict[str, Any], cb_config: Dict, cooldown_min: int
+    ) -> float:
+        """How long to wait before the next half-open probe.
+
+        A flat cooldown makes a permanently broken reflex probe forever at a
+        fixed rate — cheap here, but not free, and it keeps re-tripping the
+        breaker and rewriting state every window. Backing off exponentially in
+        the failures accrued *beyond* the trip threshold means a reflex whose
+        dependency really is gone converges to one probe per
+        ``max_cooldown_minutes``, while one whose dependency recovered still
+        closes on its first probe — the recovery case is unaffected because it
+        has not accrued extra failures.
+        """
+        max_min = float(cb_config.get("max_cooldown_minutes", 1440) or 1440)
+        trip_threshold = int(cb_config.get("max_consecutive_failures", 3) or 3)
+        consecutive = int(state.get("consecutive_failures", 0) or 0)
+        # Each failed probe adds one failure, doubling the next wait.
+        extra = max(0, consecutive - trip_threshold)
+        return min(float(cooldown_min) * (2 ** min(extra, 20)), max_min)
 
     def set_enabled(self, enabled: bool) -> None:
         """Enable or disable this reflex."""
