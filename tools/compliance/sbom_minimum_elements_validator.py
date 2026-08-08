@@ -1519,6 +1519,19 @@ def validate(document, document_path=None, document_bytes=None):
             "component_count": len(normalized.components),
         },
         "elements": elements,
+        # Keyed projection of the same verdicts. The list above is canonical —
+        # it preserves the standard's own ordering and the data-field/practice
+        # split — but a consumer that only wants "what did element X score"
+        # should not have to scan it. tools/compliance/sbom_conformance_gate.py
+        # (sbx-gov-01) looks up by name and treats a non-dict as "no per-element
+        # data available", so without this its delegation to this module would
+        # silently never fire.
+        "elements_by_id": {element["id"]: element for element in elements},
+        # Aggregate over ALL 23 elements. sbx-gov-01 prefers this to counting
+        # data fields itself, on the grounds that this module scores the six
+        # practices too and owns the definition of what counts. It is right.
+        "elements_met": data[STATUS_MET] + practices[STATUS_MET],
+        "elements_total": total_elements,
         "data_fields": {
             "met": data[STATUS_MET],
             "partial": data[STATUS_PARTIAL],
@@ -1551,6 +1564,15 @@ def validate_file(path):
     raw_bytes = sbom_path.read_bytes() if sbom_path.is_file() else None
     _raw, normalized = load_document(sbom_path)
     return validate(normalized, document_path=sbom_path, document_bytes=raw_bytes)
+
+
+#: Entry point ``tools/compliance/sbom_conformance_gate.py`` (sbx-gov-01)
+#: imports by name. That module was written against this one before either had
+#: landed, and it delegates "the moment this module is importable" — so the
+#: name it reaches for is part of this module's contract, not an accident.
+#: Kept as an alias rather than a rename because ``validate_file`` is the name
+#: this module's own CLI, tests and docs use.
+validate_sbom = validate_file
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -478,6 +478,86 @@ def test_mcp_handler_returns_the_report_and_names_its_failures():
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Interop with sbx-gov-01's gate
+#
+# tools/compliance/sbom_conformance_gate.py was written against this module
+# before either had landed, and delegates to it "the moment that module is
+# importable". Nothing in either module's own tests would catch the two
+# disagreeing, and the failure is silent rather than loud: the gate falls back
+# to its narrow built-in scorer and reports a plausible number that is not
+# this validator's. So the contract it reaches for is asserted here.
+# ─────────────────────────────────────────────────────────────────────────
+
+#: The names sbx-gov-01 looks up, copied from its DATA_FIELD_ELEMENTS.
+GOV_01_DATA_FIELD_ELEMENTS = (
+    "sbom_author",
+    "sbom_author_signature",
+    "sbom_data_format_name",
+    "sbom_data_format_version",
+    "sbom_generation_context",
+    "sbom_timestamp",
+    "sbom_tool_name",
+    "sbom_tool_version",
+    "sbom_version",
+    "component_producer",
+    "component_dependency_relationship",
+    "component_hash_value",
+    "component_hash_algorithm",
+    "component_identifiers",
+    "component_license",
+    "component_name",
+    "component_version",
+)
+
+
+def test_gate_entry_point_name_is_exposed():
+    """sbx-gov-01 imports `validate_sbom`, not `validate_file`."""
+    assert validator.validate_sbom is validator.validate_file
+    report = validator.validate_sbom(THIRD_PARTY_SPDX)
+    assert report["data_fields"]["total"] == DATA_FIELD_COUNT
+
+
+def test_gov_01_adapter_logic_finds_every_element_it_looks_for():
+    """Replay the gate's extraction against a real report.
+
+    The gate reads `elements` expecting a dict keyed by element name, then
+    `elements_met` / `elements_total` for the aggregate. A list-of-dicts fails
+    its `isinstance(..., dict)` check and scores nothing — which is exactly
+    the silent miss this test exists to prevent.
+    """
+    report = validate_file(CONFORMANT)
+
+    elements = report["elements_by_id"]
+    assert isinstance(elements, dict)
+    recognized = [name for name in GOV_01_DATA_FIELD_ELEMENTS if name in elements]
+    assert len(recognized) == len(GOV_01_DATA_FIELD_ELEMENTS), (
+        "element vocabulary drifted from sbx-gov-01's: missing "
+        f"{sorted(set(GOV_01_DATA_FIELD_ELEMENTS) - set(elements))}"
+    )
+    for name in GOV_01_DATA_FIELD_ELEMENTS:
+        assert elements[name]["status"] == STATUS_MET
+
+    assert report["elements_met"] == report["elements_total"] == 23
+
+
+def test_gate_aggregate_counts_practices_too():
+    """The gate defers the aggregate to this module because it scores all 23."""
+    report = validate_file(BASELINE)
+    assert report["elements_total"] == DATA_FIELD_COUNT + PRACTICE_COUNT
+    assert report["elements_met"] == (
+        report["data_fields"]["met"] + report["practices"]["met"]
+    )
+    assert report["elements_met"] == 2  # 2 data fields, 0 practices
+
+
+def test_keyed_and_list_element_views_cannot_drift():
+    report = validate_file(THIRD_PARTY_SPDX)
+    assert len(report["elements_by_id"]) == len(report["elements"])
+    for element in report["elements"]:
+        assert report["elements_by_id"][element["id"]] is element
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Security gate registration
 # ─────────────────────────────────────────────────────────────────────────
 
