@@ -29,7 +29,7 @@ fallen below its module floor becomes a gap.
 |---|---|---|---|---|---|---|
 | 1 | Developer portal / catalog | Backstage, Cortex.io, Port, OpsLevel | Behind | **Gap** | 48 | 2 |
 | 2 | Observability / LLM telemetry | OpenTelemetry GenAI conventions, Langfuse | Ahead | **Ahead, with items outstanding** | 32 | 1 |
-| 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | 118 | 9 |
+| 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | 119 | 9 |
 | 4 | Security ops / threat analysis | TheHive Cortex, MISP, OpenCTI | Behind | **Gap** | 153 | 1 |
 | 5 | RAG & knowledge graph | LlamaIndex, Haystack, Microsoft GraphRAG | Parity | **Parity, with named work** | 61 | 4 |
 | 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | 101 | 0 |
@@ -134,7 +134,7 @@ Measured: **32 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** Both layers of the 2026 two-layer pattern are already present — the agent_loop.py inner loop and the completed DWO card for durable outer execution — with budgets more mature than expected.
 
-Measured: **118 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/ace/`.
+Measured: **119 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/ace/`.
 
 **Verdict.** Parity, with named work; position **Parity** — ICDEV's side clears its floor with named work outstanding.
 
