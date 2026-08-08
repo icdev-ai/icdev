@@ -598,6 +598,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "il5_ingestion_log",
         # Canvas Instances — seeding audit (NIST AU — append-only activation log)
         "canvas_instances",
+        # Migration Design Canvas — audit trail (NIST AU, append-only)
+        "mc_audit",
         # NOC Operations Canvas — audit trail (NIST AU, append-only)
         "noc_audit",
         # Peering Management Canvas — audit trail (NIST AU, append-only)

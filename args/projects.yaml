@@ -7478,3 +7478,110 @@ projects:
   - key: stall
     title: STALL - Alert when board throughput goes to zero
     priority: high
+- key: agov
+  name: 'AGOV - Agent Governance (detection, forensics, unattended approval)'
+  description: 'Adapt the four things ICDEV genuinely lacks from perplexityai/numbat
+    and andrewyng/openworker, and NOTHING else. Scope was set by measuring the repo
+    on 2026-08-08, not by reading the two READMEs. PRIOR ART IS CLOSED AND MUST NOT
+    BE REOPENED: openworker''s risk.py (READ/WRITE_LOCAL/EXEC/EXTERNAL) is strictly
+    WEAKER than what ICDEV already ships in args/agent_approval_policy.yaml plus
+    tools/agent_runtime/approval_gate.py, which fails CLOSED on an unenumerated tool
+    (default_tier unknown, unknown in require_approval_tiers) and has the
+    escalation-asymmetry and command_tools carve-out openworker lacks entirely - do
+    not "adopt" it, do not refactor toward it. numbat''s artifact scanning is covered
+    by SIPA (tools/integrity/, 39 modules, 5 tables, static-only contract). numbat''s
+    OTLP receiver is OUT OF SCOPE: args/otel_collector_config.yaml plus
+    tools/observability_canvas/mitre_coverage_twin.py ingest_otel_batch already cover
+    it and an in-repo receiver buys nothing. openworker''s personas, skills,
+    connectors and desktop shell are covered by 90 role YAMLs in args/ace/roles/, 24
+    .agents/skills/icdev-*/SKILL.md, ~44 connectors across tools/databridge and
+    tools/gateway, and the icdev chat terminal REPL. WHAT SURVIVES IS FOUR GAPS.
+    (1) DET - ICDEV writes rich agent activity into hook_events (HMAC-signed,
+    session_id-keyed), agent_executions, ai_telemetry, audit_trail and ace_audit_log,
+    and never reads any of it back for detection. There is no rule engine over the
+    event stream at all; every block is hardcoded Python in a 1250-line
+    .claude/hooks/pre_tool_use.py and the only config-driven rule family is
+    args/file_access_tiers.yaml. The consequence that matters is that ICDEV cannot
+    express a multi-step chain - "read .env, then POST to an external host" is
+    invisible because every check is single-action. Also
+    tools/observability/sigma_generator.py emits Sigma rules and nothing consumes
+    them. (2) CASE - grep for session_replay / reconstruct_session / session_timeline
+    returns ZERO. The forensic raw material exists and is already tamper-evident
+    (hook_events.signature HMACs, hash-chained audit from migration 149) but nothing
+    joins it by session_id and nothing exports it; SWFT (tools/compliance/
+    swft_evidence_bundler.py) and SIPA bundle software supply-chain evidence, not
+    agent behaviour. (3) INBOX - tools/agent_runtime/safety.py:78 console_approver
+    DENIES ON EOF and approval_gate.py:403 does the same before falling back to
+    deny_all_approver, so a headless overnight SAG or cron run refuses every
+    irreversible action, and the only way round it today is to inject an
+    auto-approver, which discards the gate entirely. openworker''s insight is that
+    unattended is NOT an autonomy setting: it does not change what the agent may do
+    (the permission mode does), it changes WHERE the ask is delivered - route it to
+    an inbox and suspend the session instead of blocking on a console nobody is
+    watching. ICDEV has every piece and has joined none: four separate approval gates
+    (ace/coworker_thread.py HITLGate, agent_runtime/approval_gate.py,
+    integration/approval_manager.py, workflow_hitl/gate.py) and several unrelated
+    inbox modules (document_intelligence/inbox.py, agent/mailbox.py,
+    agentic_ai_canvas/findings_inbox.py). (4) WAKE - an agent cannot schedule its own
+    resumption; ICDEV has external scheduling only (124 Genesis reflexes,
+    agent_cron_jobs, the kanban scheduler), so nothing can say "wake me when PR #1342
+    goes CI-green". MANUAL-ONLY: this card touches .claude/hooks/pre_tool_use.py and
+    the approval gate, and tools/ci/pr_watcher.py auto-merges any CI-green kanban/*
+    branch, so every task is gated behind agov-gate-00 via depends_on_task_id (the
+    held gate row alone does not hold - the dependency is what
+    promote_backlog_to_scheduled.py actually checks) and every PR opens --draft.'
+  task_prefix: agov-
+  default_open: true
+  briefs:
+  - 'DET: the core. A rule is one YAML file under args/agent_rules/ with
+    id/version/title/severity/tags/enabled/enforce/deny_message and either a
+    single-event expr or a sequence, evaluated against a normalized read-only view
+    over the tables ICDEV already writes. Monitor-only by DEFAULT - enforcement is
+    opt-in per rule in an operator-controlled directory, and detection and
+    enforcement share one expression. Conditions are STRUCTURED YAML MATCHERS in the
+    style already proven by args/agent_approval_policy.yaml and
+    args/file_access_tiers.yaml - decided against CEL and against a restricted-AST
+    evaluator, because no new third-party dependency is acceptable here and a
+    hand-rolled expression evaluator is a security surface ICDEV would have to
+    defend. A second, concrete payoff: agent_approval_policy.yaml:110-116 documents
+    a real fail-open it had to work around, where a git_push carrying
+    {"note": "mkdir logs"} matched the mkdir DOWNGRADE pattern because patterns run
+    against a flattened string; a parsed shell view is the actual fix for that bug
+    class (agov-det-01..07)'
+  - 'CASE: join the existing per-session records into an ordered timeline and export
+    a portable, SHA-256-manifested case bundle that can be verified independently.
+    Reuse swft_evidence_bundler.py and prov_recorder.export_prov_json rather than
+    writing a third bundler. Verification must re-check the hook_events HMACs and
+    the migration-149 hash chain and name WHICH records failed, not return a
+    boolean. CLI-only on purpose: a dashboard page would trigger the 8-component
+    completeness gate (template + icdev/ mirror + route + module + constants +
+    migration + nav + full IQE wiring) and that is a separate card
+    (agov-case-01..04)'
+  - 'INBOX: separate the autonomy ceiling from the delivery channel. The seam is
+    already clean - Approver in approval_gate.py is an injectable callable and every
+    gateway adapter exposes the same send_message(channel_user_id, text, thread_id) -
+    so an inbox approver is a DROP-IN with no gate signature change. Deliver with an
+    embedded [icdev:<item_id>] correlation token so a Slack/Teams/Telegram/email
+    reply resolves the right item; in-app is the store of record and channels are
+    mirrors. The load-bearing test is that an irreversible action is still GATED in
+    unattended mode and merely routed - without it this feature silently becomes an
+    auto-approver (agov-inbox-01..05)'
+  - 'WAKE: a WakeStore (PENDING -> DUE -> FIRED) plus four agent tools - sleep_for,
+    sleep_until, wake_on(job_id), wake_on_event(key). Tick it from the existing
+    genesis/reflexes/agent_cron_reflex.py; do NOT add a daemon. Fire event keys from
+    tools/ci/pr_watcher.py and the kanban pipeline so "wake me when PR #N is green"
+    works, which is the same failure mode that produced a four-day board flatline
+    (agov-wake-01..03)'
+  epics:
+  - key: det
+    title: DET - Declarative detection rules over the agent event stream
+    priority: high
+  - key: inbox
+    title: INBOX - Unattended mode and a unified approval inbox
+    priority: high
+  - key: case
+    title: CASE - Agent-session timeline and portable case bundle
+    priority: medium
+  - key: wake
+    title: WAKE - Agent-scheduled resumption
+    priority: medium

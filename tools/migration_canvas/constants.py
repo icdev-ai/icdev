@@ -434,6 +434,26 @@ IL_LEVEL_REQUIREMENTS = {
 }
 
 
+# ── Network Migration Session Lifecycle ─────────────────────────────────────
+
+# Lifecycle states for mc_net_sessions.  The column is plain TEXT with a
+# DEFAULT of 'in_progress' and no CHECK constraint, so this is the single
+# source of truth and the PATCH endpoint validates against it.
+NET_SESSION_STATUSES = {
+    'draft':       {'label': 'Draft',       'color': '#6c757d', 'terminal': False},
+    'in_progress': {'label': 'In Progress', 'color': '#fd7e14', 'terminal': False},
+    'complete':    {'label': 'Complete',    'color': '#28a745', 'terminal': True},
+    'archived':    {'label': 'Archived',    'color': '#495057', 'terminal': True},
+}
+
+# Statuses that close a session out.  Active-session queries in blueprint.py
+# and network_migration.py filter with `status NOT IN (...)` on exactly this
+# set, and the migration_canvas reflex only flags sessions outside it.
+NET_SESSION_TERMINAL_STATUSES = tuple(
+    s for s, meta in NET_SESSION_STATUSES.items() if meta['terminal']
+)
+
+
 # ── Wave & Dependency Constants ─────────────────────────────────────────────
 
 WAVE_STATUS = {

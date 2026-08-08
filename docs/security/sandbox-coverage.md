@@ -1270,7 +1270,110 @@ another vendor's tool.
   and a different threat model — or if it starts reading *artifacts* rather than
   metadata, which is sbx-fld-03's territory.
 
-### Gap 50 — SPDX writer and validator (`tools/compliance/spdx_writer.py`)
+### Gap 50 — SBOM correction ingress (`tools/compliance/sbom_revision.py`)
+
+**Modules:** `tools/compliance/sbom_revision.py` (mirrored at
+`icdev/tools/compliance/sbom_revision.py`), consumed by
+`tools/compliance/sbom_generator.py` and `tools/compliance/sbd_assessor.py`
+
+**Ingress path:** Two surfaces, and only one of them is first-party.
+`plan_revision` / `content_digest` on the generation path only ever see a
+document this tree just built, so that half is trusted-first-party. `--correct
+--sbom <path>` is not: the corrected SBOM is an operator-supplied JSON document
+that may well have originated with an upstream producer, and it is the document
+that becomes the project's SBOM of record. `source_revision` additionally shells
+out to `git` in a caller-supplied directory.
+
+- **Decision:** **trusted-first-party** for the generation path; **bypass-documented**
+  for the correction path (parse-and-record only; no execution path exists)
+- **Rationale:** The module's whole toolkit is `json`, `hashlib`, `pathlib` and
+  one fixed-argv `git rev-parse`. It contains no `exec`, `eval`, `__import__`,
+  `pickle`, `yaml.load` or `os.system`, and no network client. A corrected SBOM
+  is round-tripped through `json.load`/`json.dump` and digested; **nothing in it
+  is ever dispatched on, resolved as a path, or used to build SQL**. The only
+  values from the document that reach the database are the component count, the
+  `serialNumber` string and the digest, each as a bound parameter. `git rev-parse`
+  is not a shell: fixed argv, `shell=False`, a 15-second timeout, and a
+  non-zero exit or any `OSError` yields `None` — which is reported as
+  `sbom_build_identity_unknown` rather than being smoothed into a pass.
+- **Guardrails:**
+  - The output path for a correction is derived from the **predecessor's own
+    recorded `file_path`**, never from anything inside the supplied document, so
+    a hostile SBOM cannot choose where bytes land.
+  - A correction is append-only by construction: it can only INSERT a successor
+    row. There is no code path by which a supplied document rewrites, blanks or
+    deletes the record it corrects, which is what stops a bad artifact from
+    *destroying* prior evidence rather than merely adding wrong evidence.
+  - `revision_reason` is validated against the closed `REVISION_REASONS`
+    vocabulary and `apply_correction` refuses a non-corrective code, so the
+    caller cannot mislabel a correction as a routine build.
+  - A correction must state a reason; an empty one raises rather than recording
+    an unexplained change to a compliance artifact.
+  - The head is re-resolved inside `apply_correction` and compared to the row it
+    was prepared against, so a concurrent writer cannot make a correction
+    supersede the wrong document.
+  - `gate_threshold` reads only ICDEV's own `args/security_gates.yaml`, via
+    `yaml.safe_load`, and a missing or corrupt file degrades to the documented
+    default.
+  - `tests/test_sbom_revision_2026.py` records every statement a correction
+    issues and fails on an `UPDATE` or `DELETE`, and compares the predecessor row
+    field-by-field before and after — so the append-only property is pinned, not
+    merely intended.
+- **Revisit if:** the correction path ever resolves anything *out of* the supplied
+  document — a file path, a URL, a tool name, a signing key reference — which
+  would turn parsed content into a resource reference; or if `source_revision`
+  gains a remote lookup (a CI API call to name the build), which is a network
+  path over attacker-influenceable material and a different threat model.
+### Gap 50 — SBOM disclosure convention and policy (`tools/compliance/unknown_information.py`)
+
+**Module:** `tools/compliance/unknown_information.py` (sbx-prc-01), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two inputs. `load_disclosure_policy` reads ICDEV's own
+`args/sbom_disclosure_policy.yaml`, which is first-party configuration but is
+edited by an operator to declare redactions. `validate_sbom_disclosure`, reached
+through `--validate`, reads a **CycloneDX JSON SBOM from an operator-supplied
+path** — which may be another vendor's output, since the point of a conformance
+validator is to be pointed at documents ICDEV did not produce.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module compares strings against closed vocabularies and
+  emits property dicts. Its total contact with untrusted content is
+  `json.loads`, `yaml.safe_load`, `str()`, `.strip()`, `.lower()` and set
+  membership. There is no `exec`/`eval`/`compile`, no `subprocess`, no
+  `pickle`, no SQL, no regex over attacker input, and no network call. Nothing
+  read from a foreign SBOM is dispatched on: a reason code either *is* a member
+  of `UNKNOWN_REASONS`/`WITHHELD_REASONS` or becomes a validation error, and a
+  field name either *is* one of the 17 minimum elements or becomes one.
+- **Guardrails:**
+  - `_clean_rules` drops a policy rule whose field or reason is unrecognised
+    rather than defaulting it, so a typo cannot silently widen or narrow a
+    redaction. `policy_defects()` reports every dropped rule, and the CLI exits
+    non-zero when there are any, so a mistyped redaction is loud rather than
+    absent.
+  - `_rule_matches` treats an unmatched key as a **non**-match. A redaction that
+    accidentally applied to every component would be far worse than one that
+    applied to nothing, because only the second is visible on inspection.
+  - A withheld field carries no free-text detail — :meth:`Disclosure.withheld`
+    evicts any detail the field had. Explaining a redaction inside the document
+    the redaction protects would undo it, and the validator fails a document
+    that does so.
+  - `yaml.safe_load` (never `yaml.load`) on the policy; a missing or corrupt
+    policy degrades to a default that withholds nothing and still names an
+    enquiry route, because an SBOM that withholds without one is what the
+    standard forbids.
+  - `Disclosure.from_db_values` treats unreadable JSON as empty, so a corrupt
+    `unknown_fields_json` column cannot raise inside SBOM rendering.
+  - `tests/test_sbom_unknown_information.py` exercises the rejection paths
+    directly: a withheld reason under the unknown prefix, an unknown reason
+    under the withheld prefix, a field in both states, an unrecognised field
+    name, and the pre-2026 conflating literals.
+- **Revisit if:** the enquiry process gains an actual transport (an API endpoint
+  that accepts recipient requests, rather than a property naming a route) — that
+  turns a document property into an attack surface with its own authorization
+  model, and belongs with sbx-gov-02.
+
+### Gap 51 — SPDX writer and validator (`tools/compliance/spdx_writer.py`)
 
 **Module:** `tools/compliance/spdx_writer.py` (sbx-fmt-01, mirrored at
 `icdev/tools/compliance/spdx_writer.py`), imported by

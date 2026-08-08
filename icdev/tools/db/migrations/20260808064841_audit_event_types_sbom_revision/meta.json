@@ -1,0 +1,8 @@
+{
+  "description": "sbx-prc-02 - rebuild audit_trail.event_type CHECK from VALID_EVENT_TYPES so sbom_revised and sbom_corrected are admitted (PostgreSQL; SQLite generates it at init)",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "sbx-prc-02"
+}

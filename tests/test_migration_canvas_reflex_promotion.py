@@ -181,3 +181,100 @@ class TestPromotionThreshold:
 
         assert result["details"]["promoted_to_kanban"] == 0
         assert icdev.inserts == []
+
+
+# ---------------------------------------------------------------------------
+# Draft protocol plans — the second, independent re-raise path.
+#
+# Check #3 used to query mc_net_protocol_plans with no join to the parent
+# session, so closing a session did not close it: an archived session holding a
+# leftover 'draft' plan kept minting a card every cycle forever.  Confirmed live
+# on nmig-ee617c955aaf, which was archived and still owned a draft vlan plan.
+#
+# These run against a real SQLite file rather than a fake, so the WHERE clause
+# is actually evaluated by a SQL engine — a fake that ignores the query would
+# pass no matter which rows the reflex asked for.
+# ---------------------------------------------------------------------------
+
+_OLD = "2026-06-18T02:32:45.743783+00:00"  # comfortably past _STALE_PLAN_DAYS
+
+
+@pytest.fixture
+def canvas_db(tmp_path, monkeypatch):
+    """A real sqlite canvas DB wired into the reflex, seeded per test."""
+    db = tmp_path / "migration_canvas.db"
+    monkeypatch.setenv("MC_DB_PATH", str(db))
+    monkeypatch.setenv("MC_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    # The promotion block opens a real icdev connection even when it has nothing
+    # to promote; point it at a throwaway file rather than the repo database.
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "icdev.db"))
+
+    init_db = importlib.import_module("tools.migration_canvas.db.init_db")
+    with init_db.get_connection() as conn:
+        conn.execute(
+            "CREATE TABLE mc_net_sessions (id TEXT PRIMARY KEY, src_model TEXT, "
+            "tgt_model TEXT, status TEXT, updated_at TEXT, created_at TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE mc_net_protocol_plans (id TEXT PRIMARY KEY, session_id TEXT, "
+            "protocol TEXT, status TEXT, created_at TEXT)"
+        )
+        conn.commit()
+
+    def _seed(session_status, *, plan_status="draft", orphan=False):
+        with init_db.get_connection() as conn:
+            if not orphan:
+                conn.execute(
+                    "INSERT INTO mc_net_sessions (id, src_model, tgt_model, status, "
+                    "updated_at, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
+                    ("nmig-ee617c955aaf", "MX204", "ASR-9901", session_status, _OLD, _OLD),
+                )
+            conn.execute(
+                "INSERT INTO mc_net_protocol_plans (id, session_id, protocol, status, "
+                "created_at) VALUES (%s,%s,%s,%s,%s)",
+                ("plan-1", "nmig-ee617c955aaf", "vlan", plan_status, _OLD),
+            )
+            conn.commit()
+
+    return _seed
+
+
+@pytest.fixture
+def plan_findings(canvas_db, monkeypatch):
+    """Seed the canvas DB, stub the other two checks, return plan findings."""
+
+    def _run(session_status, **kw):
+        canvas_db(session_status, **kw)
+        # Only the EOL check is faked out here.  The canvas connection is left
+        # real: get_canvas_connection routes through storage.get_connection, so
+        # patching that would swap the sqlite DB this test depends on for a fake.
+        netmig = importlib.import_module("tools.migration_canvas.network_migration")
+        monkeypatch.setattr(netmig, "_mc_conn", _cm(FakeConn()))
+        monkeypatch.setattr(netmig, "_nc_conn", _cm(FakeConn({"FROM ni_devices": []})))
+        # promotion_threshold above 1.0 keeps this about detection only
+        result = _reflex.run({"promotion_threshold": 2.0}, None)
+        plan_errors = [e for e in result["details"]["errors"] if "protocol_plan" in e]
+        assert not plan_errors, plan_errors
+        return result["details"]["breakdown"]["stale_protocol_plans"]
+
+    return _run
+
+
+class TestDraftPlansOnClosedSessions:
+    @pytest.mark.parametrize("terminal", _reflex._TERMINAL_SESSION_STATUSES)
+    def test_terminal_session_stops_its_draft_plan_re_raising(self, plan_findings, terminal):
+        """Closing the session is what the wizard's new control does; honour it."""
+        assert plan_findings(terminal) == 0
+
+    def test_open_session_still_raises_its_draft_plan(self, plan_findings):
+        """The filter must not silence the finding it exists to report."""
+        assert plan_findings("in_progress") == 1
+
+    def test_orphaned_plan_does_not_raise(self, plan_findings):
+        """No parent session means nobody to action the card."""
+        assert plan_findings("in_progress", orphan=True) == 0
+
+    def test_approved_plan_on_open_session_does_not_raise(self, plan_findings):
+        """Only 'draft' plans are stale; the status filter must still apply."""
+        assert plan_findings("in_progress", plan_status="approved") == 0
