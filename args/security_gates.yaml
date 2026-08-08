@@ -30,13 +30,51 @@ deployment_gates:
   block_on:
     - any_merge_gate_failure
     - sbom_not_generated
+    # Presence is not conformance: an empty CycloneDX file satisfies
+    # sbom_not_generated. See the sbom_conformance block for the thresholds.
+    - sbom_minimum_elements_not_met
     - ssp_not_current
     - poam_has_overdue_items
+  warn_on:
+    - sbom_conformance_below_threshold
   auto_rollback_on:
     - health_check_failure
     - cat1_finding_post_deploy
     - critical_vuln_runtime
     - error_rate_spike
+
+# SBOM Minimum Elements Conformance (2026 standard, sbx-gov-01)
+#
+# The five pre-existing SBOM conditions — sbom_not_generated,
+# sbom_attestation_missing, sbom_stale_over_30_days, sbom_generation_failed and
+# sbom_generation_skipped — are presence, freshness and exit-code checks. None of
+# them opens the document, so a two-line CycloneDX file with no components
+# satisfies every one. These two conditions gate on what the SBOM actually says.
+#
+# Evaluated by tools/compliance/sbom_conformance_gate.py. Every number below is
+# read from this file at evaluation time; the module carries no default for any
+# of them and refuses to run if this block is missing or incomplete.
+sbom_conformance:
+  # The gates these conditions are wired into. Each of the three also carries the
+  # condition names in its own blocking/warning list.
+  gates:
+    - deployment_gates
+    - swft
+    - devsecops
+  blocking:
+    - sbom_minimum_elements_not_met
+  warning:
+    - sbom_conformance_below_threshold
+  thresholds:
+    # Percentage of the 17 data-field elements (9 SBOM Metadata + 8 Component
+    # Data) that must be met before the SBOM is usable as evidence.
+    block_below_pct: 70
+    # The standard is a floor, not a target: anything short of the full set is
+    # worth saying out loud even when it clears the blocking threshold.
+    warn_below_pct: 100
+    # An SBOM that lists no components meets no Component Data element at all,
+    # whatever its metadata scores. Blocking, independent of the percentage.
+    require_components: true
 
 cssp:
   blocking:
@@ -398,6 +436,9 @@ devsecops:
     - policy_as_code_violation_critical
     - image_attestation_missing
     - sbom_attestation_missing
+    # A signed SBOM that states nothing is still an SBOM that states nothing —
+    # attestation covers integrity, this covers content.
+    - sbom_minimum_elements_not_met
     - critical_sast_finding_unresolved
     - secrets_detected_in_pipeline
   warning:
@@ -405,6 +446,7 @@ devsecops:
     - image_attestation_stale
     - rasp_rule_bypass_detected
     - license_compliance_violation
+    - sbom_conformance_below_threshold
   thresholds:
     policy_violations:
       max_critical: 0
@@ -853,6 +895,7 @@ swft:
   blocking:
     - slsa_provenance_missing
     - sbom_not_generated
+    - sbom_minimum_elements_not_met
     - sast_scan_not_completed
     - secret_detection_not_run
     - dependency_audit_not_completed
@@ -865,6 +908,7 @@ swft:
     # Same reconciliation as sbd above: a bundle whose SBOM predates the build it
     # attests to is not current evidence, however recent the file happens to be.
     - sbom_not_regenerated_for_current_build
+    - sbom_conformance_below_threshold
   thresholds:
     min_slsa_level: 2
     # sbom_required_per_build is the SBOM 2026 Frequency rule; sbom_max_age_days

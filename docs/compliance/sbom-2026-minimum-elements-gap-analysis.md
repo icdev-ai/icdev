@@ -235,11 +235,46 @@ Sandbox posture for the verification path (attacker-supplied SBOM + signature + 
 Every one of these is a **presence, freshness or exit-code check**. Nothing validates
 conformance to the minimum elements.
 
-**Updated by sbx-prc-02.** The freshness check now asks the per-build question first —
+**RESOLVED (sbx-gov-01).** Two conditions now gate on what the document says:
+`sbom_minimum_elements_not_met` (blocking) and `sbom_conformance_below_threshold` (warning),
+wired into `deployment_gates`, `swft` and `devsecops`, and evaluated by
+`tools/compliance/sbom_conformance_gate.py`.
+
+The concrete case that motivated the card is now covered: `{"bomFormat": "CycloneDX",
+"specVersion": "1.4"}` clears all five pre-existing conditions — it was generated, is not
+stale, neither failed nor was skipped, and can be signed and attested — and is blocked by the
+new one, because an SBOM that lists no components meets no Component Data element at all.
+
+Every number the gate applies lives in `args/security_gates.yaml` under
+`sbom_conformance.thresholds` (`block_below_pct`, `warn_below_pct`, `require_components`).
+The module carries **no default for any of them** and raises `SbomGateConfigError` when the
+block is missing or incomplete, so the gate's strictness cannot silently become whatever a
+Python literal happened to say. `tests/test_sbom_conformance_gate.py` covers both directions
+against real documents, proves retuning the YAML retunes the decision, and asserts that
+removing any single threshold raises rather than falls back.
+
+Scoring is **not** this module's job. It imports sbx-sig-02's
+`sbom_minimum_elements_validator` and delegates the moment that module is importable, with no
+edit needed here on the day it merges; the interim structural check that keeps the gate from
+being inert until then reports `scored_by: structural-interim` on every result so no caller
+can mistake one for the other. Component Producer is delegated to
+`component_producer.validate_sbom_producers`.
+
+Measured against the generator's own output as of this writing, ICDEV scores **9 of 17**
+data fields (52.94%) and is blocked — the eight gaps are precisely the elements the open
+`sbx` tasks add: SBOM Author and Generation Context (sbx-fld-01), Author Signature
+(sbx-sig-01), Hash Value and Hash Algorithm (sbx-fld-03), Component License (sbx-fld-04),
+Component Identifiers (sbx-fld-05) and the Dependency Relationship graph (sbx-cov-02).
+That is the gate working, not the gate misconfigured. Note that the conditions in this file
+are declarative — no central engine evaluates the `block_on` lists automatically — so the
+score above is what a caller of the gate sees today, not a CI failure.
+
+**Also updated by sbx-prc-02.** Conformance is one half of the question; currency is the
+other, and a document can be fully conformant and still describe a build that shipped three
+commits ago. The freshness check now asks the per-build question first —
 `sbom_not_regenerated_for_current_build` and `sbom_build_identity_unknown` joined
-`sbd.warning` and the first joined `swft.warning`, and `sbom_required_per_build: true`
-sits beside `sbom_max_age_days` in both threshold blocks. See §2.9. Conformance
-validation of the elements themselves is still sbx-sig-02's.
+`sbd.warning`, the first also joined `swft.warning`, and `sbom_required_per_build: true`
+sits beside `sbom_max_age_days` in both threshold blocks. See §2.9 and §3.3.
 
 ### 2.6 SPDX
 
