@@ -421,7 +421,7 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
 
 
 def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
-    """Use LLM (Haiku) to extract a timeout in seconds from natural language.
+    """Use the routed ``timeout_extraction`` LLM to extract a timeout in seconds.
 
     Augments the structured ``timeout_hint:NNN`` regex so human-written phrases
     like "allow 25 minutes" or "needs about 1 hour" are also understood.
@@ -446,7 +446,6 @@ def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
                 "Return ONLY the JSON object, nothing else."
             ),
             messages=[{"role": "user", "content": desc[:500]}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=32,
             temperature=0.0,
             skip_injection_scan=True,
@@ -468,7 +467,7 @@ def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
 
 
 def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Optional[str]:
-    """Use LLM (Haiku) to extract a gap entity from natural language task text.
+    """Use the routed ``gap_subject_extraction`` LLM to extract a gap entity.
 
     Augments regex patterns in _pre_dispatch_check that require specific
     formatting (e.g. "tool_not_in_manifest: tools/foo.py") so natural language
@@ -519,7 +518,6 @@ def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Opt
         req = LLMRequest(
             system_prompt=system_prompt + " Return ONLY the JSON object, nothing else.",
             messages=[{"role": "user", "content": combined}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=48,
             temperature=0.0,
             skip_injection_scan=True,
@@ -710,7 +708,7 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
 
 
 def _nlp_extract_resume_at(reset_hint: str, now: datetime) -> Optional[datetime]:
-    """Use LLM (Haiku) to parse a reset time hint into a UTC datetime.
+    """Use the routed ``resume_at_extraction`` LLM to parse a reset hint to UTC.
 
     Augments the structured regex in _parse_resume_at for natural language
     expressions like "in about twenty minutes", "at noon", "try again tomorrow".
@@ -736,7 +734,6 @@ def _nlp_extract_resume_at(reset_hint: str, now: datetime) -> Optional[datetime]
                 "Clamp to [60, 21600]. Return ONLY the JSON object, nothing else."
             ),
             messages=[{"role": "user", "content": reset_hint[:200]}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=32,
             temperature=0.0,
             skip_injection_scan=True,
@@ -8218,7 +8215,6 @@ def _check_acceptance_criteria(task_id: str, output_text: str) -> tuple:
         req = LLMRequest(
             system_prompt="You are a quality acceptance evaluator. Return valid JSON only.",
             messages=[{"role": "user", "content": prompt}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=200,
             temperature=0.0,
             skip_injection_scan=True,
@@ -8318,7 +8314,6 @@ def _decompose_triage_task(task: dict) -> bool:
         req = LLMRequest(
             system_prompt="You are a software task decomposer. Return valid JSON array only.",
             messages=[{"role": "user", "content": prompt}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=2000,
             temperature=0.3,
             skip_injection_scan=True,
