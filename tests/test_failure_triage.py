@@ -164,6 +164,175 @@ class TestAutoApplyGates:
 
 
 # ---------------------------------------------------------------------------
+# Non-code failure classes — a TIMEOUT is a budget symptom, not a defect
+# ---------------------------------------------------------------------------
+
+# The verbatim strings the kanban scheduler writes into last_failure_reason.
+# Each is paired with the writer that produces it so the pairing stays
+# checkable when a writer's wording changes. MEASURED 2026-08-08 — four of
+# the five tasks that entered the autofix queue carried the first one.
+NON_CODE_REASONS = [
+    # runtime budget / lifecycle
+    ("TIMEOUT after 3430s (max 3386s) — task exceeded dispatch budget",
+     "reaper timeout kill"),
+    ("stale-reaper: task was in_progress for 95 min with an empty log "
+     "(threshold=60 min). Automatically reset to backlog for re-dispatch.",
+     "_reap_stale_in_progress"),
+    ("Zombie reclaim: no heartbeat for >6h", "_reclaim_zombies"),
+    ("startup-recovery: task was in_progress when the scheduler restarted "
+     "— process died or scheduler crashed mid-run.", "startup sweep"),
+    ("Circuit breaker: failure_count 5 >= max_retries 5", "retry cap"),
+    # executor environment
+    ("no executor available: internet=False, gitlab=unreachable, "
+     "ollama=unreachable", "dispatch fallback chain"),
+    # not a failure at all — bookkeeping parked in the column
+    ("Task-specific checks passed or not applicable", "_verify_task_specific"),
+    ("decay-promoted: re-queued after 48 h in suggested",
+     "_promote_decayed_suggested"),
+    ("auto-revive 2/3: deps satisfied + cooled down, re-queued to backlog "
+     "for another attempt.", "_revive_quarantined_suggested"),
+    ("dep-chain-unblock: child waiting in backlog, revived from suggested "
+     "(fc was 2)", "_revive_dep_chain_blocked"),
+    ("cascade: parent sbx-fmt-01 demoted from done", "_move_task rollback"),
+    ("auto-closed: parent kax-obs-01 resolved", "_close_orphaned_rca_children"),
+    ("UNCLASSIFIED (no failure clause): Verified (git-first): 2 files changed",
+     "_split_failure_narrative fallback"),
+]
+
+# A real defect the autofixer exists to handle — same shape, same confidence.
+GENUINE_CODE_FAILURE = (
+    "VALIDATION FAILED: pytest — tests/test_foo.py::test_bar "
+    "AttributeError: 'Router' object has no attribute 'invoke_sync'"
+)
+
+
+class TestNonCodeFailureClasses:
+    """A failure whose cause is the dispatch budget, the scheduler lifecycle,
+    or the executor environment has no code a patch could fix. Autofix must
+    not spend an LLM generation on it — but a genuine code failure with the
+    SAME confidence must still get through."""
+
+    def _task(self, reason, **overrides):
+        base = {
+            "id": "t-nc",
+            "title": "rebuild the SBOM disclosure seam",
+            "description": "regular build task",
+            "task_type": "build",
+            "last_failure_reason": reason,
+        }
+        base.update(overrides)
+        return base
+
+    def _diag(self, **overrides):
+        base = {
+            "root_cause": "the task did not finish",
+            "recommendation": "patch",
+            "patch_hint": "raise the budget",
+            "suspect_files": ["tools/foo.py:42"],
+            "confidence": 0.95,
+        }
+        base.update(overrides)
+        return base
+
+    @pytest.mark.parametrize(
+        "reason,writer", NON_CODE_REASONS,
+        ids=[w for _, w in NON_CODE_REASONS],
+    )
+    def test_non_code_reason_is_denied(self, ft, reason, writer):
+        hit = ft._deny_hit(self._diag(), self._task(reason))
+        assert hit is not None, (
+            f"{writer} writes {reason[:60]!r} into last_failure_reason; "
+            f"there is no code a patch could fix, so _deny_hit must block it"
+        )
+        assert "non-code failure class" in hit
+
+    def test_timeout_denied_end_to_end_through_the_gate(self, ft, monkeypatch):
+        """The measured case: autofix ON, confidence 0.95, whitelisted
+        task_type — and it still must not auto-apply."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(
+            self._task("TIMEOUT after 3430s (max 3386s) — task exceeded "
+                       "dispatch budget"),
+            self._diag(),
+        )
+        assert allow is False
+        assert "non-code failure class" in reason
+
+    def test_genuine_code_failure_at_same_confidence_still_allowed(
+        self, ft, monkeypatch,
+    ):
+        """The control. Identical confidence, identical task_type, identical
+        suspect files — only last_failure_reason differs. If this ever starts
+        failing, the deny list has been widened into a kill switch."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        task = self._task(GENUINE_CODE_FAILURE)
+        diag = self._diag()
+
+        assert ft._deny_hit(diag, task) is None
+        allow, reason = ft.should_auto_apply(task, diag)
+        assert allow is True, reason
+
+    def test_timeout_in_description_does_not_block(self, ft, monkeypatch):
+        """Scoping proof. NON_CODE_FAILURE_TOKENS is matched against
+        last_failure_reason ONLY — a task legitimately *about* timeouts stays
+        eligible when it fails for a real reason. This is why 'timeout' is not
+        in DENY_SIGNATURE_TOKENS, which also matches description."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(
+            self._task(
+                GENUINE_CODE_FAILURE,
+                description="add a socket timeout to the CSP monitor probe "
+                            "so it stops hanging",
+            ),
+            self._diag(root_cause="the probe never sets a timeout"),
+        )
+        assert allow is True, reason
+
+    def test_every_token_is_lowercase(self, ft):
+        """_deny_hit lower-cases the reason before matching, so an uppercase
+        token could never fire."""
+        for tok in ft.NON_CODE_FAILURE_TOKENS:
+            assert tok == tok.lower(), f"{tok!r} can never match"
+
+
+class TestCompliancePathDeny:
+    """tools/compliance/ was added to DENY_FILE_PREFIXES on 2026-08-08.
+    Criterion: the independent gates cannot detect a wrong compliance
+    artifact (it compiles, lints, and the tests assert structure not truth),
+    and the artifact is outward-facing evidence a recipient may already hold.
+    """
+
+    def test_sbom_generator_is_denied(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(
+            {"id": "t-c", "title": "fix sbom", "description": "d",
+             "task_type": "build",
+             "last_failure_reason": GENUINE_CODE_FAILURE},
+            {"recommendation": "patch", "confidence": 0.95,
+             "root_cause": "wrong component list",
+             "suspect_files": ["tools/compliance/sbom_generator.py:88"]},
+        )
+        assert allow is False
+        assert "deny-path" in reason
+
+    def test_apply_side_also_rejects_compliance_paths(self, ft, tmp_path,
+                                                      monkeypatch):
+        """Belt-and-suspenders: _validate_patch_files re-checks the prefix so
+        a patch cannot reach the worktree even if the gate is bypassed."""
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        target = tmp_path / "tools" / "compliance" / "sbom_generator.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("COMPONENTS = []\n", encoding="utf-8")
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "tools/compliance/sbom_generator.py",
+                        "old_string": "COMPONENTS", "new_string": "PARTS"}]},
+            {"suspect_files": ["tools/compliance/sbom_generator.py"]},
+        )
+        assert ok is False
+        assert "deny-path" in why
+
+
+# ---------------------------------------------------------------------------
 # diagnose_task — LLM routing fallback
 # ---------------------------------------------------------------------------
 
