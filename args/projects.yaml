@@ -7591,3 +7591,161 @@ projects:
   - key: wake
     title: WAKE - Agent-scheduled resumption
     priority: medium
+- key: hgx
+  name: HGX - Harness Agent Parity and Graph Runtime
+  description: 'Promote ICDEV from a platform that ORCHESTRATES agent harnesses into
+    one that IS one. Research 2026-08-08 found five agentic execution surfaces built
+    on one primitive (icdev/tools/llm/agent_loop.py, 2161 lines, 143 tests) - SAG
+    interactive, ACE coworkers, the kanban rubric loop, the ANVIL agentic runner and
+    cortex.agent(mode=single) - each re-deciding its own toolset, safety gate and
+    audit trail. The abstraction built to unify them (tools/agents/adapter_base.py
+    AgentAdapter + registry.pick_default, OPT-71, four adapters, config at
+    args/agent_adapters.yaml) has ZERO consumers. The only executor that can
+    autonomously edit files is the vendor claude CLI - args/agent_adapters.yaml says
+    so in a comment and _dispatch_via_llm_router says so in its docstring. The owned
+    alternative (_dispatch_via_rubric_loop, KANBAN_RUBRIC_LOOP, default off) has five
+    tools and no shell, search, test-run or git. SCOPE BOUNDARY, PRIOR ART IS CLOSED -
+    the graph layer proposed in plans/agent-runtime-implementation-plan.md and the
+    four C:\AI\searches graph-engine docs is LARGELY ALREADY BUILT and those docs are
+    wrong on inventory. tools/studio/workflow_runner.py is a durable DAG runtime with
+    node_type human gates that survive restart, a single approval inbox via
+    gate_bridge.py, run-scoped memory, retries and per-node tool authorization (gate
+    MCP-WF-001 in args/security_gates.yaml is Video 3 refund-example isolation,
+    already shipped). tools/agent/team_orchestrator.py already does wave-parallel DAG
+    execution (D36/D40). tools/gateway/adapters ships 9 channels behind an 8-gate
+    security chain. tools/kanban already has atomic claim/lease. DO NOT build
+    tools/workflow/graph_engine.py, a second kanban board, or a second messaging
+    ingress - extend the existing surface, per
+    docs/spikes/dwo-00-superplane-workflow-adaptation.md line 116. MANUAL-ONLY - this
+    card touches the safety hooks, the executor chain and the approval path, so
+    hgx-gate-00 is held in_progress and every epic head declares depends_on_task_id.
+    Open any PR as --draft because pr_watcher auto-merges green kanban branches.
+    LLM-agnostic and OS-agnostic are BINDING acceptance criteria on every task, not a
+    later hardening pass - no model IDs in Python, catch AgentLoopUnsupported and
+    degrade, chain-aware context windows, encoding utf-8 AND newline empty-string on
+    every agent file write, no shell, pathlib only, explicit two-sided platform
+    branches, and a windows-latest CI job or none of it is enforced.'
+  task_prefix: hgx-
+  default_open: true
+  briefs:
+  - 'GATE: manual hold - do not dispatch. Released by hand once a human is driving
+    (hgx-gate-00)'
+  - 'EXEC: equip the owned build agent (run_command, grep_files, git_diff) and fix its
+    newline round-trip, then put it behind the AgentAdapter seam and benchmark parity
+    against claude_cli. The default executor does NOT change - this epic produces the
+    data and a working air-gap fallback (hgx-exec-01..04)'
+  - 'CTXW: long-horizon context. _estimate_message_tokens counts tool_use and
+    tool_result blocks as ZERO tokens, and compaction fires on a static 64000 rather
+    than context_budget.floor_window_for_function - that is the concrete cause of the
+    long-horizon degradation the source docs only theorize about. Plus mid-turn
+    interruptibility (hgx-ctxw-01..03)'
+  - 'SESS: the agent never reads CLAUDE.md, AGENTS.md or memory/MEMORY.md, and skills
+    are invisible to the model - no skill tool exists in any bundle, so there is no
+    progressive disclosure because there is no disclosure. record_use has zero callers
+    so the curator grades on a field nothing writes (hgx-sess-01..03)'
+  - 'GUARD: hook_compat.run_pre_tool_check implements 2 of the 8 checks
+    .claude/hooks/pre_tool_use.py runs, so an agent running OUTSIDE Claude Code is
+    less guarded than one inside it. Extract the checks into one shared module both
+    call. Also stop guessing is_read_only from name prefixes when that flag decides
+    what runs concurrently (hgx-guard-01..03)'
+  - 'FED: tools/mcp_client is a complete, tested, security-hardened outbound MCP
+    client with zero consumers - discovery.py names only three sources and dispatch.py
+    has no ext__ branch. This is WIRING, not building (hgx-fed-01)'
+  - 'OBS: tools/agent_runtime has zero references to invocation_recorder, tracer or
+    trace_id, so SAG runs are invisible; and nothing is replayable because arg VALUES
+    and tool RESULTS are never stored. Also reconcile daemon.REFLEX_NAMES with
+    args/genesis_config.yaml - 34 reflex files are never dispatched (hgx-obs-01..02)'
+  - 'PORT: five hardcoded claude-haiku model IDs in the kanban reflex, and all nine CI
+    jobs are ubuntu-latest so the OS the team develops on is never tested - which is
+    exactly how the rubric_build_tools newline bug survived (hgx-port-01..02)'
+  - 'PAR: Studio resolves the DAG with static_order and runs one step at a time, so
+    templates authored as fan-out execute serially. Mirror the proven
+    prepare/get_ready/done loop from team_orchestrator. max_parallel defaults to 1 so
+    all 61 existing templates stay byte-for-byte sequential (hgx-par-01)'
+  - 'COND: no conditional edges - a failed non-approval step sets overall_ok False and
+    execution CONTINUES, with no route to remediation. Reuse
+    automation_builder.CONDITION_OPERATORS because the repo forbids a second rules DSL
+    (hgx-cond-01)'
+  - 'AGENT: node_type agent - the per-node harness with its own scoped capabilities
+    that Video 3 actually asks for, built on the surface that already enforces
+    per-node tool authorization (hgx-agent-01..02)'
+  - 'CX: cortex.agent mode graph. Note the latent bug - mode is unvalidated, so an
+    unknown mode silently falls through to single-agent. Also no /agent REST endpoint,
+    no .agent() SDK method, and workflow_runner has no CLI and no write MCP tool, so a
+    graph run cannot be started headlessly (hgx-cx-01..03)'
+  - 'GOAL: standing goals - the ONE capability in the source docs that genuinely does
+    not exist anywhere in the tree (hgx-goal-01..03)'
+  - 'EVAL: per-node harness evaluation - nullable columns on harness_eval, mirrored
+    into conftest MINIMAL_ICDEV_SCHEMA and pg_consolidated.sql or fresh PG is left
+    behind (hgx-eval-01)'
+  - 'GOV: per-node governance profiles. output_redaction and provenance stay
+    non-skippable in every profile - they are the egress and NIST-AU guarantees
+    (hgx-gov-01)'
+  - 'CFG: args/agent_runtime.yaml + AgentRuntimeConfig, and register SAG in
+    component_registry.yaml where it is currently absent (hgx-cfg-01)'
+  - 'TMPL: multi-angle review as a TEMPLATE, not a module - once par, cond and agent
+    land it is a diamond of lens-specialised agent nodes with zero new Python
+    (hgx-tmpl-01)'
+  - 'DOC: chat status extension at 031 because 040 is taken by
+    bayesian_learning_chat, plus the loop-vs-graph decision tree and a refresh of the
+    stale commands.py docstring and standalone-agent-runtime manifest shard
+    (hgx-doc-01..02)'
+  - 'VV: end-to-end verification, portability proof and companion sync (hgx-vv-01)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: exec
+    title: EXEC - Owned executor parity behind the AgentAdapter seam
+    priority: critical
+  - key: ctxw
+    title: CTXW - Long-horizon context budgeting and interruptibility
+    priority: critical
+  - key: guard
+    title: GUARD - Headless guardrail parity and declared read-only
+    priority: critical
+  - key: port
+    title: PORT - LLM-agnostic and OS-agnostic enforcement
+    priority: critical
+  - key: sess
+    title: SESS - Project context loading and skill visibility
+    priority: high
+  - key: fed
+    title: FED - Wire the external MCP client
+    priority: high
+  - key: obs
+    title: OBS - SAG observability and reflex dispatch repair
+    priority: high
+  - key: par
+    title: PAR - Parallel DAG dispatch in Studio
+    priority: high
+  - key: cond
+    title: COND - Conditional edges and downstream cancellation
+    priority: high
+  - key: agent
+    title: AGENT - node_type agent with per-node tool scoping
+    priority: high
+  - key: cx
+    title: CX - Cortex graph mode and headless entry points
+    priority: high
+  - key: vv
+    title: VV - Verification and portability proof
+    priority: high
+  - key: goal
+    title: GOAL - Standing goals
+    priority: medium
+  - key: eval
+    title: EVAL - Per-node harness evaluation
+    priority: medium
+  - key: gov
+    title: GOV - Per-node governance profiles
+    priority: medium
+  - key: cfg
+    title: CFG - Runtime config surface and component registration
+    priority: medium
+  - key: tmpl
+    title: TMPL - Multi-angle review template
+    priority: medium
+  - key: doc
+    title: DOC - Chat extension and design-rule documentation
+    priority: medium
