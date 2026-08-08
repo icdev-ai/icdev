@@ -1039,7 +1039,7 @@ def main():
                 raise ValueError("--strip-markers requires --spec-file")
             cleaned = strip_markers(Path(args.spec_file))
             if args.output:
-                Path(args.output).write_text(cleaned, encoding="utf-8")
+                Path(args.output).write_text(cleaned, encoding="utf-8", newline="")
                 result = {"status": "ok", "message": f"Markers stripped, written to {args.output}"}
             else:
                 result = {"status": "ok", "content": cleaned}
@@ -1072,7 +1072,7 @@ def main():
             if args.annotate and result.get("status") == "ok":
                 annotated = annotate_spec(Path(args.spec_file), result.get("checks", []))
                 if args.output:
-                    Path(args.output).write_text(annotated, encoding="utf-8")
+                    Path(args.output).write_text(annotated, encoding="utf-8", newline="")
                     result["annotated_output"] = args.output
                     result["message"] = f"Annotated spec written to {args.output}"
                 else:

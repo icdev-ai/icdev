@@ -648,7 +648,7 @@ def isolated_config(
     tmp_path = Path(tmp_dir) / "rag_config.yaml"
     try:
         tmp_path.write_text(
-            yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
+            yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8", newline=""
         )
         os.environ[CONFIG_ENV_VAR] = str(tmp_path)
         import_retrieval_modules()

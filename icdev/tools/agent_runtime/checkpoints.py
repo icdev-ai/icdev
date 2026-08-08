@@ -197,7 +197,7 @@ def create_checkpoint(
 
     cp.dir.mkdir(parents=True, exist_ok=True)
     (cp.dir / "manifest.json").write_text(
-        json.dumps(cp.to_dict(), indent=2), encoding="utf-8"
+        json.dumps(cp.to_dict(), indent=2), encoding="utf-8", newline=""
     )
     logger.info("checkpoints: created %s (%d files)", cid, len(cp.files))
     return cp

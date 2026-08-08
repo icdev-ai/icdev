@@ -228,7 +228,7 @@ def setup_full(checkpoint: str, output_dir: Path | None = None) -> SetupResult:
 
     # Step 4: write Modelfile (Windows-safe: write to file, not heredoc)
     modelfile = out_dir / f"{slug}.Modelfile"
-    modelfile.write_text(f"FROM {gguf_path}\n", encoding="utf-8")
+    modelfile.write_text(f"FROM {gguf_path}\n", encoding="utf-8", newline="")
     steps.append(f"Wrote Modelfile → {modelfile}")
 
     # Step 5: register with Ollama

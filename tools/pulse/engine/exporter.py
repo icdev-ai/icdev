@@ -77,7 +77,7 @@ def export_mdx(post_id: str) -> Path:
 
     slug = post["slug"]
     out_path = out_dir / f"{slug}.mdx"
-    out_path.write_text(content, encoding="utf-8")
+    out_path.write_text(content, encoding="utf-8", newline="")
 
     logger.info("Exported MDX: %s", out_path)
     return out_path
@@ -380,7 +380,7 @@ def export_html(post_id: str) -> Path:
     html = _build_html_page(title, seo_desc, seo_keywords, canonical, og_image, schema, ga_snippet, body_html)
 
     out_path = EXPORTS_DIR / f"{slug}.html"
-    out_path.write_text(html, encoding="utf-8")
+    out_path.write_text(html, encoding="utf-8", newline="")
 
     update_row("posts", post_id, {"body_html": body_html})
 

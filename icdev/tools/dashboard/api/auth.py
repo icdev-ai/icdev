@@ -184,7 +184,7 @@ def _load_jwt_secret() -> str:
             return _DEV_SECRET_PATH.read_text(encoding="utf-8").strip()
         _DEV_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
         generated = secrets.token_hex(_jwt_secret_entropy)
-        _DEV_SECRET_PATH.write_text(generated, encoding="utf-8")
+        _DEV_SECRET_PATH.write_text(generated, encoding="utf-8", newline="")
         logger.warning(
             "ICDEV_JWT_SECRET not set; wrote dev secret to %s. "
             "Set ICDEV_JWT_SECRET for production.",

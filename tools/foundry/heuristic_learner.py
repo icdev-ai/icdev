@@ -394,7 +394,7 @@ def write_proposed_amendments(
         }
         PROPOSED_FILE.write_text(
             yaml.dump(output, default_flow_style=False, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
         LOG.info(
             "[heuristic_learner] wrote %d weight proposal(s) to %s",

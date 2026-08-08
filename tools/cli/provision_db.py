@@ -536,7 +536,7 @@ def _rewrite_compose_port(compose_file: Path, port: int, *, dry_run: bool = Fals
     text = compose_file.read_text(encoding="utf-8")
     new = _re.sub(r'^(\s*-\s*")\d+(:5432")', rf'\g<1>{port}\g<2>', text, count=1, flags=_re.M)
     if new != text:
-        compose_file.write_text(new, encoding="utf-8")
+        compose_file.write_text(new, encoding="utf-8", newline="")
         return True
     return False
 

@@ -300,7 +300,7 @@ def load_baseline(path: Path = BASELINE_PATH) -> Optional[Dict]:
 
 def save_baseline(doc: Dict, path: Path = BASELINE_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8", newline="")
 
 
 # ---------------------------------------------------------------------------

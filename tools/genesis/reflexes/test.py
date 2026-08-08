@@ -509,7 +509,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             test_code = _generate_fallback_stub(module_info)
             generation_method = "fallback_stub"
 
-        test_file.write_text(test_code, encoding="utf-8")
+        test_file.write_text(test_code, encoding="utf-8", newline="")
 
         # Run the test
         print(f"  Test: {module_info['module']} ({generation_method})")

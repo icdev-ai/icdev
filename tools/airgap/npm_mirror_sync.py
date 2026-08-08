@@ -140,7 +140,7 @@ def _write_sha256_manifest(directory: Path, pattern: str = "*.tar.gz") -> dict[s
         digests[artifact.name] = _sha256_file(artifact)
     manifest = directory / _MANIFEST_NAME
     lines = [f"{digest}  {name}\n" for name, digest in sorted(digests.items())]
-    manifest.write_text("".join(lines), encoding="utf-8")
+    manifest.write_text("".join(lines), encoding="utf-8", newline="")
     return digests
 
 
@@ -449,7 +449,7 @@ def gen_npmrc(
         raise ValueError(f"unknown strategy: {strategy!r} (choose offline-cache, verdaccio, tarball-deps)")
 
     npmrc_path = snap_dir / ".npmrc"
-    npmrc_path.write_text(npmrc, encoding="utf-8")
+    npmrc_path.write_text(npmrc, encoding="utf-8", newline="")
 
     result: dict[str, Any] = {
         "ok": True,
@@ -484,7 +484,7 @@ def _write_npmrc_template(snap_dir: Path, snapshot: str) -> None:
         f"cache={cache_rel}\n"
         "prefer-offline=true\n"
     )
-    (snap_dir / ".npmrc").write_text(content, encoding="utf-8")
+    (snap_dir / ".npmrc").write_text(content, encoding="utf-8", newline="")
 
 
 def _write_verdaccio_config(snap_dir: Path, snapshot: str) -> str:
@@ -507,7 +507,7 @@ def _write_verdaccio_config(snap_dir: Path, snapshot: str) -> str:
         "  - {type: stdout, format: pretty, level: info}\n"
     )
     cfg_path = snap_dir / "verdaccio.yaml"
-    cfg_path.write_text(config, encoding="utf-8")
+    cfg_path.write_text(config, encoding="utf-8", newline="")
     return str(cfg_path)
 
 

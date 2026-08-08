@@ -281,9 +281,9 @@ def _save_training_artifact(canvas: str, spec, topo_result: dict,
         "metadata": spec.metadata,
     }
     (training_dir / "topology.json").write_text(
-        json.dumps(topology_data, indent=2), encoding="utf-8")
+        json.dumps(topology_data, indent=2), encoding="utf-8", newline="")
     (training_dir / "probe_results.json").write_text(
-        json.dumps(probe_results, indent=2), encoding="utf-8")
+        json.dumps(probe_results, indent=2), encoding="utf-8", newline="")
 
     output_section: dict = {"probes": probe_results, "localstack": ls_result}
     if traffic_result:
@@ -295,7 +295,7 @@ def _save_training_artifact(canvas: str, spec, topo_result: dict,
             "flows":         traffic_phase.get("flows", []),
         }
         (training_dir / "traffic_flows.json").write_text(
-            json.dumps(traffic_phase, indent=2, default=str), encoding="utf-8")
+            json.dumps(traffic_phase, indent=2, default=str), encoding="utf-8", newline="")
 
     pair = {
         "canvas": canvas, "uid": uid, "gate": gate,
@@ -304,7 +304,7 @@ def _save_training_artifact(canvas: str, spec, topo_result: dict,
         "output": output_section,
     }
     pair_path = training_dir / "training_pair.json"
-    pair_path.write_text(json.dumps(pair, indent=2), encoding="utf-8")
+    pair_path.write_text(json.dumps(pair, indent=2), encoding="utf-8", newline="")
     return pair_path.relative_to(_ROOT).as_posix()
 
 
@@ -542,7 +542,7 @@ def run_sim(run_id: str, project_id: str, canvas: str = "") -> dict:
     ]
 
     report_path = out_dir / f"gns3_sim_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     traffic_flows_tested  = t_phase.get("flows_tested", 0)
     traffic_flows_reached = t_phase.get("reachable", 0)

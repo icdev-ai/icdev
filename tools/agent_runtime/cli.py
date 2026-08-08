@@ -181,7 +181,7 @@ def _sessions_export(args: argparse.Namespace) -> int:
     if args.output:
         from pathlib import Path
 
-        Path(args.output).write_text(payload, encoding="utf-8")
+        Path(args.output).write_text(payload, encoding="utf-8", newline="")
         print(f"Exported {len(messages)} message(s) to {args.output}")
     else:
         sys.stdout.write(payload)

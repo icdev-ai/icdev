@@ -175,7 +175,7 @@ def run(clean: bool = False) -> dict:
         "```\n\n"
         "After `icdev init`, the project is ready — open it in Claude Code\n"
         "and the agent will follow CLAUDE.md.\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     return {

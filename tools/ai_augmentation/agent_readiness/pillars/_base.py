@@ -303,7 +303,7 @@ class ThresholdAnomalyDetector:
         if not self._data:
             return
         try:
-            self._store_path.write_text(json.dumps(self._data, default=list), encoding="utf-8")
+            self._store_path.write_text(json.dumps(self._data, default=list), encoding="utf-8", newline="")
         except OSError:
             pass
 

@@ -223,7 +223,7 @@ def acquire(
             "acquired_at": _iso(_now()),
             "ttl_seconds": ttl,
         }
-        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+        meta_path.write_text(json.dumps(meta), encoding="utf-8", newline="")
         # For soft leases, surface the prior holder (if a different session) so
         # the caller can warn — but we still record our own claim.
         warn_holder = prior if (prior and prior.get("holder_session") != sid) else None

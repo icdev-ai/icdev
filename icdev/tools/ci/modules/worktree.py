@@ -127,7 +127,7 @@ def create_worktree(
 
     # Write classification marker
     classification_file = worktree_path / ".classification"
-    classification_file.write_text(f"{classification} // SP-CTI\n")
+    classification_file.write_text(f"{classification} // SP-CTI\n", newline="")
 
     # Write agent identity file
     agent_file = worktree_path / ".icdev-agent"
@@ -141,7 +141,7 @@ def create_worktree(
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
             indent=2,
-        )
+        ), newline=""
     )
 
     info = WorktreeInfo(
