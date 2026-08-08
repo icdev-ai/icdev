@@ -1,0 +1,8 @@
+{
+  "description": "sbx-fnd-02 - storage for the 2026 SBOM Minimum Elements: sbom_records document fields + signature, sbom_components producer/hash/identifiers/unknowns, sbom_dependencies edge table, RLS columns",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "sbx-fnd-02"
+}
