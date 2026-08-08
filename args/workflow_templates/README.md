@@ -266,6 +266,36 @@ other value is reported as a lint error.
 
 ---
 
+## `max_parallel` — top-level key (optional, default `1`)
+
+`max_parallel` is an **optional top-level key** (sibling of `steps`) that sets how
+many steps `tools/studio/workflow_runner.py` may execute concurrently.
+
+```yaml
+max_parallel: 3     # up to three steps in flight at once
+steps:
+  - {id: gap_analysis, name: Gap Analysis, tool: tools/x.py}
+  - {id: roi_model,    name: ROI Model,    tool: tools/y.py}
+  - {id: coa_a, name: "COA-A", tool: tools/z.py, depends_on: [gap_analysis, roi_model]}
+  - {id: coa_b, name: "COA-B", tool: tools/z.py, depends_on: [gap_analysis, roi_model]}
+  - {id: coa_c, name: "COA-C", tool: tools/z.py, depends_on: [gap_analysis, roi_model]}
+  - {id: brief, name: Brief,   tool: tools/w.py, depends_on: [coa_a, coa_b, coa_c]}
+```
+
+* **Omitting it means `1`** — one step at a time, in the order a flattened
+  topological sort produces. Every template that predates this key therefore
+  executes exactly as it always has.
+* The runner walks the DAG with `graphlib.TopologicalSorter.get_ready()` /
+  `done()` inside a bounded thread pool (decisions D40 and D36). A step is
+  dispatched as soon as every one of its `depends_on` entries has finished.
+* **A join needs no barrier field.** `brief` above waits for all three COAs
+  purely because it names all three in `depends_on`.
+* A `node_type: human` or `approval` gate parks **its own branch only** —
+  sibling branches keep running in the remaining slots.
+* Values are clamped to `1..16`; an unparseable value degrades to `1`.
+
+---
+
 ## `narrative_context` — top-level block (optional)
 
 `narrative_context` is an **optional top-level key** (sibling of `steps`) that
