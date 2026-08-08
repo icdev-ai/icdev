@@ -120,6 +120,11 @@ trust_kernel:
     max_consecutive_failures: 3
     cooldown_minutes: 60
     auto_reenable: true   # half-open retry after cooldown_minutes
+    # Each failed probe doubles the next wait, capped here. A reflex whose
+    # dependency is genuinely gone converges to one probe per day instead of one
+    # per hour forever; a reflex whose dependency recovered is unaffected,
+    # because it has accrued no failures beyond max_consecutive_failures.
+    max_cooldown_minutes: 1440
     notify_on_trip: true
 
   # Kill switch
@@ -1031,6 +1036,20 @@ reflexes:
     metrics_project_id: icdev-tools-rtm
     max_failure_rows: 200         # cap failure_log inserts per cycle
     max_snapshot_age_hours: 168   # ignore failures whose latest probe is >7d old (stale/abandoned)
+    # Board throughput stall rule (kax-stall-01). Nothing watched whether the board
+    # was actually COMPLETING work: 'done' transitions ran 63 (Aug 1) -> 121 (Aug 2)
+    # -> ZERO for Aug 4/5/6, and the four-day flatline was found only because a human
+    # asked. Fires when no task reached 'done' inside window_hours WHILE at least
+    # min_active_tasks were scheduled/in_progress; an empty board stays silent.
+    # Env overrides (win over these): ICDEV_BOARD_STALL_ENABLED,
+    # ICDEV_BOARD_STALL_WINDOW_HOURS, ICDEV_BOARD_STALL_MIN_ACTIVE,
+    # ICDEV_BOARD_STALL_COOLDOWN_HOURS, ICDEV_BOARD_STALL_SEVERITY.
+    board_throughput:
+      enabled: true
+      window_hours: 24            # no 'done' transition in this long => candidate stall
+      min_active_tasks: 1         # ...but only with this much scheduled/in_progress work
+      cooldown_hours: 12          # don't re-open the same stall alert this soon (dedupe)
+      severity: critical          # alerts.severity CHECK: critical | warning | info
     # Adaptive min_fail_to_alert — threshold moved from hardcoded Python constant so the
     # anomaly_detection layer can raise the bar when a category has many historical
     # failures (normal noise) and keep it low when failures are rare (high signal).
