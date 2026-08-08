@@ -7619,7 +7619,15 @@ projects:
     docs/spikes/dwo-00-superplane-workflow-adaptation.md line 116. MANUAL-ONLY - this
     card touches the safety hooks, the executor chain and the approval path, so
     hgx-gate-00 is held in_progress and every epic head declares depends_on_task_id.
-    Open any PR as --draft because pr_watcher auto-merges green kanban branches.
+    PR POLICY CHANGED 2026-08-08 - open PRs NORMALLY, not --draft. The old rule said
+    draft because pr_watcher auto-merges green kanban branches; that was right while
+    the whole card was gated, but once the card went to the dispatcher it became the
+    throttle - a draft is the one thing pr_watcher may NOT touch, so finished green
+    work piled up untouched (8 PRs, then 7 more) and every batch needed a human to
+    shepherd it. The hold that matters is the GATE, not the draft flag: the genuinely
+    dangerous slices sit behind hgx-gate-02 and never dispatch at all. Draft remains
+    correct for anything touching the safety hooks, the executor chain or the
+    approval path - which is exactly the set already behind that gate.
     LLM-agnostic and OS-agnostic are BINDING acceptance criteria on every task, not a
     later hardening pass - no model IDs in Python, catch AgentLoopUnsupported and
     degrade, chain-aware context windows, encoding utf-8 AND newline empty-string on
