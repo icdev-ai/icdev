@@ -634,6 +634,10 @@ def test_the_generated_document_emits_only_validated_spdx_expressions(generated_
             ), f"{token!r} is not on the SPDX License List"
 
 
+# The PostgreSQL side of the upsert lives in tests/pg_tier/, not here: this module's
+# generator fixture forces SQLite, and the PG tier allowlist only admits files that
+# exercise the ambient backend.
+
 # ---------------------------------------------------------------------------
 # Mirror parity
 # ---------------------------------------------------------------------------
