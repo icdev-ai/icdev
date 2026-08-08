@@ -521,13 +521,46 @@ def cmd_pause_runner(json_out: bool) -> int:
 
 
 def cmd_resume_runner(json_out: bool) -> int:
-    """Resume the autonomous kanban runner (release the global pause lease)."""
+    """Resume the autonomous kanban runner (release the global pause lease).
+
+    Falls back to :func:`leases.release_stale` when this session did not take the
+    pause — which is almost always. ``--pause-runner`` exits immediately after
+    acquiring, and each CLI invocation derives a fresh ``local-<uuid>`` session id
+    unless CLAUDE_SESSION_ID is exported, so ``--resume-runner`` could never match
+    its own ``--pause-runner``. Observed 2026-08-07: the board sat paused with its
+    holder (pid 16700) long dead, and the only ways out were a 4-hour TTL or
+    impersonating the dead session via ICDEV_SESSION_ID.
+
+    A pause whose holder is still RUNNING is left alone — that one is deliberate
+    and someone is relying on it.
+    """
     from tools.coordination import leases
+
+    prior = leases.holder(_RUNNER_PAUSE_RESOURCE)
     released = leases.release(_RUNNER_PAUSE_RESOURCE)
+    reclaimed = False
+    if not released:
+        reclaimed = leases.release_stale(_RUNNER_PAUSE_RESOURCE)
+        released = reclaimed
+
+    still = leases.holder(_RUNNER_PAUSE_RESOURCE)
     if json_out:
-        print(json.dumps({"resumed": released}, indent=2))
+        print(json.dumps({
+            "resumed": released,
+            "reclaimed_from_exited_session": reclaimed,
+            "prior_holder": (prior or {}).get("holder_session"),
+            "still_held_by": (still or {}).get("holder_session"),
+        }, indent=2))
+    elif released and reclaimed:
+        print(f"  RUNNER RESUMED (reclaimed from exited session "
+              f"{(prior or {}).get('holder_session')}, pid {(prior or {}).get('pid')})")
+    elif released:
+        print("  RUNNER RESUMED")
+    elif still:
+        print(f"  NOT RESUMED — paused by session {still.get('holder_session')} "
+              f"(pid {still.get('pid')}), whose process is still running.")
     else:
-        print(f"  {'RUNNER RESUMED' if released else 'NOT PAUSED BY THIS SESSION'}")
+        print("  NOT PAUSED — nothing to resume.")
     return 0 if released else 1
 
 
