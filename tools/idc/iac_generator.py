@@ -505,11 +505,11 @@ def main():
         validate_path = _ARTIFACTS_DIR / f"validate_{uid}.py"
         report_path = _ARTIFACTS_DIR / f"iac_report_{uid}.md"
 
-        tf_main_path.write_text(_TF_MAIN.format(ts=ts), encoding="utf-8")
-        tf_vars_path.write_text(_TF_VARIABLES, encoding="utf-8")
-        tf_tfvars_path.write_text(_TFVARS_EXAMPLE, encoding="utf-8")
-        ansible_path.write_text(_ANSIBLE_PLAYBOOK.format(ts=ts), encoding="utf-8")
-        validate_path.write_text(_VALIDATION_SCRIPT.format(ts=ts, uid=uid), encoding="utf-8")
+        tf_main_path.write_text(_TF_MAIN.format(ts=ts), encoding="utf-8", newline="")
+        tf_vars_path.write_text(_TF_VARIABLES, encoding="utf-8", newline="")
+        tf_tfvars_path.write_text(_TFVARS_EXAMPLE, encoding="utf-8", newline="")
+        ansible_path.write_text(_ANSIBLE_PLAYBOOK.format(ts=ts), encoding="utf-8", newline="")
+        validate_path.write_text(_VALIDATION_SCRIPT.format(ts=ts, uid=uid), encoding="utf-8", newline="")
         report_path.write_text(_IAC_REPORT.format(
             ts=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
             tf_main=tf_main_path.relative_to(_ROOT).as_posix(),
@@ -518,7 +518,7 @@ def main():
             ansible_pb=ansible_path.relative_to(_ROOT).as_posix(),
             validate_py=validate_path.relative_to(_ROOT).as_posix(),
             iac_report=report_path.relative_to(_ROOT).as_posix(),
-        ), encoding="utf-8")
+        ), encoding="utf-8", newline="")
 
         output = {
             "gate": "PASS",

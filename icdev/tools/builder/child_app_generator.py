@@ -472,7 +472,7 @@ def _copy_and_adapt_file(src: Path, dest: Path, adaptations: List[str], blueprin
             return True
 
         adapted = _apply_adaptations(content, adaptations, blueprint)
-        dest.write_text(adapted, encoding="utf-8")
+        dest.write_text(adapted, encoding="utf-8", newline="")
         return True
     except Exception as e:
         logger.warning("Failed to copy %s -> %s: %s", src, dest, e)
@@ -592,7 +592,7 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
         "*.pkl binary\n"
         "*.gguf binary\n"
         "*.bin binary\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
     logger.info("Step 1: Generated .gitattributes for cross-platform line endings")
 
@@ -647,7 +647,7 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
         f"\n"
         f"# === Logging ===\n"
         f"LOG_LEVEL=INFO\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
     # Also generate a minimal .env for development
     env_file = child_root / ".env"
@@ -661,7 +661,7 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
         f"RAG_ENABLED=true\n"
         f"RAG_EMBEDDING_MODEL=nomic-embed-text\n"
         f"LOG_LEVEL=INFO\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
     logger.info("Step 1: Generated .env.example and .env for admin LLM configuration")
 
@@ -1170,7 +1170,7 @@ def _generate_mcp_stubs(mcp_dir: Path, agents: list, app_name: str, blueprint: d
         )
 
         stub_path = mcp_dir / f"{server_name}.py"
-        stub_path.write_text(stub_content, encoding="utf-8")
+        stub_path.write_text(stub_content, encoding="utf-8", newline="")
         stubs_written += 1
 
     return stubs_written
@@ -1358,7 +1358,7 @@ def _generate_dashboard_stub(child_root: Path, blueprint: dict) -> bool:
 
     dash_dir = child_root / "tools" / "dashboard"
     dash_dir.mkdir(parents=True, exist_ok=True)
-    (dash_dir / "app.py").write_text(stub_content, encoding="utf-8")
+    (dash_dir / "app.py").write_text(stub_content, encoding="utf-8", newline="")
     return True
 
 
@@ -1527,7 +1527,7 @@ def _copy_full_dashboard(
             count=1,
             flags=re.DOTALL,
         )
-        (dash_dst / "app.py").write_text(content, encoding="utf-8")
+        (dash_dst / "app.py").write_text(content, encoding="utf-8", newline="")
         copied += 1
 
     # 2. Copy templates (excluding PARENT_ONLY_TEMPLATES)
@@ -1557,7 +1557,7 @@ def _copy_full_dashboard(
             dst_file = api_dst / item.name
             content = item.read_text(encoding="utf-8", errors="replace")
             content = _apply_adaptations(content, ["app_name_replace", "db_rename"], blueprint)
-            dst_file.write_text(content, encoding="utf-8")
+            dst_file.write_text(content, encoding="utf-8", newline="")
             copied += 1
 
     # 4. Copy static assets (JS, CSS) — excluding parent-only JS
@@ -1578,7 +1578,7 @@ def _copy_full_dashboard(
         if helper_src.exists():
             content = helper_src.read_text(encoding="utf-8", errors="replace")
             content = _apply_adaptations(content, ["app_name_replace", "db_rename"], blueprint)
-            (dash_dst / helper).write_text(content, encoding="utf-8")
+            (dash_dst / helper).write_text(content, encoding="utf-8", newline="")
             copied += 1
 
     logger.info("Step 3: Full dashboard copied — %d files (GovProposal stripped)", copied)
@@ -1613,14 +1613,14 @@ def step_03_agent_infrastructure(child_root: Path, blueprint: dict, icdev_root: 
         }
 
         card_path = agent_cards_dir / f"{agent['name']}_card.json"
-        card_path.write_text(json.dumps(card, indent=2), encoding="utf-8")
+        card_path.write_text(json.dumps(card, indent=2), encoding="utf-8", newline="")
         cards_written += 1
 
     # Generate agent_config.yaml
     agent_config = _generate_agent_config(agents, app_name, blueprint)
     config_path = child_root / "args" / "agent_config.yaml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(agent_config, encoding="utf-8")
+    config_path.write_text(agent_config, encoding="utf-8", newline="")
 
     # Generate MCP server stubs for each agent
     mcp_dir = child_root / "tools" / "mcp"
@@ -1730,13 +1730,13 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
 
     memory_path = child_root / "memory" / "MEMORY.md"
     memory_path.parent.mkdir(parents=True, exist_ok=True)
-    memory_path.write_text(memory_content, encoding="utf-8")
+    memory_path.write_text(memory_content, encoding="utf-8", newline="")
 
     # Create empty daily log for today
     today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
     log_path = child_root / "memory" / "logs" / f"{today}.md"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(f"# {app_name} — Daily Log {today}\n\n", encoding="utf-8")
+    log_path.write_text(f"# {app_name} — Daily Log {today}\n\n", encoding="utf-8", newline="")
 
     logger.info("Step 4: Memory bootstrapped (MEMORY.md + daily log)")
     return {"memory_md": str(memory_path), "daily_log": str(log_path)}
@@ -1833,7 +1833,7 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
     output_dir = child_root / "tools" / "db"
     output_dir.mkdir(parents=True, exist_ok=True)
     script_path = output_dir / f"init_{sanitized}_db.py"
-    script_path.write_text(script_content, encoding="utf-8")
+    script_path.write_text(script_content, encoding="utf-8", newline="")
 
     logger.info("Step 5: DB init script (fallback) generated at %s", script_path)
     return {"script_path": str(script_path), "method": "fallback"}
@@ -1888,7 +1888,7 @@ def step_06_goals_and_hardprompts(child_root: Path, blueprint: dict, icdev_root:
     for goal_name in goals_config:
         filename = goal_files.get(goal_name, f"{goal_name}.md")
         manifest_content += f"| {goal_name} | goals/{filename} |\n"
-    (goals_dir / "manifest.md").write_text(manifest_content, encoding="utf-8")
+    (goals_dir / "manifest.md").write_text(manifest_content, encoding="utf-8", newline="")
 
     logger.info("Step 6: Goals copied (fallback) — %d goals", copied)
     return {"goals_copied": copied, "method": "fallback"}
@@ -1962,7 +1962,7 @@ app:{app_name.replace("-", "_").title()}Project rdf:type owl:Class ;
     app:hasClassification icdev:{classification.replace(" ", "_").replace("//", "_")} .
 {domain_class_turtle}
 """
-    (ontology_dir / "app.ttl").write_text(app_ttl, encoding="utf-8")
+    (ontology_dir / "app.ttl").write_text(app_ttl, encoding="utf-8", newline="")
 
     # Generate app_config.yaml
     app_config_yaml = f"""# Ontology Configuration — {app_name}
@@ -1985,7 +1985,7 @@ validation:
   validate_on_scaffold: true
   require_parent_import: true
 """
-    (ontology_dir / "app_config.yaml").write_text(app_config_yaml, encoding="utf-8")
+    (ontology_dir / "app_config.yaml").write_text(app_config_yaml, encoding="utf-8", newline="")
 
     # Generate catalog.yaml for local ontology indexing
     catalog_yaml = f"""# Ontology Catalog — {app_name}
@@ -2003,7 +2003,7 @@ catalog:
 classification_tags:
   - {classification}
 """
-    (ontology_dir / "catalog.yaml").write_text(catalog_yaml, encoding="utf-8")
+    (ontology_dir / "catalog.yaml").write_text(catalog_yaml, encoding="utf-8", newline="")
 
     logger.info(
         "Ontology scaffold: app.ttl + app_config.yaml + catalog.yaml for %s (%d domain classes)",
@@ -2542,7 +2542,7 @@ if __name__ == "__main__":
 
     client_path = child_root / "tools" / "a2a" / "icdev_callback_client.py"
     client_path.parent.mkdir(parents=True, exist_ok=True)
-    client_path.write_text(client_content, encoding="utf-8")
+    client_path.write_text(client_content, encoding="utf-8", newline="")
 
     logger.info(
         "Step 8: A2A callback client generated (parent=%s)", "enabled" if parent_cb.get("enabled") else "disabled"
@@ -2608,7 +2608,7 @@ data/*.db-journal
 Thumbs.db
 """
     gitignore_path = child_root / ".gitignore"
-    gitignore_path.write_text(gitignore_content, encoding="utf-8")
+    gitignore_path.write_text(gitignore_content, encoding="utf-8", newline="")
     copied += 1
 
     # Generate requirements.txt
@@ -2629,7 +2629,7 @@ Thumbs.db
     if blueprint.get("capabilities", {}).get("mbse"):
         requirements.append("# MBSE: no additional deps (stdlib xml.etree)")
     req_path = child_root / "requirements.txt"
-    req_path.write_text("\n".join(requirements) + "\n", encoding="utf-8")
+    req_path.write_text("\n".join(requirements) + "\n", encoding="utf-8", newline="")
     copied += 1
 
     logger.info("Step 9: CI/CD setup — %d files copied", copied)
@@ -2669,7 +2669,7 @@ def _copy_license_files(child_root: Path, blueprint: dict, icdev_root: Path) -> 
     ]:
         init_file = pkg_dir / "__init__.py"
         if not init_file.exists():
-            init_file.write_text("", encoding="utf-8")
+            init_file.write_text("", encoding="utf-8", newline="")
 
     # Always copy license_validator.py
     validator_src = icdev_root / "tools" / "saas" / "licensing" / "license_validator.py"
@@ -2702,7 +2702,7 @@ def _copy_license_files(child_root: Path, blueprint: dict, icdev_root: Path) -> 
         data_dir = child_root / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         lic_path = data_dir / "license.json"
-        lic_path.write_text(json.dumps(license_info, indent=2), encoding="utf-8")
+        lic_path.write_text(json.dumps(license_info, indent=2), encoding="utf-8", newline="")
         files_copied.append("data/license.json")
 
     # D-CHILD-5: Apache-2.0 license for government deliveries
@@ -2730,7 +2730,7 @@ def _copy_license_files(child_root: Path, blueprint: dict, icdev_root: Path) -> 
             f"See the License for the specific language governing permissions and\n"
             f"limitations under the License.\n"
         )
-        child_license.write_text(apache_text, encoding="utf-8")
+        child_license.write_text(apache_text, encoding="utf-8", newline="")
         files_copied.append("LICENSE (Apache-2.0, generated fallback)")
 
     logger.info(
@@ -2784,7 +2784,7 @@ def step_09c_claude_code_config(
                 # Adapt pre_tool_use.py: filter APPEND_ONLY_TABLES to child's schema
                 if hook_file.name == "pre_tool_use.py":
                     content = _adapt_pre_tool_use_for_child(content, blueprint)
-                dst_file.write_text(content, encoding="utf-8")
+                dst_file.write_text(content, encoding="utf-8", newline="")
                 files_copied.append(f".claude/hooks/{hook_file.name}")
 
     # --- Commands (exclude PARENT_ONLY_COMMANDS) ---
@@ -2799,7 +2799,7 @@ def step_09c_claude_code_config(
             dst_file = cmds_dst / cmd_file.name
             content = cmd_file.read_text(encoding="utf-8", errors="replace")
             content = content.replace("ICDEV™", blueprint["app_name"])
-            dst_file.write_text(content, encoding="utf-8")
+            dst_file.write_text(content, encoding="utf-8", newline="")
             files_copied.append(f".claude/commands/{cmd_file.name}")
 
         # E2E specs (exclude PARENT_ONLY_E2E)
@@ -2813,7 +2813,7 @@ def step_09c_claude_code_config(
                     continue
                 dst_file = e2e_dst / e2e_file.name
                 content = e2e_file.read_text(encoding="utf-8", errors="replace")
-                dst_file.write_text(content, encoding="utf-8")
+                dst_file.write_text(content, encoding="utf-8", newline="")
                 files_copied.append(f".claude/commands/e2e/{e2e_file.name}")
 
     # --- Skills (exclude PARENT_ONLY_SKILLS + capability-gated, D-CHILD-10) ---
@@ -2849,7 +2849,7 @@ def step_09c_claude_code_config(
         settings_dst = claude_dst / "settings.json"
         content = settings_src.read_text(encoding="utf-8", errors="replace")
         content = content.replace("ICDEV™", blueprint["app_name"])
-        settings_dst.write_text(content, encoding="utf-8")
+        settings_dst.write_text(content, encoding="utf-8", newline="")
         files_copied.append(".claude/settings.json")
 
     # --- file_access_tiers.yaml ---
@@ -2976,7 +2976,7 @@ def step_10_csp_mcp_config(child_root: Path, blueprint: dict) -> dict:
             }
 
     mcp_path = child_root / ".mcp.json"
-    mcp_path.write_text(json.dumps(mcp_config, indent=2), encoding="utf-8")
+    mcp_path.write_text(json.dumps(mcp_config, indent=2), encoding="utf-8", newline="")
 
     # Generate args/csp_mcp_config.yaml
     csp_config_lines = [
@@ -2995,7 +2995,7 @@ def step_10_csp_mcp_config(child_root: Path, blueprint: dict) -> dict:
 
     csp_config_path = child_root / "args" / "csp_mcp_config.yaml"
     csp_config_path.parent.mkdir(parents=True, exist_ok=True)
-    csp_config_path.write_text("\n".join(csp_config_lines) + "\n", encoding="utf-8")
+    csp_config_path.write_text("\n".join(csp_config_lines) + "\n", encoding="utf-8", newline="")
 
     # Generate context/agentic/csp_integration.md
     integration_lines = [
@@ -3030,7 +3030,7 @@ def step_10_csp_mcp_config(child_root: Path, blueprint: dict) -> dict:
 
     integration_path = child_root / "context" / "agentic" / "csp_integration.md"
     integration_path.parent.mkdir(parents=True, exist_ok=True)
-    integration_path.write_text("\n".join(integration_lines) + "\n", encoding="utf-8")
+    integration_path.write_text("\n".join(integration_lines) + "\n", encoding="utf-8", newline="")
 
     logger.info("Step 10: CSP MCP config — %d servers for %s", len(csp_servers), provider)
     return {
@@ -3195,7 +3195,7 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
 
     readme_content = "\n".join(sections)
     readme_path = child_root / "README.md"
-    readme_path.write_text(readme_content, encoding="utf-8")
+    readme_path.write_text(readme_content, encoding="utf-8", newline="")
 
     logger.info("Step 11b: README.md generated (%d sections)", len(sections))
     return {"readme_path": str(readme_path), "sections_count": len(sections)}
@@ -3268,7 +3268,7 @@ Every failure strengthens the system. Be direct. Be reliable. Get it done.
         method = "fallback"
 
     claude_md_path = child_root / "CLAUDE.md"
-    claude_md_path.write_text(content, encoding="utf-8")
+    claude_md_path.write_text(content, encoding="utf-8", newline="")
 
     line_count = content.count("\n") + 1
     logger.info("Step 11: CLAUDE.md generated (%d lines, method=%s)", line_count, method)
@@ -3371,7 +3371,7 @@ def step_12_audit_and_registration(child_root: Path, blueprint: dict, db_path: P
                 }
                 gm_path = child_root / "data" / "genome_manifest.json"
                 gm_path.parent.mkdir(parents=True, exist_ok=True)
-                gm_path.write_text(json.dumps(genome_manifest, indent=2), encoding="utf-8")
+                gm_path.write_text(json.dumps(genome_manifest, indent=2), encoding="utf-8", newline="")
                 logger.info(
                     "Step 12: Wrote genome manifest (v%s) to child",
                     genome_version,
@@ -3395,7 +3395,7 @@ def step_12_audit_and_registration(child_root: Path, blueprint: dict, db_path: P
     }
     summary_path = child_root / "data" / "generation_summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8", newline="")
 
     logger.info("Step 12: Audit complete, registered=%s", registered)
     return {"registered": registered, "summary_path": str(summary_path)}
@@ -3448,7 +3448,7 @@ def step_13_production_audit(child_root: Path, blueprint: dict) -> dict:
         data_dir = child_root / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         audit_path = data_dir / "production_audit.json"
-        audit_path.write_text(json.dumps(audit_data, indent=2, default=str), encoding="utf-8")
+        audit_path.write_text(json.dumps(audit_data, indent=2, default=str), encoding="utf-8", newline="")
 
         # Summary
         checks = audit_data.get("checks", [])
@@ -3498,7 +3498,7 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
         data_dir = child_root / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         report_path = data_dir / "gotcha_validation.json"
-        report_path.write_text(json.dumps(report_dict, indent=2, default=str), encoding="utf-8")
+        report_path.write_text(json.dumps(report_dict, indent=2, default=str), encoding="utf-8", newline="")
 
         # Log warnings for failed checks
         for check in report_dict.get("checks", []):

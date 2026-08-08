@@ -119,7 +119,7 @@ class ExportPackGenerator:
                 lines.append(f"### Phase {i}\n")
                 lines.append(phase_text)
                 lines.append("")
-        path.write_text("\n".join(lines), encoding="utf-8")
+        path.write_text("\n".join(lines), encoding="utf-8", newline="")
         return path
 
     def _write_coa_comparison(
@@ -150,7 +150,7 @@ class ExportPackGenerator:
             ]
             for label, values in rows:
                 lines.append("| " + label + " | " + " | ".join(values) + " |")
-        path.write_text("\n".join(lines), encoding="utf-8")
+        path.write_text("\n".join(lines), encoding="utf-8", newline="")
         return path
 
     def _write_budget_table(
@@ -171,7 +171,7 @@ class ExportPackGenerator:
             for phase in budget.phases:
                 lines.append(f"| {phase.phase_name} | ${phase.cost_usd:,.0f} |")
             lines.append(f"| **Total** | **${budget.total_usd:,.0f}** |")
-        path.write_text("\n".join(lines), encoding="utf-8")
+        path.write_text("\n".join(lines), encoding="utf-8", newline="")
         return path
 
     def _write_roi_analysis(
@@ -213,7 +213,7 @@ class ExportPackGenerator:
                 else:
                     for row in roi.sensitivity_table:
                         lines.append(f"- {row}")
-        path.write_text("\n".join(lines), encoding="utf-8")
+        path.write_text("\n".join(lines), encoding="utf-8", newline="")
         return path
 
     def _write_slide_outline(
@@ -232,7 +232,7 @@ class ExportPackGenerator:
             lines.append("*Formatted as slide notes — one bullet per slide.*\n")
             for i, bullet in enumerate(narrative.slide_bullets, 1):
                 lines.append(f"**Slide {i}:** {bullet}\n")
-        path.write_text("\n".join(lines), encoding="utf-8")
+        path.write_text("\n".join(lines), encoding="utf-8", newline="")
         return path
 
     def _write_workflow_summary(
@@ -253,7 +253,7 @@ class ExportPackGenerator:
             "roi_pct": getattr(roi, "roi_pct", None) if roi else None,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
-        path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(summary, indent=2), encoding="utf-8", newline="")
         return path
 
 

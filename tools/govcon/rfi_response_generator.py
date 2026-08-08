@@ -374,7 +374,7 @@ See `hardprompts/govcon_rfi_appendix.md` for full CoT generation instructions.
 
     # Write markdown
     md_path = output_path / f"{base_name}.md"
-    md_path.write_text(md_content, encoding="utf-8")
+    md_path.write_text(md_content, encoding="utf-8", newline="")
 
     # Write capability scores JSON for human/LLM reference
     scores_path = output_path / f"{base_name}_capability_scores.json"
@@ -384,7 +384,7 @@ See `hardprompts/govcon_rfi_appendix.md` for full CoT generation instructions.
         "objectives": rfi.get("objectives", []),
         "capability_scores": scores,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-    }, indent=2), encoding="utf-8")
+    }, indent=2), encoding="utf-8", newline="")
 
     result = {
         "status": "ok",
