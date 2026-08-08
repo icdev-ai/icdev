@@ -41,6 +41,10 @@ _MAX_LISTED_PER_CARD         = 20     # findings enumerated in a batched card bo
 # Human-readable card titles per finding type.  Also the dedupe key: the
 # open-card guard matches on "[NMCE] <label> —", so these strings are
 # load-bearing, not cosmetic.
+# A session in one of these states is closed for business.  Nothing about it —
+# including a protocol plan still sitting in 'draft' — should raise a card.
+_TERMINAL_SESSION_STATUSES = ("complete", "archived")
+
 _TYPE_LABELS = {
     "stale_migration_session": "Stale migration sessions",
     "eol_no_migration":        "EOL devices with no migration",
@@ -139,10 +143,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     try:
         from tools.migration_canvas.db.init_db import get_connection as _mc_conn2
         with _mc_conn2() as mc:
+            # INNER JOIN, and exclude terminal sessions: closing a session must
+            # actually close it.  Without the join an archived session with a
+            # leftover draft plan re-raised a card every cycle forever — which
+            # is a second, independent flood path from the stale-session one.
+            # An orphaned plan (no parent row) is dropped by the join for the
+            # same reason: there is nobody left to action it.
+            placeholders = ",".join(["%s"] * len(_TERMINAL_SESSION_STATUSES))
             drafts = mc.execute(
-                """SELECT session_id, protocol, created_at
-                   FROM mc_net_protocol_plans
-                   WHERE status = 'draft'"""
+                f"""SELECT p.session_id, p.protocol, p.created_at
+                   FROM mc_net_protocol_plans p
+                   JOIN mc_net_sessions s ON s.id = p.session_id
+                   WHERE p.status = 'draft'
+                     AND s.status NOT IN ({placeholders})""",  # nosec B608
+                _TERMINAL_SESSION_STATUSES,
             ).fetchall()
         for d in drafts:
             age = _days_since(d["created_at"])

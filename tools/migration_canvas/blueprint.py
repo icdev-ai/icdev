@@ -51,6 +51,16 @@ from tools.migration_canvas.migration_engine import (  # noqa: E402
 from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
+# Network-migration session lifecycle vocabulary.  TERMINAL is the load-bearing
+# half: the migration_canvas Genesis reflex only raises kanban cards for sessions
+# *outside* this set, so moving a session to 'complete' or 'archived' is what
+# actually stops it re-raising a review card every 24h.  Kept in sync with
+# _TERMINAL_SESSION_STATUSES in tools/genesis/reflexes/migration_canvas.py and
+# the active-session query in network_migration.py.
+TERMINAL_SESSION_STATUSES = ("complete", "archived")
+SESSION_STATUSES = ("draft", "in_progress") + TERMINAL_SESSION_STATUSES
+
+
 def create_migration_blueprint():
     """Create and return the Migration Design Canvas Blueprint.
 
@@ -935,13 +945,24 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
+        if "status" in fields and fields["status"] not in SESSION_STATUSES:
+            return jsonify({
+                "error": f"Invalid status '{fields['status']}'. Expected one of: "
+                         + ", ".join(SESSION_STATUSES)
+            }), 400
         set_clause = ", ".join(f"{k}=%s" for k in fields)
         with get_connection() as conn:
+            if conn.execute("SELECT id FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone() is None:
+                return jsonify({"error": "Session not found"}), 404
             conn.execute(
                 f"UPDATE mc_net_sessions SET {set_clause}, updated_at=%s WHERE id=%s",  # nosec B608
                 list(fields.values()) + [now_isoformat(), sid],
             )
             conn.commit()
+        if "status" in fields:
+            _audit(sid, "net_session_status_changed", f"status={fields['status']}")
+        else:
+            _audit(sid, "net_session_updated", "fields=" + ",".join(sorted(fields)))
         return jsonify({"ok": True})
 
     @bp.route("/api/network-migration/<sid>/hardware-profiles", methods=["GET"])

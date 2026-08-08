@@ -20,6 +20,11 @@
 .nw-readiness-bar { height: 6px; border-radius: 4px; background: #27ae60; transition: width 0.4s; }
 .nw-readiness-score { font-size: 20px; font-weight: 700; color: #27ae60; }
 .nw-readiness-label { font-size: 11px; color: #4a6080; }
+.nw-lifecycle { padding: 0 16px 16px; }
+.nw-lifecycle-label { font-size: 11px; color: #4a6080; margin-bottom: 4px; }
+.nw-lifecycle-status { font-size: 12px; font-weight: 700; color: #eaeaea; margin-bottom: 8px; }
+.nw-lifecycle-hint { font-size: 10px; color: #4a6080; line-height: 1.4; margin-top: 6px; }
+.nw-lifecycle .btn { width: 100%; padding: 7px 10px; font-size: 12px; }
 
 /* ── Main content ─────────────────────────────────────────────── */
 .nw-main { flex: 1; overflow-y: auto; padding: 24px 28px; }
@@ -374,6 +379,12 @@
       <div class="nw-readiness-label">Readiness</div>
       <div class="nw-readiness-score" id="sidebar-score">0%</div>
       <div class="nw-readiness-bar-wrap"><div class="nw-readiness-bar" id="sidebar-bar" style="width:0%"></div></div>
+    </div>
+    <div class="nw-lifecycle" id="nw-lifecycle" style="display:none">
+      <div class="nw-lifecycle-label">Session status</div>
+      <div class="nw-lifecycle-status" id="sidebar-session-status">—</div>
+      <button class="btn btn-secondary" id="session-lifecycle-btn" onclick="toggleSessionLifecycle()">Close / Archive session</button>
+      <div class="nw-lifecycle-hint" id="session-lifecycle-hint"></div>
     </div>
   </div>
 
@@ -1459,10 +1470,57 @@ async function createSession() {
       selected_coa: selectedCOA,
     });
     _sid = data.id;
+    renderSessionLifecycle(data.status || 'in_progress');
     toast('Session created: ' + _sid);
     goStep(2);
     history.replaceState(null, '', '/migration-canvas/network-migration/' + _sid);
   } catch(e) { toast('Create session failed: ' + e.message, true); }
+}
+
+// ── Session lifecycle ─────────────────────────────────────────────
+// Terminal statuses must match _TERMINAL_SESSION_STATUSES in
+// tools/migration_canvas/blueprint.py and the reflex of the same name.  Until
+// this control existed nothing in the wizard ever moved a session out of
+// 'in_progress', so every session went stale after 7 days and the
+// migration_canvas reflex raised a kanban card for it — forever.
+const TERMINAL_SESSION_STATUSES = ['complete', 'archived'];
+let _sessionStatus = '';
+
+function renderSessionLifecycle(status) {
+  _sessionStatus = status || 'in_progress';
+  const wrap = document.getElementById('nw-lifecycle');
+  if (!_sid) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const terminal = TERMINAL_SESSION_STATUSES.includes(_sessionStatus);
+  document.getElementById('sidebar-session-status').textContent =
+    _sessionStatus.replace('_', ' ');
+  const btn = document.getElementById('session-lifecycle-btn');
+  btn.textContent = terminal ? 'Reopen session' : 'Close / Archive session';
+  btn.className = terminal ? 'btn btn-secondary' : 'btn btn-danger';
+  document.getElementById('session-lifecycle-hint').textContent = terminal
+    ? 'Archived sessions stay readable and stop appearing as open migration work.'
+    : 'Archiving keeps the session readable but stops it being flagged as stale work.';
+}
+
+async function toggleSessionLifecycle() {
+  if (!_sid) { toast('Create a session first', true); return; }
+  const terminal = TERMINAL_SESSION_STATUSES.includes(_sessionStatus);
+  const next = terminal ? 'in_progress' : 'archived';
+  const prompt = terminal
+    ? `Reopen session ${_sid}?`
+    : `Archive session ${_sid}?\n\nIt stays readable, but is no longer tracked as open migration work.`;
+  if (!confirm(prompt)) return;
+  const btn = document.getElementById('session-lifecycle-btn');
+  btn.disabled = true;
+  try {
+    await api('PATCH', `/api/network-migration/${_sid}`, {status: next});
+    renderSessionLifecycle(next);
+    toast(terminal ? 'Session reopened.' : 'Session archived.');
+  } catch(e) {
+    toast('Could not update session status: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── STEP 1 — COA questionnaire and recommendation ─────────────────
@@ -2770,6 +2828,7 @@ function escapeHtml(s) {
     try {
       const data = await api('GET', `/api/network-migration/${_sid}`);
       const sess = data.session;
+      renderSessionLifecycle(sess.status);
       // Pre-fill step 1
       document.getElementById('src-model').value = sess.src_model || '';
       document.getElementById('tgt-model').value = sess.tgt_model || '';
