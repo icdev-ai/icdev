@@ -20,6 +20,23 @@ function-calling tool schema plus a ``{tool_name: handler}`` map. Handlers recei
 ``(input_dict, stop_event)`` and return a string result. A handler may return the
 :data:`DONE` sentinel to terminate the loop (the ``done`` tool pattern).
 
+**Handler cancellation contract.** ``stop_event`` is the run's cancellation
+token, and a handler is *expected to poll it*::
+
+    def handler(inp, stop):
+        for chunk in big_job():
+            if stop is not None and stop.is_set():
+                return "cancelled"
+            ...
+
+The loop stops waiting on a handler as soon as the token is set, so a run always
+returns promptly — but Python cannot kill a thread, so a handler that ignores the
+token keeps running in the background until it finishes on its own. Poll it in
+any loop, before each subprocess launch, and between phases of a long job.
+``tools/agent_runtime/dispatch.py`` injects the token into any handler whose
+signature declares ``stop_event``; ``builtin_tools._handle_search_files`` is the
+reference implementation.
+
 Improvements over v1:
   - **Parallel read-only tool execution**: tools with ``"is_read_only": true`` in
     their schema run concurrently via a ``ThreadPoolExecutor``; state-modifying
@@ -96,6 +113,16 @@ class AgentLoopUnsupported(RuntimeError):
 
 class AgentLoopTimeout(RuntimeError):
     """Raised when ``max_iterations`` is reached without the LLM ending the turn."""
+
+
+class AgentLoopStopped(RuntimeError):
+    """Raised internally when the caller's ``stop_event`` fires mid-wait.
+
+    :func:`run_agent_loop` catches this at every wait site and converts it into
+    a clean ``truncation_reason="stop_event"`` exit — it is never propagated to
+    the caller. It exists so a wait on an abandoned tool (or LLM call) can be
+    abandoned without conflating it with a per-call timeout.
+    """
 
 
 class AgentLoopCompactionError(RuntimeError):
@@ -979,6 +1006,82 @@ def _submit_traced(executor: Any, fn: Any, *args: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Cancellation (hgx-ctxw-03)
+# ---------------------------------------------------------------------------
+
+#: How often a blocking wait re-checks ``stop_event``. Small enough that Ctrl-C
+#: feels immediate, large enough that the poll is free next to any real tool.
+_STOP_POLL_SECONDS = 0.2
+
+#: ``tool_result`` recorded for a call abandoned or skipped by a cancellation.
+#: A real string (not an empty one) because the provider protocol requires every
+#: ``tool_use`` block to be answered — and because a resumed session should read
+#: as "the operator stopped this", not "the tool failed".
+_STOPPED_TOOL_RESULT = "Tool call abandoned: the run was stopped by the operator."
+
+
+def _await_future(
+    fut: Any,
+    timeout: float | None,
+    stop_event: "threading.Event | None",
+) -> Any:
+    """Wait for ``fut`` while staying responsive to ``stop_event``.
+
+    ``Future.result(timeout=...)`` is a single uninterruptible sleep, so a run
+    that is cancelled while a 600s tool is in flight would not notice for 600s.
+    This waits in :data:`_STOP_POLL_SECONDS` slices instead and gives up as soon
+    as the token is set. The worker thread is *not* killed (Python cannot) — it
+    is abandoned, which is why handlers are expected to poll the token too.
+
+    Raises:
+        AgentLoopStopped: ``stop_event`` was set while waiting.
+        concurrent.futures.TimeoutError: ``timeout`` elapsed first.
+    """
+    if stop_event is None:
+        return fut.result(timeout=timeout)
+    deadline = None if timeout is None else time.monotonic() + float(timeout)
+    while True:
+        if stop_event.is_set():
+            fut.cancel()  # only bites if it never started; harmless otherwise
+            raise AgentLoopStopped("cancelled by stop_event")
+        slice_seconds = _STOP_POLL_SECONDS
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _futures.TimeoutError()
+            slice_seconds = min(slice_seconds, remaining)
+        try:
+            return fut.result(timeout=slice_seconds)
+        except _futures.TimeoutError:
+            continue  # slice expired, not the caller's timeout — re-check + wait
+
+
+@_contextlib.contextmanager
+def _tool_executor(max_workers: int, stop_event: "threading.Event | None") -> Any:
+    """A ``ThreadPoolExecutor`` whose teardown does not block a cancelled run.
+
+    ``with ThreadPoolExecutor(...)`` calls ``shutdown(wait=True)``, so leaving
+    the loop after a cancellation would block until every abandoned tool thread
+    finished — exactly the wait the cancellation was meant to skip. When the
+    token is set we drop the queue and return immediately instead.
+
+    Threads already running still run to completion in the background (and are
+    joined by the interpreter's own atexit hook at process exit), so a handler
+    that ignores ``stop_event`` can still delay a *process* exit. It no longer
+    delays the *turn*.
+    """
+    executor = _futures.ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        yield executor
+    finally:
+        abandon = stop_event is not None and stop_event.is_set()
+        try:
+            executor.shutdown(wait=not abandon, cancel_futures=abandon)
+        except TypeError:  # pragma: no cover — cancel_futures is 3.9+
+            executor.shutdown(wait=not abandon)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -1058,7 +1161,16 @@ def run_agent_loop(
         max_tokens:    Per-turn max output tokens.
         temperature:   Sampling temperature.
         effort:        Router effort tier (low/medium/high/xhigh/max).
-        stop_event:    When set, the loop exits at the next turn boundary.
+        stop_event:    Cancellation token (hgx-ctxw-03). When set, the loop
+                       stops at its next boundary — between turns, between
+                       sequential tools, and mid-wait on an in-flight tool or
+                       LLM call (waits poll the token every
+                       :data:`_STOP_POLL_SECONDS`). The run ends with
+                       ``truncated=False`` and
+                       ``truncation_reason="stop_event"``. Abandoned tool
+                       threads are NOT killed — Python cannot — so handlers
+                       should poll the token they are handed (see the module
+                       docstring's handler contract).
         on_turn:       Optional ``callback(turn, response, messages)`` after each
                        turn (for audit/persist/observability). Kept for backward compat.
         on_pre_tool_use: Optional ``hook(name, input) -> str | None`` called before
@@ -1368,7 +1480,7 @@ def run_agent_loop(
     # to `runtime_invocations` and reads the id from the ambient context rather
     # than being handed it through the fixed `handler(input, stop)` contract.
     _turn_trace, _correlation = _open_run_observability(trace_id, session_id)
-    with _correlation, _futures.ThreadPoolExecutor(max_workers=16) as executor:
+    with _correlation, _tool_executor(16, stop_event) as executor:
         for turn in range(max_iterations):
             # Opening turn N closes turn N-1's span. The turn body has a dozen
             # `break` paths; `finish()` after the loop catches whichever one ran.
@@ -1490,7 +1602,15 @@ def run_agent_loop(
                 if llm_call_timeout_seconds:
                     _llm_fut = _submit_traced(executor, router.invoke, llm_function, request)
                     try:
-                        response = _llm_fut.result(timeout=llm_call_timeout_seconds)
+                        response = _await_future(
+                            _llm_fut, llm_call_timeout_seconds, stop_event
+                        )
+                    except AgentLoopStopped:
+                        # Cancelled while the provider was thinking. Leave the
+                        # loop on the clean stop path — not truncated, not an
+                        # error — so the caller sees truncation_reason=stop_event.
+                        logger.info("agent_loop: stopped during LLM call on turn %d", turn)
+                        break
                     except _futures.TimeoutError:
                         logger.error(
                             "agent_loop: LLM call timed out after %.0fs (turn %d/%d)",
@@ -1618,11 +1738,14 @@ def run_agent_loop(
                 tc_name = tc.get("name") or ""
                 tc_input = tc.get("input") or {}
                 try:
-                    out = fut.result(timeout=tool_timeout_seconds)
+                    out = _await_future(fut, tool_timeout_seconds, stop_event)
                     if out is DONE or out == DONE:
                         tc_results[i] = (DONE, False, None)
                     else:
                         tc_results[i] = (str(out), False, None)
+                except AgentLoopStopped:
+                    tc_results[i] = (_STOPPED_TOOL_RESULT, True, "stopped")
+                    logger.info("agent_loop: abandoned handler %s — run stopped", tc_name)
                 except _futures.TimeoutError:
                     msg = f"Tool {tc_name!r} timed out after {tool_timeout_seconds}s."
                     tc_results[i] = (msg, True, msg)
@@ -1634,6 +1757,11 @@ def run_agent_loop(
 
             # -- Sequential tools: one at a time --
             for i in seq_indices:
+                # A cancellation lands between two sequential tools far more
+                # often than inside one — never start the next after a stop.
+                if stop_event is not None and stop_event.is_set():
+                    tc_results[i] = (_STOPPED_TOOL_RESULT, True, "stopped")
+                    continue
                 tc = tool_calls[i]
                 tc_name = tc.get("name") or ""
                 tc_input = tc.get("input") or {}
@@ -1649,13 +1777,16 @@ def run_agent_loop(
                 try:
                     if tool_timeout_seconds is not None:
                         fut = _submit_traced(executor, handler, tc_input, stop_event)
-                        out = fut.result(timeout=tool_timeout_seconds)
+                        out = _await_future(fut, tool_timeout_seconds, stop_event)
                     else:
                         out = handler(tc_input, stop_event)
                     if out is DONE or out == DONE:
                         tc_results[i] = (DONE, False, None)
                     else:
                         tc_results[i] = (str(out), False, None)
+                except AgentLoopStopped:
+                    tc_results[i] = (_STOPPED_TOOL_RESULT, True, "stopped")
+                    logger.info("agent_loop: abandoned handler %s — run stopped", tc_name)
                 except _futures.TimeoutError:
                     msg = f"Tool {tc_name!r} timed out after {tool_timeout_seconds}s."
                     tc_results[i] = (msg, True, msg)
@@ -1795,6 +1926,14 @@ def run_agent_loop(
                 )
             except Exception:
                 pass  # non-fatal
+
+            # Cancellation boundary (hgx-ctxw-03). Placed after the checkpoint
+            # so a stopped turn is still resumable, but BEFORE the budget and
+            # circuit-breaker checks below: a stop that abandoned this turn's
+            # tools would otherwise be reported as
+            # error_consecutive_tool_failures rather than as a stop.
+            if stop_event is not None and stop_event.is_set():
+                break
 
             # Hard budget check after executing all tools this turn. Kept
             # alongside the pre-dispatch check: a tool handler may itself run an
