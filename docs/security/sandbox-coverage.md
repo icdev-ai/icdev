@@ -345,6 +345,21 @@ recommend whether to enable reasoned codegen.
   - All routes are behind `pc_login_required` / `pc_role_required`; collab identity is server-derived, never body-supplied.
 - **Revisit if:** any pipeline content is ever passed to a shell command, compiled/executed, or rendered outside Jinja2 auto-escape → re-decide as **sandboxed**.
 
+### Gap 18 — SBOM dependency resolution (`tools/compliance/dependency_resolver.py`)
+
+**Modules:** `tools/compliance/dependency_resolver.py` (mirrored at `icdev/tools/compliance/dependency_resolver.py`), consumed by `tools/compliance/sbom_generator.py`
+
+**Ingress path:** To satisfy the SBOM 2026 **Coverage** element (all transitive dependencies, no minimum depth — sbx-cov-01), the resolver reads a target project's **lockfiles and installed package metadata** from `projects.directory_path`: `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `*.dist-info/METADATA`, `package-lock.json`, `yarn.lock` (v1 text and Berry YAML), `go.mod`, `go.sum`, `Cargo.lock`, `mvn dependency:list` output, `gradle.lockfile`, `obj/project.assets.json`, `packages.lock.json`. These files originate with whoever authored the target project, so they are **not** first-party content.
+
+- **Decision:** **bypass-documented** (parse-only; no execution path exists)
+- **Rationale:** The module parses and never evaluates. Its entire toolkit is `json.loads`, `tomllib`/`tomli` (a non-executing parser), `yaml.safe_load`, `re`, and `importlib.metadata.PathDistribution`. It contains **no** `subprocess`, `os.system`, `exec`, `eval`, `__import__`, or `pickle` — this is a deliberate design constraint, not an accident: resolution is **offline-first** precisely so it never shells out to `npm`, `mvn`, `gradle`, `go` or `dotnet`, which is what makes it usable in an air-gapped enclave and simultaneously removes the arbitrary-execution surface that invoking a package manager would create. `PathDistribution` reads `*.dist-info/METADATA` as text with `email.parser`; it does **not** import the distribution, so no third-party code in the target environment runs. Every parser is wrapped so a malformed or hostile lockfile degrades that ecosystem to `declared-only` with a stated reason rather than raising — a crafted file can suppress its own resolution, but suppression is *reported in the SBOM's coverage statement*, not silent.
+- **Guardrails:**
+  - `yaml.safe_load` only. `yaml.load` instantiates arbitrary Python objects and is banned here.
+  - Per-ecosystem resolution runs inside a `try/except` in `resolve_project`; an exception becomes an `incomplete` coverage entry naming the exception type, so a bad lockfile cannot abort SBOM generation or be mistaken for "this ecosystem has no dependencies".
+  - `tests/test_sbom_coverage_resolution.py::test_resolver_never_executes_what_it_parses` asserts the absence of every execution primitive in **both** the root copy and the `icdev/` mirror, so the bypass cannot silently lapse.
+  - `tests/test_sbom_coverage_resolution.py::test_a_corrupt_lockfile_degrades_rather_than_aborting_the_sbom` pins the fail-open-but-loud behaviour.
+- **Revisit if:** the resolver ever shells out to a package manager to obtain a resolved set (`mvn dependency:list`, `gradle dependencies`, `go list -m all`, `npm ls`, `dotnet restore`) — that would be a real execution path over attacker-influenced project content and must be re-decided as **sandboxed**; or if it gains a plugin/entry-point mechanism that imports code from the target environment rather than reading its metadata.
+
 ### Bypass — non-LLM code generators (template/scaffold emitters)
 
 These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM
