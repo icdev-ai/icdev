@@ -133,12 +133,12 @@ def list_contexts():
 
 @chat_api.route("/contexts/<context_id>", methods=["GET"])
 def get_context(context_id):
-    """Get context details with recent messages."""
+    """Get context details with recent messages and any standing goals."""
     err = _require_chat()
     if err:
         return err
 
-    ctx = chat_manager.get_context(context_id)
+    ctx = chat_manager.get_context_status(context_id)
     if not ctx:
         return jsonify({"error": "Context not found"}), 404
 
@@ -224,13 +224,15 @@ def get_messages(context_id):
 def get_state(context_id):
     """Get context state with dirty-tracking (Feature 4).
 
+    Includes ``standing_goals`` when this conversation has any (hgx-goal-03).
+
     Query params: since_version? (dirty version)
     """
     err = _require_chat()
     if err:
         return err
 
-    ctx = chat_manager.get_context(context_id)
+    ctx = chat_manager.get_context_status(context_id)
     if not ctx:
         return jsonify({"error": "Context not found"}), 404
 
