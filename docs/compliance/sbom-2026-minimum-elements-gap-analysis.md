@@ -269,6 +269,13 @@ That is the gate working, not the gate misconfigured. Note that the conditions i
 are declarative — no central engine evaluates the `block_on` lists automatically — so the
 score above is what a caller of the gate sees today, not a CI failure.
 
+**Also updated by sbx-prc-02.** Conformance is one half of the question; currency is the
+other, and a document can be fully conformant and still describe a build that shipped three
+commits ago. The freshness check now asks the per-build question first —
+`sbom_not_regenerated_for_current_build` and `sbom_build_identity_unknown` joined
+`sbd.warning`, the first also joined `swft.warning`, and `sbom_required_per_build: true`
+sits beside `sbom_max_age_days` in both threshold blocks. See §2.9 and §3.3.
+
 ### 2.6 SPDX
 
 There is **no SPDX generator and no SPDX parser** anywhere in the tree. SPDX appears only in
@@ -409,7 +416,57 @@ waits on the `_persist_components` writer that sbx-fld-04 introduces — this ta
 `producer_db_value()`, which never returns `NULL`, for that writer to call in one line. Adding a
 second writer here would only collide with it.
 
----
+### 2.9 Frequency and Accommodation of Updates (sbx-prc-02)
+
+Two practices, one mechanism, in `tools/compliance/sbom_revision.py`. Migration
+`20260808063350_sbom_revision_frequency` adds the three columns the mechanism needs on top of the
+`supersedes_sbom_id` that sbx-fnd-02 left for it: `content_digest`, `source_revision`,
+`revision_reason`.
+
+**The chain is append-only, and supersession is derived.** `apply_correction` inserts a
+*successor* row whose `supersedes_sbom_id` points at the row it replaces, and appends an
+`sbom_corrected` audit event. It issues no `UPDATE` and no `DELETE`. The corrected row keeps every
+value it had — file path, signature, component count, version — because a recipient may hold that
+exact document and its record has to keep describing it. There is deliberately **no `superseded`
+column**: a row is superseded exactly when another row points at it, which
+`revision_chain` computes at read time and marks there. `tests/test_sbom_revision_2026.py` asserts
+both halves — the predecessor row compared field-by-field before and after, and every statement the
+correction issues inspected for a mutation.
+
+**Content digest, not file hash.** Every regeneration mints a fresh `serialNumber`, timestamp and
+SBOM Version, so the file hash of two SBOMs of one unchanged tree never matches.
+`content_digest` strips exactly those fields and digests the rest, which is what distinguishes a
+substantive **revision** (new or corrected component data) from a **re-issue** (same bill of
+materials, new build). Frequency requires a new SBOM for both; `revision_reason` records which
+happened — `initial`, `new_build`, `dependency_change`, `correction`, `detail_discovered`. That
+vocabulary is a Python constant with no DDL `CHECK` behind it, for the reason sbx-fnd-02 gave for
+`sbom_dependencies.relationship_type`.
+
+**Version bump.** The per-build bump stays in the generator (sbx-fld-01's). A correction is a
+*patch* bump of an already-published version rather than a new revision of the software, so
+`next_sbom_version(prior, correction=True)` owns that one case, and reads both the semver
+`1.<minor>.<patch>` spelling and the legacy `<N>.0` float so it works either side of that merge.
+
+**The reconciliation.** CLAUDE.md asserted "SBOM regenerated on every build" while the only
+enforced rule was a 30-day file-mtime threshold, and the weaker rule was the one with teeth — six
+releases in a fortnight off one SBOM passed. Per-build conformance is not checkable without
+recording which build each SBOM came from, hence `source_revision` (explicit `--build-id`, then
+`$ICDEV_BUILD_ID`, then the project directory's git commit, then **unknown and reported as such**).
+`evaluate_frequency` answers the build question first and the age question second; `sbd_assessor`'s
+SBD-21 now calls it, and its own requirement text already demanded both rules.
+
+Two defects in that check were fixed in passing. It subtracted a naive `utcfromtimestamp` from an
+aware `now` — a `TypeError` on every file, swallowed by `except Exception`, which put every SBOM in
+`stale_files` with age `-1`. SBD-21 could not return `satisfied` at all. And the 30-day threshold
+was a literal in the function while `sbom_max_age_days` sat in the YAML, free to drift; the
+config value now applies, read through `gate_threshold`, which tries both nesting shapes the file
+uses (`thresholds.sbd.*` and `swft.thresholds.*`) rather than guessing one and silently returning
+its own default.
+
+`sbom_revised` and `sbom_corrected` were also added to `VALID_EVENT_TYPES`, with migration
+`20260808064841_audit_event_types_sbom_revision` rebuilding `audit_trail`'s generated CHECK.
+Without it the correction event is rejected by the constraint, swallowed by the caller's `except`,
+and the correction looks recorded while nothing was written.
 
 ---
 
@@ -449,11 +506,11 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 
 | Element | Status | Evidence / what is missing |
 |---|---|---|
-| Accommodation of Updates | **PARTIAL** | `sbom_records` versions rows, but there is no correction/revision workflow and no way to mark a prior SBOM superseded. |
+| Accommodation of Updates | **MET (sbx-prc-02)** | `tools/compliance/sbom_revision.py::apply_correction` records a correction as a **successor** row carrying `supersedes_sbom_id`, plus an `sbom_corrected` audit event. The corrected row is never written to — supersession is derived at read time by `revision_chain`. See §2.9. |
 | Coverage | **MET (sbx-cov-01)** | `tools/compliance/dependency_resolver.py` resolves each ecosystem from its **lockfile**, not its declared manifest, and the generator consumes that instead of parsing manifests itself. See §2.7. |
 | Distribution and Delivery | **PARTIAL** | Writes a file to disk and records a path. No version-specific URL and no retrieval API. |
 | Explicitly Identifying Unknown Information | **GAP** | No unknown/withheld distinction anywhere; `"unspecified"` conflates them and is not machine-processable. No documented process for recipients to query redactions. |
-| Frequency | **PARTIAL** | `CLAUDE.md` asserts "SBOM regenerated on every build"; the enforced gate is a **30-day staleness** threshold, which is materially weaker than per-release. |
+| Frequency | **MET (sbx-prc-02)** | Every generation appends a linked row; `sbom_records.source_revision` records the build, and `sbom_revision.evaluate_frequency` — which SBD-21 now calls — answers the per-build question first and treats `sbom_max_age_days` as the stale-evidence backstop. CLAUDE.md and `args/security_gates.yaml` now say the same thing. See §2.9. |
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
@@ -462,8 +519,9 @@ met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — coun
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
 **Current: 4 of 17 data-field elements** — Component Producer joined them with sbx-fld-02 — **and
-1 of 7 practices**, Coverage, with sbx-cov-01. The matrix rows above are kept current as each task
-lands, so they, not this paragraph, are the authoritative statement.
+3 of 7 practices**: Coverage with sbx-cov-01, and Frequency plus Accommodation of Updates with
+sbx-prc-02. The matrix rows above are kept current as each task lands, so they, not this
+paragraph, are the authoritative statement.
 
 ---
 

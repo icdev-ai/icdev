@@ -1,0 +1,8 @@
+{
+  "description": "sbx-prc-02 - Frequency and Accommodation of Updates: sbom_records.content_digest, source_revision, revision_reason for the supersedes/revision chain and the per-build frequency gate",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "sbx-prc-02"
+}

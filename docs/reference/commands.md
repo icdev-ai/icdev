@@ -180,6 +180,14 @@ python tools/compliance/component_producer.py --registry --json                 
 python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --json            # gate on the 2026 minimum elements, not on presence
 python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --gate swft       # deployment_gates | swft | devsecops; exit 1 when it blocks
 
+# SBOM Frequency + Accommodation of Updates (2026 Minimum Elements). A correction is a
+# successor row; the SBOM it corrects is never rewritten.
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --build-id "$CI_PIPELINE_ID"   # record which build this SBOM describes
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --chain --json                 # the revision chain, each row marked superseded/head
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --frequency --json             # per-build first, 30-day age as the backstop
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --correct --sbom "/path/to/corrected.cdx.json" --reason "producer was wrong" --json
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --correct --sbom "/path/to/fixed.cdx.json" --reason "upstream published the hash" --reason-code detail_discovered --json
+
 # SBOM Author Signature (2026 Minimum Elements). Offline on both paths — no sigstore/Fulcio.
 python tools/crypto/key_manager.py --generate-keys --key-type ecdsa-p256 --json                   # one-time: create the signing key
 export ICDEV_SBOM_SIGNING_KEY_PATH=data/keys/icdev_audit_ecdsa-p256.pem                           # generator signs every SBOM from here on

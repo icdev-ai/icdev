@@ -2358,12 +2358,17 @@ CREATE TABLE IF NOT EXISTS sbom_records (
     sbom_version        TEXT,
     serial_number       TEXT,
     supersedes_sbom_id  INTEGER REFERENCES sbom_records(id),
+    content_digest      TEXT,
+    source_revision     TEXT,
+    revision_reason     TEXT,
     classification      TEXT    NOT NULL DEFAULT 'CUI',
     tenant_id           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_project    ON sbom_records(project_id);
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_serial     ON sbom_records(serial_number);
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_supersedes ON sbom_records(supersedes_sbom_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_digest     ON sbom_records(content_digest);
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_srcrev     ON sbom_records(source_revision);
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_tenant     ON sbom_records(tenant_id);
 
 -- SBOM component registry and supply chain risk tables (migration 209),
