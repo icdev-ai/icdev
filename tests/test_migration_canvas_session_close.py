@@ -77,28 +77,54 @@ def test_terminal_set_is_non_empty_and_derived():
 
 # ── Endpoint enforcement ────────────────────────────────────────────────────
 
-@pytest.fixture(scope="module")
-def client(monkeypatch_module=None):
-    """Flask test client with the migration canvas blueprint registered."""
-    import os
+_VOCAB_SID = "nmig-test-vocab"
 
+
+@pytest.fixture(scope="module")
+def client(tmp_path_factory):
+    """Flask test client with the migration canvas blueprint registered.
+
+    The session row is real. These cases used to PATCH an id that did not exist
+    and assert 200, which the endpoint returned because a zero-row UPDATE looks
+    exactly like a successful one — so the test could not tell "the vocabulary
+    was accepted" from "nothing was written". The endpoint now 404s an unknown
+    id, and seeding the row makes the assertion mean what it says.
+    """
     from flask import Flask
 
-    os.environ["ICDEV_AUTH_BYPASS"] = "1"
+    db = tmp_path_factory.mktemp("mc_close") / "migration_canvas.db"
+    # A module-scoped MonkeyPatch rather than os.environ: MC_DB_PATH left set
+    # would redirect every later test in the session at this throwaway file.
+    mp = pytest.MonkeyPatch()
+    mp.setenv("ICDEV_AUTH_BYPASS", "1")
+    mp.setenv("MC_DB_PATH", str(db))
+    mp.setenv("MC_STORAGE_BACKEND", "sqlite")
+
     from tools.migration_canvas.blueprint import create_migration_blueprint
+    from tools.migration_canvas.db import init_db as init_db_mod
+
+    mp.setattr(init_db_mod, "DB_PATH", db)
+    init_db_mod.init_db()
+    with init_db_mod.get_connection() as conn:
+        conn.execute(
+            "INSERT INTO mc_net_sessions (id, src_model, tgt_model, status) VALUES (%s,%s,%s,%s)",
+            (_VOCAB_SID, "MX204", "ASR-9901", "in_progress"),
+        )
+        conn.commit()
 
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.secret_key = "test"  # nosec B105 — test-only Flask session key
     app.register_blueprint(create_migration_blueprint(), url_prefix="/migration-canvas")
-    return app.test_client()
+    yield app.test_client()
+    mp.undo()
 
 
 @pytest.mark.parametrize("bad", ["done", "closed", "IN_PROGRESS", "", "deleted"])
 def test_patch_rejects_unknown_status(client, bad):
     """An unvalidated status strands the session outside every status query."""
     resp = client.patch(
-        "/migration-canvas/api/network-migration/nmig-test-vocab",
+        f"/migration-canvas/api/network-migration/{_VOCAB_SID}",
         json={"status": bad},
     )
     assert resp.status_code == 400, f"status {bad!r} was accepted"
@@ -110,11 +136,18 @@ def test_patch_rejects_unknown_status(client, bad):
 @pytest.mark.parametrize("good", sorted(NET_SESSION_STATUSES))
 def test_patch_accepts_every_declared_status(client, good):
     """Every status in the vocabulary must be reachable through the API."""
+    from tools.migration_canvas.db import init_db as init_db_mod
+
     resp = client.patch(
-        "/migration-canvas/api/network-migration/nmig-test-vocab",
+        f"/migration-canvas/api/network-migration/{_VOCAB_SID}",
         json={"status": good},
     )
     assert resp.status_code == 200, f"declared status {good!r} was rejected"
+    with init_db_mod.get_connection() as conn:
+        stored = conn.execute(
+            "SELECT status FROM mc_net_sessions WHERE id=%s", (_VOCAB_SID,)
+        ).fetchone()["status"]
+    assert stored == good, "endpoint answered 200 without writing the status"
 
 
 # ── UI wiring ───────────────────────────────────────────────────────────────
