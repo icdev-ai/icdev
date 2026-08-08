@@ -3,10 +3,8 @@
 
 `tests/test_sbom_component_license.py` covers the element itself, but its
 generator fixture forces SQLite (raw `sqlite3` schema, `monkeypatch.setenv`), so
-nothing there exercises the dialect that actually ships:
-
-    INSERT INTO sbom_components (…) VALUES (…)
-    ON CONFLICT(id) DO UPDATE SET … = EXCLUDED.…
+nothing there exercises the dialect that actually ships — the upsert in
+`_persist_components`, whose conflict arm assigns from `EXCLUDED`.
 
 PostgreSQL is the primary backend, and `_persist_components` is a brand-new write
 path on a table the generator has never touched — a PG-only failure there would be

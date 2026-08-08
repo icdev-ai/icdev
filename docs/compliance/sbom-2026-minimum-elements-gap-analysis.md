@@ -160,6 +160,25 @@ Shape is pinned by `tests/test_sbom_2026_schema.py`, which applies the real migr
 a pre-migration database and round-trips a value through every new column, and asserts
 `MINIMAL_ICDEV_SCHEMA` in `tests/conftest.py` declares the identical column set.
 
+**None of it existed on a fresh PostgreSQL until sbx-fld-04.** `bootstrap_pg.py` loads
+`tools/db/schema/pg_consolidated.sql` and marks every migration at or below
+`through_version` (301) applied *without running it*. Migration 209 is below that pivot
+but its three tables — `sbom_components`, `supply_chain_vulnerabilities`,
+`supply_chain_risk_scores` — are **not in the snapshot**, which was dumped from a
+canonical database where 209 had never actually run. So a freshly bootstrapped PG had no
+`sbom_components` at all, and the migration above therefore failed every one of its
+`sbom_components` ALTERs and its `sbom_dependencies` CREATE with `UndefinedTable` — each
+swallowed by the runner's skip-failed-statement guard and then recorded as applied. The
+entire SBOM storage layer was absent on the primary backend while every version marker
+said otherwise. Repaired by `20260808043009_restore_migration_209_tables_on_postgresql`,
+which sits above the pivot, recreates the three tables idempotently (plus
+`sbom_dependencies`, and `sbom_components` in its full post-fnd-02 shape since it sorts
+after this migration), and no-ops on any database that already has them. Found by
+`tests/pg_tier/test_sbom_component_license_pg.py`, the first runtime test to write
+`sbom_components` on the ambient backend — the SQLite suite could not have caught it.
+**Not audited:** whether other pre-301 migrations are missing from the snapshot the same
+way.
+
 ### 2.3 Signing
 
 ICDEV does **not** sign its own SBOMs. `tools/crypto/attestation_signer.py::sign_artifact` and
