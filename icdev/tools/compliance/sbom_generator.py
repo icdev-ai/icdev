@@ -20,7 +20,13 @@ Signature (sbx-sig-01): when an asymmetric signing key is configured, each
 generated SBOM gets a detached `<sbom>.sig.json` written beside it and its
 signature + algorithm persisted to `sbom_records`. Unsigned generation is the
 default and says so on stdout; set `ICDEV_SBOM_REQUIRE_SIGNATURE=1` to make it a
-hard failure instead. See `tools/compliance/sbom_signer.py`."""
+hard failure instead. See `tools/compliance/sbom_signer.py`.
+
+Frequency / Accommodation of Updates (sbx-prc-02): every generation appends a row
+that links back to the SBOM it replaces (`supersedes_sbom_id`) and records the
+content digest, the build it came from and why it exists. Nothing is ever
+rewritten — a correction is a successor row, not an edit. See
+`tools/compliance/sbom_revision.py`."""
 
 import argparse
 import hashlib
@@ -40,6 +46,10 @@ from tools.compliance.dependency_resolver import (
     COVERAGE_UNKNOWN,
     RESOLUTION_DECLARED,
     resolve_project,
+)
+from tools.compliance.sbom_revision import (
+    plan_revision,
+    revision_insert_fields,
 )
 from tools.compliance.sbom_signer import (
     SbomSigningError,
@@ -997,6 +1007,7 @@ def generate_sbom(
     db_path=None,
     spec_version=None,
     python_env=None,
+    build_id=None,
 ):
     """Generate a Software Bill of Materials for a project.
 
@@ -1008,6 +1019,9 @@ def generate_sbom(
         spec_version: CycloneDX spec version override (D342)
         python_env: Virtualenv / site-packages directory whose installed
             distributions are the Python target environment (SBOM 2026 Coverage)
+        build_id: Identifier of the build this SBOM describes (SBOM 2026
+            Frequency). Falls back to `$ICDEV_BUILD_ID`, then to the project
+            directory's git commit, then to unknown.
 
     Returns:
         Path to the generated SBOM file
@@ -1096,28 +1110,62 @@ def generate_sbom(
         max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
         new_version = f"{max_ver + 1.0:.1f}"
 
+        # Frequency + Accommodation of Updates (2026 Minimum Elements, sbx-prc-02).
+        # Resolved before the INSERT so the new row carries its link to the SBOM it
+        # replaces from the moment it exists, rather than being patched afterwards —
+        # and so nothing ever has to write to the predecessor.
+        revision = plan_revision(
+            conn,
+            project_id,
+            sbom,
+            project_dir=project_dir_path,
+            build_id=build_id,
+        )
+
         # Record in sbom_records table. author_signature holds the base64
         # signature value; the full block — fingerprint, public key, artifact
         # hash — lives in the detached <sbom>.sig.json beside the artifact,
         # which is what a downstream consumer actually receives.
-        conn.execute(
-            """INSERT INTO sbom_records
-               (project_id, version, format, file_path,
-                component_count, vulnerability_count,
-                author_signature, signature_algorithm)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (
-                project_id,
-                new_version,
-                sbom_format,
-                str(out_file),
-                component_count,
-                0,  # Vulnerability count starts at 0; updated by security scanning
-                signature["value"] if signature else None,
-                signature["algorithm"] if signature else None,
-            ),
+        record_columns = [
+            "project_id",
+            "version",
+            "format",
+            "file_path",
+            "component_count",
+            "vulnerability_count",
+            "author_signature",
+            "signature_algorithm",
+        ]
+        record_values = [
+            project_id,
+            new_version,
+            sbom_format,
+            str(out_file),
+            component_count,
+            0,  # Vulnerability count starts at 0; updated by security scanning
+            signature["value"] if signature else None,
+            signature["algorithm"] if signature else None,
+        ]
+        revision_columns, revision_values, unpersisted = revision_insert_fields(conn, revision)
+        record_columns.extend(revision_columns)
+        record_values.extend(revision_values)
+        if unpersisted:
+            print(
+                f"Warning: sbom_records is missing {', '.join(unpersisted)} — this SBOM was "
+                "recorded but its link to the one it supersedes was not, so the revision "
+                "chain has a break in it. Run: python tools/db/migrate.py",
+                file=sys.stderr,
+            )
+
+        # The column list is built from literals filtered through column_exists
+        # in revision_insert_fields; every value is bound, not interpolated.
+        cursor = conn.execute(
+            f"INSERT INTO sbom_records ({', '.join(record_columns)}) "  # nosec B608
+            f"VALUES ({', '.join(['%s'] * len(record_columns))})",
+            tuple(record_values),
         )
         conn.commit()
+        record_id = getattr(cursor, "lastrowid", None)
 
         # Log audit event
         _log_audit_event(
@@ -1134,6 +1182,12 @@ def generate_sbom(
                 "signed": bool(signature),
                 "signature_algorithm": signature["algorithm"] if signature else None,
                 "public_key_fp": signature["public_key_fp"] if signature else None,
+                "sbom_record_id": record_id,
+                "supersedes_sbom_id": revision["supersedes_sbom_id"],
+                "revision_reason": revision["revision_reason"],
+                "content_digest": revision["content_digest"],
+                "content_changed": revision["content_changed"],
+                "source_revision": revision["source_revision"],
             },
             out_file,
         )
@@ -1145,6 +1199,11 @@ def generate_sbom(
         print(f"  Components: {component_count}")
         print(f"  Serial: {sbom['serialNumber']}")
         print(f"  Coverage: {coverage['status']}")
+        print(f"  Revision: {revision['revision_reason']}")
+        if revision["supersedes_sbom_id"]:
+            changed = "content changed" if revision["content_changed"] else "same content, re-issued"
+            print(f"    Supersedes SBOM record {revision['supersedes_sbom_id']} ({changed})")
+        print(f"    Build: {revision['source_revision'] or 'unknown'}")
         if coverage["status"] != COVERAGE_COMPLETE:
             print(f"  {coverage['statement']}")
         if signature:
@@ -1186,6 +1245,15 @@ def main():
             "from, instead of resolving from a lockfile (SBOM 2026 Coverage)"
         ),
     )
+    parser.add_argument(
+        "--build-id",
+        dest="build_id",
+        default=None,
+        help=(
+            "Identifier of the build this SBOM describes (SBOM 2026 Frequency). "
+            "Defaults to $ICDEV_BUILD_ID, then the project directory's git commit"
+        ),
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
@@ -1197,6 +1265,7 @@ def main():
             db_path=Path(args.db) if args.db else None,
             spec_version=args.spec_version,
             python_env=args.python_env,
+            build_id=args.build_id,
         )
         print(f"\nSBOM path: {path}")
     except (FileNotFoundError, ValueError) as e:

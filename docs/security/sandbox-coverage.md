@@ -1269,3 +1269,58 @@ another vendor's tool.
   crates.io owner query or a PyPI JSON API call) — that is a different posture
   and a different threat model — or if it starts reading *artifacts* rather than
   metadata, which is sbx-fld-03's territory.
+
+### Gap 50 — SBOM correction ingress (`tools/compliance/sbom_revision.py`)
+
+**Modules:** `tools/compliance/sbom_revision.py` (mirrored at
+`icdev/tools/compliance/sbom_revision.py`), consumed by
+`tools/compliance/sbom_generator.py` and `tools/compliance/sbd_assessor.py`
+
+**Ingress path:** Two surfaces, and only one of them is first-party.
+`plan_revision` / `content_digest` on the generation path only ever see a
+document this tree just built, so that half is trusted-first-party. `--correct
+--sbom <path>` is not: the corrected SBOM is an operator-supplied JSON document
+that may well have originated with an upstream producer, and it is the document
+that becomes the project's SBOM of record. `source_revision` additionally shells
+out to `git` in a caller-supplied directory.
+
+- **Decision:** **trusted-first-party** for the generation path; **bypass-documented**
+  for the correction path (parse-and-record only; no execution path exists)
+- **Rationale:** The module's whole toolkit is `json`, `hashlib`, `pathlib` and
+  one fixed-argv `git rev-parse`. It contains no `exec`, `eval`, `__import__`,
+  `pickle`, `yaml.load` or `os.system`, and no network client. A corrected SBOM
+  is round-tripped through `json.load`/`json.dump` and digested; **nothing in it
+  is ever dispatched on, resolved as a path, or used to build SQL**. The only
+  values from the document that reach the database are the component count, the
+  `serialNumber` string and the digest, each as a bound parameter. `git rev-parse`
+  is not a shell: fixed argv, `shell=False`, a 15-second timeout, and a
+  non-zero exit or any `OSError` yields `None` — which is reported as
+  `sbom_build_identity_unknown` rather than being smoothed into a pass.
+- **Guardrails:**
+  - The output path for a correction is derived from the **predecessor's own
+    recorded `file_path`**, never from anything inside the supplied document, so
+    a hostile SBOM cannot choose where bytes land.
+  - A correction is append-only by construction: it can only INSERT a successor
+    row. There is no code path by which a supplied document rewrites, blanks or
+    deletes the record it corrects, which is what stops a bad artifact from
+    *destroying* prior evidence rather than merely adding wrong evidence.
+  - `revision_reason` is validated against the closed `REVISION_REASONS`
+    vocabulary and `apply_correction` refuses a non-corrective code, so the
+    caller cannot mislabel a correction as a routine build.
+  - A correction must state a reason; an empty one raises rather than recording
+    an unexplained change to a compliance artifact.
+  - The head is re-resolved inside `apply_correction` and compared to the row it
+    was prepared against, so a concurrent writer cannot make a correction
+    supersede the wrong document.
+  - `gate_threshold` reads only ICDEV's own `args/security_gates.yaml`, via
+    `yaml.safe_load`, and a missing or corrupt file degrades to the documented
+    default.
+  - `tests/test_sbom_revision_2026.py` records every statement a correction
+    issues and fails on an `UPDATE` or `DELETE`, and compares the predecessor row
+    field-by-field before and after — so the append-only property is pinned, not
+    merely intended.
+- **Revisit if:** the correction path ever resolves anything *out of* the supplied
+  document — a file path, a URL, a tool name, a signing key reference — which
+  would turn parsed content into a resource reference; or if `source_revision`
+  gains a remote lookup (a CI API call to name the build), which is a network
+  path over attacker-influenceable material and a different threat model.

@@ -38,6 +38,13 @@ VALID_EVENT_TYPES = (
     "poam_generated",
     "stig_checked",
     "sbom_generated",
+    # SBOM 2026 Accommodation of Updates (sbx-prc-02). A corrected SBOM is a new
+    # document superseding its predecessor, never an edit, so the correction itself
+    # is an event: "sbom_generated" cannot distinguish a build from a fix, and the
+    # standard now lets recipients weigh SBOM errors in their risk decisions about
+    # the producer. See tools/compliance/sbom_revision.py.
+    "sbom_revised",
+    "sbom_corrected",
     "deployment_initiated",
     "deployment_succeeded",
     "deployment_failed",

@@ -110,9 +110,17 @@ def _sqlite_columns(conn, table: str) -> set:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
+#: Later migrations that also alter these tables. The conftest-parity test below
+#: compares MINIMAL_ICDEV_SCHEMA against the shape ALL of them produce, not just
+#: this task's, so adding sbom columns in a new migration means adding its version
+#: here — otherwise parity fails against a schema that is simply more current.
+#:   20260808063350 — sbx-prc-02: content_digest, source_revision, revision_reason
+SUBSEQUENT_SBOM_MIGRATIONS = ("20260808063350",)
+
+
 @pytest.fixture
 def migrated_sqlite_db(tmp_path, monkeypatch):
-    """A pre-migration SQLite database with the real migration applied to it."""
+    """A pre-migration SQLite database with the real sbom migrations applied to it."""
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
 
     from tools.db.migration_runner import MigrationRunner
@@ -125,16 +133,15 @@ def migrated_sqlite_db(tmp_path, monkeypatch):
 
     runner = MigrationRunner(db_path=db_path, engine="sqlite")
     runner.ensure_migrations_table()
-    migration = next(
-        (m for m in runner.discover_migrations() if m["version"] == MIGRATION_VERSION),
-        None,
-    )
-    assert migration is not None, (
-        f"migration {MIGRATION_VERSION} is not discoverable — a directory with "
-        "neither up.sql nor up.py is skipped silently by discover_migrations"
-    )
-    result = runner.apply_migration(migration)
-    assert result["success"], f"migration failed on SQLite: {result.get('error')}"
+    discovered = {m["version"]: m for m in runner.discover_migrations()}
+    for version in (MIGRATION_VERSION, *SUBSEQUENT_SBOM_MIGRATIONS):
+        migration = discovered.get(version)
+        assert migration is not None, (
+            f"migration {version} is not discoverable — a directory with "
+            "neither up.sql nor up.py is skipped silently by discover_migrations"
+        )
+        result = runner.apply_migration(migration)
+        assert result["success"], f"migration {version} failed on SQLite: {result.get('error')}"
     return db_path
 
 
@@ -327,8 +334,8 @@ def test_conftest_schema_matches_migrated_schema(migrated_sqlite_db, tmp_path):
             from_conftest = _sqlite_columns(conn, table)
             from_migration = _sqlite_columns(migrated, table)
             assert from_conftest == from_migration, (
-                f"{table}: conftest MINIMAL_ICDEV_SCHEMA and migration "
-                f"{MIGRATION_VERSION} disagree. "
+                f"{table}: conftest MINIMAL_ICDEV_SCHEMA and migrations "
+                f"{', '.join((MIGRATION_VERSION, *SUBSEQUENT_SBOM_MIGRATIONS))} disagree. "
                 f"only in conftest={sorted(from_conftest - from_migration)}, "
                 f"only in migration={sorted(from_migration - from_conftest)}"
             )

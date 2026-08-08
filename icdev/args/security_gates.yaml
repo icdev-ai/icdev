@@ -60,6 +60,18 @@ sbd:
   warning:
     - partial_sbd_requirements_below_80_pct
     - memory_unsafe_language_without_tooling
+    # SBOM 2026 Frequency element (sbx-prc-02). The requirement is per-build:
+    # "every software version or update has an associated SBOM", and a new build
+    # counts even when it only integrates updated dependencies. That is the rule
+    # CLAUDE.md always claimed ICDEV enforced; sbom_max_age_days is the BACKSTOP
+    # for evidence that has simply gone stale, not a restatement of it. Both are
+    # evaluated by tools/compliance/sbom_revision.py::evaluate_frequency, which is
+    # what SBD-21 now calls, and each condition below is a string that function
+    # returns. Reported as warnings because SBD-21's catalog priority is `high`,
+    # not `critical`, and the sbd gate blocks on critical-only — raise the priority
+    # in context/compliance/cisa_sbd_requirements.json to make them block.
+    - sbom_not_regenerated_for_current_build
+    - sbom_build_identity_unknown
     - sbom_stale_over_30_days
     - threat_model_missing
     - security_headers_incomplete
@@ -239,6 +251,11 @@ thresholds:
   sbd:
     min_satisfied_pct: 80
     max_critical_not_satisfied: 0
+    # SBOM 2026 Frequency (sbx-prc-02): sbom_required_per_build is the rule, and
+    # sbom_max_age_days is the backstop for stale evidence. They answer different
+    # questions and the per-build one is checked first — see the comment on the
+    # sbd.warning conditions above and gap-analysis §3.3.
+    sbom_required_per_build: true
     sbom_max_age_days: 30
     mfa_required: true
     vuln_disclosure_required: true
@@ -845,8 +862,14 @@ swft:
     - container_scan_not_completed
     - image_attestation_missing
     - swft_evidence_stale
+    # Same reconciliation as sbd above: a bundle whose SBOM predates the build it
+    # attests to is not current evidence, however recent the file happens to be.
+    - sbom_not_regenerated_for_current_build
   thresholds:
     min_slsa_level: 2
+    # sbom_required_per_build is the SBOM 2026 Frequency rule; sbom_max_age_days
+    # is the stale-evidence backstop, not a substitute for it (sbx-prc-02).
+    sbom_required_per_build: true
     sbom_max_age_days: 30
     sast_required: true
     dependency_audit_required: true
