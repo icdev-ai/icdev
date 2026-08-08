@@ -16,6 +16,7 @@ Air-gap safe: no LLM calls — pure DB heuristics.
 from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -40,6 +41,29 @@ _HIGH_PRIORITY_THRESHOLD     = 0.85   # findings above this → "high" priority
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _task_id(finding: Dict[str, Any]) -> str:
+    """Derive a STABLE kanban id for a finding.
+
+    The id must be a pure function of *what* was found, never of *when* it was
+    found: the reflex re-runs daily and re-reports every finding that is still
+    open, and the INSERT is `INSERT OR IGNORE` (→ `ON CONFLICT DO NOTHING` on
+    PostgreSQL).  A fresh uuid4 per run defeated that conflict clause entirely,
+    so each of the 60 standing findings minted a new card every 24h — 291 cards
+    for 60 distinct findings, 168 of which the runner auto-promoted to
+    `scheduled` and dispatched agent sessions against.  Hashing the finding
+    identity instead makes re-reporting a no-op, and makes a card that was
+    already worked stay closed rather than reappearing the next morning.
+    """
+    # `protocol` is part of the identity for stale_protocol_plan: one session can
+    # hold several draft plans, and each is its own card.
+    subject = "|".join(
+        str(finding.get(k) or "")
+        for k in ("session_id", "device_id", "protocol")
+    )
+    key = f"{finding['type']}|{subject}"
+    return "mc-reflex-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
 
 
 def _days_since(iso_str: str) -> int:
@@ -140,6 +164,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 findings.append({
                     "type": "stale_protocol_plan",
                     "session_id": d["session_id"],
+                    "protocol": d["protocol"],
                     "message": f"Protocol plan for {d['protocol']} in session {d['session_id']} "
                                f"has been in draft for {age} days.",
                     "confidence": _STALE_PLAN_CONFIDENCE,
@@ -151,15 +176,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # ── 4. Promote findings to kanban ─────────────────────────────────────────
     promoted = 0
     try:
-        import uuid
         from tools.db.storage import get_connection as _icdev_conn
         threshold = float((config or {}).get("promotion_threshold", _PROMOTION_THRESHOLD_DEFAULT))
         with _icdev_conn() as ic:
             for f in findings:
                 if f["confidence"] < threshold:
                     continue
-                task_id = "mc-reflex-" + uuid.uuid4().hex[:8]
-                ic.execute(
+                task_id = _task_id(f)
+                cur = ic.execute(
                     # `source` is not a column — the live column is
                     # `dispatch_source` (swp-scan-01), so no NMCE finding was
                     # ever promoted to the board.
@@ -177,7 +201,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         _now(),
                     ),
                 )
-                promoted += 1
+                # Count rows the DB actually accepted, not rows we offered it.
+                # Now that ids are stable, a re-reported finding is swallowed by
+                # ON CONFLICT DO NOTHING, and counting attempts would report a
+                # steady 60 promotions/day forever while the board never grows.
+                inserted = getattr(cur, "rowcount", 1)
+                promoted += 1 if inserted in (None, -1) else int(inserted)
     except Exception as exc:
         errors.append(f"kanban_promote: {exc}")
 
