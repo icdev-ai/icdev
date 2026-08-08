@@ -226,6 +226,7 @@ jobs:
             tests/test_sbom_component_producer.py \
             tests/test_sbom_conformance_gate.py \
             tests/test_pr_watcher_heartbeat.py \
+            tests/test_local_agent_adapter.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
