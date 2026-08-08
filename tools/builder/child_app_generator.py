@@ -242,6 +242,10 @@ DIRECTORY_TREE = [
     "tools/mcp",
     "tools/builder",
     "tools/security",  # D-EPSEC-7: security is always-on, not conditional
+    # hgx-guard-01: .claude/hooks/pre_tool_use.py is copied into every child
+    # (step_09c) and loads tools/hooks/shared_checks.py by path. Without this
+    # entry the child inherits a hook that cannot load, i.e. no guardrails.
+    "tools/hooks",
     "tools/quality",  # trust-cite-05: anti-hallucination grounding (content + citation) is always-on
     "tools/workflow",  # Coherence engine — implementation drift detection
     "tools/llm",
