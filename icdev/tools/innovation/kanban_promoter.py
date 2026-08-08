@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import hashlib
 import json
 import sys
@@ -803,6 +804,63 @@ def run_promotion(
     return promote_findings_to_kanban(
         config=config, dry_run=dry_run, query_limit=query_limit
     )
+
+
+# ---------------------------------------------------------------------------
+# Runner entry point (xbm-promote-01-d4)
+# ---------------------------------------------------------------------------
+
+# Env switch read by :func:`promote_findings_from_runner`. Default is off: a
+# promoter that writes the moment it is wired in writes by accident.
+PROMOTE_ENABLED_ENV = "KANBAN_PROMOTE_ENABLED"
+
+
+def _promote_enabled() -> bool:
+    """True only when ``KANBAN_PROMOTE_ENABLED`` is explicitly affirmative.
+
+    Read at call time, not at import: a long-lived runner must be able to have
+    the switch flipped without a restart.
+    """
+    return os.environ.get(PROMOTE_ENABLED_ENV, "false").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def promote_findings_from_runner(dry_run: bool = False) -> dict:
+    """Entry point for automated runners. Off unless the env switch is on.
+
+    Named for its caller rather than its action because
+    :func:`promote_findings_to_kanban` — the name this carried on its original
+    branch — is already the implementation on main. Wrapping it under its own
+    name would have shadowed it. This adds the two properties a caller inside a
+    pipeline needs and the implementation deliberately does not provide:
+
+    * **Opt-in.** Returns ``{"enabled": False}`` without opening a connection
+      unless ``KANBAN_PROMOTE_ENABLED`` is affirmative. Wiring the promoter into
+      a runner must not, by itself, start writing cards.
+    * **Never raises.** Promotion is additive to whatever the caller was already
+      doing; a promoter failure must not fail the pipeline behind it.
+
+    The caps (``max_per_run``, ``max_per_subsystem``), the gap gate and the
+    ``status='suggested'`` invariant all still apply — they live in
+    :func:`promote_findings_to_kanban` / :func:`promote_signals` and are not
+    bypassed here.
+    """
+    if not _promote_enabled():
+        logger.info(
+            "promote: skipped — %s is not affirmative (default off)", PROMOTE_ENABLED_ENV
+        )
+        return {
+            "enabled": False,
+            "created": 0,
+            "reason": f"{PROMOTE_ENABLED_ENV} is not set to an affirmative value",
+        }
+    try:
+        result = promote_findings_to_kanban(dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001 - promotion must not wedge its caller
+        logger.warning("promote: failed (non-blocking): %s", exc)
+        return {"enabled": True, "created": 0, "error": str(exc)[:200]}
+    return {"enabled": True, **result}
 
 
 # ---------------------------------------------------------------------------

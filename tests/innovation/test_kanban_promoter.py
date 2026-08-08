@@ -780,3 +780,136 @@ def test_override_does_not_mutate_the_caller_config(stub_pipeline):
     kp.promote_findings_to_kanban(config=CONFIG, max_findings_per_run=1)
 
     assert CONFIG == before
+
+
+# ---------------------------------------------------------------------------
+# Runner entry point â€” promote_findings_from_runner (xbm-promote-01-d4)
+#
+# The pipeline calls this, not run_promotion. What matters is that wiring it in
+# does not, by itself, start writing cards, and that it cannot fail its caller.
+# ---------------------------------------------------------------------------
+
+
+def test_entry_point_is_off_when_env_unset(monkeypatch):
+    monkeypatch.delenv(kp.PROMOTE_ENABLED_ENV, raising=False)
+
+    result = kp.promote_findings_from_runner(dry_run=False)
+
+    assert result["enabled"] is False
+    assert result["created"] == 0
+
+
+def test_entry_point_off_does_not_touch_the_database(monkeypatch):
+    """Switched off means no connection, not a connection that finds nothing.
+
+    ``run_promotion`` owns the only ``get_connection()`` on this path, so a
+    ``run_promotion`` that fails on sight proves the short-circuit happens
+    before any DB work â€” and says so without patching the connection factory.
+    """
+    monkeypatch.delenv(kp.PROMOTE_ENABLED_ENV, raising=False)
+
+    def _boom(**_):
+        raise AssertionError("opened the database while promotion is disabled")
+
+    monkeypatch.setattr(kp, "promote_findings_to_kanban", _boom)
+
+    assert kp.promote_findings_from_runner()["enabled"] is False
+
+
+@pytest.mark.parametrize("value", ["false", "0", "no", "off", "", "  "])
+def test_entry_point_stays_off_for_negative_values(monkeypatch, value):
+    monkeypatch.setenv(kp.PROMOTE_ENABLED_ENV, value)
+    monkeypatch.setattr(kp, "promote_findings_to_kanban", lambda **_: pytest.fail("ran"))
+
+    assert kp.promote_findings_from_runner()["enabled"] is False
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", "1", "yes", "on", " True "])
+def test_entry_point_runs_when_switched_on(monkeypatch, value):
+    monkeypatch.setenv(kp.PROMOTE_ENABLED_ENV, value)
+    seen = {}
+
+    def _fake_run(dry_run=True, **_):
+        seen["dry_run"] = dry_run
+        return {"created": 2, "task_ids": ["a", "b"], "truncated": False}
+
+    monkeypatch.setattr(kp, "promote_findings_to_kanban", _fake_run)
+
+    result = kp.promote_findings_from_runner(dry_run=False)
+
+    assert seen["dry_run"] is False
+    assert result["enabled"] is True
+    assert result["created"] == 2
+
+
+def test_entry_point_never_raises_at_its_caller(monkeypatch):
+    """A promotion failure must not wedge the pipeline behind it."""
+    monkeypatch.setenv(kp.PROMOTE_ENABLED_ENV, "true")
+
+    def _explode(**_):
+        raise RuntimeError("database is on fire")
+
+    monkeypatch.setattr(kp, "promote_findings_to_kanban", _explode)
+
+    result = kp.promote_findings_from_runner()
+
+    assert result["enabled"] is True
+    assert result["created"] == 0
+    assert "database is on fire" in result["error"]
+
+
+def test_env_is_read_per_call_not_at_import(monkeypatch):
+    """A long-lived runner must see the switch flip without a restart."""
+    monkeypatch.delenv(kp.PROMOTE_ENABLED_ENV, raising=False)
+    assert kp.promote_findings_from_runner()["enabled"] is False
+
+    monkeypatch.setenv(kp.PROMOTE_ENABLED_ENV, "true")
+    monkeypatch.setattr(kp, "promote_findings_to_kanban", lambda **_: {"created": 0})
+    assert kp.promote_findings_from_runner()["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# The innovation engine runner actually calls it
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_stage_delegates_to_the_promoter(monkeypatch):
+    import importlib
+
+    im = importlib.import_module("tools.innovation.innovation_manager")
+    monkeypatch.setattr(
+        kp, "promote_findings_from_runner",
+        lambda dry_run=False: {"enabled": True, "created": 1, "dry_run": dry_run},
+    )
+
+    assert im.stage_promote(dry_run=False) == {
+        "enabled": True, "created": 1, "dry_run": False,
+    }
+
+
+def test_full_pipeline_promotes_after_the_writing_stages(monkeypatch):
+    """Order is the point: the promoter reads triage_result and solutions."""
+    import importlib
+
+    im = importlib.import_module("tools.innovation.innovation_manager")
+    order: list[str] = []
+
+    for stage in ("stage_discover", "stage_introspect", "stage_competitive",
+                  "stage_standards", "stage_score", "stage_triage",
+                  "stage_detect_trends", "stage_generate"):
+        monkeypatch.setattr(
+            im, stage,
+            (lambda name: lambda **_: (order.append(name), {})[1])(stage),
+        )
+    monkeypatch.setattr(im, "_in_quiet_hours", lambda _cfg: False)
+    monkeypatch.setattr(
+        im, "stage_promote",
+        lambda **_: (order.append("stage_promote"), {"enabled": False})[1],
+    )
+
+    result = im.run_full_pipeline()
+
+    assert order[-1] == "stage_promote"
+    assert order.index("stage_triage") < order.index("stage_promote")
+    assert order.index("stage_generate") < order.index("stage_promote")
+    assert result["stages"]["promote"] == {"enabled": False}

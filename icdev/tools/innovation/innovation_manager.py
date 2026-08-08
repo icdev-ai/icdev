@@ -328,6 +328,27 @@ def stage_generate(db_path=None):
     return {"error": "solution_generator not available"}
 
 
+def stage_promote(dry_run=False):
+    """Stage 5: Promote benchmark findings to the kanban board.
+
+    Off unless ``KANBAN_PROMOTE_ENABLED`` is set — the gate, the gap verdict
+    check and the per-run / per-subsystem caps all live in the promoter, which
+    mirrors ``tools/awareness/suggested_card_writer.py`` semantics: cards are
+    written ``status='suggested'``, never ``backlog``.
+
+    Args:
+        dry_run: Preview without writing.
+
+    Returns:
+        Dict with promotion results (``{"enabled": False}`` when switched off).
+    """
+    try:
+        from tools.innovation.kanban_promoter import promote_findings_from_runner
+    except ImportError as e:
+        return {"enabled": False, "error": f"kanban_promoter not available: {e}"}
+    return promote_findings_from_runner(dry_run=dry_run)
+
+
 def stage_calibrate(db_path=None):
     """Stage 7: Calibrate scoring weights based on feedback.
 
@@ -350,9 +371,10 @@ def stage_calibrate(db_path=None):
 # FULL PIPELINE
 # =========================================================================
 def run_full_pipeline(db_path=None):
-    """Run the complete innovation pipeline: DISCOVER → SCORE → TRIAGE → GENERATE.
+    """Run the pipeline: DISCOVER → SCORE → TRIAGE → GENERATE → PROMOTE.
 
-    Skips solution generation during quiet hours.
+    Skips solution generation during quiet hours. The PROMOTE stage is off
+    unless ``KANBAN_PROMOTE_ENABLED`` is set.
 
     Args:
         db_path: Optional DB path override.
@@ -391,6 +413,11 @@ def run_full_pipeline(db_path=None):
         result["stages"]["generate"] = {"skipped": "quiet_hours"}
     else:
         result["stages"]["generate"] = stage_generate(db_path=db_path)
+
+    # Stage 5: Promote benchmark findings to the board. Runs last, after every
+    # write: the promoter reads triage_result and joins innovation_solutions,
+    # so promoting before those stages persist would query a half-built row.
+    result["stages"]["promote"] = stage_promote(dry_run=False)
 
     result["completed_at"] = now_iso()
     _audit("innovation.pipeline.complete", f"Pipeline {pipeline_id} completed", result)
