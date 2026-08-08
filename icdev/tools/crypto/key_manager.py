@@ -64,6 +64,29 @@ ENV_KEY_PATH = "ICDEV_AUDIT_SIGNING_KEY_PATH"
 ENV_HMAC_SECRET = "ICDEV_AUDIT_HMAC_SECRET"
 GENESIS_HASH = "0" * 64
 
+# ECDSA algorithm labels, keyed by the curve the key actually uses.
+#
+# This mapping exists because the label is load-bearing: callers that gate on an
+# approved-algorithm list (SBOM Author Signature, sbx-sig-01) read `algorithm`
+# and nothing else. Reporting "ECDSA-P256-SHA256" for every EllipticCurveKey —
+# which is what this module did before — would report a secp256k1 key, which no
+# authority approves for this use, under a NIST-approved name.
+#
+# The digest stays SHA-256 across all curves. FIPS 186-5 permits it, and
+# verify_payload makes a single hash choice; pairing SHA-384 with P-384 here
+# would silently invalidate every signature the old code produced.
+_ECDSA_CURVE_ALGORITHMS = {
+    "secp256r1": "ECDSA-P256-SHA256",
+    "secp384r1": "ECDSA-P384-SHA256",
+    "secp521r1": "ECDSA-P521-SHA256",
+}
+
+
+def _ecdsa_algorithm(private_key) -> str:
+    """Return the algorithm label naming the key's ACTUAL curve."""
+    curve = getattr(getattr(private_key, "curve", None), "name", "") or "unknown-curve"
+    return _ECDSA_CURVE_ALGORITHMS.get(curve, f"ECDSA-{curve}-SHA256")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -104,19 +127,64 @@ def _load_private_key(path: str) -> Optional[object]:
         return None
 
 
-def _get_public_key_fp(private_key) -> str:
-    """Return SHA-256 fingerprint of the public key PEM."""
-    if not HAS_CRYPTO or private_key is None:
+def _fp_from_public_key(public_key) -> str:
+    """Return SHA-256 fingerprint of a public key's canonical SubjectPublicKeyInfo PEM.
+
+    Always re-serializes rather than hashing caller-supplied bytes, so a PEM that
+    differs only in line endings or trailing whitespace yields the same
+    fingerprint as the one derived from the private key.
+    """
+    if not HAS_CRYPTO or public_key is None:
         return ""
     try:
-        pub = private_key.public_key()
-        pub_pem = pub.public_bytes(
+        pub_pem = public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
         return hashlib.sha256(pub_pem).hexdigest()
     except Exception:
         return ""
+
+
+def _get_public_key_fp(private_key) -> str:
+    """Return SHA-256 fingerprint of the public key PEM."""
+    if not HAS_CRYPTO or private_key is None:
+        return ""
+    try:
+        return _fp_from_public_key(private_key.public_key())
+    except Exception:
+        return ""
+
+
+def _load_public_key_pem(pem):
+    """Load a PEM-encoded public key. Returns None if unusable."""
+    if not HAS_CRYPTO or not pem:
+        return None
+    if isinstance(pem, str):
+        pem = pem.encode("utf-8")
+    try:
+        return serialization.load_pem_public_key(pem, backend=default_backend())
+    except Exception as e:
+        logger.warning(f"Failed to load public key PEM: {e}")
+        return None
+
+
+def _verify_with_public_key(public_key, payload: bytes, signature_b64: str) -> bool:
+    """Verify a base64 signature against a loaded public key object."""
+    try:
+        sig = base64.b64decode(signature_b64)
+    except Exception:
+        return False
+    try:
+        if isinstance(public_key, ec.EllipticCurvePublicKey):
+            public_key.verify(sig, payload, ec.ECDSA(hashes.SHA256()))
+            return True
+        if isinstance(public_key, ed25519.Ed25519PublicKey):
+            public_key.verify(sig, payload)
+            return True
+    except Exception:
+        return False
+    return False
 
 
 def _hmac_sign(payload: bytes, secret: str) -> str:
@@ -155,7 +223,7 @@ def sign_payload(payload: bytes, key_path: Optional[str] = None) -> dict:
                 if isinstance(priv, ec.EllipticCurvePrivateKey):
                     sig = priv.sign(payload, ec.ECDSA(hashes.SHA256()))
                     return {
-                        "algorithm": "ECDSA-P256-SHA256",
+                        "algorithm": _ecdsa_algorithm(priv),
                         "value": base64.b64encode(sig).decode(),
                         "public_key_fp": _get_public_key_fp(priv),
                         "signed_at": now,
@@ -191,7 +259,14 @@ def sign_payload(payload: bytes, key_path: Optional[str] = None) -> dict:
     }
 
 
-def verify_payload(payload: bytes, signature_b64: str, public_key_fp: str, algorithm: Optional[str] = None, key_path: Optional[str] = None) -> bool:
+def verify_payload(
+    payload: bytes,
+    signature_b64: str,
+    public_key_fp: str,
+    algorithm: Optional[str] = None,
+    key_path: Optional[str] = None,
+    public_key_pem=None,
+) -> bool:
     """Verify a payload signature.
 
     Args:
@@ -199,13 +274,20 @@ def verify_payload(payload: bytes, signature_b64: str, public_key_fp: str, algor
         signature_b64: base64-encoded signature from sign_payload()
         public_key_fp: expected public key fingerprint (for asymmetric)
         algorithm: optional algorithm hint
-        key_path: path to public key PEM for asymmetric verification
+        key_path: path to the PRIVATE key PEM; its public half does the verifying
+        public_key_pem: PEM bytes/str of the public key alone. Preferred for
+            verifying a signature someone else produced: a detached signature
+            travels to a consumer who holds the public key and must NOT hold the
+            private one, so deriving the public key from `key_path` cannot serve
+            that case at all.
     """
     if not signature_b64:
         return False
 
     # HMAC verification
-    if algorithm == "HMAC-SHA256" or (algorithm is None and not public_key_fp):
+    if algorithm == "HMAC-SHA256" or (
+        algorithm is None and not public_key_fp and public_key_pem is None
+    ):
         secret = os.environ.get(ENV_HMAC_SECRET)
         if secret:
             return _hmac_verify(payload, signature_b64, secret)
@@ -218,6 +300,18 @@ def verify_payload(payload: bytes, signature_b64: str, public_key_fp: str, algor
     if not HAS_CRYPTO:
         return False
 
+    # 1. Public key supplied directly — the only path available to a verifier
+    #    who legitimately does not hold the private key.
+    if public_key_pem is not None:
+        pub = _load_public_key_pem(public_key_pem)
+        if pub is None:
+            return False
+        if public_key_fp and _fp_from_public_key(pub) != public_key_fp:
+            logger.warning("Public key fingerprint mismatch")
+            return False
+        return _verify_with_public_key(pub, payload, signature_b64)
+
+    # 2. Derive the public key from the configured private key.
     path = key_path or os.environ.get(ENV_KEY_PATH)
     if not path:
         return False
@@ -232,19 +326,30 @@ def verify_payload(payload: bytes, signature_b64: str, public_key_fp: str, algor
         logger.warning("Public key fingerprint mismatch")
         return False
 
-    pub = priv.public_key()
-    sig = base64.b64decode(signature_b64)
+    return _verify_with_public_key(priv.public_key(), payload, signature_b64)
 
+
+def export_public_key_pem(key_path: Optional[str] = None) -> Optional[str]:
+    """Return the PEM text of the public half of a configured private key.
+
+    Lets a producer ship the verification material alongside a detached
+    signature so the consumer never needs the private key.
+    """
+    if not HAS_CRYPTO:
+        return None
+    path = key_path or os.environ.get(ENV_KEY_PATH)
+    if not path:
+        return None
+    priv = _load_private_key(path)
+    if priv is None:
+        return None
     try:
-        if isinstance(pub, ec.EllipticCurvePublicKey):
-            pub.verify(sig, payload, ec.ECDSA(hashes.SHA256()))
-            return True
-        elif isinstance(pub, ed25519.Ed25519PublicKey):
-            pub.verify(sig, payload)
-            return True
+        return priv.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("utf-8")
     except Exception:
-        return False
-    return False
+        return None
 
 
 def has_signing_key() -> bool:

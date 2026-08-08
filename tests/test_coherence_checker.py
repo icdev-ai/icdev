@@ -13,6 +13,7 @@ from tools.workflow.coherence_checker import (
     CHECK_REGISTRY,
     CoherenceCheck,
     CoherenceReport,
+    _ALTER_ADD_COLUMN_RE,
     _extract_function_calls,
     _extract_function_sigs,
     _extract_imports,
@@ -20,6 +21,7 @@ from tools.workflow.coherence_checker import (
     _extract_sql_columns_from_python,
     _load_ruff_gate_whitelist,
     _parse_create_tables,
+    _parse_migration_added_columns,
     check_append_only,
     check_fixture_schema,
     check_import_usage,
@@ -106,6 +108,55 @@ CREATE TABLE IF NOT EXISTS orders (
         assert "email" in tables["users"]
         assert "user_id" in tables["orders"]
         assert "total" in tables["orders"]
+
+    def test_migration_added_columns_are_part_of_the_schema(self):
+        """check_schema_code was blind to the ONLY sanctioned way to add a column.
+
+        CLAUDE.md requires a new column to arrive via a migration rather than an
+        edit to CREATE TABLE, because CREATE TABLE IF NOT EXISTS never alters an
+        existing table. The check read only init_icdev_db.py's CREATE TABLE
+        bodies, so it failed an INSERT for following that rule —
+        sbom_records.author_signature (sbx-sig-01, migration 20260808030213) was
+        the first one to hit it.
+        """
+        added = _parse_migration_added_columns()
+
+        assert "sbom_records" in added
+        assert {"author_signature", "signature_algorithm"} <= set(added["sbom_records"])
+
+        # Both migration layouts the runner accepts must be scanned, so this is
+        # never satisfied by a single directory shape.
+        assert len(added) > 1, "only one table found — the ALTER scan is too narrow"
+
+    def test_migration_scan_reads_the_alter_forms_both_backends_use(self):
+        """PostgreSQL writes ADD COLUMN IF NOT EXISTS; SQLite cannot."""
+        matches = _ALTER_ADD_COLUMN_RE.findall(
+            "ALTER TABLE sbom_records ADD COLUMN sbom_author TEXT;\n"
+            "ALTER TABLE sbom_records ADD COLUMN IF NOT EXISTS tool_name TEXT;\n"
+            'ALTER TABLE IF EXISTS "sbom_components" ADD COLUMN producer TEXT;\n'
+        )
+        assert matches == [
+            ("sbom_records", "sbom_author"),
+            ("sbom_records", "tool_name"),
+            ("sbom_components", "producer"),
+        ]
+
+    def test_a_migration_only_table_is_not_synthesized_from_its_alters(self):
+        """Such a table would fail every INSERT naming an original column."""
+        added = _parse_migration_added_columns()
+        schema_path = Path(__file__).resolve().parent.parent / "tools" / "db" / "init_icdev_db.py"
+        declared = _parse_create_tables(schema_path.read_text(encoding="utf-8"))
+
+        tables = dict(declared)
+        for table, columns in added.items():
+            if table in tables:
+                tables[table] = list(tables[table]) + list(columns)
+
+        for table in added:
+            if table not in declared:
+                assert table not in tables, (
+                    f"{table} has no CREATE TABLE but was synthesized from its ALTERs"
+                )
 
     def test_extract_sql_columns_insert(self):
         source = '''

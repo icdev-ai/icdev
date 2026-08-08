@@ -427,11 +427,66 @@ _SCHEMA_CODE_BACKEND_PINNED = frozenset({
 })
 
 
+_ALTER_ADD_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?[\"'`]?(\w+)[\"'`]?\s+"
+    r"ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"'`]?(\w+)[\"'`]?",
+    re.IGNORECASE,
+)
+
+
+def _parse_migration_added_columns() -> Dict[str, List[str]]:
+    """Columns that reach an existing table via ALTER TABLE ADD COLUMN in a migration.
+
+    check_schema_code read only the CREATE TABLE bodies in init_icdev_db.py,
+    which made it structurally blind to every column added the way this repo
+    REQUIRES columns to be added. CLAUDE.md: "Adding a column means writing a
+    migration, not editing the CREATE TABLE" — because CREATE TABLE IF NOT
+    EXISTS never alters an existing table, so editing that DDL changes nothing
+    on a live database while making the declaration disagree with reality.
+
+    The check was therefore failing an INSERT for doing exactly the right thing.
+    sbom_records.author_signature (sbx-sig-01, added by migration
+    20260808030213) was the first INSERT to hit it, with the whole tree
+    otherwise at zero mismatches.
+
+    Deliberately NOT authoritative. check_insert_schema_parity reads the LIVE
+    schema (information_schema / PRAGMA) and remains the gate that catches a
+    column existing nowhere. This only widens the DECLARED set so a correctly
+    migrated column stops reading as unknown.
+
+    Tables that have no CREATE TABLE in init_icdev_db.py are left alone rather
+    than synthesized from their ALTERs — a table known only by the columns some
+    migration added to it would fail every INSERT naming an original column.
+    """
+    added: Dict[str, List[str]] = {}
+    migrations_dir = PROJECT_ROOT / "tools" / "db" / "migrations"
+    if not migrations_dir.exists():
+        return added
+
+    # The runner accepts both layouts: flat <version>_name.sql and
+    # <version>_name/up.sql. Miss either and the blindness comes straight back.
+    sql_files = sorted(migrations_dir.glob("*.sql")) + sorted(migrations_dir.glob("*/up.sql"))
+    for sql_file in sql_files:
+        text = _read_text(sql_file)
+        if not text or "ALTER" not in text.upper():
+            continue
+        # Whole comment lines only — the same rule _parse_create_tables uses.
+        text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("--"))
+        for table, column in _ALTER_ADD_COLUMN_RE.findall(text):
+            added.setdefault(table, []).append(column)
+    return added
+
+
 def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Verify CREATE TABLE columns match INSERT statements in tools."""
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
     schema_text = _read_text(schema_path)
     schema_tables = _parse_create_tables(schema_text)
+
+    # A column added by a migration is part of the schema too.
+    for table, columns in _parse_migration_added_columns().items():
+        if table in schema_tables:
+            schema_tables[table].extend(columns)
 
     mismatches: List[str] = []
     checked_files: List[str] = []

@@ -487,6 +487,30 @@ def test_the_same_project_in_both_formats_scores_identically(icdev_db, tmp_path)
     assert len(spdx["packages"]) == len(cyclonedx["components"]) + 1
 
 
+def test_an_spdx_document_is_signed_like_a_cyclonedx_one(icdev_db, tmp_path, monkeypatch):
+    """SBOM Author Signature (sbx-sig-01) has to reach the second format too.
+
+    An SPDX document that carried no signature would fail that element while
+    the CycloneDX document of the same build passed it — which is the parity
+    criterion breaking across a task boundary rather than inside one.
+    """
+    from tools.compliance.sbom_signer import signature_path_for, verify_sbom
+    from tools.crypto.key_manager import generate_keypair
+
+    keys = generate_keypair(tmp_path / "keys", "ecdsa-p256")
+    monkeypatch.setenv("ICDEV_SBOM_SIGNING_KEY_PATH", keys["private_key"])
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    (project_dir / "requirements.txt").write_text("flask==3.0.0\n", encoding="utf-8")
+    _seed_project(icdev_db, project_dir)
+
+    path = Path(generate_sbom("sbx-demo", sbom_format=FORMAT_SPDX, db_path=icdev_db))
+
+    assert signature_path_for(path).exists()
+    assert verify_sbom(path, expected_fp=keys["public_key_fp"])["verified"] is True
+
+
 # =====================================================================================
 # The MCP surface
 # =====================================================================================
