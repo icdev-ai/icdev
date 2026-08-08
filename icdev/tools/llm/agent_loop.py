@@ -246,14 +246,51 @@ def _estimate_text_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def _serialize_payload(payload: Any) -> str:
+    """Render a tool payload the way it goes on the wire, for token accounting."""
+    if isinstance(payload, str):
+        return payload
+    try:
+        return json.dumps(payload, sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001 — accounting must never raise
+        return str(payload)
+
+
+def _estimate_block_tokens(block: dict[str, Any], _depth: int = 0) -> int:
+    """Estimate tokens in one content block, INCLUDING its tool traffic.
+
+    Counting only ``block["text"]`` reports ZERO for the two block types that
+    carry the bulk of an agentic conversation:
+
+      * ``tool_use`` — the arguments the model produced live under ``input``.
+      * ``tool_result`` — the tool's output is nested under ``content``, either
+        as a list of blocks or as a plain string.
+
+    In a tool-heavy run (i.e. every real build) that made the dominant content
+    invisible to the compaction trigger, so history grew past the real window
+    while the estimate stayed near zero.
+    """
+    total = _estimate_text_tokens(str(block.get("text") or ""))
+    tool_input = block.get("input")
+    if tool_input:
+        total += _estimate_text_tokens(_serialize_payload(tool_input))
+    inner = block.get("content")
+    if isinstance(inner, list):
+        if _depth < 4:  # nesting is one level in practice; bound it anyway
+            total += sum(
+                _estimate_block_tokens(b, _depth + 1) for b in inner if isinstance(b, dict)
+            )
+    elif inner:
+        total += _estimate_text_tokens(_serialize_payload(inner))
+    return total
+
+
 def _estimate_message_tokens(msg: dict[str, Any]) -> int:
-    """Estimate tokens in a single message (text-only; tool blocks counted by text)."""
+    """Estimate tokens in a single message, counting text AND tool blocks."""
     content = msg.get("content", "")
     if isinstance(content, list):
         return sum(
-            _estimate_text_tokens(str(block.get("text", "")))
-            for block in content
-            if isinstance(block, dict)
+            _estimate_block_tokens(block) for block in content if isinstance(block, dict)
         )
     return _estimate_text_tokens(str(content))
 
@@ -313,6 +350,36 @@ def _load_budget_defaults() -> dict[str, Any]:
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
+
+
+def _resolve_context_window_tokens(llm_function: str, configured: int | None) -> int | None:
+    """Compaction threshold for *llm_function* — the routed chain's real window.
+
+    ``args/llm_config.yaml`` declares a single static
+    ``agent_loop.budgets.context_window_tokens`` for every function and every
+    model. :mod:`icdev.tools.llm.context_budget` already knows the real,
+    per-model numbers, and ``floor_window_for_function`` takes the MINIMUM
+    across the chain that could serve the function — the only bound that stays
+    correct when a run falls back mid-flight from a large-window model to a
+    small one. That minimum is used verbatim; there is deliberately no branch on
+    model family, because the chain minimum is the whole point.
+
+    *configured* is kept as the fallback for when the chain declares no window
+    at all (an unrouted function, an unreadable config, or a chain whose models
+    carry no ``context_window``), so this can only sharpen the threshold, never
+    remove it.
+    """
+    try:
+        from icdev.tools.llm import context_budget
+
+        chain = context_budget.chain_for_function(llm_function)
+        windows = context_budget.model_windows()
+        if not any(windows.get(model) for model in chain):
+            return configured
+        return int(context_budget.floor_window_for_function(llm_function))
+    except Exception as exc:  # noqa: BLE001 — degrade to the configured value
+        logger.debug("agent_loop: context-window resolution failed: %s", exc)
+        return configured
 
 
 def _wall_clock_deadline(max_wall_clock_seconds: float | None) -> float | None:
@@ -840,9 +907,18 @@ def run_agent_loop(
             ``0`` (or negative) disables the ceiling entirely. Elapsed time is
             always reported in :attr:`AgentLoopResult.elapsed_seconds`.
         context_window_tokens: Soft threshold; if message history exceeds this,
-            it is compressed before the next LLM turn.
+            it is compressed before the next LLM turn. ``None`` (the default)
+            resolves the REAL window of the chain routed for ``llm_function``
+            via
+            :func:`icdev.tools.llm.context_budget.floor_window_for_function` —
+            the minimum across that chain, so a mid-flight fallback to a
+            smaller-window model cannot overflow. ``args/llm_config.yaml``
+            ``agent_loop.budgets.context_window_tokens`` is the fallback for a
+            chain that declares no window.
         compression_budget_tokens: Target token budget used when compression is
-            triggered (defaults to 75% of ``context_window_tokens``).
+            triggered (defaults to 75% of ``context_window_tokens``). A
+            config-supplied value is clamped to that 75% when the resolved
+            window is smaller than the configured one.
         tool_timeout_seconds: Per-tool execution timeout. If a handler doesn't
             return within this many seconds, it is cancelled and an error
             tool_result is appended. ``None`` means no timeout (default). Loaded
@@ -915,11 +991,28 @@ def run_agent_loop(
         max_cost_usd = budget_defaults["max_cost_usd"]
     if max_wall_clock_seconds is None and "max_wall_clock_seconds" in budget_defaults:
         max_wall_clock_seconds = budget_defaults["max_wall_clock_seconds"]
-    if context_window_tokens is None and "context_window_tokens" in budget_defaults:
-        context_window_tokens = budget_defaults["context_window_tokens"]
+    # Context window: an explicit caller value always wins. Otherwise resolve the
+    # REAL window of the chain routed for llm_function, falling back to the
+    # static config value when that chain declares none.
+    _caller_context_window = context_window_tokens
+    if _caller_context_window is None:
+        context_window_tokens = _resolve_context_window_tokens(
+            llm_function, budget_defaults.get("context_window_tokens")
+        )
+    _caller_compression_budget = compression_budget_tokens
     if compression_budget_tokens is None and "compression_budget_tokens" in budget_defaults:
         compression_budget_tokens = budget_defaults["compression_budget_tokens"]
     if compression_budget_tokens is None and context_window_tokens is not None:
+        compression_budget_tokens = int(context_window_tokens * 0.75)
+    # A config-supplied compression budget can exceed a resolved window that is
+    # smaller than the configured one; compressing to a target above the window
+    # would leave history over the threshold and re-fire every turn.
+    if (
+        _caller_compression_budget is None
+        and compression_budget_tokens is not None
+        and context_window_tokens is not None
+        and compression_budget_tokens > context_window_tokens * 0.75
+    ):
         compression_budget_tokens = int(context_window_tokens * 0.75)
     if tool_timeout_seconds is None and "tool_timeout_seconds" in budget_defaults:
         tool_timeout_seconds = budget_defaults["tool_timeout_seconds"]
