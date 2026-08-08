@@ -269,6 +269,67 @@ tool=…, decision=…)`.
 
 ---
 
+## Parallel DAG dispatch (hgx-par-01)
+
+`_resolve_dag` returned `list(TopologicalSorter(...).static_order())` — a
+FLATTENED linear list — and `_worker` walked it with `for i, step in
+enumerate(ordered_steps)`. Templates authored as a fan-out therefore ran one
+step at a time. `args/workflow_templates/ai_ml_transformation.yaml` is the
+textbook case: `coa_a`/`coa_b`/`coa_c` share the same two dependencies and then
+join at `leadership_brief` — a diamond, executed serially.
+
+`_worker` now walks a **prepared** sorter (`_prepare_dag`) with
+`get_ready()`/`done()` inside a bounded `ThreadPoolExecutor`, mirroring
+`tools/agent/team_orchestrator.py::execute_workflow`. Decisions D40 (graphlib)
+and D36 (threads, not asyncio — which is also what keeps it portable).
+
+**Concurrency is opt-in.** `max_parallel:` is a top-level template key that
+**defaults to 1**, so all 61 shipped templates (42 in `args/workflow_templates`,
+19 in `context/workflow_templates`) stay byte-for-byte sequential. At 1 the
+executed order is identical to the old `static_order()` walk, and
+`tests/studio/test_workflow_parallel.py` asserts that per template rather than
+in aggregate.
+
+Preserving that order took two deliberate choices, both of which are silent
+correctness traps:
+
+* The pool's queue is FIFO, so with one worker submission order **is** execution
+  order. Ready nodes are submitted as a group, exactly as `static_order()`
+  yields them.
+* Completed futures are retired in **submission** order, not in the
+  set-iteration order `concurrent.futures.wait` hands back. graphlib appends
+  each newly-unblocked node as its last dependency is `done()`, so walking the
+  completed set directly would make dispatch order depend on thread scheduling.
+
+**No barrier primitive was added.** Fan-in falls out of graphlib: a join is just
+a step that names several ids in `depends_on`, and `get_ready()` withholds it
+until all of them are retired.
+
+Three things the parallel loop has to get right that the linear walk never had
+to:
+
+* **A human gate parks its own branch, not the pool.** `_await_gate` blocks by
+  design; it now blocks a pool thread, leaving the other `max_parallel - 1`
+  slots free for sibling branches.
+* **A rejected or timed-out gate still stops the run.** Under the linear walk
+  that was a `break`. It cannot be one here, because a sibling of the gate may
+  already be sitting in the pool's queue — so it sets an abort flag that every
+  queued step checks on entry, and the main loop retires the remainder without
+  executing them. A step the old walk never reached still leaves no record.
+* **Emission is no longer ordered.** The per-run SSE `queue.Queue(maxsize=500)`
+  and the old `index` field assumed positional emission. `step_started` /
+  `step_done` now carry a monotonic `seq` instead of a list position. Nothing
+  consumed `index` (`tools/dashboard/templates/studio/execution.html` keys off
+  `step_id`). `run_started` gained `max_parallel`.
+
+Step records are keyed by `step_run_id`, so DB writes were already safe. The two
+pieces of shared in-process state were not: `results`/`all_artifacts` are guarded
+by a run-scoped lock, and `_remember_artifacts` — one JSON blob updated
+read-modify-write — holds `_artifacts_lock` across the whole get/set pair, or
+two steps of the same wave would drop one of the two artifact sets.
+
+---
+
 ## Tests
 
 `tests/studio/test_mcp_executor_approval.py` — the gate parks a pending human
@@ -284,6 +345,17 @@ the Python constants; and an audit outage does not change the dispatch.
 `tests/test_dwo_dur_03_resume_surface.py` — retry policy parsing and defaults,
 retry execution paths, resumable-status contract, the API's 202/404/409
 outcomes, and the UI control's presence and status parity.
+
+`tests/studio/test_workflow_parallel.py` — every shipped template dispatches in
+the old `static_order()` sequence when `max_parallel` is unset (one case per
+template, plus a guard that the corpus is non-empty and that no shipped template
+declares the key); `max_parallel` parsing and clamping; a diamond's three
+branches overlap pairwise while the join waits for all three, and the same
+template minus the key overlaps not at all; a human gate parks its branch while
+siblings run to completion (the fake gate refuses to resolve until both siblings
+finish, so blocking the pool deadlocks the test rather than passing it); a
+rejected gate leaves every later step unexecuted; a failing tool step does not
+block its wave; dangling `depends_on` and cycles.
 
 `tests/test_dwo_gate_bridge.py` — one parked gate produces exactly one
 reviewer-inbox row (and re-parking does not duplicate it); approving from
