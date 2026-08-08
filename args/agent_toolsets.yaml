@@ -36,6 +36,20 @@ bundles:
       - run_command       # mutating — safety-gated
     mutating: true
 
+  skills:
+    description: >-
+      Progressive disclosure of the .agents/skills library: list every skill's
+      name and description (cheap — bodies are never read, so the cost tracks the
+      skill COUNT, not their length), then load one skill's full instructions on
+      demand. Both read-only. Cheap enough to add to any role: without them the
+      whole propose -> HITL approve -> SKILL.md -> curate lifecycle produces
+      artifacts no model ever sees. A load also records a use, which is what
+      feeds the curator's idle-archive sweep.
+    tools:
+      - list_skills
+      - load_skill
+    mutating: false
+
   compliance:
     description: >-
       NIST / FedRAMP / CMMC / STIG compliance artifact generation and lookups.
