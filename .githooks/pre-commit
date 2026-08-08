@@ -1,0 +1,41 @@
+#!/bin/sh
+# ICDEV pre-commit gate — runs for EVERY tool, not just Claude Code.
+#
+# Claude Code's own hook blocks a stray `git worktree add` at creation time, but
+# it only exists inside Claude Code. Cursor, Codex, aider, a plain shell and a
+# human all reach git through this path instead, which is why the worktree check
+# lives here as well: git runs it regardless of which LLM (or person) staged the
+# commit, and regardless of OS.
+#
+# POSIX sh on purpose — this must run under Git Bash on Windows and /bin/sh on
+# Linux and macOS alike.
+#
+# Install with:  python -m tools.git.worktree_paths --install-hooks
+
+set -e
+
+# Blueprint imports / nav routes (pre-existing gate).
+if [ -f tools/testing/pre_commit_check.py ]; then
+    python tools/testing/pre_commit_check.py || exit 1
+fi
+
+# Where is this commit being made from?
+#
+# WARN, do not block. By commit time the work already exists in the wrong place,
+# so refusing the commit only traps it there — the useful block is at creation,
+# which the Claude hook does. This exists to tell every OTHER tool immediately,
+# on its first commit, that it picked a colliding location.
+# Set ICDEV_WORKTREE_GUARD_COMMIT=1 to make it blocking.
+if [ "${ICDEV_WORKTREE_GUARD:-1}" != "0" ]; then
+    if python -m tools.git.worktree_paths --check-cwd >/dev/null 2>&1; then
+        :
+    else
+        python -m tools.git.worktree_paths --check-cwd || true
+        if [ "${ICDEV_WORKTREE_GUARD_COMMIT:-0}" = "1" ]; then
+            echo "BLOCKED: commit refused from an unsanctioned worktree (ICDEV_WORKTREE_GUARD_COMMIT=1)" >&2
+            exit 1
+        fi
+    fi
+fi
+
+exit 0

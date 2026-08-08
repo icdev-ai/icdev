@@ -21,6 +21,7 @@ import json
 import os
 import re
 import subprocess
+import shlex
 import sys
 from fnmatch import fnmatch
 from pathlib import Path
@@ -1011,6 +1012,95 @@ def run_review_loop_precommit(tool_name: str, tool_input: dict) -> None:
         return  # never break a commit
 
 
+def _worktree_add_target(command: str, posix=None):
+    """Target path of a ``git worktree add`` in *command*, or None.
+
+    Returns None whenever the path cannot be determined with confidence — the
+    caller treats that as "allow". A parser that guesses would block legitimate
+    work, which is strictly worse than failing to catch a stray worktree.
+
+    The shlex mode must follow the OS, because neither mode is correct on both:
+
+        "git worktree add C:\\Users\\u\\wt"   posix=True  -> "C:Usersuwt"     WRONG
+        "git worktree add /tmp/my\\ dir"      posix=False -> ["/tmp/my\\","dir"] WRONG
+
+    On Windows a backslash is a path separator; on POSIX it is an escape. Pick
+    by platform rather than hardcoding either. *posix* is overridable so both
+    branches stay testable on a single host.
+    """
+    if "worktree" not in command or "add" not in command:
+        return None
+    if posix is None:
+        posix = os.name != "nt"
+    try:
+        tokens = shlex.split(command, posix=posix)
+        if not posix:
+            # Non-posix mode leaves quotes attached to the token.
+            tokens = [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t
+                      for t in tokens]
+    except ValueError:
+        return None
+
+    for i in range(len(tokens) - 2):
+        if tokens[i].endswith("git") and tokens[i + 1] == "worktree" and tokens[i + 2] == "add":
+            rest = tokens[i + 3:]
+            break
+    else:
+        return None
+
+    skip_next = False
+    for tok in rest:
+        if skip_next:
+            skip_next = False
+            continue
+        if tok in ("-b", "-B", "--reason", "--lock-reason"):
+            skip_next = True          # these take a value that is NOT the path
+            continue
+        if tok.startswith("-"):
+            continue                  # --detach, --no-checkout, --force, ...
+        return tok                    # first positional is the worktree path
+    return None
+
+
+def check_worktree_path(tool_name: str, tool_input: dict) -> str:
+    """Refuse a ``git worktree add`` outside the sanctioned roots.
+
+    Measured 2026-08-07: 150 registered worktrees across 22 parent directories,
+    118 of them stray — 33 flat in %TEMP%\\claude, 28 in C:\\AI\\.worktrees, 27
+    nested inside another worktree. Five basenames collided across parents, and
+    two simultaneous ``wt-wake2`` checkouts on different branches are how one
+    session's edits appeared in another session's working tree.
+
+    CLAUDE.md has asked for a worktree convention in prose since the beginning
+    and produced those 150. A check is what makes a convention hold, so this
+    blocks rather than warns. Set ICDEV_WORKTREE_GUARD=0 to disable.
+
+    Fails OPEN: any resolution error allows the command. A guard that cannot
+    parse a path must not be the reason a session cannot work.
+    """
+    if tool_name != "Bash":
+        return ""
+    if os.environ.get("ICDEV_WORKTREE_GUARD", "1").strip().lower() in ("0", "false", "no", "off"):
+        return ""
+    command = tool_input.get("command", "") or ""
+    target = _worktree_add_target(command)
+    if not target:
+        return ""
+    try:
+        # rls-bypass: repo root resolved from __file__, never os.getcwd() — this
+        # hook runs from whatever worktree invoked it, so cwd is not the repo.
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from tools.git.worktree_paths import describe_violation, is_sanctioned
+
+        if is_sanctioned(target, repo_root=repo_root):
+            return ""
+        return "BLOCKED: " + describe_violation(target)
+    except Exception:
+        return ""  # fail open — never block on a broken guard
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -1048,6 +1138,12 @@ def main():
         tier_error = check_file_access_tiers(tool_name, tool_input)
         if tier_error:
             print(tier_error, file=sys.stderr)
+            sys.exit(2)
+
+        # Keep worktrees out of shared temp dirs where two sessions collide
+        worktree_error = check_worktree_path(tool_name, tool_input)
+        if worktree_error:
+            print(worktree_error, file=sys.stderr)
             sys.exit(2)
 
         # Self-green staged changes before a git commit (warn-only by default)
