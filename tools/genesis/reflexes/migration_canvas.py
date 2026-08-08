@@ -16,8 +16,17 @@ Air-gap safe: no LLM calls — pure DB heuristics.
 from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict
+
+from tools.migration_canvas.constants import NET_SESSION_TERMINAL_STATUSES
+
+# Session statuses that count as closed.  Sourced from the canvas constants so
+# the reflex and the PATCH validator cannot drift apart: a session closed the
+# way the canvas closes it must stop producing findings.
+_TERMINAL_SESSION_STATUSES = NET_SESSION_TERMINAL_STATUSES
+_TERMINAL_PLACEHOLDERS = ",".join(["%s"] * len(_TERMINAL_SESSION_STATUSES))
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +61,23 @@ def _days_since(iso_str: str) -> int:
         return 0
 
 
+def _finding_task_id(finding: Dict[str, Any]) -> str:
+    """Return a stable kanban task id for a finding.
+
+    Derived from the finding identity only — never from the message or the
+    confidence, both of which drift every run as a session ages.  A stable id
+    is what makes the ``INSERT OR IGNORE`` below an actual dedupe guard: with
+    the previous ``uuid4()`` id nothing ever collided, so each 24h cycle
+    re-promoted every open finding as a new card (291 cards over 5 runs).
+    """
+    key = "|".join((
+        finding.get("type", ""),
+        str(finding.get("session_id") or finding.get("device_id") or ""),
+        finding.get("suggested_action", ""),
+    ))
+    return "mc-reflex-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
+
+
 def _days_until(iso_str: str) -> int:
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
@@ -71,12 +97,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     try:
         from tools.migration_canvas.db.init_db import get_connection as _mc_conn
         with _mc_conn() as mc:
-            rows = mc.execute(
-                """SELECT id, src_model, tgt_model, status, updated_at
-                   FROM mc_net_sessions
-                   WHERE status IN ('in_progress','draft')
-                   ORDER BY updated_at ASC"""
-            ).fetchall()
+            # Interpolation is the placeholder count only; values stay bound.
+            sql = (
+                "SELECT id, src_model, tgt_model, status, updated_at FROM mc_net_sessions "
+                f"WHERE status NOT IN ({_TERMINAL_PLACEHOLDERS}) ORDER BY updated_at ASC"  # nosec B608
+            )
+            rows = mc.execute(sql, _TERMINAL_SESSION_STATUSES).fetchall()
         for r in rows:
             age = _days_since(r["updated_at"] or r.get("created_at", _now()))
             if age > _STALE_SESSION_DAYS:
@@ -103,11 +129,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             ).fetchall()
         with _mc() as mc:
             # Use src_device_name as the device identifier (no device_id FK in schema)
+            # Interpolation is the placeholder count only; values stay bound.
+            active_sql = (
+                "SELECT src_device_name FROM mc_net_sessions "
+                f"WHERE src_device_name IS NOT NULL AND status NOT IN ({_TERMINAL_PLACEHOLDERS})"  # nosec B608
+            )
             active_device_labels = {
-                r["src_device_name"] for r in mc.execute(
-                    "SELECT src_device_name FROM mc_net_sessions "
-                    "WHERE src_device_name IS NOT NULL AND status != 'completed'"
-                ).fetchall()
+                r["src_device_name"]
+                for r in mc.execute(active_sql, _TERMINAL_SESSION_STATUSES).fetchall()
             }
         for d in devices:
             days_left = _days_until(d["eol_date"])
@@ -150,16 +179,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     # ── 4. Promote findings to kanban ─────────────────────────────────────────
     promoted = 0
+    seen_task_ids: set[str] = set()
     try:
-        import uuid
         from tools.db.storage import get_connection as _icdev_conn
         threshold = float((config or {}).get("promotion_threshold", _PROMOTION_THRESHOLD_DEFAULT))
         with _icdev_conn() as ic:
             for f in findings:
                 if f["confidence"] < threshold:
                     continue
-                task_id = "mc-reflex-" + uuid.uuid4().hex[:8]
-                ic.execute(
+                task_id = _finding_task_id(f)
+                if task_id in seen_task_ids:
+                    continue
+                seen_task_ids.add(task_id)
+                cur = ic.execute(
                     # `source` is not a column — the live column is
                     # `dispatch_source` (swp-scan-01), so no NMCE finding was
                     # ever promoted to the board.
@@ -177,7 +209,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         _now(),
                     ),
                 )
-                promoted += 1
+                # Card ids are stable, so a re-run of an unchanged finding is
+                # ignored by the DB.  Count rows actually written, not rows
+                # attempted, or the metric reports 60 promotions a day forever.
+                promoted += getattr(cur, "rowcount", 1) or 0
     except Exception as exc:
         errors.append(f"kanban_promote: {exc}")
 
@@ -187,6 +222,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "details": {
             "findings": len(findings),
             "promoted_to_kanban": promoted,
+            "promotion_candidates": len(seen_task_ids),
             "errors": errors,
             "breakdown": {
                 "stale_sessions": sum(1 for f in findings if f["type"] == "stale_migration_session"),

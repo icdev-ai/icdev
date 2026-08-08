@@ -118,6 +118,7 @@ jobs:
           trap _abort SIGTERM SIGINT
           pytest tests/test_circuit_breaker.py \
             tests/test_reflex_circuit_breaker_recovery.py \
+            tests/test_genesis_reflex_migration_canvas.py \
             tests/test_retry.py \
             tests/test_correlation.py \
             tests/test_errors.py \

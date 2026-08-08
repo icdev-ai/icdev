@@ -340,6 +340,23 @@ MIGRATION_LIFECYCLE_STATES = [
     "complete",
 ]
 
+# Network migration session lifecycle — the vocabulary of mc_net_sessions.status.
+# Single source of truth for the PATCH validator (blueprint.py) and the NMCE
+# genesis reflex, which flags any session left in a non-terminal state.
+NET_SESSION_STATUSES = (
+    "in_progress",
+    "draft",
+    "blocked",
+    "complete",
+    "archived",
+    "cancelled",
+)
+
+# Closed states — a session in one of these no longer counts as active work.
+# 'complete'/'archived' are what blueprint.py and network_migration.py already
+# query for; 'cancelled' closes a session that was abandoned rather than done.
+NET_SESSION_TERMINAL_STATUSES = ("complete", "archived", "cancelled")
+
 MIGRATION_TYPES = [
     "application",
     "cloud",

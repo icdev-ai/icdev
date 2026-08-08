@@ -40,6 +40,7 @@ from tools.migration_canvas.constants import (  # noqa: E402
     MIGRATION_OBJECTS,
     MC_COMPLIANCE_RULES,
     MIGRATION_TYPES,
+    NET_SESSION_STATUSES,
     SOP_TYPES,
 )
 from tools.migration_canvas.migration_engine import (  # noqa: E402
@@ -935,6 +936,13 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
+        # Status drives the NMCE reflex's "still open" test — an unrecognised
+        # value would silently leave the session flagged forever.
+        if "status" in fields and fields["status"] not in NET_SESSION_STATUSES:
+            return jsonify({
+                "error": f"Invalid status '{fields['status']}'",
+                "allowed": list(NET_SESSION_STATUSES),
+            }), 400
         set_clause = ", ".join(f"{k}=%s" for k in fields)
         with get_connection() as conn:
             conn.execute(
