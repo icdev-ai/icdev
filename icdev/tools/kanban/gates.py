@@ -19,7 +19,23 @@ Keep it import-free.
 
 from __future__ import annotations
 
+#: The canonical first gate of a card. Kept as a named constant because seeders
+#: and docs reference it directly, but it is NOT what the predicate matches on —
+#: see ``GATE_ID_MARKER``.
 GATE_ID_SUFFIX = "-gate-00"
+
+#: What the predicate actually matches: ``<prefix>-gate-<digits>``.
+#:
+#: A card may hold MORE THAN ONE gate. HGX seeded ``hgx-gate-00`` for the card as
+#: a whole and ``hgx-gate-01`` for the six slices that have an autonomous agent
+#: edit its own guardrails or dispatch path. Matching only on ``-gate-00`` meant
+#: ``hgx-gate-01`` was invisible to every exemption: the dispatcher promoted it,
+#: the stale-reaper bounced it back to backlog, and the dispatcher promoted it
+#: again — three dispatches in one afternoon. Worse, each dispatched session gets
+#: the boilerplate "POST status done" closing steps, so any one of them could
+#: have released all six self-modification slices unattended.
+GATE_ID_MARKER = "-gate-"
+
 GATE_TITLE_MARKER = "MANUAL-MODE GATE"
 
 #: The line a gate uses to say WHY it is held (kpr-idle-02).
@@ -58,10 +74,14 @@ _IMPLICIT_RISK_PHRASES = (
 def is_manual_gate(task_id: str | None, title: str | None) -> bool:
     """True when the task is a manual-mode gate sentinel.
 
-    Matches on EITHER the id suffix or the title marker, so a gate is still
-    recognised if one of the two is renamed.
+    Matches on EITHER a ``<prefix>-gate-<digits>`` id or the title marker, so a
+    gate is still recognised if one of the two is renamed, and so a card's
+    SECOND gate is recognised as well as its first.
     """
-    return str(task_id or "").endswith(GATE_ID_SUFFIX) or GATE_TITLE_MARKER in (title or "")
+    head, sep, tail = str(task_id or "").rpartition(GATE_ID_MARKER)
+    if sep and head and tail.isascii() and tail.isdigit():
+        return True
+    return GATE_TITLE_MARKER in (title or "")
 
 
 def declared_risk(description: str | None) -> tuple[str | None, str]:

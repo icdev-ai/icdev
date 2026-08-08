@@ -3656,27 +3656,27 @@ def _detect_orphan_done_tasks() -> list[dict]:
         conn = get_connection()
         try:
             # Scalar dep orphans: done task whose depends_on_task_id parent isn't done
+            # A manual gate never completes — that is the whole point of it. Its
+            # done dependents are finished work, not orphans. The gate exclusion
+            # is applied in Python below via ``_is_manual_gate`` rather than as a
+            # ``NOT LIKE '%-gate-00'`` clause: LIKE has no digit class portable
+            # across PG and SQLite, and the literal ``-gate-00`` missed a card's
+            # SECOND gate (``hgx-gate-01``) entirely.
             scalar_rows = conn.execute(
                 "SELECT t.id AS id, t.depends_on_task_id AS parent_id, "
-                "       p.status AS parent_status "
+                "       p.status AS parent_status, p.title AS parent_title "
                 "FROM kanban_tasks t "
                 "JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
                 "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed') "
-                # A manual gate never completes — that is the whole point of it.
-                # Its done dependents are finished work, not orphans.
-                "  AND p.id NOT LIKE '%%-gate-00' "
-                "  AND COALESCE(p.title, '') NOT LIKE '%%MANUAL-MODE GATE%%'"
             ).fetchall()
             # Junction dep orphans: done task with at least one unfinished junction parent
             junction_rows = conn.execute(
                 "SELECT DISTINCT t.id AS id, d.depends_on_id AS parent_id, "
-                "       p.status AS parent_status "
+                "       p.status AS parent_status, p.title AS parent_title "
                 "FROM kanban_tasks t "
                 "JOIN kanban_task_deps d ON d.task_id = t.id "
                 "JOIN kanban_tasks p ON p.id = d.depends_on_id "
                 "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed') "
-                "  AND p.id NOT LIKE '%%-gate-00' "
-                "  AND COALESCE(p.title, '') NOT LIKE '%%MANUAL-MODE GATE%%'"
             ).fetchall()
         finally:
             conn.close()
@@ -3688,6 +3688,8 @@ def _detect_orphan_done_tasks() -> list[dict]:
     orphans: list[dict] = []
     for r in list(scalar_rows) + list(junction_rows):
         d = dict(r)
+        if _is_manual_gate(d.get("parent_id"), d.get("parent_title")):
+            continue
         if d["id"] not in seen:
             seen.add(d["id"])
             orphans.append({
