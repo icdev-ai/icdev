@@ -108,7 +108,7 @@ def run(ctx: Dict[str, Any], conn=None) -> Dict[str, Any]:
                 cache.parent.mkdir(parents=True, exist_ok=True)
                 cache.write_text(
                     json.dumps({"sha": sha, "tier": "full", "failing": failing}),
-                    encoding="utf-8",
+                    encoding="utf-8", newline="",
                 )
                 result["baseline_refreshed"] = str(cache.name)
             except OSError as exc:

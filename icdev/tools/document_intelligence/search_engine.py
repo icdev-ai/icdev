@@ -1113,7 +1113,7 @@ def _file_qa_to_wiki(query: str, answer: str, collection_id: str | None) -> None
             f"**A (DIC grounded):** {answer}\n\n"
             f"*Synthesized from DIC search{col_tag}. Filed automatically.*\n"
         )
-        topic_file.write_text(body, encoding="utf-8")
+        topic_file.write_text(body, encoding="utf-8", newline="")
 
         # Append index entry
         mem_index = auto_dir / "MEMORY.md"

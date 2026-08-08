@@ -485,11 +485,11 @@ def remediate_missing_manifest(
             index_text = index_path.read_text(encoding="utf-8")
             if "manifest/unclassified.md" not in index_text:
                 index_text = index_text.rstrip() + "\n- [Unclassified (auto-added)](manifest/unclassified.md)\n"
-                index_path.write_text(index_text, encoding="utf-8")
+                index_path.write_text(index_text, encoding="utf-8", newline="")
                 changed.append("tools/manifest.md")
 
         shard_content = shard_content.rstrip() + "\n" + "\n".join(lines_to_append) + "\n"
-        shard_path.write_text(shard_content, encoding="utf-8")
+        shard_path.write_text(shard_content, encoding="utf-8", newline="")
         changed.append("tools/manifest/unclassified.md")
 
         if _git_commit_amend(cwd, changed):

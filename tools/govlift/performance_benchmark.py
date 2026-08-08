@@ -246,7 +246,7 @@ def main() -> int:
     # Write report for CI consumption
     report_path = Path(ci_cfg.get("report_path", ".tmp/perf_report.json"))
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8", newline="")
 
     if ci_cfg.get("fail_on_sla_breach") and not report["sla_met"]:
         print("[bench] FAIL: SLA breach — scanner did not meet time requirement", file=sys.stderr)

@@ -229,7 +229,7 @@ def render_tree(
 
         if not dry_run:
             dest_path.parent.mkdir(parents=True, exist_ok=True)
-            dest_path.write_text(rendered_text, encoding="utf-8")
+            dest_path.write_text(rendered_text, encoding="utf-8", newline="")
         rendered.append(dest_name)
 
     # `copy:` — verbatim copies of REAL repo files (src is repo-root-relative),

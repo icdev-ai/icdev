@@ -680,7 +680,7 @@ def translate_to_icdev(skill_path, output_path=None):
     out_dir = Path(output_path) if output_path else skill_path
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "SKILL.md"
-    out_file.write_text(icdev_content, encoding="utf-8")
+    out_file.write_text(icdev_content, encoding="utf-8", newline="")
 
     return {
         "success": True,

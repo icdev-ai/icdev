@@ -940,7 +940,7 @@ def seed_skills(
             pkg_dir = tmpdir / slug
             pkg_dir.mkdir(parents=True, exist_ok=True)
             skill_md = _build_skill_md(skill)
-            (pkg_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
+            (pkg_dir / "SKILL.md").write_text(skill_md, encoding="utf-8", newline="")
 
             if dry_run:
                 results.append({"slug": slug, "status": "dry_run", "ok": True})

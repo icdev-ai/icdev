@@ -565,7 +565,7 @@ def main():
                 ext = ext_map.get(args.target_language, ".txt")
                 name = Path(src_file).stem + ext
                 out_path = out_dir / name
-                out_path.write_text(code, encoding="utf-8")
+                out_path.write_text(code, encoding="utf-8", newline="")
 
     # Audit trail
     try:

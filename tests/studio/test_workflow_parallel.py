@@ -42,7 +42,17 @@ _TEMPLATE_DIRS = (
 # ── Harness ────────────────────────────────────────────────
 
 class _Recorder:
-    """Records the order and wall-clock span of every step the runner executes."""
+    """Records the order and wall-clock span of every step the runner executes.
+
+    Timed with ``time.perf_counter``, not ``time.monotonic``. Both are
+    monotonic, but on Windows ``monotonic`` is GetTickCount64 — a ~15.6 ms tick
+    — while ``perf_counter`` is QueryPerformanceCounter, sub-microsecond. Two
+    steps that genuinely start milliseconds apart therefore get the IDENTICAL
+    monotonic timestamp on Windows, and a `start_b > start_a` assertion fails on
+    a run where nothing was wrong. On Linux the same clock has ns resolution, so
+    the flake is invisible there. Caught by the windows-latest CI tier
+    (hgx-port-02) on its first run: `assert (9775.625 > 9775.625 or False)`.
+    """
 
     def __init__(self) -> None:
         self.order: list[str] = []
@@ -53,9 +63,9 @@ class _Recorder:
         step_id = step["id"]
         with self._lock:
             self.order.append(step_id)
-        start = time.monotonic()
+        start = time.perf_counter()
         time.sleep(float(step.get("_test_sleep", 0) or 0))
-        end = time.monotonic()
+        end = time.perf_counter()
         with self._lock:
             self.spans[step_id] = (start, end)
         node_type = step.get("node_type", "tool")
@@ -357,10 +367,15 @@ def test_cycle_fails_the_run_before_any_step(monkeypatch):
 
 
 def test_failed_step_does_not_block_its_wave(monkeypatch):
-    """A failing tool step marks the run failed but still runs the others.
+    """A failing tool step marks the run failed but still runs its SIBLINGS.
 
-    This is the pre-existing contract (only a gate short-circuits the walk); the
-    parallel loop must not quietly start cancelling downstream work.
+    `boom` and `other` are independent, so `other` must still run — a failure
+    anywhere must not short-circuit the walk the way a rejected gate does.
+
+    What changed in hgx-cond-01 is the DESCENDANT: `last` depends on `boom`, so
+    it is now cancelled rather than run against a precondition already known to
+    be broken. Before that card it executed, which is what this test used to
+    assert.
     """
     recorder = _Recorder()
     _stub_persistence(monkeypatch, recorder)
@@ -385,7 +400,10 @@ def test_failed_step_does_not_block_its_wave(monkeypatch):
         "default", run_queue,
     )
     events = _drain(run_queue)
-    assert set(recorder.order) == {"boom", "other", "last"}
+    assert set(recorder.order) == {"boom", "other"}
+    last = [e for e in events if e.get("step_id") == "last" and e["type"] == "step_done"][0]
+    assert last["status"] == "skipped"
+    assert "Cancelled" in last["reason"] and "boom" in last["reason"]
     assert [e for e in events if e["type"] == "run_complete"][0]["status"] == "failed"
 
 

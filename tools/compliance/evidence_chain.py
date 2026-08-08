@@ -958,7 +958,7 @@ def run_cli() -> None:
         ar_doc = export_oscal_assessment_results(chain)
         doc_str = json.dumps(ar_doc, indent=2, default=str)
         if args.output:
-            Path(args.output).write_text(doc_str, encoding="utf-8")
+            Path(args.output).write_text(doc_str, encoding="utf-8", newline="")
             print(f"OSCAL Assessment Results written to {args.output}")
         else:
             print(doc_str)

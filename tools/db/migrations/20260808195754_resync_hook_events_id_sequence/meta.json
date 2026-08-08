@@ -1,0 +1,7 @@
+{
+  "description": "resync_hook_events_id_sequence",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

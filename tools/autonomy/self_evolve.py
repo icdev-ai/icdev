@@ -222,7 +222,7 @@ def create_tool_module(name: str, purpose: str, package: str = "tools", dry_run:
             f'if __name__ == "__main__":\n'
             f"    main()\n"
         )
-        target_file.write_text(content, encoding="utf-8")
+        target_file.write_text(content, encoding="utf-8", newline="")
 
         # Verify it compiles and lints
         if not _compile_check(str(target_file)):

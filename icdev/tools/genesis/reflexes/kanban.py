@@ -18,7 +18,6 @@ IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -776,7 +775,7 @@ def _save_resume_at(task_id: str, resume_at: datetime):
     """Persist the resume-at timestamp for a token-exhausted task."""
     _ensure_prompt_dir()
     resume_file = PROMPT_DIR / f"{task_id}.resume_at"
-    resume_file.write_text(resume_at.isoformat(), encoding="utf-8")
+    resume_file.write_text(resume_at.isoformat(), encoding="utf-8", newline="")
 
 
 def _load_resume_at(task_id: str) -> Optional[datetime]:
@@ -831,7 +830,7 @@ def _increment_retry_count(task_id: str) -> int:
         except (ValueError, OSError):
             count = 0
     count += 1
-    retry_file.write_text(str(count), encoding="utf-8")
+    retry_file.write_text(str(count), encoding="utf-8", newline="")
     return count
 
 
@@ -864,7 +863,7 @@ def _increment_timeout_count(task_id: str) -> int:
         except (ValueError, OSError):
             count = 0
     count += 1
-    timeout_file.write_text(str(count), encoding="utf-8")
+    timeout_file.write_text(str(count), encoding="utf-8", newline="")
     return count
 
 
@@ -2889,7 +2888,7 @@ def _dispatch_via_tool_runner(task: dict, work_dir: str, task_log: Path) -> bool
             f"[tool-runner dispatch — task {task_id}]\n"
             f"[work_dir {work_dir}]\n"
             f"[{kind} {label}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
-            encoding="utf-8", errors="replace",
+            encoding="utf-8", errors="replace", newline="",
         )
     except Exception as exc:
         logger.debug("kanban: tool-runner log write failed for %s: %s", task_id, exc)
@@ -3806,7 +3805,7 @@ Execute this task as described above. When complete:
 """
 
     prompt_path = PROMPT_DIR / f"{task_id}.md"
-    prompt_path.write_text(prompt, encoding="utf-8")
+    prompt_path.write_text(prompt, encoding="utf-8", newline="")
     return str(prompt_path)
 
 
@@ -3853,34 +3852,26 @@ def _run_adversarial_verify(task_id: str, work_dir: str) -> tuple:
         "Be strict. Missing tests, unfulfilled criteria, or obvious bugs = REJECTED."
     )
 
-    import tempfile as _tempfile2
-    import os as _os2
-
     try:
-        _tmp = _tempfile2.NamedTemporaryFile(
-            mode="w", suffix="_adv_review.txt", delete=False,
-            dir=str(BASE_DIR / ".tmp"), encoding="utf-8",
-        )
-        _tmp.write(review_prompt)
-        _tmp.close()
+        # Same adapter as the build path, so the review session inherits the
+        # argv, the stdin temp-file and the PATHEXT-aware discovery from the
+        # one place that knows how to invoke the CLI. Deliberately NOT tagged
+        # with a dispatch_source: a review makes no commits to attribute.
+        from tools.agents.adapter_base import AgentSession  # noqa: PLC0415
+        from tools.agents.adapters.claude_cli import ADAPTER as _claude_adapter  # noqa: PLC0415
 
-        _stdin_fh = open(_tmp.name, "r", encoding="utf-8")
-        result = subprocess.run(
-            [claude_cli, "--dangerously-skip-permissions",
-             "--max-turns", "10", "--output-format", "text"],
-            cwd=work_dir,
-            stdin=_stdin_fh,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        _stdin_fh.close()
-        try:
-            _os2.unlink(_tmp.name)
-        except Exception:
-            pass
+        result = _claude_adapter.invoke(AgentSession(
+            task_id=task_id,
+            prompt=review_prompt,
+            working_dir=work_dir,
+            # --max-turns 10 is the review-only budget: enough to read the diff
+            # and judge, not enough to rewrite the work it is judging.
+            max_turns=10,
+            timeout_seconds=180,
+            metadata={"temp_dir": str(BASE_DIR / ".tmp")},
+        ))
 
-        output = (result.stdout or "").strip()
+        output = (result.output or "").strip()
         if not output:
             logger.warning("adversarial_verify: empty output for %s — passing", task_id)
             return True, ""
@@ -4139,35 +4130,29 @@ def _poll_all_channels():
 def _resolve_claude_cli() -> Optional[str]:
     """Absolute path to the ``claude`` CLI, or None.
 
-    The fallback used to test ``~/.local/bin/claude`` with no extension, which
-    never exists on Windows — the installed binary is ``claude.EXE``. So on
-    Windows resolution depended entirely on ``shutil.which``, i.e. on PATH, and
-    a process started with a thinner environment (a dashboard-spawned
-    scheduler, a service) silently found nothing. ``_claude_code_available()``
-    then returned False, the executor chain fell through gitlab and ollama, and
-    every task dispatched in that window was quarantined to ``suggested`` with
-    "no executor available" — 25 tasks on 2026-08-01 before it was traced.
+    Delegates to ``tools.agents.adapters.claude_cli.resolve_claude_cli`` — the
+    resolution rules live beside the shellout that uses them, so there is one
+    answer to "where is the CLI" rather than one per call site.
 
-    Suffixes come from PATHEXT so a ``.cmd``/``.bat`` shim resolves too.
+    The rules themselves are load-bearing history: the fallback used to test
+    ``~/.local/bin/claude`` with no extension, which never exists on Windows —
+    the installed binary is ``claude.EXE``. So on Windows resolution depended
+    entirely on ``shutil.which``, i.e. on PATH, and a process started with a
+    thinner environment (a dashboard-spawned scheduler, a service) silently
+    found nothing. ``_claude_code_available()`` then returned False, the
+    executor chain fell through gitlab and ollama, and every task dispatched in
+    that window was quarantined to ``suggested`` with "no executor available" —
+    25 tasks on 2026-08-01 before it was traced.
     """
-    found = shutil.which("claude")
-    if found:
-        return found
-    import os as _os
-
-    base = Path.home() / ".local" / "bin" / "claude"
-    suffixes = [""]
-    if _os.name == "nt":
-        suffixes += [
-            e.lower() for e in _os.environ.get(
-                "PATHEXT", ".EXE;.CMD;.BAT;.COM"
-            ).split(_os.pathsep) if e.strip()
-        ]
-    for suffix in suffixes:
-        candidate = base.with_name(base.name + suffix) if suffix else base
-        if candidate.exists():
-            return str(candidate)
-    return None
+    try:
+        from tools.agents.adapters.claude_cli import resolve_claude_cli
+    except Exception as exc:  # noqa: BLE001 — a broken adapter must be loud
+        logger.error(
+            "kanban: claude_cli adapter unimportable (%s) — the runner cannot "
+            "resolve its executor", exc,
+        )
+        return None
+    return resolve_claude_cli()
 
 
 def _claude_code_available() -> bool:
@@ -4522,82 +4507,80 @@ def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: 
     )
 
 
+def _agent_session(task: dict, instruction: str, work_dir: str,
+                   dispatch_source: str = "genesis_scheduler"):
+    """Build the AgentSession an adapter needs to run this task.
+
+    Everything executor-specific about a kanban dispatch is expressed here as
+    session metadata: the stop-hook tags, the scratch directory for the stdin
+    temp file, and the operator's model override.
+
+    MODEL OVERRIDE: a Claude model selected in the dashboard is handed to the
+    adapter, which passes it through as ``--model``. The ``cli_capable`` guard
+    stays on this side because a NON-Claude selection must never be handed to
+    the Claude CLI — such a selection never reaches here at all, because it
+    removes claude_cli from the executor chain
+    (``_build_effective_executor_chain``); quietly ignoring the choice would
+    make the dropdown a lie.
+    """
+    from tools.agents.adapter_base import AgentSession  # noqa: PLC0415
+
+    task_id = task["id"]
+    metadata: Dict[str, Any] = {
+        # guard-23: propagate dispatch_source via env so the stop hook can tag
+        # this session's commits as 'genesis_scheduler' rather than
+        # 'claude_interactive'.
+        "dispatch_source": dispatch_source,
+        "temp_dir": str(BASE_DIR / ".tmp"),
+        "project_id": str(task.get("project_id") or ""),
+        "task_type": str(task.get("task_type") or ""),
+    }
+    _model = _selected_model()
+    if _model and _model.get("cli_capable") and _model.get("model_id"):
+        metadata["model_id"] = str(_model["model_id"])
+        logger.info("kanban: dispatching %s on model %s (%s)",
+                    task_id, _model["name"], _model["model_id"])
+
+    try:
+        timeout_seconds = int(_get_task_timeout(task_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("kanban: task timeout lookup failed for %s: %s", task_id, exc)
+        timeout_seconds = int(MAX_EXECUTION_SECONDS)
+
+    return AgentSession(
+        task_id=task_id,
+        prompt=instruction,
+        working_dir=work_dir,
+        max_turns=50,
+        timeout_seconds=timeout_seconds,
+        metadata=metadata,
+    )
+
+
 def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
                              work_dir: str, task_log: Path) -> None:
-    """ClaudeCodeTaskExecutor — original behavior, isolated."""
+    """ClaudeCodeTaskExecutor — the bookkeeping around the ONE claude shellout.
+
+    The shellout itself (argv, env tagging, the stdin temp-file that dodges the
+    Windows 32767-char command-line limit, the model override) lives in
+    ``tools/agents/adapters/claude_cli.py`` so exactly one implementation
+    exists.
+    """
     task_id = task["id"]
-    claude_cli = _resolve_claude_cli()
-    if not claude_cli:
+    if not _claude_code_available():
         print("  Kanban: claude CLI not found — should have routed to LLM executor")
         return
     try:
-        log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
-        # guard-23: propagate dispatch_source via env so the stop hook can
-        # tag this session's commits as 'genesis_scheduler' rather than
-        # 'claude_interactive'. Also tag the kanban task row immediately.
-        import os as _os
-        env = _os.environ.copy()
-        env["ICDEV_DISPATCH_SOURCE"] = "genesis_scheduler"
-        env["ICDEV_DISPATCH_TASK_ID"] = task_id
+        from tools.agents.adapters.claude_cli import ADAPTER as _claude_adapter
 
+        log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
         _tag_task_source(task_id, "genesis_scheduler")
 
-        # Write instruction to a temp file and pipe via stdin to avoid the
-        # Windows 32767-char command-line length limit (WinError 206).
-        # Claude auto-detects non-TTY stdout and enters non-interactive mode.
-        import tempfile as _tempfile
-        _instr_tmp = _tempfile.NamedTemporaryFile(
-            mode="w", suffix="_instr.txt", delete=False,
-            dir=str(BASE_DIR / ".tmp"),
-            encoding="utf-8", errors="replace",
-        )
-        _instr_tmp.write(instruction)
-        _instr_tmp.close()
-        _stdin_fh = open(_instr_tmp.name, "r", encoding="utf-8", errors="replace")
-
-        # Model override: a Claude model selected in the dashboard is passed straight
-        # through to the CLI. A NON-Claude selection never reaches here at all — it
-        # removes claude_cli from the executor chain (_build_effective_executor_chain),
-        # because the CLI cannot serve it and quietly ignoring the choice would make the
-        # dropdown a lie.
-        _cli_args = [
-            claude_cli,
-            "--dangerously-skip-permissions",
-            "--max-turns",
-            "50",
-            "--output-format",
-            "text",
-        ]
-        _model = _selected_model()
-        if _model and _model.get("cli_capable") and _model.get("model_id"):
-            _cli_args += ["--model", str(_model["model_id"])]
-            logger.info("kanban: dispatching %s on model %s (%s)",
-                        task_id, _model["name"], _model["model_id"])
-
-        proc = subprocess.Popen(
-            _cli_args,
-            cwd=work_dir,
-            stdin=_stdin_fh,
+        proc = _claude_adapter.spawn(
+            _agent_session(task, instruction, work_dir),
             stdout=log_fh,
             stderr=subprocess.STDOUT,
-            env=env,
         )
-        _stdin_fh.close()  # subprocess inherits the fd; close our handle
-        # Clean up temp instruction file after 5 min (process has read it by then)
-        import threading as _threading
-        import os as _os2
-
-        def _cleanup_instr(path, delay=300.0):
-            import time
-            time.sleep(delay)
-            try:
-                _os2.unlink(path)
-            except Exception:
-                pass
-
-        _threading.Thread(
-            target=_cleanup_instr, args=(_instr_tmp.name,), daemon=True
-        ).start()
 
         _running[task_id] = proc
         _dispatch_times[task_id] = datetime.now(timezone.utc)
@@ -6508,7 +6491,7 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
                 },
                 indent=2,
             ),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.warning(

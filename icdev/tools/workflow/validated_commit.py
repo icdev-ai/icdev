@@ -199,7 +199,7 @@ def _bandit_delta(
                         continue
                     dest = tmp_path / relpy
                     dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_text(gshow.stdout, encoding="utf-8")
+                    dest.write_text(gshow.stdout, encoding="utf-8", newline="")
                     tmp_files.append(str(dest))
                 except Exception as exc:
                     logger.warning("git show %s: %s — treating as new file", relpy, exc)
@@ -545,7 +545,7 @@ def _main_baseline_failures(tier: str, timeout: float) -> Optional[Set[str]]:
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(
             json.dumps({"sha": sha, "tier": tier, "failing": sorted(failing)}),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.debug("coherence baseline cache not written: %s", exc)

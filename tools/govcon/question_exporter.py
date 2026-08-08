@@ -369,7 +369,7 @@ def export_questions(opp_id, status_filter=None, output_path=None, company_name=
             if not str(out).startswith(str(safe_base.resolve())):
                 return {"status": "error", "message": "Invalid output path"}
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(html, encoding="utf-8")
+            out.write_text(html, encoding="utf-8", newline="")
             _audit(conn, "questions_exported", f"opp={opp_id}, count={len(questions)}, path={output_path}")
             conn.commit()
             return {

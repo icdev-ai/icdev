@@ -185,7 +185,7 @@ class CalderaAdapter:
         """Write raw ability list to disk as the fallback cache."""
         try:
             self._cache_file.write_text(
-                json.dumps(abilities, ensure_ascii=False), encoding="utf-8"
+                json.dumps(abilities, ensure_ascii=False), encoding="utf-8", newline=""
             )
         except OSError:
             pass

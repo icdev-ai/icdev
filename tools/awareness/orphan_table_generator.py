@@ -907,17 +907,17 @@ def generate_migration(dry_run: bool = False) -> Dict[str, Any]:
     down_py = _render_down_py(tables_ddl)
     meta_json = _render_meta_json(len(tables_ddl))
 
-    (MIGRATION_DIR / "up.py").write_text(up_py, encoding="utf-8")
-    (MIGRATION_DIR / "down.py").write_text(down_py, encoding="utf-8")
-    (MIGRATION_DIR / "meta.json").write_text(meta_json, encoding="utf-8")
+    (MIGRATION_DIR / "up.py").write_text(up_py, encoding="utf-8", newline="")
+    (MIGRATION_DIR / "down.py").write_text(down_py, encoding="utf-8", newline="")
+    (MIGRATION_DIR / "meta.json").write_text(meta_json, encoding="utf-8", newline="")
 
     # Ensure __init__.py exists for the migrations package
     init_path = BASE_DIR / "tools" / "db" / "migrations" / "__init__.py"
     if not init_path.exists():
-        init_path.write_text("", encoding="utf-8")
+        init_path.write_text("", encoding="utf-8", newline="")
 
     # Create migration dir __init__.py
-    (MIGRATION_DIR / "__init__.py").write_text("", encoding="utf-8")
+    (MIGRATION_DIR / "__init__.py").write_text("", encoding="utf-8", newline="")
 
     return {
         "status": "generated",
