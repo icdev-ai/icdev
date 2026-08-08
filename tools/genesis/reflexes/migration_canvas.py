@@ -36,6 +36,16 @@ _EOL_CONF_MAX                = 0.98   # urgency cap for EOL findings
 _STALE_PLAN_CONFIDENCE       = 0.75   # fixed confidence for stale protocol plans
 _PROMOTION_THRESHOLD_DEFAULT = 0.70   # minimum confidence to promote finding to kanban
 _HIGH_PRIORITY_THRESHOLD     = 0.85   # findings above this → "high" priority
+_MAX_LISTED_PER_CARD         = 20     # findings enumerated in a batched card body
+
+# Human-readable card titles per finding type.  Also the dedupe key: the
+# open-card guard matches on "[NMCE] <label> —", so these strings are
+# load-bearing, not cosmetic.
+_TYPE_LABELS = {
+    "stale_migration_session": "Stale migration sessions",
+    "eol_no_migration":        "EOL devices with no migration",
+    "stale_protocol_plan":     "Protocol plans stuck in draft",
+}
 
 
 def _now() -> str:
@@ -149,29 +159,67 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         errors.append(f"stale_protocol_plan_check: {exc}")
 
     # ── 4. Promote findings to kanban ─────────────────────────────────────────
+    # One card per finding TYPE per cycle, not one per finding, and only when no
+    # open card for that type already exists.  Both halves matter:
+    #
+    #   * Per-finding cards do not scale.  Nothing in the canvas ever moves a
+    #     session out of 'in_progress' (no UI control, and the PATCH endpoint is
+    #     never called with a status), so every session ever created is stale
+    #     forever — 54 of them on this board, each minting its own card.
+    #   * The id used to be a fresh uuid4 every run, so ON CONFLICT DO NOTHING
+    #     never matched anything and each 24h cycle re-inserted the whole set.
+    #     289 cards accumulated from 60 distinct findings, 169 of them already
+    #     'scheduled' — i.e. queued to burn one agent session apiece.
+    #
+    # The open-card guard (rather than a deterministic id) is the same shape
+    # coherence_to_kanban_reflex.py uses: the finding re-raises if it is still
+    # true after someone closes the card, but never stacks while one is open.
     promoted = 0
     try:
         import uuid
         from tools.db.storage import get_connection as _icdev_conn
         threshold = float((config or {}).get("promotion_threshold", _PROMOTION_THRESHOLD_DEFAULT))
+
+        by_type: dict[str, list[dict]] = {}
+        for f in findings:
+            if f["confidence"] >= threshold:
+                by_type.setdefault(f["type"], []).append(f)
+
         with _icdev_conn() as ic:
-            for f in findings:
-                if f["confidence"] < threshold:
+            for ftype, group in by_type.items():
+                group.sort(key=lambda x: -x["confidence"])
+                title = f"[NMCE] {_TYPE_LABELS.get(ftype, ftype)} — {len(group)} finding(s)"
+                open_row = ic.execute(
+                    """SELECT id FROM kanban_tasks
+                       WHERE dispatch_source = %s
+                         AND title LIKE %s
+                         AND status NOT IN ('done','failed','cancelled','canceled')
+                       LIMIT 1""",
+                    ("genesis_reflex:migration_canvas",
+                     f"[NMCE] {_TYPE_LABELS.get(ftype, ftype)} —%"),
+                ).fetchone()
+                if open_row is not None:
                     continue
-                task_id = "mc-reflex-" + uuid.uuid4().hex[:8]
+
+                top = group[0]["confidence"]
+                body = "\n".join(f"  - {f['message']}" for f in group[:_MAX_LISTED_PER_CARD])
+                if len(group) > _MAX_LISTED_PER_CARD:
+                    body += f"\n  - …and {len(group) - _MAX_LISTED_PER_CARD} more"
+                description = (
+                    f"{len(group)} {_TYPE_LABELS.get(ftype, ftype).lower()} finding(s), "
+                    f"max confidence={top:.2f}:\n{body}\n\n"
+                    f"Suggested action: {group[0]['suggested_action']}"
+                )
                 ic.execute(
-                    # `source` is not a column — the live column is
-                    # `dispatch_source` (swp-scan-01), so no NMCE finding was
-                    # ever promoted to the board.
                     """INSERT OR IGNORE INTO kanban_tasks
                        (id, title, description, status, priority, dispatch_source, created_at, updated_at)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
-                        task_id,
-                        f"[NMCE] {f['suggested_action']}",
-                        f"{f['message']} (confidence={f['confidence']:.2f})",
+                        "mc-reflex-" + uuid.uuid4().hex[:8],
+                        title,
+                        description,
                         "suggested",
-                        "high" if f["confidence"] >= _HIGH_PRIORITY_THRESHOLD else "medium",
+                        "high" if top >= _HIGH_PRIORITY_THRESHOLD else "medium",
                         "genesis_reflex:migration_canvas",
                         _now(),
                         _now(),
