@@ -1185,3 +1185,49 @@ against silently running untrusted-bundle parsing in-process.
   (`pickle`, `yaml.load`), or shells out over the observable — it must be
   declared `sandboxed` and this table updated; or if `dispatch()` ever accepts
   a module path or callable from a caller rather than from the contract file.
+
+### Gap 50 — SBOM component licensing (`tools/compliance/component_licenser.py`)
+
+*(49 belongs to sbx-fld-03's component hasher, landing in parallel.)*
+
+**Module:** `tools/compliance/component_licenser.py` and its data module
+`tools/compliance/spdx_license_data.py` (sbx-fld-04), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two, both third-party by construction. (1) A **license string declared by
+a dependency manifest** — `package-lock.json` `license` today, other lockfiles as
+sbx-cov-01 resolves them — which is attacker-controlled if a registry account or a
+lockfile is. (2) The **project's own manifests** (`pyproject.toml`, `package.json`,
+`Cargo.toml`, `pom.xml`), read whole off disk by `project_license_from_manifests()` to
+resolve the document's target component.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither ingress reaches an execution or deserialization path. A declared
+  license is consumed as text: it is tokenized on whitespace and parentheses, each token
+  is looked up in a closed frozenset of SPDX identifiers, and an unrecognized token is
+  *reported* as a license name, never dispatched on. Manifest files are read with
+  `Path.read_text()` and matched with anchored regular expressions and `json.loads` —
+  there is no `exec`/`eval`/`subprocess`/`os.system`/`pickle`/`yaml.load` in either
+  module, no TOML/XML parser is instantiated, and no file the manifest names is ever
+  opened (a `license = { file = "…" }` pointer is carried through as text, not followed).
+- **Guardrails:**
+  - The SPDX License List is **vendored**, not fetched and not imported from a
+    third-party package, so the set of identifiers ICDEV will emit cannot change under a
+    dependency upgrade or a network response. It is data with no behaviour.
+  - Validation is **allow-list only and fails soft in the safe direction**: an identifier
+    absent from the vendored set can only cause a license to be emitted as a *name*
+    instead of an SPDX id. A stale list can never cause an unvalidated id to be emitted,
+    which is the direction that would matter.
+  - `project_license_from_manifests()` cannot raise: an unreadable, oversized-for-the-regex
+    or malformed manifest is treated as an absent one, so a hostile project directory
+    cannot abort SBOM generation for the ~25 call sites and the blocking `bdc_canvas` gate
+    that consume the document.
+  - Every regex is anchored or non-greedy and bounded by a literal delimiter; none is
+    built from input.
+  - `tests/test_sbom_component_license.py` pins the rejection set (invented identifiers,
+    a license used as an exception, malformed expressions), the malformed-manifest path,
+    and the guarantee that every emitted SPDX identifier is on the vendored list.
+- **Revisit if:** the module starts *following* a license-file pointer (`license-file`,
+  `SEE LICENSE IN <file>`) and reading that file's text — that is a new ingress with a
+  path-traversal question this decision does not cover; or if license data begins arriving
+  over the network from a registry API rather than from a manifest already on disk.

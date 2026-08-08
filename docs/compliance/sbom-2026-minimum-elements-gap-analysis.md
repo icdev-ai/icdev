@@ -134,6 +134,8 @@ Baseline as analysed:
 - `sbom_components` gains `producer`, `hash_value`, `hash_algorithm`, `identifiers_json`,
   `unknown_fields_json`, `withheld_fields_json`. The dead `license` and `vendor` columns
   are **reused** — `license` is the 2026 Component License element — not duplicated.
+  `license` is no longer dead: **sbx-fld-04** made the generator write `sbom_components`
+  and populate it (see 3.2.1). `vendor` still is, until sbx-fld-02.
 - `sbom_dependencies` is new: the Component Dependency Relationship element as an edge
   table (`sbom_record_id`, `parent_component_id`, `child_component_id`,
   `relationship_type`, `scope`) rather than a parent-ref column, because a component has
@@ -220,9 +222,65 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
 | Component Hash Algorithm | **GAP** | Consequent to the above. |
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
-| Component License | **GAP** | Not emitted, though `sbom_components.license` already exists in schema. |
+| Component License | **MET** (sbx-fld-04) | Emitted for every component and for the target component, as a validated SPDX expression, a URL, a license name or an explicit unknown marker — see 3.2.1. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
 | Component Version | **PARTIAL** | Unresolved versions are written as the literal strings `"unspecified"` (most parsers) and `"managed"` (Maven). These are not machine-interpretable unknown markers and collide with the Explicitly Identifying Unknown Information element. |
+
+#### 3.2.1 Component License — what sbx-fld-04 landed
+
+`tools/compliance/component_licenser.py` (mirrored to `icdev/tools/compliance/`) resolves
+the element for every component, and `tools/compliance/spdx_license_data.py` carries the
+698 SPDX license identifiers and 88 exception identifiers it validates against.
+
+- **Emitted for every component without exception**, as CycloneDX `licenses` plus the
+  `icdev:component-license*` properties. The properties are what make the element
+  unomittable: CycloneDX has no way to spell "unknown" inside `licenses`, so an unknown
+  license leaves that array empty and states itself in
+  `icdev:component-license` = `unknown` with a machine-readable
+  `icdev:component-license-unknown-reason`. `icdev:component-license-proprietary` is
+  always present as `true`, `false` or `unknown`.
+- **Only validated SPDX identifiers are emitted as identifiers.** A declaration that is
+  not a well-formed expression over the SPDX List — `Apache License 2.0`, a misspelling,
+  an invented id, a license used where an exception belongs — is carried through as a
+  license *name* or a URL instead. Nothing is dropped, and nothing the recipient cannot
+  resolve is presented as resolvable. Expressions are canonicalized, so a manifest
+  writing `mit` yields `MIT`.
+- **The proprietary flag is tri-state and set only from positive evidence**: npm
+  `UNLICENSED` / `SEE LICENSE IN <file>`, an SPDX `LicenseRef-`/`DocumentRef-` custom
+  reference, the `NONE` keyword, or proprietary vocabulary in the declared text. `false`
+  means "no conditions the recipient cannot look up", *not* "open source" — a
+  source-available licence with an SPDX id flags `false` because its terms are published
+  and identified. Where it cannot be determined (a bare URL, a bare name) it is stated as
+  `unknown` rather than defaulted.
+- **The list is vendored, not fetched and not imported.** ICDEV runs air-gapped, and an
+  SBOM generator whose notion of a valid license changes with an undeclared transitive
+  dependency's version is the "incorrect license information" failure the standard calls a
+  risk-management problem. Validation is allow-list only, so a stale list can only
+  downgrade an id to a name — never emit an unvalidated id.
+- **`sbom_components` is now written.** The generator has never written that table, which
+  is why `license` and `vendor` sat dead since migration 209. Each component is upserted
+  under a deterministic id — the full digest whose first 16 characters are its `bom-ref`,
+  so a row and the document entry describing it correlate, and regeneration updates rather
+  than accumulates. Only the columns this element owns are written: `vendor` stays for
+  sbx-fld-02 and the unknown/withheld blobs for sbx-prc-01.
+- **The target component is covered too.** Its license is read from the project's own
+  manifest (`pyproject.toml`, `package.json`, `Cargo.toml`, `pom.xml`), so ICDEV's own SBOM
+  reports `Apache-2.0` rather than unknown.
+- **Coverage today.** Only `package-lock.json` carries a per-component license among the
+  manifests this generator reads, so a real run over the ICDEV repo yields 126 of 173
+  components with a validated SPDX license (`MIT` 79, `ISC` 33, `BSD-3-Clause` 6,
+  `Apache-2.0` 6, `MPL-2.0 OR Apache-2.0`, `Unlicense`) and 47 with the explicit unknown
+  marker — zero NULL or empty. The rest become real licenses the moment sbx-cov-01's
+  resolution work populates `component["declared_license"]`; nothing in this module has to
+  change.
+- **Dependency on sbx-prc-01, honestly bounded.** prc-01 owns the general
+  unknown-versus-withheld convention and the `unknown_fields_json` / `withheld_fields_json`
+  blobs. This element states its unknowns locally and does not write those blobs —
+  inventing a shape here would only have to be rewritten. `license_db_value()` is the
+  single bridging point when prc-01 lands.
+
+Pinned by `tests/test_sbom_component_license.py`, which runs the real generator against a
+real database and asserts the rows land with populated licenses.
 
 ### 3.3 Practices and Processes
 
@@ -236,9 +294,9 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
-**Score: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool Name,
-Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7 practices
-fully met.**
+**Score: 3 of 17 data-field elements fully met** — SBOM Data Format Name and SBOM Tool Name
+(metadata), Component License (component data, sbx-fld-04) — plus **7 partial**, and
+**0 of 7 practices fully met.**
 
 ---
 

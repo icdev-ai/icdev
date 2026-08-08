@@ -15,6 +15,14 @@ import json
 import re
 import sys
 import uuid
+from tools.compliance.component_licenser import (
+    license_db_value,
+    license_entries,
+    license_properties,
+    project_license_from_manifests,
+    resolve_declared_license,
+    resolve_license,
+)
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +41,23 @@ CYCLONEDX_SUPPORTED_VERSIONS = {
     "1.6": "http://cyclonedx.org/schema/bom-1.6.schema.json",
     "1.7": "http://cyclonedx.org/schema/bom-1.7.schema.json",
 }
+
+# Mirrors the CHECK constraint on sbom_components.component_type (migration 209). A
+# component whose type falls outside it is stored as 'other' rather than raising — an
+# unexpected type must not cost the whole inventory write.
+SBOM_COMPONENT_TYPES = frozenset(
+    {
+        "library",
+        "framework",
+        "container",
+        "os",
+        "firmware",
+        "device",
+        "application",
+        "service",
+        "other",
+    }
+)
 
 
 def _get_connection(db_path=None):
@@ -298,6 +323,11 @@ def _parse_package_lock_json(file_path):
                     "scope": "required" if not pkg_info.get("dev") else "optional",
                     "group": group,
                     "source": str(file_path),
+                    # npm records the resolved package's own `license` field here. It is
+                    # the only per-component license any manifest this generator reads
+                    # actually carries, so it is the only real input to the Component
+                    # License element until sbx-cov-01 resolves artifacts.
+                    "declared_license": pkg_info.get("license") or pkg_info.get("licenses"),
                 }
             )
     else:
@@ -325,6 +355,7 @@ def _parse_package_lock_json(file_path):
                     "scope": "required" if not dep_info.get("dev") else "optional",
                     "group": group,
                     "source": str(file_path),
+                    "declared_license": dep_info.get("license") or dep_info.get("licenses"),
                 }
             )
 
@@ -697,10 +728,110 @@ def _parse_packages_config(file_path):
     return components
 
 
+def _component_key(component):
+    """The identity of a component: its group, name and version."""
+    return f"{component.get('group', '')}/{component['name']}@{component['version']}"
+
+
+def _deduplicate_components(components):
+    """Collapse components that describe the same thing, preserving order.
+
+    Shared by the document builder and the `sbom_components` writer so the two cannot
+    disagree about which components exist. A component with no purl is deduplicated on
+    its group/name/version identity instead, since an empty purl is not an identity.
+    """
+    seen_purls = set()
+    seen_keys = set()
+    unique = []
+    for comp in components:
+        purl = comp.get("purl", "")
+        key = _component_key(comp)
+        if purl and purl in seen_purls:
+            continue
+        if not purl and key in seen_keys:
+            continue
+        seen_purls.add(purl)
+        seen_keys.add(key)
+        unique.append(comp)
+    return unique
+
+
 def _generate_bom_ref(component):
     """Generate a unique BOM reference for a component."""
-    key = f"{component.get('group', '')}/{component['name']}@{component['version']}"
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+    return hashlib.sha256(_component_key(component).encode()).hexdigest()[:16]
+
+
+def _component_row_id(component):
+    """Deterministic `sbom_components.id` for a parsed component.
+
+    The full digest whose first 16 characters `_generate_bom_ref` uses, so a stored row
+    and the document entry describing it can be correlated. Deterministic because
+    regenerating an SBOM must update the component's row rather than accumulate a
+    duplicate on every run.
+    """
+    return hashlib.sha256(_component_key(component).encode()).hexdigest()
+
+
+def _persist_components(conn, components):
+    """Write each component to `sbom_components`, carrying its resolved license.
+
+    The generator has never written this table, which is why `license` and `vendor` sat
+    dead in the schema since migration 209. `license` is exactly the 2026 Component
+    License element, so it is populated here — with an SPDX expression, a URL, a license
+    name, or the explicit unknown marker. It is never left NULL.
+
+    Only the columns this element owns are written. `vendor` stays untouched for
+    sbx-fld-02 (Component Producer), and `unknown_fields_json` / `withheld_fields_json`
+    for sbx-prc-01, which defines the general unknown-versus-withheld convention.
+
+    A failure here is reported, not swallowed. The house rule against `except: pass`
+    around an INSERT exists because a swallowed schema mismatch reports success while
+    persisting nothing; the warning below names the table and the error, and
+    `tests/test_sbom_component_license.py` asserts the rows really land, so a mismatch
+    surfaces in CI rather than hiding. It is still not allowed to abort generation: the
+    document on disk is what ~25 call sites and a blocking gate consume, and losing that
+    over a supplementary inventory write would be the larger regression.
+    """
+    written = 0
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        for comp in _deduplicate_components(components):
+            component_type = comp.get("type") or "library"
+            if component_type not in SBOM_COMPONENT_TYPES:
+                component_type = "other"
+            conn.execute(
+                """INSERT INTO sbom_components
+                   (id, component_name, version, component_type, purl,
+                    license, classification)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT(id) DO UPDATE SET
+                       license = EXCLUDED.license,
+                       purl = EXCLUDED.purl,
+                       component_type = EXCLUDED.component_type,
+                       updated_at = %s""",
+                (
+                    _component_row_id(comp),
+                    comp["name"],
+                    comp["version"],
+                    component_type,
+                    comp.get("purl"),
+                    license_db_value(resolve_license(comp)),
+                    "CUI",
+                    now,
+                ),
+            )
+            written += 1
+        conn.commit()
+    except Exception as e:
+        # Leave the connection usable: on PostgreSQL a failed statement aborts the whole
+        # transaction, which would then take the audit event down with it.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"Warning: Could not record sbom_components rows: {e}", file=sys.stderr)
+        return 0
+    return written
 
 
 def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=None, schema=None):
@@ -715,14 +846,7 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
         serial_number = f"urn:uuid:{uuid.uuid4()}"
 
     # Deduplicate components by purl
-    seen_purls = set()
-    unique_components = []
-    for comp in components:
-        purl = comp.get("purl", "")
-        if purl and purl in seen_purls:
-            continue
-        seen_purls.add(purl)
-        unique_components.append(comp)
+    unique_components = _deduplicate_components(components)
 
     # Build CycloneDX components array
     cdx_components = []
@@ -739,7 +863,33 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
             cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
+
+        # Component License (2026 minimum elements). Always emitted: an SPDX expression
+        # validated against the SPDX License List, a URL to the full terms, a license
+        # name, or an explicit unknown marker — plus a proprietary-conditions flag that
+        # is always stated rather than inferred. The field is never omitted.
+        license_result = resolve_license(comp)
+        entries = license_entries(license_result)
+        if entries:
+            cdx_comp["licenses"] = entries
+        cdx_comp.setdefault("properties", []).extend(license_properties(license_result))
+
         cdx_components.append(cdx_comp)
+
+    # The document's target component is a component too, so the Component Data elements
+    # apply to it. Unlike its dependencies, its license IS declared — in the project's
+    # own manifest — so it is read rather than left unknown.
+    target_license = resolve_declared_license(project_license_from_manifests(project.get("directory_path")))
+    target_component = {
+        "type": "application",
+        "bom-ref": f"icdev-{project.get('id', 'unknown')}",
+        "name": project.get("name", "Unknown"),
+        "version": "0.0.0",
+        "properties": license_properties(target_license),
+    }
+    target_entries = license_entries(target_license)
+    if target_entries:
+        target_component["licenses"] = target_entries
 
     sbom = {
         "$schema": active_schema,
@@ -756,12 +906,7 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
                     "version": "1.0.0",
                 }
             ],
-            "component": {
-                "type": "application",
-                "bom-ref": f"icdev-{project.get('id', 'unknown')}",
-                "name": project.get("name", "Unknown"),
-                "version": "0.0.0",
-            },
+            "component": target_component,
             "properties": [
                 {
                     "name": "icdev:classification",
@@ -954,6 +1099,10 @@ def generate_sbom(
         )
         conn.commit()
 
+        # Record the components themselves, each carrying its Component License. Done
+        # after the sbom_records commit so a failure here cannot cost the record.
+        components_recorded = _persist_components(conn, all_components)
+
         # Log audit event
         _log_audit_event(
             conn,
@@ -963,6 +1112,7 @@ def generate_sbom(
                 "version": new_version,
                 "format": sbom_format,
                 "component_count": component_count,
+                "components_recorded": components_recorded,
                 "output_file": str(out_file),
                 "serial_number": sbom["serialNumber"],
             },
@@ -974,6 +1124,7 @@ def generate_sbom(
         print(f"  Format: CycloneDX {active_spec_version}")
         print(f"  Version: {new_version}")
         print(f"  Components: {component_count}")
+        print(f"  Recorded in sbom_components: {components_recorded}")
         print(f"  Serial: {sbom['serialNumber']}")
 
         return str(out_file)

@@ -200,6 +200,7 @@ jobs:
             tests/integration/test_runtime_cli.py \
             tests/integration/test_dashboard_panels.py \
             tests/innovation/test_innovation_kanban_promoter.py \
+            tests/test_sbom_component_license.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
