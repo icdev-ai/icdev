@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 #
-# Grandfathered duplicate migration versions.
+# Grandfathered duplicate migration versions — and why each one is safe.
 #
 # schema_migrations.version is UNIQUE and MigrationRunner.get_pending_migrations
 # dedupes by version, keeping the FIRST entry by sort order. Every other entry
@@ -11,167 +11,180 @@
 # gate in tools/db/migration_versions.py is actionable instead of perpetually red.
 #
 # DO NOT ADD ENTRIES HERE to silence a new collision. Renumber the migration to
-# the next unused version instead. Adding a file to an existing entry shadows one
-# MORE migration and is treated as a new violation.
+# the next unused version instead (python tools/db/migrate.py --create "<name>").
+# Adding a file to an existing entry shadows one MORE migration and is treated
+# as a new violation.
 #
-# 53 duplicated versions; 70 migrations shadowed.
-# Regenerate the shadowed list with:
-#   python tools/db/migration_versions.py --shadowed --json
-
+# EVERY ENTRY MUST CARRY A REASON. "Grandfathered" was only ever a statement
+# that a collision predates the gate, never that it is harmless, and the two are
+# not the same: the mvs-audit-03 audit (2026-08-03) rebuilt both backends from
+# empty and found SIX entries whose schema no supported backend produced on a
+# fresh install — including dashboard_users.role, which rejected four roles the
+# RBAC matrix hands out. An entry with no reason is a violation, enforced by
+# migration_versions.check()::unexplained_entries.
+#
+# Re-derive the classification at any time with:
+#   python tools/db/shadowed_migration_audit.py \
+#       --fresh-db <sqlite built by init_icdev_db.py + migrate.py --up --converge> \
+#       --fresh-pg-dsn <postgres built by bootstrap_pg.py + migrate.py --up --converge>
+#
+# 48 duplicated versions; 60 migrations shadowed. Verdicts as of 2026-08-03:
+#   42 benign, 9 not-actually-shadowed, 3 no-DDL, 6 were real gaps (now fixed).
+#
 grandfathered:
   "10":
-    - 010_kanban_executor_schema
-    - 010_network_intelligence_schema
+    - 010_kanban_executor_schema: "RUNS — sorts first at v10, so this is the entry MigrationRunner applies"
+    - 010_network_intelligence_schema: "benign — ni_analyses, ni_devices, ni_state_snapshots present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "18":
-    - 018_memory_db_consolidation
-    - 018_reflex_observations.py
+    - 018_memory_db_consolidation: "RUNS — sorts first at v18, so this is the entry MigrationRunner applies"
+    - 018_reflex_observations.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "19":
-    - 019_backlog_task_reassign.py
-    - 019_kanban_verifications
+    - 019_backlog_task_reassign.py: "RUNS — sorts first at v19, so this is the entry MigrationRunner applies"
+    - 019_kanban_verifications: "not actually shadowed — the runner never discovers the entry that sorts first, so this one is what runs at v19"
   "20":
-    - 020_kanban_failure_count
-    - 020_nc_topologies_schema.py
-    - 020_options_coach_events
+    - 020_kanban_failure_count: "RUNS — sorts first at v20, so this is the entry MigrationRunner applies"
+    - 020_nc_topologies_schema.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
+    - 020_options_coach_events: "benign — ad_options_coach_events present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "21":
-    - 021_ad_macro_regimes
-    - 021_dispatch_source
-    - 021_sg_sigint_events.py
+    - 021_ad_macro_regimes: "RUNS — sorts first at v21, so this is the entry MigrationRunner applies"
+    - 021_dispatch_source: "no DDL — nothing for a shadowed entry to lose"
+    - 021_sg_sigint_events.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "22":
-    - 022_ad_event_stack_tables
-    - 022_sg_eo_signals.py
+    - 022_ad_event_stack_tables: "RUNS — sorts first at v22, so this is the entry MigrationRunner applies"
+    - 022_sg_eo_signals.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "23":
-    - 023_ad_news_patterns
-    - 023_sg_socmint_signals.py
+    - 023_ad_news_patterns: "RUNS — sorts first at v23, so this is the entry MigrationRunner applies"
+    - 023_sg_socmint_signals.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "24":
-    - 024_ad_news_catalysts
-    - 024_telegram_inbox.py
+    - 024_ad_news_catalysts: "RUNS — sorts first at v24, so this is the entry MigrationRunner applies"
+    - 024_telegram_inbox.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "27":
-    - 027_ad_coach_alerts
-    - 027_compliance_snapshots
+    - 027_ad_coach_alerts: "RUNS — sorts first at v27, so this is the entry MigrationRunner applies"
+    - 027_compliance_snapshots: "benign — compliance_snapshots present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "28":
-    - 028_attack_graph
-    - 028_idc_infra_tables
+    - 028_attack_graph: "RUNS — sorts first at v28, so this is the entry MigrationRunner applies"
+    - 028_idc_infra_tables: "benign — idc_infra_resources, idc_infra_snapshots present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "31":
-    - 031_ddc_twin_tables
-    - 031_network_twin_snapshots
+    - 031_ddc_twin_tables: "RUNS — sorts first at v31, so this is the entry MigrationRunner applies"
+    - 031_network_twin_snapshots: "benign — network_twin_snapshots present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "43":
-    - 043_memory_entity_relationships
-    - 043_memory_fingerprint
+    - 043_memory_entity_relationships: "RUNS — sorts first at v43, so this is the entry MigrationRunner applies"
+    - 043_memory_fingerprint: "benign — declares no object missing from a fresh build"
   "50":
-    - 050_sg_sio_assessments
-    - 050_theater_supply_chain
+    - 050_sg_sio_assessments: "RUNS — sorts first at v50, so this is the entry MigrationRunner applies"
+    - 050_theater_supply_chain: "WAS a gap on SQLite (vendor_type rejected 'defense_contractor'); fixed in init_icdev_db.py's CREATE TABLE rather than by re-animating this entry, whose SQLite path rebuilds the table (create _new, copy, DROP, rename). PostgreSQL had it via pg_consolidated.sql."
   "52":
-    - 052_sg_conflict_events
-    - 052_sg_raw_signals
+    - 052_sg_conflict_events: "RUNS — sorts first at v52, so this is the entry MigrationRunner applies"
+    - 052_sg_raw_signals: "benign — sg_raw_signals, sg_raw_signals_audit present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "55":
-    - 055_cta_scores_cache.sql
-    - 055_sg_conflict_events_cyber_op
-    - 055_sg_information_signals
+    - 055_cta_scores_cache.sql: "RUNS — sorts first at v55, so this is the entry MigrationRunner applies"
+    - 055_sg_conflict_events_cyber_op: "WAS a gap on SQLite (sg_conflict_events missing technique_ids/threat_actor/malware_family/confidence); folded into 20260803204235_mvs_audit_03_shadowed_gaps. PostgreSQL had them via the snapshot."
+    - 055_sg_information_signals: "benign — sg_information_scores, sg_information_signals present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "56":
-    - 056_historical_cases
-    - 056_sg_prioritized_signals
-    - 056_win_loss_analysis_tables.sql
+    - 056_historical_cases: "RUNS — sorts first at v56, so this is the entry MigrationRunner applies"
+    - 056_sg_prioritized_signals: "benign — sg_prioritized_signals present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
+    - 056_win_loss_analysis_tables.sql: "benign — win_loss_analysis_runs, win_loss_feature_impacts present on a fresh build; declared by tools/db/init_icdev_db.py"
   "57":
-    - 057_ad_backtest_runs.sql
-    - 057_sg_raw_signals_processed
-    - 057_sg_sc_graph
-    - 057_sg_signals_actions
+    - 057_ad_backtest_runs.sql: "RUNS — sorts first at v57, so this is the entry MigrationRunner applies"
+    - 057_sg_raw_signals_processed: "benign — declares no object missing from a fresh build"
+    - 057_sg_sc_graph: "benign — sg_sc_edges, sg_sc_nodes present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
+    - 057_sg_signals_actions: "benign — its three columns are present on PostgreSQL. On SQLite the BASE table sg_prioritized_signals is never created at all, so the missing columns are that table's absence, not this shadowed ALTER's."
   "64":
-    - 064_sg_hitl_items_type
-    - 064_sg_pattern_learner_log
+    - 064_sg_hitl_items_type: "RUNS — sorts first at v64, so this is the entry MigrationRunner applies"
+    - 064_sg_pattern_learner_log: "benign — sg_pattern_learner_log present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "78":
-    - 078_ad_decision_audit
-    - 078_workflow_hitl
+    - 078_ad_decision_audit: "RUNS — sorts first at v78, so this is the entry MigrationRunner applies"
+    - 078_workflow_hitl: "benign — wf_citations, wf_document_submissions, wf_document_templates present on a fresh build; declared by tools/db/init_icdev_db.py"
   "83":
-    - 083_cyber_ext_columns
-    - 083_sg_multidomain_tracks
+    - 083_cyber_ext_columns: "RUNS — sorts first at v83, so this is the entry MigrationRunner applies"
+    - 083_sg_multidomain_tracks: "benign — sg_aircraft_tracks, sg_ground_vehicle_events, sg_satellite_passes present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "84":
-    - 084_aisg_wizard.sql
-    - 084_wne_sessions
+    - 084_aisg_wizard.sql: "RUNS — sorts first at v84, so this is the entry MigrationRunner applies"
+    - 084_wne_sessions: "benign — wne_artifacts, wne_sessions present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "85":
-    - 085_aadc_versions.sql
-    - 085_aisg_learning_tracks
-    - 085_sg_ccir_trigger_events
+    - 085_aadc_versions.sql: "RUNS — sorts first at v85, so this is the entry MigrationRunner applies"
+    - 085_aisg_learning_tracks: "benign — aisg_learning_tracks, aisg_track_progress present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
+    - 085_sg_ccir_trigger_events: "benign — sg_ccir_trigger_events present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "86":
-    - 086_aadc_events.sql
-    - 086_sg_intsums
+    - 086_aadc_events.sql: "RUNS — sorts first at v86, so this is the entry MigrationRunner applies"
+    - 086_sg_intsums: "benign — sg_intsum_paragraphs, sg_intsums present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "107":
-    - 107_aadc_phase5.sql
-    - 107_sg_theaters
+    - 107_aadc_phase5.sql: "RUNS — sorts first at v107, so this is the entry MigrationRunner applies"
+    - 107_sg_theaters: "benign — sg_theaters present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "108":
-    - 108_aadc_phase6.sql
-    - 108_sg_war_council_briefs
+    - 108_aadc_phase6.sql: "RUNS — sorts first at v108, so this is the entry MigrationRunner applies"
+    - 108_sg_war_council_briefs: "benign — sg_war_council_briefs present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "113":
-    - 113_aadc_compliance.sql
-    - 113_kanban_vibe_tier1
+    - 113_aadc_compliance.sql: "RUNS — sorts first at v113, so this is the entry MigrationRunner applies"
+    - 113_kanban_vibe_tier1: "WAS a gap on SQLite (kanban_tasks missing start_date/target_date/files_changed/lines_added/lines_removed, plus kanban_task_comments); folded into 20260803204235_mvs_audit_03_shadowed_gaps."
   "120":
-    - 120_kanban_alert_queue
-    - 120_ops_hub
+    - 120_kanban_alert_queue: "RUNS — sorts first at v120, so this is the entry MigrationRunner applies"
+    - 120_ops_hub: "no DDL — nothing for a shadowed entry to lose"
   "135":
-    - 135_ohc_runbooks
-    - 135_sdc_designs
+    - 135_ohc_runbooks: "RUNS — sorts first at v135, so this is the entry MigrationRunner applies"
+    - 135_sdc_designs: "benign — sdc_designs present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "136":
-    - 136_gameday_ai_league
-    - 136_qdc_metrics
+    - 136_gameday_ai_league: "RUNS — sorts first at v136, so this is the entry MigrationRunner applies"
+    - 136_qdc_metrics: "benign — qdc_metrics present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "139":
-    - 139_fisma_ir
-    - 139_govlift_map_assessment.sql
-    - 139_govlift_rbac_roles
-    - 139_mfa_enforcement
-    - 139_qdc_metrics.sql
+    - 139_fisma_ir: "RUNS — sorts first at v139, so this is the entry MigrationRunner applies"
+    - 139_govlift_map_assessment.sql: "benign — govlift_dependencies present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
+    - 139_govlift_rbac_roles: "WAS a gap — the first of two shadowed attempts to widen dashboard_users.role (247 was the second). Folded into 20260803204235_mvs_audit_03_shadowed_gaps."
+    - 139_mfa_enforcement: "GAP, but obsolete — the four dashboard_users MFA columns exist on no backend and never will. Deliberately NOT resurrected: tools/saas/auth/mfa.py reimplemented MFA on its own user_mfa and mfa_attempts tables, so nothing reads these columns. Delete the migration rather than run it."
+    - 139_qdc_metrics.sql: "benign — qdc_metrics present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "158":
-    - 158_conflict_predictions
-    - 158_sg_leadership_briefs
+    - 158_conflict_predictions: "RUNS — sorts first at v158, so this is the entry MigrationRunner applies"
+    - 158_sg_leadership_briefs: "benign — sg_leadership_briefs present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "161":
-    - 161_sdc_compliance_timeline
-    - 161_sdc_rag_stigs
+    - 161_sdc_compliance_timeline: "RUNS — sorts first at v161, so this is the entry MigrationRunner applies"
+    - 161_sdc_rag_stigs: "benign — sdc_rag_attack_techniques, sdc_rag_stigs present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "163":
-    - 163_domain_coverage
-    - 163_groups_canvas_access.sql
+    - 163_domain_coverage: "RUNS — sorts first at v163, so this is the entry MigrationRunner applies"
+    - 163_groups_canvas_access.sql: "benign — canvas_access_grants, group_members, group_roles present on a fresh build; declared by tools/db/init_icdev_db.py"
   "173":
-    - 173_cpmp_obligation_periods.py
-    - 173_white_team_review_type.py
+    - 173_cpmp_obligation_periods.py: "RUNS — sorts first at v173, so this is the entry MigrationRunner applies"
+    - 173_white_team_review_type.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "179":
-    - 179_integrity_tables.py
-    - 179_kanban_task_revivals.py
+    - 179_integrity_tables.py: "RUNS — sorts first at v179, so this is the entry MigrationRunner applies"
+    - 179_kanban_task_revivals.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "184":
-    - 184_coworkers_canvas_tables.sql
-    - 184_creative_gap_innovation_signal.sql
-    - 184_memory_fts5
+    - 184_coworkers_canvas_tables.sql: "RUNS — sorts first at v184, so this is the entry MigrationRunner applies"
+    - 184_creative_gap_innovation_signal.sql: "benign — creative_gap, innovation_signal present on a fresh build; declared by tools/db/init_icdev_db.py"
+    - 184_memory_fts5: "WAS a gap — memory_fts existed on no backend, and session_indexer.py only ever PROBES for it (_fts5_available runs a SELECT and returns False on error), so full-text search was silently degraded to unavailable rather than failing loudly. Folded into 20260803204235_mvs_audit_03_shadowed_gaps."
   "188":
-    - 188_genesis_outputs
-    - 188_genesis_phase_log.sql
+    - 188_genesis_outputs: "RUNS — sorts first at v188, so this is the entry MigrationRunner applies"
+    - 188_genesis_phase_log.sql: "benign — genesis_phase_log present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "189":
-    - 189_dd_pii_scans.sql
-    - 189_genesis_phase_log
+    - 189_dd_pii_scans.sql: "RUNS — sorts first at v189, so this is the entry MigrationRunner applies"
+    - 189_genesis_phase_log: "benign — genesis_phase_log present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "207":
-    - 207_mcip_dat_tables.sql
-    - 207_tenant_component_overrides
+    - 207_mcip_dat_tables.sql: "RUNS — sorts first at v207, so this is the entry MigrationRunner applies"
+    - 207_tenant_component_overrides: "benign — tenant_component_overrides present on a fresh build; declared by tools/db/init_icdev_db.py"
   "210":
-    - 210_showcase_apps.sql
-    - 210_sso
+    - 210_showcase_apps.sql: "RUNS — sorts first at v210, so this is the entry MigrationRunner applies"
+    - 210_sso: "WAS a gap — sso_providers and sso_sessions existed only in the long-lived database, so enterprise SSO had never worked on a new deployment despite six consumers (tools/auth/oidc.py, saml.py, session.py, admin/blueprint.py, compliance/gdpr_eraser.py). Folded into 20260803204235_mvs_audit_03_shadowed_gaps."
   "212":
-    - 212_data_residency
-    - 212_idr_suggested_classification.sql
+    - 212_data_residency: "RUNS — sorts first at v212, so this is the entry MigrationRunner applies"
+    - 212_idr_suggested_classification.sql: "benign — declares no object missing from a fresh build"
   "215":
-    - 215_api_keys
-    - 215_user_preferences
+    - 215_api_keys: "RUNS — sorts first at v215, so this is the entry MigrationRunner applies"
+    - 215_user_preferences: "benign — user_preferences present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "223":
-    - 223_agent_evals.sql
-    - 223_user_identity.sql
-    - 223_wfc_doc_regen.sql
+    - 223_agent_evals.sql: "RUNS — sorts first at v223, so this is the entry MigrationRunner applies"
+    - 223_user_identity.sql: "benign — user_challenges, user_daily_briefings, user_identity_profiles present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
+    - 223_wfc_doc_regen.sql: "benign — schema declared by tools/workflow_canvas/blueprint.py, which runs"
   "236":
-    - 236_personal_rag.sql
-    - 236_rfi_workbench.sql
+    - 236_personal_rag.sql: "RUNS — sorts first at v236, so this is the entry MigrationRunner applies"
+    - 236_rfi_workbench.sql: "WAS the widest-reaching gap — rfi_workbench_sessions/sections/exports existed only in the long-lived database despite nine consumers, and it cascaded: migrations 237, 239, 241, 249 and 255 all fail on a fresh SQLite chain with 'no such table: rfi_workbench_sections'. Folded into 20260803204235_mvs_audit_03_shadowed_gaps."
   "247":
-    - 247_cpmp_int_coverage_tenant_id.sql
-    - 247_dashboard_users_role_check
+    - 247_cpmp_int_coverage_tenant_id.sql: "RUNS — sorts first at v247, so this is the entry MigrationRunner applies"
+    - 247_dashboard_users_role_check: "WAS the worst gap in the set — dashboard_users.role rejected migration_engineer, component_admin, auditor and ciso on PostgreSQL, so create_user() with any of those roles failed. Invisible to a table/column diff because it changes neither. Folded into 20260803204235_mvs_audit_03_shadowed_gaps; see also 139_govlift_rbac_roles, the other shadowed attempt at the same fix."
   "257":
-    - 257_doc_modernization.sql
-    - 257_idr_dic_doc_link.sql
+    - 257_doc_modernization.sql: "RUNS — sorts first at v257, so this is the entry MigrationRunner applies"
+    - 257_idr_dic_doc_link.sql: "benign — declares no object missing from a fresh build"
   "269":
-    - 269_kg_embedding_vec_backfill
-    - 269_kg_empty_graph_counts.sql
+    - 269_kg_embedding_vec_backfill: "RUNS — sorts first at v269, so this is the entry MigrationRunner applies"
+    - 269_kg_empty_graph_counts.sql: "no DDL — nothing for a shadowed entry to lose"
   "282":
-    - 282_docmod_nist_pubs.sql
-    - 282_insider_risk_uba.sql
+    - 282_docmod_nist_pubs.sql: "RUNS — sorts first at v282, so this is the entry MigrationRunner applies"
+    - 282_insider_risk_uba.sql: "benign — schema declared by tools/security/insider_risk.py, which runs"

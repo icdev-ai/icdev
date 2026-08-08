@@ -78,13 +78,38 @@ def snapshot_through_version() -> str:
     return raw.zfill(3)
 
 
+def _version_order_key(version: str) -> tuple:
+    """Ordering used by ``MigrationRunner.discover_migrations``.
+
+    Shorter id family first, then numerically within the family, so every
+    3-digit legacy version precedes every 14-digit timestamp whatever the
+    digits are.
+    """
+    digits = str(version).strip()
+    return (len(digits), digits)
+
+
 def baseline_versions(all_versions, through: str) -> list:
     """The versions to record as applied without executing them.
 
     Split out as a pure function so the rule — and only versions the snapshot
     actually covers are ever marked — is testable without a database.
+
+    Ordered by ``_version_order_key``, NOT by plain string comparison. The
+    timestamp id family (``YYYYMMDDHHMMSS``, used for everything created from
+    2026-08 onward) starts with '2', and ``"20260803204235" <= "301"`` is True
+    as strings — so a lexicographic test silently swept EVERY timestamp
+    migration into the baseline and marked it applied without running it. That
+    is precisely the "value too HIGH" failure this module's docstring says it
+    exists to prevent, arriving through the comparison instead of through the
+    marker. It cost the 8 timestamp migrations then on main their DDL on every
+    fresh PostgreSQL bootstrap, including this one (mvs-audit-03).
     """
-    return sorted(v for v in set(all_versions) if v <= through)
+    cutoff = _version_order_key(through)
+    return sorted(
+        (v for v in set(all_versions) if _version_order_key(v) <= cutoff),
+        key=_version_order_key,
+    )
 
 
 def _raw_pg_conn(retries: int = 10, backoff: float = 1.5):
