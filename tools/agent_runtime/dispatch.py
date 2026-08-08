@@ -9,8 +9,9 @@ This module turns those coordinates into agent-loop handlers matching the
 
 1. **Source-aware invocation.** MCP registry handlers have signature
    ``handle_x(args: dict) -> Any``; decorated tools take named keyword arguments;
-   built-in starter tools already match the loop contract. Each is called the
-   right way and its result normalised to a string.
+   built-in starter tools already match the loop contract; ``external`` tools go
+   out through ``tools.mcp_client``'s gate rather than being imported at all.
+   Each is called the right way and its result normalised to a string.
 2. **Runtime injection.** Where a handler's signature accepts ``stop_event`` or
    ``task_id``, those are injected (matching ``run_agent_loop``'s plumbing) — a
    handler that does not declare them never sees them.
@@ -142,6 +143,59 @@ def _invoke_decorated(
 
 
 # ---------------------------------------------------------------------------
+# External MCP tools (hgx-fed-01)
+# ---------------------------------------------------------------------------
+#: Documented default for ``ICDEV_CLASSIFICATION`` (docs/operations/cicd-env-vars.md).
+_FALLBACK_CLASSIFICATION = "CUI"
+
+
+def default_classification() -> str:
+    """Sensitivity to declare for arguments leaving for an external MCP server.
+
+    This is the *deployment's* classification (``ICDEV_CLASSIFICATION`` — the
+    same variable core profiles set), not ``UNCLASSIFIED``. An agent running on
+    a CUI deployment can put CUI into a tool argument, and declaring those
+    arguments unclassified would make the per-server ``classification_ceiling``
+    inert in exactly the case it exists for. Unset falls back to ``CUI``,
+    matching the documented default; an operator enabling an external server on
+    an UNCLASSIFIED deployment sets the variable, and one sending CUI raises the
+    server's ceiling — either way the declaration is a deliberate act.
+    """
+    value = os.environ.get("ICDEV_CLASSIFICATION", "").strip()
+    return value.upper() if value else _FALLBACK_CLASSIFICATION
+
+
+def _invoke_external(
+    spec: ToolSpec, tool_input: dict[str, Any], classification: str
+) -> str:
+    """Call a third-party MCP tool through the external registry's gate.
+
+    The registry owns every control and none is duplicated here: the tool must
+    be on its server's allowlist (an unknown namespaced name is refused), the
+    classification ceiling is checked before the transport dials, and air-gap
+    mode leaves no server to reach. ``call`` never raises — it returns a dict —
+    so a remote failure arrives as a tool result the model can read rather than
+    as an exception the loop has to survive.
+
+    Resolved from ``icdev.tools.mcp_client`` for the reason
+    :func:`~tools.agent_runtime.discovery._external_registry_module` documents:
+    ``tools/mcp_client/`` is a physical copy, so the two import paths hold
+    different singletons, and dispatching through the other one would mean
+    calling a registry that has never connected.
+    """
+    from icdev.tools.mcp_client.registry import get_external_registry
+
+    result = get_external_registry().call(
+        spec.name, tool_input, classification=classification
+    )
+    if not isinstance(result, dict):
+        return _stringify(result)
+    if not result.get("ok"):
+        return f"error: {result.get('error') or 'external MCP call failed'}"
+    return _stringify(result.get("result"))
+
+
+# ---------------------------------------------------------------------------
 # Failure policy (arr-tax-01, arr-res-01, arr-res-02, arr-deg-01, arr-esc-01)
 # ---------------------------------------------------------------------------
 def _handle_failure(
@@ -238,11 +292,22 @@ def make_handler(
     gate: SafetyGate,
     task_id: Optional[str] = None,
     builtin_handlers: Optional[dict[str, ToolHandler]] = None,
+    classification: Optional[str] = None,
 ) -> ToolHandler:
-    """Build one agent-loop handler for ``spec``, wrapping it in the safety gate."""
+    """Build one agent-loop handler for ``spec``, wrapping it in the safety gate.
+
+    ``classification`` is the sensitivity declared for arguments sent to an
+    ``external`` tool; it is resolved per call from :func:`default_classification`
+    when not supplied, and ignored for every other source.
+    """
 
     def _execute(tool_input: dict[str, Any], stop: "threading.Event | None") -> str:
         """Run the tool once. Raises — the caller owns failure policy."""
+        if spec.source == "external":
+            return _invoke_external(
+                spec, tool_input, classification or default_classification()
+            )
+
         if spec.source == "builtin":
             bh = (builtin_handlers or {}).get(spec.name)
             if bh is None:
@@ -287,6 +352,7 @@ def build_handlers(
     *,
     safety_gate: Optional[SafetyGate] = None,
     task_id: Optional[str] = None,
+    classification: Optional[str] = None,
 ) -> dict[str, ToolHandler]:
     """Build ``{tool_name: handler}`` for every spec in ``registry``.
 
@@ -295,6 +361,8 @@ def build_handlers(
         safety_gate: Gate applied to mutating tools; defaults to the fail-closed
             :func:`default_safety_gate`. sag-safe-01 injects the approval gate.
         task_id: Optional task id injected into handlers that accept one.
+        classification: Sensitivity declared for arguments sent to ``external``
+            tools; defaults to :func:`default_classification`.
     """
     gate = safety_gate or default_safety_gate
     builtin_handlers: dict[str, ToolHandler] = {}
@@ -309,6 +377,10 @@ def build_handlers(
     handlers: dict[str, ToolHandler] = {}
     for name, spec in registry.items():
         handlers[name] = make_handler(
-            spec, gate=gate, task_id=task_id, builtin_handlers=builtin_handlers
+            spec,
+            gate=gate,
+            task_id=task_id,
+            builtin_handlers=builtin_handlers,
+            classification=classification,
         )
     return handlers
