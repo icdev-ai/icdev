@@ -189,6 +189,12 @@ def test_run_command_runs_in_the_worktree(tmp_path):
     """cwd must be the worktree, not the shared checkout — otherwise the agent
     inspects the wrong tree and the grader reports on the wrong branch."""
     _, h = _handlers(tmp_path)
+    # The `tools/` directory must really exist: the allowlist forces the path to
+    # start with `tools/`, and POSIX resolves `tools/..` by walking it, so a
+    # missing directory is ENOENT there. Windows collapses `tools/..` lexically
+    # and never notices. Without this mkdir the test passes on Windows and fails
+    # on Linux — the mirror image of the bug this file was written for.
+    (tmp_path / "tools").mkdir()
     (tmp_path / "marker.py").write_text("print('in-worktree')\n")
     out = h["run_command"]({"command": "python tools/../marker.py", "timeout": 60}, None)
     assert "in-worktree" in out
