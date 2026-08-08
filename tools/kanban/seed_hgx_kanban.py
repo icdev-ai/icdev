@@ -40,6 +40,14 @@ import sys
 
 GATE = "hgx-gate-00"
 
+# Mirrors the live CHECK constraint `kanban_tasks_task_type_check`. Note there is
+# no "bug" — use "fix". SQLite does not enforce the constraint, so a bad value
+# seeds cleanly against a fallback DB and only blows up on PostgreSQL part-way
+# through the insert loop; asserting here fails it at --dry-run instead.
+VALID_TASK_TYPES = frozenset(
+    {"build", "run", "fix", "research", "deploy", "test", "chore"}
+)
+
 
 def _t(
     task_id: str,
@@ -52,6 +60,11 @@ def _t(
     status: str = "backlog",
     acceptance: str | None = None,
 ) -> dict:
+    if task_type not in VALID_TASK_TYPES:
+        raise ValueError(
+            f"{task_id}: task_type {task_type!r} violates "
+            f"kanban_tasks_task_type_check; allowed: {sorted(VALID_TASK_TYPES)}"
+        )
     spec: dict = {
         "id": task_id,
         "title": title,
@@ -689,7 +702,7 @@ cannot call — this class of bug should be caught at load, not at runtime.
 """,
         depends_on="hgx-sess-02",
         priority="high",
-        task_type="bug",
+        task_type="fix",
         acceptance="""
 - qa_agent can execute its declared test commands.
 - A role declaring a tool its trust_tier forbids fails validation at load with a
@@ -812,7 +825,7 @@ BUILD
 """,
         depends_on="hgx-obs-01",
         priority="high",
-        task_type="bug",
+        task_type="fix",
         acceptance="""
 - A test fails if a name is in REFLEX_NAMES but not config, or vice versa,
   outside an explicit grandfather list.
