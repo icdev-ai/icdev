@@ -115,6 +115,7 @@ class AgentRuntime:
         self._stop = threading.Event()
         self._profile_preamble: str | None = None
         self._project_preamble: str | None = None
+        self._goals_preamble: str | None = None
 
     # -- router ------------------------------------------------------------
 
@@ -147,6 +148,7 @@ class AgentRuntime:
         # the new session (a /new after an edit to CLAUDE.md picks it up).
         self._profile_preamble = None
         self._project_preamble = None
+        self._goals_preamble = None
         return self.session
 
     def _post_session_hook(self) -> None:
@@ -173,6 +175,7 @@ class AgentRuntime:
         )
         self._profile_preamble = None
         self._project_preamble = None
+        self._goals_preamble = None
         return self.session
 
     def use_toolset(
@@ -236,15 +239,55 @@ class AgentRuntime:
             self._project_preamble = preamble
         return self._project_preamble
 
+    # -- standing goals (hgx-goal-02) ---------------------------------------
+
+    def _goals_context(self) -> str:
+        """The operator's active standing goals, capped and budgeted.
+
+        Cached like the other preambles, but with a shorter life: unlike the
+        project's instructions, goals change *during* a session — that is the
+        point of ``/goal`` — so every mutation calls :meth:`invalidate_goals`
+        and the next turn rebuilds this from the store. See
+        ``goal_context.render_block`` for the two caps (count, then tokens).
+        """
+        if getattr(self, "_goals_preamble", None) is None:
+            block = ""
+            try:
+                from tools.agent_runtime.goal_context import build_for_runtime
+
+                block = build_for_runtime(
+                    self.llm_function,
+                    self.system_prompt,
+                    user_id=self.user_id,
+                    tenant_id=self.tenant_id,
+                    context_id=getattr(self.session, "context_id", "") or "",
+                )
+            except Exception as exc:  # noqa: BLE001 — goals are best-effort
+                logger.debug("agent_runtime: goal injection skipped: %s", exc)
+            self._goals_preamble = block
+        return self._goals_preamble
+
+    def invalidate_goals(self) -> None:
+        """Drop the cached goal block so the next turn re-reads the store.
+
+        Public because the ``/goal`` handlers live in ``commands.py`` and a
+        command that mutates goals must not have to reach into a private
+        attribute to make its own change visible.
+        """
+        self._goals_preamble = None
+
     # -- profile memory (sag-mem-01) ---------------------------------------
 
     def _effective_system_prompt(self, user_input: str) -> str:
-        """System prompt with project context + the operator profile injected once.
+        """System prompt with project context, goals and the operator profile.
 
         Built at session start (first turn): the project's own instructions
-        (:meth:`_project_context`) followed by ``profile_memory`` — durable
+        (:meth:`_project_context`), the active standing goals
+        (:meth:`_goals_context`), then ``profile_memory`` — durable
         facts/preferences plus the top hybrid-memory hits keyed to the first
-        prompt — and cached so subsequent turns reuse the same preamble.
+        prompt — and cached so subsequent turns reuse the same preamble. The
+        goal block is the one part that is rebuilt mid-session, whenever
+        :meth:`invalidate_goals` has been called.
         """
         if getattr(self, "_profile_preamble", None) is None:
             preamble = ""
@@ -259,7 +302,12 @@ class AgentRuntime:
             self._profile_preamble = preamble
         parts = [
             p
-            for p in (self._project_context(), self._profile_preamble, self.system_prompt)
+            for p in (
+                self._project_context(),
+                self._goals_context(),
+                self._profile_preamble,
+                self.system_prompt,
+            )
             if p
         ]
         return "\n\n".join(parts)
