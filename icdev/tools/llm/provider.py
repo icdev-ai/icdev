@@ -59,6 +59,12 @@ class LLMRequest:
     project_id: str = ""
     tenant_id: str = ""
     classification: str = "CUI"
+    # Run-level correlation id (hgx-obs-01). Set by the agent loop so the
+    # gen_ai.invoke span the router opens for this request carries the id of the
+    # run that issued it. Carried on the REQUEST rather than in a contextvar
+    # because the loop frequently invokes the router on a pool worker, whose
+    # context is its own; an explicit field survives that thread hop.
+    correlation_id: str = ""
 
 
 @dataclass

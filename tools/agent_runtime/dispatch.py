@@ -20,6 +20,18 @@ This module turns those coordinates into agent-loop handlers matching the
    here; until then :func:`default_safety_gate` fails closed unless
    ``ICDEV_SAG_ALLOW_MUTATION`` is set, so file writes / terminal execution can
    never run unguarded by accident.
+4. **The telemetry point (hgx-obs-01).** Every call — allowed, blocked or failed
+   — is recorded to ``runtime_invocations`` with ``surface="agent"``, so a SAG
+   tool call is visible to ``icdev runtime top --surface agent`` exactly like an
+   MCP one. This is the ONLY place a SAG tool call can be observed: a tool that
+   happens to route through the MCP unified server is recorded there, but a
+   built-in or decorated tool never touches that server, and every one of them
+   passes through here.
+
+   Recording is a wrapper around the whole handler body, gate included, because
+   "the model asked for a tool it was not allowed to run" is exactly the kind of
+   thing a run needs to show. A blocked call is recorded with status ``error``
+   and the gate's reason, not silently dropped.
 """
 from __future__ import annotations
 
@@ -44,6 +56,10 @@ SafetyGate = Callable[[str, dict[str, Any], bool], "tuple[bool, str]"]
 
 _MAX_RESULT_BYTES = 200_000
 _TRUTHY = {"1", "true", "yes", "on"}
+
+#: How ``error_recovery.ToolResult.render()`` opens an unsuccessful result. The
+#: telemetry wrapper uses it to tell a genuine failure from a retry that worked.
+_FAILURE_PREFIX = "error ["
 
 
 # ---------------------------------------------------------------------------
@@ -332,19 +348,93 @@ def make_handler(
             return f"error: handler unavailable for {spec.name!r}"
         return _stringify(_invoke_mcp(fn, tool_input, stop, task_id))
 
+    def _run(tool_input: dict[str, Any], stop: "threading.Event | None",
+             inv: Any) -> str:
+        """Gate, execute, and annotate the invocation record with the outcome."""
+        allowed, reason = gate(spec.name, tool_input, spec.read_only)
+        if not allowed:
+            _annotate(inv, status="error", error_class="SafetyGateBlocked",
+                      error_message=reason)
+            blocked = f"blocked: {reason}"
+            # Recorded like any other result so a replay shows what the model
+            # actually saw — the refusal is part of the run, not a gap in it.
+            _record_result(inv, blocked)
+            return blocked
+        try:
+            out = _execute(tool_input, stop)
+        except Exception as exc:  # noqa: BLE001 — never crash the agent loop
+            logger.exception("dispatch: %s failed", spec.name)
+            out = _handle_failure(spec, exc, tool_input, stop, _execute, task_id)
+            # _handle_failure retries transient read-only failures, and a retry
+            # that succeeded returns the tool's real output — that call did NOT
+            # fail and must not be counted as an error. Only its own rendered
+            # failure does, which ToolResult.render() always prefixes.
+            if out.startswith(_FAILURE_PREFIX):
+                _annotate(inv, status="error", error_class=type(exc).__name__,
+                          error_message=str(exc))
+        _record_result(inv, out)
+        return out
+
     def _handler(tool_input: dict[str, Any], stop: "threading.Event | None") -> str:
         if not isinstance(tool_input, dict):
             tool_input = {}
-        allowed, reason = gate(spec.name, tool_input, spec.read_only)
-        if not allowed:
-            return f"blocked: {reason}"
-        try:
-            return _execute(tool_input, stop)
-        except Exception as exc:  # noqa: BLE001 — never crash the agent loop
-            logger.exception("dispatch: %s failed", spec.name)
-            return _handle_failure(spec, exc, tool_input, stop, _execute, task_id)
+        recorder = _recorder()
+        if recorder is None:
+            return _run(tool_input, stop, None)
+        with recorder.record(
+            recorder.SURFACE_AGENT, spec.name, arg_keys=tool_input,
+            session_id=task_id or "",
+        ) as inv:
+            return _run(tool_input, stop, inv)
 
     return _handler
+
+
+# ---------------------------------------------------------------------------
+# Invocation telemetry (hgx-obs-01)
+# ---------------------------------------------------------------------------
+def _recorder() -> Any:
+    """The invocation recorder module, or None if it cannot be imported.
+
+    Imported lazily and never fatally: dispatch predates the recorder and must
+    keep working in a checkout where the observability package is unavailable.
+    """
+    try:
+        from tools.observability import invocation_recorder
+
+        return invocation_recorder
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dispatch: invocation telemetry unavailable: %s", exc)
+        return None
+
+
+def _annotate(inv: Any, *, status: str, error_class: str,
+              error_message: str) -> None:
+    """Mark an invocation handle as failed. Safe with None and with anything."""
+    if inv is None:
+        return
+    try:
+        inv.status = status
+        inv.error_class = error_class
+        inv.error_message = error_message
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dispatch: invocation annotation failed: %s", exc)
+
+
+def _record_result(inv: Any, out: str) -> None:
+    """Offer the tool result to the recorder.
+
+    ``record_result`` stores nothing unless the operator has explicitly enabled
+    replay; with the flag off this is a call that returns None and persists
+    nothing. The decision lives in the recorder, not here, so there is exactly
+    one place that decides whether a tool result may be written down.
+    """
+    if inv is None:
+        return
+    try:
+        inv.record_result(out)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dispatch: invocation result capture failed: %s", exc)
 
 
 def build_handlers(
