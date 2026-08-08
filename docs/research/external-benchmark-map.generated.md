@@ -33,7 +33,7 @@ fallen below its module floor becomes a gap.
 | 4 | Security ops / threat analysis | TheHive Cortex, MISP, OpenCTI | Behind | **Gap** | 153 | 1 |
 | 5 | RAG & knowledge graph | LlamaIndex, Haystack, Microsoft GraphRAG | Parity | **Parity, with named work** | 61 | 4 |
 | 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | 101 | 0 |
-| 7 | Delivery pipeline | Temporal, Argo, GitHub Actions | Ahead | **No adaptation needed** | 106 | 0 |
+| 7 | Delivery pipeline | Temporal, Argo, GitHub Actions | Ahead | **No adaptation needed** | 107 | 0 |
 | 8 | Data quality & lineage | OpenLineage, DataHub, Great Expectations | Behind | **Gap** | 18 | 1 |
 | 9 | LLM evaluation & red teaming | promptfoo, DeepEval, Giskard | Behind | **Gap** | 11 | 1 |
 | 10 | IaC & infrastructure | Crossplane, Checkov, Atlantis | Parity | **No adaptation needed** | 45 | 0 |
@@ -269,7 +269,7 @@ Measured: **101 modules** (floor 5) → `built`; rows `not_expected`. Surface: `
 
 **ICDEV today.** kanban -> worktree -> build -> PR -> CI -> merge-verified done, with a real dated build ledger behind it. None of the external tools close the loop from detected gap to merged fix.
 
-Measured: **106 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/kanban/`.
+Measured: **107 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/kanban/`.
 
 **Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
