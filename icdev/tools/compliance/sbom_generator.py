@@ -4,10 +4,18 @@
 # ~25 live call sites (MCP sbom_generate, icdev_comply, dashboard batch API, CDRL, IronBank,
 # production audit/remediate, FedRAMP KSI/packager, SWFT) and a BLOCKING bdc_canvas gate.
 # Authored in both tools/compliance/ and icdev/tools/compliance/ — keep the two in sync.
-"""Generate CycloneDX Software Bill of Materials (SBOM).
+"""Generate a Software Bill of Materials (SBOM) in CycloneDX or SPDX.
+
 Resolves the project's transitive dependency set (SBOM 2026 Coverage element),
-generates CycloneDX 1.4 JSON format SBOM with CUI classification metadata,
-records in sbom_records table, and logs audit event.
+builds a CycloneDX JSON document with CUI classification metadata, records it in
+the sbom_records table, and logs an audit event.
+
+Formats (sbx-fmt-01): the 2026 standard names **CycloneDX (ECMA-424)** and
+**SPDX (ISO/IEC 5962:2021)** as the two widely used SBOM data formats and asks
+for support of all of them. `--format spdx` emits the same build as SPDX 2.3 by
+translating the CycloneDX document through `spdx_writer.to_spdx`, so the two
+serializations carry identical elements by construction rather than by
+maintenance.
 
 Coverage (sbx-cov-01): components come from `dependency_resolver.resolve_project`,
 which reads each ecosystem's *resolved* lockfile and degrades to this module's
@@ -76,6 +84,7 @@ from tools.compliance.sbom_signer import (
     signature_required,
     signing_available,
 )
+from tools.compliance.spdx_writer import to_spdx
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,9 +92,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-# CycloneDX spec version (default 1.4, supports 1.4-1.7 via --spec-version)
-CYCLONEDX_SPEC_VERSION = "1.4"
-CYCLONEDX_SCHEMA = "http://cyclonedx.org/schema/bom-1.4.schema.json"
+# CycloneDX spec version. The default is 1.7 (sbx-fmt-01): the 2026 Minimum
+# Elements warn against deprecated versions of a format and cite ECMA-424 of
+# December 2025, which is CycloneDX 1.7. The previous default, 1.4, is a 2022
+# spec that cannot express the Component Producer element natively -- below 1.6
+# the nearest field is `supplier`, whose producer/distributor ambiguity is what
+# the 2026 standard set out to remove. 1.4-1.6 stay selectable via
+# --spec-version for consumers whose tooling has not caught up.
+CYCLONEDX_SPEC_VERSION = "1.7"
+CYCLONEDX_SCHEMA = "http://cyclonedx.org/schema/bom-1.7.schema.json"
 
 # Supported CycloneDX spec versions (D342)
 CYCLONEDX_SUPPORTED_VERSIONS = {
@@ -93,6 +108,18 @@ CYCLONEDX_SUPPORTED_VERSIONS = {
     "1.5": "http://cyclonedx.org/schema/bom-1.5.schema.json",
     "1.6": "http://cyclonedx.org/schema/bom-1.6.schema.json",
     "1.7": "http://cyclonedx.org/schema/bom-1.7.schema.json",
+}
+
+# SBOM output formats. Both are named by the 2026 standard; SWID was removed
+# from the accepted list in 2026 and ICDEV has never emitted it.
+FORMAT_CYCLONEDX = "cyclonedx"
+FORMAT_SPDX = "spdx"
+SUPPORTED_FORMATS = (FORMAT_CYCLONEDX, FORMAT_SPDX)
+
+#: File extension per format, so a consumer can tell them apart on disk.
+FORMAT_EXTENSIONS = {
+    FORMAT_CYCLONEDX: "cdx.json",
+    FORMAT_SPDX: "spdx.json",
 }
 
 # Coverage status -> CycloneDX `compositions[].aggregate` vocabulary (spec 1.3+,
@@ -1109,10 +1136,14 @@ def generate_sbom(
 
     Args:
         project_id: The project identifier
-        sbom_format: Output format (currently only 'cyclonedx' supported)
+        sbom_format: Output format -- 'cyclonedx' or 'spdx'. The 2026 Minimum
+            Elements name both; SPDX is translated from the CycloneDX document
+            of the same build so the two carry identical elements.
         output_path: Override output file path
         db_path: Override database path
-        spec_version: CycloneDX spec version override (D342)
+        spec_version: CycloneDX spec version override (D342). Applies to the
+            CycloneDX document, including the one the SPDX document is
+            translated from -- the producer field it selects travels through.
         python_env: Virtualenv / site-packages directory whose installed
             distributions are the Python target environment (SBOM 2026 Coverage)
         build_id: Identifier of the build this SBOM describes (SBOM 2026
@@ -1122,8 +1153,8 @@ def generate_sbom(
     Returns:
         Path to the generated SBOM file
     """
-    if sbom_format != "cyclonedx":
-        raise ValueError(f"Unsupported SBOM format: {sbom_format}. Only 'cyclonedx' is supported.")
+    if sbom_format not in SUPPORTED_FORMATS:
+        raise ValueError(f"Unsupported SBOM format: {sbom_format}. Supported: {list(SUPPORTED_FORMATS)}")
 
     # Apply spec version override (D342 — backward-compatible)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
@@ -1163,7 +1194,8 @@ def generate_sbom(
             if eco["reason"]:
                 print(f"      {eco['reason']}")
 
-        # Build CycloneDX SBOM
+        # Build CycloneDX SBOM. This is the document every format is derived
+        # from, so an element added here reaches both serializations.
         sbom, component_count = _build_cyclonedx_sbom(
             project,
             all_components,
@@ -1172,6 +1204,8 @@ def generate_sbom(
             coverage=coverage,
             python_env=python_env,
         )
+
+        document = sbom if sbom_format == FORMAT_CYCLONEDX else to_spdx(sbom)
 
         # Determine output path
         if output_path:
@@ -1183,12 +1217,13 @@ def generate_sbom(
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
             out_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            out_file = out_dir / f"sbom_{project_id}_{timestamp}.cdx.json"
+            extension = FORMAT_EXTENSIONS[sbom_format]
+            out_file = out_dir / f"sbom_{project_id}_{timestamp}.{extension}"
 
         out_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(out_file, "w", encoding="utf-8") as f:
-            json.dump(sbom, f, indent=2)
+            json.dump(document, f, indent=2)
 
         # SBOM Author Signature (2026 Minimum Elements, sbx-sig-01). Signed
         # after the bytes are on disk and before the row is written, so the
@@ -1288,9 +1323,15 @@ def generate_sbom(
             out_file,
         )
 
+        format_label = (
+            f"CycloneDX {active_spec_version}"
+            if sbom_format == FORMAT_CYCLONEDX
+            else f"{document['spdxVersion']} (translated from CycloneDX {active_spec_version})"
+        )
+
         print("\nSBOM generated successfully:")
         print(f"  File: {out_file}")
-        print(f"  Format: CycloneDX {active_spec_version}")
+        print(f"  Format: {format_label}")
         print(f"  Version: {new_version}")
         print(f"  Components: {component_count}")
         print(f"  Serial: {sbom['serialNumber']}")
@@ -1314,14 +1355,14 @@ def generate_sbom(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate CycloneDX Software Bill of Materials (SBOM)")
+    parser = argparse.ArgumentParser(description="Generate a Software Bill of Materials (CycloneDX or SPDX)")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument(
         "--format",
         dest="sbom_format",
-        default="cyclonedx",
-        choices=["cyclonedx"],
-        help="SBOM output format (default: cyclonedx)",
+        default=FORMAT_CYCLONEDX,
+        choices=list(SUPPORTED_FORMATS),
+        help="SBOM output format -- both are named by the 2026 Minimum Elements (default: cyclonedx)",
     )
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
@@ -1329,8 +1370,11 @@ def main():
         "--spec-version",
         dest="spec_version",
         default=None,
-        choices=["1.4", "1.5", "1.6", "1.7"],
-        help="CycloneDX spec version (default: 1.4, D342)",
+        choices=list(CYCLONEDX_SUPPORTED_VERSIONS.keys()),
+        help=(
+            f"CycloneDX spec version (default: {CYCLONEDX_SPEC_VERSION}, D342). "
+            "Older versions remain selectable for consumers whose tooling requires them."
+        ),
     )
     parser.add_argument(
         "--python-env",
