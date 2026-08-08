@@ -34,6 +34,12 @@ from tools.compliance.component_producer import (
     producer_properties,
     resolve_project_producer,
 )
+from tools.compliance.component_names import (
+    alternate_names,
+)
+from tools.compliance.component_names import (
+    apply_to_cyclonedx as apply_names_to_cyclonedx,
+)
 from tools.compliance.dependency_resolver import (
     COVERAGE_COMPLETE,
     COVERAGE_INCOMPLETE,
@@ -204,7 +210,8 @@ def _parse_requirements_txt(file_path):
             # Patterns: package==1.0, package>=1.0, package~=1.0, package
             match = re.match(r"^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?", line)
             if match:
-                name = match.group(1).lower().replace("_", "-")
+                declared_name = match.group(1)
+                name = declared_name.lower().replace("_", "-")
                 version = match.group(3) or UNKNOWN
 
                 purl = f"pkg:pypi/{name}"
@@ -215,6 +222,10 @@ def _parse_requirements_txt(file_path):
                     {
                         "type": "library",
                         "name": name,
+                        # The spelling the producer published under. `name` above
+                        # is ICDEV's normalization of it, and the 2026 Component
+                        # Name element is defined as the producer's name.
+                        "declared_name": declared_name,
                         "version": version,
                         "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                         "purl": purl,
@@ -248,7 +259,8 @@ def _parse_pyproject_toml(file_path):
                     dep_str = dep[0] or dep[1]
                     dep_match = re.match(r"([a-zA-Z0-9._-]+)(?:\[.*?\])?\s*(?:([<>=!~]+)\s*(.+))?", dep_str)
                     if dep_match:
-                        name = dep_match.group(1).lower().replace("_", "-")
+                        declared_name = dep_match.group(1)
+                        name = declared_name.lower().replace("_", "-")
                         version = dep_match.group(3) or UNKNOWN
                         # Clean up version (take first version if multiple conditions)
                         version = version.split(",")[0].strip()
@@ -261,6 +273,7 @@ def _parse_pyproject_toml(file_path):
                             {
                                 "type": "library",
                                 "name": name,
+                                "declared_name": declared_name,
                                 "version": version,
                                 "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                                 "purl": purl,
@@ -367,11 +380,17 @@ def _parse_go_mod(file_path):
                 )
 
     # Parse single-line require statements: require github.com/foo/bar v1.2.3
-    single_requires = re.findall(r"^require\s+(\S+)\s+(\S+)", content, re.MULTILINE)
+    #
+    # The separators are same-line whitespace, not `\s`. With `\s` the pattern
+    # ran straight over the newline of a parenthesized block header, so
+    # `require (\n\tgithub.com/foo/bar/v2 v2.1.0` parsed as a module named `(`
+    # carrying `github.com/foo/bar/v2` as its *version* — a component with a
+    # nonsense name and a version that is a module path, emitted into every SBOM
+    # of a Go project using the block form, which is the common form. The
+    # `version == "("` guard below never fired because the paren lands in the
+    # module group, not the version group (sbx-fld-06).
+    single_requires = re.findall(r"^require[ \t]+(\S+)[ \t]+(\S+)", content, re.MULTILINE)
     for module, version in single_requires:
-        # Skip if this is the start of a parenthesized block
-        if version == "(":
-            continue
         version = re.sub(r"\s*//.*$", "", version).strip()
         purl = f"pkg:golang/{module}@{version}"
         components.append(
@@ -669,6 +688,32 @@ def _parse_csproj(file_path):
             }
         )
 
+    # A PackageReference carrying no version at all — Central Package Management
+    # puts the version in Directory.Packages.props, which this declared-only
+    # parser does not read. Every pattern above requires a version, so such a
+    # reference used to be dropped entirely: the component vanished from the
+    # SBOM rather than appearing with an unknown version. Under the 2026 Coverage
+    # element a component ICDEV knows about is listed, and under Component
+    # Version its missing version is stated as unknown (sbx-fld-06).
+    versionless_pattern = re.compile(r'<PackageReference\s+Include="([^"]+)"([^>]*)/?>')
+    for match in versionless_pattern.finditer(content):
+        name = match.group(1)
+        if name in seen or "Version" in match.group(2):
+            continue
+        seen.add(name)
+        components.append(
+            {
+                "type": "library",
+                "name": name,
+                "version": UNKNOWN,
+                "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
+                "purl": f"pkg:nuget/{name}",
+                "scope": "required",
+                "group": "",
+                "source": str(file_path),
+            }
+        )
+
     return components
 
 
@@ -941,8 +986,19 @@ def _build_cyclonedx_sbom(
     # differ in any emitted field are two components under the Coverage element.
     seen_identities = set()
     unique_components = []
+    # Component Name (2026 minimum elements) — the element exists so that a name
+    # is not lost, and deduplication is where names get lost: two instances that
+    # differ only in the spelling the producer used collapse into one, and the
+    # loser's spelling would vanish. Collect them instead, keyed by the identity
+    # that survives, and hand them to the alternate-name derivation below.
+    collapsed_spellings = {}
     for comp in components:
         identity = _component_identity(comp)
+        spelling = str(comp.get("declared_name") or "").strip()
+        if spelling:
+            collapsed_spellings.setdefault(identity, [])
+            if spelling not in collapsed_spellings[identity]:
+                collapsed_spellings[identity].append(spelling)
         if identity in seen_identities:
             continue
         seen_identities.add(identity)
@@ -982,6 +1038,18 @@ def _build_cyclonedx_sbom(
             cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
+
+        # Component Name — the standard requires the format to allow multiple
+        # entries for alternate names, and ICDEV emits a *derived* primary name
+        # (PEP 503-normalized, npm scope split off), so the producer's own
+        # spelling is one of the alternates rather than a nicety. Skipped where
+        # the policy withholds the name: an alternate would hand back the very
+        # value the redaction removed.
+        if disclosure.state_of(FIELD_NAME) is None:
+            apply_names_to_cyclonedx(
+                cdx_comp,
+                alternate_names(comp, declared=collapsed_spellings.get(_component_identity(comp))),
+            )
 
         # Component Producer — the entity that creates, defines and identifies
         # the component. Never taken from `group`, which is a namespace. Always

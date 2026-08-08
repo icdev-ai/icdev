@@ -189,6 +189,9 @@ python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --exp
 python tools/compliance/unknown_information.py --validate "/path/to/sbom.cdx.json" --json         # unknown vs withheld conformance; withheld is never counted as unknown
 python tools/compliance/unknown_information.py --policy --json                                     # the disclosure policy: enquiry route + declared withholdings (exit 1 on dropped rules)
 python tools/compliance/unknown_information.py --vocabulary --json                                 # the 17 fields and the two disjoint reason vocabularies
+python tools/compliance/component_names.py --validate "/path/to/sbom.cdx.json" --json             # Component Name alternates: every alternate is sourced, none contradicts a withheld name
+python tools/compliance/component_names.py --names "/path/to/sbom.cdx.json" --json                # every name each component is known by, primary first
+python tools/compliance/component_names.py --vocabulary --json                                     # the closed alternate-name source vocabulary
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"

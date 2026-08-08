@@ -1318,3 +1318,49 @@ validator is to be pointed at documents ICDEV did not produce.
   that accepts recipient requests, rather than a property naming a route) — that
   turns a document property into an attack surface with its own authorization
   model, and belongs with sbx-gov-02.
+
+---
+
+### Gap 51 — SBOM Component Name alternates (`tools/compliance/component_names.py`)
+
+**Module:** `tools/compliance/component_names.py` (sbx-fld-06), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two inputs. `alternate_names` derives names from component
+records that originate in **operator-supplied dependency manifests**
+(`requirements.txt`, `package.json`, `pom.xml`, `go.mod`, …). `validate_document`
+and `all_names_from_cyclonedx`, reached through `--validate` / `--names`, read a
+**CycloneDX JSON SBOM from an operator-supplied path**, which may be another
+vendor's output.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module is a pure string transform. Its entire contact with
+  untrusted content is `json.loads`, `str()`, `.strip()`, `.startswith()`,
+  f-string concatenation, one anchored `re.match` over a purl and one anchored
+  `re.sub` over a module path. There is no `exec`/`eval`/`compile`, no
+  `subprocess`, no `pickle`, no SQL, no filesystem write and no network call.
+  Nothing read from a component is dispatched on: the ecosystem either *is* a
+  key of `_PURL_TYPE_TO_ECOSYSTEM` or yields the empty string and no alternates.
+- **Guardrails:**
+  - Alternates are **derived, never accepted**. Every one is a mechanical
+    transform of a field already in the component record, so a manifest cannot
+    inject an arbitrary extra name for a component it does not describe.
+  - The `SOURCES` vocabulary is closed. An alternate carrying any other source
+    is a validation defect, so a foreign SBOM cannot introduce a new provenance
+    class by asserting one.
+  - `_add` refuses an empty alternate, one equal to the primary name, and a
+    duplicate — the three shapes that would let a document overstate how many
+    names a component is known by.
+  - A component whose `name` is undisclosed emits **no** alternates, and
+    `validate_component` fails a document that pairs them. An alternate on a
+    withheld name would hand back the value the redaction removed.
+  - Both regexes are anchored and bounded (`^pkg:([a-zA-Z0-9.+-]+)/`,
+    `/v([2-9]|[1-9][0-9]+)$`) over short identifier strings, with no nested
+    quantifier — there is no catastrophic-backtracking input.
+  - `tests/test_sbom_component_names.py` exercises the rejection paths directly:
+    an alternate with no source, with an invented source, repeating the primary
+    name, repeated outright, and present on a component whose name is withheld.
+- **Revisit if:** alternates are ever accepted from an input document rather than
+  derived — for example an SBOM-merge path that unions the names of two
+  documents. That turns a derivation into an assertion and needs its own trust
+  decision.

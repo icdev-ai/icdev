@@ -96,11 +96,18 @@ import re
 import sys
 from pathlib import Path
 
+# Run by path (`python tools/compliance/component_producer.py --registry`), the
+# absolute import below cannot resolve: sys.path[0] is this directory, not the
+# repo root. Every form of that command in docs/reference/commands.md raised
+# ModuleNotFoundError before this guard (sbx-fld-06).
+if __package__ in (None, ""):  # pragma: no cover - import-path bootstrap
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
 # `_site_packages_dirs` is the Coverage element's own answer to "which
 # site-packages is the target environment" (sbx-cov-01). Re-deriving it here
 # would let the producer read a different environment than the one the
 # component list came from, which is the one thing that must not happen.
-from tools.compliance.dependency_resolver import _site_packages_dirs
+from tools.compliance.dependency_resolver import _site_packages_dirs  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 REGISTRY_PATH = BASE_DIR / "args" / "sbom_producer_registry.yaml"

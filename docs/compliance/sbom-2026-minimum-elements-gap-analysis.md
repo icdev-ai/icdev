@@ -419,6 +419,96 @@ itself, is [docs/features/sbom-2026-unknown-vs-withheld.md](../features/sbom-202
 on sbx-fld-04's `_persist_components`, exactly as the producer does — `Disclosure.db_values()` is
 exported for that writer.
 
+### 2.10 Component Name alternates and Component Version unknowns (sbx-fld-06)
+
+`tools/compliance/component_names.py` (mirrored at `icdev/tools/compliance/`) implements the one
+sentence the 2026 standard added to Component Name: **"data formats implementing this element must
+allow multiple entries to capture alternate names."**
+
+**The prior state was worse than "one name".** The element is defined as *the name assigned by the
+component producer*, and ICDEV emitted a name it had **derived**:
+
+* every Python component was lower-cased and had `_` rewritten to `-` before it reached the
+  document, and the resolver's `importlib.metadata` path read `Name: Flask` from `METADATA` and
+  then discarded that string in favour of `flask`;
+* every npm scoped package had its scope split off into CycloneDX `group`, so `@babel/core` — the
+  name the package is actually published under — appeared in no single field;
+* a Maven artifact carried a bare `artifactId`, which is ambiguous across groups and which nobody
+  cites without its `groupId`.
+
+**The derivation, per ecosystem.** The primary name stays exactly as it was — the purl, the
+`bom-ref` and `_component_identity` all key on it and must not move — and everything else the
+component is legitimately known by becomes an alternate:
+
+| Source code | Applies to | The alternate |
+|---|---|---|
+| `producer-declared-spelling` | any ecosystem | `declared_name`, the string the producer published under |
+| `pep-503-normalized` | python | the PEP 503 form, where the primary is not already it (`zope.interface` -> `zope-interface`) |
+| `registry-scoped-name` | npm | `@scope/name`, reassembled from `group` |
+| `ecosystem-coordinate` | maven, gradle | `groupId:artifactId` |
+| `go-module-path-without-major-version` | golang | the module path minus its `/vN` suffix |
+
+Every alternate is a **mechanical transform of a field already in the component record**. Nothing
+is accepted from an input document and nothing is guessed, so the module is pure, offline, and
+cannot be induced to attach an arbitrary name to a component.
+
+**Carrying the producer's spelling required four call sites, not one.** `declared_name` is set by
+`_parse_requirements_txt` and `_parse_pyproject_toml`, and preserved through
+`dependency_resolver._resolve_python_environment` (from `METADATA`'s `Name`),
+`_resolve_python_lock` and `_resolve_pipfile_lock`. It also had to survive
+`_adopt_declared`, the reshape every declared manifest passes through on its way to a real SBOM —
+which is where the second defect surfaced: that function rebuilt each component from a fixed field
+list and was **dropping `version_unknown_reason`**, silently collapsing the Maven
+`version-managed-by-parent` case back to `declared-without-a-version`. The per-parser tests had
+never caught it because they call the parsers directly and never cross that seam.
+
+**CycloneDX mapping.** No supported spec version has an alias array on `component`, so the
+alternates travel in properties, the same seam Component Producer and the disclosure convention
+use:
+
+```json
+{"name": "icdev:component:alternate-name",              "value": "@babel/core"}
+{"name": "icdev:component:alternate-name-source:@babel/core", "value": "registry-scoped-name"}
+```
+
+The bare property **repeats, once per alternate** — that repetition is precisely the "multiple
+entries" the element requires; a single joined string would satisfy a schema and not the standard.
+Properties are emitted sorted, so regenerating an unchanged SBOM stays byte-stable.
+`alternate_names_from_cyclonedx` reads them back into the same records, so a consumer that
+re-emits a component does not quietly drop the extra names.
+
+**Two interactions worth stating.** A component whose `name` sbx-prc-01's policy **withholds**
+emits no alternates at all, and `validate_document` fails a document that pairs them — an
+alternate would hand back the value the redaction removed. And deduplication is where names get
+lost: two instances differing only in the producer's spelling collapse to one, so
+`_build_cyclonedx_sbom` collects the spellings of collapsed twins before deduplicating and hands
+them to the derivation, rather than letting the loser vanish.
+
+**Component Version.** sbx-prc-01 replaced the `"unspecified"` / `"managed"` literals in the
+parsers; sbx-fld-06 closed what remained. Beyond the `_adopt_declared` reason-flattening above,
+`_parse_csproj` required a `Version` attribute in every one of its patterns, so a
+`<PackageReference Include="X" />` under Central Package Management — where the version lives in
+`Directory.Packages.props` — was **dropped from the SBOM entirely** rather than listed with an
+unknown version. A component ICDEV knows about is now listed, with its version stated as unknown.
+
+**A pre-existing parser defect found while proving the above.** `_parse_go_mod`'s single-line
+`require` pattern separated its groups with `\s`, which crosses a newline, so the block header
+`require (` swallowed the first module of the block and emitted a component **named `(` whose
+version was a module path**. Both of this card's elements were nonsense on that entry, and the
+parenthesized block is how essentially every real `go.mod` is written. The separators are now
+same-line whitespace.
+
+**Also fixed:** `component_names.py` and `component_producer.py` both import
+`tools.compliance.dependency_resolver` absolutely, which does not resolve when the module is run
+by path — every `python tools/compliance/component_producer.py ...` form in
+`docs/reference/commands.md` raised `ModuleNotFoundError`. Both now bootstrap the repo root onto
+`sys.path` when `__package__` is empty.
+
+**Still open:** SPDX carries no alias field either, so sbx-fmt-01 decides how the alternates cross
+into that format; `component_names` exports `all_names_from_cyclonedx` for it. Persisting
+alternates alongside `sbom_components` waits on sbx-fld-04's `_persist_components`, the single
+writer, exactly as the producer and the disclosure do.
+
 ---
 
 ---
@@ -452,8 +542,8 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Component Hash Algorithm | **GAP** | Consequent to the above. |
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
 | Component License | **GAP** | Not emitted, though `sbom_components.license` already exists in schema. |
-| Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
-| Component Version | **PARTIAL** | The conflating literals are **gone (sbx-prc-01)**: an unresolved version is now the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. What remains for the element itself is stating the version the *producer* assigned where ICDEV currently reports a resolver's normalization. |
+| Component Name | **MET (sbx-fld-06)** | `tools/compliance/component_names.py` derives every additional name a component is legitimately known by and emits them as repeating `icdev:component:alternate-name` properties, each paired with a source from a closed vocabulary. The producer's own spelling now reaches the document — `declared_name` is carried from the parsers, from `_adopt_declared` and from the three Python resolver paths — so the element's actual definition, *the name assigned by the producer*, is satisfied rather than approximated by ICDEV's normalization. See §2.10. |
+| Component Version | **MET (sbx-prc-01, sbx-fld-06)** | The conflating literals are **gone**: an unresolved version is the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. sbx-fld-06 closed the two remaining holes: `_adopt_declared` was flattening every declared reason to `declared-without-a-version`, so the Maven parent-POM case never survived the reshape into a real SBOM; and `_parse_csproj` **dropped** a versionless `PackageReference` outright rather than listing it with an unknown version. The producer-assigned spelling of the version's component is now stated too, via Component Name above. |
 
 ### 3.3 Practices and Processes
 
@@ -471,10 +561,10 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — counting strictly, 2
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
-**Current: 4 of 17 data-field elements** — Component Producer joined them with sbx-fld-02 — **and
-2 of 7 practices**: Coverage with sbx-cov-01, and Explicitly Identifying Unknown Information with
-sbx-prc-01. The matrix rows above are kept current as each task lands, so they, not this
-paragraph, are the authoritative statement.
+**Current: 6 of 17 data-field elements** — Component Producer joined them with sbx-fld-02, and
+Component Name and Component Version with sbx-fld-06 — **and 2 of 7 practices**: Coverage with
+sbx-cov-01, and Explicitly Identifying Unknown Information with sbx-prc-01. The matrix rows above
+are kept current as each task lands, so they, not this paragraph, are the authoritative statement.
 
 ---
 
