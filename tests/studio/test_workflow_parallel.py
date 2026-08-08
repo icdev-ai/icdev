@@ -357,10 +357,15 @@ def test_cycle_fails_the_run_before_any_step(monkeypatch):
 
 
 def test_failed_step_does_not_block_its_wave(monkeypatch):
-    """A failing tool step marks the run failed but still runs the others.
+    """A failing tool step marks the run failed but still runs its SIBLINGS.
 
-    This is the pre-existing contract (only a gate short-circuits the walk); the
-    parallel loop must not quietly start cancelling downstream work.
+    `boom` and `other` are independent, so `other` must still run — a failure
+    anywhere must not short-circuit the walk the way a rejected gate does.
+
+    What changed in hgx-cond-01 is the DESCENDANT: `last` depends on `boom`, so
+    it is now cancelled rather than run against a precondition already known to
+    be broken. Before that card it executed, which is what this test used to
+    assert.
     """
     recorder = _Recorder()
     _stub_persistence(monkeypatch, recorder)
@@ -385,7 +390,10 @@ def test_failed_step_does_not_block_its_wave(monkeypatch):
         "default", run_queue,
     )
     events = _drain(run_queue)
-    assert set(recorder.order) == {"boom", "other", "last"}
+    assert set(recorder.order) == {"boom", "other"}
+    last = [e for e in events if e.get("step_id") == "last" and e["type"] == "step_done"][0]
+    assert last["status"] == "skipped"
+    assert "Cancelled" in last["reason"] and "boom" in last["reason"]
     assert [e for e in events if e["type"] == "run_complete"][0]["status"] == "failed"
 
 
