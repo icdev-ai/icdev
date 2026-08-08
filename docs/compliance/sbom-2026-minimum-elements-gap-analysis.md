@@ -346,6 +346,79 @@ waits on the `_persist_components` writer that sbx-fld-04 introduces — this ta
 `producer_db_value()`, which never returns `NULL`, for that writer to call in one line. Adding a
 second writer here would only collide with it.
 
+### 2.9 Explicitly Identifying Unknown Information (sbx-prc-01)
+
+`tools/compliance/unknown_information.py` (mirrored at `icdev/tools/compliance/`) defines the one
+convention for the two states the 2026 element **separates**: a field **unknown to the author**
+versus a field **withheld by the author**. ICDEV wrote both as the literal `"unspecified"` (and
+`"managed"` for a Maven version held by a parent POM), which says neither.
+
+**The convention, applied uniformly to all 17 data-field elements:**
+
+1. **An in-band sentinel** in the native field — `unknown` or `withheld` — so a schema that
+   requires the field still validates and no plausible-looking value stands in for one that was
+   never established.
+2. **An out-of-band property per undisclosed field**, which is the authoritative statement:
+   `icdev:unknown:<field>` or `icdev:withheld:<field>`, whose value is a machine-readable reason
+   code. The *name* carries the state and the *value* carries the why, so a reader that
+   understands only the two prefixes already has the distinction the standard asks for. Fields
+   whose CycloneDX carrier is not a plain string (`hashes`, `licenses`, `dependencies`) have no
+   sentinel and live only here — which is why the properties, not the sentinel, are authoritative.
+3. **Disjoint reason vocabularies.** `UNKNOWN_REASONS` and `WITHHELD_REASONS` share no member, so
+   a reason code identifies its own state and a withheld reason filed under the unknown prefix is
+   a structural error rather than a matter of discipline. `Disclosure.unknown()` raises on a
+   withheld reason and `.withheld()` raises on an unknown one, so the mistake cannot be made at
+   authoring time either. A field is in at most one state: recording either evicts the other.
+
+Four properties of the design matter more than the mechanics:
+
+1. **Unknown is discovered; withheld is declared.** An unknown is a fact found at generation time
+   — nobody can configure a field into being unknown. A withholding is an operator decision in
+   `args/sbom_disclosure_policy.yaml`. A rule whose field or reason is unrecognised is **dropped,
+   not defaulted**, and `--policy` reports every dropped rule and exits non-zero: guessing which
+   redaction category the operator meant is the invention this element exists to prevent. An
+   unmatched `match` key is a non-match, never a wildcard, because a redaction that accidentally
+   covered the whole tree is worse than one covering nothing — only the second is visible on
+   inspection.
+2. **The enquiry route rides with the markings that make it necessary.** ICDEV emits
+   `CUI // SP-CTI` and `Distribution D`; those *are* the withholding case, so
+   `icdev:sbom:enquiry-*` is emitted next to them on **every** document, not only when a field is
+   withheld. Withholding anything without it is a validation error, and a missing or corrupt
+   policy file degrades to a default that withholds nothing and still names a route — the route
+   can never come back empty.
+3. **Completeness is stated, and unknowns never affect it.** `icdev:sbom:disclosure-completeness`
+   is `incomplete-withheld` when one of the essential component fields (`producer`, `name`,
+   `version`, `identifiers`, `license`) is withheld — the standard's "may be considered
+   incomplete" sentence made machine-readable. `hash_value` is deliberately not essential: the
+   standard's own example of legitimately absent data is an author who cannot reach the artifact.
+   The document totals are two properties, `icdev:sbom:fields-unknown` and
+   `icdev:sbom:fields-withheld`; a single number would re-create the conflation the split removes.
+   This is a different property from `icdev:sbom:coverage` — Coverage is which components are
+   listed, this is which fields on a listed component are disclosed.
+4. **The distinction survives SPDX.** SPDX has one marker and no way to say "withheld", so both
+   states map to `NOASSERTION` in the native field and the state moves into an annotation whose
+   wording is fixed on the words `UNKNOWN`/`WITHHELD`. `spdx_mapping()` renders it for
+   sbx-fmt-01's writer to emit rather than re-derive.
+
+The Component Producer element joins the convention rather than keeping a private marker:
+sbx-fld-02's `icdev:component-producer*` properties are untouched (its finer-grained reason
+survives as the unknown's detail) and the component *additionally* states
+`icdev:unknown:producer`, so one validator reads every undisclosed field of every element from one
+pair of prefixes.
+
+`validate_sbom_disclosure()` is the acceptance criterion in executable form — it fails a document
+on a cross-filed reason, a field in both states, a bare sentinel, a sentinel disagreeing with its
+property, a surviving `unspecified`/`managed`, an unrecognised field name, a withholding with no
+enquiry process, a false completeness claim, and a detail property that explains a redaction — and
+is reachable as `unknown_information.py --validate <sbom.cdx.json>`. Its summary keeps
+`fields_unknown` and `fields_withheld` as two numbers that are never added. Tests live in
+`tests/test_sbom_unknown_information.py`; the feature doc, including the recipient enquiry process
+itself, is [docs/features/sbom-2026-unknown-vs-withheld.md](../features/sbom-2026-unknown-vs-withheld.md).
+
+**Still open:** persisting to `sbom_components.unknown_fields_json` / `withheld_fields_json` waits
+on sbx-fld-04's `_persist_components`, exactly as the producer does — `Disclosure.db_values()` is
+exported for that writer.
+
 ---
 
 ---
@@ -380,7 +453,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
 | Component License | **GAP** | Not emitted, though `sbom_components.license` already exists in schema. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
-| Component Version | **PARTIAL** | Unresolved versions are written as the literal strings `"unspecified"` (most parsers) and `"managed"` (Maven). These are not machine-interpretable unknown markers and collide with the Explicitly Identifying Unknown Information element. |
+| Component Version | **PARTIAL** | The conflating literals are **gone (sbx-prc-01)**: an unresolved version is now the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. What remains for the element itself is stating the version the *producer* assigned where ICDEV currently reports a resolver's normalization. |
 
 ### 3.3 Practices and Processes
 
@@ -389,7 +462,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Accommodation of Updates | **PARTIAL** | `sbom_records` versions rows, but there is no correction/revision workflow and no way to mark a prior SBOM superseded. |
 | Coverage | **MET (sbx-cov-01)** | `tools/compliance/dependency_resolver.py` resolves each ecosystem from its **lockfile**, not its declared manifest, and the generator consumes that instead of parsing manifests itself. See §2.7. |
 | Distribution and Delivery | **PARTIAL** | Writes a file to disk and records a path. No version-specific URL and no retrieval API. |
-| Explicitly Identifying Unknown Information | **GAP** | No unknown/withheld distinction anywhere; `"unspecified"` conflates them and is not machine-processable. No documented process for recipients to query redactions. |
+| Explicitly Identifying Unknown Information | **MET (sbx-prc-01)** | `tools/compliance/unknown_information.py` defines one convention for both states across all 17 elements — sentinel plus `icdev:unknown:<field>` / `icdev:withheld:<field>` properties over two **disjoint** reason vocabularies — and the generator emits it. The recipient enquiry route ships in `args/sbom_disclosure_policy.yaml` and is emitted on every document beside the CUI and distribution markings. See §2.9. |
 | Frequency | **PARTIAL** | `CLAUDE.md` asserts "SBOM regenerated on every build"; the enforced gate is a **30-day staleness** threshold, which is materially weaker than per-release. |
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
@@ -399,8 +472,9 @@ met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — coun
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
 **Current: 4 of 17 data-field elements** — Component Producer joined them with sbx-fld-02 — **and
-1 of 7 practices**, Coverage, with sbx-cov-01. The matrix rows above are kept current as each task
-lands, so they, not this paragraph, are the authoritative statement.
+2 of 7 practices**: Coverage with sbx-cov-01, and Explicitly Identifying Unknown Information with
+sbx-prc-01. The matrix rows above are kept current as each task lands, so they, not this
+paragraph, are the authoritative statement.
 
 ---
 
