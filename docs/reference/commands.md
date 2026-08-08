@@ -446,6 +446,44 @@ state summary. The block is built once per session and rebuilt on `/new`.
 
 ---
 
+## SAG Standing Goals — `/goal` and Prompt Injection (hgx-goal-02)
+
+`/goal` manages durable objectives from inside a session; the **active** ones are
+injected into the system prompt on the next turn, capped and budgeted.
+
+```bash
+# Preview the goal block the runtime will inject
+python tools/agent_runtime/goal_context.py --user default
+
+# Budget accounting only — shown vs withheld, tokens vs budget
+python tools/agent_runtime/goal_context.py --json
+
+# Budget against a different routing function, with an explicit count cap
+python tools/agent_runtime/goal_context.py --function question_answering \
+    --limit 3 --json
+```
+
+In-session commands (`icdev chat`, or any runtime wired to
+`tools/agent_runtime/commands.py::dispatch`):
+
+```text
+/goal create <title> [| detail] [--priority=N]   Create and start pursuing it
+/goal list [status|all]                          Numbered list (default: live)
+/goal status [N|id]                              What is injected, or one goal
+/goal pause|resume|complete|cancel <N|id>        Lifecycle moves
+/goal block <N|id> [reason]                      Mark blocked, recording why
+/goal clear [--yes]                              Cancel every live goal
+```
+
+Two caps apply and both are announced in the block itself: a count cap
+(`ICDEV_SAG_GOAL_LIMIT`, default 5) and a token cap (5% of
+`context_budget.available_input_tokens`). Under pressure the block shortens goal
+text before it drops goals, so every objective stays at least named. Every
+mutation invalidates the runtime's cached block, so a `/goal create` reaches the
+model on the very next turn. `ICDEV_SAG_GOALS=0` disables injection entirely.
+
+---
+
 ## Agent Approval Gate — Irreversible Action Confirmation (ars-appr-01)
 
 Classifies an agent tool call by **reversibility** and halts the irreversible
