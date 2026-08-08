@@ -1,0 +1,68 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.4.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "serialNumber": "urn:uuid:6f1c0b2e-3a7d-4b91-8c55-0d2e4a9f7b13",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-08-01T12:00:00Z",
+    "tools": [
+      {
+        "vendor": "ICDEV™",
+        "name": "icdev-sbom-generator",
+        "version": "1.0.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "icdev-demo-project",
+      "name": "Demo Project",
+      "version": "0.0.0"
+    },
+    "properties": [
+      {
+        "name": "icdev:classification",
+        "value": "CUI // SP-CTI"
+      },
+      {
+        "name": "icdev:project-id",
+        "value": "demo-project"
+      },
+      {
+        "name": "icdev:cui-category",
+        "value": "CTI"
+      },
+      {
+        "name": "icdev:distribution",
+        "value": "Distribution D -- Authorized DoD Personnel Only"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "a1b2c3d4e5f60718",
+      "name": "flask",
+      "version": "3.0.2",
+      "purl": "pkg:pypi/flask@3.0.2",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "bom-ref": "b2c3d4e5f6071829",
+      "name": "requests",
+      "version": "unspecified",
+      "purl": "pkg:pypi/requests",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "bom-ref": "c3d4e5f607182930",
+      "name": "commons-lang3",
+      "version": "managed",
+      "group": "org.apache.commons",
+      "purl": "pkg:maven/org.apache.commons/commons-lang3",
+      "scope": "required"
+    }
+  ]
+}

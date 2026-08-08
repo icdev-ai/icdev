@@ -1,0 +1,221 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:0193f4c7-2b8e-7a41-9d3f-6c5b0e2a94d7",
+  "version": 2,
+  "metadata": {
+    "timestamp": "2026-08-08T05:30:58.123456+00:00[UTC]",
+    "lifecycles": [
+      {
+        "phase": "post-build"
+      }
+    ],
+    "authors": [
+      {
+        "name": "Integrated Cyber Development Corporation",
+        "email": "sbom@icdev.example"
+      }
+    ],
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "vendor": "Integrated Cyber Development Corporation",
+          "name": "icdev-sbom-generator",
+          "version": "4.2.0"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "bom-ref": "icdev-platform",
+      "name": "ICDEV Platform",
+      "version": "4.2.0"
+    },
+    "properties": [
+      {
+        "name": "icdev:classification",
+        "value": "CUI // SP-CTI"
+      },
+      {
+        "name": "icdev:project-id",
+        "value": "icdev-platform"
+      },
+      {
+        "name": "icdev:sbom:version",
+        "value": "1.1.0"
+      },
+      {
+        "name": "icdev:sbom:supersedes",
+        "value": "urn:uuid:0193f4c7-2b8e-7a41-9d3f-6c5b0e2a94d6"
+      },
+      {
+        "name": "icdev:sbom:unknown-information-contact",
+        "value": "https://icdev.example/sbom/redaction-request (sbom-redaction@icdev.example)"
+      },
+      {
+        "name": "icdev:sbom:coverage",
+        "value": "complete"
+      },
+      {
+        "name": "icdev:sbom:coverage:statement",
+        "value": "All ecosystems resolved from lockfiles; transitive closure complete."
+      }
+    ]
+  },
+  "externalReferences": [
+    {
+      "type": "distribution",
+      "url": "https://sbom.icdev.example/icdev-platform/4.2.0/sbom.cdx.json",
+      "comment": "Version-specific retrieval URL for this exact build."
+    },
+    {
+      "type": "bom",
+      "url": "https://sbom.icdev.example/api/v1/sboms/0193f4c7-2b8e-7a41-9d3f-6c5b0e2a94d7"
+    }
+  ],
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg-flask-3.0.2",
+      "name": "flask",
+      "version": "3.0.2",
+      "supplier": {
+        "name": "Pallets Projects"
+      },
+      "purl": "pkg:pypi/flask@3.0.2",
+      "cpe": "cpe:2.3:a:palletsprojects:flask:3.0.2:*:*:*:*:*:*:*",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7d3bb8c7e34a1f9a2c5e6f0b1d4a8c93f2e5b7a0c1d4e7f0a3b6c9d2e5f8a1b4"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "icdev:sbom:component:alternate-names",
+          "value": "[\"Flask\"]"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg-werkzeug-3.0.1",
+      "name": "werkzeug",
+      "version": "3.0.1",
+      "supplier": {
+        "name": "NOASSERTION"
+      },
+      "purl": "pkg:pypi/werkzeug@3.0.1",
+      "cpe": "cpe:2.3:a:palletsprojects:werkzeug:3.0.1:*:*:*:*:*:*:*",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "3f9c1e0a7b2d5468f1a3c6e9b2d5f8a1c4e7b0d3f6a9c2e5b8d1f4a7c0e3b6d9f2a5c8e1b4d7f0a3c6e9b2d5f8a1c4e7"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "icdev:sbom:component:alternate-names",
+          "value": "[]"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg-icdev-crypto-2.1.0",
+      "name": "icdev-crypto",
+      "version": "2.1.0",
+      "supplier": {
+        "name": "Integrated Cyber Development Corporation"
+      },
+      "purl": "pkg:pypi/icdev-crypto@2.1.0",
+      "cpe": "cpe:2.3:a:icdev:icdev_crypto:2.1.0:*:*:*:*:*:*:*",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "b4e7a0c3f6d9b2e5a8c1f4d7b0e3a6c9f2d5b8e1a4c7f0d3b6e9a2c5f8d1b4e7"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "withheld"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "icdev:sbom:component:alternate-names",
+          "value": "[]"
+        },
+        {
+          "name": "icdev:sbom:component:withheld-fields",
+          "value": "[\"license\"]"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "icdev-platform",
+      "dependsOn": [
+        "pkg-flask-3.0.2",
+        "pkg-icdev-crypto-2.1.0"
+      ]
+    },
+    {
+      "ref": "pkg-flask-3.0.2",
+      "dependsOn": [
+        "pkg-werkzeug-3.0.1"
+      ]
+    },
+    {
+      "ref": "pkg-werkzeug-3.0.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg-icdev-crypto-2.1.0",
+      "dependsOn": []
+    }
+  ],
+  "compositions": [
+    {
+      "aggregate": "complete",
+      "assemblies": [
+        "icdev-platform",
+        "pkg-flask-3.0.2",
+        "pkg-werkzeug-3.0.1",
+        "pkg-icdev-crypto-2.1.0"
+      ]
+    }
+  ],
+  "signature": {
+    "algorithm": "ES256",
+    "publicKey": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "8Jd0mCk4pQqYwZ7nR2vXhL5tB1cF3sN6gK9aE0dU7iM",
+      "y": "T4rW2yH8pL1nQ6vC3xZ0bM5kF7jD9sA2gE4uY1oI6cP"
+    },
+    "value": "MEUCIQDx7Kf2mN9pQ4vR1sT8bH3cL0jW6yA5nE2gU7dZ0iXoAiBqM4nF8sP1vC6yT3bK9jL2wH5aR0eN7gD4uX1oZ6cIkQ"
+  }
+}

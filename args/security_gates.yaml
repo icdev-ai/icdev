@@ -919,6 +919,46 @@ swft:
     dependency_audit_required: true
     secret_detection_required: true
 
+# SBOM 2026 Minimum Elements conformance (sbx-sig-02)
+#
+# Every OTHER sbom_* condition in this file — sbom_not_generated,
+# sbom_attestation_missing, sbom_stale_over_30_days, sbom_generation_failed —
+# is a presence, freshness or exit-code check. None of them looks inside the
+# document. These conditions do, via
+# tools/compliance/sbom_minimum_elements_validator.py.
+#
+# NOT YET WIRED INTO AN ENFORCEMENT POINT. sbx-gov-01 owns attaching these to
+# the deployment, swft and devsecops gates. Declared here first so the
+# vocabulary and thresholds are agreed before anything blocks on them, and so
+# the validator's registration is complete rather than half-done. Adding the
+# conditions to a live `blocking:` list today would fail every deploy, because
+# the generator scores 2/17 until the sbx-fld-* tasks land — which is the
+# measurement this card exists to move, not a reason to stop shipping.
+sbom_conformance:
+  blocking:
+    # A score below the floor, or one that dropped since the last recorded
+    # assessment for the same project (sbom_conformance_assessments is the
+    # history that makes a regression computable at all).
+    - sbom_conformance_below_floor
+    - sbom_conformance_regressed
+  warning:
+    - sbom_conformance_below_target
+    - sbom_format_version_superseded      # e.g. CycloneDX 1.4 against ECMA-424
+    - sbom_unknown_information_ambiguous  # "unspecified"/"managed" instead of unknown vs withheld
+    - sbom_hash_algorithm_not_nist_approved
+  thresholds:
+    # Weighted percentage over all 23 elements (met = 1.0, partial = 0.5).
+    min_weighted_score: 80.0
+    target_weighted_score: 100.0
+    # Fully-met counts, which is how the standard and the gap analysis both read.
+    min_data_fields_met: 17
+    min_practices_met: 6
+    # Third-party SBOMs are held to a lower bar than ICDEV's own: a recipient
+    # cannot make a vendor emit an element, only decide whether to accept the
+    # document. This is the accept/reject line for procured software.
+    min_third_party_weighted_score: 60.0
+    allow_superseded_format_version: true
+
 # RAG Subsystem (Phase 64, D-RAG-1 through D-RAG-14)
 rag:
   blocking:
