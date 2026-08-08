@@ -45,6 +45,13 @@ VALID_EVENT_TYPES = (
     # the producer. See tools/compliance/sbom_revision.py.
     "sbom_revised",
     "sbom_corrected",
+    # Migration Design Canvas (nmce-purge-01). tools/migration_canvas/blueprint.py
+    # has bridged every _audit call here since it was written, under this
+    # event_type — but it was never admitted to the vocabulary, so the CHECK
+    # rejected all of them and the best-effort except swallowed the rejection.
+    # The canvas had zero rows in audit_trail. Actions are namespaced in `action`
+    # (net_session_status_changed, coa_selected, erb_submitted, …).
+    "migration_canvas",
     "deployment_initiated",
     "deployment_succeeded",
     "deployment_failed",

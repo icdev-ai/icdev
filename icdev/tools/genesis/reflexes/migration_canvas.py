@@ -38,6 +38,15 @@ _PROMOTION_THRESHOLD_DEFAULT = 0.70   # minimum confidence to promote finding to
 _HIGH_PRIORITY_THRESHOLD     = 0.85   # findings above this → "high" priority
 _MAX_LISTED_PER_CARD         = 20     # findings enumerated in a batched card body
 
+# A session in one of these states is closed for business.  Nothing about it —
+# including a protocol plan still sitting in 'draft' — should raise a card.
+# Imported rather than restated: the wizard's close control, the PATCH
+# validation and this reflex must agree on what "closed" means, or closing a
+# session in the UI stops one flood path and not the other.
+from tools.migration_canvas.constants import (  # noqa: E402
+    NET_SESSION_TERMINAL_STATUSES as _TERMINAL_SESSION_STATUSES,
+)
+
 # Human-readable card titles per finding type.  Also the dedupe key: the
 # open-card guard matches on "[NMCE] <label> —", so these strings are
 # load-bearing, not cosmetic.
@@ -139,10 +148,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     try:
         from tools.migration_canvas.db.init_db import get_connection as _mc_conn2
         with _mc_conn2() as mc:
+            # INNER JOIN, and exclude terminal sessions: closing a session must
+            # actually close it.  Without the join an archived session with a
+            # leftover draft plan re-raised a card every cycle forever — which
+            # is a second, independent flood path from the stale-session one.
+            # An orphaned plan (no parent row) is dropped by the join for the
+            # same reason: there is nobody left to action it.
+            placeholders = ",".join(["%s"] * len(_TERMINAL_SESSION_STATUSES))
             drafts = mc.execute(
-                """SELECT session_id, protocol, created_at
-                   FROM mc_net_protocol_plans
-                   WHERE status = 'draft'"""
+                f"""SELECT p.session_id, p.protocol, p.created_at
+                   FROM mc_net_protocol_plans p
+                   JOIN mc_net_sessions s ON s.id = p.session_id
+                   WHERE p.status = 'draft'
+                     AND s.status NOT IN ({placeholders})""",  # nosec B608
+                _TERMINAL_SESSION_STATUSES,
             ).fetchall()
         for d in drafts:
             age = _days_since(d["created_at"])
