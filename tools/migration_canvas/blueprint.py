@@ -131,23 +131,27 @@ def create_migration_blueprint():
             pass
         try:
             with get_connection() as conn:
+                # "user" is quoted: it is a reserved word, and unquoted it is a
+                # syntax error on PostgreSQL rather than a wrong-column error.
                 conn.execute(
-                    "INSERT INTO mc_audit (design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
+                    'INSERT INTO mc_audit (design_id, "user", action, detail, created_at) VALUES (%s,%s,%s,%s,%s)',
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
+                conn.commit()
         except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
             logger.warning("_audit: best-effort INSERT into mc_audit failed (non-blocking): %s", exc)
         # Bridge to main icdev.db audit_trail for compliance chain
         try:
             from tools.db.storage import get_connection as _icdev_conn
             import json as _json
-            import uuid as _uuid
             with _icdev_conn() as _ic:
+                # `id` is omitted on purpose: audit_trail.id is an integer backed
+                # by a sequence, so supplying a uuid string raised
+                # InvalidTextRepresentation on every call and was swallowed here.
                 _ic.execute(
-                    "INSERT INTO audit_trail (id, event_type, actor, action, details, classification, created_at) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                    "INSERT INTO audit_trail (event_type, actor, action, details, classification, created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (
-                        str(_uuid.uuid4()),
                         "migration_canvas",
                         user_id or "system",
                         action,
@@ -156,6 +160,7 @@ def create_migration_blueprint():
                         now_isoformat(),
                     ),
                 )
+                _ic.commit()
         except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
             logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 

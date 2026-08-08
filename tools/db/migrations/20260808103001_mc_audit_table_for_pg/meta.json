@@ -1,0 +1,7 @@
+{
+  "description": "Create mc_audit on PostgreSQL and admit migration_canvas to audit_trail.event_type (nmce-purge-01)",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}

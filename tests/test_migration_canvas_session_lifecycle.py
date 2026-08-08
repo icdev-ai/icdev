@@ -34,7 +34,13 @@ _WIZARD = (
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    """A Flask test client on the migration-canvas blueprint over temp SQLite."""
+    """A Flask test client on the migration-canvas blueprint over temp SQLite.
+
+    Two database pointers, not one. `_audit` writes to the canvas DB *and*
+    bridges to icdev's `audit_trail`, and both writes were failing independently
+    in production behind a best-effort `except`. A fixture that only wires up the
+    canvas DB would let the bridge keep silently failing and still pass.
+    """
     monkeypatch.setenv("MC_DB_PATH", str(tmp_path / "migration_canvas.db"))
     monkeypatch.setenv("MC_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
@@ -43,10 +49,40 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(init_db_mod, "DB_PATH", tmp_path / "migration_canvas.db")
     init_db_mod.init_db()
 
+    # audit_trail carries the same generated event_type CHECK production has, so
+    # an event_type missing from VALID_EVENT_TYPES fails here rather than in prod.
+    from tools.audit.audit_logger import VALID_EVENT_TYPES
+    from tools.db.storage import get_connection as _icdev_conn
+
+    allowed = ",".join(f"'{t}'" for t in VALID_EVENT_TYPES)
+    with _icdev_conn() as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS audit_trail ("  # nosec B608 - types from a code constant
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  project_id TEXT,"
+            f" event_type TEXT NOT NULL CHECK(event_type IN ({allowed})),"
+            "  actor TEXT NOT NULL,"
+            "  action TEXT NOT NULL,"
+            "  details TEXT,"
+            "  classification TEXT DEFAULT 'CUI',"
+            "  created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.commit()
+
     app = Flask(__name__)
     app.secret_key = "test"  # nosec B105 - test fixture, not a credential
     app.register_blueprint(bp_mod.create_migration_blueprint(), url_prefix="/migration-canvas")
     return app.test_client()
+
+
+def _bridged_rows(sid):
+    from tools.db.storage import get_connection as _icdev_conn
+
+    with _icdev_conn() as conn:
+        rows = conn.execute(
+            "SELECT action, details FROM audit_trail WHERE event_type='migration_canvas'"
+        ).fetchall()
+    return [r for r in rows if sid in (r["details"] or "")]
 
 
 @pytest.fixture
@@ -129,6 +165,24 @@ class TestAuditTrail:
         actions = _audit_actions(sid)
         assert "net_session_updated" in actions
         assert "net_session_status_changed" not in actions
+
+    def test_compliance_bridge_row_lands(self, client, sid):
+        """The other half of _audit, which had its own independent failure.
+
+        It passed `str(uuid4())` as `audit_trail.id`, an integer backed by a
+        sequence, so every bridged write raised and was swallowed — the canvas
+        had zero rows in audit_trail in production.
+        """
+        _patch(client, sid, {"status": "archived"})
+        rows = _bridged_rows(sid)
+        assert rows, "lifecycle change must reach the compliance audit trail"
+        assert rows[0]["action"] == "net_session_status_changed"
+
+    def test_migration_canvas_is_an_admitted_event_type(self):
+        """The bridge's event_type was never in the vocabulary its CHECK derives from."""
+        from tools.audit.audit_logger import VALID_EVENT_TYPES
+
+        assert "migration_canvas" in VALID_EVENT_TYPES
 
 
 class TestWizardControl:
