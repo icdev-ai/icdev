@@ -244,6 +244,35 @@ knowledge-base seed content that states ICDEV produces SBOMs "in SPDX and Cyclon
 `tools/govcon/seed_icdev_knowledge_base.py`, `tools/govcon/seed_solicitation_requirements.py`).
 That claim is not currently true and is customer-facing.
 
+**Resolved (sbx-gov-03, 2026-08-08).** `sbx-fmt-01` had not landed on `main`, so the claim was
+softened rather than made true. Every ICDEV capability and past-performance claim now states
+**CycloneDX only**, matching what `tools/compliance/sbom_generator.py` actually emits:
+
+| Site | Was | Now |
+|---|---|---|
+| `generate_icdev_proposal_content.py` (technical approach, ×2) | "at every build via Syft in SPDX and CycloneDX formats" | "at every build in CycloneDX format (spec 1.4-1.7)" |
+| `generate_icdev_proposal_content.py` (past performance, ×2) | "SBOMs included SPDX and CycloneDX formats" | "SBOMs were delivered in CycloneDX format" |
+| `seed_icdev_knowledge_base.py` (approach + past performance) | same as above; `spdx` retrieval keyword | CycloneDX only; `spdx` keyword removed so the record no longer surfaces on SPDX queries |
+
+Three SPDX/Syft mentions were **deliberately retained** because they are not claims about ICDEV:
+
+- `seed_solicitation_requirements.py:62,73` — seeded **solicitation** requirements ("The
+  Contractor shall …"), i.e. what a customer *asks for*. These are demand-side text; a
+  solicitation may legitimately require SPDX, and that is precisely the gap `sbx-fmt-01` closes.
+  Editing them would corrupt the fixture and hide the gap.
+- `synthetic_proposal_generator.py:224` — templated synthetic proposal text whose subject is a
+  randomly generated fictional offeror (`_COMPANY_PREFIXES`/`_COMPANY_SUFFIXES`); ICDEV never
+  appears as the company.
+
+Note that ICDEV is not entirely Syft-free: `tools/network/airgap_bundle.py` shells out to `syft`
+opportunistically when it is on `PATH`, but requests `-o cyclonedx-json` and falls back to a
+minimal CycloneDX document otherwise. It never produces SPDX, and it is the air-gap bundler
+rather than "every build" — so the corrected wording holds.
+
+**When `sbx-fmt-01` lands, revisit this section**: the CycloneDX-only wording above becomes an
+understatement, and the SPDX claim may be restored once `sbx-sig-02` verifies conformance on
+both formats.
+
 ### 2.7 Coverage — resolved dependency sets (sbx-cov-01)
 
 `tools/compliance/dependency_resolver.py` (mirrored at `icdev/tools/compliance/`) replaced

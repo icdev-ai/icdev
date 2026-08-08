@@ -75,7 +75,7 @@ _KNOWLEDGE_BLOCKS: list[dict] = [
         "content": (
             "The ICDEV DevSecOps pipeline integrates build, test, scan, sign, and deploy "
             "stages with deterministic gates. Image signing uses Sigstore/coskey for "
-            "keyless attestation. SBOM generation occurs at every build via Syft, "
+            "keyless attestation. SBOM generation occurs at every build in CycloneDX format, "
             "and attestation bundles are stored in an immutable registry. The pipeline "
             "enforces SLSA Level 3 provenance requirements: hermetic builds, reproducible "
             "artifacts, and signed provenance metadata."
@@ -468,13 +468,13 @@ _KNOWLEDGE_BLOCKS: list[dict] = [
         "content": (
             "ICDEV generated Software Bill of Materials (SBOM) and supply chain attestation packages "
             "for 15 software programs in compliance with EO 14028, NDAA Section 889, and NIST SP "
-            "800-161. SBOMs included SPDX and CycloneDX formats with VEX vulnerability exploitability "
+            "800-161. SBOMs were delivered in CycloneDX format with VEX vulnerability exploitability "
             "statements. All 15 packages passed supply chain risk management review."
         ),
         "category": "past_performance",
         "domain": "compliance",
         "volume_type": "past_performance",
-        "keywords": ["sbom", "supply chain", "eo 14028", "ndaa 889", "spdx", "cyclonedx"],
+        "keywords": ["sbom", "supply chain", "eo 14028", "ndaa 889", "cyclonedx"],
         "naics_codes": ["541512"],
     },
     # === DIFFERENTIATORS =====================================================
