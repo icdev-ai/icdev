@@ -109,6 +109,30 @@ directory, and pinned by
 `test_dotdot_in_a_command_path_needs_a_real_directory`, which asserts the
 divergence explicitly per-OS.
 
+### 5. What the job caught on its first CI run
+
+`tests/studio/test_workflow_parallel.py::test_human_gate_parks_only_its_own_branch`
+failed on `windows-latest` while all nine Linux jobs went green:
+
+```
+assert recorder.spans[sibling][0] > gate_start or recorder.overlaps(sibling, "gate")
+AssertionError: assert (9775.625 > 9775.625 or False)
+```
+
+Two steps that started milliseconds apart carried the **identical** timestamp.
+`_Recorder` timed spans with `time.monotonic()`, which on Windows is
+`GetTickCount64` — a ~15.6 ms tick (note the `.625`, i.e. a multiple of
+1/64 s). `time.perf_counter()` is `QueryPerformanceCounter`, sub-microsecond,
+and is monotonic on both platforms. On Linux `monotonic` has ns resolution, so
+the flake is invisible there — which is why it sat in a file the Linux `test`
+job already runs.
+
+Fixed by switching `_Recorder` to `perf_counter`. This is a root-cause fix, not
+a relaxed assertion: `start_b > start_a` still has to hold. Verified with 20
+consecutive runs of the failing test on Windows (20/20 pass), the full
+`tests/studio/` suite on Windows (190 passed) and `test_workflow_parallel.py`
+on Linux (81 passed).
+
 ## Verification
 
 Windows = this host. Linux = `python:3.11-slim` in Docker over the same
@@ -158,6 +182,8 @@ Source restored and re-verified clean after each.
   the Linux `test` allowlist.
 - `tests/test_toolset_portability.py` — new.
 - `tests/genesis/test_rubric_build_tools.py` — `tools/` mkdir fix.
+- `tests/studio/test_workflow_parallel.py` — `monotonic` → `perf_counter` in
+  `_Recorder` (the Windows-only failure the new job caught).
 - `docs/features/phase-hgx-port-02-windows-ci-tier.md` — this document.
 
 No `tools/` module changed, so no `icdev/tools/` mirror update is required.
