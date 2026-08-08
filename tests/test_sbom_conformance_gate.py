@@ -154,6 +154,23 @@ def test_a_partial_sbom_warns_without_blocking():
     assert "component_license" in result["gaps"]
 
 
+def test_a_detached_signature_beside_the_file_meets_the_signature_element(tmp_path):
+    """sbom_signer (sbx-sig-01) writes <sbom>.sig.json, not an in-document block —
+    scoring the document alone would call every signed SBOM unsigned."""
+    sbom = conforming_sbom()
+    sbom.pop("signature")
+    path = tmp_path / "sbom.cdx.json"
+    path.write_text(json.dumps(sbom), encoding="utf-8")
+
+    assert "sbom_author_signature" in gate.evaluate_sbom_file(path)["gaps"]
+
+    (tmp_path / "sbom.cdx.json.sig.json").write_text(
+        json.dumps({"algorithm": "ecdsa-p256", "signature": "MEUCIQD..."}), encoding="utf-8"
+    )
+
+    assert gate.evaluate_sbom_file(path)["gaps"] == []
+
+
 def test_components_without_a_producer_gap_the_producer_element():
     """Component Producer is delegated to the module that owns it (sbx-fld-02)."""
     sbom = conforming_sbom()

@@ -295,7 +295,25 @@ def _metadata_property(sbom, name):
     return None
 
 
-def _score_structural(sbom):
+def _has_detached_signature(sbom_path):
+    """Is there a signature beside this SBOM?
+
+    ``sbom_signer`` (sbx-sig-01) writes the SBOM Author Signature to a **detached**
+    ``<sbom>.sig.json``, so the document itself carries nothing to find. Scoring
+    the document alone would report every correctly signed SBOM as unsigned —
+    a wrong answer, not a missing one. Only a path can answer this, so an
+    in-memory document falls back to the in-document check.
+    """
+    if not sbom_path:
+        return False
+    try:
+        from tools.compliance.sbom_signer import signature_path_for
+    except ImportError:
+        return Path(str(sbom_path) + ".sig.json").exists()
+    return signature_path_for(sbom_path).exists()
+
+
+def _score_structural(sbom, sbom_path=None):
     """Interim CycloneDX presence check. Superseded by sbx-sig-02's validator.
 
     An element is met only when *every* component states it. Partial coverage is
@@ -319,7 +337,11 @@ def _score_structural(sbom):
     scored = {
         # --- SBOM Metadata (§1.1) ---
         "sbom_author": bool(metadata.get("authors")) or _text(_metadata_property(sbom, "icdev:sbom-author")),
-        "sbom_author_signature": bool(sbom.get("signature")) or _text(_metadata_property(sbom, "icdev:sbom-author-signature")),
+        "sbom_author_signature": (
+            bool(sbom.get("signature"))
+            or _text(_metadata_property(sbom, "icdev:sbom-author-signature"))
+            or _has_detached_signature(sbom_path)
+        ),
         "sbom_data_format_name": _text(sbom.get("bomFormat")),
         "sbom_data_format_version": _text(sbom.get("specVersion")),
         "sbom_generation_context": _text(_metadata_property(sbom, "icdev:sbom-generation-context")),
@@ -371,16 +393,18 @@ def _score_producers(sbom):
     return validate_sbom_producers(sbom)
 
 
-def score_sbom(sbom):
+def score_sbom(sbom, sbom_path=None):
     """Score a parsed SBOM against the 17 data-field elements.
 
     Prefers sbx-sig-02's validator and falls back to the interim structural
-    check. The returned ``scored_by`` says which ran.
+    check. The returned ``scored_by`` says which ran. ``sbom_path`` is what makes
+    the detached SBOM Author Signature findable; omit it and that element is
+    scored from the document alone.
     """
     validator = _load_validator()
     if validator is not None and hasattr(validator, "validate_sbom"):
         return _normalize_validator_result(validator.validate_sbom(sbom))
-    return _score_structural(sbom)
+    return _score_structural(sbom, sbom_path=sbom_path)
 
 
 # =====================================================================================
@@ -388,7 +412,7 @@ def score_sbom(sbom):
 # =====================================================================================
 
 
-def evaluate_sbom_gate(sbom, gate=None, gates_path=None, config=None):
+def evaluate_sbom_gate(sbom, gate=None, gates_path=None, config=None, sbom_path=None):
     """Evaluate the conformance conditions for one gate.
 
     ``sbom`` is a parsed CycloneDX document. ``gate`` names one of the gates in
@@ -403,7 +427,7 @@ def evaluate_sbom_gate(sbom, gate=None, gates_path=None, config=None):
             f"gate '{gate}' is not in {CONFIG_SECTION}.gates ({', '.join(config['gates'])})"
         )
 
-    score = score_sbom(sbom)
+    score = score_sbom(sbom, sbom_path=sbom_path)
     blocking = []
     warnings = []
 
@@ -451,7 +475,7 @@ def evaluate_sbom_file(sbom_path, gate=None, gates_path=None):
     """Read a CycloneDX JSON document from disk and evaluate the gate on it."""
     with open(sbom_path, encoding="utf-8") as handle:
         sbom = json.load(handle)
-    result = evaluate_sbom_gate(sbom, gate=gate, gates_path=gates_path)
+    result = evaluate_sbom_gate(sbom, gate=gate, gates_path=gates_path, sbom_path=sbom_path)
     result["sbom_path"] = str(sbom_path)
     return result
 

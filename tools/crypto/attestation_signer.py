@@ -58,13 +58,16 @@ def verify_artifact(
     artifact: dict,
     signature: dict,
     key_path: Optional[str] = None,
+    public_key_pem=None,
 ) -> bool:
     """Verify an artifact signature.
 
     Args:
         artifact: the artifact dict (must match canonicalization)
         signature: dict from sign_artifact() with 'value', 'public_key_fp', 'algorithm'
-        key_path: optional key path override
+        key_path: optional PRIVATE key path override
+        public_key_pem: PEM of the public key alone — the path a consumer who
+            does not hold the private key must use
     """
     # Integrity check: verify artifact hash matches
     expected_hash = signature.get("artifact_hash")
@@ -78,6 +81,7 @@ def verify_artifact(
         signature.get("public_key_fp", ""),
         algorithm=signature.get("algorithm"),
         key_path=key_path,
+        public_key_pem=public_key_pem,
     )
 
 
