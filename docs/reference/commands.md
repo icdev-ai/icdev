@@ -964,6 +964,18 @@ python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh v
 # depend on the dispatching process still being alive) and appends it. It does not weaken the
 # gate: a branch with no work still fails.
 
+# Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
+python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
+python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
+# Use this INSTEAD of `--set-status <id> backlog`. A hand-written re-queue bumps updated_at
+# while leaving last_failure_reason set, and failure_triage.find_recent_failures selects on
+# exactly that pair — so a clean re-queue manufactures a phantom triage queue (measured
+# 2026-08-08: five healthy sbx tasks entered the autofix queue this way, PR #1379).
+# --requeue clears last_failure_reason and branch_name, records the transition, and
+# PRESERVES failure_count (the recovery guard's budget). It also works on a task parked in
+# a pipeline-owned status like pr_opened, which --set-status cannot write. Exit 1 if any
+# task was refused; a manual-mode gate sentinel needs --force.
+
 # Kanban — rebase a DIRTY PR branch before it burns its resume budget (kax-conflict-01)
 python tools/kanban/rebase_recovery.py --task <task-id> --dry-run --json  # Probe locally, never push
 python tools/kanban/rebase_recovery.py --task <task-id> --json            # Rebase + force-with-lease push
