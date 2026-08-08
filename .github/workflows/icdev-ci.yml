@@ -123,6 +123,16 @@ jobs:
         # which drifted apart once already, and the audit event types whose absence
         # from the CHECK made the correction event silently vanish. ~2s, pure
         # Python, no DB service/LLM/network (sbx-prc-02).
+        #
+        # test_pr_watcher_heartbeat.py earns a slot because the bug it pins makes
+        # every daemon's log silence meaningless. get_logger(__name__) resolves to
+        # "__main__" when a module is executed rather than imported -- which is how
+        # launcher.py starts all of them -- so 21,884 pr_watcher heartbeats went to
+        # a shared .logs/__main__.ndjson while its own file sat empty since
+        # 2026-08-02. Twice during the 2026-08-08 triage that silence was read as
+        # "the daemon is wedged" when it was looping correctly. A regression here is
+        # invisible by construction: nothing fails, a log just stops. ~1s, pure
+        # Python, no DB service/LLM/network (kax-obs-01).
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -214,6 +224,7 @@ jobs:
             tests/innovation/test_innovation_kanban_promoter.py \
             tests/test_sbom_component_producer.py \
             tests/test_sbom_conformance_gate.py \
+            tests/test_pr_watcher_heartbeat.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries

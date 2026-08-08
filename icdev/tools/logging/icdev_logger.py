@@ -32,6 +32,15 @@ succeeds there and the swallow path is never taken.  Per-process filenames
 (option b) were rejected because they fragment each component's log across N
 files, breaking the log_triage reflex's single-stream assumption.
 
+Script-run components (kax-obs-01)
+---------------------------------
+``get_logger(__name__)`` is the house convention, but ``__name__`` is
+``"__main__"`` when a module is executed as a script rather than imported.
+Every daemon started by ``tools/genesis/launcher.py`` is executed that way, so
+before this fix they all wrote to one shared ``.logs/__main__.ndjson`` (10 MB,
+21 884 pr_watcher lines) while their own per-component file stayed empty.
+``_canonical_component`` maps the sentinel back to the dotted module path.
+
 Usage:
     from tools.logging.icdev_logger import get_logger
     log = get_logger("my_component")
@@ -155,6 +164,47 @@ class _SafeRotatingFileHandler(_WindowsSafeRotationMixin, RotatingFileHandler):
     """RotatingFileHandler that tolerates Windows cross-process rotation."""
 
 
+def _canonical_component(component: str) -> str:
+    """Resolve the sentinel ``"__main__"`` to the script's real dotted path.
+
+    ``get_logger(__name__)`` at module scope is the house convention, but
+    ``__name__`` is ``"__main__"`` whenever that module is *executed* rather
+    than imported — which is exactly how every long-running ICDEV daemon is
+    started (``python tools/ci/pr_watcher.py --daemon``, launcher.py).  Left
+    unresolved, all of them share one ``.logs/__main__.ndjson`` bucket while
+    their own ``.logs/<dotted.name>.ndjson`` stays empty, so per-component log
+    silence carries no information (kax-obs-01).
+
+    Rebuild the package path the module would have had on import by walking up
+    from the script while ``__init__.py`` exists.  ``python tools/ci/x.py`` and
+    ``python -m tools.ci.x`` therefore agree on ``tools.ci.x``.  A script that
+    is not inside a package falls back to its filename stem; only a ``__main__``
+    with no ``__file__`` at all (``python -c``, REPL) keeps the sentinel.
+    """
+    if component != "__main__":
+        return component
+    path = getattr(sys.modules.get("__main__"), "__file__", None)
+    if not path:
+        return component
+    try:
+        script = Path(path).resolve()
+    except OSError:
+        return component
+    parts = [script.stem]
+    directory = script.parent
+    # Bounded walk: package nesting is shallow, and a stray __init__.py near a
+    # filesystem root must not spin.
+    for _ in range(20):
+        if not (directory / "__init__.py").exists():
+            break
+        parts.append(directory.name)
+        parent = directory.parent
+        if parent == directory:
+            break
+        directory = parent
+    return ".".join(reversed(parts))
+
+
 def _load_config() -> Dict[str, Any]:
     global _CONFIG_CACHE
     if _CONFIG_CACHE is not None:
@@ -212,6 +262,7 @@ def get_logger(component: str) -> logging.Logger:
 
     Thread-safe for read after first write (GIL protects dict assignment).
     """
+    component = _canonical_component(component)
     if component in _CACHE:
         return _CACHE[component]
 
