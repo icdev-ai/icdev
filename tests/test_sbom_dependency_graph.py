@@ -716,6 +716,54 @@ def _load_migration_module(direction):
     return module
 
 
+SNAPSHOT_GAP_VERSION = "20260808000000"
+SNAPSHOT_GAP_DIR = (
+    BASE_DIR / "tools" / "db" / "migrations" / f"{SNAPSHOT_GAP_VERSION}_sbom_components_pg_snapshot_gap"
+)
+#: Everything migration 209 creates. A fresh PostgreSQL bootstrap has none of
+#: it — pg_consolidated.sql omits all three while the snapshot marker claims
+#: coverage through version 301, so bootstrap_pg records 209 applied without
+#: running it.
+MIGRATION_209_TABLES = (
+    "sbom_components",
+    "supply_chain_vulnerabilities",
+    "supply_chain_risk_scores",
+)
+
+
+def test_the_snapshot_gap_repair_restores_every_table_209_creates():
+    """Half a repair is worse than none: sbom_dependencies' foreign key needs
+    sbom_components, and handler_service.py SELECTs the other two."""
+    sql = (SNAPSHOT_GAP_DIR / "up.sql").read_text(encoding="utf-8")
+    for table in MIGRATION_209_TABLES:
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in sql, (
+            f"{table} is created by migration 209 but not restored by the snapshot-gap repair"
+        )
+
+
+def test_the_snapshot_gap_repair_is_ordered_before_the_migration_that_needs_it():
+    """20260808030213 ALTERs sbom_components and foreign-keys sbom_dependencies
+    to it. If the repair does not sort first, both statements fail on a fresh
+    PostgreSQL and are swallowed by executescript's skip handling — the
+    migration records success having added nothing."""
+    from tools.db.bootstrap_pg import _version_order_key
+
+    assert _version_order_key(SNAPSHOT_GAP_VERSION) < _version_order_key("20260808030213")
+    assert _version_order_key("20260808030213") < _version_order_key(MIGRATION_VERSION)
+
+
+# The end-to-end proof that the three migrations produce the whole schema on a
+# fresh PostgreSQL is the CI "Test (PostgreSQL)" job itself: it runs
+# bootstrap_pg against an empty database, and _apply_post_snapshot_migrations
+# raises SystemExit on any failure. That is what turned this defect up — the
+# vocabulary migration refuses to record itself as applied when
+# sbom_dependencies is absent, so the job went red instead of building another
+# database that lies about its own schema. Reproducing it here would mean
+# CREATE DATABASE plus a global connection-pool reset inside a pytest session
+# that has already opened one, and the resulting test would be a worse gate
+# than the bootstrap it imitates.
+
+
 def test_conftest_schema_declares_the_same_vocabulary():
     """conftest is what most of the suite tests against; drift from the
     migration is how a test starts passing against a shape production lacks."""

@@ -292,6 +292,33 @@ Tests: `tests/test_sbom_dependency_graph.py`. The migration is exercised through
 validator is run in both directions — met against a generated SBOM, and rejecting each defect
 including the pre-sbx-cov-02 flat-list shape.
 
+#### A fresh-PostgreSQL gap this uncovered
+
+`tools/db/schema/pg_consolidated.sql` contains no `sbom_components`,
+`supply_chain_vulnerabilities` or `supply_chain_risk_scores` — the three tables migration 209
+creates — while its sidecar marks the snapshot as covering everything through version 301. So
+`bootstrap_pg` records 209 as applied **without running it** and a fresh PostgreSQL never gets
+those tables. Every long-lived database ran 209 for real, which is why nothing surfaced it.
+
+The consequence for this card: sbx-fnd-02's PG branch ALTERs `sbom_components` and creates
+`sbom_dependencies` with a foreign key to it. On a fresh PostgreSQL both statements failed and
+were swallowed by `executescript`'s skip-failed-statement handling, so **the migration recorded
+success having added nothing** — no Producer, Hash, Identifiers or explicit-unknown columns and
+no edge table at all.
+
+sbx-cov-02 is what made it visible: its migration refuses to record itself as applied when
+`sbom_dependencies` is absent, so the fresh-PostgreSQL CI tier failed loudly instead of building
+another database that lies about its own schema. Migration
+`20260808000000_sbom_components_pg_snapshot_gap` restores all three tables in exactly the shape
+209 declares (nothing more — sbx-fnd-02 runs next and adds its own columns). Its version is
+dated before `20260808030213` for ordering, not chronology: `_version_order_key` sorts every
+timestamp id after the whole numeric `001`–`341` family, so a timestamp below that one is the
+only way to sequence ahead of it. On any database where 209 really ran it is a pending no-op.
+
+The remaining exposure is not SBOM-specific: any other table migration ≤ 301 created that the
+snapshot also omits has the same defect, silently. A snapshot-vs-migration audit is worth its
+own card.
+
 **Still open:** emitting the CycloneDX `dependencies` array from the edges the resolver now
 collects is **sbx-cov-02**; artifact hashes, which resolution unlocks, are **sbx-fld-03**.
 

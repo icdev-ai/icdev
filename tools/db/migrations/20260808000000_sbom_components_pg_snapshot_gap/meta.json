@@ -1,0 +1,7 @@
+{
+  "description": "Restore migration 209 tables missing from the PG snapshot (sbx-cov-02)",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}
