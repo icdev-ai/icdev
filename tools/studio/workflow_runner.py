@@ -11,6 +11,7 @@ multi-user and multi-tab runs isolated.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import queue
@@ -19,6 +20,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
@@ -117,12 +119,58 @@ MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
 
 # ── DAG helpers ────────────────────────────────────────────
 
-def _resolve_dag(steps: list) -> list:
+def _dag_graph(steps: list) -> dict:
+    """{step_id: {dependency_id, ...}} for the template's steps."""
     graph: dict[str, set] = {}
     for step in steps:
         graph[step["id"]] = set(step.get("depends_on", []) or [])
-    sorter = TopologicalSorter(graph)
-    return list(sorter.static_order())
+    return graph
+
+
+def _resolve_dag(steps: list) -> list:
+    """A flattened topological order — the announcement order, not the run order.
+
+    Execution walks a prepared sorter instead (see `_prepare_dag`), so a fan-out
+    can dispatch concurrently. This flattening still backs the `run_started`
+    payload and the generated-script path, both of which need a single list.
+    """
+    return list(TopologicalSorter(_dag_graph(steps)).static_order())
+
+
+def _prepare_dag(steps: list) -> TopologicalSorter:
+    """A prepared sorter for wave-parallel dispatch (`get_ready`/`done`).
+
+    Mirrors `tools/agent/team_orchestrator.py::execute_workflow` — decisions D40
+    (graphlib) and D36 (threads, not asyncio). `prepare()` raises CycleError here
+    rather than at the first `get_ready()`, so a circular template fails at the
+    same point in `_worker` as it did when the order was resolved eagerly.
+
+    A join needs no barrier primitive: a step with several `depends_on` entries
+    is simply not handed out by `get_ready()` until every one of them is `done()`.
+    """
+    sorter = TopologicalSorter(_dag_graph(steps))
+    sorter.prepare()
+    return sorter
+
+
+# Concurrency is capped so a template typo (`max_parallel: 500`) cannot spawn a
+# thread per step. Steps are subprocesses, so the useful ceiling is low anyway.
+_MAX_PARALLEL_CAP = 16
+
+
+def _max_parallel(data: dict) -> int:
+    """Concurrent step slots for a run, from the template's `max_parallel` key.
+
+    DEFAULT 1 — a template that does not declare it runs exactly as it did
+    before parallel dispatch existed: one step at a time, in `_resolve_dag`
+    order. An unparseable or out-of-range value degrades to the nearest legal
+    one rather than failing the run.
+    """
+    try:
+        value = int(data.get("max_parallel", 1) or 1)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(value, _MAX_PARALLEL_CAP))
 
 
 def _step_tool_path(step: dict) -> str:
@@ -391,6 +439,12 @@ def _remember_canvas(run_id: str, canvas: str) -> None:
         logger.warning("Could not record canvas for run %s: %s", run_id, exc)
 
 
+# The artifacts key is one JSON blob updated read-modify-write, so two steps of
+# the same parallel wave publishing at once would drop one of the two. Held for
+# the whole get/set pair, not just the set.
+_artifacts_lock = threading.Lock()
+
+
 def _remember_artifacts(run_id: str, step_name: str, artifacts: list) -> None:
     """Record a step's artifacts under run memory's ``artifacts`` key.
 
@@ -401,11 +455,12 @@ def _remember_artifacts(run_id: str, step_name: str, artifacts: list) -> None:
     if not run_id or not artifacts:
         return
     try:
-        current = run_memory.get(run_id, run_memory.ARTIFACTS_KEY, default={})
-        if not isinstance(current, dict):
-            current = {}
-        current[step_name] = artifacts
-        run_memory.set(run_id, run_memory.ARTIFACTS_KEY, current)
+        with _artifacts_lock:
+            current = run_memory.get(run_id, run_memory.ARTIFACTS_KEY, default={})
+            if not isinstance(current, dict):
+                current = {}
+            current[step_name] = artifacts
+            run_memory.set(run_id, run_memory.ARTIFACTS_KEY, current)
     except Exception as exc:
         logger.warning("Could not record artifacts for run %s: %s", run_id, exc)
 
@@ -737,6 +792,7 @@ def _worker(
 
         try:
             order = _resolve_dag(steps)
+            sorter = _prepare_dag(steps)
         except CycleError as exc:
             msg = f"Circular dependency detected: {exc}"
             _update_run_status(run_id, "failed", json.dumps({"error": msg}))
@@ -745,6 +801,7 @@ def _worker(
 
         step_map = {s["id"]: s for s in steps}
         ordered_steps = [step_map[sid] for sid in order if sid in step_map]
+        parallel = _max_parallel(data)
 
         # The template's `canvas:` key is the authoritative slug for this run —
         # publish it before any step runs so executors read it from memory
@@ -756,6 +813,7 @@ def _worker(
             "type": "run_started",
             "run_id": run_id,
             "total_steps": len(ordered_steps),
+            "max_parallel": parallel,
             "steps": [{"id": s["id"], "name": s.get("name", s["id"])} for s in ordered_steps],
         })
 
@@ -763,25 +821,52 @@ def _worker(
         overall_ok = True
         all_artifacts: list[dict] = []
         prior = _load_prior_steps(run_id) if resume else {}
+        total = len(ordered_steps)
 
-        for i, step in enumerate(ordered_steps):
+        # Guards every mutation of results/all_artifacts/overall_ok, all of which
+        # a parallel wave writes from several threads at once.
+        state_lock = threading.Lock()
+        # A rejected or timed-out human gate stops the run. Under the old linear
+        # walk that was a `break`; the equivalent here has to be a flag, because
+        # a sibling of the gate may already be sitting in the pool's queue.
+        abort = threading.Event()
+        # Emission is no longer ordered, so an event carries a monotonic sequence
+        # number rather than its position in `ordered_steps`.
+        _seq = itertools.count()
+
+        def _next_seq() -> int:
+            with state_lock:
+                return next(_seq)
+
+        def _run_node(step: dict) -> None:
+            """Execute one DAG node. Runs on a pool thread; may block on a gate."""
+            nonlocal overall_ok
+
+            if abort.is_set():
+                # Queued behind the gate that stopped the run. The old linear
+                # walk never reached this step either, so it leaves no record.
+                return
+
+            step_id = step["id"]
+            step_name = step.get("name", step_id)
+
             _push(run_queue, {
                 "type": "step_started",
                 "run_id": run_id,
-                "step_id": step["id"],
-                "step_name": step.get("name", step["id"]),
-                "index": i,
-                "total": len(ordered_steps),
+                "step_id": step_id,
+                "step_name": step_name,
+                "seq": _next_seq(),
+                "total": total,
             })
 
-            prior_row = prior.get(step["id"]) or {}
+            prior_row = prior.get(step_id) or {}
             prior_status = prior_row.get("status")
 
             if prior_status in ("success", "approved", "skipped"):
                 # Already satisfied before the restart — replay it, don't re-run.
                 result = {
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "tool": _step_tool_path(step),
                     "status": prior_status,
                     "stdout": prior_row.get("stdout"),
@@ -798,7 +883,7 @@ def _worker(
                 result["status"] = "awaiting_approval"
             else:
                 step_run_id = _create_step_record(
-                    run_id, step["id"], step.get("name", step["id"]), _step_tool_path(step)
+                    run_id, step_id, step_name, _step_tool_path(step)
                 )
                 result = _exec_step_with_retries(step, project_id, run_id)
 
@@ -806,38 +891,41 @@ def _worker(
                 # Replayed step: emit its artifacts and move on without touching
                 # the append-only record again.
                 replayed_artifacts = _step_artifacts(result)
-                all_artifacts.extend(replayed_artifacts)
+                with state_lock:
+                    all_artifacts.extend(replayed_artifacts)
+                    results.append(result)
                 _remember_artifacts(run_id, result["step_name"], replayed_artifacts)
-                results.append(result)
                 _push(run_queue, {
                     "type": "step_done",
                     "run_id": run_id,
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "status": result["status"],
                     "duration_ms": result.get("duration_ms", 0),
                     "resumed": True,
-                    "index": i,
-                    "total": len(ordered_steps),
+                    "seq": _next_seq(),
+                    "total": total,
                 })
-                continue
+                return
 
             if result["status"] == "awaiting_approval":
-                # Persist the gate state and pause the run
+                # Persist the gate state and pause the run. Only THIS branch
+                # parks: `_await_gate` blocks this pool thread, leaving the other
+                # `max_parallel - 1` slots free for sibling branches.
                 _update_step_record(step_run_id, result)
                 _update_run_status(run_id, "awaiting_approval")
                 _push(run_queue, {
                     "type": "step_awaiting_approval",
                     "run_id": run_id,
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "step_run_id": step_run_id,
                     "role": step.get("role", "approver"),
                 })
                 if not prior_status:
                     # Only notify on the first park, not on every resume.
                     _notify_approval_gate(
-                        run_id, step_run_id, step.get("name", step["id"]),
+                        run_id, step_run_id, step_name,
                         step.get("role", "approver"), project_id,
                     )
 
@@ -853,50 +941,98 @@ def _worker(
                 else:
                     result["status"] = "rejected" if (signaled and decision == "rejected") else "timeout"
                     result["stderr"] = reason or ("Rejected" if decision == "rejected" else "Approval timed out after 24h")
-                    overall_ok = False
+                    with state_lock:
+                        overall_ok = False
                     _update_step_record(step_run_id, result)
             else:
                 _update_step_record(step_run_id, result)
 
-            results.append(result)
+            with state_lock:
+                results.append(result)
+                if result["status"] in ("failed", "timeout", "rejected") and step.get("required", True):
+                    overall_ok = False
 
-            if result["status"] in ("failed", "timeout", "rejected") and step.get("required", True):
-                overall_ok = False
             if result["status"] in ("rejected", "timeout") and step.get("node_type") in ("human", "approval"):
-                # Stop processing further steps after a rejected/timed-out approval
+                # Stop the run after a rejected/timed-out approval. Steps already
+                # queued behind this one return early on the `abort` check above.
+                abort.set()
                 _push(run_queue, {
                     "type": "step_done",
                     "run_id": run_id,
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "status": result["status"],
                     "duration_ms": result.get("duration_ms", 0),
                     "artifacts": [],
-                    "index": i,
-                    "total": len(ordered_steps),
+                    "seq": _next_seq(),
+                    "total": total,
                 })
-                break
+                return
 
             # Extract artifacts list from stdout JSON if present, and publish it
-            # to run memory so the next step reads it there (dwo-mem-02).
+            # to run memory so a downstream step reads it there (dwo-mem-02).
             artifacts = _step_artifacts(result)
-            all_artifacts.extend(artifacts)
-            _remember_artifacts(run_id, step.get("name", step["id"]), artifacts)
+            with state_lock:
+                all_artifacts.extend(artifacts)
+            _remember_artifacts(run_id, step_name, artifacts)
 
             _push(run_queue, {
                 "type": "step_done",
                 "run_id": run_id,
-                "step_id": step["id"],
-                "step_name": step.get("name", step["id"]),
+                "step_id": step_id,
+                "step_name": step_name,
                 "status": result["status"],
                 "duration_ms": result.get("duration_ms", 0),
                 "output_preview": (result.get("stdout") or "")[:500],
                 "error": result.get("stderr"),
                 "attempts": result.get("attempts", 1),
                 "artifacts": artifacts,
-                "index": i,
-                "total": len(ordered_steps),
+                "seq": _next_seq(),
+                "total": total,
             })
+
+        # ── Wave-parallel dispatch ─────────────────────────
+        # get_ready() hands out every node whose dependencies are all done();
+        # done() retires one and unblocks its successors. At max_parallel == 1
+        # this walks the graph in exactly `_resolve_dag` order: the pool's queue
+        # is FIFO, so submission order is execution order, and retiring in
+        # submission order keeps graphlib's ready-queue in the same state
+        # static_order() would have left it in.
+        pool = ThreadPoolExecutor(
+            max_workers=parallel, thread_name_prefix=f"dwf-{run_id}",
+        )
+        try:
+            futures: dict = {}          # future -> (submission index, step_id)
+            submitted = 0
+            while sorter.is_active():
+                ready = list(sorter.get_ready())
+                for sid in ready:
+                    if sid not in step_map or abort.is_set():
+                        # A dangling depends_on target (no such step), or the run
+                        # has been stopped by a rejected gate. Retire the node
+                        # without executing it so the walk can finish.
+                        sorter.done(sid)
+                        continue
+                    futures[pool.submit(_run_node, step_map[sid])] = (submitted, sid)
+                    submitted += 1
+                if not futures:
+                    if not ready:
+                        break       # nothing ready and nothing in flight
+                    continue
+                done_set, _pending = wait(list(futures), return_when=FIRST_COMPLETED)
+                # Retire in SUBMISSION order, not set-iteration order: graphlib
+                # appends each newly-unblocked node as its last dependency is
+                # retired, so walking a set here would make the dispatch order
+                # depend on thread scheduling.
+                for fut in sorted(done_set, key=lambda f: futures[f][0]):
+                    _, sid = futures.pop(fut)
+                    fut.result()        # re-raise into the run-level handler
+                    sorter.done(sid)
+        finally:
+            # wait=False: a sibling still parked at a human gate must not hold
+            # this thread for the rest of the approval window when the loop exits
+            # early. Every future is already resolved on the normal path.
+            pool.shutdown(wait=False, cancel_futures=True)
 
         summary = {
             "total": len(results),

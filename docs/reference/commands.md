@@ -136,7 +136,13 @@ icdev audit tail --source runtime_invocations --follow --json
 icdev runtime top                         # Top 20 names by call count, all surfaces
 icdev runtime top --limit 50
 icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
+icdev runtime top --surface agent         # SAG tool calls, recorded from dispatch.py
 icdev runtime top --json                  # Machine-readable rollup
+
+# One RUN rather than all runs. The correlation id is AgentLoopResult.trace_id;
+# both the agent.turn spans and the gen_ai.invoke spans beneath them carry it.
+icdev runtime trace <correlation-id>      # Every span of one agent run, oldest first
+icdev runtime trace <correlation-id> --json
 
 # Core enterprise profiles
 icdev profile list                 # List available profiles
@@ -408,6 +414,35 @@ try:
 finally:
     driver.quit()
 ```
+
+---
+
+## SAG Project Context — Instruction Loading at Session Start (hgx-sess-01)
+
+Loads `CLAUDE.md`, `AGENTS.md`, `memory/MEMORY.md` and the
+`session_context_builder` project-state summary into the agent's system prompt,
+budgeted against `context_budget.floor_window_for_function` (the minimum window
+across the routed chain) rather than a constant.
+
+```bash
+# Preview the block the runtime will inject
+python tools/agent_runtime/project_context.py
+
+# Budget accounting only — which sections were truncated, and by how much
+python tools/agent_runtime/project_context.py --json
+
+# Budget against a different routing function; skip the DB-backed state summary
+python tools/agent_runtime/project_context.py --function question_answering \
+    --no-project-state --json
+```
+
+A large-window model receives the documents intact; a 32k local chain receives a
+line-boundary-truncated block carrying an explicit
+`[... N of M lines omitted to fit the context budget — read <path> ...]` marker,
+so a partial rule set never reads as complete. Toggles:
+`ICDEV_SAG_PROJECT_CONTEXT=0` disables the block entirely;
+`ICDEV_SAG_PROJECT_STATE=0` keeps the instruction files but skips the project
+state summary. The block is built once per session and rebuilt on `/new`.
 
 ---
 

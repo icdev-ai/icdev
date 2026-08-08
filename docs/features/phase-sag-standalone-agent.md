@@ -29,6 +29,46 @@ Canonical package: `tools/agent_runtime/` (mirrored to `icdev/tools/agent_runtim
   `icdev sessions list|export|search`.
 - Subagent delegation: isolated child runtimes with scoped toolsets.
 
+### Project context at session start (hgx-sess-01)
+
+The runtime never read the project's own instructions. Every `CLAUDE.md` hit in
+`tools/agent_runtime/` used the name as a *repo-root sentinel* for a directory
+walk — no file was ever opened and put in a prompt, and `AGENTS.md` /
+`memory/MEMORY.md` were not handled at all. The agent got the six-line
+`_DEFAULT_SYSTEM_PROMPT`, the operator profile, and a few memory hits.
+
+- `tools/agent_runtime/project_context.py` loads `CLAUDE.md`, `AGENTS.md`,
+  `memory/MEMORY.md`, and the project-state markdown from the **existing**
+  `tools/project/session_context_builder.py` (via its new public
+  `render_markdown()` — project detection is not re-implemented).
+- **Budgeted against the real window, never a constant.** The block is capped at
+  `WINDOW_SHARE` (25%) of `context_budget.available_input_tokens()`, which
+  derives from `floor_window_for_function` — the MINIMUM window across the
+  routed chain, because `two_tier` applies before chain resolution, RL
+  re-ranking reorders it after, and the CLI bridge is prepended at invoke time.
+- **Degrades, never swallows.** A 200k model gets the documents intact; a 32k
+  chain gets a line-boundary-truncated block (measured: 5.9k tokens, 18% of a
+  32k window) carrying `[... N of M lines omitted to fit the context budget —
+  read <path> ...]`, so a partial rule set never reads as complete. Per-section
+  shares (0.50/0.20/0.15/0.15) put pressure on derived state before the rules;
+  unspent allowance rolls forward; a section under `MIN_SECTION_TOKENS` is
+  dropped whole and named rather than shaved into a misleading stub.
+- Cached per session on `AgentRuntime._project_context()`; `/new` clears it.
+  `ICDEV_SAG_PROJECT_CONTEXT=0` disables the block, `ICDEV_SAG_PROJECT_STATE=0`
+  keeps the instruction files but skips the DB-backed state summary.
+
+**Three latent bugs fixed in `session_context_builder` on the way** — its
+compliance/intake queries named columns that do not exist
+(`framework_applicability.status` vs `confirmed`, `intake_sessions.status` vs
+`session_status`, and `cato_evidence.readiness_score`/`assessed_at`, which have
+never existed). Each raised, was swallowed by the surrounding `except`, and left
+the field permanently empty; the tests passed because their fixture DDL declared
+the invented columns. Fixture DDL now mirrors `init_icdev_db.py`, and
+`cato_readiness` is left unset rather than read from a phantom column
+(`cato_monitor.compute_cato_readiness` computes it but prints to stdout
+unconditionally, so it cannot be called from a builder whose own output is
+stdout markdown).
+
 ### Tool discovery, bundles, safety (sag-reg-01/02, sag-safe-01/02)
 - Discovery derives agent-loop tool schemas from the MCP `TOOL_REGISTRY` + built-ins
   + `@tool`-decorated functions. Bundles are YAML data (`args/agent_toolsets.yaml`).

@@ -1,0 +1,69 @@
+# CUI // SP-CTI
+# ---------------------------------------------------------------------------
+# Hardcoded-model-ID gate  (hgx-port-01)
+# ---------------------------------------------------------------------------
+# Consumed by tests/test_no_hardcoded_model_ids.py.
+#
+# CLAUDE.md: "LLM config via .env, never hardcode model IDs in Python."
+# A literal provider model ID bound to a `model=` / `model_id=` argument (or the
+# matching dict key) pins one vendor into Python. On an air-gapped or
+# non-Anthropic deployment that call cannot be served, and because these call
+# sites are wrapped in `except Exception: pass` the feature degrades SILENTLY.
+# Route by llm_function through LLMRouter instead, and declare the function's
+# chain in args/llm_config.yaml.
+#
+# The gate inspects the parsed AST, so a model name appearing in a docstring,
+# comment, or free-form string is not a finding — only a value actually bound to
+# a model selector is.
+#
+# Two lists:
+#   exempt_paths  — modules that name models BY DESIGN (provider adapters,
+#                   pricing tables, demo/seed catalogs). Permanent.
+#   grandfathered — real violations that predate this gate, with the allowed
+#                   occurrence count per file. Adding a NEW literal to a
+#                   grandfathered file pushes it over its count and fails.
+#                   DO NOT add entries or raise counts to get a commit through;
+#                   route the call instead. Lower a count when you fix one.
+#
+# Paths are repo-relative POSIX and apply to BOTH trees: `tools/x.py` also
+# covers the `icdev/tools/x.py` mirror.
+# ---------------------------------------------------------------------------
+
+exempt_paths:
+  # Provider adapters — a provider module's whole job is to name its models.
+  - "tools/llm/*_provider.py"
+  - "tools/llm/cli_bridge/**"
+  - "tools/finetune/*_provider.py"
+  # Cost/pricing tables and usage reporting — model ID is a lookup key, not a
+  # routing decision.
+  - "tools/dashboard/api/usage.py"
+  - "tools/cache_savings/**"
+  - "tools/agentic_ai_canvas/cost_estimator.py"
+  # Demo / seed catalogs — rows describing models, inserted as data.
+  - "tools/db/seeds/**"
+  - "tools/kanban/seed_*.py"
+  - "tools/aiml_canvas/constants.py"
+  - "tools/aiml_canvas/db/init_db.py"
+  - "tools/agentic_ai_canvas/constants.py"
+
+grandfathered:
+  # Pre-existing LLMRequest(model=...) pins. Each is the same defect this gate
+  # was created for; they are out of scope for hgx-port-01, which fixed
+  # tools/genesis/reflexes/kanban.py (now zero, and NOT listed here).
+  tools/ace/blueprint.py: 1
+  tools/ai_augmentation/pattern_classifier.py: 1
+  tools/skills/gepa_optimizer.py: 1
+  # Fallback-config dicts whose "model" key is read back into an LLM call.
+  tools/genesis/reflexes/cato_monitor.py: 1
+  tools/genesis/reflexes/comply.py: 1
+  tools/genesis/reflexes/govchain_anchor.py: 1
+  tools/genesis/reflexes/ndc_topology_drift.py: 1
+  tools/genesis/reflexes/strategos/signal_scout.py: 1
+  tools/workflow/lesson_learned.py: 1
+  # Module-level _FALLBACK_MODEL / _ANOMALY_MODEL constants — same defect,
+  # bound at import time rather than at the call.
+  tools/ai_augmentation/nlp_extractor.py: 1
+  tools/ai_augmentation/agent_readiness/pillars/stig_nlp_extractor.py: 1
+  tools/genesis/reflexes/fathomdesk_openbb_refresh.py: 1
+  tools/genesis/reflexes/nocc_alarm_triage.py: 1
+  tools/genesis/reflexes/pdc_pipeline_stale.py: 1
