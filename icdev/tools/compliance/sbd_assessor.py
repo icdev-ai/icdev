@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+from tools.compliance.sbom_revision import _load_max_age_days, evaluate_frequency
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 SBD_REQUIREMENTS_PATH = BASE_DIR / "context" / "compliance" / "cisa_sbd_requirements.json"
+
+# Checks that need the database, not just a directory on disk. SBD-21 is the only
+# one so far: SBOM freshness is a question about the recorded build, and a bare
+# file tree cannot answer it. See _run_auto_check.
+DB_AWARE_CHECKS = frozenset({"SBD-21"})
 
 
 # -----------------------------------------------------------------
@@ -79,6 +85,16 @@ def _load_sbd_requirements():
         )
     with open(SBD_REQUIREMENTS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _load_sbom_max_age_days():
+    """The configured SBOM age threshold for the sbd gate.
+
+    Delegates to sbom_revision rather than re-reading the YAML, because the
+    threshold used to be a literal 30 here while the configured value sat in
+    args/security_gates.yaml, and a second reader is a second thing to get wrong.
+    """
+    return _load_max_age_days("sbd")
 
 
 def _log_audit_event(conn, project_id, action, details, file_path=None):
@@ -918,8 +934,46 @@ def _check_secure_error_handling(project_dir):
     }
 
 
-def _check_sbom_freshness(project_dir):
-    """SBD-21: Check for SBOM files and their freshness (within 30 days)."""
+def _check_sbom_freshness(project_dir, conn=None, project_id=None):
+    """SBD-21: SBOM presence and freshness.
+
+    The requirement is two rules, not one: "generated for every build" AND "no
+    older than 30 days". Only the second was ever checked here, which is the gap
+    sbx-prc-02 closes — see the Frequency element in
+    docs/compliance/sbom-2026-minimum-elements-gap-analysis.md §3.3.
+
+    So when there are `sbom_records` rows to read, the per-build question is
+    answered from them by `sbom_revision.evaluate_frequency`, which compares the
+    latest SBOM's recorded build against the current one and only then falls back
+    to age. Without a database the check degrades to the old file-mtime scan,
+    because a bare directory carries no build identity.
+
+    Two bugs are fixed in that fallback while we are here. It subtracted a naive
+    `utcfromtimestamp` from an aware `now`, which raises TypeError on every file,
+    was swallowed by `except Exception`, and made every SBOM report as stale with
+    age -1 — the check could not return "satisfied". And the 30-day threshold was
+    a literal here while `sbom_max_age_days` sat in args/security_gates.yaml,
+    free to drift; the config value is now the one that applies.
+    """
+    if conn is not None and project_id:
+        try:
+            frequency = evaluate_frequency(conn, project_id, project_dir=project_dir)
+            if frequency["record"] is not None:
+                return {
+                    "status": frequency["status"],
+                    "evidence": frequency["evidence"],
+                    "details": (
+                        frequency["details"]
+                        + (f" Gate conditions: {', '.join(frequency['conditions'])}." if frequency["conditions"] else "")
+                    ),
+                }
+        except Exception as e:
+            print(
+                f"Warning: SBD-21 could not evaluate SBOM frequency from sbom_records ({e}); falling back to file scan.",
+                file=sys.stderr,
+            )
+
+    max_age_days = _load_sbom_max_age_days()
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
@@ -943,31 +997,43 @@ def _check_sbom_freshness(project_dir):
     stale_files = []
     for fpath in found:
         try:
-            mtime = datetime.utcfromtimestamp(os.path.getmtime(fpath))
+            mtime = datetime.fromtimestamp(os.path.getmtime(fpath), tz=timezone.utc)
             age_days = (now - mtime).days
-            if age_days <= 30:
+            if age_days <= max_age_days:
                 fresh_files.append((fpath, age_days))
             else:
                 stale_files.append((fpath, age_days))
         except Exception:
             stale_files.append((fpath, -1))
 
+    # No sbom_records row means per-build conformance was not observed, so the
+    # best a file scan can honestly report is partial — the file being recent
+    # says nothing about whether the last build produced it.
+    unverified = (
+        " No sbom_records row was available, so per-build generation could not be "
+        "verified from the file scan alone."
+    )
+
     if fresh_files and not stale_files:
         return {
-            "status": "satisfied",
-            "evidence": (f"SBOM artifact(s) found and fresh: {len(fresh_files)} file(s) modified within 30 days."),
-            "details": "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in fresh_files[:5]),
+            "status": "partially_satisfied",
+            "evidence": (
+                f"SBOM artifact(s) found and fresh: {len(fresh_files)} file(s) modified within {max_age_days} days."
+            ),
+            "details": "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in fresh_files[:5]) + unverified,
         }
     elif fresh_files and stale_files:
         return {
             "status": "partially_satisfied",
             "evidence": (f"{len(fresh_files)} fresh SBOM(s) but {len(stale_files)} stale SBOM(s) detected."),
-            "details": ("Stale: " + "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5])),
+            "details": (
+                "Stale: " + "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5]) + unverified
+            ),
         }
 
     return {
-        "status": "partially_satisfied",
-        "evidence": (f"SBOM artifact(s) found but all are stale (>30 days old): {len(stale_files)} file(s)."),
+        "status": "not_satisfied",
+        "evidence": (f"SBOM artifact(s) found but all are stale (>{max_age_days} days old): {len(stale_files)} file(s)."),
         "details": (
             "Stale: "
             + "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5])
@@ -1319,6 +1385,19 @@ AUTO_CHECKS = {
 }
 
 
+def _run_auto_check(req_id, project_dir, conn, project_id):
+    """Invoke one auto-check, handing the database only to checks that want it.
+
+    Membership in DB_AWARE_CHECKS is explicit rather than inferred from the
+    function signature: an introspection-based dispatch silently stops passing
+    the connection the moment somebody renames a parameter, and the failure looks
+    like a compliance result rather than a bug.
+    """
+    if req_id in DB_AWARE_CHECKS:
+        return AUTO_CHECKS[req_id](project_dir, conn=conn, project_id=project_id)
+    return AUTO_CHECKS[req_id](project_dir)
+
+
 # -----------------------------------------------------------------
 # Core assessment function
 # -----------------------------------------------------------------
@@ -1391,7 +1470,7 @@ def run_sbd_assessment(
             if automation_level == "auto" and can_auto_check:
                 if req_id in AUTO_CHECKS:
                     try:
-                        check_result = AUTO_CHECKS[req_id](project_dir)
+                        check_result = _run_auto_check(req_id, project_dir, conn, project_id)
                         status = check_result["status"]
                         evidence = check_result["evidence"]
                         details = check_result.get("details", "")
@@ -1414,7 +1493,7 @@ def run_sbd_assessment(
                 # Run partial check if a mapped function exists
                 if req_id in AUTO_CHECKS:
                     try:
-                        check_result = AUTO_CHECKS[req_id](project_dir)
+                        check_result = _run_auto_check(req_id, project_dir, conn, project_id)
                         status = check_result["status"]
                         evidence = check_result["evidence"]
                         details = check_result.get("details", "")

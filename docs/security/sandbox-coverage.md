@@ -360,6 +360,22 @@ recommend whether to enable reasoned codegen.
   - `tests/test_sbom_coverage_resolution.py::test_a_corrupt_lockfile_degrades_rather_than_aborting_the_sbom` pins the fail-open-but-loud behaviour.
 - **Revisit if:** the resolver ever shells out to a package manager to obtain a resolved set (`mvn dependency:list`, `gradle dependencies`, `go list -m all`, `npm ls`, `dotnet restore`) — that would be a real execution path over attacker-influenced project content and must be re-decided as **sandboxed**; or if it gains a plugin/entry-point mechanism that imports code from the target environment rather than reading its metadata.
 
+### Gap 19 — SBOM author signature verification (`tools/compliance/sbom_signer.py`)
+
+**Modules:** `tools/compliance/sbom_signer.py` (mirrored at `icdev/tools/compliance/sbom_signer.py`), consumed by `tools/compliance/sbom_generator.py`
+
+**Ingress path:** Signing only ever reads an SBOM this tree just produced, so it is first-party. **Verification is not.** `verify_sbom` is the consumer-side entry point: it reads an SBOM document and a detached `<sbom>.sig.json` that arrive from whoever is claiming to have signed them, and the signature file contains a **PEM public key supplied by that same party**. The attacker-controlled surface is therefore two JSON documents plus a PEM blob handed to `cryptography`'s `load_pem_public_key`.
+
+- **Decision:** **bypass-documented** (parse-and-verify only; no execution path exists)
+- **Rationale:** The module parses and verifies; it never evaluates. Its whole toolkit is `json.loads`, `hashlib`, `pathlib`, and the `cryptography` library's PEM loader and signature verifier. It contains no `subprocess`, `os.system`, `exec`, `eval`, `__import__`, `pickle` or `yaml.load`, and — unlike every other signing path in the industry — **no network client at all**: no sigstore, no Fulcio, no Rekor, no OCSP, no CRL fetch. That absence is a requirement, not an accident, because air-gapped verification is one of the card's acceptance criteria; it also removes the entire SSRF / hostile-response surface that a transparency-log lookup would introduce. `load_pem_public_key` on hostile bytes is a parse in a memory-safe Rust/OpenSSL boundary that returns a key object or raises; it does not deserialize Python objects the way `pickle` or `yaml.load` would.
+- **Guardrails:**
+  - Every load is wrapped: a malformed SBOM, a malformed signature file, a corrupt PEM, or a bad base64 blob returns `verified: False` with a stated reason. `verify_sbom` is documented never to raise on bad input, so a hostile artifact cannot abort a gate by throwing.
+  - The algorithm is checked against a closed `APPROVED_ALGORITHMS` allowlist **before** any signature maths runs, so an attacker cannot select an algorithm the verifier merely happens to accept. HMAC-SHA256 is refused by name: it is a symmetric MAC, so anyone who can verify it can forge it.
+  - Verification is **fail-closed by omission** — an SBOM with no signature file reports `verified: False`, never "nothing to check, so fine".
+  - Integrity and authenticity are reported as two fields (`verified`, `trusted`), never one. The embedded public key can only establish that the document matches *some* signature; `trusted` is `True` only when the caller pinned a fingerprint obtained out of band. `tests/test_sbom_author_signature.py::test_a_tampered_sbom_resigned_by_another_key_fails_a_pinned_fingerprint` pins that distinction so it cannot be "simplified" away.
+  - `tests/test_sbom_author_signature.py::test_the_signer_has_no_network_import` asserts the absence of every network and subprocess import in **both** the root copy and the `icdev/` mirror, so the offline property cannot silently lapse.
+- **Revisit if:** the signer gains a transparency-log, OCSP, CRL, KMS or HSM-over-network lookup — that is a real network path over attacker-influenced material and must be re-decided; or if it ever accepts a key *path*, key *identifier* or algorithm name from the signature file and resolves it (rather than only PEM bytes it validates), which would turn parsed content into a resource reference.
+
 ### Bypass — non-LLM code generators (template/scaffold emitters)
 
 These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM
@@ -1254,6 +1270,60 @@ another vendor's tool.
   and a different threat model — or if it starts reading *artifacts* rather than
   metadata, which is sbx-fld-03's territory.
 
+### Gap 50 — SBOM correction ingress (`tools/compliance/sbom_revision.py`)
+
+**Modules:** `tools/compliance/sbom_revision.py` (mirrored at
+`icdev/tools/compliance/sbom_revision.py`), consumed by
+`tools/compliance/sbom_generator.py` and `tools/compliance/sbd_assessor.py`
+
+**Ingress path:** Two surfaces, and only one of them is first-party.
+`plan_revision` / `content_digest` on the generation path only ever see a
+document this tree just built, so that half is trusted-first-party. `--correct
+--sbom <path>` is not: the corrected SBOM is an operator-supplied JSON document
+that may well have originated with an upstream producer, and it is the document
+that becomes the project's SBOM of record. `source_revision` additionally shells
+out to `git` in a caller-supplied directory.
+
+- **Decision:** **trusted-first-party** for the generation path; **bypass-documented**
+  for the correction path (parse-and-record only; no execution path exists)
+- **Rationale:** The module's whole toolkit is `json`, `hashlib`, `pathlib` and
+  one fixed-argv `git rev-parse`. It contains no `exec`, `eval`, `__import__`,
+  `pickle`, `yaml.load` or `os.system`, and no network client. A corrected SBOM
+  is round-tripped through `json.load`/`json.dump` and digested; **nothing in it
+  is ever dispatched on, resolved as a path, or used to build SQL**. The only
+  values from the document that reach the database are the component count, the
+  `serialNumber` string and the digest, each as a bound parameter. `git rev-parse`
+  is not a shell: fixed argv, `shell=False`, a 15-second timeout, and a
+  non-zero exit or any `OSError` yields `None` — which is reported as
+  `sbom_build_identity_unknown` rather than being smoothed into a pass.
+- **Guardrails:**
+  - The output path for a correction is derived from the **predecessor's own
+    recorded `file_path`**, never from anything inside the supplied document, so
+    a hostile SBOM cannot choose where bytes land.
+  - A correction is append-only by construction: it can only INSERT a successor
+    row. There is no code path by which a supplied document rewrites, blanks or
+    deletes the record it corrects, which is what stops a bad artifact from
+    *destroying* prior evidence rather than merely adding wrong evidence.
+  - `revision_reason` is validated against the closed `REVISION_REASONS`
+    vocabulary and `apply_correction` refuses a non-corrective code, so the
+    caller cannot mislabel a correction as a routine build.
+  - A correction must state a reason; an empty one raises rather than recording
+    an unexplained change to a compliance artifact.
+  - The head is re-resolved inside `apply_correction` and compared to the row it
+    was prepared against, so a concurrent writer cannot make a correction
+    supersede the wrong document.
+  - `gate_threshold` reads only ICDEV's own `args/security_gates.yaml`, via
+    `yaml.safe_load`, and a missing or corrupt file degrades to the documented
+    default.
+  - `tests/test_sbom_revision_2026.py` records every statement a correction
+    issues and fails on an `UPDATE` or `DELETE`, and compares the predecessor row
+    field-by-field before and after — so the append-only property is pinned, not
+    merely intended.
+- **Revisit if:** the correction path ever resolves anything *out of* the supplied
+  document — a file path, a URL, a tool name, a signing key reference — which
+  would turn parsed content into a resource reference; or if `source_revision`
+  gains a remote lookup (a CI API call to name the build), which is a network
+  path over attacker-influenceable material and a different threat model.
 ### Gap 50 — SBOM disclosure convention and policy (`tools/compliance/unknown_information.py`)
 
 **Module:** `tools/compliance/unknown_information.py` (sbx-prc-01), imported by

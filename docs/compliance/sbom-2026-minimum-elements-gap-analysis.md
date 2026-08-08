@@ -160,13 +160,65 @@ Shape is pinned by `tests/test_sbom_2026_schema.py`, which applies the real migr
 a pre-migration database and round-trips a value through every new column, and asserts
 `MINIMAL_ICDEV_SCHEMA` in `tests/conftest.py` declares the identical column set.
 
-### 2.3 Signing
+### 2.3 Signing — SBOM Author Signature (sbx-sig-01)
 
-ICDEV does **not** sign its own SBOMs. `tools/crypto/attestation_signer.py::sign_artifact` and
-`tools/crypto/key_manager.py::sign_payload` exist and are unused by the SBOM path. `cosign`
-appears only inside **CI YAML that ICDEV generates for downstream projects**
-(`tools/devsecops/pipeline_security_generator.py`, `tools/devsecops/attestation_manager.py`) —
-ICDEV instructs others to attest SBOMs while producing unsigned ones itself.
+**Closed.** `tools/compliance/sbom_signer.py` (mirrored at `icdev/tools/compliance/`) signs every
+generated SBOM through the two primitives that already existed and had no caller on this path:
+`tools/crypto/attestation_signer.py::sign_artifact` over
+`tools/crypto/key_manager.py::sign_payload`. `cosign` still appears only inside CI YAML ICDEV
+generates for downstream projects (`tools/devsecops/pipeline_security_generator.py`,
+`tools/devsecops/attestation_manager.py`); ICDEV no longer produces unsigned SBOMs while
+instructing others to attest theirs.
+
+What is signed is the **canonicalized SBOM document** (sorted keys, no whitespace) — not the
+file's bytes, because re-indenting a file does not change the bill of materials and a signature
+that broke on formatting is one people learn to ignore. The exact bytes are digested separately
+(`file_sha256`) and a mismatch is reported as `bytes_modified` rather than as a failure. The
+signature is written **detached** to `<sbom>.sig.json`, which keeps the CycloneDX output
+byte-identical for every existing consumer and avoids embedding a signature in the document it
+covers. `author_signature` and `signature_algorithm` (migration `20260808030213`, sbx-fnd-02)
+are persisted on the `sbom_records` row.
+
+**Approved algorithms.** `APPROVED_ALGORITHMS` is the intersection of "approved by an authority
+the standard names" and "producible by `key_manager`": ECDSA over P-256/P-384/P-521 with
+SHA-256, and Ed25519 — all FIPS 186-5 (NIST DSS) and all on the ENISA Agreed Cryptographic
+Mechanisms list. RSA-PSS is approved by FIPS 186-5 and is deliberately **absent**, because
+`sign_payload` has no RSA branch and listing it would be a claim rather than a capability.
+
+Two things are refused outright rather than emitted under the element's name:
+
+- **HMAC-SHA256.** `key_manager` degrades to it so audit logging never breaks. It is a symmetric
+  MAC — every party who can verify it can also forge it — so it cannot be *attributable to the
+  SBOM author*, which is the entire property this element exists to provide.
+- **`"none"`**, the empty-signature no-op returned when no key is configured.
+
+Signing also required a correctness fix in `key_manager`: `sign_payload` labelled **every**
+elliptic-curve key `ECDSA-P256-SHA256`, so a `secp256k1` key — approved by no authority for this
+use — would have been recorded and reported under a NIST-approved name, and any allowlist check
+reading `algorithm` would have passed it. The label is now derived from the key's actual curve
+(`_ecdsa_algorithm`). The digest stays SHA-256 across all curves, which FIPS 186-5 permits and
+which keeps every previously-issued signature verifiable.
+
+**Air gap.** Neither path touches the network: no sigstore, no Fulcio, no Rekor, no OCSP.
+Signing reads a local PEM private key; verification reads the public key embedded in the
+detached file, or a locally held one. `key_manager.verify_payload` gained a `public_key_pem`
+parameter for this — deriving the public key from the *private* key, which was the only path it
+had, cannot serve a consumer who legitimately does not hold the private key.
+
+**Integrity is not authenticity.** Because the detached file carries its own public key, an
+attacker who rewrites an SBOM can re-sign it with their own key; unpinned verification then
+truthfully reports the document matches its signature. `verify_sbom` therefore returns
+`verified` and `trusted` as two separate fields, and `trusted` is `True` only when the caller
+pinned the expected fingerprint (`--expect-fp`) from an out-of-band source.
+
+Unsigned generation remains the **default** and is announced on stdout: `sbom_generator` has
+~25 live call sites and a blocking `bdc_canvas` gate, so hard-failing on a missing key would
+turn "SBOMs are not signed yet" into "SBOM generation is broken" everywhere at once. Operators
+who require signatures set `ICDEV_SBOM_REQUIRE_SIGNATURE=1` for fail-closed behaviour. What is
+never permitted, in either mode, is a *non-conformant* signature.
+
+Sandbox posture for the verification path (attacker-supplied SBOM + signature + PEM):
+`docs/security/sandbox-coverage.md` Gap 19.
 
 ### 2.4 Ingestion and assessment
 
@@ -183,6 +235,47 @@ ICDEV instructs others to attest SBOMs while producing unsigned ones itself.
 Every one of these is a **presence, freshness or exit-code check**. Nothing validates
 conformance to the minimum elements.
 
+**RESOLVED (sbx-gov-01).** Two conditions now gate on what the document says:
+`sbom_minimum_elements_not_met` (blocking) and `sbom_conformance_below_threshold` (warning),
+wired into `deployment_gates`, `swft` and `devsecops`, and evaluated by
+`tools/compliance/sbom_conformance_gate.py`.
+
+The concrete case that motivated the card is now covered: `{"bomFormat": "CycloneDX",
+"specVersion": "1.4"}` clears all five pre-existing conditions — it was generated, is not
+stale, neither failed nor was skipped, and can be signed and attested — and is blocked by the
+new one, because an SBOM that lists no components meets no Component Data element at all.
+
+Every number the gate applies lives in `args/security_gates.yaml` under
+`sbom_conformance.thresholds` (`block_below_pct`, `warn_below_pct`, `require_components`).
+The module carries **no default for any of them** and raises `SbomGateConfigError` when the
+block is missing or incomplete, so the gate's strictness cannot silently become whatever a
+Python literal happened to say. `tests/test_sbom_conformance_gate.py` covers both directions
+against real documents, proves retuning the YAML retunes the decision, and asserts that
+removing any single threshold raises rather than falls back.
+
+Scoring is **not** this module's job. It imports sbx-sig-02's
+`sbom_minimum_elements_validator` and delegates the moment that module is importable, with no
+edit needed here on the day it merges; the interim structural check that keeps the gate from
+being inert until then reports `scored_by: structural-interim` on every result so no caller
+can mistake one for the other. Component Producer is delegated to
+`component_producer.validate_sbom_producers`.
+
+Measured against the generator's own output as of this writing, ICDEV scores **9 of 17**
+data fields (52.94%) and is blocked — the eight gaps are precisely the elements the open
+`sbx` tasks add: SBOM Author and Generation Context (sbx-fld-01), Author Signature
+(sbx-sig-01), Hash Value and Hash Algorithm (sbx-fld-03), Component License (sbx-fld-04),
+Component Identifiers (sbx-fld-05) and the Dependency Relationship graph (sbx-cov-02).
+That is the gate working, not the gate misconfigured. Note that the conditions in this file
+are declarative — no central engine evaluates the `block_on` lists automatically — so the
+score above is what a caller of the gate sees today, not a CI failure.
+
+**Also updated by sbx-prc-02.** Conformance is one half of the question; currency is the
+other, and a document can be fully conformant and still describe a build that shipped three
+commits ago. The freshness check now asks the per-build question first —
+`sbom_not_regenerated_for_current_build` and `sbom_build_identity_unknown` joined
+`sbd.warning`, the first also joined `swft.warning`, and `sbom_required_per_build: true`
+sits beside `sbom_max_age_days` in both threshold blocks. See §2.9 and §3.3.
+
 ### 2.6 SPDX
 
 There is **no SPDX generator and no SPDX parser** anywhere in the tree. SPDX appears only in
@@ -191,6 +284,35 @@ knowledge-base seed content that states ICDEV produces SBOMs "in SPDX and Cyclon
 (`tools/govcon/generate_icdev_proposal_content.py`,
 `tools/govcon/seed_icdev_knowledge_base.py`, `tools/govcon/seed_solicitation_requirements.py`).
 That claim is not currently true and is customer-facing.
+
+**Resolved (sbx-gov-03, 2026-08-08).** `sbx-fmt-01` had not landed on `main`, so the claim was
+softened rather than made true. Every ICDEV capability and past-performance claim now states
+**CycloneDX only**, matching what `tools/compliance/sbom_generator.py` actually emits:
+
+| Site | Was | Now |
+|---|---|---|
+| `generate_icdev_proposal_content.py` (technical approach, ×2) | "at every build via Syft in SPDX and CycloneDX formats" | "at every build in CycloneDX format (spec 1.4-1.7)" |
+| `generate_icdev_proposal_content.py` (past performance, ×2) | "SBOMs included SPDX and CycloneDX formats" | "SBOMs were delivered in CycloneDX format" |
+| `seed_icdev_knowledge_base.py` (approach + past performance) | same as above; `spdx` retrieval keyword | CycloneDX only; `spdx` keyword removed so the record no longer surfaces on SPDX queries |
+
+Three SPDX/Syft mentions were **deliberately retained** because they are not claims about ICDEV:
+
+- `seed_solicitation_requirements.py:62,73` — seeded **solicitation** requirements ("The
+  Contractor shall …"), i.e. what a customer *asks for*. These are demand-side text; a
+  solicitation may legitimately require SPDX, and that is precisely the gap `sbx-fmt-01` closes.
+  Editing them would corrupt the fixture and hide the gap.
+- `synthetic_proposal_generator.py:224` — templated synthetic proposal text whose subject is a
+  randomly generated fictional offeror (`_COMPANY_PREFIXES`/`_COMPANY_SUFFIXES`); ICDEV never
+  appears as the company.
+
+Note that ICDEV is not entirely Syft-free: `tools/network/airgap_bundle.py` shells out to `syft`
+opportunistically when it is on `PATH`, but requests `-o cyclonedx-json` and falls back to a
+minimal CycloneDX document otherwise. It never produces SPDX, and it is the air-gap bundler
+rather than "every build" — so the corrected wording holds.
+
+**When `sbx-fmt-01` lands, revisit this section**: the CycloneDX-only wording above becomes an
+understatement, and the SPDX claim may be restored once `sbx-sig-02` verifies conformance on
+both formats.
 
 ### 2.7 Coverage — resolved dependency sets (sbx-cov-01)
 
@@ -294,7 +416,59 @@ waits on the `_persist_components` writer that sbx-fld-04 introduces — this ta
 `producer_db_value()`, which never returns `NULL`, for that writer to call in one line. Adding a
 second writer here would only collide with it.
 
-### 2.9 Explicitly Identifying Unknown Information (sbx-prc-01)
+### 2.9 Frequency and Accommodation of Updates (sbx-prc-02)
+
+Two practices, one mechanism, in `tools/compliance/sbom_revision.py`. Migration
+`20260808063350_sbom_revision_frequency` adds the three columns the mechanism needs on top of the
+`supersedes_sbom_id` that sbx-fnd-02 left for it: `content_digest`, `source_revision`,
+`revision_reason`.
+
+**The chain is append-only, and supersession is derived.** `apply_correction` inserts a
+*successor* row whose `supersedes_sbom_id` points at the row it replaces, and appends an
+`sbom_corrected` audit event. It issues no `UPDATE` and no `DELETE`. The corrected row keeps every
+value it had — file path, signature, component count, version — because a recipient may hold that
+exact document and its record has to keep describing it. There is deliberately **no `superseded`
+column**: a row is superseded exactly when another row points at it, which
+`revision_chain` computes at read time and marks there. `tests/test_sbom_revision_2026.py` asserts
+both halves — the predecessor row compared field-by-field before and after, and every statement the
+correction issues inspected for a mutation.
+
+**Content digest, not file hash.** Every regeneration mints a fresh `serialNumber`, timestamp and
+SBOM Version, so the file hash of two SBOMs of one unchanged tree never matches.
+`content_digest` strips exactly those fields and digests the rest, which is what distinguishes a
+substantive **revision** (new or corrected component data) from a **re-issue** (same bill of
+materials, new build). Frequency requires a new SBOM for both; `revision_reason` records which
+happened — `initial`, `new_build`, `dependency_change`, `correction`, `detail_discovered`. That
+vocabulary is a Python constant with no DDL `CHECK` behind it, for the reason sbx-fnd-02 gave for
+`sbom_dependencies.relationship_type`.
+
+**Version bump.** The per-build bump stays in the generator (sbx-fld-01's). A correction is a
+*patch* bump of an already-published version rather than a new revision of the software, so
+`next_sbom_version(prior, correction=True)` owns that one case, and reads both the semver
+`1.<minor>.<patch>` spelling and the legacy `<N>.0` float so it works either side of that merge.
+
+**The reconciliation.** CLAUDE.md asserted "SBOM regenerated on every build" while the only
+enforced rule was a 30-day file-mtime threshold, and the weaker rule was the one with teeth — six
+releases in a fortnight off one SBOM passed. Per-build conformance is not checkable without
+recording which build each SBOM came from, hence `source_revision` (explicit `--build-id`, then
+`$ICDEV_BUILD_ID`, then the project directory's git commit, then **unknown and reported as such**).
+`evaluate_frequency` answers the build question first and the age question second; `sbd_assessor`'s
+SBD-21 now calls it, and its own requirement text already demanded both rules.
+
+Two defects in that check were fixed in passing. It subtracted a naive `utcfromtimestamp` from an
+aware `now` — a `TypeError` on every file, swallowed by `except Exception`, which put every SBOM in
+`stale_files` with age `-1`. SBD-21 could not return `satisfied` at all. And the 30-day threshold
+was a literal in the function while `sbom_max_age_days` sat in the YAML, free to drift; the
+config value now applies, read through `gate_threshold`, which tries both nesting shapes the file
+uses (`thresholds.sbd.*` and `swft.thresholds.*`) rather than guessing one and silently returning
+its own default.
+
+`sbom_revised` and `sbom_corrected` were also added to `VALID_EVENT_TYPES`, with migration
+`20260808064841_audit_event_types_sbom_revision` rebuilding `audit_trail`'s generated CHECK.
+Without it the correction event is rejected by the constraint, swallowed by the caller's `except`,
+and the correction looks recorded while nothing was written.
+
+### 2.10 Explicitly Identifying Unknown Information (sbx-prc-01)
 
 `tools/compliance/unknown_information.py` (mirrored at `icdev/tools/compliance/`) defines the one
 convention for the two states the 2026 element **separates**: a field **unknown to the author**
@@ -381,7 +555,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Element | Status | Evidence / what is missing |
 |---|---|---|
 | SBOM Author | **GAP** | No author field. `metadata.tools[].vendor = "ICDEV™"` identifies the tool vendor, which the standard explicitly says is *not* the author. |
-| SBOM Author Signature | **GAP** | No signing in the SBOM path. |
+| SBOM Author Signature | **MET** (sbx-sig-01) | `sbom_signer.sign_sbom` writes a detached `<sbom>.sig.json` over the canonicalized document and persists `author_signature` + `signature_algorithm`. FIPS 186-5 algorithms only (ECDSA P-256/384/521, Ed25519); HMAC and empty signatures refused. Offline both ways. See §2.3. |
 | SBOM Data Format Name | **MET** | `bomFormat: "CycloneDX"`. |
 | SBOM Data Format Version | **PARTIAL** | `specVersion` present, but defaults to **1.4** (2022). The standard cites ECMA-424 (Dec 2025) and warns against deprecated versions. Default should move up. |
 | SBOM Generation Context | **GAP** | Nothing records lifecycle phase. ICDEV generates from source manifests, i.e. "before build" — knowable and currently unstated. |
@@ -407,11 +581,11 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 
 | Element | Status | Evidence / what is missing |
 |---|---|---|
-| Accommodation of Updates | **PARTIAL** | `sbom_records` versions rows, but there is no correction/revision workflow and no way to mark a prior SBOM superseded. |
+| Accommodation of Updates | **MET (sbx-prc-02)** | `tools/compliance/sbom_revision.py::apply_correction` records a correction as a **successor** row carrying `supersedes_sbom_id`, plus an `sbom_corrected` audit event. The corrected row is never written to — supersession is derived at read time by `revision_chain`. See §2.9. |
 | Coverage | **MET (sbx-cov-01)** | `tools/compliance/dependency_resolver.py` resolves each ecosystem from its **lockfile**, not its declared manifest, and the generator consumes that instead of parsing manifests itself. See §2.7. |
 | Distribution and Delivery | **PARTIAL** | Writes a file to disk and records a path. No version-specific URL and no retrieval API. |
-| Explicitly Identifying Unknown Information | **MET (sbx-prc-01)** | `tools/compliance/unknown_information.py` defines one convention for both states across all 17 elements — sentinel plus `icdev:unknown:<field>` / `icdev:withheld:<field>` properties over two **disjoint** reason vocabularies — and the generator emits it. The recipient enquiry route ships in `args/sbom_disclosure_policy.yaml` and is emitted on every document beside the CUI and distribution markings. See §2.9. |
-| Frequency | **PARTIAL** | `CLAUDE.md` asserts "SBOM regenerated on every build"; the enforced gate is a **30-day staleness** threshold, which is materially weaker than per-release. |
+| Explicitly Identifying Unknown Information | **MET (sbx-prc-01)** | `tools/compliance/unknown_information.py` defines one convention for both states across all 17 elements — sentinel plus `icdev:unknown:<field>` / `icdev:withheld:<field>` properties over two **disjoint** reason vocabularies — and the generator emits it. The recipient enquiry route ships in `args/sbom_disclosure_policy.yaml` and is emitted on every document beside the CUI and distribution markings. See §2.10. |
+| Frequency | **MET (sbx-prc-02)** | Every generation appends a linked row; `sbom_records.source_revision` records the build, and `sbom_revision.evaluate_frequency` — which SBD-21 now calls — answers the per-build question first and treats `sbom_max_age_days` as the stale-evidence backstop. CLAUDE.md and `args/security_gates.yaml` now say the same thing. See §2.9. |
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
@@ -420,8 +594,9 @@ met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — coun
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
 **Current: 4 of 17 data-field elements** — Component Producer joined them with sbx-fld-02 — **and
-2 of 7 practices**: Coverage with sbx-cov-01, and Explicitly Identifying Unknown Information with
-sbx-prc-01. The matrix rows above are kept current as each task lands, so they, not this
+4 of 7 practices**: Coverage with sbx-cov-01, Frequency plus Accommodation of Updates
+with sbx-prc-02, and Explicitly Identifying Unknown Information with sbx-prc-01. The
+matrix rows above are kept current as each task lands, so they, not this
 paragraph, are the authoritative statement.
 
 ---
