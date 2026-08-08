@@ -36,6 +36,46 @@ Defaults are intentionally conservative:
 
 Kill switch: set ``ICDEV_AUTOFIX_ENABLED=false`` (or leave it unset) to
 force suggested-card-only behavior.
+
+Deny lists — the membership criteria
+------------------------------------
+Three separate lists gate auto-apply. They exist for different reasons and
+are matched against different fields; do not merge them.
+
+``NON_CODE_FAILURE_TOKENS`` — *"there is no code a patch could fix."*
+    Matched against ``last_failure_reason`` ONLY, because that column is
+    written by the scheduler, not by a human or an LLM. A member belongs
+    here when the string identifies a failure class whose cause lives in
+    the runtime budget, the scheduler lifecycle, or the executor
+    environment rather than in the repository — or is not a failure at
+    all, just bookkeeping text the scheduler parked in the column.
+    Diagnosing one of these burns an LLM generation to produce a patch
+    for a setting.
+    Deliberately NOT in ``DENY_SIGNATURE_TOKENS``: that list also matches
+    ``description``, and a task legitimately described as "add a timeout
+    to the socket call" would then be permanently ineligible for autofix
+    even when it later fails with a real ``AttributeError``.
+
+``DENY_SIGNATURE_TOKENS`` — *"this change is too dangerous to make
+    unattended."* Matched against the whole blob (failure reason +
+    description + LLM root cause + patch hint) precisely because a
+    mention anywhere is enough to warrant a human. Membership criterion:
+    the token names an operation that is irreversible, destroys history,
+    or disables a control.
+
+``DENY_FILE_PREFIXES`` — *"the verification gates are blind to damage
+    here."* A path belongs on this list when BOTH hold:
+    (a) an incorrect edit would still pass ``_run_independent_gates``
+        (the originally-failing test, the CI ruff gate, and the coherence
+        diff) — i.e. the harness cannot tell right from wrong for this
+        file; AND
+    (b) being wrong is not merely a bug: the file either weakens a
+        control that constrains the autofixer itself, or produces an
+        outward-facing / irreversible artifact that a third party may
+        already hold by the time the error is noticed.
+    Ordinary application code fails (b) — a wrong edit there is caught by
+    the tests, or is a normal bug that a normal fix reverses. Do not add
+    a prefix just because the module feels important.
 """
 
 from __future__ import annotations
@@ -121,6 +161,47 @@ DEFAULT_WINDOW_HOURS = 1           # how far back to scan
 # blast radius, stays on the suggested-card path.
 AUTO_APPLY_TASK_TYPES = {"build", "chore", "fix", "research", "test"}
 
+# Failure classes with no code defect behind them. See the "Deny lists"
+# section of the module docstring for the membership criterion. Matched
+# against ``last_failure_reason`` ONLY (lower-cased substring).
+#
+# MEASURED 2026-08-08: re-queueing nine sbx-* tasks refreshed their
+# ``updated_at`` while they still carried ``last_failure_reason`` from the
+# build attempts whose PRs had just been closed. find_recent_failures selects
+# on exactly (reason IS NOT NULL AND updated_at > cutoff AND status IN
+# (backlog, failed, scheduled, needs_decomposition)), so five tasks entered
+# the autofix queue with nothing wrong with them: four carried
+# "TIMEOUT after ~3430s (max 3386s)" — and ``max_runtime_seconds`` was NULL on
+# every one of them, so the cap was the GLOBAL dispatch budget, not a
+# per-task defect — and the fifth carried
+# "Task-specific checks passed or not applicable", which is not a failure at
+# all. ICDEV_AUTOFIX_ENABLED was true; only the absence of
+# ICDEV_AUTOFIX_AUTOMERGE kept the resulting patches off main.
+#
+# Each entry below is a verbatim prefix of a string some writer puts in the
+# column; the writer is named so the pairing stays checkable.
+NON_CODE_FAILURE_TOKENS = [
+    # --- runtime budget / lifecycle: the cause is a setting or a process,
+    #     not a line of code (kanban reflex scheduler) ---
+    "timeout after",              # reaper: "TIMEOUT after {n}s (max {budget}s)"
+    "task exceeded dispatch budget",
+    "stale-reaper:",              # _reap_stale_in_progress
+    "zombie reclaim:",            # _reclaim_zombies
+    "startup-recovery:",          # scheduler restarted mid-run
+    "circuit breaker: failure_count",   # retry cap reached, not a new defect
+    # --- executor environment: nothing in the repo is broken ---
+    "no executor available",
+    # --- not a failure at all: bookkeeping text parked in the column ---
+    "task-specific checks passed",      # _verify_task_specific non-failure default
+    "decay-promoted:",            # _promote_decayed_suggested
+    "auto-revive ",               # _revive_quarantined_suggested
+    "dep-chain-unblock:",         # _revive_dep_chain_blocked
+    "cascade: parent ",           # _move_task descendant rollback
+    "auto-closed: parent ",       # _close_orphaned_rca_children
+    "auto-decomposed into",       # phase-gate decomposition marker
+    "unclassified (no failure clause)",  # _split_failure_narrative fallback
+]
+
 # Signatures and suspect-file substrings that force human review.
 # Anything matching stays on the suggested-card path regardless of
 # confidence.
@@ -136,6 +217,25 @@ DENY_FILE_PREFIXES = [
     ".claude/hooks/",
     "args/security_gates.yaml",
     "args/llm_config.yaml",  # config edits are blast-radius; human-review
+    # tools/compliance/ — decided 2026-08-08 (kax-recover-01), ADDED.
+    # Criterion (a): a wrong control id, a dropped component, a mis-scored
+    # assessment, or a missing CUI banner is textually valid Python. It
+    # compiles, it lints, the tests assert artifact STRUCTURE rather than
+    # content truth, and coherence does not model control semantics — so
+    # _run_independent_gates cannot tell a correct generator from a subtly
+    # wrong one.
+    # Criterion (b): the output is outward-facing evidence, and correcting
+    # it is not an edit. sbom_generator.py is the single writer for every
+    # SBOM ICDEV emits, and a corrected SBOM ships as a SUCCESSOR row via
+    # sbom_revision.apply_correction — because a recipient may already hold
+    # the document the wrong one described. The same holds for the rest of
+    # the package: all 95 modules are assessors, artifact generators
+    # (SSP/POA&M/OSCAL/SLSA/model+system cards), evidence collectors, or
+    # classification markers. There is no internal-only plumbing in there
+    # that would make a narrower prefix meaningfully different.
+    # Note this is a DENY, not a ban: these tasks still get a diagnosis and
+    # a suggested card with the patch attached — a human presses apply.
+    "tools/compliance/",
 ]
 
 # Env kill switch
@@ -290,6 +390,18 @@ def autofix_enabled() -> bool:
 
 def _deny_hit(diag: Dict[str, Any], task: Dict[str, Any]) -> Optional[str]:
     """Return the reason string if any deny rule matches, else None."""
+    # Non-code failure classes are checked FIRST and against the scheduler-
+    # written column alone. A TIMEOUT is a budget symptom: max_runtime_seconds
+    # was NULL on every task that produced one, so the cap is a global
+    # setting and there is no code a patch could fix. Same for the
+    # bookkeeping strings the scheduler parks in this column on re-queue —
+    # they are not failures at all. Scoped to last_failure_reason so a task
+    # merely *described* as "add a timeout to X" stays eligible.
+    failure_reason = (task.get("last_failure_reason") or "").lower()
+    for tok in NON_CODE_FAILURE_TOKENS:
+        if tok in failure_reason:
+            return f"non-code failure class matched: {tok!r}"
+
     reason_blob = (
         (task.get("last_failure_reason") or "")
         + " " + (task.get("description") or "")

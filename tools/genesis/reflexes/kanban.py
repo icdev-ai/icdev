@@ -7589,6 +7589,13 @@ _SUCCESS_CLAUSE_PREFIXES = (
     "remediation=",
     "passed",
     "all validation gates passed",
+    # _verify_task_specific's non-failure default (see its final return).
+    # It starts with "Task-specific", not "passed", so it slipped through
+    # this filter and was stored as the failure clause — which is how a task
+    # with nothing wrong with it reached failure_triage's autofix queue on
+    # 2026-08-08 (kax-recover-01). Its FAILURE returns are prefixed
+    # "SPECIFIC CHECK FAILED:" and are unaffected.
+    "task-specific checks passed",
 )
 
 
