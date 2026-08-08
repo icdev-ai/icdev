@@ -144,6 +144,16 @@ jobs:
         # diff there reports an empty set, which makes every scoped delivery gate
         # vacuously green. Fakes only: no LLM, no network, no DB service; the git
         # work runs against a throwaway repo in tmp_path. ~15s (hgx-exec-04).
+        #
+        # test_ollama_tool_use.py earns a slot because the regression it pins is
+        # silent by construction. The provider parsed tool_calls back but never
+        # sent `tools`, so no model could emit one; and because llm_config
+        # declares supports_tools: true, the agent loop did not raise
+        # AgentLoopUnsupported either -- it got prose on turn 1 and recorded
+        # done=True. A completed agent run and a model answering in prose are
+        # the same object, which is how this survived to be found by a
+        # benchmark rather than a test. ~0.5s, payload asserted directly, no
+        # network (hgx-exec-04).
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -239,6 +249,7 @@ jobs:
             tests/test_pr_watcher_heartbeat.py \
             tests/test_local_agent_adapter.py \
             tests/genesis/test_executor_parity.py \
+            tests/llm/test_ollama_tool_use.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
