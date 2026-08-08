@@ -417,6 +417,35 @@ finally:
 
 ---
 
+## SAG Project Context — Instruction Loading at Session Start (hgx-sess-01)
+
+Loads `CLAUDE.md`, `AGENTS.md`, `memory/MEMORY.md` and the
+`session_context_builder` project-state summary into the agent's system prompt,
+budgeted against `context_budget.floor_window_for_function` (the minimum window
+across the routed chain) rather than a constant.
+
+```bash
+# Preview the block the runtime will inject
+python tools/agent_runtime/project_context.py
+
+# Budget accounting only — which sections were truncated, and by how much
+python tools/agent_runtime/project_context.py --json
+
+# Budget against a different routing function; skip the DB-backed state summary
+python tools/agent_runtime/project_context.py --function question_answering \
+    --no-project-state --json
+```
+
+A large-window model receives the documents intact; a 32k local chain receives a
+line-boundary-truncated block carrying an explicit
+`[... N of M lines omitted to fit the context budget — read <path> ...]` marker,
+so a partial rule set never reads as complete. Toggles:
+`ICDEV_SAG_PROJECT_CONTEXT=0` disables the block entirely;
+`ICDEV_SAG_PROJECT_STATE=0` keeps the instruction files but skips the project
+state summary. The block is built once per session and rebuilt on `/new`.
+
+---
+
 ## Agent Approval Gate — Irreversible Action Confirmation (ars-appr-01)
 
 Classifies an agent tool call by **reversibility** and halts the irreversible
