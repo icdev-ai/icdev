@@ -976,6 +976,19 @@ python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --js
 # a pipeline-owned status like pr_opened, which --set-status cannot write. Exit 1 if any
 # task was refused; a manual-mode gate sentinel needs --force.
 
+# Kanban — is restarting the scheduler safe right now? (kax-recover-04)
+python -m tools.kanban.startup_recovery --dry-run --json      # Classify only; changes nothing
+python -m tools.kanban.startup_recovery --dry-run --force     # Same, even while the daemon owns the runner
+python -m tools.kanban.startup_recovery --json                # Perform the sweep (what a restart does)
+# Ask BEFORE restarting. Both restart sweeps (the kanban_scheduler.py entrypoint and the
+# reflex's cycle-1 sweep) route through recover_interrupted_tasks, which HOLDS any in_progress
+# task with provable liveness — an in-process handle, a fresh agent_sessions heartbeat in the
+# task worktree, a live kanban:task:<id> lease holder, or an OS process naming the task — and
+# resets only genuinely orphaned rows. --dry-run reports, per task, whether its commits survive
+# on kanban/<id> or whether a reset discards its work, so a restart is no longer a guess.
+# Without --force it no-ops while another live scheduler owns the runner; --once bypasses the
+# entrypoint lockfile check, so that guard is what keeps a one-shot run off the live board.
+
 # Kanban — rebase a DIRTY PR branch before it burns its resume budget (kax-conflict-01)
 python tools/kanban/rebase_recovery.py --task <task-id> --dry-run --json  # Probe locally, never push
 python tools/kanban/rebase_recovery.py --task <task-id> --json            # Rebase + force-with-lease push

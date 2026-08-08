@@ -290,6 +290,43 @@ def session_paused() -> Optional[dict]:
         return None
 
 
+# ── Runner ownership ─────────────────────────────────────────────────────────
+def scheduler_lock_path() -> Path:
+    """The single-instance lockfile, resolved from the SHARED repo root.
+
+    Same anchor as :func:`_flag_path` and for the same reason: a scheduler
+    started from a linked worktree that reads its own tree's ``.tmp/`` finds a
+    private lockfile, concludes nobody owns the runner, and dispatches against
+    the shared board alongside the canonical instance.
+    """
+    return _canonical_repo_root() / ".tmp" / "kanban_scheduler.pid"
+
+
+def scheduler_lock_owner_pid() -> int:
+    """PID of a LIVE kanban scheduler that is not this process, or 0.
+
+    "Not this process" matters: the owner writes its own PID, so a scheduler
+    asking whether someone else owns the runner must not find itself. Verifies
+    the PID is both alive and actually a scheduler, so a recycled PID cannot
+    stand in for a dead owner.
+    """
+    try:
+        owner_pid = int(scheduler_lock_path().read_text(encoding="utf-8").strip())
+    except Exception:  # noqa: BLE001 — missing/garbage lockfile means unowned
+        return 0
+    if owner_pid == os.getpid():
+        return 0
+    try:
+        import psutil  # noqa: PLC0415
+
+        if psutil.pid_exists(owner_pid):
+            if "kanban_scheduler" in " ".join(psutil.Process(owner_pid).cmdline()):
+                return owner_pid
+    except Exception:  # noqa: BLE001 — psutil absent or process gone mid-check
+        pass
+    return 0
+
+
 # ── Combined ─────────────────────────────────────────────────────────────────
 def should_pause() -> dict:
     """Single check for the scheduler loop.
