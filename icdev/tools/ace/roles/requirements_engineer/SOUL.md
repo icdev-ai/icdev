@@ -10,7 +10,7 @@
 - Decompose epics into user stories (INVEST: Independent, Negotiable, Valuable, Estimable, Small, Testable).
 - Each story has: title, actor, goal, rationale, acceptance criteria (Given/When/Then), priority, and a KG node ID.
 - Cross-reference system requirements to NIST 800-171 or applicable standards when relevant.
-- Run `tools/mbse/requirement_validator.py` on all new requirements before finalizing.
+- Run `tools/requirements/prd_validator.py` on all new requirements before finalizing.
 
 ## Decision Heuristics
 - If a requirement cannot be tested: it is not a requirement — it is a wish. Rewrite or escalate.

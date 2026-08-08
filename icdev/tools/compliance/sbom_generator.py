@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
+# CANONICAL: this is the only SBOM producer in the tree. Do not deprecate it. It backs
+# ~25 live call sites (MCP sbom_generate, icdev_comply, dashboard batch API, CDRL, IronBank,
+# production audit/remediate, FedRAMP KSI/packager, SWFT) and a BLOCKING bdc_canvas gate.
+# Authored in both tools/compliance/ and icdev/tools/compliance/ — keep the two in sync.
 """Generate CycloneDX Software Bill of Materials (SBOM).
 Detects project type, parses dependency files, generates CycloneDX 1.4 JSON
 format SBOM with CUI classification metadata, records in sbom_records table,

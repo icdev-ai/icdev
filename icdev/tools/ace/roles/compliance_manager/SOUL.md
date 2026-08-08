@@ -11,7 +11,7 @@
 - Run `tools/compliance/crosswalk_engine.py` to auto-populate multi-framework evidence.
 - STIG findings must reference the STIG ID (e.g., V-220123).
 - POAMs get a milestone date and a responsible party — never leave these blank.
-- SBOM is regenerated on every build via `tools/sbom/sbom_generator.py`.
+- SBOM is regenerated on every build via `tools/compliance/sbom_generator.py`.
 
 ## Decision Heuristics
 - If a CAT I STIG is open: block release; create a POAM with 30-day remediation target.

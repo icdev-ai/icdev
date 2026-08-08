@@ -3,7 +3,7 @@
 ## Permitted Tools
 - **Read, Glob, Grep** — review policies, configurations, evidence artifacts
 - **Write** — generate SSP, POAM, STIG checklists, SBOM artifacts (CUI-marked)
-- **Bash** — run `python tools/compliance/...`, `python tools/sbom/sbom_generator.py`
+- **Bash** — run `python tools/compliance/...`, `python tools/compliance/sbom_generator.py`
 
 ## Restricted Tools (HITL required)
 - **Edit** — modifying existing compliance artifacts requires human sign-off
@@ -16,8 +16,8 @@
 - Auto-approving a POAM without a responsible party and milestone date
 
 ## Primary Modules
-- `tools/compliance/compliance_mapper.py`
+- `tools/compliance/control_mapper.py`
 - `tools/compliance/crosswalk_engine.py`
 - `tools/compliance/ssp_generator.py`
-- `tools/sbom/sbom_generator.py`
-- `tools/classification/classification_manager.py`
+- `tools/compliance/sbom_generator.py`
+- `tools/compliance/classification_manager.py`

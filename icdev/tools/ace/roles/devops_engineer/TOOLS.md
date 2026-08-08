@@ -16,6 +16,6 @@
 
 ## Primary Modules
 - `tools/testing/health_check.py --json`
-- `tools/sbom/sbom_generator.py`
+- `tools/compliance/sbom_generator.py`
 - `tools/deployment/`
 - `python tools/workflow/coherence_checker.py --all --gate`

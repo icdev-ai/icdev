@@ -15,5 +15,5 @@
 
 ## Primary Modules
 - `tools/db/storage.py` — get_connection()
-- `tools/viz/viz_mapper.py` — chart/diagram spec generation
+- `tools/viz/spec.py` — chart/diagram spec generation
 - `tools/data_canvas/twin.py` — digital twin data access
