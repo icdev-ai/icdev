@@ -136,7 +136,13 @@ icdev audit tail --source runtime_invocations --follow --json
 icdev runtime top                         # Top 20 names by call count, all surfaces
 icdev runtime top --limit 50
 icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
+icdev runtime top --surface agent         # SAG tool calls, recorded from dispatch.py
 icdev runtime top --json                  # Machine-readable rollup
+
+# One RUN rather than all runs. The correlation id is AgentLoopResult.trace_id;
+# both the agent.turn spans and the gen_ai.invoke spans beneath them carry it.
+icdev runtime trace <correlation-id>      # Every span of one agent run, oldest first
+icdev runtime trace <correlation-id> --json
 
 # Core enterprise profiles
 icdev profile list                 # List available profiles

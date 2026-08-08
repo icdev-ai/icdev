@@ -140,3 +140,33 @@ bundles:
       - databridge_sources
       - databridge_fetch
     mutating: false
+
+# ---------------------------------------------------------------------------
+# TOOLS ON THIRD-PARTY MCP SERVERS
+#
+# Tools discovered from an external MCP server appear in the same registry under
+# `ext__<server>__<tool>` and are listed in a bundle by that name, like any other
+# tool. No bundle is shipped: the servers list in args/external_mcp_servers.yaml
+# is empty and `enabled: false`, so a bundle here would name tools that do not
+# exist.
+#
+# Enabling one is deliberately TWO steps, because they answer different
+# questions. args/external_mcp_servers.yaml decides which remote tools ICDEV may
+# reach at all (per-server allowlist, classification ceiling, transport). A
+# bundle here decides which ROLES get handed them. Enabling a server should not
+# hand its tools to every agent that loads a toolset.
+#
+# `mutating: true` on the bundle, always. ICDEV cannot know whether somebody
+# else's tool changes state, and the server's own claim about that is not
+# evidence — external tools are never marked read-only, so they always go
+# through the dispatch safety gate.
+#
+#   ticketing:
+#     description: >-
+#       Read-only ticket lookup via the `ticketing` external MCP server. The
+#       server's own allowlist in args/external_mcp_servers.yaml bounds what is
+#       reachable; this bundle bounds who may reach it.
+#     tools:
+#       - ext__ticketing__search_tickets
+#       - ext__ticketing__get_ticket
+#     mutating: true

@@ -1147,7 +1147,6 @@ def specify_task():
                 "Return valid JSON only."
             ),
             messages=[{"role": "user", "content": prompt}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=600,
             temperature=0.3,
             skip_injection_scan=True,
@@ -1225,7 +1224,6 @@ def judge_task(task_id):
         req = LLMRequest(
             system_prompt="You are a quality acceptance evaluator. Return valid JSON only.",
             messages=[{"role": "user", "content": prompt}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=300,
             temperature=0.0,
             skip_injection_scan=True,
