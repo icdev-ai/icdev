@@ -179,6 +179,10 @@ python tools/compliance/sbom_minimum_elements_validator.py --sbom vendor.spdx.js
 python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --min-score 80    # exit 1 below threshold, 2 if unreadable
 python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --require-conformant
 python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --record --project-id "sparkpilot"
+python tools/compliance/component_producer.py --purl "pkg:golang/k8s.io/client-go@v0.29.0" --json  # Component Producer for one component
+python tools/compliance/component_producer.py --name flask --version 3.0.0 --ecosystem python --project-dir "/path/to/project" --json
+python tools/compliance/component_producer.py --validate "/path/to/sbom.cdx.json" --json          # every component states a producer or unknown provenance
+python tools/compliance/component_producer.py --registry --json                                    # the namespace -> organization registry in force
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"

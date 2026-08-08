@@ -154,6 +154,29 @@ PROP_ALTERNATE_NAMES = "icdev:sbom:component:alternate-names"
 PROP_UNKNOWN_FIELDS = "icdev:sbom:component:unknown-fields"
 PROP_WITHHELD_FIELDS = "icdev:sbom:component:withheld-fields"
 
+# Component Producer's carrier, owned by tools/compliance/component_producer.py
+# (sbx-fld-02). Imported rather than restated — the same rule this module asks
+# sbx-prc-01 to follow for the unknown/withheld vocabulary.
+#
+# Reading these is not optional. That module writes the native CycloneDX field
+# ONLY when a producer is identifiable (`manufacturer` from 1.6, `supplier`
+# below it) and states in its own docstring that "the properties, not the
+# native field, remain the authoritative statement". A component of unknown
+# provenance therefore carries no supplier at all — so a reader that looks only
+# at the native field scores an explicitly-marked unknown as an absent value,
+# which is exactly the distinction the 2026 standard added.
+#
+# Soft import with literal fallbacks: grading a vendor's SBOM must not depend
+# on ICDEV's producer resolver being importable.
+try:
+    from tools.compliance.component_producer import (
+        PROPERTY_PRODUCER as PROP_COMPONENT_PRODUCER,
+        PROPERTY_PROVENANCE as PROP_COMPONENT_PROVENANCE,
+    )
+except ImportError:  # pragma: no cover - fallback for a partial checkout
+    PROP_COMPONENT_PRODUCER = "icdev:component-producer"
+    PROP_COMPONENT_PROVENANCE = "icdev:component-provenance"
+
 # ── Format currency. The standard says to avoid deprecated versions of any
 # format and to reassess supported formats regularly. ─────────────────────
 CYCLONEDX_CURRENT = frozenset({"1.6", "1.7"})  # ECMA-424, December 2025
@@ -427,8 +450,13 @@ def _cdx_component(raw):
     # spec version, so all four are read.
     supplier = raw.get("supplier") or {}
     manufacturer = raw.get("manufacturer") or {}
+    # The ICDEV property is checked FIRST because component_producer.py declares
+    # it authoritative over the native field, and because it is the only carrier
+    # that survives when the producer is unknown.
     comp.producer = str(
-        (supplier.get("name") if isinstance(supplier, dict) else "")
+        props.get(PROP_COMPONENT_PRODUCER)
+        or props.get(PROP_COMPONENT_PROVENANCE)
+        or (supplier.get("name") if isinstance(supplier, dict) else "")
         or (manufacturer.get("name") if isinstance(manufacturer, dict) else "")
         or raw.get("publisher")
         or raw.get("author")

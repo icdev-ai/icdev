@@ -122,36 +122,80 @@ def test_baseline_reproduces_the_documented_gap_analysis_matrix():
     }
 
 
-def test_live_generator_output_reproduces_the_baseline_data_field_score(tmp_path):
-    """The same 2/17 against what the generator actually emits today.
+def _live_generator_document(project):
+    """Build a document through the production path, minus the database write."""
+    from tools.compliance.dependency_resolver import resolve_project
+    from tools.compliance.sbom_generator import DECLARED_PARSERS, _build_cyclonedx_sbom
+
+    resolution = resolve_project(project, declared_parsers=DECLARED_PARSERS)
+    document, _count = _build_cyclonedx_sbom(
+        {"id": "demo", "name": "Demo", "directory_path": str(project)},
+        resolution["components"],
+        coverage=resolution["coverage"],
+    )
+    return document
+
+
+def test_live_generator_scores_the_two_baseline_elements_plus_what_has_landed(tmp_path):
+    """What the generator actually emits today, not what a fixture froze.
 
     This is the load-bearing half of the baseline check: the frozen fixture
-    could drift away from the generator without either one being wrong. Here
-    the document is built by the production code path — ``resolve_project``
-    into ``_build_cyclonedx_sbom`` — with only the database write skipped.
+    could drift away from the generator without either one being wrong.
+
+    The two baseline elements are still MET and nothing has regressed. The
+    delta from the documented 2/17 is Component Producer, which sbx-fld-02
+    landed — so this asserts the two named elements individually and the total
+    separately. A test that only checked the total would report a regression
+    and a new element as the same number.
 
     The project deliberately has no lockfile, so resolution degrades to the
     declared parsers. That is the state the gap analysis measured.
     """
-    from tools.compliance.dependency_resolver import resolve_project
-    from tools.compliance.sbom_generator import DECLARED_PARSERS, _build_cyclonedx_sbom
-
     project = tmp_path / "declared-only"
     project.mkdir()
     (project / "requirements.txt").write_text("flask==3.0.2\nrequests\n", encoding="utf-8")
 
-    resolution = resolve_project(project, declared_parsers=DECLARED_PARSERS)
-    document, _count = _build_cyclonedx_sbom(
-        {"id": "demo", "name": "Demo"},
-        resolution["components"],
-        coverage=resolution["coverage"],
-    )
+    report = validate(_live_generator_document(project))
+    statuses = _statuses(report)
 
-    report = validate(document)
-    assert report["data_fields"]["met"] == 2
-    assert _statuses(report)["sbom_data_format_name"] == STATUS_MET
-    assert _statuses(report)["sbom_tool_name"] == STATUS_MET
+    assert statuses["sbom_data_format_name"] == STATUS_MET
+    assert statuses["sbom_tool_name"] == STATUS_MET
+    assert statuses["component_producer"] == STATUS_MET  # sbx-fld-02
+    assert report["data_fields"]["met"] == 3
     assert report["practices"]["met"] == 0
+
+
+def test_explicit_unknown_provenance_from_sbx_fld_02_is_read_as_conforming(tmp_path):
+    """component_producer.py writes the properties, not the native field.
+
+    When no producer is identifiable it emits no `supplier`/`manufacturer` at
+    all and states unknown provenance only in `icdev:component-producer` /
+    `icdev:component-provenance` — its docstring calls the properties "the
+    authoritative statement". A reader that consulted only the native field
+    would score an explicitly-marked unknown as an absent value, which is
+    precisely the distinction the 2026 standard added, and would report ICDEV
+    as non-conforming on an element it actually conforms to.
+    """
+    project = tmp_path / "no-metadata"
+    project.mkdir()
+    (project / "requirements.txt").write_text("flask==3.0.2\n", encoding="utf-8")
+
+    document = _live_generator_document(project)
+    component = document["components"][0]
+    # The premise: no native producer field is present on this component.
+    assert "supplier" not in component and "manufacturer" not in component
+    properties = {p["name"]: p["value"] for p in component.get("properties", [])}
+    assert properties[validator.PROP_COMPONENT_PRODUCER] == "unknown"
+
+    assert _statuses(validate(document))["component_producer"] == STATUS_MET
+
+
+def test_producer_property_names_are_imported_from_their_owner():
+    """Restating them here is how the producer and the grader drift apart."""
+    from tools.compliance import component_producer
+
+    assert validator.PROP_COMPONENT_PRODUCER == component_producer.PROPERTY_PRODUCER
+    assert validator.PROP_COMPONENT_PROVENANCE == component_producer.PROPERTY_PROVENANCE
 
 
 def test_coverage_practice_moved_off_gap_when_sbx_cov_01_landed(tmp_path):
