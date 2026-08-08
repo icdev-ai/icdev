@@ -7847,6 +7847,14 @@ def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
 
 _SUGGESTED_DECAY_HOURS = _int_env("KANBAN_SUGGESTED_DECAY_HOURS", 48)
 
+#: Why a decay promotion happened. Recorded on the ``kanban_status_transitions``
+#: row — never on ``last_failure_reason``, which is a *triage input*, not a
+#: general-purpose note field (see ``_promote_stale_suggested``).
+_DECAY_PROMOTION_REASON = (
+    f"suggested-decay: re-queued after {_SUGGESTED_DECAY_HOURS} h in 'suggested' "
+    "with no hard-quarantine signal (failure_count preserved)"
+)
+
 
 def _promote_stale_suggested() -> None:
     """Decay sweep: re-queue 'suggested' tasks that have been stuck >48 h
@@ -7857,38 +7865,73 @@ def _promote_stale_suggested() -> None:
     issue resolves on its own (transient resource exhaustion, flaky E2E,
     resolved dependency). Hard-quarantined tasks (fc >= 5 or explicit
     hard-quarantine reason) still require human review.
+
+    The promotion goes through ``tools/kanban/requeue.py::requeue_task`` rather
+    than a local UPDATE, because the local UPDATE had both of the failure modes
+    that module exists to prevent (kax-recover-05):
+
+    * It wrote the promotion *rationale* into ``last_failure_reason`` while
+      setting ``status='scheduled'`` and a fresh ``updated_at`` — precisely the
+      triple ``failure_triage.find_recent_failures`` selects on
+      (``last_failure_reason IS NOT NULL AND updated_at > cutoff AND status IN
+      (...,'scheduled',...)``). Every decay-promoted task therefore entered the
+      autofix queue carrying a "reason" that describes a promotion rather than a
+      failure; 114 rows on the live board still carry that string. The rationale
+      belongs on the ``kanban_status_transitions`` row, which is an audit
+      surface, not on a triage input.
+    * It set ``failure_count=0`` while the guard below uses ``fc >= 5`` as the
+      hard-quarantine test — so a task that passed through 'suggested' had its
+      quarantine budget reset every 48 h and could never reach hard quarantine.
+      ``requeue_task`` preserves the count on purpose: it is
+      ``recovery_guard.py``'s budget and the task's real history. Preserving it
+      cannot trip the dispatcher's circuit breaker here, because that fires at
+      ``failure_count >= max_retries`` (default 5) and this pass only promotes
+      tasks below 5.
     """
     try:
+        from tools.kanban.requeue import requeue_task  # noqa: PLC0415
+
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
+        ).isoformat()
         with get_connection() as conn:
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
-            ).isoformat()
             rows = conn.execute(
                 "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
                 "WHERE status = 'suggested' AND updated_at < %s",
                 (cutoff,),
             ).fetchall()
-            promoted = []
-            now_iso = datetime.now(timezone.utc).isoformat()
-            for r in rows:
-                d = dict(r)
-                fc = d.get("failure_count") or 0
-                reason = (d.get("last_failure_reason") or "").lower()
-                if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
-                    continue  # genuinely quarantined — leave for human review
-                conn.execute(
-                    "UPDATE kanban_tasks SET status='scheduled', scheduled_at=%s, "
-                    "updated_at=%s, failure_count=0, "
-                    "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
-                    "WHERE id=%s",
-                    (now_iso, now_iso, d["id"]),
-                )
-                promoted.append(d["id"])
-            if promoted:
-                logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
-                for tid in promoted:
-                    print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
 
+        candidates = []
+        for r in rows:
+            d = dict(r)
+            fc = d.get("failure_count") or 0
+            reason = (d.get("last_failure_reason") or "").lower()
+            if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
+                continue  # genuinely quarantined — leave for human review
+            candidates.append(d["id"])
+
+        # requeue_task opens its own connection, so the read above is closed
+        # before promoting rather than nesting a second connection inside it.
+        promoted = []
+        for tid in candidates:
+            outcome = requeue_task(
+                tid,
+                status="scheduled",
+                reason=_DECAY_PROMOTION_REASON,
+                actor="suggested-decay-sweep",
+            )
+            if outcome.get("requeued"):
+                promoted.append(tid)
+            else:
+                logger.warning(
+                    "suggested-decay: %s not re-queued: %s", tid, outcome.get("error"),
+                )
+        if promoted:
+            logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
+            for tid in promoted:
+                print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
+
+        with get_connection() as conn:
             # ── BOUNDED AUTO-REVIVE of failure-quarantined tasks ──────────
             # The decay pass above deliberately skips fc>=5 / HITL-quarantined
             # tasks. Without this pass they (and their dependency chains) rot
@@ -7943,6 +7986,7 @@ def _revive_quarantined_suggested(conn: Any) -> None:
     ).fetchall()
 
     revived: list[str] = []
+    revive_reasons: dict[str, str] = {}
     held: list[str] = []
     for r in rows:
         d = dict(r)
@@ -7983,17 +8027,30 @@ def _revive_quarantined_suggested(conn: Any) -> None:
             continue
 
         # Revive to backlog with a fresh failure budget.
+        #
+        # kax-recover-05: the rationale is NOT written to last_failure_reason.
+        # That column plus a fresh updated_at plus status='backlog' is exactly
+        # what failure_triage.find_recent_failures selects on, so describing a
+        # revival there put every revived task straight into the autofix queue
+        # carrying a non-failure "reason". It is cleared instead, and the
+        # rationale goes on the kanban_status_transitions row below.
+        #
+        # failure_count IS still reset here, unlike the decay pass above. This
+        # pass only acts on fc>=5 tasks, and the dispatcher's circuit breaker
+        # blocks at fc >= max_retries (default 5) — preserving the count would
+        # make the revival a no-op that re-parks the task immediately. The
+        # budget that bounds this path is revive_count in kanban_task_revivals,
+        # which survives re-quarantine; the failure count is not it.
         new_rc = revive_count + 1
+        revive_reason = (
+            f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
+            "re-queued to backlog for another attempt."
+        )
         conn.execute(
             "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
-            "last_failure_reason = %s, updated_at = %s "
+            "last_failure_reason = NULL, updated_at = %s "
             "WHERE id = %s AND status = 'suggested'",
-            (
-                f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
-                "re-queued to backlog for another attempt.",
-                now_iso,
-                tid,
-            ),
+            (now_iso, tid),
         )
         # Upsert the revival counter (works on both SQLite and PostgreSQL).
         if rc_row:
@@ -8010,10 +8067,17 @@ def _revive_quarantined_suggested(conn: Any) -> None:
                 (tid, new_rc, now_iso, now_iso),
             )
         revived.append(tid)
+        revive_reasons[tid] = revive_reason
 
     if revived or held:
         conn.commit()
     for tid in revived:
+        # Recorded after the commit so the audit row never describes a revival
+        # that did not land. This is where the rationale lives now.
+        _record_status_transition(
+            tid, "suggested", "backlog",
+            actor="auto-revive", reason=revive_reasons[tid],
+        )
         print(f"  Kanban: auto-revive quarantined {tid} -> backlog")
     if revived:
         logger.info("auto-revive: re-queued %d quarantined task(s): %s", len(revived), revived)
@@ -8063,6 +8127,7 @@ def _unblock_dep_chain(conn: Any) -> None:
             "WHERE p.status = 'suggested' AND c.status = 'backlog'"
         ).fetchall()
         unblocked: list[str] = []
+        unblock_reasons: dict[str, str] = {}
         for r in rows:
             d = dict(r)
             tid = d["id"]
@@ -8075,20 +8140,30 @@ def _unblock_dep_chain(conn: Any) -> None:
             is_hitl = "hitl" in reason or "hard-quarantine" in reason
             if is_hard_quarantine or is_hitl:
                 continue
+            # kax-recover-05: rationale goes on the transition row, not into
+            # last_failure_reason — writing it there made every unblocked task
+            # match failure_triage.find_recent_failures with a reason that
+            # describes an unblock rather than a failure. The failure_count
+            # reset stays: this pass lets fc>=5 "no executor" tasks through, and
+            # the dispatcher blocks at fc >= max_retries (default 5), so
+            # preserving it would re-park the task the moment it was unblocked.
+            unblock_reasons[tid] = (
+                f"dep-chain-unblock: child waiting in backlog, revived from suggested (fc was {fc})"
+            )
             conn.execute(
                 "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
-                "last_failure_reason = %s, updated_at = %s "
+                "last_failure_reason = NULL, updated_at = %s "
                 "WHERE id = %s AND status = 'suggested'",
-                (
-                    f"dep-chain-unblock: child waiting in backlog, revived from suggested (fc was {fc})",
-                    now_iso,
-                    tid,
-                ),
+                (now_iso, tid),
             )
             unblocked.append(tid)
         if unblocked:
             conn.commit()
             for tid in unblocked:
+                _record_status_transition(
+                    tid, "suggested", "backlog",
+                    actor="dep-chain-unblock", reason=unblock_reasons[tid],
+                )
                 print(f"  Kanban: dep-chain-unblock {tid} -> backlog (was blocking child)")
             logger.info(
                 "dep-chain-unblock: revived %d critical-path task(s): %s",
