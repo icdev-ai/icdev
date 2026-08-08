@@ -145,9 +145,12 @@ def test_create_tasks_accepts_every_legal_type(monkeypatch):
 # ── 3. board writes must not silently land in a throwaway SQLite DB ───────────
 
 
-def test_assert_real_board_rejects_a_bare_sqlite_connection():
+def test_assert_real_board_rejects_a_bare_sqlite_connection(monkeypatch):
+    """conftest sets ICDEV_KANBAN_ALLOW_LOCAL_BOARD for the whole suite (tests
+    legitimately seed a local board), so clear it to exercise the guard itself."""
     from tools.kanban.task_factory import BoardBackendError, _assert_real_board
 
+    monkeypatch.delenv("ICDEV_KANBAN_ALLOW_LOCAL_BOARD", raising=False)
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE kanban_tasks (id TEXT)")
     try:
