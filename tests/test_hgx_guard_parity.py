@@ -345,6 +345,49 @@ def test_repo_root_resolves_from_file_not_cwd():
     assert root == ROOT
 
 
+def test_icdev_init_ships_the_shared_module_beside_the_hook(tmp_path):
+    """`icdev init` must scaffold a hook that can actually load its checks.
+
+    The bootstrap tree ships `.claude/hooks/` but historically nothing from
+    `tools/`. Since the hook became a thin adapter that fails open, an init that
+    wrote the hook without `tools/hooks/shared_checks.py` would hand every new
+    project a guardrail that permits everything.
+    """
+    from tools.cli.init import BOOTSTRAP_MAP
+
+    targets = dict(BOOTSTRAP_MAP)
+    assert targets.get("data/claude_bootstrap/tools/hooks") == "tools/hooks"
+
+    from tools.cli import init as init_mod
+
+    init_mod.init_project(tmp_path, only=["tools/hooks", ".claude/hooks"])
+    scaffolded = tmp_path / "tools" / "hooks" / "shared_checks.py"
+    assert scaffolded.is_file(), "init wrote no shared_checks.py"
+
+    hook = tmp_path / ".claude" / "hooks" / "pre_tool_use.py"
+    if hook.is_file():
+        # PROJECT_ROOT in the copied hook is <project>; that is where it looks.
+        assert scaffolded.parent.parent.parent == tmp_path
+
+
+def test_prebuild_packages_the_shared_module():
+    """The packaged copy must not drift from the source it mirrors.
+
+    `prebuild_bootstrap.py` runs only at build time and nothing re-runs it, so a
+    stale copy ships silently in the wheel.
+    """
+    from tools.installer.prebuild_bootstrap import SOURCES
+
+    assert ("tools/hooks", "tools/hooks", "dir") in SOURCES
+
+    packaged = ROOT / "icdev" / "data" / "claude_bootstrap" / "tools" / "hooks" / "shared_checks.py"
+    assert packaged.is_file(), f"missing packaged copy: {packaged}"
+    assert packaged.read_bytes() == SHARED_TOOLS.read_bytes(), (
+        "packaged shared_checks.py has drifted — re-run "
+        "python tools/installer/prebuild_bootstrap.py"
+    )
+
+
 def test_the_adapter_hook_fails_open_only_loudly():
     """Fail-open is deliberate, but it must announce itself on stderr.
 

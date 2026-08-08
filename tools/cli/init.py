@@ -95,6 +95,10 @@ BOOTSTRAP_MAP: list[tuple[str, str]] = [
     ("data/claude_bootstrap/.env.template", ".env.template"),
     ("data/claude_bootstrap/claude/commands", ".claude/commands"),
     ("data/claude_bootstrap/claude/hooks", ".claude/hooks"),
+    # The copied pre_tool_use.py loads its checks from
+    # <project>/tools/hooks/shared_checks.py and fails open without it
+    # (hgx-guard-01/02). Must land in the same init that writes the hook.
+    ("data/claude_bootstrap/tools/hooks", "tools/hooks"),
     ("data/claude_bootstrap/claude/settings.json.template", ".claude/settings.json"),
     ("data/claude_bootstrap/claude/skills", ".claude/skills"),
     ("data/claude_bootstrap/claude/agents", ".claude/agents"),

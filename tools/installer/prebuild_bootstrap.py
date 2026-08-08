@@ -46,6 +46,13 @@ SOURCES: list[tuple[str, str, str]] = [
     (".env.sample", ".env.sample", "file"),
     (".claude/commands", "claude/commands", "dir"),
     (".claude/hooks", "claude/hooks", "dir"),
+    # hgx-guard-01/02: pre_tool_use.py is a thin adapter over
+    # tools/hooks/shared_checks.py and FAILS OPEN without it. The hook resolves
+    # the module as <project>/tools/hooks/shared_checks.py, so it has to ship
+    # beside the hook or every `icdev init` project gets a guard that guards
+    # nothing. Deliberately NOT in OPTIONAL_SOURCES: a wheel missing it should
+    # fail init loudly rather than scaffold a dead guardrail.
+    ("tools/hooks", "tools/hooks", "dir"),
     (".claude/settings.json", "claude/settings.json.template", "file"),
     (".agents/skills", "claude/skills", "dir"),
     (".claude/agents", "claude/agents", "dir"),
