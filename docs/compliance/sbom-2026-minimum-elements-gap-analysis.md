@@ -160,13 +160,65 @@ Shape is pinned by `tests/test_sbom_2026_schema.py`, which applies the real migr
 a pre-migration database and round-trips a value through every new column, and asserts
 `MINIMAL_ICDEV_SCHEMA` in `tests/conftest.py` declares the identical column set.
 
-### 2.3 Signing
+### 2.3 Signing — SBOM Author Signature (sbx-sig-01)
 
-ICDEV does **not** sign its own SBOMs. `tools/crypto/attestation_signer.py::sign_artifact` and
-`tools/crypto/key_manager.py::sign_payload` exist and are unused by the SBOM path. `cosign`
-appears only inside **CI YAML that ICDEV generates for downstream projects**
-(`tools/devsecops/pipeline_security_generator.py`, `tools/devsecops/attestation_manager.py`) —
-ICDEV instructs others to attest SBOMs while producing unsigned ones itself.
+**Closed.** `tools/compliance/sbom_signer.py` (mirrored at `icdev/tools/compliance/`) signs every
+generated SBOM through the two primitives that already existed and had no caller on this path:
+`tools/crypto/attestation_signer.py::sign_artifact` over
+`tools/crypto/key_manager.py::sign_payload`. `cosign` still appears only inside CI YAML ICDEV
+generates for downstream projects (`tools/devsecops/pipeline_security_generator.py`,
+`tools/devsecops/attestation_manager.py`); ICDEV no longer produces unsigned SBOMs while
+instructing others to attest theirs.
+
+What is signed is the **canonicalized SBOM document** (sorted keys, no whitespace) — not the
+file's bytes, because re-indenting a file does not change the bill of materials and a signature
+that broke on formatting is one people learn to ignore. The exact bytes are digested separately
+(`file_sha256`) and a mismatch is reported as `bytes_modified` rather than as a failure. The
+signature is written **detached** to `<sbom>.sig.json`, which keeps the CycloneDX output
+byte-identical for every existing consumer and avoids embedding a signature in the document it
+covers. `author_signature` and `signature_algorithm` (migration `20260808030213`, sbx-fnd-02)
+are persisted on the `sbom_records` row.
+
+**Approved algorithms.** `APPROVED_ALGORITHMS` is the intersection of "approved by an authority
+the standard names" and "producible by `key_manager`": ECDSA over P-256/P-384/P-521 with
+SHA-256, and Ed25519 — all FIPS 186-5 (NIST DSS) and all on the ENISA Agreed Cryptographic
+Mechanisms list. RSA-PSS is approved by FIPS 186-5 and is deliberately **absent**, because
+`sign_payload` has no RSA branch and listing it would be a claim rather than a capability.
+
+Two things are refused outright rather than emitted under the element's name:
+
+- **HMAC-SHA256.** `key_manager` degrades to it so audit logging never breaks. It is a symmetric
+  MAC — every party who can verify it can also forge it — so it cannot be *attributable to the
+  SBOM author*, which is the entire property this element exists to provide.
+- **`"none"`**, the empty-signature no-op returned when no key is configured.
+
+Signing also required a correctness fix in `key_manager`: `sign_payload` labelled **every**
+elliptic-curve key `ECDSA-P256-SHA256`, so a `secp256k1` key — approved by no authority for this
+use — would have been recorded and reported under a NIST-approved name, and any allowlist check
+reading `algorithm` would have passed it. The label is now derived from the key's actual curve
+(`_ecdsa_algorithm`). The digest stays SHA-256 across all curves, which FIPS 186-5 permits and
+which keeps every previously-issued signature verifiable.
+
+**Air gap.** Neither path touches the network: no sigstore, no Fulcio, no Rekor, no OCSP.
+Signing reads a local PEM private key; verification reads the public key embedded in the
+detached file, or a locally held one. `key_manager.verify_payload` gained a `public_key_pem`
+parameter for this — deriving the public key from the *private* key, which was the only path it
+had, cannot serve a consumer who legitimately does not hold the private key.
+
+**Integrity is not authenticity.** Because the detached file carries its own public key, an
+attacker who rewrites an SBOM can re-sign it with their own key; unpinned verification then
+truthfully reports the document matches its signature. `verify_sbom` therefore returns
+`verified` and `trusted` as two separate fields, and `trusted` is `True` only when the caller
+pinned the expected fingerprint (`--expect-fp`) from an out-of-band source.
+
+Unsigned generation remains the **default** and is announced on stdout: `sbom_generator` has
+~25 live call sites and a blocking `bdc_canvas` gate, so hard-failing on a missing key would
+turn "SBOMs are not signed yet" into "SBOM generation is broken" everywhere at once. Operators
+who require signatures set `ICDEV_SBOM_REQUIRE_SIGNATURE=1` for fail-closed behaviour. What is
+never permitted, in either mode, is a *non-conformant* signature.
+
+Sandbox posture for the verification path (attacker-supplied SBOM + signature + PEM):
+`docs/security/sandbox-coverage.md` Gap 19.
 
 ### 2.4 Ingestion and assessment
 
@@ -246,7 +298,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Element | Status | Evidence / what is missing |
 |---|---|---|
 | SBOM Author | **GAP** | No author field. `metadata.tools[].vendor = "ICDEV™"` identifies the tool vendor, which the standard explicitly says is *not* the author. |
-| SBOM Author Signature | **GAP** | No signing in the SBOM path. |
+| SBOM Author Signature | **MET** (sbx-sig-01) | `sbom_signer.sign_sbom` writes a detached `<sbom>.sig.json` over the canonicalized document and persists `author_signature` + `signature_algorithm`. FIPS 186-5 algorithms only (ECDSA P-256/384/521, Ed25519); HMAC and empty signatures refused. Offline both ways. See §2.3. |
 | SBOM Data Format Name | **MET** | `bomFormat: "CycloneDX"`. |
 | SBOM Data Format Version | **PARTIAL** | `specVersion` present, but defaults to **1.4** (2022). The standard cites ECMA-424 (Dec 2025) and warns against deprecated versions. Default should move up. |
 | SBOM Generation Context | **GAP** | Nothing records lifecycle phase. ICDEV generates from source manifests, i.e. "before build" — knowable and currently unstated. |

@@ -173,6 +173,15 @@ python tools/compliance/stig_checker.py --project-id "sparkpilot"
 python tools/compliance/sbom_generator.py --project-id "sparkpilot"
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --python-env /path/to/.venv   # resolve Python from the installed environment
 python tools/compliance/dependency_resolver.py --project-dir "/path/to/project" --json            # resolved transitive set + coverage report
+
+# SBOM Author Signature (2026 Minimum Elements). Offline on both paths — no sigstore/Fulcio.
+python tools/crypto/key_manager.py --generate-keys --key-type ecdsa-p256 --json                   # one-time: create the signing key
+export ICDEV_SBOM_SIGNING_KEY_PATH=data/keys/icdev_audit_ecdsa-p256.pem                           # generator signs every SBOM from here on
+python tools/compliance/sbom_signer.py --list-algorithms                                          # approved algorithms + the authority for each
+python tools/compliance/sbom_signer.py --sign "compliance/sbom.cdx.json" --json                   # writes detached compliance/sbom.cdx.json.sig.json
+python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --json                 # integrity; exit 1 if tampered or unsigned
+python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --expect-fp "<fp>"     # + authorship, fingerprint pinned out of band
+
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"

@@ -14,7 +14,13 @@ which reads each ecosystem's *resolved* lockfile and degrades to this module's
 declared-manifest parsers only where offline resolution is impossible. The
 resulting SBOM always carries an explicit coverage statement — `compositions`
 plus `icdev:sbom:coverage*` properties — so a partial tree is never presented as
-complete."""
+complete.
+
+Signature (sbx-sig-01): when an asymmetric signing key is configured, each
+generated SBOM gets a detached `<sbom>.sig.json` written beside it and its
+signature + algorithm persisted to `sbom_records`. Unsigned generation is the
+default and says so on stdout; set `ICDEV_SBOM_REQUIRE_SIGNATURE=1` to make it a
+hard failure instead. See `tools/compliance/sbom_signer.py`."""
 
 import argparse
 import hashlib
@@ -28,6 +34,12 @@ from tools.compliance.dependency_resolver import (
     COVERAGE_UNKNOWN,
     RESOLUTION_DECLARED,
     resolve_project,
+)
+from tools.compliance.sbom_signer import (
+    SbomSigningError,
+    sign_sbom,
+    signature_required,
+    signing_available,
 )
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -750,6 +762,44 @@ def _generate_bom_ref(component):
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+def _sign_generated_sbom(out_file):
+    """Produce the SBOM Author Signature for a freshly written SBOM.
+
+    Returns the signature block, or None when no signature was produced.
+
+    Unsigned generation is the DEFAULT and is loud rather than silent. This
+    module has ~25 live call sites and most installs have no signing key
+    configured, so hard-failing on a missing key would convert "SBOMs are not
+    signed yet" into "SBOM generation is broken" across the whole compliance
+    pipeline. Operators who require signed SBOMs set
+    ICDEV_SBOM_REQUIRE_SIGNATURE=1 and get the fail-closed behaviour instead.
+
+    What is never allowed, in either mode, is a *non-conformant* signature:
+    sbom_signer refuses to emit an HMAC tag or an empty value under the name
+    "SBOM Author Signature". See tools/compliance/sbom_signer.py.
+    """
+    if not signing_available():
+        message = (
+            "no asymmetric signing key configured "
+            "(set ICDEV_SBOM_SIGNING_KEY_PATH or ICDEV_AUDIT_SIGNING_KEY_PATH; "
+            "generate one with: python tools/crypto/key_manager.py --generate-keys)"
+        )
+        if signature_required():
+            raise SbomSigningError(
+                f"ICDEV_SBOM_REQUIRE_SIGNATURE is set but {message}."
+            )
+        print(f"  Signature: NOT SIGNED — {message}")
+        return None
+
+    try:
+        return sign_sbom(out_file)
+    except SbomSigningError as e:
+        if signature_required():
+            raise
+        print(f"Warning: SBOM Author Signature not produced: {e}", file=sys.stderr)
+        return None
+
+
 def _build_coverage_blocks(coverage, cdx_components, target_bom_ref):
     """Render a coverage report as CycloneDX ``compositions`` + ICDEV properties.
 
@@ -994,6 +1044,11 @@ def generate_sbom(
         with open(out_file, "w", encoding="utf-8") as f:
             json.dump(sbom, f, indent=2)
 
+        # SBOM Author Signature (2026 Minimum Elements, sbx-sig-01). Signed
+        # after the bytes are on disk and before the row is written, so the
+        # persisted signature always describes the artifact that shipped.
+        signature = _sign_generated_sbom(out_file)
+
         # Determine version
         existing = conn.execute(
             """SELECT MAX(CAST(
@@ -1005,12 +1060,16 @@ def generate_sbom(
         max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
         new_version = f"{max_ver + 1.0:.1f}"
 
-        # Record in sbom_records table
+        # Record in sbom_records table. author_signature holds the base64
+        # signature value; the full block — fingerprint, public key, artifact
+        # hash — lives in the detached <sbom>.sig.json beside the artifact,
+        # which is what a downstream consumer actually receives.
         conn.execute(
             """INSERT INTO sbom_records
                (project_id, version, format, file_path,
-                component_count, vulnerability_count)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
+                component_count, vulnerability_count,
+                author_signature, signature_algorithm)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 new_version,
@@ -1018,6 +1077,8 @@ def generate_sbom(
                 str(out_file),
                 component_count,
                 0,  # Vulnerability count starts at 0; updated by security scanning
+                signature["value"] if signature else None,
+                signature["algorithm"] if signature else None,
             ),
         )
         conn.commit()
@@ -1034,6 +1095,9 @@ def generate_sbom(
                 "output_file": str(out_file),
                 "serial_number": sbom["serialNumber"],
                 "coverage": coverage["status"],
+                "signed": bool(signature),
+                "signature_algorithm": signature["algorithm"] if signature else None,
+                "public_key_fp": signature["public_key_fp"] if signature else None,
             },
             out_file,
         )
@@ -1047,6 +1111,10 @@ def generate_sbom(
         print(f"  Coverage: {coverage['status']}")
         if coverage["status"] != COVERAGE_COMPLETE:
             print(f"  {coverage['statement']}")
+        if signature:
+            print(f"  Signature: {signature['signature_path']}")
+            print(f"    Algorithm: {signature['algorithm']}")
+            print(f"    Key fp:    {signature['public_key_fp']}")
 
         return str(out_file)
 
