@@ -28,7 +28,7 @@ fallen below its module floor becomes a gap.
 | # | Subsystem | Benchmarked against | Position | Verdict | Modules | Outstanding |
 |---|---|---|---|---|---|---|
 | 1 | Developer portal / catalog | Backstage, Cortex.io, Port, OpsLevel | Behind | **Gap** | 48 | 2 |
-| 2 | Observability / LLM telemetry | OpenTelemetry GenAI conventions, Langfuse | Ahead | **Ahead, with items outstanding** | 31 | 1 |
+| 2 | Observability / LLM telemetry | OpenTelemetry GenAI conventions, Langfuse | Ahead | **Ahead, with items outstanding** | 32 | 1 |
 | 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | 117 | 9 |
 | 4 | Security ops / threat analysis | TheHive Cortex, MISP, OpenCTI | Behind | **Gap** | 153 | 1 |
 | 5 | RAG & knowledge graph | LlamaIndex, Haystack, Microsoft GraphRAG | Parity | **Parity, with named work** | 61 | 4 |
@@ -97,7 +97,7 @@ Measured: **48 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `a
 
 **ICDEV today.** Already OTel-GenAI-native. tools/observability/ carries a dedicated genai_attributes.py and otel_tracer.py, and tools/llm/router.py — the path effectively all routed calls take — emits gen_ai.* spans.
 
-Measured: **31 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/observability/`.
+Measured: **32 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/observability/`.
 
 **Verdict.** Ahead, with items outstanding; position **Ahead** — ICDEV leads and there is still something worth taking.
 
