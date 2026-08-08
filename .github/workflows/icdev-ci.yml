@@ -105,6 +105,15 @@ jobs:
         # for installed users -- which is exactly what shipped in #960. Off the
         # gate the drift is invisible; on it, the fix is one prebuild run.
         # ~13s, pure Python, no DB/LLM/network.
+        #
+        # test_innovation_kanban_promoter.py earns a slot because it is the only
+        # thing standing between KANBAN_PROMOTE_ENABLED and an unbounded seeder.
+        # The promoter reads a table that has held 1,179 signals; the last time
+        # promotion ran without a cap it queued 266 approved CVEs and produced
+        # 353 branches. This seeds 20 findings into a real SQLite
+        # innovation_signals and asserts the run stops at 5 -- unstubbed, so a
+        # cap that regresses to a silent slice fails here rather than on the
+        # board. ~1.5s, pure Python, no DB service/LLM/network (xbm-promote-01).
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -190,6 +199,7 @@ jobs:
             tests/slides/test_blueprint.py \
             tests/integration/test_runtime_cli.py \
             tests/integration/test_dashboard_panels.py \
+            tests/innovation/test_innovation_kanban_promoter.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
