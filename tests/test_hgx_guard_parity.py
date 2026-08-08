@@ -15,6 +15,7 @@ hand-written list of cases, so the two paths cannot silently diverge:
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import pathlib
@@ -307,6 +308,41 @@ def test_child_apps_inherit_the_shared_checks_module():
 
     assert "tools/hooks" in DIRECTORY_TREE
     assert "tools/hooks" not in PARENT_ONLY_DIRS
+
+
+def _attr_chain(node) -> str:
+    """Dotted name of an attribute/name expression, e.g. ``os.getcwd``."""
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+@pytest.mark.parametrize("path", [SHARED_TOOLS, HOOK], ids=["shared", "hook"])
+def test_no_check_resolves_paths_from_cwd(path):
+    """Both guards run from worktrees, where cwd is the worktree root.
+
+    A check that resolved ``args/file_access_tiers.yaml`` or an exemption list
+    against cwd would silently apply the wrong rules — or none. Asserted against
+    the AST rather than the text because both modules *document* the hazard, so
+    a substring search would only ever match the explanation of the rule.
+    """
+    forbidden = {"os.getcwd", "os.curdir", "Path.cwd", "pathlib.Path.cwd"}
+    offenders = [
+        _attr_chain(node.func)
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Call) and _attr_chain(node.func) in forbidden
+    ]
+    assert not offenders, f"{path.name} resolves paths from {offenders}"
+
+
+def test_repo_root_resolves_from_file_not_cwd():
+    root = checks.repo_root()
+    assert (root / "tools" / "hooks" / "shared_checks.py").is_file()
+    assert root == ROOT
 
 
 def test_the_adapter_hook_fails_open_only_loudly():
