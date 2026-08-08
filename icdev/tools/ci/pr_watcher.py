@@ -24,6 +24,8 @@ CLI:
     python tools/ci/pr_watcher.py --once --dry-run --json
     python tools/ci/pr_watcher.py --daemon --interval 30
     python tools/ci/pr_watcher.py --once --task task-xyz
+    # Bounded run — one heartbeat, then exit (kax-obs-01):
+    python tools/ci/pr_watcher.py --daemon --interval 1 --max-iterations 1
 
 Non-goals:
     * GitLab / glab backend (deferred)
@@ -1159,6 +1161,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="Poll forever at --interval")
     ap.add_argument("--interval", type=int, default=30,
                     help="Seconds between polls in daemon mode")
+    ap.add_argument("--max-iterations", type=int, default=0,
+                    help="Stop after N daemon ticks (0 = forever). Makes the "
+                         "iteration= heartbeat observable in a bounded run.")
     ap.add_argument("--task", default=None,
                     help="Limit the poll to a single task id")
     ap.add_argument("--dry-run", action="store_true",
@@ -1177,7 +1182,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     watcher = PRWatcher(config=config, dry_run=args.dry_run)
 
     if args.daemon:
-        watcher.run_daemon(interval=args.interval)
+        watcher.run_daemon(
+            interval=args.interval, max_iterations=args.max_iterations
+        )
         return 0
 
     report = watcher.poll_once(task_id=args.task)
