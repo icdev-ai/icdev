@@ -373,6 +373,34 @@ CREATE TABLE IF NOT EXISTS supply_chain_risk_scores (
 CREATE INDEX IF NOT EXISTS idx_scrs_sbom_id      ON supply_chain_risk_scores(sbom_id);
 CREATE INDEX IF NOT EXISTS idx_scrs_last_assessed ON supply_chain_risk_scores(last_assessed);
 
+-- Component Dependency Relationship edges — the 2026 SBOM Minimum Elements
+-- graph (migration 20260808030213_sbom_2026_minimum_elements, sbx-fnd-02).
+-- Declared here as well as in the migration for the same reason migration 209's
+-- tables are: a NEW table is safe to declare in both places because both sides
+-- say CREATE TABLE IF NOT EXISTS, whichever runs first wins and the other is a
+-- no-op. The COLUMNS that same migration adds to sbom_records and
+-- sbom_components are deliberately NOT mirrored into their CREATE TABLE bodies
+-- above: those are ALTER TABLE ADD COLUMN, and SQLite has no IF NOT EXISTS
+-- clause for them, so declaring them here would make a fresh SQLite install
+-- create the column and then fail the migration on a duplicate-column error the
+-- runner's "already exists" guard does not match.
+CREATE TABLE IF NOT EXISTS sbom_dependencies (
+    id                  TEXT    PRIMARY KEY,
+    sbom_record_id      INTEGER NOT NULL REFERENCES sbom_records(id),
+    parent_component_id TEXT    NOT NULL REFERENCES sbom_components(id),
+    child_component_id  TEXT    NOT NULL REFERENCES sbom_components(id),
+    relationship_type   TEXT    NOT NULL DEFAULT 'depends_on',
+    scope               TEXT,
+    classification      TEXT    NOT NULL DEFAULT 'CUI',
+    tenant_id           TEXT,
+    created_at          TEXT    DEFAULT (datetime('now')),
+    UNIQUE (sbom_record_id, parent_component_id, child_component_id, relationship_type)
+);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_record ON sbom_dependencies(sbom_record_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_parent ON sbom_dependencies(parent_component_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_child  ON sbom_dependencies(child_component_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_tenant ON sbom_dependencies(tenant_id);
+
 -- ============================================================
 -- CODE REVIEW GATES
 -- ============================================================

@@ -2333,19 +2333,82 @@ CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
 CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON rag_provenance_ledger(chunk_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON rag_provenance_ledger(event_type);
 
--- SBOM component registry and supply chain risk tables (migration 209)
-CREATE TABLE IF NOT EXISTS sbom_components (
-    id              TEXT    PRIMARY KEY,
-    component_name  TEXT    NOT NULL,
-    version         TEXT,
-    vendor          TEXT,
-    component_type  TEXT,
-    purl            TEXT,
-    license         TEXT,
-    classification  TEXT    NOT NULL DEFAULT 'CUI',
-    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+-- SBOM document records (init_icdev_db.py) + the 2026 Minimum Elements columns
+-- added by migration 20260808030213_sbom_2026_minimum_elements (sbx-fnd-02).
+-- Shape parity with that migration is asserted by
+-- tests/test_sbom_2026_schema.py::test_conftest_schema_matches_migrated_schema —
+-- if you edit either side, that test tells you the other drifted.
+CREATE TABLE IF NOT EXISTS sbom_records (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id          TEXT    NOT NULL,
+    version             TEXT    NOT NULL,
+    format              TEXT    NOT NULL DEFAULT 'cyclonedx',
+    file_path           TEXT    NOT NULL,
+    component_count     INTEGER,
+    vulnerability_count INTEGER,
+    generated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sbom_author         TEXT,
+    author_signature    TEXT,
+    signature_algorithm TEXT,
+    data_format_name    TEXT,
+    data_format_version TEXT,
+    generation_context  TEXT,
+    tool_name           TEXT,
+    tool_version        TEXT,
+    sbom_version        TEXT,
+    serial_number       TEXT,
+    supersedes_sbom_id  INTEGER REFERENCES sbom_records(id),
+    classification      TEXT    NOT NULL DEFAULT 'CUI',
+    tenant_id           TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_project    ON sbom_records(project_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_serial     ON sbom_records(serial_number);
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_supersedes ON sbom_records(supersedes_sbom_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_tenant     ON sbom_records(tenant_id);
+
+-- SBOM component registry and supply chain risk tables (migration 209),
+-- extended by 20260808030213 with the 2026 component-level elements.
+CREATE TABLE IF NOT EXISTS sbom_components (
+    id                   TEXT    PRIMARY KEY,
+    component_name       TEXT    NOT NULL,
+    version              TEXT,
+    vendor               TEXT,
+    component_type       TEXT,
+    purl                 TEXT,
+    license              TEXT,
+    classification       TEXT    NOT NULL DEFAULT 'CUI',
+    created_at           TEXT    DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT    DEFAULT CURRENT_TIMESTAMP,
+    producer             TEXT,
+    hash_value           TEXT,
+    hash_algorithm       TEXT,
+    identifiers_json     TEXT    NOT NULL DEFAULT '{}',
+    unknown_fields_json  TEXT    NOT NULL DEFAULT '{}',
+    withheld_fields_json TEXT    NOT NULL DEFAULT '{}',
+    tenant_id            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sbom_comp_producer ON sbom_components(producer);
+CREATE INDEX IF NOT EXISTS idx_sbom_comp_hash     ON sbom_components(hash_value);
+CREATE INDEX IF NOT EXISTS idx_sbom_comp_tenant   ON sbom_components(tenant_id);
+
+-- Component Dependency Relationship edges (migration 20260808030213).
+CREATE TABLE IF NOT EXISTS sbom_dependencies (
+    id                  TEXT    PRIMARY KEY,
+    sbom_record_id      INTEGER NOT NULL REFERENCES sbom_records(id),
+    parent_component_id TEXT    NOT NULL REFERENCES sbom_components(id),
+    child_component_id  TEXT    NOT NULL REFERENCES sbom_components(id),
+    relationship_type   TEXT    NOT NULL DEFAULT 'depends_on',
+    scope               TEXT,
+    classification      TEXT    NOT NULL DEFAULT 'CUI',
+    tenant_id           TEXT,
+    created_at          TEXT    DEFAULT (datetime('now')),
+    UNIQUE (sbom_record_id, parent_component_id, child_component_id, relationship_type)
+);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_record ON sbom_dependencies(sbom_record_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_parent ON sbom_dependencies(parent_component_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_child  ON sbom_dependencies(child_component_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_dep_tenant ON sbom_dependencies(tenant_id);
+
 CREATE TABLE IF NOT EXISTS supply_chain_vulnerabilities (
     id                TEXT    PRIMARY KEY,
     sbom_id           TEXT    NOT NULL REFERENCES sbom_components(id),

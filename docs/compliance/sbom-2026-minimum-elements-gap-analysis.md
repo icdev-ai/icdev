@@ -115,11 +115,48 @@ copy, the two copies stay byte-identical, and no ACE role card cites a non-exist
 
 ### 2.2 Storage
 
+Baseline as analysed:
+
 - `sbom_records` — `project_id, version, format, file_path, component_count,
   vulnerability_count, generated_at` (`tools/db/init_icdev_db.py`, `tools/saas/db/pg_schema.py`).
 - `sbom_components` (migration 209) — `component_name, version, vendor, component_type, purl,
   license, classification`. **The generator never writes to this table**, so the existing
   `license` and `vendor` columns are dead.
+
+**Resolved by sbx-fnd-02** — migration
+`tools/db/migrations/20260808030213_sbom_2026_minimum_elements`, dual-engine
+(`@sqlite-only` / `@pg-only`), applied and round-trip verified on both backends:
+
+- `sbom_records` gains the nine SBOM Metadata fields plus the signature pair and the
+  supersedes link: `sbom_author`, `author_signature`, `signature_algorithm`,
+  `data_format_name`, `data_format_version`, `generation_context`, `tool_name`,
+  `tool_version`, `sbom_version`, `serial_number`, `supersedes_sbom_id`.
+- `sbom_components` gains `producer`, `hash_value`, `hash_algorithm`, `identifiers_json`,
+  `unknown_fields_json`, `withheld_fields_json`. The dead `license` and `vendor` columns
+  are **reused** — `license` is the 2026 Component License element — not duplicated.
+- `sbom_dependencies` is new: the Component Dependency Relationship element as an edge
+  table (`sbom_record_id`, `parent_component_id`, `child_component_id`,
+  `relationship_type`, `scope`) rather than a parent-ref column, because a component has
+  many parents inside one document. Edges are scoped by document, since the same
+  component row sits at different points of the graph in two different SBOMs.
+  `relationship_type` carries no CHECK vocabulary — that is sbx-cov-02's to define, and
+  it has to cover both CycloneDX `dependsOn` and SPDX `RELATIONSHIP` kinds.
+- **RLS:** `sbom_records` had neither `classification` nor `tenant_id`, so every query
+  from a request context would have raised `UndefinedColumn` once the table was read
+  through `get_connection()` — the trap migrations 305/309/311/326 each documented. Both
+  columns are now ensured on `sbom_records` and `sbom_components`, and declared on
+  `sbom_dependencies`, with 326's defaults: `classification NOT NULL DEFAULT 'CUI'`,
+  `tenant_id` nullable.
+- **Not covered:** `tools/saas/db/pg_schema.py` still declares the pre-2026
+  `sbom_records` shape for tenant/platform databases. Extending it is deliberately
+  deferred — `migrate.py --up --all-tenants` would then apply this migration's `ALTER`
+  to a tenant database that already had the columns, and SQLite has no
+  `ADD COLUMN IF NOT EXISTS`. Sequence it with sbx-gov-02, which is where multi-tenant
+  SBOM retrieval lands.
+
+Shape is pinned by `tests/test_sbom_2026_schema.py`, which applies the real migration to
+a pre-migration database and round-trips a value through every new column, and asserts
+`MINIMAL_ICDEV_SCHEMA` in `tests/conftest.py` declares the identical column set.
 
 ### 2.3 Signing
 
