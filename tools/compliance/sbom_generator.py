@@ -28,6 +28,12 @@ import json
 import re
 import sys
 import uuid
+from tools.compliance.component_producer import (
+    ProducerContext,
+    apply_producer_to_cyclonedx,
+    producer_properties,
+    resolve_project_producer,
+)
 from tools.compliance.dependency_resolver import (
     COVERAGE_COMPLETE,
     COVERAGE_INCOMPLETE,
@@ -852,7 +858,13 @@ def _build_coverage_blocks(coverage, cdx_components, target_bom_ref):
 
 
 def _build_cyclonedx_sbom(
-    project, components, serial_number=None, spec_version=None, schema=None, coverage=None
+    project,
+    components,
+    serial_number=None,
+    spec_version=None,
+    schema=None,
+    coverage=None,
+    python_env=None,
 ):
     """Build a CycloneDX JSON SBOM document."""
     now = datetime.now(timezone.utc)
@@ -875,6 +887,12 @@ def _build_cyclonedx_sbom(
         seen_identities.add(identity)
         unique_components.append(comp)
 
+    # Component Producer (2026 minimum elements). One context for the whole
+    # document so the Python environment is indexed once and each package's
+    # metadata is read once, however many instances of it the tree contains.
+    project_dir = project.get("directory_path") or None
+    producers = ProducerContext(project_dir=project_dir, python_env=python_env)
+
     # Build CycloneDX components array
     cdx_components = []
     for comp in unique_components:
@@ -890,10 +908,32 @@ def _build_cyclonedx_sbom(
             cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
+
+        # Component Producer — the entity that creates, defines and identifies
+        # the component. Never taken from `group`, which is a namespace. Always
+        # stated: a component with no identifiable producer carries the explicit
+        # unknown-provenance marker instead, because the standard says silence
+        # is not acceptable.
+        producer = producers.resolve(comp)
+        apply_producer_to_cyclonedx(cdx_comp, producer, active_spec_version)
+        cdx_comp.setdefault("properties", []).extend(producer_properties(producer))
+
         # Private marker, stripped before serialization — records whether this
         # instance came from a resolved set or from a declared manifest.
         cdx_comp["_declared"] = comp.get("resolution") == RESOLUTION_DECLARED
         cdx_components.append(cdx_comp)
+
+    # The target component is a component too, so the element applies to it —
+    # and unlike its dependencies, the operator can simply state the answer.
+    target_producer = resolve_project_producer(project, project_dir=project_dir)
+    target_component = {
+        "type": "application",
+        "bom-ref": f"icdev-{project.get('id', 'unknown')}",
+        "name": project.get("name", "Unknown"),
+        "version": "0.0.0",
+        "properties": producer_properties(target_producer),
+    }
+    apply_producer_to_cyclonedx(target_component, target_producer, active_spec_version)
 
     sbom = {
         "$schema": active_schema,
@@ -910,12 +950,7 @@ def _build_cyclonedx_sbom(
                     "version": "1.0.0",
                 }
             ],
-            "component": {
-                "type": "application",
-                "bom-ref": f"icdev-{project.get('id', 'unknown')}",
-                "name": project.get("name", "Unknown"),
-                "version": "0.0.0",
-            },
+            "component": target_component,
             "properties": [
                 {
                     "name": "icdev:classification",
@@ -1025,6 +1060,7 @@ def generate_sbom(
             spec_version=active_spec_version,
             schema=active_schema,
             coverage=coverage,
+            python_env=python_env,
         )
 
         # Determine output path

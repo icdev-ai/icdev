@@ -1216,3 +1216,56 @@ against silently running untrusted-bundle parsing in-process.
   (`pickle`, `yaml.load`), or shells out over the observable — it must be
   declared `sandboxed` and this table updated; or if `dispatch()` ever accepts
   a module path or callable from a caller rather than from the contract file.
+
+### Gap 49 — SBOM Component Producer resolution (`tools/compliance/component_producer.py`)
+
+**Module:** `tools/compliance/component_producer.py` (sbx-fld-02), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Third-party package metadata, read straight off the target
+project's disk — `*.dist-info/METADATA` under a virtualenv's `site-packages`,
+`node_modules/**/package.json`, `.pom` files in a Maven local repository,
+`Cargo.toml` in a vendor directory or the Cargo registry source cache, and
+`.nuspec` files in a NuGet packages folder. Every one of those files is written
+by whoever published the dependency, so all of it is untrusted by construction —
+that is the point of inventorying it. `--validate` additionally reads a
+CycloneDX JSON SBOM from an operator-supplied path, which may have come from
+another vendor's tool.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module reads and never runs. Its total contact with
+  untrusted content is `Path.read_text`, `json.loads`, `tomllib.loads`,
+  `importlib.metadata.PathDistribution` (which parses `METADATA` as text —
+  nothing from the target environment is imported), a handful of anchored
+  regexes, and string normalization. There is no `exec`/`eval`/`compile`, no
+  `subprocess`, no `pickle`, no `yaml.load`, no SQL, and no network call of any
+  kind: resolution is offline-first for the same reason `dependency_resolver`
+  is, so it behaves identically in an air-gapped enclave. A hostile author
+  string is normalized into a name or rejected as a placeholder; it is never
+  interpreted.
+- **Guardrails:**
+  - POM and `.nuspec` are read with regexes rather than an XML parser
+    *deliberately*. Every stdlib XML parser is exposed to entity-expansion and
+    external-entity attacks against exactly this kind of third-party packaging
+    metadata; a regex is not. `_parse_pom_xml` in `sbom_generator.py` made the
+    same call for the same reason.
+  - Every file path is composed from the component's own coordinates under a
+    caller-supplied root. The npm install path taken from a lockfile key is
+    rejected if it contains a `..` segment, so a malicious `package-lock.json`
+    cannot walk out of `node_modules`.
+  - `_resolve_uncached` wraps each ecosystem resolver: a malformed manifest
+    becomes unknown provenance with the exception type as its reason, never an
+    aborted SBOM and never a silently absent element.
+  - `yaml.safe_load` is used once, on ICDEV's own
+    `args/sbom_producer_registry.yaml`, and a missing or corrupt registry
+    degrades to an empty one — which marks components unknown rather than
+    naming an organization that was never established.
+  - The producer is only ever *emitted*, never dispatched on. It reaches SQL
+    solely through `producer_db_value()` as a bound parameter.
+  - `tests/test_sbom_component_producer.py` pins the no-execution posture over
+    both the root and the `icdev/` mirror, and exercises the placeholder,
+    namespace-echo and missing-metadata paths directly.
+- **Revisit if:** the module gains registry lookups over the network (a real
+  crates.io owner query or a PyPI JSON API call) — that is a different posture
+  and a different threat model — or if it starts reading *artifacts* rather than
+  metadata, which is sbx-fld-03's territory.

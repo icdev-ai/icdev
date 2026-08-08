@@ -286,6 +286,68 @@ recorded there as `RESOLUTION_BUDGET_SECONDS`.
 **Still open:** emitting the CycloneDX `dependencies` array from the edges the resolver now
 collects is **sbx-cov-02**; artifact hashes, which resolution unlocks, are **sbx-fld-03**.
 
+### 2.8 Component Producer (sbx-fld-02)
+
+`tools/compliance/component_producer.py` (mirrored at `icdev/tools/compliance/`) resolves the
+2026 **Component Producer** element for every component the generator emits. The element replaced
+*Supplier Name* because "supplier" was ambiguous about distributors, so ICDEV states the entity
+that **creates, defines and identifies** the component — exactly one organization each.
+
+**Evidence first, registry second, explicit unknown last.** Per ecosystem:
+
+| Ecosystem | Evidence, in precedence order |
+|---|---|
+| python | `*.dist-info`/`*.egg-info` `METADATA`: `Author` → `Maintainer` → the domain of `Author-email`/`Maintainer-email` through the registry |
+| npm | the installed package's own `package.json`: `author` → `maintainers[0]` → `contributors[0]`, then the author e-mail domain |
+| maven / gradle | the artifact's POM in the local repository: `<organization><name>` → a `<developers>` organization → the groupId read as reverse-DNS through the registry |
+| golang | the module host path through the registry; a bare forge host is explicitly **not** a producer |
+| cargo | the crate's `Cargo.toml` `[package] authors`, from a vendor directory or the Cargo registry source cache |
+| nuget | the package's `.nuspec` `<authors>`, from the project's `packages/` directory or the global packages folder |
+
+Four properties of the design matter more than the table:
+
+1. **`group` is never the answer.** `org.apache.commons` is a Maven coordinate and `@types` is an
+   npm scope; neither names an organization. No resolver reads `group` as a candidate, and
+   `_reject_namespace_echo` drops a candidate that turns out to echo the component's own
+   namespace — which is what `authors = ["com.acme"]` amounts to. `args/sbom_producer_registry.yaml`
+   is what *maps* a namespace to an organization, and it maps only where the mapping is
+   unambiguous.
+2. **Offline-first, like sbx-cov-01.** "PyPI maintainer" and "crates.io owner" are registry-side
+   facts, and querying a registry is exactly what an air-gapped build cannot do. The offline
+   stand-in is the same fact obtained from the artifact: crates.io renders the crate's `authors`,
+   PyPI renders the distribution's `Author`. Nothing shells out and nothing goes to the network.
+3. **Unknown provenance is stated, never implied.** The standard says that where there is no clear
+   indication the author *must* explicitly mark the component as being of unknown provenance.
+   Every component therefore carries `icdev:component-producer` (a name, or the literal `unknown`),
+   `icdev:component-provenance` (`known`/`unknown`) and, when unknown, a machine-readable
+   `icdev:component-producer-unknown-reason` — `forge-host-is-not-a-producer`,
+   `package-metadata-names-no-producer`, `namespace-maps-to-no-known-organization` and so on. There
+   is no third outcome in which the element is simply absent. This is the *unknown* half of the
+   convention sbx-prc-01 owns; ICDEV withholds nothing about a producer, so the *withheld* half
+   does not arise here.
+4. **The native CycloneDX field depends on the spec version.** CycloneDX only grew a field meaning
+   "the organization that created the component" in 1.6 — `component.manufacturer`. Below that the
+   nearest expressible field is `component.supplier`, whose ambiguity is the very thing the 2026
+   standard set out to remove. So 1.6/1.7 get `manufacturer`, 1.4/1.5 get `supplier`, and the
+   authoritative statement always travels in the `icdev:component-producer*` properties, which
+   every supported version can carry.
+
+The document's own target component is a component too, so it carries the element as well;
+`ICDEV_SBOM_PRODUCER` names your organization and outranks the project manifest, because a legal
+name is rarely what `pyproject.toml` says.
+
+`validate_sbom_producers()` is the acceptance criterion in executable form — it fails a document
+with a silent component, an unknown with no reason, or a producer equal to the component's `group`
+— and is reachable as `component_producer.py --validate <sbom.cdx.json>`. sbx-sig-02's conformance
+validator can call it as-is. Per-ecosystem tests live in `tests/test_sbom_component_producer.py`.
+
+**Still open:** persisting the producer to `sbom_components.producer` (the column sbx-fnd-02 added)
+waits on the `_persist_components` writer that sbx-fld-04 introduces — this task exports
+`producer_db_value()`, which never returns `NULL`, for that writer to call in one line. Adding a
+second writer here would only collide with it.
+
+---
+
 ---
 
 ## 3. Conformance matrix
@@ -311,7 +373,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 
 | Element | Status | Evidence / what is missing |
 |---|---|---|
-| Component Producer | **GAP** | No supplier/producer emitted at all. `group` is a Maven/npm namespace, not a producer. No unknown-provenance fallback. |
+| Component Producer | **MET (sbx-fld-02)** | `tools/compliance/component_producer.py` resolves the producing organization per ecosystem from the package's own metadata, maps a Go host path or a reverse-DNS groupId through `args/sbom_producer_registry.yaml`, and marks anything left over as being of unknown provenance. `group` is never a candidate. See §2.8. |
 | Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
 | Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
 | Component Hash Algorithm | **GAP** | Consequent to the above. |
@@ -332,9 +394,13 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
-**Score: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool Name,
-Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7 practices
-fully met.**
+**Baseline score, as analysed before any `sbx` task landed: 3 of 17 data-field elements fully
+met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — counting strictly, 2
+fully met plus 7 partial), **0 of 7 practices fully met.**
+
+**Current: 4 of 17 data-field elements** — Component Producer joined them with sbx-fld-02 — **and
+1 of 7 practices**, Coverage, with sbx-cov-01. The matrix rows above are kept current as each task
+lands, so they, not this paragraph, are the authoritative statement.
 
 ---
 
