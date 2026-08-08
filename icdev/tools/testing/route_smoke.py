@@ -48,9 +48,13 @@ API_ENDPOINTS: List[Dict[str, object]] = [
     {"route": "/api/kanban/tasks?status=backlog", "expect_json": True},
     {"route": "/api/code-quality/summary",        "expect_json": True},
     {"route": "/api/code-quality/log-health",     "expect_json": True},
-    {"route": "/api/iqe-query",                   "expect_json": False,  "skip_404": True},
-    {"route": "/api/proposals",                   "expect_json": True},
-    {"route": "/api/govcon/opportunities",        "expect_json": True},
+    # /api/iqe-query is POST-only, so a GET probe answers 405 Method Not Allowed.
+    # A 405 still proves the route is registered and the blueprint imported.
+    {"route": "/api/iqe-query",                   "expect_json": False,  "skip_404": True, "skip_405": True},
+    # Collection routes live under their blueprint's url_prefix — there is no
+    # bare GET /api/proposals or GET /api/govcon/opportunities.
+    {"route": "/api/proposals/opportunities",     "expect_json": True},
+    {"route": "/api/govcon/sam/opportunities",    "expect_json": True},
     {"route": "/api/projects",                    "expect_json": True},
     {"route": "/api/agents",                      "expect_json": True},
     {"route": "/health",                          "expect_json": False},
@@ -233,12 +237,19 @@ def _smoke_api_endpoint(
     route = str(endpoint["route"])
     expect_json = bool(endpoint.get("expect_json", True))
     skip_404 = bool(endpoint.get("skip_404", False))
+    skip_405 = bool(endpoint.get("skip_405", False))
 
     result = _smoke_route(base, route, timeout=timeout)
     result["is_api"] = True
 
     # A 404 on an optional endpoint is acceptable
     if result["status"] == 404 and skip_404:
+        result["ok"] = True
+        result["error"] = None
+        return result
+
+    # A 405 on a POST-only endpoint still proves the route is registered
+    if result["status"] == 405 and skip_405:
         result["ok"] = True
         result["error"] = None
         return result
@@ -252,7 +263,10 @@ def _smoke_api_endpoint(
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-APISmoker/1.0"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read(65536).decode("utf-8", errors="replace")
+                # Read the FULL body — a truncated read splits a large but valid
+                # JSON document mid-string and json.loads reports a bogus
+                # "Unterminated string" failure (/api/kanban/tasks is ~580KB).
+                body = resp.read().decode("utf-8", errors="replace")
             _json.loads(body)  # raises ValueError if not JSON
         except (ValueError, Exception) as e:
             result["ok"] = False
