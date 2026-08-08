@@ -23,6 +23,10 @@ from tools.observability import invocation_recorder as R
 
 _KANBAN_SRC = (Path(__file__).resolve().parent.parent
                / "tools" / "genesis" / "reflexes" / "kanban.py")
+# hgx-exec-03 moved the shellout itself into the adapter; the runner still owns
+# the process handle and the instrumentation around it.
+_ADAPTER_SRC = (Path(__file__).resolve().parent.parent
+                / "tools" / "agents" / "adapters" / "claude_cli.py")
 
 
 @pytest.fixture()
@@ -119,13 +123,45 @@ def test_dispatch_path_does_not_route_through_execute_agent():
     If this ever becomes False the runner has changed shape, and instrumenting
     `execute_agent` might become correct — but until then, instrumenting it is
     instrumenting a function this file never calls.
+
+    Since hgx-exec-03 the Popen lives one call away, in the claude_cli adapter,
+    so that exactly one implementation of the shellout exists. The invariant is
+    unchanged: the runner spawns and owns a process, and that is where the
+    agent surface has to be instrumented.
     """
     src = _kanban_src()
-    assert "subprocess.Popen(" in src, "runner no longer spawns its own process"
+    adapter_src = _ADAPTER_SRC.read_text(encoding="utf-8", errors="replace")
+    assert "subprocess.Popen(" in adapter_src, (
+        "the claude_cli adapter no longer spawns a process"
+    )
+    assert ".spawn(" in src, (
+        "runner no longer spawns its own process — it neither calls Popen nor "
+        "the adapter's spawn()"
+    )
     assert "execute_agent(" not in src, (
         "kanban.py now calls execute_agent — re-check whether the agent surface "
-        "should be instrumented there instead of at the Popen site"
+        "should be instrumented there instead of at the spawn site"
     )
+
+
+def test_exactly_one_claude_cli_shellout_implementation():
+    """hgx-exec-03's core claim, pinned.
+
+    Two independent implementations of `claude --dangerously-skip-permissions`
+    drifted for months and only one of them carried the Windows command-line
+    workaround, the stop-hook env tags and the model override. The runner must
+    not grow a second one back.
+    """
+    src = _kanban_src()
+    # The quoted form is an argv element; kanban's module docstring still
+    # mentions the flag in prose, which is fine.
+    assert '"--dangerously-skip-permissions"' not in src, (
+        "kanban.py builds a claude command line again — the argv belongs to "
+        "tools/agents/adapters/claude_cli.py, which is the one place that "
+        "knows the hardening"
+    )
+    adapter_src = _ADAPTER_SRC.read_text(encoding="utf-8", errors="replace")
+    assert adapter_src.count('"--dangerously-skip-permissions"') == 1
 
 
 def test_claude_cli_dispatch_opens_an_agent_invocation():
