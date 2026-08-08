@@ -15,6 +15,11 @@ import json
 import re
 import sys
 import uuid
+from tools.compliance.component_hasher import (
+    component_hash,
+    cyclonedx_hashes,
+    hash_properties,
+)
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -298,6 +303,10 @@ def _parse_package_lock_json(file_path):
                     "scope": "required" if not pkg_info.get("dev") else "optional",
                     "group": group,
                     "source": str(file_path),
+                    # Subresource Integrity over the published tarball — a digest of the
+                    # artifact itself, so it is usable as the Component Hash Value when
+                    # the artifact is not on disk to recompute from.
+                    "declared_digest": pkg_info.get("integrity"),
                 }
             )
     else:
@@ -325,6 +334,7 @@ def _parse_package_lock_json(file_path):
                     "scope": "required" if not dep_info.get("dev") else "optional",
                     "group": group,
                     "source": str(file_path),
+                    "declared_digest": dep_info.get("integrity"),
                 }
             )
 
@@ -739,6 +749,17 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
             cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
+
+        # Component Hash Value + Component Hash Algorithm (2026 minimum elements).
+        # Always emitted: a real digest when an artifact or a trustworthy declared
+        # digest is available, otherwise an explicit unknown marker with a reason.
+        # The field is never omitted.
+        hash_result = component_hash(comp)
+        native_hashes = cyclonedx_hashes(hash_result)
+        if native_hashes:
+            cdx_comp["hashes"] = native_hashes
+        cdx_comp.setdefault("properties", []).extend(hash_properties(hash_result))
+
         cdx_components.append(cdx_comp)
 
     sbom = {

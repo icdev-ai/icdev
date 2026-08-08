@@ -217,8 +217,8 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 |---|---|---|
 | Component Producer | **GAP** | No supplier/producer emitted at all. `group` is a Maven/npm namespace, not a producer. No unknown-provenance fallback. |
 | Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
-| Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
-| Component Hash Algorithm | **GAP** | Consequent to the above. |
+| Component Hash Value | **MET** | **Resolved by sbx-fld-03.** Always emitted, never omitted — `icdev:component-hash-value` carries a lowercase ASCII hex digest or the literal `unknown` plus `icdev:component-hash-unknown-reason`. A known digest also lands in the native CycloneDX `hashes` array. Resolution order is: recompute from `component["artifact_path"]` when one is present, else accept a trustworthy declared digest, else unknown. npm resolves to real `sha-512` digests today from `package-lock.json` `integrity`; every other ecosystem resolves to `unknown` / `artifact-not-located` until **sbx-cov-01** starts populating artifact paths, at which point recomputation takes over with no further change. |
+| Component Hash Algorithm | **MET** | **Resolved by sbx-fld-03.** `icdev:component-hash-algorithm` carries an IANA Hash Function Textual Name (lowercase, hyphenated — `sha-256`, never `SHA256`) or `unknown`. `tools/compliance/component_hasher.py` holds the registry set and the NIST-approved subset; `md2`/`md5`/`sha-1` are registry members that are rejected as not-approved. Default and only computed algorithm is `sha-256`. CycloneDX's own `hashes[].alg` vocabulary is not the IANA one and is mapped explicitly (`sha-224` has no CycloneDX spelling, so it travels in the properties only). |
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
 | Component License | **GAP** | Not emitted, though `sbom_components.license` already exists in schema. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
@@ -236,9 +236,9 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
-**Score: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool Name,
-Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7 practices
-fully met.**
+**Score: 4 of 17 data-field elements fully met** — SBOM Data Format Name and SBOM Tool Name
+(metadata), Component Hash Value and Component Hash Algorithm (component data, sbx-fld-03) —
+plus **7 partial**, and **0 of 7 practices fully met.**
 
 ---
 

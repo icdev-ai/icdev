@@ -1185,3 +1185,19 @@ against silently running untrusted-bundle parsing in-process.
   (`pickle`, `yaml.load`), or shells out over the observable — it must be
   declared `sandboxed` and this table updated; or if `dispatch()` ever accepts
   a module path or callable from a caller rather than from the contract file.
+
+### Gap 49 — SBOM component hashing (`tools/compliance/component_hasher.py`)
+
+**Module:** `tools/compliance/component_hasher.py` (sbx-fld-03), imported by `tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two, both third-party by construction. (1) The **bytes of an executable component artifact** — a wheel, sdist, tarball, crate or jar downloaded from a public registry — read whole off disk from `component["artifact_path"]`. (2) A **digest string declared by a dependency manifest** — `package-lock.json` `integrity` today, other lockfiles as sbx-cov-01 resolves them — which is attacker-controlled if a registry account or a lockfile is.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither ingress reaches an execution or deserialization path. Artifact bytes are opened `"rb"` and fed to `hashlib` in fixed 1 MiB chunks; the file is never unpacked, never parsed, never imported, and its name is never used to select code. There is no `exec`/`eval`/`subprocess`/`os.system`/`pickle`/`yaml.load` in the module, and no native parser beyond `base64.b64decode(validate=True)` and `bytes.fromhex`. A declared digest is consumed as a string: it is split on one separator, its algorithm is looked up in a closed set, and its payload is length-checked against that algorithm — an unrecognized spelling is *reported*, never dispatched on.
+- **Guardrails:**
+  - `hash_artifact()` cannot be steered onto a weak primitive: an algorithm outside the NIST-approved subset raises `ValueError` before any file is opened, and the only computed default is `sha-256`. `md5`/`sha-1` are recognized solely so a declared digest naming them is rejected as not-approved.
+  - Artifact inaccessibility is a **documented outcome, not an error**: a missing path, a directory, or an `OSError` returns the explicit unknown marker with a machine-readable reason. The module raises on no input a caller can supply, so a hostile or absent artifact cannot abort SBOM generation.
+  - The algorithm is never inferred from digest length — a bare hex string with no label is `declared-digest-malformed`. This is what stops a `go.sum` `h1:` dirhash (which is *not* a digest of the module artifact) from being laundered into the document as `sha-256`.
+  - A declared digest whose decoded length disagrees with its claimed algorithm is rejected rather than emitted.
+  - `tests/test_sbom_component_hash.py` pins the artifact-inaccessible paths (missing, directory, `PermissionError`), the rejection set, and the guarantee that every component in a generated SBOM carries both fields.
+- **Revisit if:** the module gains an unpack/extract step to reach a nested artifact (a wheel's `RECORD`, a jar's manifest) — that parser is a new ingress and needs its own decision; or if artifact fetching moves in-module, which would add an outbound-network ingress this decision does not cover.
