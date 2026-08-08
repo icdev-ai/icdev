@@ -107,6 +107,31 @@ def _resolve(root: Path, rel: str) -> Path:
     return target
 
 
+# Text I/O below deliberately goes through open(..., newline="") rather than
+# Path.read_text/write_text.
+#
+# `newline=""` disables universal-newline translation in BOTH directions, so a
+# file keeps the endings it already had and the agent sees exactly what is on
+# disk. Without it, on Windows, `write_text` turns every "\n" into "\r\n": the
+# agent patches one line and the ENTIRE file is rewritten, which shows up as a
+# whole-file `git diff`, floods the reviewer, and makes the pipeline grader's
+# changed-file signal meaningless. The same edit on Linux is a clean one-line
+# diff — so the executor's output depended on the host OS. CI is ubuntu-only,
+# so nothing caught it. See tests/genesis/test_rubric_build_tools.py.
+
+
+def _read_text(path: Path) -> str:
+    """Read text without translating line endings."""
+    with open(path, encoding="utf-8", errors="replace", newline="") as fh:
+        return fh.read()
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Write text without translating line endings."""
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
 def build_worktree_toolset(work_dir: str) -> Tuple[List[Dict[str, Any]], Dict[str, ToolHandler]]:
     """Return ``(tools, tool_handlers)`` for an agent building inside *work_dir*.
 
@@ -121,7 +146,7 @@ def build_worktree_toolset(work_dir: str) -> Tuple[List[Dict[str, Any]], Dict[st
             target = _resolve(root, str(inp.get("path", "")))
             if not target.is_file():
                 return f"error: file not found: {inp.get('path')}"
-            return target.read_text(encoding="utf-8", errors="replace")
+            return _read_text(target)
         except ValueError:
             return "error: path escapes the worktree root"
         except Exception as exc:  # noqa: BLE001 — surface to the agent, never crash the loop
@@ -146,7 +171,7 @@ def build_worktree_toolset(work_dir: str) -> Tuple[List[Dict[str, Any]], Dict[st
             if not isinstance(content, str):
                 return "error: 'content' must be a string"
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            _write_text(target, content)
             return f"Wrote {len(content)} chars to {inp.get('path')}"
         except ValueError:
             return "error: path escapes the worktree root"
@@ -162,13 +187,13 @@ def build_worktree_toolset(work_dir: str) -> Tuple[List[Dict[str, Any]], Dict[st
             target = _resolve(root, str(inp.get("path", "")))
             if not target.is_file():
                 return f"error: file not found: {inp.get('path')}"
-            text = target.read_text(encoding="utf-8")
+            text = _read_text(target)
             count = text.count(old)
             if count == 0:
                 return f"error: old_string not found in {inp.get('path')}"
             if count > 1:
                 return f"error: old_string appears {count} times — add surrounding context to make it unique"
-            target.write_text(text.replace(old, new, 1), encoding="utf-8")
+            _write_text(target, text.replace(old, new, 1))
             return f"Patched {inp.get('path')}"
         except ValueError:
             return "error: path escapes the worktree root"
