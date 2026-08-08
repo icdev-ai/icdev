@@ -171,7 +171,7 @@ def apply_to_file(file_path: Path) -> dict:
         return {"file": str(file_path.relative_to(BASE_DIR)), "status": "no_changes"}
 
     # Write back
-    file_path.write_text(content, encoding="utf-8")
+    file_path.write_text(content, encoding="utf-8", newline="")
     return {
         "file": str(file_path.relative_to(BASE_DIR)),
         "status": "modified",

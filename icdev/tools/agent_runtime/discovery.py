@@ -672,7 +672,7 @@ def write_cache(
         "version": 1,
         "tools": [spec.to_cache_entry() for spec in registry.values()],
     }
-    dest.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    dest.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8", newline="")
     return dest
 
 

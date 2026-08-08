@@ -306,5 +306,5 @@ document.addEventListener('DOMContentLoaded', function() {
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     slug = format(zlib.crc32(title.encode()) & 0xFFFFFFFF, "08x")
     out_path = out_dir / f"{ts}_{slug}.html"
-    out_path.write_text(html_doc, encoding="utf-8")
+    out_path.write_text(html_doc, encoding="utf-8", newline="")
     return str(out_path)

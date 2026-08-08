@@ -183,7 +183,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     report_dir = BASE_DIR / "data" / "review_board" / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     report_file = report_dir / f"digest-{now.strftime('%Y-%m-%d')}.md"
-    report_file.write_text(report_text, encoding="utf-8")
+    report_file.write_text(report_text, encoding="utf-8", newline="")
 
     return {
         "success": True,

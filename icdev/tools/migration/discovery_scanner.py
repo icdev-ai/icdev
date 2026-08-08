@@ -201,7 +201,7 @@ def run(project_id: str = "default") -> dict:
         # ── Generate Markdown report ──────────────────────────────────────────
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
         report_path = _ARTIFACTS_DIR / "01_discovery_report.md"
-        report_path.write_text(_generate_report(data), encoding="utf-8")
+        report_path.write_text(_generate_report(data), encoding="utf-8", newline="")
 
         # ── Persist to mc_assessments ─────────────────────────────────────────
         design_id = designs[0]["id"] if designs else "default"

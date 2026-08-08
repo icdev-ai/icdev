@@ -62,7 +62,7 @@ def _load_offset() -> int:
 
 def _save_offset(ms: int) -> None:
     _OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _OFFSET_FILE.write_text(str(ms), encoding="utf-8")
+    _OFFSET_FILE.write_text(str(ms), encoding="utf-8", newline="")
 
 
 def _reply(channel_id: str, text: str) -> None:

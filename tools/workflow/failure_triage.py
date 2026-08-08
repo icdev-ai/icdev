@@ -341,7 +341,7 @@ def mark_triaged(task_id: str, sig: str, outcome: Dict[str, Any]) -> None:
                 {"task_id": task_id, "sig": sig, "ts": _utcnow().isoformat(), "outcome": outcome},
                 indent=2,
             ),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.warning("failure_triage: mark_triaged failed for %s: %s", task_id, exc)
@@ -366,7 +366,7 @@ def _load_rate_log() -> List[float]:
 def _save_rate_log(ts_list: List[float]) -> None:
     try:
         RATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        RATE_FILE.write_text(json.dumps(ts_list), encoding="utf-8")
+        RATE_FILE.write_text(json.dumps(ts_list), encoding="utf-8", newline="")
     except Exception as exc:
         logger.warning("failure_triage: rate-log write failed: %s", exc)
 
@@ -829,7 +829,7 @@ def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
     try:
         AUDIT_DIR.mkdir(parents=True, exist_ok=True)
         (AUDIT_DIR / f"{task_id}__{sig}.json").write_text(
-            json.dumps(record, indent=2, default=str), encoding="utf-8",
+            json.dumps(record, indent=2, default=str), encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.warning("failure_triage: audit write failed: %s", exc)
@@ -1072,7 +1072,7 @@ def apply_patch_in_worktree(
             full = wt / path
             text = full.read_text(encoding="utf-8", errors="replace")
             new_text = text.replace(f["old_string"], f["new_string"], 1)
-            full.write_text(new_text, encoding="utf-8")
+            full.write_text(new_text, encoding="utf-8", newline="")
             applied_files.append(path)
     except Exception as exc:
         record["outcome"] = "edit_failed"

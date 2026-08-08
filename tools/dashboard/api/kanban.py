@@ -2010,7 +2010,7 @@ def _update_env_file(key: str, value: str) -> None:
             new_lines.append(line)
     if not found:
         new_lines.append(f"{key}={value}")
-    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8", newline="")
 
 
 @kanban_api.route("/settings/executor-chain", methods=["GET", "POST"])

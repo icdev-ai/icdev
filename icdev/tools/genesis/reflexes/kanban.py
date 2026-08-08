@@ -775,7 +775,7 @@ def _save_resume_at(task_id: str, resume_at: datetime):
     """Persist the resume-at timestamp for a token-exhausted task."""
     _ensure_prompt_dir()
     resume_file = PROMPT_DIR / f"{task_id}.resume_at"
-    resume_file.write_text(resume_at.isoformat(), encoding="utf-8")
+    resume_file.write_text(resume_at.isoformat(), encoding="utf-8", newline="")
 
 
 def _load_resume_at(task_id: str) -> Optional[datetime]:
@@ -830,7 +830,7 @@ def _increment_retry_count(task_id: str) -> int:
         except (ValueError, OSError):
             count = 0
     count += 1
-    retry_file.write_text(str(count), encoding="utf-8")
+    retry_file.write_text(str(count), encoding="utf-8", newline="")
     return count
 
 
@@ -863,7 +863,7 @@ def _increment_timeout_count(task_id: str) -> int:
         except (ValueError, OSError):
             count = 0
     count += 1
-    timeout_file.write_text(str(count), encoding="utf-8")
+    timeout_file.write_text(str(count), encoding="utf-8", newline="")
     return count
 
 
@@ -2888,7 +2888,7 @@ def _dispatch_via_tool_runner(task: dict, work_dir: str, task_log: Path) -> bool
             f"[tool-runner dispatch — task {task_id}]\n"
             f"[work_dir {work_dir}]\n"
             f"[{kind} {label}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
-            encoding="utf-8", errors="replace",
+            encoding="utf-8", errors="replace", newline="",
         )
     except Exception as exc:
         logger.debug("kanban: tool-runner log write failed for %s: %s", task_id, exc)
@@ -3805,7 +3805,7 @@ Execute this task as described above. When complete:
 """
 
     prompt_path = PROMPT_DIR / f"{task_id}.md"
-    prompt_path.write_text(prompt, encoding="utf-8")
+    prompt_path.write_text(prompt, encoding="utf-8", newline="")
     return str(prompt_path)
 
 
@@ -6491,7 +6491,7 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
                 },
                 indent=2,
             ),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.warning(

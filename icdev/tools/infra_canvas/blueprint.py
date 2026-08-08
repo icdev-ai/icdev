@@ -416,7 +416,7 @@ def emit_run():
                 if not blocks:
                     return jsonify({"error": "No terraform-emittable nodes found"}), 422
                 content = "\n\n".join(blocks)
-                (out_dir / "main.tf").write_text(content, encoding="utf-8")
+                (out_dir / "main.tf").write_text(content, encoding="utf-8", newline="")
                 file_names = ["main.tf"]
 
             elif target == "ansible":
@@ -429,7 +429,7 @@ def emit_run():
                 if not good:
                     return jsonify({"error": "No Ansible-compatible nodes found"}), 422
                 content = emit_playbook(good)
-                (out_dir / "playbook.yaml").write_text(content, encoding="utf-8")
+                (out_dir / "playbook.yaml").write_text(content, encoding="utf-8", newline="")
                 file_names = ["playbook.yaml"]
 
             elif target == "pulumi":
@@ -454,7 +454,7 @@ def emit_run():
                 header = "\n".join(line for line in [aws_import, az_import] if line)
                 body_text = "\n\n".join(blocks)
                 content = f"{header}\n\n{body_text}" if header else body_text
-                (out_dir / "index.ts").write_text(content, encoding="utf-8")
+                (out_dir / "index.ts").write_text(content, encoding="utf-8", newline="")
                 file_names = ["index.ts"]
 
             else:  # helm
@@ -474,7 +474,7 @@ def emit_run():
                 for fname, fcontent in files_map.items():
                     fpath = out_dir / fname
                     fpath.parent.mkdir(parents=True, exist_ok=True)
-                    fpath.write_text(fcontent, encoding="utf-8")
+                    fpath.write_text(fcontent, encoding="utf-8", newline="")
                     file_names.append(fname)
 
         except Exception as exc:

@@ -296,7 +296,7 @@ def sync_tools(dry_run: bool = False, clean: bool = False) -> list:
     # the dev repo. Written unconditionally (even under --clean, which
     # deletes icdev/tools/ before this function repopulates it).
     if not dry_run:
-        (PKG_TOOLS / "__init__.py").write_text(ICDEV_TOOLS_INIT, encoding="utf-8")
+        (PKG_TOOLS / "__init__.py").write_text(ICDEV_TOOLS_INIT, encoding="utf-8", newline="")
 
     results: list = []
     # Copy top-level files (manifest.md, helper .py files). __init__.py is
@@ -365,7 +365,7 @@ def sync_apps(dry_run: bool = False) -> list:
         pkg_apps.mkdir(parents=True, exist_ok=True)
         init = pkg_apps / "__init__.py"
         if not init.exists():
-            init.write_text("# CUI // SP-CTI\n")
+            init.write_text("# CUI // SP-CTI\n", newline="")
 
     for app_name in SAMPLE_APPS:
         src = src_root / app_name

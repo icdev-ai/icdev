@@ -79,7 +79,7 @@ def _write_package_files(pkg_root: Path, model_name: str, model_files_dir: Path)
         description = "Offline model weights for {model_name} (air-gap deployment)"
         requires-python = ">=3.10"
         """),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     # setup.cfg for package data inclusion
@@ -93,13 +93,13 @@ def _write_package_files(pkg_root: Path, model_name: str, model_files_dir: Path)
         [options.package_dir]
         = src
         """),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     # MANIFEST.in to include all model files
     (pkg_root / "MANIFEST.in").write_text(
         f"recursive-include src/{pkg_name}_weights/model *\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     # Package source directory
@@ -124,7 +124,7 @@ def _write_package_files(pkg_root: Path, model_name: str, model_files_dir: Path)
             pkg_files = files("{pkg_name}_weights")
             return str(pkg_files.joinpath("model"))
         """),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     # Write model metadata
@@ -134,7 +134,7 @@ def _write_package_files(pkg_root: Path, model_name: str, model_files_dir: Path)
         "version": version,
     }
     (src_dir / "model" / "icdev_package_metadata.json").write_text(
-        json.dumps(metadata, indent=2), encoding="utf-8"
+        json.dumps(metadata, indent=2), encoding="utf-8", newline=""
     )
 
 

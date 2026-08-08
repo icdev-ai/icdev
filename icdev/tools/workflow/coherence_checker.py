@@ -7993,7 +7993,7 @@ def _autofix_append_only(check: CoherenceCheck) -> List[str]:
         insert_point = existing_block.rstrip().rstrip("}")
         new_block = insert_point + "\n" + "\n".join(new_entries) + "\n}"
         content = content.replace(existing_block, new_block)
-        hook_path.write_text(content, encoding="utf-8")
+        hook_path.write_text(content, encoding="utf-8", newline="")
         fixes.append(f"Added {len(new_entries)} table(s) to APPEND_ONLY_TABLES: {', '.join(check.missing)}")
     return fixes
 

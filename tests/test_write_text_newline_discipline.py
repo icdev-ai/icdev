@@ -1,25 +1,32 @@
 # CUI // SP-CTI
-"""Generator modules must write LF, on every platform.
+"""Every `write_text` under tools/ must pass `newline=`.
 
 `Path.write_text()` performs universal-newline translation, so on Windows it
-turns every "\\n" into "\\r\\n". This repo is LF. A generator that writes without
-`newline=""` therefore emits CRLF files, and git reports the WHOLE file as
-changed the first time anyone edits one.
+turns every "\\n" into "\\r\\n". This repo is LF, so a call without `newline=""`
+emits CRLF and git reports the WHOLE file as changed the first time anyone
+edits it.
 
-This is not hypothetical — it cost three separate fixes on 2026-08-08:
+Not hypothetical — four fixes on 2026-08-08:
   * tools/genesis/rubric_build_tools.py — the owned build agent rewrote every
     file it patched, so one-line edits produced whole-file diffs (#1389).
   * tools/db/migration_runner.py — every scaffolded migration arrived CRLF
     (#1416).
-  * 192 calls across 61 generator modules — this gate's motivating sweep.
+  * 192 calls across 61 generator modules (#1417) — this gate's first scope.
+  * the remaining 695 calls across 434 modules — the uniformity sweep.
 
-None of it is reproducible on Linux, and all nine CI jobs are ubuntu-latest, so
-the platform the team develops on is never tested. A static gate is the only
-thing that catches it today.
+SCOPE. This started narrower: only "generators", on the reasoning that CRLF in
+output nobody commits is invisible. That reasoning does not survive contact.
+Whether a file's output is committed is not a property of the module — it is a
+property of where the caller points it, and it changes the moment someone reuses
+a helper. Two of the first three bugs were in modules nobody would have called
+generators. So the rule is uniform: every `write_text` in tools/ is explicit
+about newlines. On Linux that is a no-op; on Windows it is the difference
+between a one-line diff and a whole-file rewrite, and there is no case where a
+caller WANTS Python to guess.
 
-Scope is deliberately GENERATORS — modules whose output lands in a git
-repository. A `write_text` to a scratch file is not interesting; a `write_text`
-that produces a committed source file is.
+None of it reproduces on Linux, and all nine CI jobs are ubuntu-latest, so the
+platform the team develops on is never tested. Until hgx-port-02 adds a
+windows-latest tier, this static gate is what catches it.
 """
 import ast
 import pathlib
@@ -34,20 +41,23 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 ALLOWLIST: frozenset[str] = frozenset()
 
 
-def _is_generator(path: pathlib.Path) -> bool:
-    """A module whose output is intended to be committed."""
-    rel = path.relative_to(REPO_ROOT).as_posix()
-    # Normalise so the icdev/ mirror classifies the same as the root tree.
-    if "/tools/" in rel:
-        rel = "tools/" + rel.split("/tools/", 1)[1]
-    return (
-        rel.startswith("tools/builder/")
-        or rel.startswith("tools/dx/")
-        or path.name.endswith(
-            ("_generator.py", "_writer.py", "_assembler.py", "_organizer.py")
-        )
-        or path.name.startswith("scaffolder")
-    )
+def _in_scope(path: pathlib.Path) -> bool:
+    """Every module under tools/.
+
+    The gate started life scoped to generators — modules whose output is
+    committed — on the reasoning that CRLF elsewhere is invisible. That reasoning
+    does not survive contact: "is this file's output committed?" is not a
+    property of the module, it is a property of where the caller points it, and
+    it changes when someone reuses a helper. Two of the three CRLF bugs found on
+    2026-08-08 were in modules nobody would have called generators
+    (rubric_build_tools, migration_runner).
+
+    Uniform rule instead: any `write_text` in tools/ passes `newline=`. On Linux
+    it is a no-op; on Windows it is the difference between a one-line diff and a
+    whole-file rewrite. There is no case where the caller WANTS Python to guess.
+    """
+    del path  # scope is now unconditional; kept for call-site symmetry
+    return True
 
 
 def _offenders(root: pathlib.Path) -> list[str]:
@@ -55,7 +65,7 @@ def _offenders(root: pathlib.Path) -> list[str]:
     if not root.is_dir():
         return out
     for path in sorted(root.rglob("*.py")):
-        if not _is_generator(path):
+        if not _in_scope(path):
             continue
         rel = path.relative_to(REPO_ROOT).as_posix()
         if rel in ALLOWLIST:
@@ -77,10 +87,10 @@ def _offenders(root: pathlib.Path) -> list[str]:
 
 
 @pytest.mark.parametrize("tree", ["tools", "icdev/tools"])
-def test_generators_pass_newline_to_write_text(tree):
+def test_all_tools_pass_newline_to_write_text(tree):
     offenders = _offenders(REPO_ROOT / tree)
     assert not offenders, (
-        f"{len(offenders)} generator write_text() call(s) omit newline=\"\", so "
+        f"{len(offenders)} write_text() call(s) under tools/ omit newline=\"\", so "
         "they emit CRLF on Windows and every generated file shows up as a "
         "whole-file diff:\n  "
         + "\n  ".join(offenders)
@@ -111,7 +121,7 @@ def test_the_gate_would_actually_catch_a_regression(tmp_path, monkeypatch):
     monkeypatch.setattr(
         pathlib.Path, "relative_to", pathlib.Path.relative_to, raising=False
     )
-    import tests.test_generator_newline_discipline as mod
+    import tests.test_write_text_newline_discipline as mod
 
     monkeypatch.setattr(mod, "REPO_ROOT", tmp_path)
     found = mod._offenders(tmp_path / "tools")

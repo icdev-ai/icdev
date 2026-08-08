@@ -230,7 +230,7 @@ def _save_seen(seen: set) -> None:
         _SEEN_SIGS_FILE.parent.mkdir(parents=True, exist_ok=True)
         _SEEN_SIGS_FILE.write_text(
             json.dumps({"seen": list(seen), "updated_at": datetime.now(timezone.utc).isoformat()}),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     except OSError as exc:
         log.warning("Could not persist seen-sigs: %s", exc)

@@ -61,7 +61,7 @@ def run(run_id: str, project_id: str, canvas: str = "") -> dict:
                 shutil.copy2(inventory_path, tmp_path / "inventory.ini")
             else:
                 (tmp_path / "inventory.ini").write_text(
-                    "[all]\nlocalhost ansible_connection=local\n", encoding="utf-8"
+                    "[all]\nlocalhost ansible_connection=local\n", encoding="utf-8", newline=""
                 )
             rc, out, err = docker_run(
                 _ANSIBLE_IMAGE, tmp, [], "sh", "-c",
@@ -120,7 +120,7 @@ def run(run_id: str, project_id: str, canvas: str = "") -> dict:
             lines.append("")
 
     report_path = out_dir / f"ansible_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
     root = Path(__file__).resolve().parents[3]
     return {
         "gate": gate, "canvas": canvas, "docker_used": docker_used,

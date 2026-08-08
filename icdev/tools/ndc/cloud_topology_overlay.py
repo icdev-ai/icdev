@@ -322,7 +322,7 @@ def main() -> None:
         body = json.dumps(result, indent=2)
 
     if args.output:
-        Path(args.output).write_text(body, encoding="utf-8")
+        Path(args.output).write_text(body, encoding="utf-8", newline="")
         print(f"Written to {args.output}")
     else:
         print(body)

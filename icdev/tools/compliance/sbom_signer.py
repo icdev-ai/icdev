@@ -271,7 +271,7 @@ def sign_sbom(sbom_path, key_path: Optional[str] = None, signature_path=None) ->
     }
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(signature, indent=2) + "\n", encoding="utf-8")
+    out_path.write_text(json.dumps(signature, indent=2) + "\n", encoding="utf-8", newline="")
 
     result = dict(signature)
     result["signature_path"] = str(out_path)

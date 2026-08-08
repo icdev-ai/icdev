@@ -150,7 +150,7 @@ def write_to_daily_log(content):
     if not log_file.exists():
         log_file.write_text(
             f"# Daily Log — {today}\n\n## Session Notes\n\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
 
     with open(log_file, "a", encoding="utf-8") as f:
@@ -203,7 +203,7 @@ def update_memory_md(content, section):
                 new_lines.append(f"- {content}")
                 inserted = True
         if inserted:
-            MEMORY_FILE.write_text("\n".join(new_lines), encoding="utf-8")
+            MEMORY_FILE.write_text("\n".join(new_lines), encoding="utf-8", newline="")
             print(f"Updated MEMORY.md section: {header}")
             return True
 
@@ -271,7 +271,7 @@ def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = 
             continue
 
         # Append back-link before the final newline
-        f.write_text(text.rstrip() + link_line + "\n", encoding="utf-8")
+        f.write_text(text.rstrip() + link_line + "\n", encoding="utf-8", newline="")
         updated.append(str(f))
 
     return updated

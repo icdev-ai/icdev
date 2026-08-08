@@ -769,7 +769,7 @@ def generate_bridge(opportunity_id: str) -> Dict[str, Any]:
     # Save to file
     BRIDGE_DIR.mkdir(parents=True, exist_ok=True)
     file_path = BRIDGE_DIR / f"{opportunity_id}-bridge-v{version}.md"
-    file_path.write_text(markdown, encoding="utf-8")
+    file_path.write_text(markdown, encoding="utf-8", newline="")
 
     # Store metadata
     bridge_id = _gen_id()

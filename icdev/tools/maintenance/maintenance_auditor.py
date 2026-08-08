@@ -674,7 +674,7 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     report_file = out_dir / f"maintenance_audit_{now.strftime('%Y%m%d_%H%M%S')}.md"
-    report_file.write_text("\n".join(L), encoding="utf-8")
+    report_file.write_text("\n".join(L), encoding="utf-8", newline="")
     return str(report_file)
 
 
