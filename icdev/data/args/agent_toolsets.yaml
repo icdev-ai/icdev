@@ -126,3 +126,47 @@ bundles:
       - kanban_move_task
       - kanban_queue_plan
     mutating: false
+
+  external_data:
+    description: >-
+      Read-only access to a customer's own external systems (Splunk, ServiceNow,
+      GitHub, ...) through the DataBridge agent broker. Deny-all by default:
+      nothing is reachable until a connector and table are granted in
+      args/databridge_agent_access.yaml, so adding this bundle to a role grants
+      the CAPABILITY, not the DATA. Every call is authorized per-agent, refused
+      in air-gap mode, has free-text filters redacted fail-closed before egress,
+      and writes an audit row whether allowed or denied.
+    tools:
+      - databridge_sources
+      - databridge_fetch
+    mutating: false
+
+# ---------------------------------------------------------------------------
+# TOOLS ON THIRD-PARTY MCP SERVERS
+#
+# Tools discovered from an external MCP server appear in the same registry under
+# `ext__<server>__<tool>` and are listed in a bundle by that name, like any other
+# tool. No bundle is shipped: the servers list in args/external_mcp_servers.yaml
+# is empty and `enabled: false`, so a bundle here would name tools that do not
+# exist.
+#
+# Enabling one is deliberately TWO steps, because they answer different
+# questions. args/external_mcp_servers.yaml decides which remote tools ICDEV may
+# reach at all (per-server allowlist, classification ceiling, transport). A
+# bundle here decides which ROLES get handed them. Enabling a server should not
+# hand its tools to every agent that loads a toolset.
+#
+# `mutating: true` on the bundle, always. ICDEV cannot know whether somebody
+# else's tool changes state, and the server's own claim about that is not
+# evidence — external tools are never marked read-only, so they always go
+# through the dispatch safety gate.
+#
+#   ticketing:
+#     description: >-
+#       Read-only ticket lookup via the `ticketing` external MCP server. The
+#       server's own allowlist in args/external_mcp_servers.yaml bounds what is
+#       reachable; this bundle bounds who may reach it.
+#     tools:
+#       - ext__ticketing__search_tickets
+#       - ext__ticketing__get_ticket
+#     mutating: true
