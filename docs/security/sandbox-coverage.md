@@ -360,6 +360,21 @@ recommend whether to enable reasoned codegen.
   - `tests/test_sbom_coverage_resolution.py::test_a_corrupt_lockfile_degrades_rather_than_aborting_the_sbom` pins the fail-open-but-loud behaviour.
 - **Revisit if:** the resolver ever shells out to a package manager to obtain a resolved set (`mvn dependency:list`, `gradle dependencies`, `go list -m all`, `npm ls`, `dotnet restore`) — that would be a real execution path over attacker-influenced project content and must be re-decided as **sandboxed**; or if it gains a plugin/entry-point mechanism that imports code from the target environment rather than reading its metadata.
 
+### Gap 19 — SBOM dependency graph (`tools/compliance/dependency_graph.py`)
+
+**Modules:** `tools/compliance/dependency_graph.py` (mirrored at `icdev/tools/compliance/dependency_graph.py`), consumed by `tools/compliance/sbom_generator.py`
+
+**Ingress path:** Two, both carrying non-first-party content. `build_dependency_graph` consumes the component instances Gap 18's resolver produced from a target project's lockfiles — package names, versions, purls and edge keys all originate with whoever authored that project. `validate_dependency_graph` (and the `--validate` CLI) reads a **CycloneDX JSON document**, which may have been produced by a third party rather than by ICDEV: sbx-sig-02's conformance validator and sbx-fmt-02's ingest parity both call it on documents ICDEV did not write.
+
+- **Decision:** **bypass-documented** (parse-only; no execution path exists)
+- **Rationale:** The module does dictionary and set arithmetic over strings and `hashlib.sha256`. Its only parser is `json.loads` on the file named by `--validate`. It contains no `subprocess`, `os.system`, `exec`, `eval`, `__import__`, `pickle` or `yaml.load`, and it never resolves a path from document content — the only path it opens is the one the operator passed on the command line. Component names and versions are hashed and compared, never formatted into SQL, a shell command or a template. The same offline-first constraint that makes Gap 18 a bypass applies unchanged here, since this module is strictly downstream of it.
+- **Guardrails:**
+  - Edge targets that name a component the resolver never emitted are **dropped and counted** (`dangling_edges`), not emitted — a `dependsOn` pointing at nothing is the defect the element's own validator fails on, and `tests/test_sbom_dependency_graph.py::test_an_edge_to_a_component_that_was_never_emitted_is_dropped` pins it.
+  - `detect_cycles` is iterative and colour-marked, so a hostile lockfile describing a deep or cyclic graph cannot exhaust the stack or spin: `test_a_cycle_is_detected_declared_and_still_reachable` and `test_a_self_edge_is_reported_as_a_cycle`.
+  - bom-refs are truncated SHA-256 over the node identity with an explicit collision guard, so two distinct nodes cannot be made to share a ref by crafting component metadata.
+  - `validate_dependency_graph` treats every field of the input document as untrusted: missing keys, wrong types and unresolvable refs become findings, never exceptions.
+- **Revisit if:** the module ever fetches a linked SBOM over the network (the standard permits expressing dependencies as links; ICDEV deliberately embeds instead — see §2.8 of the gap analysis), or if a bom-ref is ever used to build a filesystem path, a URL or a SQL identifier.
+
 ### Bypass — non-LLM code generators (template/scaffold emitters)
 
 These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM

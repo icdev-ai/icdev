@@ -143,6 +143,8 @@ Baseline as analysed:
   component row sits at different points of the graph in two different SBOMs.
   `relationship_type` carries no CHECK vocabulary — that is sbx-cov-02's to define, and
   it has to cover both CycloneDX `dependsOn` and SPDX `RELATIONSHIP` kinds.
+  *(Defined by sbx-cov-02: `dependency_graph.RELATIONSHIP_TYPES`, installed as a CHECK by
+  migration `20260808045015_sbom_relationship_type_vocabulary`. See §2.8.)*
 - **RLS:** `sbom_records` had neither `classification` nor `tenant_id`, so every query
   from a request context would have raised `UndefinedColumn` once the table was read
   through `get_connection()` — the trap migrations 305/309/311/326 each documented. Both
@@ -231,6 +233,65 @@ Per-ecosystem tests live in `tests/test_sbom_coverage_resolution.py`, each over 
 project whose transitive tree is known by construction. The agreed generation-time budget is
 recorded there as `RESOLUTION_BUDGET_SECONDS`.
 
+### 2.8 Component Dependency Relationship — the graph (sbx-cov-02)
+
+`tools/compliance/dependency_graph.py` (mirrored at `icdev/tools/compliance/`) turns the
+resolved set of §2.7 into a graph and the generator emits it as a CycloneDX `dependencies`
+array rooted at `metadata.component`. The definition applied is the standard's narrow one —
+an edge exists only where one component is **necessary for the operation of** the other, which
+is the resolver's edge set and nothing inferred.
+
+- **Embedding, not linking.** The standard permits linking to a separate SBOM per dependency,
+  but linking satisfies Coverage only if the recipient has access to *every* linked document,
+  which ICDEV cannot guarantee for an artifact that leaves the enclave. One document therefore
+  carries the whole graph, and says so in `icdev:sbom:dependency:embedding`.
+- **Node identity is metadata *plus* edges.** sbx-cov-01 collapsed instances whose emitted
+  metadata matched. That is not sufficient for relationships: two instances of the same
+  name and version can resolve different dependencies, and collapsing them would either invent
+  an edge or drop one. A node is now `(metadata identity, set of dependency identities)` — a
+  strict refinement, so nothing sbx-cov-01 kept apart is merged. The refinement is one level
+  deep rather than a full bisimulation; going deeper would need a fixpoint over a cyclic graph
+  for a distinction no consumer can act on.
+- **Rooting is derived from in-degree, not from the resolver's `direct` flag.** Several
+  resolvers default that flag to `True` because their source records no directness, so trusting
+  it would fan the root out over the entire transitive set and assert direct requirements that
+  do not exist. A node nothing else depends on is a direct dependency; everything else is
+  reached through its parent.
+- **Cycles are found, declared and kept.** npm permits cycles, so removing an edge to force a
+  tree would falsify the graph. `detect_cycles` is iterative (a deep npm tree cannot blow the
+  stack) and the count lands in `icdev:sbom:dependency:cycles`. A cycle with no external entry
+  would leave its members unreachable from the target, so exactly one entry point per such
+  cycle is attached to the root and counted in `icdev:sbom:dependency:unrooted`.
+- **Unknown is not empty.** A declared-only component's own dependencies were never read, so it
+  gets *no* `dependencies` entry — CycloneDX's way of saying unknown. A resolved leaf gets an
+  entry with an empty `dependsOn`, which asserts it is known to depend on nothing. This is the
+  same unknown/withheld distinction sbx-prc-01 generalises.
+- **Vocabulary.** `RELATIONSHIP_TYPES` (`depends_on`, `optional_depends_on`) is the vocabulary
+  sbx-fnd-02 deliberately left off `sbom_dependencies.relationship_type`; migration
+  `20260808045015_sbom_relationship_type_vocabulary` installs the CHECK **derived from that
+  constant** (PG `ADD CONSTRAINT`, SQLite table rebuild — SQLite cannot add a CHECK in place).
+  `SPDX_RELATIONSHIP` maps each type onto an SPDX `RELATIONSHIP` kind, with an operand-swap
+  flag because `OPTIONAL_DEPENDENCY_OF` reads in the inverse direction, and
+  `to_spdx_relationships` renders the identical edges — so sbx-fmt-01 inherits this graph
+  rather than re-deriving one.
+- **Scored by the same code that emits it.** `validate_dependency_graph` checks presence, ref
+  resolution, rooting, reachability, duplicate refs and the declared cycle count, returning
+  `met` / `not_met` with findings. It is the per-element contract sbx-sig-02's full
+  minimum-elements validator consumes; a second, drifting opinion is how an element gets scored
+  met while being emitted wrong. CLI: `python tools/compliance/dependency_graph.py --validate
+  <sbom.json> --json`.
+
+**Not covered here.** Nothing is written to `sbom_components` or `sbom_dependencies` yet. An
+edge row references two `sbom_components.id` values, and populating that table is where the
+`sbx-fld-*` fields land (Producer, Hash, Identifiers, License); writing half-populated
+component rows now would churn exactly the columns those tasks own. The vocabulary and CHECK
+ship here so the table is ready; the write belongs with sbx-fld-05 or sbx-gov-02.
+
+Tests: `tests/test_sbom_dependency_graph.py`. The migration is exercised through the real
+`MigrationRunner` on SQLite and against a throwaway schema on live PostgreSQL, and the
+validator is run in both directions — met against a generated SBOM, and rejecting each defect
+including the pre-sbx-cov-02 flat-list shape.
+
 **Still open:** emitting the CycloneDX `dependencies` array from the edges the resolver now
 collects is **sbx-cov-02**; artifact hashes, which resolution unlocks, are **sbx-fld-03**.
 
@@ -260,7 +321,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Element | Status | Evidence / what is missing |
 |---|---|---|
 | Component Producer | **GAP** | No supplier/producer emitted at all. `group` is a Maven/npm namespace, not a producer. No unknown-provenance fallback. |
-| Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
+| Component Dependency Relationship | **MET (sbx-cov-02)** | `tools/compliance/dependency_graph.py` emits a `dependencies` array rooted at `metadata.component`, reconstructing the tree sbx-cov-01 resolves. Cycle-checked and declared; duplicate instances that resolve different dependencies are separate components with their own relationships; a declared-only component's edges are marked unknown rather than empty. See §2.8. |
 | Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
 | Component Hash Algorithm | **GAP** | Consequent to the above. |
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
@@ -280,9 +341,10 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
-**Score: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool Name,
-Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7 practices
-fully met.**
+**Score at analysis time: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM
+Tool Name, Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7
+practices fully met.** Since then sbx-cov-01 has met Coverage and sbx-cov-02 has met Component
+Dependency Relationship; the remaining rows are the open `sbx` tasks.
 
 ---
 

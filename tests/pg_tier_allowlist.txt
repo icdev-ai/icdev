@@ -45,3 +45,10 @@ tests/test_audit_tail_cli.py
 # green. The PG case seeds rows inside a transaction and ROLLS BACK, so the
 # append-only audit_trail accumulates nothing.
 tests/ci/test_pr_watcher_rebase.py
+# sbx-cov-02: the sbom_dependencies.relationship_type CHECK. Its PostgreSQL
+# branch is a plain ADD CONSTRAINT guarded by an information_schema lookup,
+# because PG has no ADD CONSTRAINT IF NOT EXISTS; the SQLite branch takes a
+# completely different path (table rebuild — SQLite cannot add a CHECK in
+# place), so the SQLite case exercises none of the shipping PG code. The PG
+# case builds a throwaway schema and DROPs it, touching no live table.
+tests/test_sbom_dependency_graph.py

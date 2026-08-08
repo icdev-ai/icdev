@@ -14,14 +14,23 @@ which reads each ecosystem's *resolved* lockfile and degrades to this module's
 declared-manifest parsers only where offline resolution is impossible. The
 resulting SBOM always carries an explicit coverage statement — `compositions`
 plus `icdev:sbom:coverage*` properties — so a partial tree is never presented as
-complete."""
+complete.
+
+Component Dependency Relationship (sbx-cov-02): `dependency_graph` turns that
+resolved set into a real graph — bom-refs, a `dependencies` array rooted at the
+target component, and a cycle check — instead of the flat component list ICDEV
+used to emit."""
 
 import argparse
-import hashlib
 import json
 import re
 import sys
 import uuid
+from tools.compliance.dependency_graph import (
+    build_dependency_graph,
+    graph_properties,
+    to_cyclonedx_dependencies,
+)
 from tools.compliance.dependency_resolver import (
     COVERAGE_COMPLETE,
     COVERAGE_INCOMPLETE,
@@ -726,30 +735,6 @@ DECLARED_PARSERS = {
 }
 
 
-def _component_identity(component):
-    """The metadata tuple that decides whether two instances are the same component.
-
-    The 2026 Coverage element requires that "multiple instances of a component
-    with differing metadata are listed separately with their dependency
-    relationship". So instances collapse only when every emitted field matches;
-    two npm instances that differ in version *or* scope stay separate.
-    """
-    return (
-        component.get("type", "library"),
-        component.get("group", ""),
-        component.get("name", ""),
-        component.get("version", ""),
-        component.get("purl", ""),
-        component.get("scope", ""),
-    )
-
-
-def _generate_bom_ref(component):
-    """Generate a unique BOM reference for a component instance."""
-    key = "|".join(_component_identity(component))
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
-
-
 def _build_coverage_blocks(coverage, cdx_components, target_bom_ref):
     """Render a coverage report as CycloneDX ``compositions`` + ICDEV properties.
 
@@ -814,23 +799,20 @@ def _build_cyclonedx_sbom(
     if serial_number is None:
         serial_number = f"urn:uuid:{uuid.uuid4()}"
 
-    # Deduplicate by full metadata identity, not by purl: two instances that
-    # differ in any emitted field are two components under the Coverage element.
-    seen_identities = set()
-    unique_components = []
-    for comp in components:
-        identity = _component_identity(comp)
-        if identity in seen_identities:
-            continue
-        seen_identities.add(identity)
-        unique_components.append(comp)
+    target_bom_ref = f"icdev-{project.get('id', 'unknown')}"
 
-    # Build CycloneDX components array
+    # One pass builds the deduplicated node set AND the edges between them
+    # (sbx-cov-02). Deduplication cannot be done here and relationships there:
+    # a node is its metadata identity *plus* its resolved dependency set, so the
+    # component list and the dependency graph are two views of one computation.
+    graph = build_dependency_graph(components, target_bom_ref)
+
     cdx_components = []
-    for comp in unique_components:
+    for node in graph["nodes"]:
+        comp = node["instance"]
         cdx_comp = {
             "type": comp.get("type", "library"),
-            "bom-ref": _generate_bom_ref(comp),
+            "bom-ref": node["ref"],
             "name": comp["name"],
             "version": comp["version"],
         }
@@ -862,7 +844,7 @@ def _build_cyclonedx_sbom(
             ],
             "component": {
                 "type": "application",
-                "bom-ref": f"icdev-{project.get('id', 'unknown')}",
+                "bom-ref": target_bom_ref,
                 "name": project.get("name", "Unknown"),
                 "version": "0.0.0",
             },
@@ -890,7 +872,6 @@ def _build_cyclonedx_sbom(
 
     # Coverage (2026 Minimum Elements) — always emitted, including when the
     # answer is "incomplete" or "unknown".
-    target_bom_ref = sbom["metadata"]["component"]["bom-ref"]
     compositions, coverage_properties = _build_coverage_blocks(
         coverage or {"status": COVERAGE_UNKNOWN, "statement": "", "resolved": [], "unresolved": []},
         cdx_components,
@@ -899,10 +880,16 @@ def _build_cyclonedx_sbom(
     sbom["metadata"]["properties"].extend(coverage_properties)
     sbom["compositions"] = compositions
 
+    # Component Dependency Relationship (2026 Minimum Elements) — the graph,
+    # rooted at the target component. Always emitted: the root entry states
+    # what the target depends on even when that answer is "nothing".
+    sbom["metadata"]["properties"].extend(graph_properties(graph))
+    sbom["dependencies"] = to_cyclonedx_dependencies(graph)
+
     for cdx_comp in cdx_components:
         cdx_comp.pop("_declared", None)
 
-    return sbom, len(unique_components)
+    return sbom, len(cdx_components)
 
 
 def generate_sbom(
@@ -1045,6 +1032,9 @@ def generate_sbom(
         print(f"  Components: {component_count}")
         print(f"  Serial: {sbom['serialNumber']}")
         print(f"  Coverage: {coverage['status']}")
+        dependency_entries = sbom.get("dependencies", [])
+        edges = sum(len(entry.get("dependsOn", [])) for entry in dependency_entries)
+        print(f"  Dependency edges: {edges} across {len(dependency_entries)} node(s)")
         if coverage["status"] != COVERAGE_COMPLETE:
             print(f"  {coverage['statement']}")
 

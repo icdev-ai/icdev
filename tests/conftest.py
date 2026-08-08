@@ -2397,7 +2397,10 @@ CREATE TABLE IF NOT EXISTS sbom_dependencies (
     sbom_record_id      INTEGER NOT NULL REFERENCES sbom_records(id),
     parent_component_id TEXT    NOT NULL REFERENCES sbom_components(id),
     child_component_id  TEXT    NOT NULL REFERENCES sbom_components(id),
-    relationship_type   TEXT    NOT NULL DEFAULT 'depends_on',
+    -- Vocabulary derived from dependency_graph.RELATIONSHIP_TYPES by migration
+    -- 20260808045015; tests/test_sbom_dependency_graph.py pins the two in sync.
+    relationship_type   TEXT    NOT NULL DEFAULT 'depends_on'
+                                CHECK (relationship_type IN ('depends_on', 'optional_depends_on')),
     scope               TEXT,
     classification      TEXT    NOT NULL DEFAULT 'CUI',
     tenant_id           TEXT,
