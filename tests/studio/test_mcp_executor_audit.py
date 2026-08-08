@@ -225,5 +225,5 @@ def test_audit_failure_does_not_decide_the_dispatch(run_id, caller, stub_tool,
 
 
 def test_table_is_registered_append_only():
-    hook = (_ROOT / ".claude/hooks/pre_tool_use.py").read_text(encoding="utf-8")
+    hook = (_ROOT / "tools/hooks/shared_checks.py").read_text(encoding="utf-8")
     assert f'"{mcp_executor.AUDIT_TABLE}"' in hook

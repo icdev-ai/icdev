@@ -553,7 +553,7 @@ def test_a_failed_audit_write_does_not_undo_the_grade(fadb, caplog):
 def test_the_audit_table_is_registered_append_only():
     """The hook is what makes 'append-only' true; the DDL only says it."""
     import pathlib
-    hook = pathlib.Path(__file__).resolve().parents[1] / ".claude/hooks/pre_tool_use.py"
+    hook = pathlib.Path(__file__).resolve().parents[1] / "tools/hooks/shared_checks.py"
     assert "fa_instructor_audit" in hook.read_text(encoding="utf-8")
 
 

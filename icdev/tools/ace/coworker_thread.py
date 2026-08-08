@@ -23,6 +23,8 @@ from icdev.tools.ace.step_executor import (
 from icdev.tools.ace.team_assembler import CoWorkerSpec
 from icdev.tools.chat.chat_manager import ChatManager
 from tools.logging.icdev_logger import get_logger
+from tools.observability.invocation_recorder import SURFACE_ROLE as _SURFACE_ROLE
+from tools.observability.invocation_recorder import record as _record_invocation
 
 logger = get_logger("icdev.ace.coworker_thread")
 
@@ -503,7 +505,18 @@ class CoWorkerThread(threading.Thread):
 
             attempted += 1
             try:
-                result = executor.run(step, self._ace_context, self.spec, self.trust_kernel)
+                # Role steps had no telemetry at all before this — measured
+                # 2026-08-02, zero `role_*` events in audit_trail and no role
+                # table. This is the surface where the llm_step permission
+                # deadlock hid: 88 of 90 roles raised on every step while the
+                # run still reported 'done'. A per-step record with a status
+                # makes that arithmetic visible instead of inferable.
+                with _record_invocation(
+                    _SURFACE_ROLE,
+                    f"{getattr(role, 'id', 'role')}:{step.get('id', '?')}"[:120],
+                    parent_id=getattr(self, "instance_id", None),
+                ):
+                    result = executor.run(step, self._ace_context, self.spec, self.trust_kernel)
                 succeeded += 1
                 self._audit(
                     "step_complete",
@@ -683,6 +696,21 @@ class CoWorkerThread(threading.Thread):
             return None
 
         # ----------------------------------------------------------------
+        # on_post_tool_use hook: the headless analogue of
+        # .claude/hooks/post_tool_use.py (hgx-guard-02). Records the call on
+        # the append-only hook_events trail and fires TOOL_EXECUTE_AFTER, which
+        # is what keeps the awareness component index current. Observational
+        # only — it cannot block, and it swallows its own failures so a co-worker
+        # run is never taken down by an audit write.
+        # ----------------------------------------------------------------
+        def _post_tool_hook(name: str, inp: dict, result_text: str, is_error: bool) -> None:
+            try:
+                from tools.airgap.hook_compat import run_post_tool_check
+                run_post_tool_check(name, inp, result_text, is_error)
+            except Exception as _exc:  # noqa: BLE001
+                logger.debug("ace: post-tool audit failed for %s: %s", name, _exc)
+
+        # ----------------------------------------------------------------
         # on_stop hook: audit result_subtype + save session for resume.
         # ----------------------------------------------------------------
         _coworker_id = self.spec.coworker_id
@@ -758,6 +786,7 @@ class CoWorkerThread(threading.Thread):
             stop_event=self._stop_event,
             on_turn=self._on_agent_turn,
             on_pre_tool_use=_combined_pre_hook,
+            on_post_tool_use=_post_tool_hook,
             on_stop=_on_stop_hook,
             max_total_tokens=max_total_tokens,
             max_cost_usd=max_cost_usd,

@@ -696,6 +696,21 @@ class CoWorkerThread(threading.Thread):
             return None
 
         # ----------------------------------------------------------------
+        # on_post_tool_use hook: the headless analogue of
+        # .claude/hooks/post_tool_use.py (hgx-guard-02). Records the call on
+        # the append-only hook_events trail and fires TOOL_EXECUTE_AFTER, which
+        # is what keeps the awareness component index current. Observational
+        # only — it cannot block, and it swallows its own failures so a co-worker
+        # run is never taken down by an audit write.
+        # ----------------------------------------------------------------
+        def _post_tool_hook(name: str, inp: dict, result_text: str, is_error: bool) -> None:
+            try:
+                from tools.airgap.hook_compat import run_post_tool_check
+                run_post_tool_check(name, inp, result_text, is_error)
+            except Exception as _exc:  # noqa: BLE001
+                logger.debug("ace: post-tool audit failed for %s: %s", name, _exc)
+
+        # ----------------------------------------------------------------
         # on_stop hook: audit result_subtype + save session for resume.
         # ----------------------------------------------------------------
         _coworker_id = self.spec.coworker_id
@@ -771,6 +786,7 @@ class CoWorkerThread(threading.Thread):
             stop_event=self._stop_event,
             on_turn=self._on_agent_turn,
             on_pre_tool_use=_combined_pre_hook,
+            on_post_tool_use=_post_tool_hook,
             on_stop=_on_stop_hook,
             max_total_tokens=max_total_tokens,
             max_cost_usd=max_cost_usd,

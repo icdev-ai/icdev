@@ -424,7 +424,7 @@ def test_access_log_is_registered_append_only():
     """An audit table that can be rewritten is not an audit table."""
     from pathlib import Path
 
-    hook = (Path(__file__).resolve().parents[1] / ".claude/hooks/pre_tool_use.py").read_text(
+    hook = (Path(__file__).resolve().parents[1] / "tools/hooks/shared_checks.py").read_text(
         encoding="utf-8"
     )
     assert '"databridge_agent_access_log"' in hook

@@ -65,7 +65,7 @@ def test_suggestions_table_is_not_append_only():
     """
     from pathlib import Path
 
-    hook = Path(__file__).resolve().parents[1] / ".claude" / "hooks" / "pre_tool_use.py"
+    hook = Path(__file__).resolve().parents[1] / "tools" / "hooks" / "shared_checks.py"
     text = hook.read_text(encoding="utf-8")
     assert '"ace_team_suggestions"' not in text
     assert '"ace_audit_log"' in text

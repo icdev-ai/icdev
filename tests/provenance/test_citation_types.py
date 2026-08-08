@@ -170,7 +170,7 @@ def test_fetch_provenance_is_registered_append_only():
     Re-fetching must append a row so drift is visible, which only holds if the
     table is on the append-only list the pre-tool hook enforces.
     """
-    hook = (REPO / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
+    hook = (REPO / "tools" / "hooks" / "shared_checks.py").read_text(encoding="utf-8")
     assert "web_fetch_provenance" in hook, (
         "web_fetch_provenance missing from APPEND_ONLY_TABLES in "
         ".claude/hooks/pre_tool_use.py"

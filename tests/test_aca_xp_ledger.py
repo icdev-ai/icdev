@@ -181,7 +181,7 @@ def test_the_ledger_is_registered_append_only():
     """Corrections must be compensating rows, or the ledger stops being evidence."""
     import pathlib
     hook = (pathlib.Path(__file__).resolve().parent.parent
-            / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
+            / "tools" / "hooks" / "shared_checks.py").read_text(encoding="utf-8")
     block = hook[hook.index("APPEND_ONLY_TABLES"):]
     assert '"fa_xp_ledger"' in block[:8000]
 

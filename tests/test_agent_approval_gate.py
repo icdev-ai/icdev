@@ -494,7 +494,7 @@ class TestAudit:
         assert all(r["decision"] == "approved" for r in rows)
 
     def test_table_is_registered_append_only(self):
-        hook = (REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py").read_text(
+        hook = (REPO_ROOT / "tools" / "hooks" / "shared_checks.py").read_text(
             encoding="utf-8"
         )
         assert '"agent_approval_log"' in hook

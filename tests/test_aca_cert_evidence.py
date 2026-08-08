@@ -236,7 +236,7 @@ def test_the_migration_declares_the_table_and_ships_no_backfill():
 
 
 def test_the_table_is_registered_append_only():
-    hook = (REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py").read_text(
+    hook = (REPO_ROOT / "tools" / "hooks" / "shared_checks.py").read_text(
         encoding="utf-8")
     block = hook[hook.index("APPEND_ONLY_TABLES"):]
     assert '"fa_certificate_evidence"' in block[:8000]

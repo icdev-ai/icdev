@@ -27,6 +27,7 @@ Usage::
 
 import hashlib
 import hmac
+import importlib
 import json
 import os
 import sqlite3
@@ -144,155 +145,285 @@ def forward_to_dashboard(event_data: dict) -> None:
         pass
 
 
-# ── Pre-Tool-Use Guard ─────────────────────────────────────────────────
-
-# Append-only tables that must never be UPDATE/DELETE'd (NIST AU)
-APPEND_ONLY_TABLES = [
-    "audit_trail",
-    "hook_events",
-    "activity_log",
-    "compliance_evidence",
-    "security_scan_results",
-    "deployment_log",
-    "access_log",
-    "ai_telemetry",
-    "redaction_audit",
-    "prompt_injection_log",
-    "merge_audit",
-    "deploy_audit",
-    "fedramp_audit",
-    "cmmc_audit",
-    "cato_audit",
-    "sbom_snapshots",
-    "container_scan_results",
-    "stig_results",
-    "supply_chain_events",
-    "mfa_events",
-    "zta_policy_decisions",
-    "fips_assessment_log",
-]
-
-
-# OPT-51 — git destructive-command blocklist (adapted from
-# mattpocock/skills/git-guardrails-claude-code, MIT). See
-# _ATTRIBUTION_REGISTRY in tools/workflow/coherence_checker.py.
+# -- Pre-Tool-Use Guard -------------------------------------------------
 #
-# These commands can silently destroy work in a non-recoverable way.
-# Hooked through run_pre_tool_check so any orchestrator (Claude Code,
-# LLMRouter, MCP gateway) gets the same protection that .claude/hooks/
-# pre_tool_use.py already gives the Claude-only path.
-_GIT_DANGER_PATTERNS = [
-    # Force push — direct or via shorthand
-    (r"\bgit\s+push\s+(?:[^\n]*\s)?(?:--force\b|--force-with-lease\b|-f\b)",
-     "git push --force is destructive — rewrites remote history"),
-    # Hard reset anything
-    (r"\bgit\s+reset\s+(?:[^\n]*\s)?--hard\b",
-     "git reset --hard discards uncommitted changes"),
-    # Force delete branches. -D is case-sensitive (distinct from safe -d).
-    (r"\bgit\s+branch\s+(?:[^\n]*\s)?(?-i:-D)\b",
-     "git branch -D force-deletes branches (use -d for safe delete)"),
-    (r"\bgit\s+branch\s+(?:[^\n]*\s)?--delete\s+--force\b",
-     "git branch --delete --force force-deletes branches"),
-    # Dangerous clean
-    (r"\bgit\s+clean\s+(?:[^\n]*\s)?-[a-zA-Z]*f[a-zA-Z]*\b",
-     "git clean -f permanently deletes untracked files"),
-    # Checkout/restore of working tree — can wipe uncommitted edits
-    (r"\bgit\s+checkout\s+(?:--\s*\.|\.\s*$|\.\s)",
-     "git checkout . discards uncommitted working-tree changes"),
-    (r"\bgit\s+restore\s+(?:[^\n]*\s)?(?:--\s*\.|\.\s*$|\.\s)",
-     "git restore . discards uncommitted working-tree changes"),
-    # Commit amend on already-pushed commits is risky (heuristic — block
-    # only when combined with no-edit or with --force elsewhere)
-    (r"\bgit\s+rebase\s+(?:[^\n]*\s)?-i\b",
-     "interactive git rebase requires manual approval (no automation)"),
-]
+# Every rule now lives in tools/hooks/shared_checks.py, which .claude/hooks/
+# pre_tool_use.py loads too, so the Claude Code path and this one cannot drift
+# (hgx-guard-01, hgx-guard-02). Before that, Claude Code ran eight checks and
+# this path ran two -- an agent running OUTSIDE Claude Code was materially less
+# guarded than one inside it, which for an IL5/IL6 platform is backwards.
+
+from tools.hooks import shared_checks as _checks  # noqa: E402
+
+# Back-compat re-exports. `APPEND_ONLY_TABLES` here used to be a hand-maintained
+# 22-entry list that had drifted ~340 tables behind the hook's; it is now the
+# same object the hook reads.
+APPEND_ONLY_TABLES = _checks.APPEND_ONLY_TABLES
+_GIT_DANGER_PATTERNS = _checks._GIT_DANGER_PATTERNS
 
 
 def _check_git_danger(command: str) -> Optional[str]:
     """Return a block reason if the command matches a destructive git
     pattern, else None. Case-insensitive match on the raw command text."""
-    import re
+    reason = _checks.check_git_danger(_checks.ToolCall(name="Bash", command=command))
+    return reason or None
 
-    text = command
-    for pattern, reason in _GIT_DANGER_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            return reason
-    return None
+
+def _tool_input_snippet(tool_input: Optional[Dict[str, Any]], limit: int = 200) -> str:
+    """Short, log-safe rendering of a tool input for the audit row."""
+    if not isinstance(tool_input, dict):
+        return ""
+    try:
+        return json.dumps(tool_input, default=str)[:limit]
+    except (TypeError, ValueError):
+        return str(tool_input)[:limit]
 
 
 def run_pre_tool_check(
     tool_name: str,
     tool_input: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Run pre-tool-use safety checks (append-only table protection +
-    git destructive-command blocklist).
+    """Run every pre-tool-use safety check registered for the headless path.
 
-    Equivalent to .claude/hooks/pre_tool_use.py but callable from any
-    orchestrator (not just Claude Code).
+    Equivalent to .claude/hooks/pre_tool_use.py -- same module, same rules --
+    but callable from any orchestrator. Blocks are audited to ``hook_events``.
+
+    This used to short-circuit to *allowed* for any tool whose name was not one
+    of six known strings, so an unrecognised mutating tool was waved through
+    unscanned. Tool names are not a security boundary: a call is now classified
+    by the shape of its input (does it carry text that will be executed, a path
+    it will write) and scanned on that basis. Read-only traffic stays cheap
+    because nothing is extracted from it, so every check exits on its first
+    guard.
+
+    Args:
+        tool_name: Name of the tool about to run. May be unknown.
+        tool_input: The tool's input dict.
 
     Returns:
-        {"allowed": True/False, "reason": str}
+        ``{"allowed": bool, "reason": str, "check": str, "warnings": [...]}``
     """
-    import re
+    outcome = _checks.evaluate(tool_name, tool_input, path=_checks.PATH_HEADLESS)
 
-    if tool_name not in ("Bash", "bash", "shell", "sql", "Write", "Edit"):
-        return {"allowed": True, "reason": "non-destructive tool"}
-
-    if not tool_input:
-        return {"allowed": True, "reason": "no input to check"}
-
-    # Extract command text from tool input
-    command = ""
-    if isinstance(tool_input, dict):
-        command = tool_input.get("command", "")
-        if not command:
-            command = tool_input.get("content", "")
-        if not command:
-            command = tool_input.get("query", "")
-
-    if not command or not isinstance(command, str):
-        return {"allowed": True, "reason": "no command to check"}
-
-    command_lower = command.lower()
-
-    # OPT-51: destructive git command blocklist
-    git_reason = _check_git_danger(command)
-    if git_reason:
-        reason = f"BLOCKED: {git_reason}"
-        logger.warning(reason)
+    if not outcome.allowed:
+        logger.warning(outcome.reason)
         store_event(
             get_session_id(),
             "pre_tool_use",
             tool_name,
             {
                 "blocked": True,
-                "reason": reason,
-                "command_snippet": command[:200],
-                "rule": "git_danger_blocklist",
+                "reason": outcome.reason,
+                "rule": outcome.check,
+                "command_snippet": _tool_input_snippet(tool_input),
             },
         )
-        return {"allowed": False, "reason": reason}
+    else:
+        for warning in outcome.warnings:
+            logger.warning("%s: %s", warning["check"], warning["reason"])
 
-    # Check for destructive operations on append-only tables
-    for table in APPEND_ONLY_TABLES:
-        if re.search(
-            rf"(update|delete)\s+(from\s+)?{re.escape(table)}",
-            command_lower,
-        ):
-            reason = (
-                f"BLOCKED: destructive operation on append-only table '{table}'. "
-                f"NIST AU compliance requires append-only audit trail."
-            )
-            logger.warning(reason)
-            store_event(
-                get_session_id(),
-                "pre_tool_use",
-                tool_name,
-                {"blocked": True, "reason": reason, "command_snippet": command[:200]},
-            )
-            return {"allowed": False, "reason": reason}
+    return outcome.as_dict()
 
-    return {"allowed": True, "reason": "passed safety checks"}
+
+# -- Post-Tool-Use ------------------------------------------------------
+
+# Tools the awareness subscriber actually handles -- must stay in sync with
+# _TRACKED_TOOLS in tools/awareness/hooks.py.
+_AWARENESS_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit"})
+
+
+def _dispatch_tool_execute_after(
+    tool_name: str,
+    tool_input: Dict[str, Any],
+    tool_output: Any,
+) -> bool:
+    """Fire the TOOL_EXECUTE_AFTER extension point. Best effort."""
+    # Only import the awareness subscriber for the tools it actually handles:
+    # importing it for a Read or a Bash call paid ~90 ms to register a handler
+    # that would immediately filter the event out.
+    if tool_name in _AWARENESS_TOOLS:
+        try:
+            # import_module, not a bare `import`: the module is imported purely
+            # for its registration side effect and a plain import reads as dead.
+            importlib.import_module("tools.awareness.hooks")
+        except Exception:
+            pass  # Awareness hook optional
+
+    try:
+        from tools.extensions.extension_manager import ExtensionPoint, extension_manager
+
+        # Fire-and-forget: observational hooks run in a background daemon thread
+        # so tool execution is NEVER blocked waiting for them.
+        extension_manager.dispatch_async(
+            ExtensionPoint.TOOL_EXECUTE_AFTER,
+            {
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "tool_input_keys": list(tool_input.keys()),
+                "output_length": len(str(tool_output)) if tool_output else 0,
+            },
+        )
+        return True
+    except (ImportError, AttributeError):
+        return False  # Extension manager not available -- skip silently
+    except Exception:
+        return False  # Never block tool execution
+
+
+def run_post_tool_check(
+    tool_name: str,
+    tool_input: Optional[Dict[str, Any]] = None,
+    tool_output: Any = "",
+    is_error: bool = False,
+) -> Dict[str, Any]:
+    """Headless equivalent of ``.claude/hooks/post_tool_use.py``.
+
+    Records the call on the append-only ``hook_events`` trail and fires the
+    ``TOOL_EXECUTE_AFTER`` extension point (which is what keeps the awareness
+    component index current). Observational only -- it can never block, and it
+    never raises: a failure here must not take down a tool call that already
+    succeeded.
+
+    Args:
+        tool_name: Name of the tool that just ran.
+        tool_input: The input it ran with.
+        tool_output: Its result text. Truncated to 2000 chars before storage.
+        is_error: True when the tool reported a failure.
+
+    Returns:
+        ``{"recorded": bool, "event_id": int, "dispatched": bool}``
+    """
+    result: Dict[str, Any] = {"recorded": False, "event_id": -1, "dispatched": False}
+    data = tool_input if isinstance(tool_input, dict) else {}
+
+    try:
+        event_id = store_event(
+            get_session_id(),
+            "post_tool_use",
+            tool_name,
+            {
+                "tool_input_keys": list(data.keys()),
+                "output_length": len(str(tool_output)) if tool_output else 0,
+                # Truncated to keep the audit trail from bloating on large reads.
+                "output_summary": str(tool_output)[:2000] if tool_output else "",
+                "is_error": bool(is_error),
+            },
+        )
+        result["event_id"] = event_id
+        result["recorded"] = event_id != -1
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("run_post_tool_check: audit write failed: %s", exc)
+
+    result["dispatched"] = _dispatch_tool_execute_after(tool_name, data, tool_output)
+    return result
+
+
+# -- Stop ---------------------------------------------------------------
+
+
+def run_stop_check(
+    reason: str = "unknown",
+    session_id: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    auto_commit_message: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Headless equivalent of ``.claude/hooks/stop.py``.
+
+    Records the stop on ``hook_events`` and runs the same ICDEV_AUTO_COMMIT
+    behaviour the Claude Code stop hook performs. Transcript capture is not
+    mirrored: it reads a Claude Code ``.jsonl`` transcript that has no headless
+    counterpart -- the agent loop persists its own history through
+    ``session_store`` checkpoints instead.
+
+    Never raises.
+
+    Args:
+        reason: Why the run ended (``result_subtype`` / ``truncation_reason``).
+        session_id: Session to attribute the event to. Defaults to the ambient one.
+        payload: Extra fields to merge into the audit row.
+        auto_commit_message: Commit subject when ICDEV_AUTO_COMMIT is enabled.
+
+    Returns:
+        ``{"recorded": bool, "event_id": int, "auto_commit": {...}}``
+    """
+    sid = session_id or get_session_id()
+    result: Dict[str, Any] = {"recorded": False, "event_id": -1}
+
+    try:
+        body: Dict[str, Any] = {"stop_reason": reason, "session_id": sid}
+        if payload:
+            body.update(payload)
+        event_id = store_event(sid, "stop", None, body)
+        result["event_id"] = event_id
+        result["recorded"] = event_id != -1
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("run_stop_check: audit write failed: %s", exc)
+
+    try:
+        result["auto_commit"] = run_auto_commit(auto_commit_message)
+    except Exception as exc:  # noqa: BLE001
+        result["auto_commit"] = {"committed": False, "message": str(exc)}
+
+    return result
+
+
+# -- Agent-loop hook adapters -------------------------------------------
+
+
+def agent_loop_hooks(
+    auto_commit_message: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Guardrail hooks shaped for ``run_agent_loop``'s lifecycle slots.
+
+    The loop has always exposed ``on_pre_tool_use`` / ``on_post_tool_use`` /
+    ``on_stop``, but only the pre-tool slot had a headless implementation to
+    plug into. These are the other two.
+
+    Signatures match the loop's ``PreToolUseHook`` / ``PostToolUseHook`` /
+    ``StopHook`` aliases exactly::
+
+        from tools.airgap.hook_compat import agent_loop_hooks
+        result = run_agent_loop(..., **agent_loop_hooks())
+
+    Returns:
+        ``{"on_pre_tool_use": fn, "on_post_tool_use": fn, "on_stop": fn}``
+    """
+
+    def on_pre_tool_use(name: str, tool_input: Dict[str, Any]) -> Optional[str]:
+        outcome = run_pre_tool_check(name, tool_input)
+        # The loop treats a returned string as the block message and feeds it
+        # back to the model as the tool result; None allows the call.
+        return None if outcome["allowed"] else outcome["reason"]
+
+    def on_post_tool_use(
+        name: str,
+        tool_input: Dict[str, Any],
+        result_text: str,
+        is_error: bool,
+    ) -> None:
+        run_post_tool_check(name, tool_input, result_text, is_error)
+
+    def on_stop(result: Any) -> None:
+        run_stop_check(
+            reason=getattr(result, "result_subtype", "")
+            or getattr(result, "truncation_reason", "")
+            or "unknown",
+            session_id=getattr(result, "session_id", "") or None,
+            payload={
+                "turns": getattr(result, "turns", 0),
+                "done": getattr(result, "done", False),
+                "tool_calls": len(getattr(result, "tool_call_log", []) or []),
+                "total_input_tokens": getattr(result, "total_input_tokens", 0),
+                "total_output_tokens": getattr(result, "total_output_tokens", 0),
+            },
+            auto_commit_message=auto_commit_message,
+        )
+
+    return {
+        "on_pre_tool_use": on_pre_tool_use,
+        "on_post_tool_use": on_post_tool_use,
+        "on_stop": on_stop,
+    }
 
 
 # ── Auto-Commit ────────────────────────────────────────────────────────

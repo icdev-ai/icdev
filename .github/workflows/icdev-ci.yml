@@ -182,6 +182,7 @@ jobs:
             tests/test_publish_gates.py \
             tests/test_dic_cove_gate.py \
             tests/test_mirror_drift_baseline.py \
+            tests/test_hgx_guard_parity.py \
             tests/test_freshness_guardian_parity.py \
             tests/test_data_canvas_mirror_parity.py \
             tests/test_quality_monitor_parity.py \

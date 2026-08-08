@@ -19,6 +19,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_FILE = REPO_ROOT / "tools" / "db" / "migrations" / "257_doc_modernization.sql"
 HOOK_FILE = REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+# The APPEND_ONLY_TABLES literal moved out of the hook and into the shared
+# registry both hook paths read (hgx-guard-01). The hook is still loaded as a
+# module below — it re-exports the predicates — but the table names live here.
+APPEND_ONLY_REGISTRY = REPO_ROOT / "tools" / "hooks" / "shared_checks.py"
 
 ALL_TABLES = [
     "docmod_scan_runs",
@@ -124,7 +128,7 @@ def _load_hook_module():
 
 class TestAppendOnlyRegistration:
     def test_tables_registered_in_hook_source(self):
-        source = HOOK_FILE.read_text(encoding="utf-8")
+        source = APPEND_ONLY_REGISTRY.read_text(encoding="utf-8")
         for t in APPEND_ONLY:
             assert f'"{t}"' in source, f"{t} not in APPEND_ONLY_TABLES"
 

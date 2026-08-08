@@ -153,7 +153,7 @@ def test_constants_sanity():
 def test_append_only_tables_registered_in_hook():
     from pathlib import Path
 
-    hook = (Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "pre_tool_use.py").read_text(
+    hook = (Path(__file__).resolve().parents[2] / "tools" / "hooks" / "shared_checks.py").read_text(
         encoding="utf-8"
     )
     for t in ("docmod_findings", "docmod_scan_runs", "docmod_catalog_audit"):

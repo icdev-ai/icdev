@@ -242,6 +242,11 @@ DIRECTORY_TREE = [
     "tools/mcp",
     "tools/builder",
     "tools/security",  # D-EPSEC-7: security is always-on, not conditional
+    # hgx-guard-01/02: the .claude/hooks/pre_tool_use.py this generator copies is
+    # now a thin adapter over tools/hooks/shared_checks.py, and it FAILS OPEN when
+    # that module is absent. Without this entry a generated child app would ship a
+    # hook that guards nothing.
+    "tools/hooks",
     "tools/quality",  # trust-cite-05: anti-hallucination grounding (content + citation) is always-on
     "tools/workflow",  # Coherence engine — implementation drift detection
     "tools/llm",
@@ -2873,6 +2878,17 @@ def _adapt_pre_tool_use_for_child(content: str, blueprint: dict) -> str:
     Only keeps table names that exist in the child's enabled capability
     table groups. This prevents the hook from referencing tables that
     don't exist in the child's database.
+
+    INERT, and has always been: the regex below matches a ``{...}`` set literal
+    while APPEND_ONLY_TABLES has always been a ``[...]`` list, so the pattern
+    never matches and the content is returned unchanged. Left as-is rather than
+    "fixed" — a child inheriting the full list simply protects table names it
+    does not have, which costs nothing, whereas a filter that starts working
+    would silently strip protection. Since hgx-guard-01 the literal lives in
+    ``tools/hooks/shared_checks.py`` (copied into the child via the
+    ``tools/hooks`` DIRECTORY_TREE entry), not in the hook this function is
+    handed, so it is doubly a no-op. Do not go looking for the filter at
+    runtime — it does not run.
     """
     # Ensure project root is in sys.path for deferred import
     _project_root = str(Path(__file__).resolve().parent.parent.parent)

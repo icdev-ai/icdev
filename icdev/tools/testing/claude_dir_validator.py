@@ -156,23 +156,17 @@ def discover_append_only_tables(init_db_path: Path) -> Set[str]:
     return tables
 
 
-def discover_protected_tables(pre_tool_use_path: Path) -> Set[str]:
-    """Parse pre_tool_use.py to find all tables in APPEND_ONLY_TABLES list.
-
-    Uses ast module to find the APPEND_ONLY_TABLES assignment and extract
-    all string literals from the list.
-    """
-    if not pre_tool_use_path.exists():
+def _parse_append_only_literal(path: Path) -> Set[str]:
+    """String literals of the ``APPEND_ONLY_TABLES`` list assignment in *path*."""
+    if not path.exists():
         return set()
 
-    content = pre_tool_use_path.read_text(encoding="utf-8")
     try:
-        tree = ast.parse(content)
-    except SyntaxError:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, OSError):
         return set()
 
     tables: Set[str] = set()
-
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
@@ -182,6 +176,30 @@ def discover_protected_tables(pre_tool_use_path: Path) -> Set[str]:
                             if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                                 tables.add(elt.value)
     return tables
+
+
+def discover_protected_tables(pre_tool_use_path: Path) -> Set[str]:
+    """Parse *pre_tool_use_path* for the tables in its APPEND_ONLY_TABLES list.
+
+    Honours the path it is given, exactly. Callers that want the canonical
+    registry ask :func:`append_only_registry_path` for it — the literal moved to
+    ``tools/hooks/shared_checks.py`` (hgx-guard-01) so the Claude Code hook and
+    the headless ``run_pre_tool_check`` read one list instead of two.
+    """
+    return _parse_append_only_literal(pre_tool_use_path)
+
+
+def append_only_registry_path() -> Path:
+    """File holding the canonical ``APPEND_ONLY_TABLES`` literal.
+
+    Falls back to the Claude Code hook for an older checkout that still holds
+    the literal there.
+    """
+    for rel in ("tools/hooks/shared_checks.py", "icdev/tools/hooks/shared_checks.py"):
+        candidate = PROJECT_ROOT / rel
+        if candidate.exists():
+            return candidate
+    return PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
 
 
 def discover_dashboard_page_routes(app_path: Path) -> Set[str]:
@@ -242,7 +260,7 @@ def check_append_only_table_coverage(
     if init_db_path is None:
         init_db_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
     if pre_tool_use_path is None:
-        pre_tool_use_path = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+        pre_tool_use_path = append_only_registry_path()
 
     db_tables = discover_append_only_tables(init_db_path)
     hook_tables = discover_protected_tables(pre_tool_use_path)

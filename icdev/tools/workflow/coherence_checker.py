@@ -863,10 +863,28 @@ def check_manifest() -> CoherenceCheck:
 # ---------------------------------------------------------------------------
 
 
+def _append_only_registry_path() -> Path:
+    """File holding the canonical ``APPEND_ONLY_TABLES`` literal.
+
+    Moved out of ``.claude/hooks/pre_tool_use.py`` by hgx-guard-01 so the Claude
+    Code hook and the headless ``run_pre_tool_check`` read one list instead of
+    two that had drifted ~340 tables apart. Falls back to the hook for an older
+    checkout that still holds the literal there.
+    """
+    for rel in (
+        ("tools", "hooks", "shared_checks.py"),
+        ("icdev", "tools", "hooks", "shared_checks.py"),
+    ):
+        candidate = PROJECT_ROOT.joinpath(*rel)
+        if candidate.exists():
+            return candidate
+    return PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+
+
 def check_append_only() -> CoherenceCheck:
-    """Verify append-only tables in init_icdev_db.py are protected in pre_tool_use.py."""
+    """Verify append-only tables in init_icdev_db.py are registered as protected."""
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
-    hook_path = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+    hook_path = _append_only_registry_path()
 
     if not schema_path.exists() or not hook_path.exists():
         return CoherenceCheck(
@@ -3537,14 +3555,16 @@ def check_hitl_workflow() -> CoherenceCheck:
 
     # Check 1: append-only tables
     try:
-        aot_path = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+        aot_path = _append_only_registry_path()
         if aot_path.exists():
             content = aot_path.read_text(encoding="utf-8")
             for tbl in ("wf_feedback", "wf_document_submissions", "wf_citations"):
                 if tbl in content:
                     actual.append(f"append_only:{tbl}=OK")
                 else:
-                    issues.append(f"wf table {tbl!r} missing from APPEND_ONLY_TABLES in pre_tool_use.py")
+                    issues.append(
+                        f"wf table {tbl!r} missing from APPEND_ONLY_TABLES in {aot_path.name}"
+                    )
     except Exception as exc:
         issues.append(f"append_only check failed: {exc}")
 
@@ -7971,10 +7991,20 @@ def _autofix_imports(check: CoherenceCheck) -> List[str]:
 
 
 def _autofix_append_only(check: CoherenceCheck) -> List[str]:
-    """Auto-add missing tables to APPEND_ONLY_TABLES in pre_tool_use.py."""
+    """Auto-add missing tables to the canonical APPEND_ONLY_TABLES literal.
+
+    Currently inert, and deliberately left that way: the regex below matches a
+    ``{...}`` set literal while the list has always been a ``[...]`` list, so
+    this has never fired. Registering a table as append-only is a judgement
+    about its write sites, not a mechanical edit — the list carries explicit
+    notes on five gd_ai_* tables that are mutable BY DESIGN and must stay out —
+    so auto-adding whatever the schema scan guessed would break working code.
+    Retargeted here only so it can never write a second copy of the rules into
+    the hook file, which is now a thin adapter (hgx-guard-01).
+    """
     if not check.missing:
         return []
-    hook_path = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+    hook_path = _append_only_registry_path()
     if not hook_path.exists():
         return []
     content = hook_path.read_text(encoding="utf-8")

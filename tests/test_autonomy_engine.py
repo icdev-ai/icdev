@@ -321,15 +321,15 @@ class TestSelfEvolve:
 # ---------------------------------------------------------------------------
 class TestAppendOnlyProtection:
     def test_observations_protected(self):
-        content = (BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
+        content = (BASE_DIR / "tools" / "hooks" / "shared_checks.py").read_text(encoding="utf-8")
         assert "autonomy_observations" in content
 
     def test_actions_protected(self):
-        content = (BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
+        content = (BASE_DIR / "tools" / "hooks" / "shared_checks.py").read_text(encoding="utf-8")
         assert "autonomy_actions" in content
 
     def test_behavior_log_protected(self):
-        content = (BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py").read_text(encoding="utf-8")
+        content = (BASE_DIR / "tools" / "hooks" / "shared_checks.py").read_text(encoding="utf-8")
         assert "autonomy_behavior_log" in content
 
 
