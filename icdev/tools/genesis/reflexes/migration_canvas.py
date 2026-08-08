@@ -38,13 +38,18 @@ _PROMOTION_THRESHOLD_DEFAULT = 0.70   # minimum confidence to promote finding to
 _HIGH_PRIORITY_THRESHOLD     = 0.85   # findings above this → "high" priority
 _MAX_LISTED_PER_CARD         = 20     # findings enumerated in a batched card body
 
+# A session in one of these states is closed for business.  Nothing about it —
+# including a protocol plan still sitting in 'draft' — should raise a card.
+# Imported rather than restated: the wizard's close control, the PATCH
+# validation and this reflex must agree on what "closed" means, or closing a
+# session in the UI stops one flood path and not the other.
+from tools.migration_canvas.constants import (  # noqa: E402
+    NET_SESSION_TERMINAL_STATUSES as _TERMINAL_SESSION_STATUSES,
+)
+
 # Human-readable card titles per finding type.  Also the dedupe key: the
 # open-card guard matches on "[NMCE] <label> —", so these strings are
 # load-bearing, not cosmetic.
-# A session in one of these states is closed for business.  Nothing about it —
-# including a protocol plan still sitting in 'draft' — should raise a card.
-_TERMINAL_SESSION_STATUSES = ("complete", "archived")
-
 _TYPE_LABELS = {
     "stale_migration_session": "Stale migration sessions",
     "eol_no_migration":        "EOL devices with no migration",

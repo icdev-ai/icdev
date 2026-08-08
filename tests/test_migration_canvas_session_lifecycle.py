@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""A network migration session had no way to ever end.
+"""The migration-canvas audit trail recorded nothing, and closing a session did not close it.
 
-The PATCH endpoint allowlisted `status` and worked, but nothing in the wizard
-ever called it with one, so every session created stayed `in_progress` forever.
-After 7 days the migration_canvas Genesis reflex flagged it as stale and raised
-a kanban card — and kept raising one, because the session could not be closed.
-249 `[NMCE]` cards accumulated from 48 sessions that way.
+Two defects behind one route, both of which look like success from the outside.
 
-These cover the close path end to end: the wizard control that calls it, the
-status vocabulary it is allowed to set, and the audit row a lifecycle change
-must leave behind (every other mutating route in the blueprint audits; this one
-silently did not).
+`mc_net_api_update` is the endpoint the wizard's close control calls. It wrote no
+audit row while every other mutating route in the blueprint did, and it answered
+200 for a session id that does not exist — a silent zero-row UPDATE, which is how
+a dead Close button looks like it worked.
+
+Underneath, `_audit` itself has never persisted anything. `mc_audit` was declared
+only in the canvas SCHEMA and never applied to PostgreSQL, and the bridge to
+`audit_trail` passed a uuid string as an integer sequence-backed `id` under an
+`event_type` the CHECK did not admit. Both failures were swallowed by
+best-effort `except` blocks, so the canvas has produced zero audit rows.
+
+The wizard control and the status vocabulary are covered by
+test_migration_canvas_session_close.py; this file covers what that one cannot
+reach.
 """
 
 import sys
@@ -24,12 +30,8 @@ import pytest
 from flask import Flask
 
 from tools.migration_canvas import blueprint as bp_mod
+from tools.migration_canvas.constants import NET_SESSION_TERMINAL_STATUSES
 from tools.migration_canvas.db import init_db as init_db_mod
-
-_WIZARD = (
-    Path(__file__).resolve().parent.parent
-    / "tools" / "dashboard" / "templates" / "migration_canvas" / "network_wizard.html"
-)
 
 
 @pytest.fixture
@@ -114,32 +116,26 @@ def _patch(client, sid, body):
 
 
 class TestClosingASession:
-    def test_archiving_persists(self, client, sid):
-        """The whole point: a session can reach a state the reflex ignores."""
-        assert _patch(client, sid, {"status": "archived"}).status_code == 200
-        assert _status(sid) == "archived"
+    """The close path itself is covered by test_migration_canvas_session_close.py
+    (the wizard control and the status vocabulary). What is asserted here is the
+    part that file does not reach: that the reflex agrees on what closed means,
+    and that the write leaves a trail."""
 
-    @pytest.mark.parametrize("status", bp_mod.SESSION_STATUSES)
-    def test_every_declared_status_is_settable(self, client, sid, status):
-        """The vocabulary the UI offers must be the vocabulary the API accepts."""
-        assert _patch(client, sid, {"status": status}).status_code == 200
-        assert _status(sid) == status
-
-    def test_archived_is_terminal_to_the_reflex(self):
-        """Both halves must agree on which statuses actually stop a card."""
+    def test_the_reflex_honours_the_same_terminal_set(self):
+        """A drifted copy would close the session in the UI and keep raising cards."""
         reflex = __import__(
             "tools.genesis.reflexes.migration_canvas", fromlist=["_TERMINAL_SESSION_STATUSES"]
         )
-        assert set(reflex._TERMINAL_SESSION_STATUSES) == set(bp_mod.TERMINAL_SESSION_STATUSES)
+        assert set(reflex._TERMINAL_SESSION_STATUSES) == set(NET_SESSION_TERMINAL_STATUSES)
+
+    def test_terminal_statuses_are_actually_settable(self, client, sid):
+        """Closing must reach the DB, not just validate."""
+        for status in NET_SESSION_TERMINAL_STATUSES:
+            assert _patch(client, sid, {"status": status}).status_code == 200
+            assert _status(sid) == status
 
 
 class TestStatusValidation:
-    def test_unknown_status_is_rejected(self, client, sid):
-        """'closed', 'done', 'complete ' — a typo must not create a fourth state."""
-        resp = _patch(client, sid, {"status": "closed"})
-        assert resp.status_code == 400
-        assert "closed" in resp.get_json()["error"]
-
     def test_rejected_status_does_not_write(self, client, sid):
         """A 400 must leave the row alone, not half-apply the request."""
         _patch(client, sid, {"status": "closed"})
@@ -183,23 +179,3 @@ class TestAuditTrail:
         from tools.audit.audit_logger import VALID_EVENT_TYPES
 
         assert "migration_canvas" in VALID_EVENT_TYPES
-
-
-class TestWizardControl:
-    """The API was never the gap — the missing UI control was."""
-
-    def test_wizard_offers_a_close_control(self):
-        html = _WIZARD.read_text(encoding="utf-8")
-        assert "toggleSessionLifecycle" in html
-        assert "Close / Archive session" in html
-
-    def test_control_patches_a_terminal_status(self):
-        html = _WIZARD.read_text(encoding="utf-8")
-        assert "{status: next}" in html
-        assert "'archived'" in html
-
-    def test_wizard_terminal_list_matches_the_server(self):
-        """A drifted client list would show 'Close' on an already-closed session."""
-        html = _WIZARD.read_text(encoding="utf-8")
-        expected = ", ".join(f"'{s}'" for s in bp_mod.TERMINAL_SESSION_STATUSES)
-        assert f"TERMINAL_SESSION_STATUSES = [{expected}]" in html

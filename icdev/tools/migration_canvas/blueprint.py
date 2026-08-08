@@ -40,6 +40,7 @@ from tools.migration_canvas.constants import (  # noqa: E402
     MIGRATION_OBJECTS,
     MC_COMPLIANCE_RULES,
     MIGRATION_TYPES,
+    NET_SESSION_STATUSES,
     SOP_TYPES,
 )
 from tools.migration_canvas.migration_engine import (  # noqa: E402
@@ -49,16 +50,6 @@ from tools.migration_canvas.migration_engine import (  # noqa: E402
     get_design_stats,
 )
 from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
-
-
-# Network-migration session lifecycle vocabulary.  TERMINAL is the load-bearing
-# half: the migration_canvas Genesis reflex only raises kanban cards for sessions
-# *outside* this set, so moving a session to 'complete' or 'archived' is what
-# actually stops it re-raising a review card every 24h.  Kept in sync with
-# _TERMINAL_SESSION_STATUSES in tools/genesis/reflexes/migration_canvas.py and
-# the active-session query in network_migration.py.
-TERMINAL_SESSION_STATUSES = ("complete", "archived")
-SESSION_STATUSES = ("draft", "in_progress") + TERMINAL_SESSION_STATUSES
 
 
 def create_migration_blueprint():
@@ -826,13 +817,21 @@ def create_migration_blueprint():
     @mdc_login_required
     def mc_net_migration_new():
         """Network migration wizard — new session."""
-        return render_template("migration_canvas/network_wizard.html", session_id=None)
+        return render_template(
+            "migration_canvas/network_wizard.html",
+            session_id=None,
+            net_session_statuses=NET_SESSION_STATUSES,
+        )
 
     @bp.route("/network-migration/<session_id>")
     @mdc_login_required
     def mc_net_migration_wizard(session_id):
         """Network migration wizard — resume existing session."""
-        return render_template("migration_canvas/network_wizard.html", session_id=session_id)
+        return render_template(
+            "migration_canvas/network_wizard.html",
+            session_id=session_id,
+            net_session_statuses=NET_SESSION_STATUSES,
+        )
 
     @bp.route("/network-migration/<session_id>/port-diagram")
     @mdc_login_required
@@ -950,10 +949,13 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
-        if "status" in fields and fields["status"] not in SESSION_STATUSES:
+        # status is free-form TEXT in the schema, so the vocabulary is only
+        # enforceable here.  An unchecked value silently strands the session
+        # outside every active/terminal query that filters on these names.
+        if "status" in fields and fields["status"] not in NET_SESSION_STATUSES:
             return jsonify({
-                "error": f"Invalid status '{fields['status']}'. Expected one of: "
-                         + ", ".join(SESSION_STATUSES)
+                "error": f"Invalid status '{fields['status']}'",
+                "allowed": sorted(NET_SESSION_STATUSES),
             }), 400
         set_clause = ", ".join(f"{k}=%s" for k in fields)
         with get_connection() as conn:
