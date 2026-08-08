@@ -1101,6 +1101,95 @@ def check_worktree_path(tool_name: str, tool_input: dict) -> str:
         return ""  # fail open — never block on a broken guard
 
 
+def _remote_branch_delete_targets(command: str):
+    """Remote branches a command would DELETE. Empty when it deletes nothing.
+
+    Recognises the three forms that actually reach GitHub:
+        git push <remote> --delete <branch> [<branch>...]
+        git push <remote> :<branch>
+        gh api -X DELETE .../git/refs/heads/<branch>
+
+    ``git branch -D`` is deliberately NOT included: it deletes a LOCAL ref, which
+    cannot close a PR or remove anything from the remote.
+    """
+    if "push" not in command and "DELETE" not in command:
+        return []
+    try:
+        tokens = shlex.split(command, posix=(os.name != "nt"))
+    except ValueError:
+        return []
+
+    out = []
+    for i, tok in enumerate(tokens):
+        if tok == "push":
+            rest = tokens[i + 1:]
+            positional = [t for t in rest if not t.startswith("-")]
+            if any(t in ("--delete", "-d") for t in rest):
+                # everything positional after the remote is a branch
+                out += positional[1:] if len(positional) > 1 else []
+            out += [t[1:] for t in rest if t.startswith(":") and len(t) > 1]
+        elif tok == "DELETE":
+            for t in tokens[i + 1:]:
+                if "git/refs/heads/" in t:
+                    out.append(t.split("git/refs/heads/", 1)[1].strip("/"))
+    return [b for b in out if b]
+
+
+def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
+    """Refuse to delete a remote branch that still holds unmerged commits.
+
+    On 2026-08-07 an agent "cleaning up duplicates" deleted four remote branches
+    matching one task id in a six-second burst. One was PR #1332 with every check
+    green: deleting a head branch makes GitHub close the PR as CLOSED-not-merged,
+    so the work vanished with no review and no failure — and `gh pr reopen` then
+    fails because the head ref is gone.
+
+    A task legitimately has several branches — a retry, a rebase, a rival
+    implementation, a human's fix. Sharing a task id is never grounds for
+    deletion. Unmerged commits are grounds for refusal.
+
+    Compared locally with `git cherry` so the check stays fast and works offline,
+    and fails OPEN on any error.
+    """
+    if tool_name != "Bash":
+        return ""
+    if os.environ.get("ICDEV_BRANCH_DELETE_GUARD", "1").strip().lower() in ("0", "false", "no", "off"):
+        return ""
+    branches = _remote_branch_delete_targets(tool_input.get("command", "") or "")
+    if not branches:
+        return ""
+    try:
+        # rls-bypass: repo root resolved from __file__, never os.getcwd() — the
+        # hook runs from whichever worktree invoked it.
+        repo_root = Path(__file__).resolve().parents[2]
+        blocked = []
+        for br in branches:
+            res = subprocess.run(
+                ["git", "cherry", "origin/main", f"origin/{br}"],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
+            )
+            if res.returncode != 0:
+                continue  # cannot compare -> allow (fail open)
+            unique = [ln for ln in res.stdout.splitlines() if ln.startswith("+")]
+            if unique:
+                blocked.append((br, len(unique)))
+        if not blocked:
+            return ""
+        detail = "\n".join(
+            f"    origin/{b}: {n} commit(s) not on origin/main" for b, n in blocked)
+        return (
+            "BLOCKED: refusing to delete a remote branch that still holds "
+            "unmerged work.\n" + detail + "\n"
+            "  Deleting a head branch CLOSES its pull request as closed-not-merged,\n"
+            "  and `gh pr reopen` cannot undo it once the ref is gone.\n"
+            "  Merge or explicitly close the PR first. A shared task id is not a\n"
+            "  reason to delete a branch — a task legitimately has several.\n"
+            "  Deliberate discard: ICDEV_BRANCH_DELETE_GUARD=0"
+        )
+    except Exception:
+        return ""  # fail open — never block on a broken guard
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -1138,6 +1227,12 @@ def main():
         tier_error = check_file_access_tiers(tool_name, tool_input)
         if tier_error:
             print(tier_error, file=sys.stderr)
+            sys.exit(2)
+
+        # Never delete a remote branch that still holds unmerged work
+        branch_error = check_branch_deletion(tool_name, tool_input)
+        if branch_error:
+            print(branch_error, file=sys.stderr)
             sys.exit(2)
 
         # Keep worktrees out of shared temp dirs where two sessions collide
