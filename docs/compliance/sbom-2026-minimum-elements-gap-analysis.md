@@ -162,6 +162,8 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 
 ### 3.1 SBOM Metadata
 
+Baseline as analysed:
+
 | Element | Status | Evidence / what is missing |
 |---|---|---|
 | SBOM Author | **GAP** | No author field. `metadata.tools[].vendor = "ICDEV™"` identifies the tool vendor, which the standard explicitly says is *not* the author. |
@@ -173,6 +175,32 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | SBOM Tool Name | **MET** | `metadata.tools[].name = "icdev-sbom-generator"`. |
 | SBOM Tool Version | **PARTIAL** | **Hardcoded `"1.0.0"`** — not derived from anything. It is a constant that will never change and therefore misidentifies the code delivery. |
 | SBOM Version | **PARTIAL** | Document always carries `"version": 1` while `sbom_records.version` independently counts 1.0, 2.0, 3.0… The two disagree, and neither follows the "major version should be 1, use minor/patch for content changes" guidance. |
+
+**Eight of the nine resolved by sbx-fld-01** in `_build_cyclonedx_sbom()` and
+`generate_sbom()`. SBOM Author Signature is untouched — it is sbx-sig-01's element.
+
+| Element | Now | How |
+|---|---|---|
+| SBOM Author | **MET** | `metadata.authors[0].name` — CycloneDX's native author slot, valid across 1.4–1.7 (unlike `metadata.manufacturer`, 1.6+). Resolved from the `--author` argument, then `$ICDEV_SBOM_AUTHOR`, then `DEFAULT_SBOM_AUTHOR = "Intelligent Certified Development Platform"` — a full name, not an acronym. A deployment sets the env var to its own entity. `metadata.tools[].vendor` is left alone: it was always the tool vendor and was never the author. |
+| SBOM Author Signature | **GAP** | Out of scope here — sbx-sig-01. |
+| SBOM Data Format Name | **MET** | Unchanged; now also persisted to `sbom_records.data_format_name`. |
+| SBOM Data Format Version | **MET** | Default raised 1.4 → **1.6**. 1.4–1.7 all stay selectable via `--spec-version` for readers pinned to an older schema. 1.6 rather than 1.7 for reader support; 1.7 is one flag away. |
+| SBOM Generation Context | **MET** | `metadata.lifecycles = [{"phase": "pre-build"}]` on 1.5+, plus property `icdev:sbom-generation-context = "before build"` on every version. Two vocabularies, not redundancy: the property carries the standard's own term, and a 1.4 document has no `lifecycles` field to put it in. |
+| SBOM Timestamp | **MET** | `_rfc9557_timestamp()` — RFC 3339 profile of RFC 9557, which is what CycloneDX's `format: date-time` accepts (a `[UTC]` suffix would fail it). Naive datetimes now raise instead of being stamped `Z`; a non-UTC datetime is converted rather than relabelled. Parsed back in test. |
+| SBOM Tool Name | **MET** | Unchanged; hoisted to the `SBOM_TOOL_NAME` constant and persisted. |
+| SBOM Tool Version | **MET** | `_get_tool_version()` — `icdev._version.__version__`, then installed distribution metadata, then `pyproject.toml`, then the literal `"unknown"` the standard requires when the version is unavailable. The `"1.0.0"` literal is gone from both copies and an AST check keeps it gone. |
+| SBOM Version | **MET** | One counter, two spellings. The revision is settled before the document is built: CycloneDX `version` carries it as the integer 1, 2, 3…, `icdev:sbom-version` and `sbom_records.version` / `.sbom_version` carry it as semver `1.<N-1>.0` — major pinned to 1 per the standard, minor counting content revisions. Legacy `"3.0"` rows still parse to revision 3, so an existing project continues at `1.3.0` rather than restarting. `serialNumber` remains a `uuid4` urn, which is RFC 9562 §5.4. |
+
+Two supporting changes fell out of this. The version query was
+`MAX(CAST(CASE WHEN version GLOB '[0-9]*' …  AS REAL))` — SQLite dialect on a
+PostgreSQL-primary backend, where `translate_sql` rewrites `GLOB` to a POSIX `~` whose
+`[0-9]*` matches every string, and where `CAST('1.0.0' AS REAL)` is a hard error. It is
+now computed in Python. And the `sbom_records` INSERT appends the sbx-fnd-02 columns
+only where they exist, so a database that has not run migration
+`20260808030213_sbom_2026_minimum_elements` still records its row and names on stderr
+what it could not persist.
+
+Pinned by `tests/test_sbom_metadata_2026.py`.
 
 ### 3.2 Component Data
 
@@ -199,9 +227,13 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
-**Score: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool Name,
-Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7 practices
-fully met.**
+**Score as analysed: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool
+Name, Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7
+practices fully met.**
+
+**Score after sbx-fld-01: 8 of 17 data-field elements fully met** — the eight SBOM Metadata
+elements above. The ninth metadata element (SBOM Author Signature) and all eight Component Data
+elements are unchanged; practices are unchanged at 0 of 7.
 
 ---
 

@@ -5,26 +5,38 @@
 # production audit/remediate, FedRAMP KSI/packager, SWFT) and a BLOCKING bdc_canvas gate.
 # Authored in both tools/compliance/ and icdev/tools/compliance/ — keep the two in sync.
 """Generate CycloneDX Software Bill of Materials (SBOM).
-Detects project type, parses dependency files, generates CycloneDX 1.4 JSON
-format SBOM with CUI classification metadata, records in sbom_records table,
-and logs audit event."""
+Detects project type, parses dependency files, generates CycloneDX JSON format
+SBOM with CUI classification metadata, records in sbom_records table, and logs
+audit event.
+
+The document-level metadata block implements the SBOM Metadata half of the
+*2026 Minimum Elements for a Software Bill of Materials* (CISA with NSA, FBI and
+16 international partners, 2026-07-29, v2.1), which supersedes the 2021 NTIA
+minimum elements. See docs/compliance/sbom-2026-minimum-elements-gap-analysis.md
+sections 1.1 and 3.1. Eight of the nine metadata elements are emitted here; the
+ninth, SBOM Author Signature, is sbx-sig-01."""
 
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import uuid
-from tools.db.storage import get_connection
+from tools.db.storage import column_exists, get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-# CycloneDX spec version (default 1.4, supports 1.4-1.7 via --spec-version)
-CYCLONEDX_SPEC_VERSION = "1.4"
-CYCLONEDX_SCHEMA = "http://cyclonedx.org/schema/bom-1.4.schema.json"
+# SBOM Data Format Version. The default was 1.4 — a 2022 spec — until sbx-fld-01.
+# The 2026 minimum elements cite ECMA-424 and say deprecated data-format versions
+# should not be used, so the default moved up; 1.4-1.7 stay selectable via
+# --spec-version for consumers pinned to an older reader. 1.6 rather than 1.7 is
+# the default because it has the wider reader support among current versions.
+CYCLONEDX_SPEC_VERSION = "1.6"
+CYCLONEDX_SCHEMA = "http://cyclonedx.org/schema/bom-1.6.schema.json"
 
 # Supported CycloneDX spec versions (D342)
 CYCLONEDX_SUPPORTED_VERSIONS = {
@@ -33,6 +45,54 @@ CYCLONEDX_SUPPORTED_VERSIONS = {
     "1.6": "http://cyclonedx.org/schema/bom-1.6.schema.json",
     "1.7": "http://cyclonedx.org/schema/bom-1.7.schema.json",
 }
+
+# --- 2026 SBOM Metadata elements ------------------------------------------------
+
+# SBOM Data Format Name and SBOM Tool Name.
+SBOM_DATA_FORMAT_NAME = "CycloneDX"
+SBOM_TOOL_NAME = "icdev-sbom-generator"
+SBOM_TOOL_VENDOR = "ICDEV™"
+
+# SBOM Author — the ENTITY that creates the SBOM data, explicitly NOT the tool.
+# metadata.tools[].vendor identifies the tool's vendor and does not satisfy this
+# element. The standard asks for full names with no acronyms unless the acronym is
+# official, and allows the author and the component producer to be the same entity.
+# A deployment SHOULD set ICDEV_SBOM_AUTHOR to the full legal name of the entity
+# operating this generator; the default names the platform in full, not by acronym.
+SBOM_AUTHOR_ENV = "ICDEV_SBOM_AUTHOR"
+DEFAULT_SBOM_AUTHOR = "Intelligent Certified Development Platform"
+
+# SBOM Generation Context — the lifecycle phase, and so the data available, when
+# the SBOM was generated. This generator reads declared source manifests and never
+# opens a built artifact, which makes the phase "before build" in the standard's
+# wording and "pre-build" in the CycloneDX metadata.lifecycles vocabulary. Both are
+# emitted: the CycloneDX field where the spec version supports it, the property
+# always, because only the property carries the standard's own term.
+SBOM_GENERATION_CONTEXT = "before build"
+CYCLONEDX_LIFECYCLE_PHASE = "pre-build"
+LIFECYCLES_MIN_SPEC_VERSION = (1, 5)
+
+# SBOM Version — semantic versioning with the major pinned to 1, per "the major
+# version of an SBOM following these elements should be '1'", and the minor
+# counting content revisions. The CycloneDX document `version` integer counts the
+# same revisions from 1, so the two are two spellings of one number rather than the
+# two independent counters they used to be.
+SBOM_VERSION_MAJOR = 1
+
+# The sbom_records columns added by migration 20260808030213_sbom_2026_minimum_elements
+# (sbx-fnd-02). Written only where they exist: a database that predates that
+# migration still records its row, and says on stderr what it could not persist
+# rather than dropping the write into the surrounding exception handler.
+SBOM_RECORD_2026_COLUMNS = (
+    "sbom_author",
+    "data_format_name",
+    "data_format_version",
+    "generation_context",
+    "tool_name",
+    "tool_version",
+    "sbom_version",
+    "serial_number",
+)
 
 
 def _get_connection(db_path=None):
@@ -703,15 +763,143 @@ def _generate_bom_ref(component):
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=None, schema=None):
-    """Build a CycloneDX JSON SBOM document."""
+def _get_tool_version():
+    """SBOM Tool Version — derived from the delivery, never a literal.
+
+    This was hardcoded "1.0.0", a constant that could never change and therefore
+    identified no particular code delivery. The version is read from the package's
+    single source of truth, then from installed distribution metadata, then from
+    pyproject.toml. If every source fails the answer is the string "unknown", which
+    is what the standard requires the author to state when the version is
+    unavailable — not a placeholder that reads like a real release.
+    """
+    try:
+        from icdev._version import __version__ as package_version
+
+        if package_version:
+            return str(package_version)
+    except Exception:
+        pass
+
+    try:
+        from importlib.metadata import version as _distribution_version
+
+        installed = _distribution_version("icdev")
+        if installed:
+            return str(installed)
+    except Exception:
+        pass
+
+    try:
+        text = (BASE_DIR / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+
+    return "unknown"
+
+
+def _get_sbom_author(sbom_author=None):
+    """SBOM Author — explicit argument, then ICDEV_SBOM_AUTHOR, then the default."""
+    if sbom_author and str(sbom_author).strip():
+        return str(sbom_author).strip()
+    configured = os.environ.get(SBOM_AUTHOR_ENV, "")
+    if configured.strip():
+        return configured.strip()
+    return DEFAULT_SBOM_AUTHOR
+
+
+def _rfc9557_timestamp(moment):
+    """SBOM Timestamp, conformant to RFC 9557.
+
+    RFC 9557 extends RFC 3339 with optional bracketed suffixes; an unsuffixed
+    RFC 3339 date-time is a conformant Internet-Extended-Date/Time string. The
+    suffix form is deliberately not used because CycloneDX types
+    metadata.timestamp as JSON Schema `format: date-time`, which `[UTC]` fails.
+
+    A naive datetime raises rather than being assumed UTC. The strftime format this
+    replaces stamped a literal "Z" onto whatever it was handed, so a non-UTC clock
+    produced a timestamp that was wrong and well-formed at the same time.
+    """
+    if moment.tzinfo is None or moment.tzinfo.utcoffset(moment) is None:
+        raise ValueError("SBOM timestamp requires a timezone-aware datetime (RFC 9557)")
+    utc = moment.astimezone(timezone.utc).replace(microsecond=0)
+    return utc.isoformat().replace("+00:00", "Z")
+
+
+def _spec_version_tuple(spec_version):
+    """Parse "1.6" into (1, 6) for ordered comparison; (0, 0) if unparseable."""
+    try:
+        return tuple(int(part) for part in str(spec_version).split("."))
+    except (TypeError, ValueError):
+        return (0, 0)
+
+
+def _revision_from_version(value):
+    """Map one sbom_records.version string to the revision number it stands for.
+
+    Computed in Python rather than in SQL deliberately. The query this replaces used
+    `version GLOB '[0-9]*'` with CAST(... AS REAL) — SQLite dialect on a
+    PostgreSQL-primary backend, where translate_sql rewrites GLOB to a POSIX `~`
+    whose `[0-9]*` matches every string including the empty one, and where
+    CAST('1.0.0' AS REAL) is a hard error rather than 1.0.
+
+    Both spellings are understood so revisions stay monotonic across the change:
+    the semver "1.<N>.0" written from sbx-fld-01 onward, and the legacy "<N>.0"
+    floats written before it.
+    """
+    if value is None:
+        return 0
+    text = str(value).strip()
+    if not text:
+        return 0
+    parts = text.split(".")
+    try:
+        if len(parts) >= 3 and int(parts[0]) == SBOM_VERSION_MAJOR:
+            return int(parts[1]) + 1  # "1.0.0" is the first revision
+        return int(float(text))  # legacy "3.0" is the third
+    except (TypeError, ValueError):
+        return 0
+
+
+def _semver_for_revision(revision):
+    """The SBOM Version element for revision N: major pinned to 1, minor counts."""
+    return f"{SBOM_VERSION_MAJOR}.{max(int(revision), 1) - 1}.0"
+
+
+def _build_cyclonedx_sbom(
+    project,
+    components,
+    serial_number=None,
+    spec_version=None,
+    schema=None,
+    sbom_author=None,
+    tool_version=None,
+    document_version=1,
+    sbom_version=None,
+):
+    """Build a CycloneDX JSON SBOM document.
+
+    document_version is the CycloneDX integer revision counter and sbom_version is
+    the same revision spelled as the standard's SBOM Version element. Callers that
+    pass neither get revision 1 / "1.0.0", which keeps the two agreeing by
+    construction rather than by coincidence.
+    """
     now = datetime.now(timezone.utc)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
     active_schema = schema or CYCLONEDX_SUPPORTED_VERSIONS.get(
         active_spec_version, CYCLONEDX_SUPPORTED_VERSIONS[CYCLONEDX_SPEC_VERSION]
     )
+    active_author = _get_sbom_author(sbom_author)
+    active_tool_version = tool_version or _get_tool_version()
+    active_document_version = int(document_version)
+    active_sbom_version = sbom_version or _semver_for_revision(active_document_version)
 
     if serial_number is None:
+        # uuid4 is the random UUID of RFC 9562 section 5.4, which is the form the
+        # standard points at for serial-number style identifiers.
         serial_number = f"urn:uuid:{uuid.uuid4()}"
 
     # Deduplicate components by purl
@@ -746,14 +934,17 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
         "bomFormat": "CycloneDX",
         "specVersion": active_spec_version,
         "serialNumber": serial_number,
-        "version": 1,
+        "version": active_document_version,
         "metadata": {
-            "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": _rfc9557_timestamp(now),
+            # SBOM Author, in CycloneDX's own metadata.authors slot — valid in every
+            # spec version this module emits, unlike metadata.manufacturer (1.6+).
+            "authors": [{"name": active_author}],
             "tools": [
                 {
-                    "vendor": "ICDEV™",
-                    "name": "icdev-sbom-generator",
-                    "version": "1.0.0",
+                    "vendor": SBOM_TOOL_VENDOR,
+                    "name": SBOM_TOOL_NAME,
+                    "version": active_tool_version,
                 }
             ],
             "component": {
@@ -779,10 +970,24 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
                     "name": "icdev:distribution",
                     "value": "Distribution D -- Authorized DoD Personnel Only",
                 },
+                {
+                    "name": "icdev:sbom-generation-context",
+                    "value": SBOM_GENERATION_CONTEXT,
+                },
+                {
+                    "name": "icdev:sbom-version",
+                    "value": active_sbom_version,
+                },
             ],
         },
         "components": cdx_components,
     }
+
+    # SBOM Generation Context in CycloneDX's vocabulary. metadata.lifecycles arrived
+    # in 1.5, so a 1.4 document carries the context in the property above only rather
+    # than in a field its schema would reject.
+    if _spec_version_tuple(active_spec_version) >= LIFECYCLES_MIN_SPEC_VERSION:
+        sbom["metadata"]["lifecycles"] = [{"phase": CYCLONEDX_LIFECYCLE_PHASE}]
 
     return sbom, len(unique_components)
 
@@ -793,6 +998,7 @@ def generate_sbom(
     output_path=None,
     db_path=None,
     spec_version=None,
+    sbom_author=None,
 ):
     """Generate a Software Bill of Materials for a project.
 
@@ -801,6 +1007,8 @@ def generate_sbom(
         sbom_format: Output format (currently only 'cyclonedx' supported)
         output_path: Override output file path
         db_path: Override database path
+        spec_version: CycloneDX spec version (1.4-1.7); defaults to CYCLONEDX_SPEC_VERSION
+        sbom_author: SBOM Author entity name; defaults to $ICDEV_SBOM_AUTHOR
 
     Returns:
         Path to the generated SBOM file
@@ -815,6 +1023,8 @@ def generate_sbom(
             f"Unsupported CycloneDX spec version: {active_spec_version}. Supported: {list(CYCLONEDX_SUPPORTED_VERSIONS.keys())}"
         )
     active_schema = CYCLONEDX_SUPPORTED_VERSIONS[active_spec_version]
+    active_author = _get_sbom_author(sbom_author)
+    active_tool_version = _get_tool_version()
 
     conn = _get_connection(db_path)
     try:
@@ -904,9 +1114,27 @@ def generate_sbom(
                 except Exception as e:
                     print(f"  Warning: Failed to parse {ptype}: {e}")
 
+        # SBOM Version. One revision counter, read as rows and counted in Python —
+        # see _revision_from_version for why this is not a MAX(CAST(...)) query. The
+        # revision is settled before the document is built so the CycloneDX integer
+        # `version` and the sbom_records row are the same number by construction.
+        prior = conn.execute(
+            "SELECT version FROM sbom_records WHERE project_id = %s",
+            (project_id,),
+        ).fetchall()
+        revision = max([_revision_from_version(row["version"]) for row in prior] or [0]) + 1
+        new_version = _semver_for_revision(revision)
+
         # Build CycloneDX SBOM
         sbom, component_count = _build_cyclonedx_sbom(
-            project, all_components, spec_version=active_spec_version, schema=active_schema
+            project,
+            all_components,
+            spec_version=active_spec_version,
+            schema=active_schema,
+            sbom_author=active_author,
+            tool_version=active_tool_version,
+            document_version=revision,
+            sbom_version=new_version,
         )
 
         # Determine output path
@@ -926,32 +1154,58 @@ def generate_sbom(
         with open(out_file, "w", encoding="utf-8") as f:
             json.dump(sbom, f, indent=2)
 
-        # Determine version
-        existing = conn.execute(
-            """SELECT MAX(CAST(
-                 CASE WHEN version GLOB '[0-9]*' THEN version ELSE '0' END
-               AS REAL)) as max_ver
-               FROM sbom_records WHERE project_id = %s""",
-            (project_id,),
-        ).fetchone()
-        max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
-        new_version = f"{max_ver + 1.0:.1f}"
+        # Record in sbom_records table. The 2026 metadata columns are appended only
+        # where they exist, so a database that has not run migration
+        # 20260808030213_sbom_2026_minimum_elements still records its row instead of
+        # raising into the caller — and says on stderr exactly what it dropped.
+        record_columns = [
+            "project_id",
+            "version",
+            "format",
+            "file_path",
+            "component_count",
+            "vulnerability_count",
+        ]
+        record_values = [
+            project_id,
+            new_version,
+            sbom_format,
+            str(out_file),
+            component_count,
+            0,  # Vulnerability count starts at 0; updated by security scanning
+        ]
+        metadata_elements = {
+            "sbom_author": active_author,
+            "data_format_name": SBOM_DATA_FORMAT_NAME,
+            "data_format_version": active_spec_version,
+            "generation_context": SBOM_GENERATION_CONTEXT,
+            "tool_name": SBOM_TOOL_NAME,
+            "tool_version": active_tool_version,
+            "sbom_version": new_version,
+            "serial_number": sbom["serialNumber"],
+        }
+        unpersisted = []
+        for column in SBOM_RECORD_2026_COLUMNS:
+            if column_exists(conn, "sbom_records", column):
+                record_columns.append(column)
+                record_values.append(metadata_elements[column])
+            else:
+                unpersisted.append(column)
+        if unpersisted:
+            print(
+                f"Warning: sbom_records is missing {', '.join(unpersisted)} — those 2026 SBOM "
+                "metadata elements are in the document but were not persisted. "
+                "Run: python tools/db/migrate.py",
+                file=sys.stderr,
+            )
 
-        # Record in sbom_records table
-        conn.execute(
-            """INSERT INTO sbom_records
-               (project_id, version, format, file_path,
-                component_count, vulnerability_count)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (
-                project_id,
-                new_version,
-                sbom_format,
-                str(out_file),
-                component_count,
-                0,  # Vulnerability count starts at 0; updated by security scanning
-            ),
-        )
+        # Assembled rather than written out, because the trailing columns depend on
+        # whether this database has run the sbx-fnd-02 migration. Every interpolated
+        # name comes from SBOM_RECORD_2026_COLUMNS or the fixed base list above — a
+        # module constant, never caller input — and every value stays bound.
+        column_list = f"({', '.join(record_columns)})"
+        value_list = f"VALUES ({', '.join(['%s'] * len(record_columns))})"
+        conn.execute(f"INSERT INTO sbom_records {column_list} {value_list}", tuple(record_values))  # nosec B608
         conn.commit()
 
         # Log audit event
@@ -965,6 +1219,9 @@ def generate_sbom(
                 "component_count": component_count,
                 "output_file": str(out_file),
                 "serial_number": sbom["serialNumber"],
+                "sbom_author": active_author,
+                "tool_version": active_tool_version,
+                "generation_context": SBOM_GENERATION_CONTEXT,
             },
             out_file,
         )
@@ -972,7 +1229,10 @@ def generate_sbom(
         print("\nSBOM generated successfully:")
         print(f"  File: {out_file}")
         print(f"  Format: CycloneDX {active_spec_version}")
-        print(f"  Version: {new_version}")
+        print(f"  Version: {new_version} (document revision {revision})")
+        print(f"  Author: {active_author}")
+        print(f"  Tool: {SBOM_TOOL_NAME} {active_tool_version}")
+        print(f"  Context: {SBOM_GENERATION_CONTEXT}")
         print(f"  Components: {component_count}")
         print(f"  Serial: {sbom['serialNumber']}")
 
@@ -999,7 +1259,16 @@ def main():
         dest="spec_version",
         default=None,
         choices=["1.4", "1.5", "1.6", "1.7"],
-        help="CycloneDX spec version (default: 1.4, D342)",
+        help=f"CycloneDX spec version (default: {CYCLONEDX_SPEC_VERSION}, D342)",
+    )
+    parser.add_argument(
+        "--author",
+        dest="sbom_author",
+        default=None,
+        help=(
+            "SBOM Author — full name of the entity generating the SBOM, not the tool. "
+            f"Defaults to ${SBOM_AUTHOR_ENV}, then to '{DEFAULT_SBOM_AUTHOR}'."
+        ),
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
@@ -1011,6 +1280,7 @@ def main():
             output_path=args.output,
             db_path=Path(args.db) if args.db else None,
             spec_version=args.spec_version,
+            sbom_author=args.sbom_author,
         )
         print(f"\nSBOM path: {path}")
     except (FileNotFoundError, ValueError) as e:
