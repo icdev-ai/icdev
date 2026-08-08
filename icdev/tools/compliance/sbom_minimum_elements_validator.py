@@ -1309,9 +1309,14 @@ def _score_distribution_and_delivery(s):
 
 def _score_explicit_unknowns(s):
     ambiguous = []
-    explicit_unknown = 0
-    explicit_withheld = 0
-    for comp in s.components:
+    # Counted as (component, field) pairs rather than as running totals: a
+    # field can be marked BOTH by its value ("withheld") and by the component's
+    # withheld-fields list, and reporting that one field as two would make the
+    # diagnostic disagree with the document it is describing.
+    unknown_pairs = set()
+    withheld_pairs = set()
+    for index, comp in enumerate(s.components):
+        key = comp.ref or f"{comp.name}#{index}"
         for field_name, value in (
             ("version", comp.version),
             ("producer", comp.producer),
@@ -1321,11 +1326,14 @@ def _score_explicit_unknowns(s):
             if state == "ambiguous":
                 ambiguous.append(f"{comp.name}.{field_name}={value!r}")
             elif state == "unknown":
-                explicit_unknown += 1
+                unknown_pairs.add((key, field_name))
             elif state == "withheld":
-                explicit_withheld += 1
-        explicit_unknown += len(comp.unknown_fields)
-        explicit_withheld += len(comp.withheld_fields)
+                withheld_pairs.add((key, field_name))
+        unknown_pairs.update((key, name) for name in comp.unknown_fields)
+        withheld_pairs.update((key, name) for name in comp.withheld_fields)
+
+    explicit_unknown = len(unknown_pairs)
+    explicit_withheld = len(withheld_pairs)
 
     if ambiguous:
         return (
