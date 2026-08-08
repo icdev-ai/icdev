@@ -1,0 +1,171 @@
+# CUI // SP-CTI
+# ---------------------------------------------------------------------------
+# Component Producer namespace registry — 2026 SBOM Minimum Elements (sbx-fld-02)
+#
+# The 2026 standard replaced "Supplier Name" with "Component Producer": the
+# entity that CREATES, DEFINES and IDENTIFIES the component, exactly one
+# organization per component, stated with full names and no acronyms unless the
+# acronym is the official name. It also says that for open source with no clear
+# producer the author should name "the original project or maintaining
+# organization", and that where there is still no clear indication the component
+# MUST be explicitly marked as being of unknown provenance.
+#
+# This file is the evidence source for that middle clause, and ONLY for it.
+# `component_producer.py` always prefers first-party package metadata — a PyPI
+# distribution's Author, an npm package's `author`, a Maven POM's
+# <organization>, a crate's `authors`, a nuspec's <authors>. This registry is
+# consulted only when that metadata is absent, which is the normal case for Go
+# (module paths carry no producer metadata at all) and for Maven artifacts whose
+# POM is not in the local repository.
+#
+# It is deliberately DATA, not Python. The mapping is reference material that an
+# operator is expected to extend for their own enclave's internal namespaces;
+# burying it in a module would make that an edit to code.
+#
+# WHAT MAY GO IN HERE
+#
+# Only mappings where the namespace unambiguously identifies one organization.
+# If two organizations publish under a namespace, or if the namespace is an
+# individual's account rather than an organization, leave it out — an explicit
+# unknown-provenance marker is the correct and honest output, and the standard
+# says so outright. Guessing is the failure mode this element exists to stop.
+#
+# A groupId, an npm scope and a Go module path are NEVER copied into the
+# producer field verbatim. `org.apache.commons` is a Maven namespace, not an
+# organization's name; the registry is what turns it into one. A candidate that
+# merely echoes the component's own namespace is rejected by
+# `_reject_namespace_echo` even if someone adds it here.
+# ---------------------------------------------------------------------------
+
+version: 1
+
+# Namespace domains -> the full name of the producing organization.
+#
+# Matched against, in this order:
+#   - a Go module's host path            (google.golang.org/grpc -> google.golang.org)
+#   - a Maven groupId read as reverse-DNS (org.apache.commons     -> commons.apache.org)
+#   - the domain of a package author's e-mail address
+#
+# Lookup is longest-suffix-first, so `google.golang.org` wins over `golang.org`.
+# A bare public suffix (`org`, `io`, `com`) is never matched.
+domains:
+  apache.org: "The Apache Software Foundation"
+  eclipse.org: "Eclipse Foundation AISBL"
+  golang.org: "The Go Authors"
+  google.golang.org: "Google LLC"
+  google.com: "Google LLC"
+  googleapis.com: "Google LLC"
+  k8s.io: "The Kubernetes Authors"
+  kubernetes.io: "The Kubernetes Authors"
+  go.uber.org: "Uber Technologies, Inc."
+  go.mongodb.org: "MongoDB, Inc."
+  microsoft.com: "Microsoft Corporation"
+  redhat.com: "Red Hat, Inc."
+  jetbrains.com: "JetBrains s.r.o."
+  mozilla.org: "Mozilla Foundation"
+  python.org: "Python Software Foundation"
+  djangoproject.com: "Django Software Foundation"
+  palletsprojects.com: "Pallets"
+  numfocus.org: "NumFOCUS, Inc."
+  cloudflare.com: "Cloudflare, Inc."
+  hashicorp.com: "HashiCorp, Inc."
+  elastic.co: "Elasticsearch B.V."
+  oracle.com: "Oracle Corporation"
+  ibm.com: "International Business Machines Corporation"
+  amazonaws.com: "Amazon Web Services, Inc."
+  fasterxml.com: "FasterXML, LLC"
+  qos.ch: "QOS.ch Sarl"
+  springframework.org: "Broadcom Inc."
+  jenkins.io: "Continuous Delivery Foundation"
+  linuxfoundation.org: "The Linux Foundation"
+  openssl.org: "The OpenSSL Project"
+  gnu.org: "Free Software Foundation, Inc."
+  nist.gov: "National Institute of Standards and Technology"
+  mitre.org: "The MITRE Corporation"
+
+# Code-hosting forges. A component whose only namespace evidence is one of these
+# hosts has NOT identified a producer — `github.com` publishes nothing, it hosts.
+# Such a component is marked of unknown provenance unless a `namespaces` entry
+# below names the specific account's organization.
+# `gopkg.in` is listed here too: it is a version-routing alias in front of
+# GitHub, so it identifies a redirect and not a producer.
+forges:
+  - github.com
+  - gitlab.com
+  - bitbucket.org
+  - codeberg.org
+  - git.sr.ht
+  - sourceforge.net
+  - gitee.com
+  - dev.azure.com
+  - visualstudio.com
+  - gopkg.in
+
+# Specific forge accounts -> organization. Matched as a `<host>/<account>`
+# prefix of a Go module path. Only accounts that are unambiguously an
+# organization's official account belong here.
+namespaces:
+  github.com/kubernetes: "The Kubernetes Authors"
+  github.com/golang: "The Go Authors"
+  github.com/google: "Google LLC"
+  github.com/googleapis: "Google LLC"
+  github.com/grpc: "The gRPC Authors"
+  github.com/protocolbuffers: "Google LLC"
+  github.com/hashicorp: "HashiCorp, Inc."
+  github.com/aws: "Amazon Web Services, Inc."
+  github.com/Azure: "Microsoft Corporation"
+  github.com/microsoft: "Microsoft Corporation"
+  github.com/dotnet: "Microsoft Corporation"
+  github.com/NuGet: "Microsoft Corporation"
+  github.com/facebook: "Meta Platforms, Inc."
+  github.com/openzipkin: "OpenZipkin"
+  github.com/prometheus: "The Prometheus Authors"
+  github.com/opencontainers: "The Linux Foundation"
+  github.com/containerd: "The Linux Foundation"
+  github.com/cncf: "Cloud Native Computing Foundation"
+  github.com/etcd-io: "Cloud Native Computing Foundation"
+  github.com/apache: "The Apache Software Foundation"
+  github.com/eclipse: "Eclipse Foundation AISBL"
+  github.com/mozilla: "Mozilla Foundation"
+  github.com/rust-lang: "The Rust Foundation"
+  github.com/nodejs: "OpenJS Foundation"
+  github.com/npm: "npm, Inc."
+  github.com/pypa: "Python Packaging Authority"
+  github.com/python: "Python Software Foundation"
+  github.com/pallets: "Pallets"
+  github.com/django: "Django Software Foundation"
+  github.com/numpy: "NumFOCUS, Inc."
+  github.com/pandas-dev: "NumFOCUS, Inc."
+  github.com/elastic: "Elasticsearch B.V."
+  github.com/redhat-developer: "Red Hat, Inc."
+  github.com/openshift: "Red Hat, Inc."
+  github.com/torvalds: "The Linux Foundation"
+
+# Values that a package's own metadata sometimes carries in place of a real
+# producer. Matched case-insensitively against the whole normalized candidate.
+# These are treated as if the field were empty, which is what they mean — the
+# component ends up explicitly marked of unknown provenance rather than
+# carrying "UNKNOWN" as though it were an organization's name.
+placeholders:
+  - unknown
+  - none
+  - n/a
+  - na
+  - nil
+  - null
+  - tbd
+  - todo
+  - "-"
+  - "?"
+  - author
+  - authors
+  - your name
+  - your name here
+  - example
+  - example author
+  - anonymous
+  - dummy
+  - test
+  - placeholder
+  - the author
+  - me
