@@ -2409,6 +2409,39 @@ CREATE INDEX IF NOT EXISTS idx_sbom_dep_parent ON sbom_dependencies(parent_compo
 CREATE INDEX IF NOT EXISTS idx_sbom_dep_child  ON sbom_dependencies(child_component_id);
 CREATE INDEX IF NOT EXISTS idx_sbom_dep_tenant ON sbom_dependencies(tenant_id);
 
+-- Conformance assessments from tools/compliance/sbom_minimum_elements_validator.py
+-- (migration 20260808053058, sbx-sig-02). APPEND-ONLY. Also covers SBOMs
+-- received from vendors, which is why sbom_record_id and project_id are
+-- nullable and document_sha256 is the durable identity.
+CREATE TABLE IF NOT EXISTS sbom_conformance_assessments (
+    id                   TEXT    PRIMARY KEY,
+    sbom_record_id       INTEGER REFERENCES sbom_records(id),
+    project_id           TEXT,
+    document_path        TEXT,
+    document_sha256      TEXT    NOT NULL,
+    format_name          TEXT,
+    format_version       TEXT,
+    component_count      INTEGER NOT NULL DEFAULT 0,
+    data_fields_met      INTEGER NOT NULL DEFAULT 0,
+    data_fields_partial  INTEGER NOT NULL DEFAULT 0,
+    data_fields_gap      INTEGER NOT NULL DEFAULT 0,
+    practices_met        INTEGER NOT NULL DEFAULT 0,
+    practices_partial    INTEGER NOT NULL DEFAULT 0,
+    practices_gap        INTEGER NOT NULL DEFAULT 0,
+    weighted_score       REAL    NOT NULL DEFAULT 0.0,
+    conformant           INTEGER NOT NULL DEFAULT 0,
+    elements_json        TEXT    NOT NULL DEFAULT '[]',
+    validator_version    TEXT,
+    standard_version     TEXT,
+    assessed_at          TEXT    DEFAULT (datetime('now')),
+    classification       TEXT    NOT NULL DEFAULT 'CUI',
+    tenant_id            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sbom_conf_record  ON sbom_conformance_assessments(sbom_record_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_conf_project ON sbom_conformance_assessments(project_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_conf_sha     ON sbom_conformance_assessments(document_sha256);
+CREATE INDEX IF NOT EXISTS idx_sbom_conf_tenant  ON sbom_conformance_assessments(tenant_id);
+
 CREATE TABLE IF NOT EXISTS supply_chain_vulnerabilities (
     id                TEXT    PRIMARY KEY,
     sbom_id           TEXT    NOT NULL REFERENCES sbom_components(id),

@@ -664,6 +664,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "component_audit_log",
         # MCIP DAT — DTI snapshots are append-only audit trail (NIST AU-9, issue-18)
         "mcip_dti_scores",
+        # SBX (sbx-sig-02, migration 20260808053058) — SBOM 2026 minimum-elements
+        # conformance scores, including for SBOMs received from vendors. A past score
+        # is the basis of a past acceptance decision, so re-scoring appends (NIST AU-9).
+        "sbom_conformance_assessments",
         # ECR SSO — session records are append-only NIST AU (sso_providers is mutable)
         "sso_sessions",
         # ECR SOC 2 — evidence records are immutable compliance evidence (NIST AU-9, migration 211)

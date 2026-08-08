@@ -3106,6 +3106,45 @@ def handle_sandbox_execute(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def handle_sbom_validate_minimum_elements(args: dict) -> dict:
+    """Score an SBOM against the 2026 Minimum Elements (sbx-sig-02).
+
+    Pattern A (direct import) rather than a subprocess: the validator is a
+    pure function over a file and its report is already a dict, so shelling
+    out would only add a JSON round-trip and swallow the distinction between
+    "unreadable document" (exit 2) and "low score" (exit 1) that the CLI is
+    careful to keep. Works on third-party SBOMs, which is why no project_id
+    is required.
+    """
+    sbom_path = args.get("sbom_path")
+    if not sbom_path:
+        raise ValueError("'sbom_path' is required")
+
+    try:
+        from tools.compliance.sbom_minimum_elements_validator import (
+            UnsupportedFormatError,
+            record_assessment,
+            validate_file,
+        )
+    except ImportError as exc:
+        return {"error": f"sbom_minimum_elements_validator not available: {exc}"}
+
+    try:
+        report = validate_file(sbom_path)
+    except (FileNotFoundError, UnsupportedFormatError) as exc:
+        return {"error": str(exc), "sbom_path": str(sbom_path), "conformant": False}
+
+    if args.get("record"):
+        try:
+            record_assessment(report, project_id=args.get("project_id"), db_path=str(DB_PATH))
+            report["recorded"] = True
+        except Exception as exc:  # noqa: BLE001 — recording must not mask the score
+            report["recorded"] = False
+            report["record_error"] = str(exc)
+
+    return report
+
+
 def handle_fedramp_ksi_generate(args: dict) -> dict:
     """Generate FedRAMP 20x KSI evidence for continuous authorization."""
     cli_args = ["--project-id", str(args.get("project_id", ""))]

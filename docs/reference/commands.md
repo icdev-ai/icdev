@@ -173,6 +173,12 @@ python tools/compliance/stig_checker.py --project-id "sparkpilot"
 python tools/compliance/sbom_generator.py --project-id "sparkpilot"
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --python-env /path/to/.venv   # resolve Python from the installed environment
 python tools/compliance/dependency_resolver.py --project-dir "/path/to/project" --json            # resolved transitive set + coverage report
+# SBOM 2026 Minimum Elements conformance — grades ICDEV output AND vendor-supplied SBOMs
+python tools/compliance/sbom_minimum_elements_validator.py --sbom compliance/sbom.cdx.json
+python tools/compliance/sbom_minimum_elements_validator.py --sbom vendor.spdx.json --json         # CycloneDX 1.x or SPDX 2.2/2.3
+python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --min-score 80    # exit 1 below threshold, 2 if unreadable
+python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --require-conformant
+python tools/compliance/sbom_minimum_elements_validator.py --sbom sbom.cdx.json --record --project-id "sparkpilot"
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"

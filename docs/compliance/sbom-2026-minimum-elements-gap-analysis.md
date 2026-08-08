@@ -180,8 +180,18 @@ ICDEV instructs others to attest SBOMs while producing unsigned ones itself.
 `args/security_gates.yaml` already carries `sbom_not_generated` (deployment, swft),
 `sbom_attestation_missing` (devsecops), `sbom_stale_over_30_days` / `sbom_max_age_days: 30`
 (sbd, swft), and `sbom_generation_failed` / `sbom_generation_skipped` (marketplace, production).
-Every one of these is a **presence, freshness or exit-code check**. Nothing validates
-conformance to the minimum elements.
+Every one of these is a **presence, freshness or exit-code check**. None of them looks inside
+the document.
+
+**sbx-sig-02** adds a `sbom_conformance:` section to the same file, whose conditions
+(`sbom_conformance_below_floor`, `sbom_conformance_regressed`, and four warnings) are backed by
+the new validator. That section is **declared but not yet wired into an enforcement point** —
+attaching it to the deployment, swft and devsecops gates is **sbx-gov-01**. Declaring it first
+is deliberate: adding the conditions to a live `blocking:` list today would fail every deploy,
+since the generator scores 2/17 until the `sbx-fld-*` tasks land, and that is the measurement
+this card exists to move rather than a reason to stop shipping. Regression detection needs
+history, which is why the validator can append to `sbom_conformance_assessments` (migration
+`20260808053058`, append-only) rather than only printing.
 
 ### 2.6 SPDX
 
@@ -280,9 +290,53 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
 
-**Score: 3 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool Name,
-Component Name is partial — counting strictly, 2 fully met plus 7 partial), **0 of 7 practices
-fully met.**
+**Score: 2 of 17 data-field elements fully met** (SBOM Data Format Name, SBOM Tool Name), plus
+7 partial and 8 gaps; **0 of the practices fully met.** The practice count reads as "0 of 7"
+against the 2021 list and "0 of 6" against the 2026 one — Access Control was removed, and zero
+is zero either way.
+
+### 3.4 Measured, not asserted (sbx-sig-02)
+
+The matrix above is now produced by a tool rather than by reading the generator:
+`tools/compliance/sbom_minimum_elements_validator.py`. It scores any CycloneDX or SPDX
+document against all 23 elements and emits met/partial/gap with a rationale per element.
+
+```bash
+python tools/compliance/sbom_minimum_elements_validator.py --sbom compliance/sbom.cdx.json --json
+```
+
+Three measurements are pinned by `tests/test_sbom_minimum_elements_validator.py`:
+
+| Document | Data fields | Practices | Weighted |
+|---|---|---|---|
+| Pre-`sbx` generator output (`tests/fixtures/sbom/baseline_cyclonedx_pre_sbx.cdx.json`) | 2 / 17 | 0 / 6 | 30.4% |
+| A document carrying every element (`conformant_cyclonedx_1.6.cdx.json`) | 17 / 17 | 6 / 6 | 100% |
+| A vendor's SPDX 2.3 file (`third_party_spdx_2.3.spdx.json`) | 11 / 17 | 3 / 6 | 69.6% |
+
+The **live** generator, driven through `resolve_project` → `_build_cyclonedx_sbom`, still scores
+exactly 2 of 17 data fields on a declared-only project — the same two elements §3.1/§3.2 name.
+
+One correction to §3.3 above, which the tool makes visible: **sbx-cov-01 moved Coverage off the
+baseline, but not uniformly.** A project whose ecosystems resolve from lockfiles now scores
+Coverage **MET**; a project that degrades to declared manifests scores **PARTIAL**, because the
+document does now state its own incompleteness honestly, which is what the element asks of a
+document. Neither is the original **GAP**. The practices total therefore reads 1/6 or 0/6
+depending on the project, not 0/6 unconditionally.
+
+The third row matters as much as the first two. The standard is aimed at organizations that
+**procure** software as much as at those that produce it, so the validator reads documents ICDEV
+did not generate. That is why the reader is format-agnostic, why it does not import the
+generator, and why `sbom_conformance_assessments.sbom_record_id` is nullable — a vendor's SBOM
+has no generation event behind it.
+
+**Unknown vs withheld.** The validator refuses to score them alike, and grades a value that
+conflates them (`"unspecified"`, `"managed"`) as *worse* than a stated unknown. `UNKNOWN_MARKERS`,
+`WITHHELD_MARKERS` and `AMBIGUOUS_PLACEHOLDERS` in that module are the vocabulary; **sbx-prc-01
+must import them rather than restate them.**
+
+**Known limits.** SPDX support is JSON 2.2/2.3. SPDX 3.x JSON-LD and SPDX tag-value are declined
+with a named error rather than parsed approximately — mis-scoring a vendor's document is worse
+than declining it.
 
 ---
 
