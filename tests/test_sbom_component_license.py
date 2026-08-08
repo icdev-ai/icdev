@@ -783,6 +783,53 @@ def test_the_persisted_row_carries_the_reason_the_license_is_unknown(generated_s
     assert all(not row["withheld"] for row in generated_sbom.rows.values())
 
 
+def test_a_withheld_license_persists_as_withheld_and_the_value_does_not(tmp_path):
+    """The withheld path all the way into the table.
+
+    The fixture above pins the unknown path; this pins the other one, because the
+    column can hold only one value and writing the license beside a `withheld`
+    marker in `withheld_fields_json` would publish what was withheld.
+    """
+    from tools.compliance.sbom_generator import _persist_components
+    from tools.db.storage import get_connection
+
+    policy = {
+        "enquiry": {"process": "ask", "contact": "", "uri": "", "response_target_days": 30},
+        "withhold": {
+            "document": [],
+            "components": [{"field": FIELD_LICENSE, "reason": REASON_CONTRACTUAL_RESTRICTION}],
+        },
+    }
+    component = {
+        "type": "library", "name": "secret", "version": "1.0.0",
+        "purl": "pkg:npm/secret@1.0.0", "group": "", "declared_license": "MIT",
+    }
+    sbom, _ = _build_cyclonedx_sbom(_PROJECT, [component], disclosure_policy=policy)
+
+    db_path = tmp_path / "icdev.db"
+    setup = sqlite3.connect(db_path)
+    setup.executescript(_MINIMAL_SCHEMA)
+    setup.commit()
+    setup.close()
+
+    conn = get_connection(db_path=str(db_path))
+    try:
+        assert _persist_components(conn, sbom["components"]) == 1
+    finally:
+        conn.close()
+
+    row = (
+        sqlite3.connect(db_path)
+        .execute("SELECT license, unknown_fields_json, withheld_fields_json FROM sbom_components")
+        .fetchone()
+    )
+    license_value, unknown_json, withheld_json = row
+    assert license_value == WITHHELD
+    assert json.loads(withheld_json)[FIELD_LICENSE] == REASON_CONTRACTUAL_RESTRICTION
+    assert FIELD_LICENSE not in json.loads(unknown_json)
+    assert "MIT" not in json.dumps(row)
+
+
 def test_the_persisted_row_and_the_document_report_the_same_license(generated_sbom):
     """The table is not allowed to be a second, drifting opinion about the element."""
     in_document = {
