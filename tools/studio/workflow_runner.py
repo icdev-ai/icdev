@@ -119,6 +119,28 @@ def _gate_deadline(step: dict, started_at: str | None) -> float:
 MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
 
 
+# ── Agent steps (hgx-agent-01) ─────────────────────────────
+
+# A `node_type: agent` step runs an agent loop instead of a script: it names the
+# task in `prompt` and bounds its tools with `agent_tools` (bundle names from
+# args/agent_toolsets.yaml). Every such step runs through this one executor,
+# the same way every mcp step runs through mcp_executor.
+AGENT_EXECUTOR = "tools/studio/executors/agent_executor.py"
+
+# Step keys forwarded to the executor as `--<flag> <value>`, in the order the
+# executor documents them. Absent keys are simply not passed, so the executor's
+# own defaults apply and this list never has to restate them.
+_AGENT_STEP_FLAGS = (
+    ("system_prompt", "--system-prompt"),
+    ("llm_function", "--llm-function"),
+    ("work_dir", "--work-dir"),
+    ("max_iterations", "--max-iterations"),
+    ("max_tokens", "--max-tokens"),
+    ("effort", "--effort"),
+    ("approval_mode", "--approval-mode"),
+)
+
+
 # ── DAG helpers ────────────────────────────────────────────
 
 def _dag_graph(steps: list) -> dict:
@@ -221,10 +243,14 @@ def _step_tool_path(step: dict) -> str:
     """Repo-relative script this step runs ('' when it declares none).
 
     An `mcp` node names a registry tool, not a script — every one of them runs
-    through the shared executor, so the path is fixed rather than authored.
+    through the shared executor, so the path is fixed rather than authored. An
+    `agent` node names a prompt and a toolset, and is fixed the same way.
     """
-    if step.get("node_type") == "mcp":
+    node_type = step.get("node_type")
+    if node_type == "mcp":
         return MCP_EXECUTOR
+    if node_type == "agent":
+        return AGENT_EXECUTOR
     return step.get("tool", "") or ""
 
 
@@ -264,6 +290,48 @@ def _build_mcp_command(step: dict, project_id: str, run_id: str = "") -> list:
     return cmd
 
 
+def _agent_tools_arg(step: dict) -> str:
+    """A step's `agent_tools` as the executor's comma-separated --agent-tools.
+
+    A list is how a template authors it; a string is accepted so a hand-edited
+    template that wrote `agent_tools: "worktree_build, terminal"` still runs.
+    The executor re-parses and de-duplicates either form.
+    """
+    raw = step.get("agent_tools")
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    return ",".join(str(name).strip() for name in raw if str(name).strip())
+
+
+def _build_agent_command(step: dict, project_id: str, run_id: str = "") -> list:
+    """Command for a `node_type: agent` step — run the loop via agent_executor.py."""
+    prompt = str(step.get("prompt", "") or "").strip()
+    if not prompt:
+        return []
+    cmd = [
+        sys.executable, str(_ROOT / AGENT_EXECUTOR),
+        "--prompt", prompt,
+        "--agent-tools", _agent_tools_arg(step),
+    ]
+    for key, flag in _AGENT_STEP_FLAGS:
+        value = step.get(key)
+        if value is None or str(value).strip() == "":
+            continue
+        cmd.extend([flag, str(value)])
+    step_id = str(step.get("id", "") or "")
+    if step_id:
+        cmd.extend(["--step-id", step_id])
+    if step.get("inject_project_id", True):
+        cmd.extend(["--project-id", project_id])
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
+    if step.get("json_output", True):
+        cmd.append("--json")
+    return cmd
+
+
 def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
     # argv only. The run's inputs reach the step through the environment
     # instead — see RUN_INPUTS_ENV_VAR / _build_step_env — because an inputs
@@ -271,6 +339,8 @@ def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
     # line at ~32k characters.
     if step.get("node_type") == "mcp":
         return _build_mcp_command(step, project_id, run_id)
+    if step.get("node_type") == "agent":
+        return _build_agent_command(step, project_id, run_id)
     tool_path = step.get("tool", "")
     if not tool_path:
         return []
@@ -499,6 +569,32 @@ def _exec_step_with_retries(step: dict, project_id: str, run_id: str = "") -> di
     return result
 
 
+# What a node type is missing when it builds no command. A `tool` node has no
+# script path; the two executor-backed node types are each missing the one key
+# that names their work.
+_MISSING_STEP_KEY = {
+    "mcp": "node_type: mcp step declares no 'mcp_tool'",
+    "agent": "node_type: agent step declares no 'prompt'",
+}
+
+
+def _agent_degradation(result: dict) -> str:
+    """Why an agent step degraded, or '' when it did not (hgx-agent-01).
+
+    An unsupported provider is not a failed step: `agent_executor.py` exits 0
+    with `degraded: true` so the run continues, and this lifts the reason out of
+    its stdout so the step is recorded as `skipped` with that reason rather than
+    as a `success` that never ran a loop.
+    """
+    try:
+        payload = json.loads(result.get("stdout") or "")
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(payload, dict) or not payload.get("degraded"):
+        return ""
+    return str(payload.get("degrade_reason") or "Agent step degraded")
+
+
 def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     result: dict = {
         "step_id": step["id"],
@@ -520,10 +616,8 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     cmd = _build_command(step, project_id, run_id)
     if not cmd:
         result["status"] = "skipped"
-        result["stderr"] = (
-            "node_type: mcp step declares no 'mcp_tool'"
-            if node_type == "mcp"
-            else "No tool path configured"
+        result["stderr"] = _MISSING_STEP_KEY.get(
+            node_type, "No tool path configured"
         )
         return result
 
@@ -551,6 +645,11 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
         result["stdout"] = proc.stdout.strip()[:32000] if proc.stdout else None
         result["stderr"] = proc.stderr.strip()[:4000] if proc.stderr else None
         result["status"] = "success" if proc.returncode == 0 else "failed"
+        if node_type == "agent" and result["status"] == "success":
+            degraded = _agent_degradation(result)
+            if degraded:
+                result["status"] = "skipped"
+                result["stderr"] = degraded[:4000]
     except subprocess.TimeoutExpired:
         result["status"] = "timeout"
         result["stderr"] = f"Timed out after {timeout}s"

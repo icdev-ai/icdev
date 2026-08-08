@@ -13,6 +13,14 @@
 # (tools/agent_runtime/dispatch.py); until sag-safe-01 wires the approval UX, the
 # default gate fails closed unless ICDEV_SAG_ALLOW_MUTATION=1.
 #
+# A Studio `node_type: agent` step (hgx-agent-01) names bundles here too, in its
+# `agent_tools:` key. It resolves them with the same `resolve_bundles()`, but
+# offers the WORKTREE toolset (tools/genesis/rubric_build_tools.py) rather than
+# the discovery registry — so the `worktree_*` bundles below are the ones an
+# agent node can actually be handed. Naming a registry bundle in an agent step
+# is not an error; those tools are reported as unavailable until hgx-agent-02
+# lands the `agent_workflow_tools` gate that authorizes them.
+#
 # This is DATA, not code — add or retune a bundle here without touching Python.
 
 version: 1
@@ -34,6 +42,38 @@ bundles:
       reusing the tools/skills/invoke.py allowlist. Safety-gated.
     tools:
       - run_command       # mutating — safety-gated
+    mutating: true
+
+  worktree_read:
+    description: >-
+      Read-only inspection of a build worktree: read a file, list a directory,
+      grep, glob, and `git diff`, plus the `done` sentinel that ends the loop.
+      Every path is resolved and traversal-guarded inside the step's work_dir by
+      tools/genesis/rubric_build_tools.py, so this cannot read the wider disk.
+    tools:
+      - read_file
+      - list_files
+      - grep_files
+      - search_files
+      - git_diff
+      - done
+    mutating: false
+
+  worktree_build:
+    description: >-
+      worktree_read plus the two edits an agent needs to BUILD in a worktree:
+      whole-file write and single-occurrence patch. Both are recoverable (git
+      restores them) and both pass the reversibility gate. Pair with `terminal`
+      when the agent also needs to run the allowlisted test command.
+    tools:
+      - read_file
+      - list_files
+      - grep_files
+      - search_files
+      - git_diff
+      - done
+      - write_file        # mutating — safety-gated
+      - patch_file        # mutating — safety-gated
     mutating: true
 
   compliance:

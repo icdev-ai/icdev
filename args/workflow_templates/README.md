@@ -35,7 +35,7 @@ routing.
 ### `node_type`
 
 ```yaml
-node_type: tool | human | approval | mcp   # default: tool
+node_type: tool | human | approval | mcp | agent   # default: tool
 ```
 
 | Value | Meaning |
@@ -44,6 +44,7 @@ node_type: tool | human | approval | mcp   # default: tool
 | `human` | A person must perform or confirm this step before the DAG may proceed. |
 | `approval` | One or more named approvers must sign off before the DAG may proceed. |
 | `mcp` | Automated step that dispatches a registered MCP tool.  The step names the tool in `mcp_tool`, not a script path in `tool`. |
+| `agent` | Automated step that runs an **agent loop**.  The step names its task in `prompt` and bounds its tools with `agent_tools`, not a script path in `tool`. |
 
 > Omitting `node_type` is identical to `node_type: tool`.
 
@@ -109,6 +110,66 @@ edit time — the template still lints clean.  IL and role limits are not restat
 in that block; they come from the tool's own registry metadata plus
 `args/component_registry.yaml` and are evaluated per-dispatch alongside the
 allowlist.  Refusals and approvals are both audited append-only.
+
+---
+
+### `prompt` / `agent_tools` — `node_type: agent`
+
+```yaml
+- id: document
+  name: Document The Module
+  node_type: agent
+  prompt: "Read tools/foo.py and add a module docstring explaining what it does."
+  agent_tools: [worktree_build]     # bundle names from args/agent_toolsets.yaml
+  llm_function: code_generation     # a routing FUNCTION, never a model id
+  work_dir: /path/to/worktree       # default: the repo root
+```
+
+| Field | Type | Required | Meaning |
+|-------|------|----------|---------|
+| `prompt` | string | **yes** | The task the agent is asked to carry out. |
+| `agent_tools` | list | **yes** | Toolset bundle names bounding what the agent may call. |
+| `system_prompt` | string | no | Overrides the default "you are a workflow step" instruction. |
+| `llm_function` | string | no | Router routing key (default `code_generation`).  **Never a model id** — which provider serves it is `args/llm_config.yaml`'s decision. |
+| `work_dir` | string | no | Root the file tools are confined to (default: the repo root). |
+| `max_iterations` / `max_tokens` / `effort` | — | no | Loop budget knobs. |
+| `approval_mode` | string | no | `enforce` (default) / `dry_run` / `off` for the reversibility gate. |
+
+Every one of these steps runs through the shared executor
+`tools/studio/executors/agent_executor.py`, the way every mcp step runs through
+`mcp_executor.py`:
+
+```
+python tools/studio/executors/agent_executor.py \
+    --prompt "Read tools/foo.py and add a module docstring..." \
+    --agent-tools worktree_build \
+    --step-id document --project-id <id> --run-id <id> --json
+```
+
+A step with `node_type: agent` and no `prompt` is skipped rather than run.
+
+**The agent tool surface is default-deny.**  `agent_tools` resolves through
+`tools/agent_runtime/toolsets.py::resolve_bundles` against
+`args/agent_toolsets.yaml`, and the offered toolset is the worktree toolset
+(`tools/genesis/rubric_build_tools.py` — every path resolved and
+traversal-guarded inside `work_dir`) **intersected** with what those bundles
+name.  A step that declares no bundle is refused, not handed every tool.  Every
+call then passes the reversibility gate in
+`tools/agent_runtime/approval_gate.py`, whose tiers live in
+`args/agent_approval_policy.yaml` and whose decisions are audited append-only —
+the default approver denies on EOF, so an unattended run fails closed on
+anything the policy calls irreversible or unknown.
+
+**A provider that cannot do native tool use degrades the step, it does not fail
+the run.**  The CLI-bridge provider flattens tools to text, and some local models
+declare `supports_tools: false`; either way the loop cannot run.  The step then
+records `skipped` with the reason as its stderr and the workflow continues, so a
+template with an agent step is still deployable on a box whose model cannot serve
+one.  Dependents can branch on it with
+`when: {field: output.degraded, operator: equals, value: "True"}`.
+
+Files the agent wrote or patched are declared as the step's `artifacts`, which
+the runner lifts into run memory under this step's name like any other step's.
 
 ---
 
@@ -235,17 +296,21 @@ steps:
 
 ## Field applicability matrix
 
-| Field | `tool` | `human` | `approval` | `mcp` |
-|-------|--------|---------|------------|-------|
-| `node_type` | ✓ | ✓ | ✓ | ✓ |
-| `tool` | required | required | required | ignored |
-| `mcp_tool` | ignored | ignored | ignored | **required** |
-| `mcp_params` | ignored | ignored | ignored | optional |
-| `args` | forwarded | forwarded | forwarded | **not forwarded** |
-| `role` | ignored | owner | approver group | ignored |
-| `human_required` | ignored | ✓ | ignored | ignored |
-| `approval_policy` | ignored | ignored | ✓ | ignored |
-| `doc_template` | optional | optional | optional | optional |
+| Field | `tool` | `human` | `approval` | `mcp` | `agent` |
+|-------|--------|---------|------------|-------|---------|
+| `node_type` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `tool` | required | required | required | ignored | ignored |
+| `mcp_tool` | ignored | ignored | ignored | **required** | ignored |
+| `mcp_params` | ignored | ignored | ignored | optional | ignored |
+| `prompt` | ignored | ignored | ignored | ignored | **required** |
+| `agent_tools` | ignored | ignored | ignored | ignored | **required** |
+| `system_prompt` / `llm_function` / `work_dir` | ignored | ignored | ignored | ignored | optional |
+| `max_iterations` / `max_tokens` / `effort` / `approval_mode` | ignored | ignored | ignored | ignored | optional |
+| `args` | forwarded | forwarded | forwarded | **not forwarded** | **not forwarded** |
+| `role` | ignored | owner | approver group | ignored | ignored |
+| `human_required` | ignored | ✓ | ignored | ignored | ignored |
+| `approval_policy` | ignored | ignored | ✓ | ignored | ignored |
+| `doc_template` | optional | optional | optional | optional | optional |
 
 ---
 
@@ -261,8 +326,13 @@ python tools/studio/template_linter.py --check --gate # CI exit-1 on failure
 python tools/studio/template_linter.py --fix          # auto-fix DAG issues
 ```
 
-Allowed `node_type` values: `tool`, `human`, `approval`, `mcp` (or omitted).  Any
-other value is reported as a lint error.
+Allowed `node_type` values: `tool`, `human`, `approval`, `mcp`, `agent` (or
+omitted).  Any other value is reported as a lint error.
+
+An `agent` step is additionally linted for the two keys that fail quietly at run
+time when they are missing: a step with no `prompt` is skipped by the runner, and
+a step with no `agent_tools` is refused by the executor's default-deny allowlist.
+Both are reported under `bad_agent`.
 
 ---
 

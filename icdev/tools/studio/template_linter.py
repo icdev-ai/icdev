@@ -40,7 +40,12 @@ TEMPLATES_DIR = Path(__file__).parent.parent.parent / "args" / "workflow_templat
 #
 # "mcp" (dwo-mcp-03): the step names a TOOL_REGISTRY tool in `mcp_tool`
 # rather than a script path in `tool`.
-VALID_NODE_TYPES: frozenset[str] = frozenset({"tool", "human", "approval", "mcp"})
+# "agent" (hgx-agent-01): the step names a task in `prompt` and bounds its tools
+# with `agent_tools` (bundle names from args/agent_toolsets.yaml), and runs an
+# agent loop instead of a script.
+VALID_NODE_TYPES: frozenset[str] = frozenset(
+    {"tool", "human", "approval", "mcp", "agent"}
+)
 VALID_AUDIENCES: frozenset[str] = frozenset({"leadership", "technical", "compliance", "board", "customer"})
 
 # `when:` (hgx-cond-01) is an OPTIONAL conditional edge — a condition, or a list
@@ -154,6 +159,36 @@ def validate_when(step: dict) -> list[str]:
     return errors
 
 
+def validate_agent(step: dict) -> list[str]:
+    """Return error strings for a `node_type: agent` step (hgx-agent-01).
+
+    Both keys are load-bearing and both fail quietly at run time if omitted: a
+    step with no `prompt` is skipped by the runner, and one with no
+    `agent_tools` is refused by the executor's default-deny allowlist. Neither
+    is worth discovering mid-run, so they are linted here.
+    """
+    if step.get("node_type") != "agent":
+        return []
+
+    errors: list[str] = []
+    if not str(step.get("prompt", "") or "").strip():
+        errors.append("node_type: agent step has no 'prompt' — it will be skipped")
+
+    tools = step.get("agent_tools")
+    if tools is not None and not isinstance(tools, (str, list)):
+        errors.append(
+            f"agent_tools must be a list of bundle names, got {type(tools).__name__!r}"
+        )
+    else:
+        names = tools.split(",") if isinstance(tools, str) else list(tools or [])
+        if not [n for n in names if str(n).strip()]:
+            errors.append(
+                "node_type: agent step has no 'agent_tools' — the allowlist is "
+                "default-deny, so the step is refused rather than handed every tool"
+            )
+    return errors
+
+
 def analyze(steps: list[dict]) -> dict:
     ids = {s["id"] for s in steps}
     has_in: set[str] = set()
@@ -171,6 +206,9 @@ def analyze(steps: list[dict]) -> dict:
     bad_when = [
         (s["id"], err) for s in steps for err in validate_when(s)
     ]
+    bad_agent = [
+        (s["id"], err) for s in steps for err in validate_agent(s)
+    ]
     return {
         "isolated":       [s["id"] for s in steps if s["id"] not in has_in and s["id"] not in has_out],
         "roots":          [s["id"] for s in steps if s["id"] not in has_in and s["id"] in has_out],
@@ -178,6 +216,7 @@ def analyze(steps: list[dict]) -> dict:
         "dangling":       [d for s in steps for d in _deps(s) if d not in ids],
         "bad_node_types": bad_node_types,
         "bad_when":       bad_when,
+        "bad_agent":      bad_agent,
         "components":     len(comps),
         "comp_groups":    [sorted(c) for c in sorted(comps, key=len, reverse=True)],
         "has_in":         has_in,
@@ -188,9 +227,10 @@ def analyze(steps: list[dict]) -> dict:
 def _connectivity_ok(info: dict) -> bool:
     """True when the GRAPH is clean — the subset `auto_fix` can actually repair.
 
-    A malformed `when:` is an authoring error in a step, not a missing edge, so
-    it is excluded here: including it would make `auto_fix` spin its full
-    iteration budget adding no edges, unable to reach `is_ok`.
+    A malformed `when:` — or an agent step missing its `prompt` / `agent_tools`
+    — is an authoring error in a step, not a missing edge, so both are excluded
+    here: including them would make `auto_fix` spin its full iteration budget
+    adding no edges, unable to reach `is_ok`.
     """
     return (
         not info["isolated"]
@@ -201,7 +241,11 @@ def _connectivity_ok(info: dict) -> bool:
 
 
 def is_ok(info: dict) -> bool:
-    return _connectivity_ok(info) and not info.get("bad_when")
+    return (
+        _connectivity_ok(info)
+        and not info.get("bad_when")
+        and not info.get("bad_agent")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +378,7 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
 
         info = analyze(steps) if steps else {
             "isolated": [], "dangling": [], "bad_node_types": [], "bad_when": [],
+            "bad_agent": [],
             "components": 0, "comp_groups": [], "has_in": set(), "has_out": set(),
         }
         ok = is_ok(info) and not nc_errors
@@ -347,6 +392,7 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
             "dangling": info["dangling"],
             "bad_node_types": info["bad_node_types"],
             "bad_when": info["bad_when"],
+            "bad_agent": info["bad_agent"],
             "narrative_context_errors": nc_errors,
             "status": "ok" if ok else "fail",
         }
@@ -364,12 +410,16 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
                     data["steps"] = patched
                     save_template(path, data)
                 entry["auto_fixed"] = changes
-                # `auto_fix` only ever adds EDGES. A malformed `when:` — like a
-                # narrative_context error — survives it untouched, so reporting
-                # "fixed" here would claim a repair that did not happen and let
-                # the next --check be the first thing to notice.
+                # `auto_fix` only ever adds EDGES. A malformed `when:`, an agent
+                # step missing its keys, and a narrative_context error all
+                # survive it untouched, so reporting "fixed" here would claim a
+                # repair that did not happen and let the next --check be the
+                # first thing to notice.
+                repatched = analyze(patched)
                 entry["status"] = (
-                    "fail" if (analyze(patched)["bad_when"] or nc_errors) else "fixed"
+                    "fail"
+                    if (repatched["bad_when"] or repatched["bad_agent"] or nc_errors)
+                    else "fixed"
                 )
 
         results.append(entry)
@@ -388,6 +438,8 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
                 line += f"  bad_node_types={r['bad_node_types']}"
             if r.get("bad_when"):
                 line += f"  bad_when={r['bad_when']}"
+            if r.get("bad_agent"):
+                line += f"  bad_agent={r['bad_agent']}"
             if r.get("narrative_context_errors"):
                 line += f"  narrative_context_errors={r['narrative_context_errors']}"
             if r.get("components", 1) > 1:
