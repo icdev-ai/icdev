@@ -93,6 +93,11 @@ CREATE TABLE IF NOT EXISTS runtime_invocations (
     error_class TEXT,
     error_message TEXT,
     arg_keys TEXT,
+    -- 20260808161052: correlation_id joins a run's tool calls to its spans;
+    -- arg_values/result_preview stay NULL unless ICDEV_OBS_REPLAY is enabled.
+    correlation_id TEXT,
+    arg_values TEXT,
+    result_preview TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );

@@ -59,6 +59,7 @@ Usage::
 from __future__ import annotations
 
 import concurrent.futures as _futures
+import contextlib as _contextlib
 import json
 import math
 import os
@@ -719,6 +720,64 @@ def _record_codegen_decision(
 
 
 # ---------------------------------------------------------------------------
+# Run observability (hgx-obs-01)
+# ---------------------------------------------------------------------------
+class _NoTurnTrace:
+    """Stand-in used when the observability package cannot be imported.
+
+    Same surface as ``agent_trace.TurnTracer``, every method a no-op. The loop
+    therefore never branches on whether tracing is available — a checkout
+    without ``tools/observability`` runs the identical code path.
+    """
+
+    trace_id = ""
+
+    def begin(self, turn: int) -> None:
+        pass
+
+    def annotate(self, **attributes: Any) -> None:
+        pass
+
+    def error(self, message: str) -> None:
+        pass
+
+    def finish(self) -> None:
+        pass
+
+
+def _open_run_observability(trace_id: str, session_id: str) -> "tuple[Any, Any]":
+    """``(turn_tracer, correlation_scope)`` for one loop run.
+
+    Degrades to a no-op tracer and a null context manager rather than failing:
+    an agent run must not depend on its own telemetry being importable.
+    """
+    try:
+        from tools.observability.agent_trace import TurnTracer, correlation_scope
+
+        return TurnTracer(trace_id, session_id=session_id), correlation_scope(trace_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("agent_loop: run observability unavailable: %s", exc)
+        return _NoTurnTrace(), _contextlib.nullcontext()
+
+
+def _submit_traced(executor: Any, fn: Any, *args: Any) -> Any:
+    """``executor.submit`` that carries the caller's context into the worker.
+
+    A pool worker starts with an EMPTY context, so the run correlation id and
+    the active span are both invisible inside it — which would silently detach
+    every parallel tool call and every timed LLM call from the run that issued
+    them. Falls back to a plain submit if propagation is unavailable.
+    """
+    try:
+        from tools.observability.agent_trace import submit_with_context
+
+        return submit_with_context(executor, fn, *args)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("agent_loop: context propagation unavailable: %s", exc)
+        return executor.submit(fn, *args)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -764,6 +823,7 @@ def run_agent_loop(
     sanitize_tool_results: bool = True,
     initial_messages: list[dict[str, Any]] | None = None,
     harness_task_id: str | None = None,
+    correlation_id: str = "",
     _record_harness_decision: bool = True,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
@@ -891,6 +951,14 @@ def run_agent_loop(
             attaches to this decision. When ``None`` the loop's own
             ``session_id`` is used so a decision row still lands (see
             ``_record_codegen_decision``).
+        correlation_id: Run-level id threading this loop through its telemetry —
+            it becomes :attr:`AgentLoopResult.trace_id`, the ``agent.turn`` span
+            per turn, the ``icdev.correlation_id`` attribute on every
+            ``gen_ai.invoke`` span the router emits beneath it, and the
+            ``correlation_id`` column of every tool call recorded to
+            ``runtime_invocations``. Pass a caller-owned id (a task id, a request
+            id) to join an agent run to whatever dispatched it; the default mints
+            a fresh uuid4 per run, which is what the loop always did.
         _record_harness_decision: Private flag. When ``True`` (default), a single
             ``reflex="codegen"`` decision is recorded at loop completion.
             :func:`run_agent_loop_with_rubric` sets it ``False`` for its inner
@@ -974,7 +1042,9 @@ def run_agent_loop(
     session_id = str(_uuid.uuid4())
 
     # Correlation ID: threads this loop run through memory writes, evals, and OTel spans.
-    trace_id = str(_uuid.uuid4())
+    # A caller-supplied id wins so an agent run can be joined to whatever asked
+    # for it; otherwise one is minted per run, as it always was.
+    trace_id = correlation_id or str(_uuid.uuid4())
 
     # Resume: if a prior session ID is given, load its message history instead
     # of starting fresh. Falls back to a new conversation if the session is not
@@ -1045,8 +1115,18 @@ def run_agent_loop(
     _seen_call_keys: set[str] = set()
     # Control 6: rolling window of executed calls for semantic-loop detection.
     _recent_calls: _deque[Any] = _deque(maxlen=_loop_window)
-    with _futures.ThreadPoolExecutor(max_workers=16) as executor:
+
+    # Observability (hgx-obs-01). `_turn_trace` opens one span per turn and
+    # `_correlation` publishes the run id to everything the turn calls — most
+    # importantly `tools/agent_runtime/dispatch.py`, which records each tool call
+    # to `runtime_invocations` and reads the id from the ambient context rather
+    # than being handed it through the fixed `handler(input, stop)` contract.
+    _turn_trace, _correlation = _open_run_observability(trace_id, session_id)
+    with _correlation, _futures.ThreadPoolExecutor(max_workers=16) as executor:
         for turn in range(max_iterations):
+            # Opening turn N closes turn N-1's span. The turn body has a dozen
+            # `break` paths; `finish()` after the loop catches whichever one ran.
+            _turn_trace.begin(turn)
             if stop_event is not None and stop_event.is_set():
                 break
 
@@ -1138,11 +1218,12 @@ def run_agent_loop(
                 max_tokens=max_tokens,
                 temperature=temperature,
                 effort=effort,
+                correlation_id=trace_id,
             )
             try:
                 # Control 1: LLM call timeout — wraps the blocking invoke call.
                 if llm_call_timeout_seconds:
-                    _llm_fut = executor.submit(router.invoke, llm_function, request)
+                    _llm_fut = _submit_traced(executor, router.invoke, llm_function, request)
                     try:
                         response = _llm_fut.result(timeout=llm_call_timeout_seconds)
                     except _futures.TimeoutError:
@@ -1153,6 +1234,9 @@ def run_agent_loop(
                         result.result_subtype = ResultSubtype.error_during_execution
                         result.truncated = True
                         result.truncation_reason = "error_during_execution"
+                        _turn_trace.error(
+                            f"llm call timed out after {llm_call_timeout_seconds}s"
+                        )
                         break
                 else:
                     response = router.invoke(llm_function, request)
@@ -1161,6 +1245,7 @@ def run_agent_loop(
                 result.truncated = True
                 result.result_subtype = ResultSubtype.error_during_execution
                 result.truncation_reason = "error_during_execution"
+                _turn_trace.error(f"{type(exc).__name__}: {exc}")
                 break
 
             result.turns = turn + 1
@@ -1177,6 +1262,14 @@ def run_agent_loop(
 
             # No tool calls → LLM ended the turn with a final answer.
             tool_calls = getattr(response, "tool_calls", None) or []
+            _turn_trace.annotate(**{
+                "gen_ai.response.model": getattr(response, "model_id", "") or "",
+                "gen_ai.system": getattr(response, "provider", "") or "",
+                "gen_ai.usage.input_tokens": getattr(response, "input_tokens", 0) or 0,
+                "gen_ai.usage.output_tokens": getattr(response, "output_tokens", 0) or 0,
+                "gen_ai.response.finish_reason": result.stop_reason,
+                "agent.tool_call_count": len(tool_calls),
+            })
             if not tool_calls:
                 messages.append(_assistant_message(response))  # final assistant text
                 result.done = True
@@ -1220,7 +1313,7 @@ def run_agent_loop(
                 if block_msg:
                     tc_results[i] = (block_msg, True, f"blocked: {block_msg}")
                     continue
-                ro_futures[i] = executor.submit(handler, tc_input, stop_event)
+                ro_futures[i] = _submit_traced(executor, handler, tc_input, stop_event)
 
             for i, fut in ro_futures.items():
                 tc = tool_calls[i]
@@ -1257,7 +1350,7 @@ def run_agent_loop(
                     continue
                 try:
                     if tool_timeout_seconds is not None:
-                        fut = executor.submit(handler, tc_input, stop_event)
+                        fut = _submit_traced(executor, handler, tc_input, stop_event)
                         out = fut.result(timeout=tool_timeout_seconds)
                     else:
                         out = handler(tc_input, stop_event)
@@ -1477,6 +1570,10 @@ def run_agent_loop(
                 max_iterations,
                 llm_function,
             )
+
+    # Closes whichever turn span was open when the loop left — including every
+    # `break` path and the `for/else` max-iterations exhaustion.
+    _turn_trace.finish()
 
     result.tool_call_log = tool_call_log
     result.messages = messages
