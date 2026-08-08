@@ -1,0 +1,88 @@
+# CUI // SP-CTI
+# SBOM disclosure policy — Explicitly Identifying Unknown Information (sbx-prc-01)
+#
+# The 2026 SBOM Minimum Elements separate two states that must never be
+# conflated: a field UNKNOWN TO THE AUTHOR and a field WITHHELD BY THE AUTHOR.
+# This file governs the second one, plus the process the standard requires an
+# author to have for recipients asking about redacted security information.
+#
+# Unknown is not configured here. It is a fact discovered at generation time by
+# tools/compliance/unknown_information.py and its callers; you cannot declare a
+# field unknown by policy, only find that it is.
+#
+# Loaded by: tools/compliance/unknown_information.py::load_disclosure_policy
+# Inspect with: python tools/compliance/unknown_information.py --policy --json
+
+# ---------------------------------------------------------------------------
+# Recipient enquiry process (REQUIRED by the standard whenever anything is
+# withheld — and emitted on every document, because ICDEV's CUI // SP-CTI and
+# Distribution D markings are already a restriction on the recipient).
+#
+# Emitted into metadata.properties as icdev:sbom:enquiry-*, alongside
+# icdev:classification and icdev:distribution.
+#
+# Override without editing this file:
+#   ICDEV_SBOM_ENQUIRY_PROCESS, ICDEV_SBOM_ENQUIRY_CONTACT, ICDEV_SBOM_ENQUIRY_URI
+# ---------------------------------------------------------------------------
+enquiry:
+  process: >-
+    Recipients may request information withheld from this SBOM, including
+    security-related redactions, from the organization named in the document's
+    distribution statement. Submit the SBOM serial number, the component
+    bom-ref, and the field named in the icdev:withheld:<field> property. The
+    author confirms receipt, verifies the requester's authorization against the
+    document's distribution statement, and either releases the value under that
+    authorization or states the specific authority for continued withholding.
+    Requests concerning an unpatched vulnerability are handled under the
+    author's coordinated vulnerability disclosure process instead.
+
+  # Organizational contact. Leave blank to fall back to the distribution
+  # statement; a wrong address is worse than none.
+  contact: ""
+
+  # Version-specific URL or API endpoint where requests are lodged.
+  uri: ""
+
+  # Days within which the author undertakes to respond.
+  response_target_days: 30
+
+# ---------------------------------------------------------------------------
+# Declared withholdings.
+#
+# Each rule names a field from the 2026 minimum elements and a reason from the
+# WITHHELD vocabulary. A rule whose field or reason is not recognised is DROPPED,
+# not defaulted — `--policy` reports what was dropped. In particular an
+# unknown-reason such as `not-provided-by-producer` is rejected here: it belongs
+# to the other state.
+#
+# Fields:      sbom_author, author_signature, data_format_name,
+#              data_format_version, generation_context, timestamp, tool_name,
+#              tool_version, sbom_version, producer, dependency_relationship,
+#              hash_value, hash_algorithm, identifiers, license, name, version
+# Reasons:     classification-restricted, export-controlled,
+#              contractual-restriction, operational-security, proprietary,
+#              active-vulnerability-mitigation
+#
+# Withholding one of the ESSENTIAL component fields (producer, name, version,
+# identifiers, license) marks the whole document
+# icdev:sbom:disclosure-completeness = incomplete-withheld, because the standard
+# says an SBOM withholding essential component data may be considered incomplete.
+#
+# Component rules may carry a `match` block. Every key given must match;
+# `purl` matches on prefix, the rest exactly and case-insensitively. A rule with
+# no `match` applies to every component — deliberate, and rarely what you want.
+#
+#   components:
+#     - match: {purl: "pkg:maven/mil.example.classified/"}
+#       field: version
+#       reason: classification-restricted
+#     - match: {ecosystem: golang, name: internal-crypto}
+#       field: hash_value
+#       reason: export-controlled
+#
+# ICDEV's own builds withhold nothing: everything they cannot state is genuinely
+# unknown to them, and is emitted as such.
+# ---------------------------------------------------------------------------
+withhold:
+  document: []
+  components: []

@@ -32,7 +32,7 @@ fallen below its module floor becomes a gap.
 | 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | 117 | 9 |
 | 4 | Security ops / threat analysis | TheHive Cortex, MISP, OpenCTI | Behind | **Gap** | 153 | 1 |
 | 5 | RAG & knowledge graph | LlamaIndex, Haystack, Microsoft GraphRAG | Parity | **Parity, with named work** | 61 | 4 |
-| 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | 99 | 0 |
+| 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | 100 | 0 |
 | 7 | Delivery pipeline | Temporal, Argo, GitHub Actions | Ahead | **No adaptation needed** | 106 | 0 |
 | 8 | Data quality & lineage | OpenLineage, DataHub, Great Expectations | Behind | **Gap** | 18 | 1 |
 | 9 | LLM evaluation & red teaming | promptfoo, DeepEval, Giskard | Behind | **Gap** | 11 | 1 |
@@ -241,7 +241,7 @@ Measured: **61 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** OSCAL generate/validate/convert/profile-resolve, FedRAMP 20x KSI, CMMC, eMASS and Xacta sync, STIG checking, SSP/POAM/SBOM generation, a multi-framework crosswalk, cATO monitoring, IL4-IL6 classification and append-only NIST AU audit.
 
-Measured: **99 modules** (floor 5) → `built`; rows `not_expected`. Surface: `tools/compliance/`.
+Measured: **100 modules** (floor 5) → `built`; rows `not_expected`. Surface: `tools/compliance/`.
 
 **Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 

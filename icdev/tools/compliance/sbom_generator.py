@@ -47,6 +47,25 @@ from tools.compliance.dependency_resolver import (
     RESOLUTION_DECLARED,
     resolve_project,
 )
+from tools.compliance.unknown_information import (
+    FIELD_NAME,
+    FIELD_PRODUCER,
+    FIELD_VERSION,
+    REASON_DECLARED_WITHOUT_VERSION,
+    REASON_NOT_PROVIDED_BY_PRODUCER,
+    REASON_VERSION_MANAGED_BY_PARENT,
+    UNKNOWN,
+    UNKNOWN_REASONS,
+    Disclosure,
+    apply_component_policy,
+    apply_document_policy,
+    apply_to_cyclonedx,
+    completeness_properties,
+    disclosure_from_producer,
+    enquiry_properties,
+    is_legacy_sentinel,
+    load_disclosure_policy,
+)
 from tools.compliance.sbom_revision import (
     plan_revision,
     revision_insert_fields,
@@ -196,10 +215,10 @@ def _parse_requirements_txt(file_path):
             match = re.match(r"^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?", line)
             if match:
                 name = match.group(1).lower().replace("_", "-")
-                version = match.group(3) or "unspecified"
+                version = match.group(3) or UNKNOWN
 
                 purl = f"pkg:pypi/{name}"
-                if version != "unspecified":
+                if version != UNKNOWN:
                     purl += f"@{version}"
 
                 components.append(
@@ -207,6 +226,7 @@ def _parse_requirements_txt(file_path):
                         "type": "library",
                         "name": name,
                         "version": version,
+                        "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                         "purl": purl,
                         "scope": "required",
                         "group": "",
@@ -239,12 +259,12 @@ def _parse_pyproject_toml(file_path):
                     dep_match = re.match(r"([a-zA-Z0-9._-]+)(?:\[.*?\])?\s*(?:([<>=!~]+)\s*(.+))?", dep_str)
                     if dep_match:
                         name = dep_match.group(1).lower().replace("_", "-")
-                        version = dep_match.group(3) or "unspecified"
+                        version = dep_match.group(3) or UNKNOWN
                         # Clean up version (take first version if multiple conditions)
                         version = version.split(",")[0].strip()
 
                         purl = f"pkg:pypi/{name}"
-                        if version != "unspecified":
+                        if version != UNKNOWN:
                             purl += f"@{version}"
 
                         components.append(
@@ -252,6 +272,7 @@ def _parse_pyproject_toml(file_path):
                                 "type": "library",
                                 "name": name,
                                 "version": version,
+                                "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                                 "purl": purl,
                                 "scope": "required",
                                 "group": "",
@@ -279,12 +300,12 @@ def _parse_package_json(file_path):
             # Clean version spec
             version = version_spec.lstrip("^~>=<")
             if not version or version == "*":
-                version = "unspecified"
+                version = UNKNOWN
 
             # Handle scoped packages
             purl_name = name.replace("/", "%2F") if "/" in name else name
             purl = f"pkg:npm/{purl_name}"
-            if version != "unspecified":
+            if version != UNKNOWN:
                 purl += f"@{version}"
 
             group = ""
@@ -300,6 +321,7 @@ def _parse_package_json(file_path):
                     "type": "library",
                     "name": pkg_name,
                     "version": version,
+                    "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                     "purl": purl,
                     "scope": scope,
                     "group": group,
@@ -410,13 +432,14 @@ def _parse_cargo_toml(file_path):
         simple_match = re.match(r'^([a-zA-Z0-9_-]+)\s*=\s*"([^"]*)"', stripped)
         if simple_match:
             name = simple_match.group(1)
-            version = simple_match.group(2) or "unspecified"
-            purl = f"pkg:cargo/{name}@{version}"
+            version = simple_match.group(2) or UNKNOWN
+            purl = f"pkg:cargo/{name}" if version == UNKNOWN else f"pkg:cargo/{name}@{version}"
             components.append(
                 {
                     "type": "library",
                     "name": name,
                     "version": version,
+                    "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                     "purl": purl,
                     "scope": scope,
                     "group": "",
@@ -431,13 +454,14 @@ def _parse_cargo_toml(file_path):
             name = table_match.group(1)
             inner = table_match.group(2)
             version_match = re.search(r'version\s*=\s*"([^"]*)"', inner)
-            version = version_match.group(1) if version_match else "unspecified"
-            purl = f"pkg:cargo/{name}@{version}"
+            version = version_match.group(1) if version_match else UNKNOWN
+            purl = f"pkg:cargo/{name}" if version == UNKNOWN else f"pkg:cargo/{name}@{version}"
             components.append(
                 {
                     "type": "library",
                     "name": name,
                     "version": version,
+                    "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                     "purl": purl,
                     "scope": scope,
                     "group": "",
@@ -472,8 +496,15 @@ def _parse_pom_xml(file_path):
             group_id = group_match.group(1).strip()
             artifact_id = artifact_match.group(1).strip()
 
+            # A POM that names no <version> is not silent about the version — the
+            # version lives in a parent POM's dependencyManagement, which this
+            # declared-only parser cannot read. That is a distinct unknown-reason,
+            # not the old "managed" literal, which said neither unknown nor withheld.
             version_match = re.search(r"<version>\s*(.*?)\s*</version>", block)
-            version = version_match.group(1).strip() if version_match else "managed"
+            version = version_match.group(1).strip() if version_match else UNKNOWN
+            version_reason = (
+                REASON_DECLARED_WITHOUT_VERSION if version_match else REASON_VERSION_MANAGED_BY_PARENT
+            )
 
             scope_match = re.search(r"<scope>\s*(.*?)\s*</scope>", block)
             maven_scope = scope_match.group(1).strip() if scope_match else "compile"
@@ -484,13 +515,16 @@ def _parse_pom_xml(file_path):
             else:
                 cdx_scope = "required"
 
-            purl = f"pkg:maven/{group_id}/{artifact_id}@{version}"
+            purl = f"pkg:maven/{group_id}/{artifact_id}"
+            if version != UNKNOWN:
+                purl += f"@{version}"
 
             components.append(
                 {
                     "type": "library",
                     "name": artifact_id,
                     "version": version,
+                    "version_unknown_reason": version_reason,
                     "purl": purl,
                     "scope": cdx_scope,
                     "group": group_id,
@@ -867,6 +901,32 @@ def _build_coverage_blocks(coverage, cdx_components, target_bom_ref):
     return compositions, properties
 
 
+def _record_version_disclosure(comp, disclosure):
+    """State whether a component's version is unknown, and why (sbx-prc-01).
+
+    A version ICDEV could not establish used to be written as the bare literal
+    ``"unspecified"`` (or ``"managed"`` for Maven), which told a recipient neither
+    that the author had looked nor that the author was holding it back. Now the
+    absence is one of the two states the 2026 standard separates — always the
+    *unknown* one here, since a version nobody declared is not a version anybody
+    is withholding.
+    """
+    raw = str(comp.get("version") or "")
+    if raw.strip().lower() != UNKNOWN and not is_legacy_sentinel(raw):
+        return disclosure
+
+    reason = comp.get("version_unknown_reason")
+    if reason not in UNKNOWN_REASONS:
+        # A resolved lockfile that still has no version means the producer
+        # published none; a declared manifest means nobody pinned one.
+        reason = (
+            REASON_DECLARED_WITHOUT_VERSION
+            if comp.get("resolution") == RESOLUTION_DECLARED
+            else REASON_NOT_PROVIDED_BY_PRODUCER
+        )
+    return disclosure.unknown(FIELD_VERSION, reason)
+
+
 def _build_cyclonedx_sbom(
     project,
     components,
@@ -875,6 +935,7 @@ def _build_cyclonedx_sbom(
     schema=None,
     coverage=None,
     python_env=None,
+    disclosure_policy=None,
 ):
     """Build a CycloneDX JSON SBOM document."""
     now = datetime.now(timezone.utc)
@@ -903,14 +964,27 @@ def _build_cyclonedx_sbom(
     project_dir = project.get("directory_path") or None
     producers = ProducerContext(project_dir=project_dir, python_env=python_env)
 
+    # Explicitly Identifying Unknown Information (2026 minimum elements). The
+    # policy carries the recipient enquiry route and any field the operator
+    # deliberately withholds; unknowns are discovered below, not configured.
+    policy = disclosure_policy or load_disclosure_policy()
+    disclosures = []
+
     # Build CycloneDX components array
     cdx_components = []
     for comp in unique_components:
+        # Unknown first, then policy withholding: a field the operator withholds
+        # is withheld even where ICDEV also failed to establish it, because
+        # "we are not telling you" is the stronger and more actionable statement.
+        disclosure = _record_version_disclosure(comp, Disclosure())
+        apply_component_policy(comp, policy, into=disclosure)
+        disclosures.append(disclosure)
+
         cdx_comp = {
             "type": comp.get("type", "library"),
             "bom-ref": _generate_bom_ref(comp),
-            "name": comp["name"],
-            "version": comp["version"],
+            "name": disclosure.value_for(FIELD_NAME, comp["name"]),
+            "version": disclosure.value_for(FIELD_VERSION, comp["version"]),
         }
         if comp.get("group"):
             cdx_comp["group"] = comp["group"]
@@ -928,6 +1002,15 @@ def _build_cyclonedx_sbom(
         apply_producer_to_cyclonedx(cdx_comp, producer, active_spec_version)
         cdx_comp.setdefault("properties", []).extend(producer_properties(producer))
 
+        # An unidentifiable producer is an *unknown* field like any other, so it
+        # also joins the uniform convention — a validator then reads every
+        # undisclosed field of every element from one pair of property prefixes,
+        # without knowing that the producer element has properties of its own.
+        # A producer the policy withholds stays withheld: the bridge only adds.
+        if disclosure.state_of(FIELD_PRODUCER) is None:
+            disclosure_from_producer(producer, into=disclosure)
+        apply_to_cyclonedx(cdx_comp, disclosure)
+
         # Private marker, stripped before serialization — records whether this
         # instance came from a resolved set or from a declared manifest.
         cdx_comp["_declared"] = comp.get("resolution") == RESOLUTION_DECLARED
@@ -936,14 +1019,19 @@ def _build_cyclonedx_sbom(
     # The target component is a component too, so the element applies to it —
     # and unlike its dependencies, the operator can simply state the answer.
     target_producer = resolve_project_producer(project, project_dir=project_dir)
+    target_disclosure = disclosure_from_producer(target_producer)
+    apply_document_policy(policy, into=target_disclosure)
+    disclosures.append(target_disclosure)
+
     target_component = {
         "type": "application",
         "bom-ref": f"icdev-{project.get('id', 'unknown')}",
-        "name": project.get("name", "Unknown"),
-        "version": "0.0.0",
+        "name": target_disclosure.value_for(FIELD_NAME, project.get("name", "Unknown")),
+        "version": target_disclosure.value_for(FIELD_VERSION, "0.0.0"),
         "properties": producer_properties(target_producer),
     }
     apply_producer_to_cyclonedx(target_component, target_producer, active_spec_version)
+    apply_to_cyclonedx(target_component, target_disclosure)
 
     sbom = {
         "$schema": active_schema,
@@ -982,6 +1070,14 @@ def _build_cyclonedx_sbom(
         },
         "components": cdx_components,
     }
+
+    # Explicitly Identifying Unknown Information — the recipient enquiry route
+    # goes immediately after the classification and distribution markings, because
+    # those markings *are* the withholding posture the standard's process element
+    # is about: they tell a recipient what they may not have, and this tells them
+    # how to ask. Emitted on every document, withholding or not.
+    sbom["metadata"]["properties"].extend(enquiry_properties(policy))
+    sbom["metadata"]["properties"].extend(completeness_properties(disclosures))
 
     # Coverage (2026 Minimum Elements) — always emitted, including when the
     # answer is "incomplete" or "unknown".

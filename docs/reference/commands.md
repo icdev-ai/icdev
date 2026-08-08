@@ -195,7 +195,9 @@ python tools/compliance/sbom_signer.py --list-algorithms                        
 python tools/compliance/sbom_signer.py --sign "compliance/sbom.cdx.json" --json                   # writes detached compliance/sbom.cdx.json.sig.json
 python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --json                 # integrity; exit 1 if tampered or unsigned
 python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --expect-fp "<fp>"     # + authorship, fingerprint pinned out of band
-
+python tools/compliance/unknown_information.py --validate "/path/to/sbom.cdx.json" --json         # unknown vs withheld conformance; withheld is never counted as unknown
+python tools/compliance/unknown_information.py --policy --json                                     # the disclosure policy: enquiry route + declared withholdings (exit 1 on dropped rules)
+python tools/compliance/unknown_information.py --vocabulary --json                                 # the 17 fields and the two disjoint reason vocabularies
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"
