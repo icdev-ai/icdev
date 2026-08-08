@@ -114,6 +114,7 @@ class AgentRuntime:
         )
         self._stop = threading.Event()
         self._profile_preamble: str | None = None
+        self._project_preamble: str | None = None
 
     # -- router ------------------------------------------------------------
 
@@ -142,8 +143,10 @@ class AgentRuntime:
             user_id=self.user_id,
             tenant_id=self.tenant_id,
         )
-        # Re-inject the operator profile at the next turn of the new session.
+        # Re-inject the operator profile + project context at the next turn of
+        # the new session (a /new after an edit to CLAUDE.md picks it up).
         self._profile_preamble = None
+        self._project_preamble = None
         return self.session
 
     def _post_session_hook(self) -> None:
@@ -169,6 +172,7 @@ class AgentRuntime:
             tenant_id=self.tenant_id,
         )
         self._profile_preamble = None
+        self._project_preamble = None
         return self.session
 
     def use_toolset(
@@ -210,12 +214,35 @@ class AgentRuntime:
                 names.append(name)
         return sorted(names)
 
+    # -- project context (hgx-sess-01) --------------------------------------
+
+    def _project_context(self) -> str:
+        """The project's own instructions, budgeted to the model's window.
+
+        ``CLAUDE.md`` / ``AGENTS.md`` / ``memory/MEMORY.md`` plus the existing
+        ``session_context_builder`` project-state summary, sized against
+        ``floor_window_for_function`` so a 32k local model gets a truncated block
+        rather than a swallowed window (see ``project_context``). Built once per
+        session and cached; ``/new`` clears it.
+        """
+        if getattr(self, "_project_preamble", None) is None:
+            preamble = ""
+            try:
+                from tools.agent_runtime.project_context import build_for_runtime
+
+                preamble = build_for_runtime(self.llm_function, self.system_prompt)
+            except Exception as exc:  # noqa: BLE001 — context is best-effort
+                logger.debug("agent_runtime: project context skipped: %s", exc)
+            self._project_preamble = preamble
+        return self._project_preamble
+
     # -- profile memory (sag-mem-01) ---------------------------------------
 
     def _effective_system_prompt(self, user_input: str) -> str:
-        """System prompt with the operator profile + memory preamble injected once.
+        """System prompt with project context + the operator profile injected once.
 
-        Built at session start (first turn) from ``profile_memory`` — durable
+        Built at session start (first turn): the project's own instructions
+        (:meth:`_project_context`) followed by ``profile_memory`` — durable
         facts/preferences plus the top hybrid-memory hits keyed to the first
         prompt — and cached so subsequent turns reuse the same preamble.
         """
@@ -230,9 +257,12 @@ class AgentRuntime:
             except Exception as exc:  # noqa: BLE001 — memory is best-effort
                 logger.debug("agent_runtime: profile injection skipped: %s", exc)
             self._profile_preamble = preamble
-        if self._profile_preamble:
-            return f"{self._profile_preamble}\n\n{self.system_prompt}"
-        return self.system_prompt
+        parts = [
+            p
+            for p in (self._project_context(), self._profile_preamble, self.system_prompt)
+            if p
+        ]
+        return "\n\n".join(parts)
 
     # -- turn execution ----------------------------------------------------
 
