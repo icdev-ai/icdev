@@ -190,6 +190,63 @@ def test_explicit_unknown_provenance_from_sbx_fld_02_is_read_as_conforming(tmp_p
     assert _statuses(validate(document))["component_producer"] == STATUS_MET
 
 
+def test_detached_sidecar_signature_is_found(tmp_path):
+    """sbx-sig-01 signs to `<sbom>.sig.json`, not into the document.
+
+    An SBOM ICDEV has properly signed carries no `signature` key at all, so a
+    validator that looked only inside the document would score GAP on a
+    correctly signed artifact — and the card could never reach 17/17 on real
+    generator output.
+    """
+    from tools.compliance.sbom_signer import SIGNATURE_SUFFIX
+
+    unsigned = json.loads(CONFORMANT.read_text(encoding="utf-8"))
+    del unsigned["signature"]
+    sbom_path = tmp_path / "sbom.cdx.json"
+    sbom_path.write_text(json.dumps(unsigned), encoding="utf-8")
+
+    assert _statuses(validate_file(sbom_path))["sbom_author_signature"] == STATUS_GAP
+
+    Path(str(sbom_path) + SIGNATURE_SUFFIX).write_text(
+        json.dumps(
+            {
+                "schema": "icdev-sbom-signature/1",
+                "sbom_file": sbom_path.name,
+                "algorithm": "ECDSA-P256-SHA256",
+                "value": "MEUCIQD0f4k3S1gnatur3Byt3s==",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert _statuses(validate_file(sbom_path))["sbom_author_signature"] == STATUS_MET
+
+
+def test_sidecar_naming_a_different_document_is_not_this_documents_signature(tmp_path):
+    from tools.compliance.sbom_signer import SIGNATURE_SUFFIX
+
+    unsigned = json.loads(CONFORMANT.read_text(encoding="utf-8"))
+    del unsigned["signature"]
+    sbom_path = tmp_path / "sbom.cdx.json"
+    sbom_path.write_text(json.dumps(unsigned), encoding="utf-8")
+    Path(str(sbom_path) + SIGNATURE_SUFFIX).write_text(
+        json.dumps({"sbom_file": "some-other-sbom.cdx.json", "algorithm": "Ed25519", "value": "x"}),
+        encoding="utf-8",
+    )
+    assert _statuses(validate_file(sbom_path))["sbom_author_signature"] == STATUS_GAP
+
+
+def test_signer_algorithm_names_are_accepted():
+    """sbom_signer spells algorithms in full; JOSE short names are not its vocabulary."""
+    from tools.compliance.sbom_signer import APPROVED_ALGORITHMS
+
+    for name in APPROVED_ALGORITHMS:
+        assert name.upper() in validator.APPROVED_SIGNATURE_ALGORITHMS, (
+            f"{name} is approved by sbom_signer but would score PARTIAL here"
+        )
+    # The JOSE spellings a third-party CycloneDX signature block uses still work.
+    assert "ES256" in validator.APPROVED_SIGNATURE_ALGORITHMS
+
+
 def test_producer_property_names_are_imported_from_their_owner():
     """Restating them here is how the producer and the grader drift apart."""
     from tools.compliance import component_producer

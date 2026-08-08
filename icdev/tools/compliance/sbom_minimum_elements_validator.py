@@ -259,6 +259,27 @@ APPROVED_SIGNATURE_ALGORITHMS = frozenset(
     }
 )
 
+# tools/compliance/sbom_signer.py (sbx-sig-01) spells its algorithms in full —
+# "ECDSA-P256-SHA256" rather than the JOSE "ES256" — and vets them against the
+# same authorities. Unioned in rather than transcribed, so an algorithm that
+# module adds or retires does not silently disagree with this one. Without it a
+# correctly signed ICDEV SBOM scores PARTIAL for using an "unapproved"
+# algorithm that is in fact FIPS 186-5.
+try:
+    from tools.compliance.sbom_signer import (
+        APPROVED_ALGORITHMS as _SIGNER_APPROVED_ALGORITHMS,
+        SIGNATURE_SUFFIX as DETACHED_SIGNATURE_SUFFIX,
+    )
+
+    APPROVED_SIGNATURE_ALGORITHMS = APPROVED_SIGNATURE_ALGORITHMS | frozenset(
+        name.upper() for name in _SIGNER_APPROVED_ALGORITHMS
+    )
+except ImportError:  # pragma: no cover - fallback for a partial checkout
+    DETACHED_SIGNATURE_SUFFIX = ".sig.json"
+    APPROVED_SIGNATURE_ALGORITHMS = APPROVED_SIGNATURE_ALGORITHMS | frozenset(
+        {"ECDSA-P256-SHA256", "ECDSA-P384-SHA256", "ECDSA-P521-SHA256", "ED25519"}
+    )
+
 # Tool versions that are indistinguishable from an unset default. The current
 # generator hardcodes "1.0.0" and has never changed it (gap analysis §3.1).
 PLACEHOLDER_TOOL_VERSIONS = frozenset({"1.0.0", "0.0.0", "1.0", "0.0", "0", "1"})
@@ -1586,11 +1607,45 @@ def validate(document, document_path=None, document_bytes=None):
     return report
 
 
+def attach_detached_signature(normalized, sbom_path):
+    """Fold a detached sidecar signature into the normalized document.
+
+    ``sbom_signer.py`` (sbx-sig-01) does not embed the signature — it writes a
+    sidecar at ``<sbom>.sig.json``, because CycloneDX's own JSF block cannot
+    cover an SPDX document and because a signature that is inside the thing it
+    signs has to be excluded from its own digest. So an SBOM ICDEV has properly
+    signed carries no ``signature`` key at all, and a validator that looked
+    only inside the document would score it GAP.
+
+    Only consulted when the document has no embedded signature: an embedded one
+    is the stronger claim and stays authoritative.
+    """
+    if normalized.signature_value or sbom_path is None:
+        return normalized
+    sidecar = Path(str(sbom_path) + DETACHED_SIGNATURE_SUFFIX)
+    if not sidecar.is_file():
+        return normalized
+    try:
+        block = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return normalized
+    if not isinstance(block, dict):
+        return normalized
+    # A sidecar naming a different file is not this document's signature.
+    named = str(block.get("sbom_file") or "")
+    if named and named != Path(sbom_path).name:
+        return normalized
+    normalized.signature_value = str(block.get("value") or "")
+    normalized.signature_algorithm = str(block.get("algorithm") or "")
+    return normalized
+
+
 def validate_file(path):
     """Load, normalize and score an SBOM file."""
     sbom_path = Path(path)
     raw_bytes = sbom_path.read_bytes() if sbom_path.is_file() else None
     _raw, normalized = load_document(sbom_path)
+    normalized = attach_detached_signature(normalized, sbom_path)
     return validate(normalized, document_path=sbom_path, document_bytes=raw_bytes)
 
 
