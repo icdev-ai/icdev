@@ -7478,6 +7478,12 @@ projects:
   - key: stall
     title: STALL - Alert when board throughput goes to zero
     priority: high
+  - key: merge
+    title: MERGE - The CLI can land a PR, not just refuse to mark it done
+    priority: high
+  - key: obs
+    title: OBS - pr_watcher liveness is observable
+    priority: high
 - key: agov
   name: 'AGOV - Agent Governance (detection, forensics, unattended approval)'
   description: 'Adapt the four things ICDEV genuinely lacks from perplexityai/numbat
