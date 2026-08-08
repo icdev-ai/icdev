@@ -302,6 +302,47 @@ def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
     return tables
 
 
+_ALTER_ADD_COLUMN = re.compile(
+    r"ALTER\s+TABLE\s+\"?(\w+)\"?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?\"?(\w+)\"?",
+    re.IGNORECASE,
+)
+
+_MIGRATION_COLUMNS_CACHE: Optional[Dict[str, List[str]]] = None
+
+
+def _parse_migration_added_columns() -> Dict[str, List[str]]:
+    """Extract table → [columns] added by `ALTER TABLE ... ADD COLUMN` migrations.
+
+    `init_icdev_db.py` is NOT the whole schema. The repo's own rule is that a
+    new column MUST arrive as a migration and must NOT be added to the
+    `CREATE TABLE` body — `CREATE TABLE IF NOT EXISTS` never alters an existing
+    table, and SQLite has no `ADD COLUMN IF NOT EXISTS`, so declaring it in both
+    places makes a fresh SQLite install fail the migration on a duplicate
+    column. A schema check that reads only the CREATE TABLE text therefore
+    reports every correctly-migrated column as "unknown".
+
+    This is a static text scan, deliberately: it must work on a checkout with no
+    database. `insert_schema_parity` is the check that reads the live schema.
+    """
+    global _MIGRATION_COLUMNS_CACHE
+    if _MIGRATION_COLUMNS_CACHE is not None:
+        return _MIGRATION_COLUMNS_CACHE
+
+    added: Dict[str, List[str]] = {}
+    migrations_dir = PROJECT_ROOT / "tools" / "db" / "migrations"
+    if migrations_dir.is_dir():
+        for path in sorted(migrations_dir.rglob("*")):
+            if path.suffix not in (".sql", ".py") or "__pycache__" in str(path):
+                continue
+            for table, column in _ALTER_ADD_COLUMN.findall(_read_text(path)):
+                columns = added.setdefault(table.lower(), [])
+                if column.lower() not in columns:
+                    columns.append(column.lower())
+
+    _MIGRATION_COLUMNS_CACHE = added
+    return added
+
+
 def _extract_sql_columns_from_python(source: str) -> List[Tuple[str, str, List[str]]]:
     """Extract (table_name, operation, [columns]) from Python SQL strings.
 
@@ -432,6 +473,13 @@ def check_schema_code(changed_files: Optional[List[Path]] = None) -> CoherenceCh
     schema_path = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
     schema_text = _read_text(schema_path)
     schema_tables = _parse_create_tables(schema_text)
+
+    # The CREATE TABLE bodies are only the table's INITIAL shape. Fold in every
+    # column the migrations ALTER in, or a column added the way this repo
+    # REQUIRES new columns to be added reads as a mismatch here.
+    for table, columns in _parse_migration_added_columns().items():
+        known = schema_tables.setdefault(table, [])
+        known.extend(column for column in columns if column not in known)
 
     mismatches: List[str] = []
     checked_files: List[str] = []

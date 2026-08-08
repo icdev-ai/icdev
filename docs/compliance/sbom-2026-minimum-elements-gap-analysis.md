@@ -219,10 +219,69 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
 | Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
 | Component Hash Algorithm | **GAP** | Consequent to the above. |
-| Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
+| Component Identifiers | **MET (sbx-fld-05)** | Was: `purl` only. Now `tools/compliance/sbom_identifiers.py` derives every identifier the coordinates support — see §3.2.1. |
 | Component License | **GAP** | Not emitted, though `sbom_components.license` already exists in schema. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
 | Component Version | **PARTIAL** | Unresolved versions are written as the literal strings `"unspecified"` (most parsers) and `"managed"` (Maven). These are not machine-interpretable unknown markers and collide with the Explicitly Identifying Unknown Information element. |
+
+#### 3.2.1 Component Identifiers — resolved (sbx-fld-05)
+
+`tools/compliance/sbom_identifiers.py` (mirrored under `icdev/tools/compliance/`) derives the
+full identifier set from the coordinates a manifest parser already produces, and
+`_build_cyclonedx_sbom` applies it to every component.
+
+| Type | Derivation |
+|---|---|
+| PURL (ECMA-427) | From the parser, as before. |
+| CPE 2.3 | Derived for every component with a name. Vendor comes from the reverse-DNS Maven group (`org.apache.logging.log4j` → `apache`), the npm scope (`@babel` → `babel`), the Go module path (`github.com/spf13/cobra` → `spf13`/`cobra`), or a dotted NuGet id (`Newtonsoft.Json` → `newtonsoft`/`json`). |
+| UUID (RFC 9562) | Deterministic v5 over the coordinates, namespace `uuid5(NAMESPACE_DNS, "sbom.icdev.ai")`. |
+| Organization-specific | `icdev:component:<16 hex>` — the same value as the CycloneDX `bom-ref` and the `sbom_components` primary key, from one formula. Derivable from coordinates alone, so **every** component carries at least one identifier even when purl, version and vendor are all unknown. |
+| Commit hash | Read out of a Go pseudo-version (`v0.0.0-20191109021931-daa7c04131f5`), or taken from a parser-supplied `commit_hash`. |
+| SWHID (ISO/IEC 18670:2025) | `swh:1:rev:<sha1>` — only from a **full** 40-hex revision. An abbreviated Go pseudo-version hash deliberately does not produce one. |
+| OmniBOR | Pass-through only. It is computed over artifact bytes, which the generator does not read until sbx-fld-03 / sbx-cov-01; nothing is fabricated. |
+
+Two decisions worth recording:
+
+- **What is emitted is a CPE *match string*, not a claim of NVD dictionary membership.**
+  Attributes that cannot be derived with confidence stay as the ANY wildcard `*` rather than a
+  guessed vendor. A guess narrows a CVE join and loses findings; `*` widens it. `target_sw` is
+  left ANY for the same reason. Unresolved versions (`unspecified`, `managed`) become `*` instead
+  of being written through as a literal that would match nothing.
+- **Escaping follows real NVD data, not a maximal reading of NIST IR 7695**: everything outside
+  `[A-Za-z0-9._-]` is backslash-escaped and `.` / `-` are left bare, because that is how NVD
+  writes them (`cpe:2.3:a:node-red:node-red:1.0.0:*:...`). Escaping them would break the string
+  match this element exists to enable.
+
+Emission is spec-version aware: `purl` and `cpe` use the native CycloneDX fields on every
+version, `swhid` and `omniborId` use the arrays CycloneDX added in 1.6, and everything else —
+plus anything that overflows a single-valued native field, such as a second CPE — goes to
+`icdev:identifier:<type>` properties. Nothing is dropped on 1.4 or 1.5.
+
+Round-trip is pinned in both directions by `tests/test_sbom_component_identifiers.py` (64 tests):
+`parse_identifiers_from_cyclonedx()` returns the identical set on all four spec versions, and
+`identifiers_to_json()` / `identifiers_from_json()` round-trip through the real
+`sbom_components.identifiers_json` column — including one end-to-end test that drives
+`generate_sbom()` through `tools.db.storage`, so the `%s` translation and the upsert are
+exercised by the production path rather than by a shim.
+
+`generate_sbom()` now writes `sbom_components` rows at all; before this task nothing in the tree
+ever did, which is why `license` and `vendor` were dead columns. The table is a coordinate-keyed
+catalog (it has no per-document key — `sbom_dependencies` is what scopes a component to one SBOM),
+so persistence is an upsert on the deterministic component id and a re-run updates in place.
+
+`python tools/compliance/sbom_identifiers.py --validate <sbom.cdx.json>` reports identifier
+totals, how many components are NVD-joinable, and exits non-zero on a conformance failure —
+the foothold sbx-sig-02's full minimum-elements validator composes.
+
+**Two pre-existing defects the validator surfaced and this task fixed**, both in
+`sbom_generator.py`'s parsers:
+
+1. Scoped npm packages were encoded `pkg:npm/@babel%2Fcore@7.24.0` — the `/` namespace separator
+   percent-encoded and the reserved `@` left bare, exactly backwards. ECMA-427 rejects it. Now
+   `pkg:npm/%40babel/core@7.24.0`.
+2. `_parse_go_mod`'s single-line `^require\s+(\S+)\s+(\S+)` matched across the newline after
+   `require (`, emitting a phantom component named `(` whose version was the first module path.
+   The separator is now horizontal whitespace only.
 
 ### 3.3 Practices and Processes
 

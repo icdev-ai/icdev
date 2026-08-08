@@ -171,6 +171,9 @@ python tools/compliance/ssp_generator.py --project-id "sparkpilot"
 python tools/compliance/poam_generator.py --project-id "sparkpilot"
 python tools/compliance/stig_checker.py --project-id "sparkpilot"
 python tools/compliance/sbom_generator.py --project-dir "/path/to/project"
+# Component Identifiers conformance (2026 SBOM Minimum Elements, sbx-fld-05).
+# Exits 1 when a component carries no identifier, or carries a malformed one.
+python tools/compliance/sbom_identifiers.py --validate "/path/to/sbom.cdx.json" --json
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"

@@ -10,11 +10,16 @@ format SBOM with CUI classification metadata, records in sbom_records table,
 and logs audit event."""
 
 import argparse
-import hashlib
 import json
 import re
 import sys
 import uuid
+from tools.compliance.sbom_identifiers import (
+    apply_identifiers_to_cyclonedx,
+    component_id,
+    derive_identifiers,
+    identifiers_to_json,
+)
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -213,6 +218,21 @@ def _parse_pyproject_toml(file_path):
     return components
 
 
+def _npm_purl_name(name):
+    """Encode an npm package name for the purl name/namespace fields.
+
+    A scoped package ``@babel/core`` is namespace ``%40babel`` and name
+    ``core``: the ``@`` is percent-encoded because purl reserves it as the
+    version separator, and the ``/`` STAYS a separator because that is what
+    divides namespace from name. The previous encoding did the exact opposite —
+    ``pkg:npm/@babel%2Fcore`` — which ECMA-427 rejects and which the Component
+    Identifiers validator flags (sbx-fld-05).
+    """
+    if name.startswith("@"):
+        return "%40" + name[1:]
+    return name
+
+
 def _parse_package_json(file_path):
     """Parse package.json for dependencies. Returns list of component dicts."""
     components = []
@@ -232,7 +252,7 @@ def _parse_package_json(file_path):
                 version = "unspecified"
 
             # Handle scoped packages
-            purl_name = name.replace("/", "%2F") if "/" in name else name
+            purl_name = _npm_purl_name(name)
             purl = f"pkg:npm/{purl_name}"
             if version != "unspecified":
                 purl += f"@{version}"
@@ -278,7 +298,7 @@ def _parse_package_lock_json(file_path):
                 continue
             version = pkg_info.get("version", "unspecified")
 
-            purl_name = name.replace("/", "%2F") if "/" in name else name
+            purl_name = _npm_purl_name(name)
             purl = f"pkg:npm/{purl_name}@{version}"
 
             group = ""
@@ -305,7 +325,7 @@ def _parse_package_lock_json(file_path):
         deps = data.get("dependencies", {})
         for name, dep_info in deps.items():
             version = dep_info.get("version", "unspecified")
-            purl_name = name.replace("/", "%2F") if "/" in name else name
+            purl_name = _npm_purl_name(name)
             purl = f"pkg:npm/{purl_name}@{version}"
 
             group = ""
@@ -369,10 +389,14 @@ def _parse_go_mod(file_path):
                 )
 
     # Parse single-line require statements: require github.com/foo/bar v1.2.3
-    single_requires = re.findall(r"^require\s+(\S+)\s+(\S+)", content, re.MULTILINE)
+    # The separator is horizontal whitespace only: `\s+` matches newlines, so
+    # `require (\n\tgithub.com/foo/bar v1.2.3` used to capture module="(" and
+    # version="github.com/foo/bar" — a phantom component named "(" alongside
+    # the real one the require-block loop above already found.
+    single_requires = re.findall(r"^require[ \t]+(\S+)[ \t]+(\S+)", content, re.MULTILINE)
     for module, version in single_requires:
         # Skip if this is the start of a parenthesized block
-        if version == "(":
+        if version == "(" or module == "(":
             continue
         version = re.sub(r"\s*//.*$", "", version).strip()
         purl = f"pkg:golang/{module}@{version}"
@@ -698,9 +722,13 @@ def _parse_packages_config(file_path):
 
 
 def _generate_bom_ref(component):
-    """Generate a unique BOM reference for a component."""
-    key = f"{component.get('group', '')}/{component['name']}@{component['version']}"
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+    """Generate a unique BOM reference for a component.
+
+    Delegates to sbom_identifiers.component_id so the bom-ref, the
+    sbom_components primary key and the organization-specific identifier are
+    all the same value derived by one formula.
+    """
+    return component_id(component)
 
 
 def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=None, schema=None):
@@ -735,10 +763,19 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
         }
         if comp.get("group"):
             cdx_comp["group"] = comp["group"]
-        if comp.get("purl"):
-            cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
+
+        # Component Identifiers (2026 element, sbx-fld-05): emit ALL derivable
+        # identifiers, not just the purl. apply_() writes purl/cpe/swhid/
+        # omniborId natively where the active spec version has the field and
+        # falls back to properties, so nothing is dropped on 1.4/1.5. The list
+        # is kept on the component dict for persistence into
+        # sbom_components.identifiers_json.
+        identifiers = derive_identifiers(comp)
+        comp["identifiers"] = identifiers
+        apply_identifiers_to_cyclonedx(cdx_comp, identifiers, spec_version=active_spec_version)
+
         cdx_components.append(cdx_comp)
 
     sbom = {
@@ -785,6 +822,60 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
     }
 
     return sbom, len(unique_components)
+
+
+# sbom_components.component_type is CHECK-constrained; anything outside the
+# vocabulary is recorded as 'other' rather than failing the whole write.
+SBOM_COMPONENT_TYPES = frozenset(
+    {"library", "framework", "container", "os", "firmware", "device", "application", "service", "other"}
+)
+
+
+def _persist_components(conn, components):
+    """Upsert the generated components into sbom_components.
+
+    sbom_components is a catalog keyed on coordinates, not a per-document
+    table — sbom_dependencies is what scopes a component to one SBOM — so the
+    primary key is the deterministic coordinate id and a re-run of the
+    generator updates the identifier set in place instead of duplicating rows.
+
+    Returns the number of rows written. Best-effort: a database that has not
+    yet run migration 20260808030213 has no identifiers_json column, and an
+    SBOM file must still be produced there. The failure is reported on stderr
+    rather than swallowed.
+    """
+    written = 0
+    for comp in components:
+        identifiers = comp.get("identifiers")
+        if not identifiers:
+            continue
+        comp_type = str(comp.get("type") or "library").lower()
+        if comp_type not in SBOM_COMPONENT_TYPES:
+            comp_type = "other"
+        conn.execute(
+            """INSERT INTO sbom_components
+               (id, component_name, version, component_type, purl,
+                identifiers_json, classification)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (id) DO UPDATE SET
+                 identifiers_json = EXCLUDED.identifiers_json,
+                 purl             = EXCLUDED.purl,
+                 version          = EXCLUDED.version,
+                 component_type   = EXCLUDED.component_type,
+                 updated_at       = CURRENT_TIMESTAMP""",
+            (
+                component_id(comp),
+                comp.get("name", ""),
+                comp.get("version", ""),
+                comp_type,
+                comp.get("purl") or None,
+                identifiers_to_json(identifiers),
+                "CUI",
+            ),
+        )
+        written += 1
+    conn.commit()
+    return written
 
 
 def generate_sbom(
@@ -954,6 +1045,15 @@ def generate_sbom(
         )
         conn.commit()
 
+        # Persist the components themselves, carrying the identifier set
+        # (Component Identifiers, sbx-fld-05). Until this landed nothing in the
+        # tree ever wrote an sbom_components row.
+        components_persisted = 0
+        try:
+            components_persisted = _persist_components(conn, all_components)
+        except Exception as e:
+            print(f"Warning: Could not persist sbom_components: {e}", file=sys.stderr)
+
         # Log audit event
         _log_audit_event(
             conn,
@@ -963,6 +1063,7 @@ def generate_sbom(
                 "version": new_version,
                 "format": sbom_format,
                 "component_count": component_count,
+                "components_persisted": components_persisted,
                 "output_file": str(out_file),
                 "serial_number": sbom["serialNumber"],
             },
@@ -974,6 +1075,7 @@ def generate_sbom(
         print(f"  Format: CycloneDX {active_spec_version}")
         print(f"  Version: {new_version}")
         print(f"  Components: {component_count}")
+        print(f"  Persisted to sbom_components: {components_persisted}")
         print(f"  Serial: {sbom['serialNumber']}")
 
         return str(out_file)

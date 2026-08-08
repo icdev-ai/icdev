@@ -1185,3 +1185,46 @@ against silently running untrusted-bundle parsing in-process.
   (`pickle`, `yaml.load`), or shells out over the observable — it must be
   declared `sandboxed` and this table updated; or if `dispatch()` ever accepts
   a module path or callable from a caller rather than from the contract file.
+
+### Gap 49 — SBOM Component Identifiers derivation and validation (`tools/compliance/sbom_identifiers.py`)
+
+**Module:** `tools/compliance/sbom_identifiers.py` (sbx-fld-05), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two. (1) As a library it receives component dicts built by
+the generator's manifest parsers from a target project's `requirements.txt`,
+`package.json`, `pom.xml`, `go.mod`, `Cargo.toml`, `*.csproj` and friends —
+third-party content by definition, since the whole point is to inventory
+someone else's dependency tree. (2) `--validate` reads a CycloneDX JSON SBOM
+from an operator-supplied path, which may have been produced by another vendor's
+tool rather than by ICDEV.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module treats every input as an opaque string. Its total
+  contact with untrusted content is `str.lower`/`partition`/`split`, character
+  iteration, seven anchored `re` patterns, `hashlib.sha256`, `uuid.uuid5`,
+  `json.loads` (building data, never code) and `json.dumps`. There is no
+  `exec`/`eval`/`compile`, no `subprocess`, no `importlib`, no `pickle` or
+  `yaml.load`, no SQL, no network call, and no filesystem path derived from
+  content — the CLI opens exactly the one path the operator named and writes
+  nothing. A malicious package name is escaped into a CPE attribute or rejected
+  by the validator; it is never interpreted.
+- **Guardrails:**
+  - Identifier values are only ever *emitted or compared*, never dispatched on.
+    `validate_identifier` is a pure function returning a string or `None`.
+  - `split_cpe` is a hand-rolled character scanner with no backtracking, and
+    every regex is anchored with bounded quantifiers, so a hostile package name
+    cannot drive catastrophic backtracking.
+  - `identifiers_from_json` catches `ValueError`/`TypeError` and returns an
+    empty list, so a corrupt `identifiers_json` column degrades to "no
+    identifiers" — which the validator then reports as a conformance failure
+    rather than passing silently.
+  - `_persist_components` in the generator binds every value as a parameter;
+    no identifier is ever interpolated into SQL.
+  - `tests/test_sbom_component_identifiers.py` exercises the malformed-input
+    paths directly, including a package name carrying a `:` that would
+    otherwise tear a CPE string in half.
+- **Revisit if:** the module gains artifact reading to compute real OmniBOR
+  gitoids or SWHIDs (sbx-fld-03 / sbx-cov-01) — hashing downloaded archive bytes
+  is a different posture from string manipulation — or if `--validate` grows a
+  `--fix` mode that writes back into an SBOM it parsed.
