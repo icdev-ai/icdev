@@ -208,6 +208,7 @@ jobs:
             tests/test_kanban_throughput_stall.py \
             tests/test_localai_provider.py \
             tests/studio/test_workflow_parallel.py \
+            tests/studio/test_workflow_conditional.py \
             tests/browser/test_backend.py \
             tests/browser/test_driver_manager_airgap.py \
             tests/browser/test_driver_staleness.py \
