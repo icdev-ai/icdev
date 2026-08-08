@@ -164,6 +164,125 @@ class TestAutoApplyGates:
 
 
 # ---------------------------------------------------------------------------
+# Chain blockers face the SAME confidence bar as leaf tasks (kax-recover-03)
+#
+# should_auto_apply used to relax the bar from APPLY_CONFIDENCE (0.85) to 0.70
+# when blocked_dependents_count > 0. That conflated cost with correctness:
+# being a blocker says the failure is expensive, not that the diagnosis is
+# right. These tests pin the removal — a blocker and a leaf must be gated
+# identically, and the amplified cost is spent on escalation instead.
+# ---------------------------------------------------------------------------
+
+class TestChainBlockerSameBar:
+    def _task(self, blocked, **overrides):
+        base = {
+            "id": "t-chain",
+            "title": "fix a bug",
+            "description": "regular build task",
+            "task_type": "fix",
+            "last_failure_reason": "AttributeError: typo",
+            "blocked_dependents_count": blocked,
+        }
+        base.update(overrides)
+        return base
+
+    def _diag(self, confidence):
+        return {
+            "root_cause": "missing attribute",
+            "recommendation": "patch",
+            "patch_hint": "rename _x to x",
+            "suspect_files": ["tools/foo.py:42"],
+            "confidence": confidence,
+        }
+
+    @pytest.mark.parametrize(
+        "confidence", [0.0, 0.5, 0.69, 0.70, 0.71, 0.80, 0.84, 0.85, 0.90, 1.0],
+    )
+    def test_blocker_and_leaf_decide_identically(self, ft, monkeypatch, confidence):
+        """The whole point: blocker status must not move the bar anywhere."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        leaf_allow, _ = ft.should_auto_apply(self._task(0), self._diag(confidence))
+        blocker_allow, _ = ft.should_auto_apply(self._task(3), self._diag(confidence))
+        assert leaf_allow == blocker_allow, (
+            f"confidence {confidence} decided differently for a chain blocker "
+            f"(leaf={leaf_allow}, blocker={blocker_allow})"
+        )
+        assert leaf_allow is (confidence >= ft.APPLY_CONFIDENCE)
+
+    def test_the_old_relaxed_band_now_blocks_a_blocker(self, ft, monkeypatch):
+        """0.70 <= conf < 0.85 was the window the relaxation opened."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(self._task(9), self._diag(0.75))
+        assert allow is False
+        assert f"threshold {ft.APPLY_CONFIDENCE}" in reason
+
+    def test_reason_string_advertises_no_lowered_threshold(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        for conf in (0.75, 0.95):
+            _, reason = ft.should_auto_apply(self._task(2), self._diag(conf))
+            assert "0.70" not in reason
+            assert "lower" not in reason.lower()
+
+    def test_effective_bar_is_the_same_number_for_both(self, ft, monkeypatch):
+        """Sweep for the allow boundary independently on each shape."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+
+        def first_allowed(blocked):
+            for step in range(0, 101):
+                conf = step / 100.0
+                allow, _ = ft.should_auto_apply(self._task(blocked), self._diag(conf))
+                if allow:
+                    return conf
+            return None
+
+        leaf_bar = first_allowed(0)
+        blocker_bar = first_allowed(4)
+        assert leaf_bar == blocker_bar == pytest.approx(ft.APPLY_CONFIDENCE)
+
+    def test_decision_and_rationale_are_recorded_in_the_docstring(self, ft):
+        """Acceptance criterion: the call must not be a silent threshold flip."""
+        doc = ft.should_auto_apply.__doc__ or ""
+        assert "kax-recover-03" in doc
+        assert "REMOVED" in doc
+        # The distinction the removal turns on has to be stated, not implied.
+        assert "correct" in doc.lower() and "cost" in doc.lower()
+
+
+class TestChainBlockerEscalation:
+    def _task(self, blocked):
+        return {"id": "t-esc", "blocked_dependents_count": blocked}
+
+    def test_leaf_task_gets_no_escalation(self, ft):
+        assert ft.chain_blocker_escalation(self._task(0)) is None
+
+    def test_missing_count_is_treated_as_leaf(self, ft):
+        assert ft.chain_blocker_escalation({"id": "t"}) is None
+
+    def test_blocker_escalates_to_critical_with_a_marker(self, ft):
+        esc = ft.chain_blocker_escalation(self._task(3))
+        assert esc is not None
+        assert esc["priority"] == "critical"
+        assert esc["blocked_dependents_count"] == 3
+        assert "3 task(s) stalled" in esc["title_marker"]
+
+    def test_escalation_does_not_touch_the_apply_gate(self, ft, monkeypatch):
+        """Escalation is a routing decision; it must not grant an apply."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        task = {
+            "id": "t-esc2", "task_type": "fix", "description": "",
+            "last_failure_reason": "AttributeError: typo",
+            "blocked_dependents_count": 7,
+        }
+        diag = {
+            "recommendation": "patch", "confidence": 0.80,
+            "root_cause": "x", "patch_hint": "y", "suspect_files": ["tools/foo.py"],
+        }
+        assert ft.chain_blocker_escalation(task) is not None
+        allow, _ = ft.should_auto_apply(task, diag)
+        assert allow is False
+
+
+# ---------------------------------------------------------------------------
 # Non-code failure classes — a TIMEOUT is a budget symptom, not a defect
 # ---------------------------------------------------------------------------
 
