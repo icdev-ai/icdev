@@ -346,6 +346,16 @@ VALID_EVENT_TYPES = (
     # nearest admitted type but records a compression as a configuration
     # change, which is not what happened.
     "llm.context_compressed",
+
+    # SBOM Distribution and Delivery (sbx-gov-02,
+    # tools/compliance/sbom_distribution.py). "sbom_generated" records that an
+    # artifact was produced; these record who it was released to. The denial is
+    # logged as deliberately as the grant, because the 2026 element allows
+    # access control to limit sharing with unauthorized parties but not to
+    # obstruct authorized ones — which is only auditable if both legs are kept.
+    # Constraint rebuilt by migration 20260808071512.
+    "sbom.distributed",
+    "sbom.distribution_denied",
 )
 
 EVENT_TYPE_CONSTRAINT = "audit_trail_event_type_check"

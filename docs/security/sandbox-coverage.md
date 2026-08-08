@@ -1269,3 +1269,56 @@ another vendor's tool.
   crates.io owner query or a PyPI JSON API call) — that is a different posture
   and a different threat model — or if it starts reading *artifacts* rather than
   metadata, which is sbx-fld-03's territory.
+
+### Gap 50 — SBOM distribution and version-specific retrieval (`tools/compliance/sbom_distribution.py`)
+
+**Module:** `tools/compliance/sbom_distribution.py` (sbx-gov-02, mirrored at
+`icdev/tools/compliance/sbom_distribution.py`), backing three routes in
+`tools/supply_chain/blueprint.py`.
+
+**Ingress path:** Two, and only one of them is first-party.
+
+1. **The request.** A `project_id` and a `version` arriving from an
+   unauthenticated HTTP caller, used to look up an `sbom_records` row.
+2. **The artifact.** The bytes at `sbom_records.file_path`. Today ICDEV writes
+   every such row itself, so the artifact is first-party — but the module is
+   explicitly built to hold third-party SBOMs too (the 2026 standard is aimed at
+   organizations that *procure* software as much as those that produce it), so
+   it is treated as untrusted content, not as its own output.
+
+- **Decision:** **bypass-documented** (parameterised lookup plus a byte-for-byte
+  file read; no execution path and no parse on the served path)
+- **Rationale:** The retrieval path does not parse the artifact at all. It
+  `read_bytes()`s the file and streams it — deliberately, because sbx-sig-01
+  signs those exact bytes and re-encoding would break the recipient's signature
+  check. There is therefore no parser between a hostile SBOM and the response.
+  The only place the document *is* parsed is `document_markings()`, which
+  `json.loads` a copy purely to echo the classification and distribution
+  statements into response headers; it is wrapped so any malformed document
+  yields empty markings rather than an error, and its output is never dispatched
+  on. `conformance()` parses too, but only to hand the document to sbx-sig-02's
+  validator, and its failure is logged and swallowed rather than propagated.
+  The module contains no `subprocess`, `os.system`, `exec`, `eval`,
+  `__import__`, `pickle` or `yaml.load`, and no network client.
+- **Guardrails:**
+  - Both request-derived values reach SQL only as bound parameters
+    (`resolve_record` uses `%s` placeholders exclusively) and never as
+    formatted-in text; the only interpolated fragments are the module's own
+    `_RECORD_COLUMNS` constant and a column name chosen from a two-element
+    literal tuple.
+  - `file_path` is read from the database, never from the request, so a caller
+    cannot address an arbitrary file. A row whose path is missing from disk
+    yields a 404 through `ArtifactUnavailable`, not a traceback.
+  - `evaluate_access` gates every byte: unauthenticated is 401, a role with no
+    supply-chain need is 403, and an artifact whose classification is not
+    dominated by the caller's clearance is withheld. Both legs are audited.
+  - The catalog and version-index responses strip `file_path`, so the host's
+    directory layout is not published to anyone who can reach the page.
+  - `tests/test_sbom_distribution.py` covers the deny legs at the HTTP boundary
+    — not merely on the helper — alongside the allow legs that the 2026 element
+    requires to keep working.
+- **Revisit if:** the module starts *validating* or *rewriting* the artifact on
+  the served path (that would put a parser back in front of hostile bytes and
+  break the signature guarantee at the same time), or if retrieval grows a
+  fetch-by-URL mode that pulls an SBOM from a remote registry — that is an SSRF
+  surface this module does not currently have.

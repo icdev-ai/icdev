@@ -145,6 +145,7 @@ jobs:
             tests/test_migration_version_uniqueness.py \
             tests/test_sbom_coverage_resolution.py \
             tests/test_icdev_comply_sbom_step.py \
+            tests/test_sbom_distribution.py \
             tests/ci/test_error_classifier.py \
             tests/kanban/test_pr_linker.py \
             tests/kanban/test_reverify.py \

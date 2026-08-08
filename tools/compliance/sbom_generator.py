@@ -41,6 +41,7 @@ from tools.compliance.dependency_resolver import (
     RESOLUTION_DECLARED,
     resolve_project,
 )
+from tools.compliance.sbom_distribution import retrieval_url as sbom_retrieval_url
 from tools.compliance.sbom_signer import (
     SbomSigningError,
     sign_sbom,
@@ -865,8 +866,16 @@ def _build_cyclonedx_sbom(
     schema=None,
     coverage=None,
     python_env=None,
+    retrieval_url=None,
 ):
-    """Build a CycloneDX JSON SBOM document."""
+    """Build a CycloneDX JSON SBOM document.
+
+    ``retrieval_url`` is the version-specific URL this document will be served
+    from (sbx-gov-02). It is embedded rather than merely recorded because
+    Distribution and Delivery is about the *recipient*: an SBOM that has
+    travelled away from ICDEV should still say where its authoritative copy —
+    and any later version — can be fetched.
+    """
     now = datetime.now(timezone.utc)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
     active_schema = schema or CYCLONEDX_SUPPORTED_VERSIONS.get(
@@ -984,6 +993,28 @@ def _build_cyclonedx_sbom(
     sbom["metadata"]["properties"].extend(coverage_properties)
     sbom["compositions"] = compositions
 
+    # Distribution and Delivery (2026 Minimum Elements, sbx-gov-02). A
+    # top-level externalReference of type "bom" is how CycloneDX 1.4+ states
+    # where this document lives; the property repeats it for consumers that do
+    # not walk externalReferences. Emitted only when a URL is known, because a
+    # placeholder address is worse than none — it would tell a recipient to
+    # fetch from somewhere that does not answer.
+    if retrieval_url:
+        sbom["externalReferences"] = [
+            {
+                "type": "bom",
+                "url": retrieval_url,
+                "comment": (
+                    "Version-specific retrieval URL for this SBOM. Access is "
+                    "restricted to authorized parties per the distribution "
+                    "statement above; it is not restricted between them."
+                ),
+            }
+        ]
+        sbom["metadata"]["properties"].append(
+            {"name": "icdev:retrieval-url", "value": retrieval_url}
+        )
+
     for cdx_comp in cdx_components:
         cdx_comp.pop("_declared", None)
 
@@ -1053,6 +1084,21 @@ def generate_sbom(
             if eco["reason"]:
                 print(f"      {eco['reason']}")
 
+        # Determine version BEFORE building the document. The version is half
+        # of the version-specific retrieval URL (sbx-gov-02), and the URL has
+        # to be inside the bytes that get signed — so it cannot be assigned
+        # after the file is written, which is where this used to sit.
+        existing = conn.execute(
+            """SELECT MAX(CAST(
+                 CASE WHEN version GLOB '[0-9]*' THEN version ELSE '0' END
+               AS REAL)) as max_ver
+               FROM sbom_records WHERE project_id = %s""",
+            (project_id,),
+        ).fetchone()
+        max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
+        new_version = f"{max_ver + 1.0:.1f}"
+        distribution_url = sbom_retrieval_url(project_id, new_version)
+
         # Build CycloneDX SBOM
         sbom, component_count = _build_cyclonedx_sbom(
             project,
@@ -1061,6 +1107,7 @@ def generate_sbom(
             schema=active_schema,
             coverage=coverage,
             python_env=python_env,
+            retrieval_url=distribution_url,
         )
 
         # Determine output path
@@ -1084,17 +1131,6 @@ def generate_sbom(
         # after the bytes are on disk and before the row is written, so the
         # persisted signature always describes the artifact that shipped.
         signature = _sign_generated_sbom(out_file)
-
-        # Determine version
-        existing = conn.execute(
-            """SELECT MAX(CAST(
-                 CASE WHEN version GLOB '[0-9]*' THEN version ELSE '0' END
-               AS REAL)) as max_ver
-               FROM sbom_records WHERE project_id = %s""",
-            (project_id,),
-        ).fetchone()
-        max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
-        new_version = f"{max_ver + 1.0:.1f}"
 
         # Record in sbom_records table. author_signature holds the base64
         # signature value; the full block — fingerprint, public key, artifact
