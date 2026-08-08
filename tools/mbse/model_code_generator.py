@@ -250,7 +250,7 @@ def _hash_content(content: str) -> str:
 def _write_file(path: Path, content: str) -> str:
     """Write content to file and return its SHA-256 hash."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
     return _hash_content(content)
 
 

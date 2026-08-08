@@ -166,7 +166,7 @@ def write_proposed_heuristics(proposed_yaml: str, error_case_count: int) -> bool
             "error_cases_analyzed": error_case_count,
             "proposed": proposals,
         }
-        PROPOSED_FILE.write_text(yaml.dump(output, default_flow_style=False, allow_unicode=True))
+        PROPOSED_FILE.write_text(yaml.dump(output, default_flow_style=False, allow_unicode=True), newline="")
         LOG.info("[heuristic_writer] wrote %d proposals to %s", len(proposals), PROPOSED_FILE)
         return True
     except Exception as exc:
@@ -198,7 +198,7 @@ def merge_approved_proposals() -> int:
 
         current.setdefault("heuristics", []).extend(added)
         current["version"] = current.get("version", 1) + 1
-        HEURISTICS_FILE.write_text(yaml.dump(current, default_flow_style=False, allow_unicode=True))
+        HEURISTICS_FILE.write_text(yaml.dump(current, default_flow_style=False, allow_unicode=True), newline="")
         PROPOSED_FILE.unlink(missing_ok=True)
         LOG.info("[heuristic_writer] merged %d new heuristic(s) into %s", len(added), HEURISTICS_FILE)
         return len(added)

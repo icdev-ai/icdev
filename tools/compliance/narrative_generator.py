@@ -1048,7 +1048,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         out = Path(args.output_dir)
         out.mkdir(parents=True, exist_ok=True)
         for r in results:
-            (out / f"{r.control_id}.md").write_text(r.narrative, encoding="utf-8")
+            (out / f"{r.control_id}.md").write_text(r.narrative, encoding="utf-8", newline="")
 
     if args.json:
         payload = {

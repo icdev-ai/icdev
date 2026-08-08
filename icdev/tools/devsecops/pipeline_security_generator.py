@@ -502,7 +502,7 @@ def main():
     if args.output and "yaml_content" in result:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(result["yaml_content"], encoding="utf-8")
+        out_path.write_text(result["yaml_content"], encoding="utf-8", newline="")
         result["output_file"] = str(out_path)
 
     if args.json or not args.human:

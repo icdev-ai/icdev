@@ -46,7 +46,7 @@ def _load_yaml(path: Path) -> dict:
 def _dump_yaml(data: dict, path: Path) -> None:
     import yaml
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8", newline="")
 
 
 def list_profiles() -> list[dict[str, Any]]:

@@ -177,7 +177,7 @@ def generate_from_spec(
     if language == "python":
         init_file = src_dir / "__init__.py"
         if not init_file.exists():
-            init_file.write_text(f"{CUI_HEADER}\n", encoding="utf-8")
+            init_file.write_text(f"{CUI_HEADER}\n", encoding="utf-8", newline="")
 
     # Detect code type and entity
     code_type = force_type or _detect_spec_type(spec)
@@ -209,7 +209,7 @@ def generate_from_spec(
     ext = _LANGUAGE_EXTENSIONS.get(language, ".py")
     filename = f"{_slugify(entity)}{ext}"
     output_file = src_dir / filename
-    output_file.write_text(code, encoding="utf-8")
+    output_file.write_text(code, encoding="utf-8", newline="")
 
     generated_files = [str(output_file)]
     print(f"Generated [{language}/{code_type}]: {output_file}")

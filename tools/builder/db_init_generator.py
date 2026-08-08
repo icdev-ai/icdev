@@ -2033,7 +2033,7 @@ def write_init_script(blueprint: Dict[str, Any], output_dir: Path) -> Path:
     output_path = output_dir / filename
 
     source = generate_init_script(blueprint)
-    output_path.write_text(source, encoding="utf-8")
+    output_path.write_text(source, encoding="utf-8", newline="")
 
     logger.info("Wrote init script: %s (%d bytes)", output_path, len(source))
 

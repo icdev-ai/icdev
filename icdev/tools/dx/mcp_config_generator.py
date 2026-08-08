@@ -220,7 +220,7 @@ def generate_mcp_config(directory=None, platforms=None, write=False, dry_run=Fal
 
         if write and not dry_run:
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(content, encoding="utf-8")
+            full_path.write_text(content, encoding="utf-8", newline="")
             written = True
 
         results[platform] = {
