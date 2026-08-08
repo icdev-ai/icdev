@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from tools.db.storage import get_connection
+from tools.hooks import shared_checks
 
 logger = get_logger("icdev.airgap.hook_compat")
 
@@ -146,7 +147,14 @@ def forward_to_dashboard(event_data: dict) -> None:
 
 # ── Pre-Tool-Use Guard ─────────────────────────────────────────────────
 
-# Append-only tables that must never be UPDATE/DELETE'd (NIST AU)
+# Append-only tables that must never be UPDATE/DELETE'd (NIST AU).
+#
+# NOT the canonical list. That one lives in APPEND_ONLY_TABLES in
+# .claude/hooks/pre_tool_use.py and carries 361 tables; this one carries 22, of
+# which 17 are absent from the canonical list — so 356 audit tables the Claude
+# Code path protects are unprotected here, and neither list is a superset.
+# That drift is exactly what hgx-guard-02 reconciles; left verbatim for now so
+# this task changes no verdict on either side.
 APPEND_ONLY_TABLES = [
     "audit_trail",
     "hook_events",
@@ -179,45 +187,14 @@ APPEND_ONLY_TABLES = [
 #
 # These commands can silently destroy work in a non-recoverable way.
 # Hooked through run_pre_tool_check so any orchestrator (Claude Code,
-# LLMRouter, MCP gateway) gets the same protection that .claude/hooks/
-# pre_tool_use.py already gives the Claude-only path.
-_GIT_DANGER_PATTERNS = [
-    # Force push — direct or via shorthand
-    (r"\bgit\s+push\s+(?:[^\n]*\s)?(?:--force\b|--force-with-lease\b|-f\b)",
-     "git push --force is destructive — rewrites remote history"),
-    # Hard reset anything
-    (r"\bgit\s+reset\s+(?:[^\n]*\s)?--hard\b",
-     "git reset --hard discards uncommitted changes"),
-    # Force delete branches. -D is case-sensitive (distinct from safe -d).
-    (r"\bgit\s+branch\s+(?:[^\n]*\s)?(?-i:-D)\b",
-     "git branch -D force-deletes branches (use -d for safe delete)"),
-    (r"\bgit\s+branch\s+(?:[^\n]*\s)?--delete\s+--force\b",
-     "git branch --delete --force force-deletes branches"),
-    # Dangerous clean
-    (r"\bgit\s+clean\s+(?:[^\n]*\s)?-[a-zA-Z]*f[a-zA-Z]*\b",
-     "git clean -f permanently deletes untracked files"),
-    # Checkout/restore of working tree — can wipe uncommitted edits
-    (r"\bgit\s+checkout\s+(?:--\s*\.|\.\s*$|\.\s)",
-     "git checkout . discards uncommitted working-tree changes"),
-    (r"\bgit\s+restore\s+(?:[^\n]*\s)?(?:--\s*\.|\.\s*$|\.\s)",
-     "git restore . discards uncommitted working-tree changes"),
-    # Commit amend on already-pushed commits is risky (heuristic — block
-    # only when combined with no-edit or with --force elsewhere)
-    (r"\bgit\s+rebase\s+(?:[^\n]*\s)?-i\b",
-     "interactive git rebase requires manual approval (no automation)"),
-]
-
-
-def _check_git_danger(command: str) -> Optional[str]:
-    """Return a block reason if the command matches a destructive git
-    pattern, else None. Case-insensitive match on the raw command text."""
-    import re
-
-    text = command
-    for pattern, reason in _GIT_DANGER_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            return reason
-    return None
+# LLMRouter, MCP gateway) gets the same protection.
+#
+# hgx-guard-01: the patterns and the matcher now live in
+# tools/hooks/shared_checks.py, which .claude/hooks/pre_tool_use.py also
+# imports — the two guard paths cannot drift apart again. Re-exported here
+# under their historical names so existing importers keep working.
+_GIT_DANGER_PATTERNS = list(shared_checks.GIT_DANGER_PATTERNS)
+_check_git_danger = shared_checks.git_danger_reason
 
 
 def run_pre_tool_check(
@@ -227,14 +204,17 @@ def run_pre_tool_check(
     """Run pre-tool-use safety checks (append-only table protection +
     git destructive-command blocklist).
 
-    Equivalent to .claude/hooks/pre_tool_use.py but callable from any
-    orchestrator (not just Claude Code).
+    Shares its implementation with .claude/hooks/pre_tool_use.py via
+    tools/hooks/shared_checks.py, and is callable from any orchestrator (not
+    just Claude Code).
+
+    Scope note (hgx-guard-01): this still runs the two checks it has always
+    run. Bringing it to full parity with the Claude Code hook's eight — and
+    removing the tool-name short-circuit below — is hgx-guard-02.
 
     Returns:
         {"allowed": True/False, "reason": str}
     """
-    import re
-
     if tool_name not in ("Bash", "bash", "shell", "sql", "Write", "Edit"):
         return {"allowed": True, "reason": "non-destructive tool"}
 
@@ -253,10 +233,8 @@ def run_pre_tool_check(
     if not command or not isinstance(command, str):
         return {"allowed": True, "reason": "no command to check"}
 
-    command_lower = command.lower()
-
     # OPT-51: destructive git command blocklist
-    git_reason = _check_git_danger(command)
+    git_reason = shared_checks.git_danger_reason(command)
     if git_reason:
         reason = f"BLOCKED: {git_reason}"
         logger.warning(reason)
@@ -274,23 +252,20 @@ def run_pre_tool_check(
         return {"allowed": False, "reason": reason}
 
     # Check for destructive operations on append-only tables
-    for table in APPEND_ONLY_TABLES:
-        if re.search(
-            rf"(update|delete)\s+(from\s+)?{re.escape(table)}",
-            command_lower,
-        ):
-            reason = (
-                f"BLOCKED: destructive operation on append-only table '{table}'. "
-                f"NIST AU compliance requires append-only audit trail."
-            )
-            logger.warning(reason)
-            store_event(
-                get_session_id(),
-                "pre_tool_use",
-                tool_name,
-                {"blocked": True, "reason": reason, "command_snippet": command[:200]},
-            )
-            return {"allowed": False, "reason": reason}
+    table = shared_checks.find_append_only_table(command, APPEND_ONLY_TABLES)
+    if table:
+        reason = (
+            f"BLOCKED: destructive operation on append-only table '{table}'. "
+            f"NIST AU compliance requires append-only audit trail."
+        )
+        logger.warning(reason)
+        store_event(
+            get_session_id(),
+            "pre_tool_use",
+            tool_name,
+            {"blocked": True, "reason": reason, "command_snippet": command[:200]},
+        )
+        return {"allowed": False, "reason": reason}
 
     return {"allowed": True, "reason": "passed safety checks"}
 
