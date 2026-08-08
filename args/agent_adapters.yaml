@@ -5,12 +5,21 @@ default_adapter: auto  # 'auto', 'claude_cli', 'local_llm_router', ...
 enabled_adapters:
   - claude_cli
   - local_llm_router
+  # hgx-exec-02 — the OWNED build path: the rubric-gated agent loop with the
+  # worktree toolset, graded by the real delivery gates. Unlike
+  # local_llm_router it edits files. Enabled but deliberately absent from
+  # fallback_order below, so selection stays byte-unchanged for existing
+  # consumers until one opts in via ICDEV_AGENT_ADAPTER=local_agent or a
+  # per_task_type_preference entry.
+  - local_agent
   # - codex_cli     # stub — uncomment when wired
   # - copilot_cli   # stub — uncomment when wired
 
 # Prefer claude_cli for anything that actually needs to edit files; use
 # local_llm_router for research/plan tasks that only need a written
-# output.
+# output. local_agent is the air-gap alternative to claude_cli for
+# file-editing work (it degrades to prose when the provider can't do
+# native tool use).
 per_task_type_preference:
   build: claude_cli
   fix: claude_cli
