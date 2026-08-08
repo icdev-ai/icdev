@@ -433,19 +433,34 @@ def test_a_run_under_the_caps_logs_no_truncation(seeded_db, shipped_config,
 # ---------------------------------------------------------------------------
 
 
-def test_rerun_creates_nothing(seeded_db, shipped_config):
-    """The scheduled case: the same run, twice, against the same rows."""
+def test_rerun_advances_to_the_next_batch_without_duplicating(seeded_db, shipped_config):
+    """The scheduled case: the same run, twice, over the same 20 findings.
+
+    Named for what it asserts. A second run does NOT create nothing — the
+    anti-join in ``find_promotable_signals`` drops the 5 findings that now
+    carry a card, so the run promotes the next 5 and the cap holds again.
+    That is the intended drain rate: 20 findings become cards over 4 runs,
+    never 20 at once. What must not happen is a finding getting a second
+    card, which is what the distinct-count below pins.
+    """
     first = _promote(shipped_config)
     second = _promote(shipped_config)
 
     assert first["created"] == MAX_PER_RUN
-    # The anti-join in find_promotable_signals removes the 5 already carrying a
-    # card, so the second run promotes the NEXT 5 — that is the cap doing its
-    # job across runs, not a duplicate.
     assert second["created"] == MAX_PER_RUN
+
     cards = seeded_db.cards()
     assert len(cards) == 2 * MAX_PER_RUN
+    # One card per finding: 10 rows, 10 distinct findings, 10 distinct keys.
     assert len({c["source_prediction_id"] for c in cards}) == 2 * MAX_PER_RUN
+    assert len({c["idempotency_key"] for c in cards}) == 2 * MAX_PER_RUN
+
+    counts = seeded_db.subsystem_counts(cards, shipped_config)
+    for subsystem, count in counts.items():
+        assert count <= 2 * MAX_PER_SUBSYSTEM, (
+            f"{subsystem} accumulated {count} cards over 2 runs; the "
+            f"per-subsystem cap is {MAX_PER_SUBSYSTEM} per run"
+        )
 
 
 def test_idempotency_key_alone_blocks_a_duplicate(seeded_db, shipped_config):
