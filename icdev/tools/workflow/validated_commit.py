@@ -681,12 +681,30 @@ def _run_route_smoke(modified_files: List[str]) -> Tuple[bool, str, Dict[str, An
     return True, f"Route smoke passed ({len(results)} routes OK)", metrics
 
 
+# Broad-change fallback, in preference order. Deliberately the two cheapest
+# whole-app specs (7 + 3 tests) rather than the ~15-minute full suite: the point
+# is that SOMETHING relevant runs, inside a budget the caller actually has.
+_BROAD_UI_SMOKE_SPECS = ("key_pages_smoke.spec.ts", "nav_smoke.spec.ts")
+
+
 def _playwright_specs_for_changed_files(modified_files: Optional[List[str]]) -> List[str]:
     """Map changed UI files -> relevant tests/e2e/<slug>*.spec.ts spec(s).
 
-    Modeled on route_smoke._routes_for_changed_files. Returns [] (→ caller falls
-    back to Selenium) for backend-only diffs, or for too-broad changes (app.py /
-    base layout) so we never run the whole spec suite synchronously. Capped at 2.
+    Modeled on route_smoke._routes_for_changed_files. Returns [] for backend-only
+    diffs. Capped at 2 specs, because the full suite is ~15 minutes — far past
+    this caller's budget, and the kanban agent's whole wall-clock allowance.
+
+    A UI change that maps to NOTHING used to fall through to the Selenium
+    fallback, which runs one kanban-depends-on test touching none of the changed
+    pages — so the task reported "E2E verification" having exercised nothing
+    relevant. Two cases caused that and both now resolve to the broad SMOKE
+    specs (``key_pages_smoke`` 7 tests + ``nav_smoke`` 3, seconds not minutes):
+
+    * **too-broad changes** (``app.py``, ``base.html``) affect every page, so no
+      single slug is right — but "every page" is exactly what a smoke spec is.
+    * **unmatched slugs**, e.g. ``templates/index.html`` -> slug ``index``, and
+      there is no ``index*.spec.ts``. Measured against recent merges, this was
+      half the UI commits sampled.
     """
     files = modified_files or []
     specs_dir = BASE_DIR / "tests" / "e2e"
@@ -694,12 +712,18 @@ def _playwright_specs_for_changed_files(modified_files: Optional[List[str]]) -> 
         return []
     ui_exts = (".html", ".js", ".ts", ".css", ".jinja", ".jinja2")
     slugs: Set[str] = set()
+    saw_ui = False
     for f in files:
         fp = f.replace("\\", "/")
-        # Too broad → bail to Selenium (never run the whole spec suite here).
+        # Too broad for a slug match — fall to the smoke specs below, not to
+        # Selenium. Keep scanning: a diff touching app.py AND a canvas template
+        # should still run that canvas's spec.
         if fp.endswith("app.py") or fp.endswith("/base.html") or "/templates/base.html" in fp:
-            return []
+            saw_ui = True
+            continue
         is_ui = any(fp.endswith(e) for e in ui_exts) or "/templates/" in fp or fp.endswith("blueprint.py")
+        if is_ui:
+            saw_ui = True
         if not is_ui:
             continue
         parts = fp.split("/")
@@ -727,6 +751,14 @@ def _playwright_specs_for_changed_files(modified_files: Optional[List[str]]) -> 
             p = str(cand)
             if cand.is_file() and p not in specs:
                 specs.append(p)
+
+    # UI changed but nothing matched: run the broad smoke specs rather than
+    # handing the task to a Selenium test that exercises none of it.
+    if saw_ui and not specs:
+        for name in _BROAD_UI_SMOKE_SPECS:
+            cand = specs_dir / name
+            if cand.is_file():
+                specs.append(str(cand))
     return specs[:2]
 
 
