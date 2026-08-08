@@ -170,7 +170,9 @@ python tools/builder/forge_validator.py --gate               # FORGE gate for ch
 python tools/compliance/ssp_generator.py --project-id "sparkpilot"
 python tools/compliance/poam_generator.py --project-id "sparkpilot"
 python tools/compliance/stig_checker.py --project-id "sparkpilot"
-python tools/compliance/sbom_generator.py --project-dir "/path/to/project"
+python tools/compliance/sbom_generator.py --project-id "sparkpilot"
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --python-env /path/to/.venv   # resolve Python from the installed environment
+python tools/compliance/dependency_resolver.py --project-dir "/path/to/project" --json            # resolved transitive set + coverage report
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"
@@ -1801,7 +1803,8 @@ python tools/ci/pipeline_config_generator.py --dir /path --platform gitlab --wri
 python tools/compliance/ssp_generator.py --project-id "proj-123"
 python tools/compliance/poam_generator.py --project-id "proj-123"
 python tools/compliance/stig_checker.py --project-id "proj-123"
-python tools/compliance/sbom_generator.py --project-dir "/path/to/project"
+python tools/compliance/sbom_generator.py --project-id "proj-123"
+python tools/compliance/dependency_resolver.py --project-dir "/path/to/project" --json
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "proj-123"

@@ -119,10 +119,14 @@ def run_compliance_artifacts(run_id: str, issue_number: str, logger: logging.Log
     try:
         from tools.compliance.sbom_generator import generate_sbom
 
-        sbom_result = generate_sbom(project_dir=str(PROJECT_ROOT))
+        # generate_sbom takes a project_id (like every sibling step above) and
+        # returns the output path as a str. This called it with `project_dir=`
+        # and then `.get()` the str, so the step raised TypeError into the
+        # handler below on every run and never produced an SBOM.
+        sbom_path = generate_sbom(project_id)
         results["sbom"] = {
             "status": "generated",
-            "path": sbom_result.get("output_path", ""),
+            "path": str(sbom_path),
         }
         logger.info(f"SBOM generated: {results['sbom']['path']}")
     except ImportError:

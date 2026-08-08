@@ -5,9 +5,16 @@
 # production audit/remediate, FedRAMP KSI/packager, SWFT) and a BLOCKING bdc_canvas gate.
 # Authored in both tools/compliance/ and icdev/tools/compliance/ — keep the two in sync.
 """Generate CycloneDX Software Bill of Materials (SBOM).
-Detects project type, parses dependency files, generates CycloneDX 1.4 JSON
-format SBOM with CUI classification metadata, records in sbom_records table,
-and logs audit event."""
+Resolves the project's transitive dependency set (SBOM 2026 Coverage element),
+generates CycloneDX 1.4 JSON format SBOM with CUI classification metadata,
+records in sbom_records table, and logs audit event.
+
+Coverage (sbx-cov-01): components come from `dependency_resolver.resolve_project`,
+which reads each ecosystem's *resolved* lockfile and degrades to this module's
+declared-manifest parsers only where offline resolution is impossible. The
+resulting SBOM always carries an explicit coverage statement — `compositions`
+plus `icdev:sbom:coverage*` properties — so a partial tree is never presented as
+complete."""
 
 import argparse
 import hashlib
@@ -15,6 +22,13 @@ import json
 import re
 import sys
 import uuid
+from tools.compliance.dependency_resolver import (
+    COVERAGE_COMPLETE,
+    COVERAGE_INCOMPLETE,
+    COVERAGE_UNKNOWN,
+    RESOLUTION_DECLARED,
+    resolve_project,
+)
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +46,14 @@ CYCLONEDX_SUPPORTED_VERSIONS = {
     "1.5": "http://cyclonedx.org/schema/bom-1.5.schema.json",
     "1.6": "http://cyclonedx.org/schema/bom-1.6.schema.json",
     "1.7": "http://cyclonedx.org/schema/bom-1.7.schema.json",
+}
+
+# Coverage status -> CycloneDX `compositions[].aggregate` vocabulary (spec 1.3+,
+# so this is valid across every version in CYCLONEDX_SUPPORTED_VERSIONS).
+COVERAGE_AGGREGATE = {
+    COVERAGE_COMPLETE: "complete",
+    COVERAGE_INCOMPLETE: "incomplete",
+    COVERAGE_UNKNOWN: "unknown",
 }
 
 
@@ -260,75 +282,11 @@ def _parse_package_json(file_path):
     return components
 
 
-def _parse_package_lock_json(file_path):
-    """Parse package-lock.json for exact dependency versions."""
-    components = []
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    # package-lock.json v2/v3 format
-    packages = data.get("packages", {})
-    if packages:
-        for pkg_path, pkg_info in packages.items():
-            if not pkg_path or pkg_path == "":
-                continue  # Skip root
-            name = pkg_path.replace("node_modules/", "")
-            # Skip nested node_modules
-            if "node_modules/" in name[1:]:
-                continue
-            version = pkg_info.get("version", "unspecified")
-
-            purl_name = name.replace("/", "%2F") if "/" in name else name
-            purl = f"pkg:npm/{purl_name}@{version}"
-
-            group = ""
-            pkg_name = name
-            if name.startswith("@"):
-                parts = name.split("/", 1)
-                if len(parts) == 2:
-                    group = parts[0]
-                    pkg_name = parts[1]
-
-            components.append(
-                {
-                    "type": "library",
-                    "name": pkg_name,
-                    "version": version,
-                    "purl": purl,
-                    "scope": "required" if not pkg_info.get("dev") else "optional",
-                    "group": group,
-                    "source": str(file_path),
-                }
-            )
-    else:
-        # Fallback: package-lock.json v1 format
-        deps = data.get("dependencies", {})
-        for name, dep_info in deps.items():
-            version = dep_info.get("version", "unspecified")
-            purl_name = name.replace("/", "%2F") if "/" in name else name
-            purl = f"pkg:npm/{purl_name}@{version}"
-
-            group = ""
-            pkg_name = name
-            if name.startswith("@"):
-                parts = name.split("/", 1)
-                if len(parts) == 2:
-                    group = parts[0]
-                    pkg_name = parts[1]
-
-            components.append(
-                {
-                    "type": "library",
-                    "name": pkg_name,
-                    "version": version,
-                    "purl": purl,
-                    "scope": "required" if not dep_info.get("dev") else "optional",
-                    "group": group,
-                    "source": str(file_path),
-                }
-            )
-
-    return components
+# NOTE: `_parse_package_lock_json` was removed by sbx-cov-01. package-lock.json is a
+# RESOLVED tree and is now read by dependency_resolver._resolve_package_lock, which keeps
+# the nested node_modules instances the old parser discarded. The parsers that remain in
+# this module are DECLARED-manifest parsers only, reached via DECLARED_PARSERS when an
+# ecosystem cannot be resolved offline.
 
 
 def _parse_go_mod(file_path):
@@ -697,13 +655,155 @@ def _parse_packages_config(file_path):
     return components
 
 
+def _declared_python(project_dir):
+    """Declared-only Python dependencies — used when no lockfile/environment exists."""
+    detected = _detect_project_type(project_dir)
+    components = []
+    if "python-requirements" in detected:
+        components.extend(_parse_requirements_txt(project_dir / "requirements.txt"))
+    if "python-pyproject" in detected:
+        components.extend(_parse_pyproject_toml(project_dir / "pyproject.toml"))
+    return components
+
+
+def _declared_npm(project_dir):
+    """Declared-only npm dependencies — package.json ranges, no resolved tree."""
+    if "javascript-package" not in _detect_project_type(project_dir):
+        return []
+    return _parse_package_json(project_dir / "package.json")
+
+
+def _declared_golang(project_dir):
+    if "go-mod" not in _detect_project_type(project_dir):
+        return []
+    return _parse_go_mod(project_dir / "go.mod")
+
+
+def _declared_cargo(project_dir):
+    if "rust-cargo" not in _detect_project_type(project_dir):
+        return []
+    return _parse_cargo_toml(project_dir / "Cargo.toml")
+
+
+def _declared_maven(project_dir):
+    if "java-maven" not in _detect_project_type(project_dir):
+        return []
+    return _parse_pom_xml(project_dir / "pom.xml")
+
+
+def _declared_gradle(project_dir):
+    if "java-gradle" not in _detect_project_type(project_dir):
+        return []
+    for build_file in ("build.gradle", "build.gradle.kts"):
+        path = project_dir / build_file
+        if path.exists():
+            return _parse_build_gradle(path)
+    return []
+
+
+def _declared_nuget(project_dir):
+    detected = _detect_project_type(project_dir)
+    components = []
+    if "csharp-csproj" in detected:
+        for csproj in sorted(project_dir.glob("*.csproj")):
+            components.extend(_parse_csproj(csproj))
+    if "csharp-packages" in detected:
+        components.extend(_parse_packages_config(project_dir / "packages.config"))
+    return components
+
+
+#: Passed to ``resolve_project`` and invoked only for ecosystems whose resolved
+#: set could not be obtained offline. Keeping the parsers here (rather than in
+#: the resolver) avoids a circular import and leaves ~25 call sites untouched.
+DECLARED_PARSERS = {
+    "python": _declared_python,
+    "npm": _declared_npm,
+    "golang": _declared_golang,
+    "cargo": _declared_cargo,
+    "maven": _declared_maven,
+    "gradle": _declared_gradle,
+    "nuget": _declared_nuget,
+}
+
+
+def _component_identity(component):
+    """The metadata tuple that decides whether two instances are the same component.
+
+    The 2026 Coverage element requires that "multiple instances of a component
+    with differing metadata are listed separately with their dependency
+    relationship". So instances collapse only when every emitted field matches;
+    two npm instances that differ in version *or* scope stay separate.
+    """
+    return (
+        component.get("type", "library"),
+        component.get("group", ""),
+        component.get("name", ""),
+        component.get("version", ""),
+        component.get("purl", ""),
+        component.get("scope", ""),
+    )
+
+
 def _generate_bom_ref(component):
-    """Generate a unique BOM reference for a component."""
-    key = f"{component.get('group', '')}/{component['name']}@{component['version']}"
+    """Generate a unique BOM reference for a component instance."""
+    key = "|".join(_component_identity(component))
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=None, schema=None):
+def _build_coverage_blocks(coverage, cdx_components, target_bom_ref):
+    """Render a coverage report as CycloneDX ``compositions`` + ICDEV properties.
+
+    ``compositions[].aggregate`` is the standard's own vehicle for stating that a
+    component set is complete or incomplete; the properties carry the same fact
+    in a form an ICDEV gate can read without a CycloneDX parser.
+    """
+    status = coverage.get("status", COVERAGE_UNKNOWN)
+
+    properties = [
+        {"name": "icdev:sbom:coverage", "value": status},
+        {"name": "icdev:sbom:coverage:statement", "value": coverage.get("statement", "")},
+    ]
+    for entry in coverage.get("resolved", []):
+        properties.append(
+            {
+                "name": f"icdev:sbom:coverage:{entry['ecosystem']}",
+                "value": f"resolved: {entry['method']}",
+            }
+        )
+    for entry in coverage.get("unresolved", []):
+        properties.append(
+            {
+                "name": f"icdev:sbom:coverage:{entry['ecosystem']}",
+                "value": f"declared-only: {entry['method']}",
+            }
+        )
+        properties.append(
+            {
+                "name": f"icdev:sbom:coverage:{entry['ecosystem']}:reason",
+                "value": entry.get("reason", ""),
+            }
+        )
+
+    complete_refs = sorted({c["bom-ref"] for c in cdx_components if not c.get("_declared")})
+    incomplete_refs = sorted({c["bom-ref"] for c in cdx_components if c.get("_declared")})
+
+    compositions = []
+    if complete_refs:
+        compositions.append({"aggregate": "complete", "assemblies": complete_refs})
+    if incomplete_refs:
+        compositions.append({"aggregate": "incomplete", "assemblies": incomplete_refs})
+    if not compositions:
+        # No components at all — the aggregate still has to say what that means.
+        compositions.append(
+            {"aggregate": COVERAGE_AGGREGATE.get(status, "unknown"), "assemblies": [target_bom_ref]}
+        )
+
+    return compositions, properties
+
+
+def _build_cyclonedx_sbom(
+    project, components, serial_number=None, spec_version=None, schema=None, coverage=None
+):
     """Build a CycloneDX JSON SBOM document."""
     now = datetime.now(timezone.utc)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
@@ -714,14 +814,15 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
     if serial_number is None:
         serial_number = f"urn:uuid:{uuid.uuid4()}"
 
-    # Deduplicate components by purl
-    seen_purls = set()
+    # Deduplicate by full metadata identity, not by purl: two instances that
+    # differ in any emitted field are two components under the Coverage element.
+    seen_identities = set()
     unique_components = []
     for comp in components:
-        purl = comp.get("purl", "")
-        if purl and purl in seen_purls:
+        identity = _component_identity(comp)
+        if identity in seen_identities:
             continue
-        seen_purls.add(purl)
+        seen_identities.add(identity)
         unique_components.append(comp)
 
     # Build CycloneDX components array
@@ -739,6 +840,9 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
             cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
+        # Private marker, stripped before serialization — records whether this
+        # instance came from a resolved set or from a declared manifest.
+        cdx_comp["_declared"] = comp.get("resolution") == RESOLUTION_DECLARED
         cdx_components.append(cdx_comp)
 
     sbom = {
@@ -784,6 +888,20 @@ def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=
         "components": cdx_components,
     }
 
+    # Coverage (2026 Minimum Elements) — always emitted, including when the
+    # answer is "incomplete" or "unknown".
+    target_bom_ref = sbom["metadata"]["component"]["bom-ref"]
+    compositions, coverage_properties = _build_coverage_blocks(
+        coverage or {"status": COVERAGE_UNKNOWN, "statement": "", "resolved": [], "unresolved": []},
+        cdx_components,
+        target_bom_ref,
+    )
+    sbom["metadata"]["properties"].extend(coverage_properties)
+    sbom["compositions"] = compositions
+
+    for cdx_comp in cdx_components:
+        cdx_comp.pop("_declared", None)
+
     return sbom, len(unique_components)
 
 
@@ -793,6 +911,7 @@ def generate_sbom(
     output_path=None,
     db_path=None,
     spec_version=None,
+    python_env=None,
 ):
     """Generate a Software Bill of Materials for a project.
 
@@ -801,6 +920,9 @@ def generate_sbom(
         sbom_format: Output format (currently only 'cyclonedx' supported)
         output_path: Override output file path
         db_path: Override database path
+        spec_version: CycloneDX spec version override (D342)
+        python_env: Virtualenv / site-packages directory whose installed
+            distributions are the Python target environment (SBOM 2026 Coverage)
 
     Returns:
         Path to the generated SBOM file
@@ -828,85 +950,31 @@ def generate_sbom(
         else:
             project_dir_path = Path(project_dir)
 
-        # Detect project type and parse dependencies
-        all_components = []
+        # Resolve the transitive dependency set per ecosystem (SBOM 2026 Coverage).
+        # Ecosystems that cannot be resolved offline fall back to DECLARED_PARSERS
+        # and are reported as declared-only rather than silently passed off as
+        # complete.
+        resolution = resolve_project(
+            project_dir_path,
+            declared_parsers=DECLARED_PARSERS,
+            python_env=python_env,
+        )
+        all_components = resolution["components"]
+        coverage = resolution["coverage"]
 
-        if project_dir_path:
-            detected_types = _detect_project_type(project_dir_path)
-            print(f"Detected project types: {detected_types or ['none']}")
-
-            # Parse each detected dependency file
-            for ptype in detected_types:
-                try:
-                    if ptype == "python-requirements":
-                        comps = _parse_requirements_txt(project_dir_path / "requirements.txt")
-                        all_components.extend(comps)
-                        print(f"  Parsed requirements.txt: {len(comps)} dependencies")
-
-                    elif ptype == "python-pyproject":
-                        comps = _parse_pyproject_toml(project_dir_path / "pyproject.toml")
-                        all_components.extend(comps)
-                        print(f"  Parsed pyproject.toml: {len(comps)} dependencies")
-
-                    elif ptype == "javascript-package":
-                        comps = _parse_package_json(project_dir_path / "package.json")
-                        all_components.extend(comps)
-                        print(f"  Parsed package.json: {len(comps)} dependencies")
-
-                    elif ptype == "javascript-package-lock":
-                        comps = _parse_package_lock_json(project_dir_path / "package-lock.json")
-                        all_components.extend(comps)
-                        print(f"  Parsed package-lock.json: {len(comps)} dependencies")
-
-                    elif ptype == "go-mod":
-                        dep_file = project_dir_path / "go.mod"
-                        if dep_file.exists():
-                            comps = _parse_go_mod(dep_file)
-                            all_components.extend(comps)
-                            print(f"  Parsed go.mod: {len(comps)} dependencies")
-
-                    elif ptype == "rust-cargo":
-                        dep_file = project_dir_path / "Cargo.toml"
-                        if dep_file.exists():
-                            comps = _parse_cargo_toml(dep_file)
-                            all_components.extend(comps)
-                            print(f"  Parsed Cargo.toml: {len(comps)} dependencies")
-
-                    elif ptype == "java-maven":
-                        dep_file = project_dir_path / "pom.xml"
-                        if dep_file.exists():
-                            comps = _parse_pom_xml(dep_file)
-                            all_components.extend(comps)
-                            print(f"  Parsed pom.xml: {len(comps)} dependencies")
-
-                    elif ptype == "java-gradle":
-                        for gf in ["build.gradle", "build.gradle.kts"]:
-                            dep_file = project_dir_path / gf
-                            if dep_file.exists():
-                                comps = _parse_build_gradle(dep_file)
-                                all_components.extend(comps)
-                                print(f"  Parsed {gf}: {len(comps)} dependencies")
-                                break
-
-                    elif ptype == "csharp-csproj":
-                        for csproj in project_dir_path.glob("*.csproj"):
-                            comps = _parse_csproj(csproj)
-                            all_components.extend(comps)
-                            print(f"  Parsed {csproj.name}: {len(comps)} dependencies")
-
-                    elif ptype == "csharp-packages":
-                        dep_file = project_dir_path / "packages.config"
-                        if dep_file.exists():
-                            comps = _parse_packages_config(dep_file)
-                            all_components.extend(comps)
-                            print(f"  Parsed packages.config: {len(comps)} dependencies")
-
-                except Exception as e:
-                    print(f"  Warning: Failed to parse {ptype}: {e}")
+        for eco in resolution["ecosystems"]:
+            flag = "resolved" if eco["complete"] else "DECLARED ONLY"
+            print(f"  [{flag}] {eco['ecosystem']}: {eco['component_count']} via {eco['method']}")
+            if eco["reason"]:
+                print(f"      {eco['reason']}")
 
         # Build CycloneDX SBOM
         sbom, component_count = _build_cyclonedx_sbom(
-            project, all_components, spec_version=active_spec_version, schema=active_schema
+            project,
+            all_components,
+            spec_version=active_spec_version,
+            schema=active_schema,
+            coverage=coverage,
         )
 
         # Determine output path
@@ -965,6 +1033,7 @@ def generate_sbom(
                 "component_count": component_count,
                 "output_file": str(out_file),
                 "serial_number": sbom["serialNumber"],
+                "coverage": coverage["status"],
             },
             out_file,
         )
@@ -975,6 +1044,9 @@ def generate_sbom(
         print(f"  Version: {new_version}")
         print(f"  Components: {component_count}")
         print(f"  Serial: {sbom['serialNumber']}")
+        print(f"  Coverage: {coverage['status']}")
+        if coverage["status"] != COVERAGE_COMPLETE:
+            print(f"  {coverage['statement']}")
 
         return str(out_file)
 
@@ -1001,6 +1073,15 @@ def main():
         choices=["1.4", "1.5", "1.6", "1.7"],
         help="CycloneDX spec version (default: 1.4, D342)",
     )
+    parser.add_argument(
+        "--python-env",
+        dest="python_env",
+        default=None,
+        help=(
+            "Virtualenv (or site-packages) directory to read installed Python distributions "
+            "from, instead of resolving from a lockfile (SBOM 2026 Coverage)"
+        ),
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
@@ -1011,6 +1092,7 @@ def main():
             output_path=args.output,
             db_path=Path(args.db) if args.db else None,
             spec_version=args.spec_version,
+            python_env=args.python_env,
         )
         print(f"\nSBOM path: {path}")
     except (FileNotFoundError, ValueError) as e:

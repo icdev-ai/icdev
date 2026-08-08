@@ -78,9 +78,11 @@ for this card.
 is the only SBOM producer in the tree. It:
 
 - emits **CycloneDX only**, default spec **1.4**, selectable 1.4–1.7 via `--spec-version`;
-- parses **declared dependency manifests** — `requirements.txt`, `pyproject.toml`,
+- parsed **declared dependency manifests** — `requirements.txt`, `pyproject.toml`,
   `package.json`, `package-lock.json`, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`,
-  `*.csproj`, `packages.config`;
+  `*.csproj`, `packages.config`. *(Superseded by sbx-cov-01: components now come from
+  `dependency_resolver.resolve_project`, and those manifest parsers survive only as the
+  declared-only fallback — see §2.7.)*;
 - emits per component: `type`, `bom-ref`, `name`, `version`, `group`, `purl`, `scope`;
 - emits metadata: `timestamp`, `tools[{vendor,name,version}]`, target `component`, and four
   ICDEV `properties` (classification, project-id, cui-category, distribution);
@@ -190,6 +192,48 @@ knowledge-base seed content that states ICDEV produces SBOMs "in SPDX and Cyclon
 `tools/govcon/seed_icdev_knowledge_base.py`, `tools/govcon/seed_solicitation_requirements.py`).
 That claim is not currently true and is customer-facing.
 
+### 2.7 Coverage — resolved dependency sets (sbx-cov-01)
+
+`tools/compliance/dependency_resolver.py` (mirrored at `icdev/tools/compliance/`) replaced
+declared-manifest parsing as the generator's component source. Per ecosystem it reads the
+**resolved** set, in precedence order:
+
+| Ecosystem | Resolved source | Edges? |
+|---|---|---|
+| python | `uv.lock` → `poetry.lock` → `pdm.lock` → `Pipfile.lock` → installed environment via `importlib.metadata` over a venv's `site-packages` | yes, except `Pipfile.lock` |
+| npm | `package-lock.json` (v1 and v2/v3) → `yarn.lock` (v1 text and Berry YAML) | yes |
+| golang | `go.mod` with `go >= 1.17` (the pruned module graph lists every indirect module) → `go.sum` | no |
+| cargo | `Cargo.lock` | yes |
+| maven | `mvn dependency:list` output at `target/dependency-list.txt`, `target/dependencies.txt` or `dependency-list.txt` | no |
+| gradle | `gradle.lockfile` / `gradle/dependency-locks/*.lockfile` | no |
+| nuget | `obj/project.assets.json` → `packages.lock.json` | yes |
+
+Three properties of the design matter more than the table:
+
+1. **Offline-first.** Nothing shells out to a package manager — every source above is parsed
+   with `json`, `tomllib`, `yaml.safe_load` or `importlib.metadata`. Resolution therefore
+   behaves identically in an air-gapped enclave. The cost is that Maven and Gradle have no
+   offline resolved form unless the project committed one, which is why both degrade.
+2. **Degradation is stated, never silent.** Where the resolved set is unavailable, the
+   ecosystem falls back to the generator's declared parsers and the SBOM carries an explicit
+   incomplete-coverage statement — CycloneDX `compositions[].aggregate` (`complete` /
+   `incomplete` / `unknown`, valid from spec 1.3) plus `icdev:sbom:coverage*` metadata
+   properties naming each unresolved ecosystem and why. The statement closes with the reason
+   this matters: a component's absence does **not** establish that the software is unaffected.
+   A project with no manifest at all reports `unknown`, not `complete`.
+3. **Instances, not names.** Components deduplicate on their full emitted metadata tuple
+   rather than on `purl`, so two instances that differ in version *or* scope are listed
+   separately with their own `bom-ref`. The nested-`node_modules` case is the concrete one:
+   the previous `_parse_package_lock_json` skipped every nested entry, dropping installed
+   components outright. That parser has been removed.
+
+Per-ecosystem tests live in `tests/test_sbom_coverage_resolution.py`, each over a fixture
+project whose transitive tree is known by construction. The agreed generation-time budget is
+recorded there as `RESOLUTION_BUDGET_SECONDS`.
+
+**Still open:** emitting the CycloneDX `dependencies` array from the edges the resolver now
+collects is **sbx-cov-02**; artifact hashes, which resolution unlocks, are **sbx-fld-03**.
+
 ---
 
 ## 3. Conformance matrix
@@ -229,7 +273,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Element | Status | Evidence / what is missing |
 |---|---|---|
 | Accommodation of Updates | **PARTIAL** | `sbom_records` versions rows, but there is no correction/revision workflow and no way to mark a prior SBOM superseded. |
-| Coverage | **GAP** | The generator parses **declared** dependencies, so it captures direct dependencies only for every ecosystem except npm (`package-lock.json` alone yields a resolved tree). Transitive coverage is the single largest gap and the one the standard changed most decisively — "no minimum depth". |
+| Coverage | **MET (sbx-cov-01)** | `tools/compliance/dependency_resolver.py` resolves each ecosystem from its **lockfile**, not its declared manifest, and the generator consumes that instead of parsing manifests itself. See §2.7. |
 | Distribution and Delivery | **PARTIAL** | Writes a file to disk and records a path. No version-specific URL and no retrieval API. |
 | Explicitly Identifying Unknown Information | **GAP** | No unknown/withheld distinction anywhere; `"unspecified"` conflates them and is not machine-processable. No documented process for recipients to query redactions. |
 | Frequency | **PARTIAL** | `CLAUDE.md` asserts "SBOM regenerated on every build"; the enforced gate is a **30-day staleness** threshold, which is materially weaker than per-release. |
