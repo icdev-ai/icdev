@@ -136,6 +136,11 @@ Baseline as analysed:
 - `sbom_components` gains `producer`, `hash_value`, `hash_algorithm`, `identifiers_json`,
   `unknown_fields_json`, `withheld_fields_json`. The dead `license` and `vendor` columns
   are **reused** — `license` is the 2026 Component License element — not duplicated.
+  `license` is no longer dead: **sbx-fld-04** made the generator write `sbom_components`
+  at all, and it is the single writer of that table (see 3.2.1). It populates `license`,
+  `producer` and the two disclosure blobs from the finished document. `vendor` stays
+  deliberately NULL — Component Producer is the 2026 element that replaced Supplier Name,
+  and `producer` is the column that carries it.
 - `sbom_dependencies` is new: the Component Dependency Relationship element as an edge
   table (`sbom_record_id`, `parent_component_id`, `child_component_id`,
   `relationship_type`, `scope`) rather than a parent-ref column, because a component has
@@ -159,6 +164,25 @@ Baseline as analysed:
 Shape is pinned by `tests/test_sbom_2026_schema.py`, which applies the real migration to
 a pre-migration database and round-trips a value through every new column, and asserts
 `MINIMAL_ICDEV_SCHEMA` in `tests/conftest.py` declares the identical column set.
+
+**None of it existed on a fresh PostgreSQL until sbx-fld-04.** `bootstrap_pg.py` loads
+`tools/db/schema/pg_consolidated.sql` and marks every migration at or below
+`through_version` (301) applied *without running it*. Migration 209 is below that pivot
+but its three tables — `sbom_components`, `supply_chain_vulnerabilities`,
+`supply_chain_risk_scores` — are **not in the snapshot**, which was dumped from a
+canonical database where 209 had never actually run. So a freshly bootstrapped PG had no
+`sbom_components` at all, and the migration above therefore failed every one of its
+`sbom_components` ALTERs and its `sbom_dependencies` CREATE with `UndefinedTable` — each
+swallowed by the runner's skip-failed-statement guard and then recorded as applied. The
+entire SBOM storage layer was absent on the primary backend while every version marker
+said otherwise. Repaired by `20260808043009_restore_migration_209_tables_on_postgresql`,
+which sits above the pivot, recreates the three tables idempotently (plus
+`sbom_dependencies`, and `sbom_components` in its full post-fnd-02 shape since it sorts
+after that migration), and no-ops on any database that already has them. Found by
+`tests/pg_tier/test_sbom_component_license_pg.py`, the first runtime test to write
+`sbom_components` on the ambient backend — the SQLite suite could not have caught it.
+**Not audited:** whether other pre-301 migrations are missing from the snapshot the same
+way. That is a schema-wide sweep, not this card.
 
 ### 2.3 Signing — SBOM Author Signature (sbx-sig-01)
 
@@ -626,9 +650,82 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
 | Component Hash Algorithm | **GAP** | Consequent to the above. |
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
-| Component License | **GAP** | Not emitted, though `sbom_components.license` already exists in schema. |
+| Component License | **MET (sbx-fld-04)** | `tools/compliance/component_licenser.py` emits the element for every component and for the target component, in one of the four shapes the standard allows — a validated SPDX expression, a URL to full terms, a license name, or an explicit unknown/withheld marker — plus a tri-state proprietary-conditions flag. Never omitted. `sbom_components.license` is populated by the same resolution. See §3.2.1. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
 | Component Version | **PARTIAL** | The conflating literals are **gone (sbx-prc-01)**: an unresolved version is now the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. What remains for the element itself is stating the version the *producer* assigned where ICDEV currently reports a resolver's normalization. |
+
+#### 3.2.1 Component License — what sbx-fld-04 landed
+
+`tools/compliance/component_licenser.py` (mirrored to `icdev/tools/compliance/`) resolves
+the element for every component, and `tools/compliance/spdx_license_data.py` carries the
+698 SPDX license identifiers and 88 exception identifiers it validates against.
+
+- **Emitted for every component without exception**, as CycloneDX `licenses` plus the
+  `icdev:component-license*` properties. The properties are what make the element
+  unomittable: CycloneDX has no way to spell "unknown" inside `licenses`, so an
+  undisclosed license leaves that array empty and states itself in
+  `icdev:component-license`. `icdev:component-license-proprietary` is always present as
+  `true`, `false` or `unknown`.
+- **Only validated SPDX identifiers are emitted as identifiers.** A declaration that is
+  not a well-formed expression over the SPDX List — `Apache License 2.0`, a misspelling,
+  an invented id, a license used where an exception belongs — is carried through as a
+  license *name* or a URL instead. Nothing is dropped, and nothing the recipient cannot
+  resolve is presented as resolvable. Expressions are parsed with the ISO/IEC 5962
+  Annex D grammar and canonicalized, so a manifest writing `mit` yields `MIT`.
+- **The proprietary flag is tri-state and set only from positive evidence**: npm
+  `UNLICENSED` / `SEE LICENSE IN <file>`, an SPDX `LicenseRef-`/`DocumentRef-` custom
+  reference, the `NONE` keyword, or proprietary vocabulary in the declared text. `false`
+  means "no conditions the recipient cannot look up", *not* "open source" — a
+  source-available licence with an SPDX id (BUSL-1.1, SSPL-1.0) flags `false` because its
+  terms are published and identified, which is what the element is for. Where it cannot
+  be determined (a bare URL, a bare name) it is stated as `unknown` rather than defaulted
+  to `false`, which would assert the absence of conditions nobody checked for.
+- **The list is vendored, not fetched and not imported.** ICDEV runs air-gapped, and an
+  SBOM generator whose notion of a valid license changes with an undeclared transitive
+  dependency's version is the "incorrect license information" failure the standard calls a
+  risk-management problem. Validation is allow-list only, so a stale list can only
+  downgrade an id to a name — never emit an unvalidated id.
+- **Unknown and withheld go through sbx-prc-01, not a marker of this element's own.** An
+  absent license records `FIELD_LICENSE` on the component's `Disclosure` with a reason
+  from the closed `UNKNOWN_REASONS` vocabulary; the finer-grained local reason
+  (`license-not-declared` and friends) travels as the disclosure *detail*, so precision
+  survives without a second vocabulary a recipient's tooling would not recognise. This
+  module emits **no** unknown-reason property of its own. Which shared reason applies
+  depends on where the component came from: reading a package's real metadata and finding
+  no license means the producer published none (`not-provided-by-producer`), while a
+  `requirements.txt` line means nothing about the package at all — that format cannot
+  carry a license, so the value is one an offline build cannot reach
+  (`not-resolvable-offline`). A license the operator's disclosure policy **withholds**
+  suppresses the `licenses` array, the declaration shape, the evidence and the URL, and
+  reduces to the `withheld` sentinel: leaving any of those in place would publish exactly
+  what was withheld.
+- **`sbom_components` is now written, and this is its single writer.** The generator had
+  never written that table, which is why `license` sat dead since migration 209. Rows are
+  built from the **finished** CycloneDX components rather than re-resolved from the parsed
+  input, so the table cannot become a second, drifting opinion about the element — the
+  same dedup, the same policy and the same resolution produced both. The row id is the
+  component's `bom-ref`, so a row and its document entry correlate by identity and
+  regeneration updates rather than accumulates. `license`, `producer` and the
+  `unknown_fields_json` / `withheld_fields_json` blobs are all written from that one row.
+- **The target component is covered too.** Its license is read from the project's own
+  manifest (`pyproject.toml`, `package.json`, `Cargo.toml`, `pom.xml`), so ICDEV's own SBOM
+  reports `Apache-2.0` rather than unknown.
+- **Coverage today.** A real run over this repo against its installed Python environment
+  and `package-lock.json` yields **558 components: 399 with a validated SPDX expression**
+  (`MIT` 223, `Apache-2.0` 61, `BSD-3-Clause` 43, `ISC` 35, …), **147 carried as license
+  names** — `MIT License`, `BSD License`, `Apache 2.0` and other trove-classifier or
+  free-text spellings that are deliberately *not* laundered into SPDX ids — **and 12 with
+  the explicit unknown marker. Zero omitted, zero NULL or empty**, and zero invalid SPDX
+  identifiers emitted. `dependency_resolver` reads `License-Expression`, `License` and the
+  `License ::` trove classifier from each installed distribution's `*.dist-info/METADATA`
+  in PEP 639 order, which is the only place an air-gapped build can learn a Python
+  package's license; a `License:` field that is multi-line or over 120 characters is
+  discarded rather than carried, because several distributions paste their entire license
+  body into it.
+
+Pinned by `tests/test_sbom_component_license.py` (107 tests), which runs the real
+generator against a real database and asserts the rows land with populated licenses, and
+by `tests/pg_tier/test_sbom_component_license_pg.py` against a live PostgreSQL.
 
 ### 3.3 Practices and Processes
 

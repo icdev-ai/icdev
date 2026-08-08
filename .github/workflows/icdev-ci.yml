@@ -223,6 +223,7 @@ jobs:
             tests/integration/test_dashboard_panels.py \
             tests/innovation/test_innovation_kanban_promoter.py \
             tests/test_sbom_component_producer.py \
+            tests/test_sbom_component_license.py \
             tests/test_sbom_conformance_gate.py \
             tests/test_pr_watcher_heartbeat.py \
             -v --tb=short -x

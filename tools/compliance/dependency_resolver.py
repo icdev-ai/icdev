@@ -147,6 +147,7 @@ def _component(
     resolution=RESOLUTION_RESOLVED,
     direct=True,
     ctype="library",
+    declared_license=None,
 ):
     """Build one component instance.
 
@@ -154,6 +155,12 @@ def _component(
     instances of the same name and version at different ``node_modules`` paths
     are two keys, so they survive deduplication and can each carry their own
     dependency relationship.
+
+    ``declared_license`` is whatever the source stated, uninterpreted — a string,
+    or npm's legacy object/array form. Classifying it is
+    ``component_licenser``'s job (2026 Component License, sbx-fld-04); resolvers
+    only report what they read, and ``None`` means this source carries no license
+    field at all.
     """
     return {
         "type": ctype,
@@ -168,6 +175,7 @@ def _component(
         "dependencies": list(dependencies or []),
         "resolution": resolution,
         "direct": bool(direct),
+        "declared_license": declared_license,
     }
 
 
@@ -324,6 +332,45 @@ def _site_packages_dirs(project_dir, python_env=None):
     return [c for c in candidates if c.is_dir()]
 
 
+#: A `License:` field long enough or multi-line enough to be the license TEXT rather
+#: than its name. Several distributions paste the whole BSD or MIT body in there, and
+#: carrying that into an SBOM as a license *name* would be worse than saying nothing:
+#: the 2026 element exists so a recipient can look the terms up, not read them inline.
+_LICENSE_FIELD_MAX = 120
+
+
+def _python_metadata_license(metadata):
+    """The license a `*.dist-info/METADATA` file declares, or None.
+
+    PEP 639 order. ``License-Expression`` is an SPDX expression by definition, so it is
+    preferred outright. ``License`` is free text that is *usually* an identifier and
+    occasionally the entire license body. The trove classifier is last: it is a category
+    ("MIT License"), not an identifier, so it travels as a license name and
+    ``component_licenser`` never launders it into an SPDX id.
+    """
+    expression = (metadata.get("License-Expression") or "").strip()
+    if expression:
+        return expression
+
+    declared = (metadata.get("License") or "").strip()
+    if declared and "\n" not in declared and len(declared) <= _LICENSE_FIELD_MAX:
+        return declared
+
+    try:
+        classifiers = metadata.get_all("Classifier") or []
+    except AttributeError:
+        classifiers = []
+    for classifier in classifiers:
+        if not isinstance(classifier, str) or not classifier.startswith("License ::"):
+            continue
+        label = classifier.split("::")[-1].strip()
+        # "License :: OSI Approved" on its own names no license.
+        if label and label != "OSI Approved":
+            return label
+
+    return None
+
+
 def _resolve_python_environment(project_dir, python_env=None):
     """Read the *installed* distributions of a target environment.
 
@@ -351,6 +398,9 @@ def _resolve_python_environment(project_dir, python_env=None):
                 name = _normalize_pypi_name(raw_name)
                 version = str(dist.version or "")
                 edges = sorted({_requirement_name(r) for r in (dist.requires or [])} - {""})
+                # Component License, from the producer's own installed metadata — the
+                # only place an air-gapped build can read a Python package's license.
+                declared_license = _python_metadata_license(dist.metadata)
             except Exception:
                 continue
 
@@ -367,6 +417,7 @@ def _resolve_python_environment(project_dir, python_env=None):
                     key=key,
                     source=info,
                     dependencies=[f"python|{e}" for e in edges],
+                    declared_license=declared_license,
                 )
             )
 
@@ -519,6 +570,9 @@ def _resolve_package_lock_v2(path, packages):
                 source=path,
                 dependencies=sorted(set(edges)),
                 direct=pkg_path.count("node_modules/") == 1,
+                # npm records the resolved package's own license here, in either the
+                # current string form or the legacy object/array form.
+                declared_license=info.get("license") or info.get("licenses"),
             )
         )
     if not components:
@@ -570,6 +624,9 @@ def _resolve_package_lock_v1(path, dependencies):
                 source=path,
                 dependencies=sorted(set(edges)),
                 direct=pkg_path.count("node_modules/") == 1,
+                # npm records the resolved package's own license here, in either the
+                # current string form or the legacy object/array form.
+                declared_license=info.get("license") or info.get("licenses"),
             )
         )
     return _result("npm", "package-lock.json (lockfileVersion 1)", True, components, source=path)

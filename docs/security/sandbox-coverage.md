@@ -1419,3 +1419,62 @@ committed to the repo.
   document back into ICDEV's component model — that is sbx-fmt-02's ingest
   parity work and a materially different posture, because the values would then
   reach the database rather than only a report.
+
+### Gap 52 — SBOM component licensing (`tools/compliance/component_licenser.py`)
+
+*(There are two entries numbered 50 above: `sbom_revision` and `unknown_information`
+landed from sibling `sbx` branches that each allocated the next number concurrently.
+Left as-is rather than renumbered — the headings are referenced from those PRs.)*
+
+**Module:** `tools/compliance/component_licenser.py` and its data module
+`tools/compliance/spdx_license_data.py` (sbx-fld-04), imported by
+`tools/compliance/sbom_generator.py`. The license-reading additions to
+`tools/compliance/dependency_resolver.py` are covered here too, since they are the
+ingress that feeds it.
+
+**Ingress path:** Three, all third-party by construction. (1) A **license string declared
+by a dependency manifest** — `package-lock.json` `license`/`licenses` — which is
+attacker-controlled if a registry account or a lockfile is. (2) **Installed Python
+distribution metadata**, read as text from `*.dist-info/METADATA` via
+`importlib.metadata.PathDistribution`. (3) The **project's own manifests**
+(`pyproject.toml`, `package.json`, `Cargo.toml`, `pom.xml`), read whole off disk by
+`project_license_from_manifests()` to resolve the document's target component.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** No ingress reaches an execution or deserialization path. A declared
+  license is consumed as text: it is tokenized on whitespace and parentheses, each token
+  is looked up in a closed frozenset of SPDX identifiers, and an unrecognized token is
+  *reported* as a license name, never dispatched on. Manifest files are read with
+  `Path.read_text()` and matched with anchored regular expressions and `json.loads` —
+  there is no `exec`/`eval`/`subprocess`/`os.system`/`pickle`/`yaml.load` in either
+  module, no TOML/XML parser is instantiated, and no file a manifest names is ever opened
+  (a `license = { file = "…" }` pointer is carried through as text, not followed).
+  `PathDistribution` parses METADATA as text and imports nothing from the target
+  environment, which is the same posture sbx-cov-01 already recorded for it.
+- **Guardrails:**
+  - The SPDX License List is **vendored**, not fetched and not imported from a
+    third-party package, so the set of identifiers ICDEV will emit cannot change under a
+    dependency upgrade or a network response. It is data with no behaviour.
+  - Validation is **allow-list only and fails soft in the safe direction**: an identifier
+    absent from the vendored set can only cause a license to be emitted as a *name*
+    instead of an SPDX id. A stale list can never cause an unvalidated id to be emitted,
+    which is the direction that would matter.
+  - A `License:` metadata field that is multi-line or longer than `_LICENSE_FIELD_MAX`
+    (120 chars) is discarded rather than carried, so a distribution that pastes its whole
+    license body — or a crafted one that pastes anything else — cannot inject unbounded
+    third-party text into the SBOM as a license *name*.
+  - `project_license_from_manifests()` cannot raise: an unreadable or malformed manifest
+    is treated as an absent one, so a hostile project directory cannot abort SBOM
+    generation for the ~25 call sites and the blocking `bdc_canvas` gate that consume the
+    document. `_python_metadata_license` is likewise called inside the resolver's existing
+    per-distribution `try`.
+  - Every regex is anchored or non-greedy and bounded by a literal delimiter; none is
+    built from input.
+  - `tests/test_sbom_component_license.py` pins the rejection set (invented identifiers,
+    a license used as an exception, malformed expressions), the malformed-manifest path,
+    the metadata-length guard, and the guarantee that every emitted SPDX identifier is on
+    the vendored list.
+- **Revisit if:** the module starts *following* a license-file pointer (`license-file`,
+  `SEE LICENSE IN <file>`) and reading that file's text — that is a new ingress with a
+  path-traversal question this decision does not cover; or if license data begins arriving
+  over the network from a registry API rather than from a manifest already on disk.

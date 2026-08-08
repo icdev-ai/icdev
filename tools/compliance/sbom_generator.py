@@ -30,6 +30,13 @@ signature + algorithm persisted to `sbom_records`. Unsigned generation is the
 default and says so on stdout; set `ICDEV_SBOM_REQUIRE_SIGNATURE=1` to make it a
 hard failure instead. See `tools/compliance/sbom_signer.py`.
 
+Component License (sbx-fld-04): every component and the target component carry the
+element in one of four shapes — an SPDX expression validated against the vendored SPDX
+License List, a URL to the full terms, a license name, or an explicit unknown/withheld
+marker — plus a proprietary-conditions flag. It is never omitted. The same resolution is
+written to `sbom_components.license`, a column dead since migration 209 because this
+generator had never written the table at all. See `tools/compliance/component_licenser.py`.
+
 Frequency / Accommodation of Updates (sbx-prc-02): every generation appends a row
 that links back to the SBOM it replaces (`supersedes_sbom_id`) and records the
 content digest, the build it came from and why it exists. Nothing is ever
@@ -42,7 +49,17 @@ import json
 import re
 import sys
 import uuid
+from tools.compliance.component_licenser import (
+    PROPERTY_LICENSE,
+    license_entries,
+    license_properties,
+    project_license_from_manifests,
+    record_license_disclosure,
+    resolve_declared_license,
+    resolve_license,
+)
 from tools.compliance.component_producer import (
+    PROPERTY_PRODUCER,
     ProducerContext,
     apply_producer_to_cyclonedx,
     producer_properties,
@@ -129,6 +146,23 @@ COVERAGE_AGGREGATE = {
     COVERAGE_INCOMPLETE: "incomplete",
     COVERAGE_UNKNOWN: "unknown",
 }
+
+# Mirrors the CHECK constraint on sbom_components.component_type (migration 209). A
+# component whose type falls outside it is stored as 'other' rather than raising — an
+# unexpected type must not cost the whole inventory write.
+SBOM_COMPONENT_TYPES = frozenset(
+    {
+        "library",
+        "framework",
+        "container",
+        "os",
+        "firmware",
+        "device",
+        "application",
+        "service",
+        "other",
+    }
+)
 
 
 def _get_connection(db_path=None):
@@ -839,6 +873,94 @@ def _generate_bom_ref(component):
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+def _property_value(cdx_comp, name, default=None):
+    """Read one CycloneDX property off a built component."""
+    for prop in cdx_comp.get("properties") or []:
+        if prop.get("name") == name:
+            return prop.get("value")
+    return default
+
+
+def _persist_components(conn, cdx_components):
+    """Write the document's components to `sbom_components`, carrying their licenses.
+
+    The generator has never written this table, which is why `license` sat dead in the
+    schema from migration 209 until now. `license` is exactly the 2026 Component License
+    element, so it is populated here — an SPDX expression, a URL, a license name, or one
+    of the two explicit undisclosed markers. It is never left NULL.
+
+    Rows are read back out of the FINISHED CycloneDX components rather than re-resolved
+    from the parsed input. That is what makes the table incapable of disagreeing with the
+    document: the same dedup, the same disclosure policy and the same resolution produced
+    both, so a component cannot be described here in terms the recipient's copy does not
+    use. It is also why the row id is the component's `bom-ref` — a row and the document
+    entry it came from are the same string, and regenerating an SBOM updates the row
+    rather than accumulating a duplicate.
+
+    Only the dependency components are written. The document's target component lives in
+    `metadata.component`, not in `components`, and it is the subject of the inventory
+    rather than an entry in it.
+
+    A failure here is reported, not swallowed. The house rule against `except: pass`
+    around an INSERT exists because a swallowed schema mismatch reports success while
+    persisting nothing; the warning below names the table and the error, and
+    `tests/test_sbom_component_license.py` asserts the rows really land, so a mismatch
+    surfaces in CI rather than hiding. It is still not allowed to abort generation: the
+    document on disk is what ~25 call sites and a blocking gate consume, and losing that
+    over a supplementary inventory write would be the larger regression.
+    """
+    written = 0
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        for cdx_comp in cdx_components:
+            component_type = cdx_comp.get("type") or "library"
+            if component_type not in SBOM_COMPONENT_TYPES:
+                component_type = "other"
+            # Read back what the document says, including the two undisclosed states —
+            # so a withheld license persists as `withheld` and an unknown one as
+            # `unknown`, never as the value that was withheld.
+            unknown_json, withheld_json = Disclosure.from_cyclonedx(cdx_comp).db_values()
+            conn.execute(
+                """INSERT INTO sbom_components
+                   (id, component_name, version, component_type, purl, license,
+                    producer, unknown_fields_json, withheld_fields_json, classification)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT(id) DO UPDATE SET
+                       license = EXCLUDED.license,
+                       producer = EXCLUDED.producer,
+                       unknown_fields_json = EXCLUDED.unknown_fields_json,
+                       withheld_fields_json = EXCLUDED.withheld_fields_json,
+                       purl = EXCLUDED.purl,
+                       component_type = EXCLUDED.component_type,
+                       updated_at = %s""",
+                (
+                    cdx_comp["bom-ref"],
+                    cdx_comp["name"],
+                    cdx_comp["version"],
+                    component_type,
+                    cdx_comp.get("purl"),
+                    _property_value(cdx_comp, PROPERTY_LICENSE),
+                    _property_value(cdx_comp, PROPERTY_PRODUCER),
+                    unknown_json,
+                    withheld_json,
+                    "CUI",
+                    now,
+                ),
+            )
+            written += 1
+        conn.commit()
+    except Exception as e:
+        # Leave the connection usable: on PostgreSQL a failed statement aborts the whole
+        # transaction, which would then take the audit event down with it.
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 — nothing better to do than keep going
+            pass
+        print(f"Warning: Could not record sbom_components rows: {e}", file=sys.stderr)
+        return 0
+    return written
+
+
 def _sign_generated_sbom(out_file):
     """Produce the SBOM Author Signature for a freshly written SBOM.
 
@@ -1020,6 +1142,25 @@ def _build_cyclonedx_sbom(
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
 
+        # Component License — an SPDX expression validated against the SPDX License
+        # List, a URL to the full terms, a license name, or one of the two explicit
+        # undisclosed markers. Never omitted, and the proprietary-conditions flag is
+        # always stated rather than left to inference. Resolved AFTER the policy has
+        # been applied, so a license the operator withholds is not then overwritten
+        # with "unknown" and is never rendered into `licenses`.
+        license_result = resolve_license(comp)
+        record_license_disclosure(
+            license_result,
+            disclosure,
+            resolved=comp.get("resolution") != RESOLUTION_DECLARED,
+        )
+        entries = license_entries(license_result, disclosure)
+        if entries:
+            cdx_comp["licenses"] = entries
+        cdx_comp.setdefault("properties", []).extend(
+            license_properties(license_result, disclosure)
+        )
+
         # Component Producer — the entity that creates, defines and identifies
         # the component. Never taken from `group`, which is a namespace. Always
         # stated: a component with no identifiable producer carries the explicit
@@ -1048,6 +1189,13 @@ def _build_cyclonedx_sbom(
     target_producer = resolve_project_producer(project, project_dir=project_dir)
     target_disclosure = disclosure_from_producer(target_producer)
     apply_document_policy(policy, into=target_disclosure)
+
+    # Unlike its dependencies, the target component's license IS declared — in the
+    # project's own manifest — so it is read rather than left unknown. `resolved=True`:
+    # this project is the producer, so a manifest of ours that states no license is a
+    # license its producer did not provide, not one an offline build could not reach.
+    target_license = resolve_declared_license(project_license_from_manifests(project_dir))
+    record_license_disclosure(target_license, target_disclosure, resolved=True)
     disclosures.append(target_disclosure)
 
     target_component = {
@@ -1055,8 +1203,12 @@ def _build_cyclonedx_sbom(
         "bom-ref": f"icdev-{project.get('id', 'unknown')}",
         "name": target_disclosure.value_for(FIELD_NAME, project.get("name", "Unknown")),
         "version": target_disclosure.value_for(FIELD_VERSION, "0.0.0"),
-        "properties": producer_properties(target_producer),
+        "properties": producer_properties(target_producer)
+        + license_properties(target_license, target_disclosure),
     }
+    target_entries = license_entries(target_license, target_disclosure)
+    if target_entries:
+        target_component["licenses"] = target_entries
     apply_producer_to_cyclonedx(target_component, target_producer, active_spec_version)
     apply_to_cyclonedx(target_component, target_disclosure)
 
@@ -1298,6 +1450,13 @@ def generate_sbom(
         conn.commit()
         record_id = getattr(cursor, "lastrowid", None)
 
+        # Component inventory (sbx-fld-04). Written from the FINISHED document, so the
+        # table and the artifact describe the same components with the same licenses,
+        # and written after the record commits so rows only ever exist for an SBOM that
+        # was actually recorded. Format-independent: the SPDX serialization is a
+        # translation of this same document, so the rows describe it equally.
+        persisted = _persist_components(conn, sbom["components"])
+
         # Log audit event
         _log_audit_event(
             conn,
@@ -1314,6 +1473,7 @@ def generate_sbom(
                 "signature_algorithm": signature["algorithm"] if signature else None,
                 "public_key_fp": signature["public_key_fp"] if signature else None,
                 "sbom_record_id": record_id,
+                "components_persisted": persisted,
                 "supersedes_sbom_id": revision["supersedes_sbom_id"],
                 "revision_reason": revision["revision_reason"],
                 "content_digest": revision["content_digest"],
@@ -1333,7 +1493,7 @@ def generate_sbom(
         print(f"  File: {out_file}")
         print(f"  Format: {format_label}")
         print(f"  Version: {new_version}")
-        print(f"  Components: {component_count}")
+        print(f"  Components: {component_count} ({persisted} recorded in sbom_components)")
         print(f"  Serial: {sbom['serialNumber']}")
         print(f"  Coverage: {coverage['status']}")
         print(f"  Revision: {revision['revision_reason']}")
