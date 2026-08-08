@@ -40,6 +40,7 @@ from tools.migration_canvas.constants import (  # noqa: E402
     MIGRATION_OBJECTS,
     MC_COMPLIANCE_RULES,
     MIGRATION_TYPES,
+    NET_SESSION_STATUSES,
     SOP_TYPES,
 )
 from tools.migration_canvas.migration_engine import (  # noqa: E402
@@ -811,13 +812,21 @@ def create_migration_blueprint():
     @mdc_login_required
     def mc_net_migration_new():
         """Network migration wizard — new session."""
-        return render_template("migration_canvas/network_wizard.html", session_id=None)
+        return render_template(
+            "migration_canvas/network_wizard.html",
+            session_id=None,
+            net_session_statuses=NET_SESSION_STATUSES,
+        )
 
     @bp.route("/network-migration/<session_id>")
     @mdc_login_required
     def mc_net_migration_wizard(session_id):
         """Network migration wizard — resume existing session."""
-        return render_template("migration_canvas/network_wizard.html", session_id=session_id)
+        return render_template(
+            "migration_canvas/network_wizard.html",
+            session_id=session_id,
+            net_session_statuses=NET_SESSION_STATUSES,
+        )
 
     @bp.route("/network-migration/<session_id>/port-diagram")
     @mdc_login_required
@@ -935,6 +944,14 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
+        # status is free-form TEXT in the schema, so the vocabulary is only
+        # enforceable here.  An unchecked value silently strands the session
+        # outside every active/terminal query that filters on these names.
+        if "status" in fields and fields["status"] not in NET_SESSION_STATUSES:
+            return jsonify({
+                "error": f"Invalid status '{fields['status']}'",
+                "allowed": sorted(NET_SESSION_STATUSES),
+            }), 400
         set_clause = ", ".join(f"{k}=%s" for k in fields)
         with get_connection() as conn:
             conn.execute(
