@@ -3145,6 +3145,46 @@ def handle_sbom_validate_minimum_elements(args: dict) -> dict:
     return report
 
 
+def handle_sbom_collect_evidence(args: dict) -> dict:
+    """Find the SBOMs in a project directory and grade each one (sbx-fmt-02).
+
+    The project-scoped counterpart to ``sbom_validate_minimum_elements``,
+    which grades one named document. This is what the FedRAMP / SbD / CSSP /
+    IVV assessors now see when they look for an SBOM, so an agent asking
+    "does this project have a real SBOM?" gets the same answer they do —
+    including that an empty file named ``sbom.json`` is not one.
+
+    Direct import for the same reason the validator handler uses one: the
+    result is already a dict, and the per-file validator ``report`` is
+    stripped here because it would swamp the response.
+    """
+    project_dir = args.get("project_dir")
+    if not project_dir:
+        raise ValueError("'project_dir' is required")
+
+    try:
+        from tools.compliance.sbom_evidence import collect_sbom_evidence, describe, detail
+    except ImportError as exc:
+        return {"error": f"sbom_evidence not available: {exc}"}
+
+    evidence = collect_sbom_evidence(project_dir)
+
+    def _strip(finding):
+        return {k: v for k, v in finding.items() if k != "report"}
+
+    return {
+        "project_dir": evidence["project_dir"],
+        "verdict": evidence["verdict"],
+        "summary": describe(evidence),
+        "details": detail(evidence),
+        "candidates": evidence["candidates"],
+        "gradeable_count": evidence["gradeable_count"],
+        "findings": [_strip(f) for f in evidence["findings"]],
+        "best": _strip(evidence["best"]) if evidence["best"] else None,
+        "classification": evidence["classification"],
+    }
+
+
 def handle_fedramp_ksi_generate(args: dict) -> dict:
     """Generate FedRAMP 20x KSI evidence for continuous authorization."""
     cli_args = ["--project-id", str(args.get("project_id", ""))]

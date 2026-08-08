@@ -184,6 +184,12 @@ python tools/compliance/component_producer.py --name flask --version 3.0.0 --eco
 python tools/compliance/component_producer.py --validate "/path/to/sbom.cdx.json" --json          # every component states a producer or unknown provenance
 python tools/compliance/component_producer.py --registry --json                                    # the namespace -> organization registry in force
 
+# What the FedRAMP / SbD / CSSP / IVV assessors see when they look for an SBOM (sbx-fmt-02).
+# Discovers candidates by glob, then PARSES and SCORES each one — an empty file named
+# sbom.json is reported ungradeable, not "found".
+python tools/compliance/sbom_evidence.py --project-dir "/path/to/project"
+python tools/compliance/sbom_evidence.py --project-dir "/path/to/project" --json                   # exit 0 only when a conforming SBOM exists
+
 # SBOM Author Signature (2026 Minimum Elements). Offline on both paths — no sigstore/Fulcio.
 python tools/crypto/key_manager.py --generate-keys --key-type ecdsa-p256 --json                   # one-time: create the signing key
 export ICDEV_SBOM_SIGNING_KEY_PATH=data/keys/icdev_audit_ecdsa-p256.pem                           # generator signs every SBOM from here on

@@ -358,6 +358,7 @@ def test_fixture_files_exist():
     for name in ["sbom_sample.json", "sast_sample.json", "survey_sample.json",
                  "nmap_sample.xml", "openapi_sample.yaml",
                  "nmap_multihost.xml", "sbom_cyclonedx_full.json",
+                 "sbom_spdx_2.3.json",
                  "sast_bandit_full.json"]:
         assert (FIXTURE_DIR / name).exists(), f"missing fixture: {name}"
 

@@ -13,6 +13,8 @@ import json
 import os
 import re
 import sys
+from tools.compliance import sbom_evidence
+from tools.compliance.sbom_evidence import collect_sbom_evidence
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1246,21 +1248,17 @@ def _check_pipeline_security(project_dir):
 def _check_artifact_integrity(project_dir):
     """IVV-26: Artifact Integrity.
 
-    Look for SBOM files, checksums (SHA256SUMS, *.sha256, *.sig),
-    signed artifacts. Also check for cosign, sigstore, GPG signature files.
-    Satisfied if integrity artifacts found.
+    Look for SBOMs, checksums (SHA256SUMS, *.sha256, *.sig), signed artifacts,
+    cosign/sigstore/GPG signatures and provenance attestations.
+
+    The SBOM half was a filename glob, which meant an empty file named
+    ``sbom.json`` on its own satisfied artifact integrity. SBOM candidates are
+    now parsed and scored against the 2026 Minimum Elements (sbx-fmt-02) and
+    only count when they actually read as an SBOM; checksums and signatures
+    remain an independent route to the control.
     """
-    # SBOM files
-    sbom_files = _dir_or_file_exists(
-        project_dir,
-        glob_patterns=[
-            "*sbom*.json",
-            "*bom*.xml",
-            "*sbom*.xml",
-            "*cyclonedx*",
-            "*spdx*",
-        ],
-    )
+    sbom_report = collect_sbom_evidence(project_dir)
+    sbom_files = [f["path"] for f in sbom_report["conforming"] + sbom_report["deficient"]]
 
     # Checksum and signature files
     integrity_files = _dir_or_file_exists(
@@ -1283,17 +1281,31 @@ def _check_artifact_integrity(project_dir):
     )
 
     all_found = list(set(sbom_files + integrity_files))
+    sbom_summary = sbom_evidence.describe(sbom_report)
+
     if all_found:
+        # An SBOM that exists but misses elements is an integrity artifact with
+        # a stated defect, not a clean pass — say which, and name the score.
+        deficient_sbom = sbom_report["verdict"] == sbom_evidence.VERDICT_DEFICIENT
         return {
-            "status": "satisfied",
-            "evidence": (f"Artifact integrity mechanisms found: {len(all_found)} artifact(s)."),
-            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
+            "status": "partially_satisfied" if deficient_sbom else "satisfied",
+            "evidence": (
+                f"Artifact integrity mechanisms found: {len(all_found)} artifact(s). {sbom_summary}"
+            ),
+            "details": (
+                "; ".join(os.path.basename(f) for f in all_found[:5])
+                + " | "
+                + sbom_evidence.detail(sbom_report)
+            ),
         }
     return {
         "status": "not_satisfied",
-        "evidence": "No artifact integrity mechanisms detected (SBOM, checksums, signatures).",
+        "evidence": (
+            f"No artifact integrity mechanisms detected (SBOM, checksums, signatures). {sbom_summary}"
+        ),
         "details": (
-            "Expected: SBOM files, SHA256SUMS, *.sha256, *.sig, cosign signatures, or provenance attestations."
+            "Expected: SBOM files, SHA256SUMS, *.sha256, *.sig, cosign signatures, or provenance attestations. "
+            + sbom_evidence.detail(sbom_report)
         ),
     }
 

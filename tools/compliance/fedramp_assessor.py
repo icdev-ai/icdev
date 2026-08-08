@@ -37,6 +37,8 @@ import json
 import os
 import re
 import sys
+from tools.compliance import sbom_evidence
+from tools.compliance.sbom_evidence import collect_sbom_evidence
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -791,17 +793,15 @@ def _check_security_assessment(project_dir):
 
 
 def _check_supply_chain(project_dir):
-    """SA/SR family: Check for SBOM, dependency auditing, vendor risk."""
-    sbom_found = _dir_or_file_exists(
-        project_dir,
-        glob_patterns=[
-            "*sbom*.json",
-            "*bom*.xml",
-            "*sbom*.xml",
-            "*cyclonedx*",
-            "*spdx*",
-        ],
-    )
+    """SA/SR family: Check for SBOM, dependency auditing, vendor risk.
+
+    The SBOM half used to be a filename glob, so an empty file named
+    ``sbom.json`` evidenced supply chain risk management. Candidates are now
+    parsed and scored against the 2026 Minimum Elements (sbx-fmt-02): a
+    document that does not read as an SBOM is not an SBOM, and the score of
+    the one that does goes into the evidence a reviewer reads.
+    """
+    sbom_evidence_report = collect_sbom_evidence(project_dir)
 
     dep_patterns = [
         r"pip.audit|pip_audit|pipaudit",
@@ -828,20 +828,25 @@ def _check_supply_chain(project_dir):
         ],
     )
 
-    has_sbom = bool(sbom_found)
+    # A parseable SBOM, conforming or not — an unreadable candidate is not one.
+    has_sbom = sbom_evidence.has_real_sbom(sbom_evidence_report)
     has_dep_audit = bool(dep_matched)
     has_lock = bool(lock_files)
+    sbom_summary = sbom_evidence.describe(sbom_evidence_report)
 
+    # FedRAMP's status vocabulary has no "partially_satisfied", so a deficient
+    # SBOM cannot be graded down here without failing projects that have a real
+    # one. Blocking on a conformance threshold is sbx-gov-01's job; this check
+    # reports the score so the reviewer sees it.
     if has_sbom and has_dep_audit:
         return {
             "status": "satisfied",
             "evidence": (
-                f"Supply chain: SBOM ({len(sbom_found)} artifact(s)) and "
-                f"dependency auditing ({len(dep_matched)} config(s)) detected."
+                f"Supply chain: {sbom_summary} Dependency auditing: "
+                f"{len(dep_matched)} config(s) detected."
             ),
             "details": (
-                "SBOM: "
-                + "; ".join(os.path.basename(f) for f in sbom_found[:3])
+                sbom_evidence.detail(sbom_evidence_report)
                 + " | Audit: "
                 + "; ".join(os.path.basename(f) for f in dep_matched[:3])
             ),
@@ -858,19 +863,21 @@ def _check_supply_chain(project_dir):
             "status": "other_than_satisfied",
             "evidence": (
                 f"Partial supply chain: {', '.join(parts)} detected but "
-                f"complete supply chain risk management not verified."
+                f"complete supply chain risk management not verified. {sbom_summary}"
             ),
             "details": (
                 "FedRAMP requires SBOM generation, dependency vulnerability "
-                "scanning, and software composition analysis."
+                "scanning, and software composition analysis. "
+                + sbom_evidence.detail(sbom_evidence_report)
             ),
         }
 
     return {
         "status": "other_than_satisfied",
-        "evidence": "No supply chain risk management artifacts detected.",
+        "evidence": f"No supply chain risk management artifacts detected. {sbom_summary}",
         "details": (
-            "Expected: SBOM (CycloneDX/SPDX), dependency audit tools (pip-audit, npm audit, Snyk), lock files."
+            "Expected: SBOM (CycloneDX/SPDX), dependency audit tools (pip-audit, npm audit, Snyk), lock files. "
+            + sbom_evidence.detail(sbom_evidence_report)
         ),
     }
 

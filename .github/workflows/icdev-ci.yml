@@ -144,6 +144,8 @@ jobs:
             tests/test_idp_catalog_scorecards.py \
             tests/test_migration_version_uniqueness.py \
             tests/test_sbom_coverage_resolution.py \
+            tests/test_sbom_ingest_parity.py \
+            tests/test_zig_ingest_adapters.py \
             tests/test_icdev_comply_sbom_step.py \
             tests/ci/test_error_classifier.py \
             tests/kanban/test_pr_linker.py \

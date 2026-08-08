@@ -12,6 +12,8 @@ import json
 import os
 import re
 import sys
+from tools.compliance import sbom_evidence
+from tools.compliance.sbom_evidence import collect_sbom_evidence
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -456,27 +458,26 @@ def _check_ir_plan(project_dir):
 
 
 def _check_sbom_exists(project_dir):
-    """Look for SBOM JSON or CycloneDX BOM XML files."""
-    found = _dir_or_file_exists(
-        project_dir,
-        glob_patterns=[
-            "*sbom*.json",
-            "*bom*.xml",
-            "*sbom*.xml",
-            "*cyclonedx*",
-            "*spdx*",
-        ],
-    )
-    if found:
-        return {
-            "status": "satisfied",
-            "evidence": f"SBOM artifact(s) found: {len(found)} file(s).",
-            "details": "; ".join(os.path.basename(f) for f in found[:5]),
-        }
+    """ID-2: an SBOM that parses and scores, not a filename that matches a glob.
+
+    This check used to be ``bool(glob("*sbom*"))``, which an empty file named
+    ``sbom.json`` satisfied. It now parses every candidate and scores it
+    against the 2026 Minimum Elements (sbx-fmt-02); a document that cannot be
+    read as an SBOM is not evidence that one exists.
+    """
+    evidence = collect_sbom_evidence(project_dir)
+
+    if evidence["verdict"] == sbom_evidence.VERDICT_CONFORMING:
+        status = "satisfied"
+    elif evidence["verdict"] == sbom_evidence.VERDICT_DEFICIENT:
+        status = "partially_satisfied"
+    else:
+        status = "not_satisfied"
+
     return {
-        "status": "not_satisfied",
-        "evidence": "No SBOM artifacts detected.",
-        "details": "Expected: *sbom*.json, *bom*.xml, *cyclonedx*, or *spdx* files.",
+        "status": status,
+        "evidence": sbom_evidence.describe(evidence),
+        "details": sbom_evidence.detail(evidence),
     }
 
 

@@ -259,6 +259,28 @@ TOOL_REGISTRY = {
             "required": ["sbom_path"],
         },
     },
+    "sbom_collect_evidence": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_sbom_collect_evidence",
+        "description": (
+            "Find every SBOM in a project directory and grade each one against the 2026 "
+            "Minimum Elements — the project-scoped view the FedRAMP, SbD, CSSP and IVV "
+            "assessors now use. Returns one of four verdicts (absent / ungradeable / "
+            "deficient / conforming) rather than a boolean, so an empty file named "
+            "sbom.json is reported as ungradeable with the reason, not as an SBOM."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_dir": {
+                    "type": "string",
+                    "description": "Project root to scan for SBOM documents",
+                },
+            },
+            "required": ["project_dir"],
+        },
+    },
     "cui_mark": {
         "category": "compliance",
         "module": "tools.mcp.compliance_server",

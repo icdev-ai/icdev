@@ -2,7 +2,7 @@
 """ZIG External Adapter — ingest external scan results → ZIG activity completions.
 
 Five ingest methods map tool output to ZIG activities for a given target:
-  ingest_sbom(target_id, cyclonedx_json)   — CycloneDX SBOM JSON
+  ingest_sbom(target_id, sbom_json)        — CycloneDX or SPDX 2.2/2.3 SBOM JSON
   ingest_sast(target_id, bandit_json)      — Bandit SAST JSON output
   ingest_survey(target_id, survey_json)    — Security survey response dict
   ingest_nmap(target_id, nmap_xml)         — Nmap XML output string
@@ -23,6 +23,11 @@ from xml.etree.ElementTree import ParseError
 
 from tools.security_canvas.zig_activity_tracker import set_activity_status
 from tools.security_canvas.constants import ZIG_EVIDENCE_MAP
+
+# The SBOM reader and grader (sbx-sig-02). Imported rather than restated so
+# CycloneDX and SPDX are parsed here exactly as the compliance assessors and
+# the conformance gate parse them — one definition of "this is an SBOM".
+from tools.compliance import sbom_minimum_elements_validator as _sbom_validator
 
 
 # Cap the scan window for the cheap pre-parse guard; DOCTYPE/ENTITY markers
@@ -90,19 +95,93 @@ def _map_finding_to_activities(source: str, finding_key: str) -> list:
     return [activity_id] if activity_id else []
 
 
-def ingest_sbom(target_id: str, cyclonedx_json: str) -> dict:
-    """Ingest CycloneDX SBOM JSON and map findings to ZIG activities.
+def _normalize_sbom(data):
+    """Normalize a parsed SBOM document. Returns ``(normalized, format_note)``.
+
+    Delegates to ``sbom_minimum_elements_validator`` so CycloneDX and SPDX land
+    in one shape and the ingest never branches on format.
+
+    One deliberate lenience: a document that declares no format at all but
+    carries a ``components`` list is still read, because callers have passed
+    bare ``{"components": [...]}`` payloads to this adapter since it was
+    written and evidence ingestion is not a gate. Its ``format_name`` is
+    cleared so the conformance score says the format was undeclared rather
+    than crediting it with one the reader supplied.
+    """
+    try:
+        return _sbom_validator.read_document(data), ""
+    except _sbom_validator.UnsupportedFormatError:
+        if isinstance(data.get("components"), list):
+            normalized = _sbom_validator.read_cyclonedx(data)
+            normalized.format_name = ""
+            normalized.format_version = ""
+            return normalized, "format undeclared — read as a CycloneDX-shaped component list"
+        raise
+
+
+def _sbom_vulnerabilities(data, normalized):
+    """Yield ``(component_name, severity, vuln_id)`` for high/critical findings.
+
+    Two carriers, because both appear in the wild:
+      - CycloneDX top-level ``vulnerabilities[]`` with ``affects[].ref``,
+        which is where the spec puts them.
+      - A ``vulnerabilities`` list nested inside a component, which is what
+        several scanners emit and what this adapter has always read.
+
+    SPDX 2.2/2.3 has no vulnerability model, so an SPDX document yields none —
+    its value here is the component inventory, not CVE findings.
+    """
+    ref_to_name = {c.ref: c.name for c in normalized.components if c.ref}
+
+    for vuln in data.get("vulnerabilities") or []:
+        if not isinstance(vuln, dict):
+            continue
+        severity = (((vuln.get("ratings") or [{}])[0]) or {}).get("severity", "")
+        affected = [
+            ref_to_name.get(str(a.get("ref")), str(a.get("ref")))
+            for a in vuln.get("affects") or []
+            if isinstance(a, dict) and a.get("ref")
+        ]
+        for name in affected or ["?"]:
+            yield name, str(severity).lower(), str(vuln.get("id", "?"))
+
+    for comp in data.get("components") or []:
+        if not isinstance(comp, dict):
+            continue
+        for vuln in comp.get("vulnerabilities") or []:
+            if not isinstance(vuln, dict):
+                continue
+            severity = (((vuln.get("ratings") or [{}])[0]) or {}).get("severity", "")
+            yield str(comp.get("name", "?")), str(severity).lower(), str(vuln.get("id", "?"))
+
+
+def ingest_sbom(target_id: str, sbom_json: str) -> dict:
+    """Ingest a CycloneDX or SPDX SBOM and map findings to ZIG activities.
+
+    Accepts CycloneDX JSON (1.x) and SPDX JSON 2.2/2.3 — the two formats the
+    2026 Minimum Elements names — as a string, bytes or already-parsed dict.
 
     Detects:
-      - Components with known CVEs → zig-act-d08 (SBOM generation)
-      - Outdated / risky dependencies → zig-act-p1-21 (SAST/SCA in CI/CD)
+      - Components with known high/critical CVEs → zig-act-d08 (SBOM generation)
+      - Components with no version → zig-act-p1-21 (SAST/SCA in CI/CD)
+
+    The result carries a ``conformance`` block: the document's score against
+    the 2026 Minimum Elements, so a caller learns not just that an SBOM was
+    ingested but how complete it was.
     """
     updated = []
     findings = 0
     now_note = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    if isinstance(sbom_json, bytes):
+        try:
+            sbom_json = sbom_json.decode("utf-8")
+        except UnicodeDecodeError:
+            return {"source": "sbom", "target_id": target_id,
+                    "activities_updated": [], "findings": 0, "error": "invalid JSON"}
+
     try:
-        data = json.loads(cyclonedx_json) if isinstance(cyclonedx_json, str) else cyclonedx_json
+        data = json.loads(sbom_json) if isinstance(sbom_json, str) else sbom_json
     except (json.JSONDecodeError, TypeError):
         return {"source": "sbom", "target_id": target_id,
                 "activities_updated": [], "findings": 0, "error": "invalid JSON"}
@@ -111,33 +190,52 @@ def ingest_sbom(target_id: str, cyclonedx_json: str) -> dict:
         return {"source": "sbom", "target_id": target_id,
                 "activities_updated": [], "findings": 0, "error": "not a mapping"}
 
-    components = data.get("components", [])
+    try:
+        normalized, format_note = _normalize_sbom(data)
+    except _sbom_validator.UnsupportedFormatError as exc:
+        return {"source": "sbom", "target_id": target_id,
+                "activities_updated": [], "findings": 0, "error": str(exc)}
+
+    report = _sbom_validator.validate(normalized)
+    conformance = {
+        "format": normalized.format_name or "undeclared",
+        "format_version": normalized.format_version,
+        "elements_met": report["elements_met"],
+        "elements_total": report["elements_total"],
+        "weighted_pct": report["score"]["weighted_pct"],
+        "conformant": report["conformant"],
+    }
+    if format_note:
+        conformance["note"] = format_note
+    score_note = (
+        f"{conformance['elements_met']}/{conformance['elements_total']} "
+        "2026 minimum elements"
+    )
+
+    components = normalized.components
     if not components:
         _upsert_activity_completion(
             target_id, "zig-act-d08",
-            f"SBOM ingested {now_note} — no components found (empty SBOM)",
+            f"SBOM ingested {now_note} — no components found (empty SBOM), {score_note}",
         )
         updated.append("zig-act-d08")
 
-    for comp in components:
-        if not isinstance(comp, dict):
+    for name, severity, vuln_id in _sbom_vulnerabilities(data, normalized):
+        if severity not in ("critical", "high"):
             continue
-        vulns = comp.get("vulnerabilities", []) or []
-        for vuln in vulns:
-            sev = (vuln.get("ratings", [{}]) or [{}])[0].get("severity", "").lower()
-            if sev in ("critical", "high"):
-                key = "cve_critical" if sev == "critical" else "cve_high"
-                for act_id in _map_finding_to_activities("sbom", key):
-                    note = (f"SBOM {now_note}: {comp.get('name','?')} "
-                            f"CVE-{sev} {vuln.get('id','?')}")
-                    if _upsert_activity_completion(target_id, act_id, note) and act_id not in updated:
-                        updated.append(act_id)
-                findings += 1
+        key = "cve_critical" if severity == "critical" else "cve_high"
+        for act_id in _map_finding_to_activities("sbom", key):
+            note = f"SBOM {now_note}: {name} CVE-{severity} {vuln_id}"
+            if _upsert_activity_completion(target_id, act_id, note) and act_id not in updated:
+                updated.append(act_id)
+        findings += 1
 
-        # Risky licenses or missing version hints at supply chain gap
-        if not comp.get("version"):
+    # A component with no version cannot be matched against a vulnerability
+    # feed, so it is a supply chain gap regardless of format.
+    for comp in components:
+        if not comp.version:
             for act_id in _map_finding_to_activities("sbom", "outdated_dep"):
-                note = f"SBOM {now_note}: {comp.get('name','?')} missing version"
+                note = f"SBOM {now_note}: {comp.name or '?'} missing version"
                 if _upsert_activity_completion(target_id, act_id, note) and act_id not in updated:
                     updated.append(act_id)
 
@@ -145,12 +243,14 @@ def ingest_sbom(target_id: str, cyclonedx_json: str) -> dict:
         # SBOM exists and is clean — mark SBOM activity positively
         _upsert_activity_completion(
             target_id, "zig-act-d08",
-            f"SBOM ingested {now_note} — {len(components)} components, no high/critical CVEs",
+            f"SBOM ingested {now_note} — {len(components)} components, "
+            f"no high/critical CVEs, {score_note}",
         )
         updated.append("zig-act-d08")
 
     return {"source": "sbom", "target_id": target_id,
-            "activities_updated": updated, "findings": findings}
+            "activities_updated": updated, "findings": findings,
+            "conformance": conformance}
 
 
 def ingest_sast(target_id: str, bandit_json: str) -> dict:

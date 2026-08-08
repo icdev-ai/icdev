@@ -220,12 +220,62 @@ never permitted, in either mode, is a *non-conformant* signature.
 Sandbox posture for the verification path (attacker-supplied SBOM + signature + PEM):
 `docs/security/sandbox-coverage.md` Gap 19.
 
-### 2.4 Ingestion and assessment
+### 2.4 Ingestion and assessment (sbx-fmt-02)
 
-- `icdev/tools/security_canvas/zig_external_adapter.py::ingest_sbom` accepts **CycloneDX JSON
-  only** and maps components to ZIG activities.
-- `fedramp_assessor.py`, `sbd_assessor.py`, `cssp_assessor.py`, `ivv_assessor.py` check for SBOM
-  presence by **filename glob** (`*sbom*`, `*spdx*`, `*cyclonedx*`). None parses or validates.
+**Before.** `zig_external_adapter.py::ingest_sbom` accepted **CycloneDX JSON only**. The four
+assessors — `fedramp_assessor.py`, `sbd_assessor.py`, `cssp_assessor.py`, `ivv_assessor.py` —
+detected SBOMs by **filename glob** (`*sbom*.json`, `*bom*.xml`, `*sbom*.xml`, `*cyclonedx*`,
+`*spdx*`) and **none of them opened the file**. A zero-byte file named `sbom.json` satisfied
+every one of those four controls. So did a `<sbom>.sig.json` signature sidecar, a directory
+named `cyclonedx/`, and a `spdx-headers.md` note.
+
+**After.** Discovery still uses the same globs — matching a filename is a reasonable way to
+*find* a candidate — but the verdict now comes from parsing it.
+
+`tools/compliance/sbom_evidence.py` (mirrored at `icdev/tools/compliance/`) is the one place
+that does this, so the four assessors cannot drift apart. It opens each candidate and scores it
+with sbx-sig-02's validator, returning four verdicts rather than a boolean:
+
+| Verdict | Meaning | What it calls for |
+|---|---|---|
+| `absent` | nothing SBOM-shaped found | generate one |
+| `ungradeable` | a candidate exists but does not read as an SBOM — empty, not JSON, XML, or a format the validator declines | the empty-`sbom.json` case; produce a real document |
+| `deficient` | a real SBOM missing some of the 23 elements | a defect to fix, with the score naming which |
+| `conforming` | every data field and applicable practice met | — |
+
+Each assessor maps that onto its own status vocabulary and puts the score in the `evidence`
+string it persists, so an assessment now reads *"SBOM present but non-conforming: sbom.cdx.json
+(CycloneDX 1.6, 41 components, scoring 14 of 23 2026 minimum elements)"* instead of *"SBOM
+artifact(s) found: 1 file(s)"*. CSSP ID-2 and SbD SBD-21 downgrade `satisfied` →
+`partially_satisfied` on a deficient document; FedRAMP SA/SR has no partial status in its
+vocabulary, so it reports the score without grading down. **No threshold lives here** —
+blocking on conformance is sbx-gov-01's `sbom_conformance_gate.py`, which owns the number and
+reads it from `args/security_gates.yaml`. SBD-21's freshness window likewise now comes from
+`thresholds.sbd.sbom_max_age_days` rather than a hardcoded 30 that could disagree with the gate
+it feeds.
+
+Two deliberate limits:
+
+- **CycloneDX/SPDX XML is `ungradeable`, not assumed good.** The validator is JSON-only and
+  says so. Crediting an unparsed XML file would reintroduce exactly the presence check this
+  removes, and parsing it here would pull the entity-expansion / XXE surface into four
+  compliance assessors. The reason is stated on the finding, so an operator sees "present, not
+  gradeable" rather than a silent failure.
+- **Reads are bounded** at `MAX_SBOM_BYTES` (64 MiB), checked with `stat()` before the file is
+  opened, and every parse failure becomes a finding rather than an exception — a hostile
+  document can fail to evidence a control, but cannot abort an assessment.
+
+`ingest_sbom` now accepts **SPDX 2.2/2.3 JSON as well as CycloneDX**, reading both through the
+same validator so the ZIG adapter, the assessors and the gate share one definition of "this is
+an SBOM". It also reads CycloneDX's spec-shaped top-level `vulnerabilities[]` (resolving
+`affects[].ref` to component names), not only the nested `component.vulnerabilities` list some
+scanners emit, and returns a `conformance` block alongside the activities it mapped. A bare
+`{"components": [...]}` payload with no declared format still ingests — callers have passed one
+since the adapter was written, and evidence ingestion is not a gate — but its conformance
+result says the format was undeclared rather than crediting it with one.
+
+Sandbox posture for the newly-opened files (a project under assessment may carry a
+vendor-supplied or attacker-supplied SBOM): `docs/security/sandbox-coverage.md` Gap 50.
 
 ### 2.5 Gating
 
@@ -247,12 +297,17 @@ history, which is why the validator can append to `sbom_conformance_assessments`
 
 ### 2.6 SPDX
 
-There is **no SPDX generator and no SPDX parser** anywhere in the tree. SPDX appears only in
-assessor glob patterns, in third-party CI templates ICDEV emits, and in GovCon proposal /
-knowledge-base seed content that states ICDEV produces SBOMs "in SPDX and CycloneDX formats"
+The tree had **no SPDX generator and no SPDX parser**. SPDX appeared only in assessor glob
+patterns, in third-party CI templates ICDEV emits, and in GovCon proposal / knowledge-base seed
+content that states ICDEV produces SBOMs "in SPDX and CycloneDX formats"
 (`tools/govcon/generate_icdev_proposal_content.py`,
 `tools/govcon/seed_icdev_knowledge_base.py`, `tools/govcon/seed_solicitation_requirements.py`).
-That claim is not currently true and is customer-facing.
+
+The **reader** half has since landed: `sbom_minimum_elements_validator.read_spdx` (sbx-sig-02)
+parses SPDX 2.2/2.3 JSON, and sbx-fmt-02 wired it into `ingest_sbom` and the four assessors, so
+ICDEV can now *consume and grade* a vendor's SPDX document (§2.4). The **writer** half is
+sbx-fmt-01. Until that lands the customer-facing "ICDEV produces SBOMs in SPDX and CycloneDX
+formats" claim remains half true — ICDEV reads both and emits only CycloneDX.
 
 ### 2.7 Coverage — resolved dependency sets (sbx-cov-01)
 

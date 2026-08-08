@@ -11,6 +11,8 @@ import json
 import os
 import re
 import sys
+from tools.compliance import sbom_evidence
+from tools.compliance.sbom_evidence import collect_sbom_evidence
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +20,27 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 SBD_REQUIREMENTS_PATH = BASE_DIR / "context" / "compliance" / "cisa_sbd_requirements.json"
+SECURITY_GATES_PATH = BASE_DIR / "args" / "security_gates.yaml"
+
+#: Fallback only. The live value is ``sbd.sbom_max_age_days`` in
+#: args/security_gates.yaml, which the SbD gate itself already reads — SBD-21
+#: read a hardcoded 30 and could silently disagree with the gate it feeds.
+DEFAULT_SBOM_MAX_AGE_DAYS = 30
+
+
+def _sbom_max_age_days():
+    """SBOM freshness window, from args/security_gates.yaml."""
+    try:
+        import yaml
+
+        with open(SECURITY_GATES_PATH, encoding="utf-8") as handle:
+            config = yaml.safe_load(handle) or {}
+        value = (config.get("thresholds") or {}).get("sbd", {}).get("sbom_max_age_days")
+        if isinstance(value, int) and value > 0:
+            return value
+    except Exception:
+        pass
+    return DEFAULT_SBOM_MAX_AGE_DAYS
 
 
 # -----------------------------------------------------------------
@@ -919,55 +942,77 @@ def _check_secure_error_handling(project_dir):
 
 
 def _check_sbom_freshness(project_dir):
-    """SBD-21: Check for SBOM files and their freshness (within 30 days)."""
-    found = _dir_or_file_exists(
-        project_dir,
-        glob_patterns=[
-            "*sbom*.json",
-            "*bom*.xml",
-            "*sbom*.xml",
-            "*cyclonedx*",
-            "*spdx*",
-        ],
-    )
+    """SBD-21: a *conforming* SBOM, and a fresh one — both, not either.
 
-    if not found:
+    Freshness was previously computed over whatever matched ``*sbom*``, so a
+    file touched yesterday satisfied the control whether or not it contained
+    an SBOM. Candidates are now parsed and scored against the 2026 Minimum
+    Elements first (sbx-fmt-02); only a document that reads as an SBOM is
+    eligible to be called fresh.
+    """
+    evidence = collect_sbom_evidence(project_dir)
+
+    if evidence["verdict"] == sbom_evidence.VERDICT_ABSENT:
         return {
             "status": "not_satisfied",
             "evidence": "No SBOM artifacts detected in the project.",
-            "details": ("Expected: *sbom*.json, *bom*.xml, *cyclonedx*, or *spdx* files."),
+            "details": sbom_evidence.detail(evidence),
         }
 
+    if not sbom_evidence.has_real_sbom(evidence):
+        return {
+            "status": "not_satisfied",
+            "evidence": sbom_evidence.describe(evidence),
+            "details": sbom_evidence.detail(evidence),
+        }
+
+    max_age_days = _sbom_max_age_days()
     now = datetime.now(timezone.utc)
     fresh_files = []
     stale_files = []
-    for fpath in found:
+    for finding in evidence["conforming"] + evidence["deficient"]:
+        fpath = finding["path"]
         try:
-            mtime = datetime.utcfromtimestamp(os.path.getmtime(fpath))
+            mtime = datetime.fromtimestamp(os.path.getmtime(fpath), timezone.utc)
             age_days = (now - mtime).days
-            if age_days <= 30:
+            if age_days <= max_age_days:
                 fresh_files.append((fpath, age_days))
             else:
                 stale_files.append((fpath, age_days))
         except Exception:
             stale_files.append((fpath, -1))
 
+    conformance = sbom_evidence.describe(evidence)
+
     if fresh_files and not stale_files:
+        # Fresh is necessary, not sufficient: a fresh SBOM that misses elements
+        # is a defect to fix, so the control is only fully satisfied when the
+        # document also conforms.
+        conforming = evidence["verdict"] == sbom_evidence.VERDICT_CONFORMING
         return {
-            "status": "satisfied",
-            "evidence": (f"SBOM artifact(s) found and fresh: {len(fresh_files)} file(s) modified within 30 days."),
-            "details": "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in fresh_files[:5]),
+            "status": "satisfied" if conforming else "partially_satisfied",
+            "evidence": (
+                f"{len(fresh_files)} SBOM(s) parsed and fresh (within {max_age_days} days). "
+                + conformance
+            ),
+            "details": sbom_evidence.detail(evidence),
         }
     elif fresh_files and stale_files:
         return {
             "status": "partially_satisfied",
-            "evidence": (f"{len(fresh_files)} fresh SBOM(s) but {len(stale_files)} stale SBOM(s) detected."),
+            "evidence": (
+                f"{len(fresh_files)} fresh SBOM(s) but {len(stale_files)} stale SBOM(s) detected. "
+                + conformance
+            ),
             "details": ("Stale: " + "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5])),
         }
 
     return {
         "status": "partially_satisfied",
-        "evidence": (f"SBOM artifact(s) found but all are stale (>30 days old): {len(stale_files)} file(s)."),
+        "evidence": (
+            f"SBOM artifact(s) found but all are stale (>{max_age_days} days old): "
+            f"{len(stale_files)} file(s). " + conformance
+        ),
         "details": (
             "Stale: "
             + "; ".join(f"{os.path.basename(f)} ({d}d old)" for f, d in stale_files[:5])

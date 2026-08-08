@@ -600,9 +600,11 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 ### Gap 21 — ZIG External Ingest Adapters (`tools/security_canvas/zig_external_adapter.py`)
 
 - **Files:** `tools/security_canvas/zig_external_adapter.py`
-- **Risk:** Parses user-supplied content from 5 external scan formats: CycloneDX SBOM (JSON),
-  Bandit SAST output (JSON), security survey responses (JSON), Nmap scan results (XML),
-  and OpenAPI specifications (YAML/JSON). All content arrives from an authenticated API
+- **Risk:** Parses user-supplied content from 5 external scan formats: SBOMs — CycloneDX
+  JSON and, as of sbx-fmt-02, SPDX 2.2/2.3 JSON, both read through
+  `tools/compliance/sbom_minimum_elements_validator.py` (see Gap 50) rather than
+  re-parsed here — Bandit SAST output (JSON), security survey responses (JSON), Nmap scan
+  results (XML), and OpenAPI specifications (YAML/JSON). All content arrives from an authenticated API
   endpoint (`POST /security/api/zig/targets/<id>/ingest`). As of shx-auth-01 the endpoint
   is auth-guarded (`@sc_login_required`), so ingest requires an authenticated session.
 - **Decision:** **bypass-documented**
@@ -1269,3 +1271,56 @@ another vendor's tool.
   crates.io owner query or a PyPI JSON API call) — that is a different posture
   and a different threat model — or if it starts reading *artifacts* rather than
   metadata, which is sbx-fld-03's territory.
+
+### Gap 50 — SBOM ingest parity: conformance grading of third-party SBOMs (`tools/compliance/sbom_evidence.py`, `tools/compliance/sbom_minimum_elements_validator.py`)
+
+- **Files:** `tools/compliance/sbom_evidence.py` (mirrored at
+  `icdev/tools/compliance/sbom_evidence.py`) and the validator it delegates to,
+  `tools/compliance/sbom_minimum_elements_validator.py` (mirrored). Consumed by
+  `fedramp_assessor.py`, `sbd_assessor.py`, `cssp_assessor.py`,
+  `ivv_assessor.py` and `tools/security_canvas/zig_external_adapter.py`.
+- **Risk:** sbx-fmt-02 changed these four assessors from *matching a filename*
+  to *opening the file*. That is a genuine expansion of attack surface and
+  should be named as such: before this change no assessor read the bytes of a
+  ``*sbom*`` candidate, and now every candidate under a scanned project
+  directory is read and parsed. The content is **not** first-party — a project
+  under assessment may carry a vendor-supplied or attacker-supplied SBOM, and
+  grading vendor documents is an explicit goal of the 2026 standard, not an
+  edge case.
+- **Decision:** **bypass-documented**
+- **Rationale:**
+  - The whole path parses and never evaluates. `sbom_evidence` uses `json` via
+    the validator and nothing else; the validator's toolkit is `json`,
+    `hashlib`, `re` and `uuid`. Neither module contains `exec`, `eval`,
+    `subprocess`, `os.system`, `pickle`, `__import__` or any network import.
+    Nothing in a document is ever dispatched on — component names, licenses,
+    purls and producers are read as opaque strings, compared, and emitted.
+  - **XML is declined, not parsed.** `*bom*.xml` and `*sbom*.xml` remain in the
+    discovery globs because they were there before, but a candidate with an
+    `.xml` suffix is reported `ungradeable` with a stated reason and is never
+    handed to an XML parser. This deliberately keeps the entity-expansion / XXE
+    surface out of the assessors entirely, rather than relying on a second
+    hardened parser being wired correctly.
+  - **Bounded reads.** `MAX_SBOM_BYTES` (64 MiB) is checked with `stat()`
+    *before* the file is opened, so an oversized or hostile artifact is
+    reported rather than read into memory. Zero-byte files short-circuit
+    first.
+  - **Every failure is a finding, never an exception.** `grade_sbom_file`
+    catches `UnsupportedFormatError`, `OSError`, `UnicodeDecodeError` and
+    `ValueError` and returns an ungradeable finding carrying the reason. A
+    malformed or hostile document therefore cannot abort a compliance
+    assessment — it can only fail to evidence a control, which is the correct
+    outcome.
+  - **Discovery is filtered.** Directories, `<sbom>.sig.json` signature
+    sidecars, and prose files (`.md`, `.txt`, `.rst`, `.log`, `.html`) that
+    match the globs are dropped before anything is read.
+  - Verdicts reach SQL only through the assessors' existing parameterized
+    inserts, as evidence/details strings.
+  - `tests/test_sbom_ingest_parity.py` pins the empty-file, XML, sidecar,
+    directory and unsupported-format paths, and asserts that all four
+    assessors reject a zero-byte `sbom.json`.
+- **Revisit if:** XML SBOMs are ever actually parsed (that needs the
+  `defusedxml` posture `zig_external_adapter._parse_xml_safe` already
+  documents under Gap 21), if `MAX_SBOM_BYTES` is removed, or if any element
+  of a document starts being used as a path, a key into a dispatch table, or
+  an import target.
