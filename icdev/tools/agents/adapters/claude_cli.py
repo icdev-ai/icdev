@@ -9,11 +9,12 @@ standalone orchestrators) that want a uniform interface.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from tools.agents.adapter_base import (
     AgentResult,
@@ -27,6 +28,44 @@ _COMPLETION_MARKERS = (
     "Task completed",
     "done.",
 )
+
+
+def _parse_cli_json(stdout: str) -> Tuple[str, Dict[str, Any]]:
+    """Split the CLI's ``--output-format json`` envelope into (text, structured).
+
+    The CLI is the only executor that knows what a session cost; without this the
+    adapter reported a duration and nothing else, so any cost comparison against
+    another adapter had one column permanently empty. Parsing is best-effort by
+    design: an older CLI, or one that printed something else, degrades to
+    treating stdout as plain text — the same contract callers had before.
+    """
+    raw = (stdout or "").strip()
+    if not raw.startswith("{"):
+        return stdout or "", {}
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return stdout or "", {}
+    if not isinstance(payload, dict):
+        return stdout or "", {}
+
+    usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+    structured: Dict[str, Any] = {
+        "result_subtype": payload.get("subtype") or "",
+        "is_error": bool(payload.get("is_error")),
+        "turns": payload.get("num_turns") or 0,
+        "session_id": payload.get("session_id") or "",
+        "total_cost_usd": payload.get("total_cost_usd") or 0.0,
+        "input_tokens": (usage.get("input_tokens") or 0)
+        + (usage.get("cache_read_input_tokens") or 0)
+        + (usage.get("cache_creation_input_tokens") or 0),
+        "output_tokens": usage.get("output_tokens") or 0,
+        "duration_api_ms": payload.get("duration_api_ms") or 0,
+    }
+    text = payload.get("result")
+    if not isinstance(text, str):
+        text = raw
+    return text, structured
 
 
 class ClaudeCliAdapter:
@@ -63,7 +102,10 @@ class ClaudeCliAdapter:
                     cli,
                     "--dangerously-skip-permissions",
                     "--max-turns", str(session.max_turns),
-                    "--output-format", "text",
+                    # json, not text: the envelope carries cost, token usage and
+                    # turn count. `output` below stays the assistant's text, so
+                    # existing callers see no change.
+                    "--output-format", "json",
                     "-p", prompt,
                 ],
                 cwd=session.working_dir or None,
@@ -74,16 +116,19 @@ class ClaudeCliAdapter:
                 timeout=session.timeout_seconds,
             )
             dur = int((time.time() - t0) * 1000)
-            output = (proc.stdout or "") + ("" if proc.returncode == 0
-                                            else "\n" + (proc.stderr or ""))
+            text, structured = _parse_cli_json(proc.stdout or "")
+            output = text + ("" if proc.returncode == 0
+                             else "\n" + (proc.stderr or ""))
             return AgentResult(
                 task_id=session.task_id,
                 adapter_name=self.name,
                 completed=(proc.returncode == 0
-                           and self.detect_completion(proc.stdout or "")),
+                           and not structured.get("is_error")
+                           and self.detect_completion(text)),
                 exit_code=proc.returncode,
                 output=output,
                 duration_ms=dur,
+                structured=structured,
             )
         except subprocess.TimeoutExpired:
             dur = int((time.time() - t0) * 1000)

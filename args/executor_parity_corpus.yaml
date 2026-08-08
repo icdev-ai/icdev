@@ -1,0 +1,303 @@
+# CUI // SP-CTI
+# hgx-exec-04 — fixed replay corpus for the executor parity benchmark.
+#
+# Ten already-merged kanban tasks whose diffs are self-contained (2-4 files,
+# <=180 inserted lines, no migration, no new page). Each entry names the commit
+# that closed the task and its PARENT, which is the state the replay starts
+# from: a disposable detached worktree is created at `base_commit`, the executor
+# is handed `prompt` (the task as a fresh session would receive it — never the
+# diff), and the resulting tree is graded by
+# tools/workflow/pipeline_grader.make_pipeline_grader.
+#
+# `reference_files` records what the human change actually touched. It is
+# REPORTED (overlap with what the executor touched), never enforced: a different
+# correct route to the same outcome is not a failure, and the delivery gates are
+# the verdict.
+#
+# The prompts are authored from each commit's own message — the problem it
+# states, not the patch it applied. Editing a prompt changes what is being
+# measured, so treat this file as a frozen baseline: add entries, do not reword
+# existing ones without re-running both executors and re-publishing the numbers
+# in docs/features/hgx-executor-parity.md.
+#
+# Runner: python -m tools.workflow.executor_parity --run --json
+
+version: 1
+corpus_id: hgx-exec-04-v1
+
+tasks:
+  - task_id: sbx-gov-03
+    title: correct the untrue SPDX/Syft SBOM claim
+    task_type: fix
+    reference_commit: f1e35a259854c1b9c4cdcf53275849142ff3d69f
+    base_commit: 045acbb90ce6fcc0c09a18cbc224e6a138c2e0b3
+    reference_files:
+      - docs/compliance/sbom-2026-minimum-elements-gap-analysis.md
+      - tools/govcon/generate_icdev_proposal_content.py
+      - tools/govcon/seed_icdev_knowledge_base.py
+    prompt: |
+      GovCon proposal content and the knowledge base state that ICDEV produces
+      SBOMs "in SPDX and CycloneDX formats" and that "SBOM generation occurs at
+      every build via Syft". Neither claim is true.
+      tools/compliance/sbom_generator.py is the only SBOM producer in the tree,
+      it emits CycloneDX only, and it contains no SPDX symbol at all.
+
+      Correct the claims ICDEV makes about ITSELF so they state CycloneDX only,
+      and drop the `spdx` retrieval keyword from the past-performance knowledge
+      base record so it stops surfacing on SPDX queries.
+
+      Do NOT touch seeded *solicitation* requirements or the synthetic proposal
+      generator: those are demand-side text about a customer or a fictional
+      offeror, not claims about ICDEV.
+    acceptance:
+      - Every ICDEV capability / past-performance claim states CycloneDX only.
+      - The spdx retrieval keyword no longer appears on the ICDEV past-performance record.
+      - Solicitation-side and synthetic-offeror text is unchanged.
+
+  - task_id: idp-intel-01
+    title: stop rendering an unassessed DORA metric as a number
+    task_type: fix
+    reference_commit: 807504be8980698f1d0c740a7910578f492eeec0
+    base_commit: ace61060d93ab4b0bf873449e9f6c7a2d4b32993
+    reference_files:
+      - tools/dashboard/templates/sre/dashboard.html
+      - icdev/tools/dashboard/templates/sre/dashboard.html
+      - tests/test_idp_delivery_events.py
+    prompt: |
+      On the /sre page the DORA metric cards call their formatters
+      unconditionally. The endpoint correctly reports an unmeasured metric as
+      {"value": null, "rating": "Not Assessed"}, but MTTR's formatter is
+      arithmetic (`v.value < 3600 ? Math.round(v.value/60) + ' min' : ...`) and
+      JavaScript coerces null to 0, so "no incident data at all" renders as a
+      perfect "0 min" — in the metric's own colour, directly above its
+      "Not Assessed" badge. The other three cards render the literal string
+      "null".
+
+      Make an unassessed metric render as unassessed in every card. Also fix
+      `rating.toLowerCase()` on "Not Assessed", which emits `pill-not assessed`
+      — two class names, neither styled; collapse the whitespace and style the
+      resulting class deliberately neutral so unassessed reads as neither good
+      nor bad.
+
+      Mirror the template to icdev/tools/dashboard/templates/.
+    acceptance:
+      - A null metric value never renders as a number or as the string "null".
+      - The Not Assessed pill resolves to one styled, neutral class.
+      - tools/ and icdev/tools/ copies of the template stay identical.
+
+  - task_id: cxo-perf-02
+    title: mtime-cache _load_llm_config on the air-gap hot path
+    task_type: chore
+    reference_commit: acc4e66e844b70496dc1a2d77769659014dfb354
+    base_commit: 72fa8a3c2abd458ad52df5533877640167ebb916
+    reference_files:
+      - tools/cortex/config.py
+      - icdev/tools/cortex/config.py
+      - tests/cortex/test_airgap_assertion.py
+    prompt: |
+      `airgap_exclusions()` in tools/cortex/config.py runs on every Cortex
+      `_invoke` and, when ICDEV_AIRGAP=1, does a full yaml.safe_load of
+      args/llm_config.yaml per LLM call — the whole LLM config parsed once per
+      request. Air-gap is a first-class ICDEV target (IL6/SIPR), so this is on
+      the hot path.
+
+      Give `_load_llm_config` the same mtime-keyed cache its sibling
+      `load_cortex_config` already uses, with a `refresh=` escape hatch for
+      tests. Behaviour must be unchanged when air-gap is inactive.
+
+      Mirror to icdev/tools/cortex/config.py for the mirror-parity gate, and add
+      tests proving N air-gapped calls parse the YAML once and that both
+      `refresh=` and an mtime bump invalidate the cache.
+    acceptance:
+      - Repeated air-gapped calls parse args/llm_config.yaml once.
+      - refresh= and an mtime change both invalidate the cache.
+      - tools/ and icdev/tools/ copies stay identical.
+
+  - task_id: cxo-doc-01
+    title: drop stale duplicate rows from the cortex manifest shard
+    task_type: chore
+    reference_commit: 15d1ce735ce434ceb2a803d32f2e527fe7ade587
+    base_commit: df1c74c20ea80de3ee5f8a96536b4dd7a9233197
+    reference_files:
+      - tools/manifest/cortex.md
+      - icdev/tools/manifest/cortex.md
+    prompt: |
+      tools/manifest/cortex.md carries a second, older copy of seven entries
+      from the 7-facade era, contradicting the current rows above them:
+      "Cortex API facade (7 governed functions)" vs 8, "CORTEX_MODES
+      (7 facades)" vs 8, the MCP server at "7 tools" with no cortex_reason vs 8,
+      and "REST API v1 six POST endpoints".
+
+      Verify against the code which copy is correct, delete the stale
+      duplicates, and correct the REST v1 row to the surface actually
+      registered. Mirror the shard to icdev/tools/manifest/cortex.md
+      byte-identically.
+    acceptance:
+      - No duplicated manifest rows remain in the cortex shard.
+      - Every surviving count matches the code it describes.
+      - tools/ and icdev/tools/ copies are byte-identical.
+
+  - task_id: mvs-guard-02
+    title: name the exact paths instead of handing out a blanket git clean
+    task_type: fix
+    reference_commit: c5b4a2512847487954b5b6e7ae83946ee4098e8a
+    base_commit: bba0c01f890ff2fb5148dc9502578a120b3d914e
+    reference_files:
+      - tools/db/migration_versions.py
+      - icdev/tools/db/migration_versions.py
+      - tests/test_migration_version_uniqueness.py
+    prompt: |
+      The migration-version guard tells the reader to run
+      `git clean -xdf tools/db/migrations` when it finds a stale untracked
+      directory. That command would also delete a directory-style migration the
+      author has not `git add`ed yet — including the very directory the message
+      is naming, which is untracked too.
+
+      Print the concrete paths instead, and point at the non-destructive
+      `git clean -xdn` for the check. Mirror to icdev/tools/db/ and cover the
+      new wording with a test.
+    acceptance:
+      - The guard never emits a destructive blanket git clean command.
+      - The message names the concrete offending paths.
+      - tools/ and icdev/tools/ copies stay identical and a test pins the wording.
+
+  - task_id: mvs-audit-03
+    title: mirror the unexplained-entry warning and unmangle the re-derive command
+    task_type: fix
+    reference_commit: 5e5c9ee0d0d6747d7528d2d9bb988e625f0d801d
+    base_commit: 5eb7af2a3b190c355305b15c46f097c0965ec09f
+    reference_files:
+      - tools/db/migration_versions.py
+      - icdev/tools/db/migration_versions.py
+      - args/migration_duplicate_versions.yaml
+      - icdev/args/migration_duplicate_versions.yaml
+    prompt: |
+      Two drift defects in the shadowed-migration allowlist gate:
+
+      1. tools/db/migration_versions.py grew a block that names every allowlist
+         entry lacking a recorded reason and tells the reader how to classify
+         it. icdev/tools/db/ kept the old ending, so a wheel install gets a gate
+         that fails without saying which entry failed. This is the drift
+         test_mirror_drift_baseline catches on `db`.
+      2. The allowlist's own re-derive command has collapsed onto one line, with
+         the backslash continuations replaced by `#`, making the documented
+         shadowed_migration_audit.py invocation uncopyable — in a file whose
+         whole point is that the next reader does not re-derive the
+         classification by hand.
+
+      Fix both, in every copy of each file that exists in the tree.
+    acceptance:
+      - The unexplained-entry warning is identical in tools/ and icdev/tools/.
+      - The re-derive command is copy-pasteable in all copies of the allowlist.
+
+  - task_id: idp-cat-03
+    title: register /components-map in the registry it renders
+    task_type: feature
+    reference_commit: cf71a6f1add6ad7086c5e1123e02f8418b4202e7
+    base_commit: 98e44fda4e7cdbd8bda553efbf069fd8d1dcf1aa
+    reference_files:
+      - args/component_registry.yaml
+      - icdev/data/args/component_registry.yaml
+      - .env.example
+    prompt: |
+      The catalog does not contain the catalog viewer. /components-map and
+      /ask-icdev are the Internal Awareness Engine's two pages, both hardcoded
+      @app.route definitions in tools/dashboard/app.py, and grepping
+      args/component_registry.yaml for either returns nothing. CLAUDE.md's rule
+      is that components are declared in the registry and runtime registration
+      is derived from it, so a hardcoded page is invisible to every
+      registry-driven consumer: the IDP catalog and its scorecards, ownership
+      reporting, tenant overrides, `icdev enable/disable/status`, the setup TUI
+      and the generated .env.
+
+      Declare it in the registry. Its routes live in app.py rather than a
+      blueprint module, which is what `kind: core_extension` already describes
+      (see ai_observatory, ontology, cache_savings) — that also keeps it out of
+      the 8-point canvas completeness gate, which grades canvases only. Record
+      the non-obvious decisions as comments on the entry rather than leaving
+      them implicit. Mirror the registry change and add the toggle to
+      .env.example.
+    acceptance:
+      - /components-map is declared in args/component_registry.yaml as a core_extension.
+      - The registry change is mirrored to icdev/data/args/component_registry.yaml.
+      - The toggle appears in .env.example.
+
+  - task_id: cxo-trust-03
+    title: a misconfigured provenance gate must not look flaky
+    task_type: fix
+    reference_commit: bad627e13e2299cc456ecf34d52cd3efe34b4878
+    base_commit: 1639fecd823e292e304e41aad2d0fd36661c5b2a
+    reference_files:
+      - tools/cortex/governance.py
+      - icdev/tools/cortex/governance.py
+      - tests/cortex/test_provenance_swallow.py
+    prompt: |
+      The Cortex provenance gate catches bare Exception and records "warn". That
+      makes a PROGRAMMING error — a citation_type absent from CITATION_TYPES,
+      which register_citation rejects with ValueError before it ever opens a
+      connection — indistinguishable from a transient database failure. It is
+      exactly what hid cxo-trust-01: Cortex wrote 0 of 285 registry rows for its
+      entire existence while the audit trail said "warn", and warn reads as
+      degradation rather than breakage.
+
+      Record a ValueError as "fail" and log it at ERROR with wording that names
+      the cause as misconfiguration, not a transient failure. Genuine
+      operational failures — connection refused, timeout, missing table — must
+      still degrade to "warn" and preserve the fail-open posture.
+
+      This changes LEGIBILITY, not enforcement: _record() is pure bookkeeping,
+      blocking happens only in _block(), and governance.fail_closed stays false.
+      Pin that default with a test so the change cannot quietly become an
+      enforcement change. Mirror to icdev/tools/cortex/governance.py.
+    acceptance:
+      - A ValueError from register_citation records "fail", not "warn".
+      - Operational failures still record "warn" (fail-open preserved).
+      - A test pins governance.fail_closed default to false.
+      - tools/ and icdev/tools/ copies stay identical.
+
+  - task_id: tsr-doc-01-d4
+    title: translate %s in the DIC conflict-detector test fixture
+    task_type: test
+    reference_commit: d23f8aa66a0aa0747804d28455c42aaf806ce679
+    base_commit: ba2f363123793fa71f9efc40cd711c5b75a68199
+    reference_files:
+      - tests/test_rted_conflict_detector.py
+      - docs/testing/tsr-doc-01-d4-sql-compat.md
+    prompt: |
+      tests/test_rted_conflict_detector.py hands conflict_detector a bare
+      sqlite3 connection through a hand-rolled _FakeConn shim whose docstring
+      claims the module "uses ? placeholders". It does not — conflict_detector.py
+      authors PG-native %s, and at runtime StorageConnection rewrites it.
+      Without that layer every query raises `near "%": syntax error`, failing 7
+      of the 11 tests; the 4 that pass never touch a connection.
+
+      Replace the shim with the shared tests/_sql_compat helper, which delegates
+      to the same tools.db.storage.translate_sql the runtime uses, so the
+      fixture cannot drift from the behaviour it stands in for. All 11 tests
+      must pass, with no other failure in the file introduced.
+    acceptance:
+      - The hand-rolled connection shim is gone; the shared _sql_compat helper is used.
+      - All tests in tests/test_rted_conflict_detector.py pass.
+
+  - task_id: gdx-mir-01
+    title: wire the ai_gameday mirror-parity guard into CI
+    task_type: chore
+    reference_commit: ae6df8058f3bc200c936781ec80edd9c650043d2
+    base_commit: 5522a5ab44f49b2c44381ba4b29197ed9f848657
+    reference_files:
+      - .github/workflows/icdev-ci.yml
+      - tests/test_ai_gameday_mirror_parity.py
+    prompt: |
+      tests/test_ai_gameday_mirror_parity.py was deliberately held out of the CI
+      Test job's file allowlist while it was RED — adding it then would have
+      blocked every unrelated PR. It is green now.
+
+      First verify the premise: check whether the ai_gameday hub.html and
+      player.html mirror copies still differ (compare the committed blobs, not
+      just the files on disk). Then wire the guard into the CI Test job beside
+      its sibling gates test_data_canvas_mirror_parity.py and
+      test_quality_monitor_parity.py. Content parity today is a fact about one
+      commit; the gate is what stops the next unmirrored edit shipping silently.
+    acceptance:
+      - test_ai_gameday_mirror_parity.py is in the CI Test job allowlist next to its siblings.
+      - No no-op hand-copy of already-identical mirror files is committed.
