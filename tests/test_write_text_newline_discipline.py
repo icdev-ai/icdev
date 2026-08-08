@@ -29,6 +29,7 @@ platform the team develops on is never tested. Until hgx-port-02 adds a
 windows-latest tier, this static gate is what catches it.
 """
 import ast
+import subprocess
 import pathlib
 
 import pytest
@@ -60,18 +61,53 @@ def _in_scope(path: pathlib.Path) -> bool:
     return True
 
 
+def _python_files(root: pathlib.Path) -> list[pathlib.Path]:
+    """Python files under *root* that git actually TRACKS.
+
+    Not ``rglob``. This gate protects committed content, so it must look at
+    exactly what CI checks out. Walking the filesystem instead pulls in
+    gitignored local files: ``tools/trading/`` is ignored, and its
+    ``genesis_daemon.py`` writes a ``.bat`` startup script that legitimately
+    wants CRLF. That gave a gate which was RED on a developer's machine and
+    GREEN in CI — the fastest way to get a gate switched off.
+
+    Falls back to a filesystem walk outside a git checkout (an unpacked sdist,
+    say) so the test still means something there.
+    """
+    rel = root.relative_to(REPO_ROOT).as_posix()
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files", "--", f"{rel}/*.py"],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+        )
+        if proc.returncode == 0:
+            return [REPO_ROOT / ln for ln in proc.stdout.splitlines() if ln.strip()]
+    except Exception:  # noqa: BLE001 — fall through to the filesystem walk
+        pass
+    return sorted(root.rglob("*.py"))  # pragma: no cover - non-git checkout
+
+
 def _offenders(root: pathlib.Path) -> list[str]:
     out: list[str] = []
     if not root.is_dir():
         return out
-    for path in sorted(root.rglob("*.py")):
+    for path in _python_files(root):
         if not _in_scope(path):
             continue
         rel = path.relative_to(REPO_ROOT).as_posix()
         if rel in ALLOWLIST:
             continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        # Cheap prescan before the expensive parse. Only ~1 file in 8 mentions
+        # write_text at all, and ast.parse over every tracked module costs about
+        # 50s — enough to make people reach for -k to skip it.
+        if "write_text" not in source:
+            continue
+        try:
+            tree = ast.parse(source)
         except SyntaxError:
             continue
         for node in ast.walk(tree):
