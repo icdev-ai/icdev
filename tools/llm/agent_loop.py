@@ -31,6 +31,7 @@ from icdev.tools.llm.agent_loop import *  # noqa: F401,F403
 from icdev.tools.llm.agent_loop import (  # noqa: F401
     DONE,
     AgentLoopResult,
+    AgentLoopStopped,
     AgentLoopTimeout,
     AgentLoopUnsupported,
     LoopStage,
@@ -71,6 +72,7 @@ from icdev.tools.llm.agent_loop import (  # noqa: F401
 __all__ = [
     "DONE",
     "AgentLoopResult",
+    "AgentLoopStopped",
     "AgentLoopTimeout",
     "AgentLoopUnsupported",
     "LoopStage",
