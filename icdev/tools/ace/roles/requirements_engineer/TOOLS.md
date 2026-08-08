@@ -15,7 +15,7 @@
 - Bypassing the change request process for baseline changes
 
 ## Primary Modules
-- `tools/mbse/requirement_validator.py`
+- `tools/requirements/prd_validator.py`
 - `tools/canvas/kg_builder.py` — KG node creation
 - `goals/manifest.md` — goal alignment check
 - `context/` — reference material for domain requirements

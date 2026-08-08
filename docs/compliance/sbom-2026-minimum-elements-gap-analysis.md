@@ -101,6 +101,18 @@ is the only SBOM producer in the tree. It:
    `tools/ace/roles/compliance_manager/TOOLS.md`, `.../SOUL.md` and
    `tools/ace/roles/devops_engineer/TOOLS.md`.
 
+**Both defects are RESOLVED (sbx-fnd-01).** The decision on record: `tools/compliance/sbom_generator.py`
+is **CANONICAL** — it is the sole SBOM producer and everything the remaining `sbx` tasks add is
+built on it. The false deprecation marker is gone from both the root file and the
+`icdev/tools/compliance/` mirror, replaced by a `# CANONICAL:` note that names the call sites and
+the blocking gate so no future session re-deprecates it. `tools/manifest/compliance-engine.md`
+now lists it as `[CANONICAL]`. The three ACE role cards were corrected to the real path (and two
+further phantom paths in the same list — `tools/compliance/compliance_mapper.py` and
+`tools/classification/classification_manager.py` — were corrected to `control_mapper.py` and
+`tools/compliance/classification_manager.py`). `tests/test_sbom_generator_canonical.py` pins the
+outcome: both import namespaces expose `generate_sbom`, no removal-date comment survives in either
+copy, the two copies stay byte-identical, and no ACE role card cites a non-existent module path.
+
 ### 2.2 Storage
 
 - `sbom_records` — `project_id, version, format, file_path, component_count,
