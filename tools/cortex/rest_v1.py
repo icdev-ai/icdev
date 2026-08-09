@@ -14,6 +14,10 @@ and one auth path — no second blueprint, no double registration.
     POST /cortex/api/v1/classify   single-label classification (governed)
     POST /cortex/api/v1/extract    structured extraction (governed)
     POST /cortex/api/v1/govern     run the TRUST governance chain over text
+    POST /cortex/api/v1/agent      launch a goal: ACE team / agent loop / Studio
+                                   graph run (governed; scope never granted by
+                                   default — it is the one endpoint here that
+                                   makes the platform ACT rather than answer)
 
 Identity (tenant / user / classification) is derived SERVER-SIDE from the
 authenticated session, never from the client body; ``domain`` is the only
@@ -34,7 +38,7 @@ from .analyst import CortexAnalystError, CortexQueryBlocked
 # gateway screen, redaction, grounding, provenance, append-only audit). Importing
 # ask/search from .analyst/.search_service would reach the RAW ungoverned impls,
 # so the REST /api/v1/search + /ask endpoints would bypass governance entirely.
-from .api import ask, classify, complete, extract, reason, search
+from .api import agent, ask, classify, complete, extract, reason, search
 from .governance import GovernanceBlockedError, GovernancePipeline
 from .schemas import CortexContext, CortexResult
 
@@ -348,6 +352,97 @@ def api_v1_govern(data):
         "blocked": result.governance.blocked,
         "governance": result.governance.to_dict(),
     }
+
+
+@_cortex_api
+def api_v1_agent(data):
+    """Launch a goal through the multi-agent stack — team, single, or graph (hgx-cx-02).
+
+    The agent facade existed but was reachable only in-process and over
+    same-machine MCP (``cortex_agent_launch``). This is its first remote entry
+    point, and it is the one endpoint on this surface that makes the platform
+    *act* rather than answer, so three things are true of it that are not true of
+    its neighbours:
+
+    * ``cortex:agent`` is NOT in the default grant (see service_keys.AGENT_SCOPES).
+    * The single-agent loop runs with NO tools. Handlers are Python callables and
+      a tool list is an authorization decision; a remote caller choosing the tools
+      its agent may run is a caller choosing its own privileges. Tool-bearing work
+      is what ``mode="graph"`` is for — Studio authorizes tools per node
+      (MCP-WF-001) against a workflow an operator wrote.
+    * The launch is NON-BLOCKING in team and graph modes, exactly as in-process:
+      the response carries ``instance_id`` / ``run_id`` and the caller polls.
+
+    Governance is NOT applied here. ``api.agent`` is itself a ``_governed_facade``
+    ("cortex.agent"), so the goal is injection-screened and input-redacted before
+    dispatch and the report comes back attached on ``result.governance``. Wrapping
+    it in ``_governed`` as well — the way complete/reason/classify/extract do —
+    would run the chain twice over one launch and write two audit rows for it.
+    ``search``/``ask`` are the precedent for calling an already-governed facade
+    directly; a blocked pre-check still raises ``GovernanceBlockedError`` from
+    inside the facade and the decorator above still maps it to a 403.
+
+    Degradation: a provider that cannot serve native tool-use raises
+    ``AgentLoopUnsupported``. That is a capability answer, not a fault, so it
+    comes back 200 with ``launched: false`` and ``degraded: true`` rather than a
+    500 the client would read as "Cortex is down". Read ``launched`` FIRST.
+    """
+    params = validators.validate_agent(data)
+    ctx = _server_context(validators.domain_of(data))
+
+    kwargs = {
+        "roles": params["roles"],
+        "mode": params["mode"],
+        "graph": params["graph"],
+        "max_iterations": params["max_iterations"],
+        # Provenance: a remote launch is attributable to the KEY that made it,
+        # never to a body field claiming to be someone.
+        "trigger_source": "cortex.rest_v1",
+        "trigger_ref": params.get("trigger_ref") or ctx.tenant_id or "cortex",
+    }
+    if "system_prompt" in params:
+        kwargs["system_prompt"] = params["system_prompt"]
+    if "llm_function" in params:
+        kwargs["llm_function"] = params["llm_function"]
+
+    unsupported = _agent_loop_unsupported()
+    try:
+        result = agent(params["goal"], ctx=ctx, **kwargs)
+    except unsupported as exc:
+        logger.info("agent launch degraded (provider cannot serve tool-use): %s", exc)
+        return {
+            "launched": False,
+            "degraded": True,
+            "mode": params["mode"],
+            "reason": str(exc)[:500],
+            "text": "",
+        }
+
+    payload = result.to_dict()
+    payload["launched"] = True
+    payload["degraded"] = False
+    return payload
+
+
+class _NeverRaised(Exception):
+    """Stand-in so the ``except`` clause is inert when the loop is unavailable."""
+
+
+def _agent_loop_unsupported():
+    """The ``AgentLoopUnsupported`` class, or a never-raised stand-in.
+
+    Late-bound: ``icdev.tools.llm.agent_loop`` pulls in the provider stack, and
+    this module is imported at blueprint-registration time on every dashboard
+    boot. Note the ``icdev.`` spelling — ``tools/llm/agent_loop.py`` is a
+    re-export shim, so only the canonical path is guaranteed to bind the same
+    class object the loop actually raises (see ``api._run_single_agent``).
+    """
+    try:
+        from icdev.tools.llm.agent_loop import AgentLoopUnsupported
+
+        return AgentLoopUnsupported
+    except Exception:  # noqa: BLE001 — an unimportable loop cannot raise it either
+        return _NeverRaised
 
 
 @_cortex_api
@@ -1018,7 +1113,7 @@ def api_v1_health():
             "status": "healthy",
             "airgap": bool(airgap_active(None)),
             "operations": [
-                "search", "ask", "complete", "reason", "classify", "extract", "govern", "intake", "slides", "win_themes", "staffing_matrix", "cost_volume", "dashboard", "award", "bom",
+                "search", "ask", "complete", "reason", "classify", "extract", "govern", "intake", "slides", "win_themes", "staffing_matrix", "cost_volume", "dashboard", "award", "bom", "agent",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -1040,6 +1135,7 @@ def register_rest_v1(cortex_bp) -> None:
         ("classify", api_v1_classify),
         ("extract", api_v1_extract),
         ("govern", api_v1_govern),
+        ("agent", api_v1_agent),
         ("slides", api_v1_slides),
         ("win_themes", api_v1_win_themes),
         ("staffing_matrix", api_v1_staffing_matrix),

@@ -44,9 +44,9 @@ logger = get_logger("icdev.cortex.service_keys")
 
 API_KEY_PREFIX = "icdev_ctx_"
 
-# The REST v1 operations a key can be scoped to (tools/cortex/rest_v1.py).
-# ``agent`` is deliberately absent from the REST surface — team launches are
-# same-machine MCP only (cortex_agent_launch).
+# The REST v1 operations a key can be scoped to BY DEFAULT (tools/cortex/rest_v1.py).
+# ``agent`` is reachable over REST as of hgx-cx-02 but is NOT in this tuple: see
+# AGENT_SCOPES below — it is granted explicitly, never by default.
 REST_OPERATIONS = ("search", "ask", "complete", "reason", "classify", "extract",
                    "govern",
                    # Deterministic deck assembly from a caller-supplied spec —
@@ -90,12 +90,23 @@ AWARD_SCOPES = ("cortex:award",)
 # A key that can search the platform must not silently also be able to post a
 # competitor's pricing into it.
 BOM_SCOPES = ("cortex:bom",)
+# hgx-cx-02: agent LAUNCHES EXECUTION — an ACE team, an agent loop, or a Studio
+# graph run — against the platform, on the platform's budget, under the key's
+# tenant. It is the single most consequential thing a Cortex key can do, and the
+# gap between it and every other scope is not one of degree: search reads,
+# complete writes text, agent DOES things. It has always been off the REST
+# surface for exactly that reason; putting it on does not make it a default.
+#
+# A key that can search must not silently also be able to spend the platform's
+# tokens for an hour, nor to start a workflow whose nodes hold their own tool
+# authorizations.
+AGENT_SCOPES = ("cortex:agent",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
                      "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
 ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
               + PRICING_SCOPES + DASHBOARD_SCOPES + AWARD_SCOPES + BOM_SCOPES
-              + DATABRIDGE_SCOPES)
+              + AGENT_SCOPES + DATABRIDGE_SCOPES)
 
 # Default scopes for a newly created key: the core REST operations (the
 # spend-heavier feeds/write scopes are granted explicitly).
