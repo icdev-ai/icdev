@@ -281,7 +281,15 @@ def _pypi_purl(name, version):
 
 
 def _npm_purl(name, version):
-    purl_name = name.replace("/", "%2F") if "/" in name else name
+    """Build an npm purl. A scoped name is namespace + name, not one escaped blob.
+
+    ``@babel/core`` is namespace ``%40babel`` and name ``core``: the ``@`` is
+    percent-encoded because purl reserves it as the version separator, and the
+    ``/`` STAYS a separator because it is what divides namespace from name. This
+    used to do the exact opposite — ``pkg:npm/@babel%2Fcore`` — which ECMA-427
+    rejects and which the Component Identifiers validator flags (sbx-fld-05).
+    """
+    purl_name = "%40" + name[1:] if name.startswith("@") else name
     purl = f"pkg:npm/{purl_name}"
     if version:
         purl += f"@{version}"

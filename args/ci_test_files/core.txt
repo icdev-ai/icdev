@@ -162,6 +162,11 @@ tests/innovation/test_innovation_kanban_promoter.py
 tests/test_sbom_component_producer.py
 tests/test_sbom_component_license.py
 tests/test_sbom_conformance_gate.py
+# test_sbom_component_identifiers.py earns a slot because CPE is the NVD lookup
+# key: lose it and tools/supply_chain/cve_triager.py silently joins nothing —
+# an SBOM that still validates and still looks complete. ~1s, pure Python plus
+# an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-05).
+tests/test_sbom_component_identifiers.py
 
 # test_sbom_distribution.py earns a slot because it is the only place the RBAC
 # DENY case on SBOM retrieval is asserted (sbx-gov-02). The 2026 revision folded

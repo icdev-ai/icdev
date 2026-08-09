@@ -294,6 +294,29 @@ class TestSchemaCodeCheck:
         result = check_schema_code(changed_files=[tool])
         assert isinstance(result, CoherenceCheck)
 
+    def test_migration_added_columns_count_as_schema(self, tmp_path):
+        """A column added the way the repo REQUIRES is not a mismatch.
+
+        New columns must arrive as an `ALTER TABLE ... ADD COLUMN` migration and
+        must NOT be added to the `CREATE TABLE` body in init_icdev_db.py. A
+        check that reads only the CREATE TABLE text therefore flagged every
+        correctly-migrated column — sbom_components.identifiers_json was the
+        case that surfaced it (sbx-fld-05).
+        """
+        from tools.workflow.coherence_checker import _parse_migration_added_columns
+
+        added = _parse_migration_added_columns()
+        assert "identifiers_json" in added.get("sbom_components", [])
+
+        tool = tmp_path / "migrated_insert.py"
+        tool.write_text(
+            'conn.execute("INSERT INTO sbom_components '
+            '(id, component_name, identifiers_json) VALUES (%s, %s, %s)")',
+            encoding="utf-8",
+        )
+        result = check_schema_code(changed_files=[tool])
+        assert result.status == "pass", result.actual
+
 
 class TestFixtureSchemaCheck:
     """Tests for test fixture-schema coherence check."""
