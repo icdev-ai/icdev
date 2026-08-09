@@ -483,9 +483,20 @@ def list_pr_tasks(
 # syntax — they are excluded from the sibling check as a heuristic about how
 # they are edited, NOT because git resolves them automatically. Adding a path
 # here does not make it auto-mergeable.
+#
+# `args/ci_test_files/` is the second entry that is literally union-merged
+# (kax-conflict-07). It holds the pytest allowlists that used to be a
+# line-continuation chain inside .github/workflows/icdev-ci.yml. That inlining
+# is what deadlocked the board on 2026-08-09: five open PRs each appended a test
+# path to the same hand-written workflow, so this guard made each a sibling of
+# every other and refused all five. Note what is NOT listed here — the workflow
+# itself. It carries real job definitions, and two PRs editing a job's `run:`
+# block is a genuine collision worth serializing; only the additive list moved
+# out, so only the list is excluded.
 _ADDITIVE_PATH_MARKERS = (
     "tools/manifest/",
     "tools/manifest.md",
+    "args/ci_test_files/",
     ".claude/hooks/pre_tool_use.py",
     "tools/dashboard/templates/base.html",
     ".claude/commands/start.md",
