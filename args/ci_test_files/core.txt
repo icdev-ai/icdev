@@ -235,3 +235,12 @@ tests/test_pytest_timeout_declared.py
 # re-inlined list in the YAML. ~1s, pure Python, no DB/LLM/network
 # (kax-conflict-07).
 tests/ci/test_gated_test_list.py
+# test_agov_shell_parse.py earns a slot because the parsed shell view is the
+# cause-level fix for a documented fail-open (agent_approval_policy.yaml:107-126:
+# a git_push carrying {"note": "mkdir logs"} matched the mkdir DOWNGRADE pattern
+# because patterns ran against a flattened string). Its failure mode is silent
+# in both directions: a parser that gets LOOSER invents a command name nobody
+# ran, and one that gets STRICTER stops firing rules with no error anywhere. The
+# named regression plus the refusal set are the only things pinning either. ~1s,
+# pure Python, stdlib-only module, no DB/LLM/network (agov-det-02).
+tests/test_agov_shell_parse.py
