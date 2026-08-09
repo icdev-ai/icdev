@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection, sql_placeholder
@@ -2366,8 +2366,14 @@ def hitl_alert_action(alert_id):
                 (datetime.now(timezone.utc).isoformat(), "hook_event_logged",
                  "dashboard", f"hitl_alert.{action}", json.dumps(result)),
             )
-        except Exception:  # noqa: BLE001 — audit must not fail the action
-            pass
+        except Exception as audit_exc:  # noqa: BLE001
+            # The remediation already happened, so failing the request now would
+            # be a lie — but swallowing this silently is how an audit gap goes
+            # unnoticed, which is why the swallowed-INSERT gate rejects `pass`
+            # here. Log it loudly and let the caller keep its result.
+            current_app.logger.warning(
+                "hitl_alert: audit write failed for %s (%s): %s",
+                result.get("task_id"), action, audit_exc)
         try:
             conn.commit()
         except Exception:  # noqa: BLE001
