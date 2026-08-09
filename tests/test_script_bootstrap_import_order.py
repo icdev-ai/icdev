@@ -172,13 +172,44 @@ def analyze_source(source: str) -> dict:
     return {"bootstrap": bootstrap, "first_import": first_import}
 
 
+def _tracked_paths() -> set:
+    """Repo-relative posix paths git actually tracks.
+
+    THE GATE MUST SCAN TRACKED FILES, NOT THE FILESYSTEM. ``tools/trading/`` is
+    gitignored (.gitignore:243) and exists only on a developer's disk, so walking
+    the tree found 51 violations locally and 0 in CI. That is the worst way round:
+    RED for every developer, GREEN on the merge gate. A check that cries wolf
+    locally is one people learn to skip, and this one cost a full diagnosis cycle
+    on 2026-08-09 before the cause was spotted. The identical false positive was
+    fixed once already in the CRLF gate (#1421) — same mistake, same fix.
+
+    An empty result (git missing or failing) falls back to walking the tree: a
+    missing git is a reason to check more loosely, never a reason to stop.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files", *SCANNED_TREES],
+            cwd=str(REPO_ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if proc.returncode != 0:
+        return set()
+    return {ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip().endswith(".py")}
+
+
 def _iter_python_files():
+    tracked = _tracked_paths()
     for tree_name in SCANNED_TREES:
         root = REPO_ROOT / tree_name
         if not root.is_dir():
             continue
         for path in sorted(root.rglob("*.py")):
-            yield path.relative_to(REPO_ROOT).as_posix(), path
+            rel = path.relative_to(REPO_ROOT).as_posix()
+            if tracked and rel not in tracked:
+                continue
+            yield rel, path
 
 
 def collect_violations() -> list[tuple[str, dict]]:
