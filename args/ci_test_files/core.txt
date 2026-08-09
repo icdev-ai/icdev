@@ -256,3 +256,14 @@ tests/test_agov_events.py
 # reintroduces a pre-2026 "unspecified"/"managed" version literal. ~1.5s, pure
 # Python plus an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-06).
 tests/test_sbom_component_names.py
+# test_agov_events.py earns a slot because both invariants it pins fail SILENTLY.
+# The normalized agent event view is what every AGOV detection rule will read, and
+# the two ways it can lie are invisible from the outside: classify from free text
+# and a command merely QUOTED in tool output becomes evidence the command ran;
+# promote without the operand and `command.exec` fires with command=None, which a
+# rule matcher reads as "no match" rather than "broken". Neither shows up as a
+# failure anywhere else — a green suite and a detection layer that indicts the
+# wrong session are the same object. Also pins mutual exclusivity (one source row
+# → at most one event) and that the module creates NO table. ~1s, pure Python plus
+# a tmp_path SQLite file, no DB service/LLM/network (agov-det-01).
+tests/test_agov_events.py
