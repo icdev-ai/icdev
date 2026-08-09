@@ -4677,3 +4677,44 @@ The scheduled writer is the Genesis reflex `idp_delivery_events` (6h, GREEN
 tier — `args/genesis_config.yaml`). It exists because the endpoint reads a
 *rolling* 30-day window: without a writer, a one-off backfill ages out and the
 endpoint returns to `metrics_assessed: 0` with nobody having changed a line.
+
+## Executor Parity Benchmark (hgx-exec-04)
+
+A/B replay of a fixed corpus of already-merged kanban tasks through two
+AgentAdapters — `claude_cli` (primary) and `local_agent` (the owned,
+file-editing rubric loop). Each pair gets a disposable detached worktree at the
+task's pre-fix parent commit, the identical `AgentSession`, and one grader:
+`tools/workflow/pipeline_grader.make_pipeline_grader`.
+
+Measurement only. It changes no default: `KANBAN_RUBRIC_LOOP` is on the `.env`
+import denylist so the benchmark cannot flip it even by accident, and
+`args/strategos_config.yaml` is never read or written.
+
+```bash
+# What is in the corpus (task ids, base commits, prompt size)
+python -m tools.workflow.executor_parity --list
+
+# Resolve corpus + adapters + base commits without building anything
+python -m tools.workflow.executor_parity --dry-run
+
+# Full benchmark: 10 tasks x 2 executors, JSON + markdown out
+python -m tools.workflow.executor_parity --run \
+  --out .tmp/parity.json --report .tmp/parity.md
+
+# One task, one executor (a smoke check before spending the full run)
+python -m tools.workflow.executor_parity --run \
+  --tasks cxo-doc-01 --executors claude_cli --timeout 300
+
+# Keep the worktrees to inspect what an executor actually produced
+python -m tools.workflow.executor_parity --run --limit 1 --keep-worktrees
+```
+
+Two rates are reported per executor and they are deliberately not the same
+number: `gate_pass_rate` is the harness's own verdict on the tree,
+`self_report_rate` is what the executor claimed about itself. The gap is the
+result — measured numbers live in
+[docs/features/hgx-executor-parity.md](../features/hgx-executor-parity.md).
+
+Corpus: `args/executor_parity_corpus.yaml`. Treat it as a frozen baseline —
+adding an entry is fine, rewording one changes what is being measured and
+requires re-running both executors.

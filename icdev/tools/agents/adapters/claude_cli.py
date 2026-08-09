@@ -43,6 +43,7 @@ Session metadata keys this adapter understands (all optional):
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -50,7 +51,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from tools.agents.adapter_base import (
     AgentResult,
@@ -121,6 +122,44 @@ def _schedule_cleanup(path: str, delay: float) -> None:
                      name="claude-cli-instr-cleanup").start()
 
 
+def _parse_cli_json(stdout: str) -> Tuple[str, Dict[str, Any]]:
+    """Split the CLI's ``--output-format json`` envelope into (text, structured).
+
+    The CLI is the only executor that knows what a session cost; without this the
+    adapter reported a duration and nothing else, so any cost comparison against
+    another adapter had one column permanently empty. Parsing is best-effort by
+    design: an older CLI, or one that printed something else, degrades to
+    treating stdout as plain text — the same contract callers had before.
+    """
+    raw = (stdout or "").strip()
+    if not raw.startswith("{"):
+        return stdout or "", {}
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return stdout or "", {}
+    if not isinstance(payload, dict):
+        return stdout or "", {}
+
+    usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+    structured: Dict[str, Any] = {
+        "result_subtype": payload.get("subtype") or "",
+        "is_error": bool(payload.get("is_error")),
+        "turns": payload.get("num_turns") or 0,
+        "session_id": payload.get("session_id") or "",
+        "total_cost_usd": payload.get("total_cost_usd") or 0.0,
+        "input_tokens": (usage.get("input_tokens") or 0)
+        + (usage.get("cache_read_input_tokens") or 0)
+        + (usage.get("cache_creation_input_tokens") or 0),
+        "output_tokens": usage.get("output_tokens") or 0,
+        "duration_api_ms": payload.get("duration_api_ms") or 0,
+    }
+    text = payload.get("result")
+    if not isinstance(text, str):
+        text = raw
+    return text, structured
+
+
 class ClaudeCliAdapter:
     name = "claude_cli"
 
@@ -155,7 +194,7 @@ class ClaudeCliAdapter:
             "--max-turns",
             str(session.max_turns),
             "--output-format",
-            "text",
+            "json",
         ]
         model_id = (session.metadata or {}).get("model_id")
         if model_id:
@@ -265,17 +304,18 @@ class ClaudeCliAdapter:
                     timeout=session.timeout_seconds,
                     shell=False,
                 )
-            stdout = proc.stdout or ""
+            text, envelope = _parse_cli_json(proc.stdout or "")
             return AgentResult(
                 task_id=session.task_id,
                 adapter_name=self.name,
                 completed=(proc.returncode == 0
-                           and self.detect_completion(stdout)),
+                           and not envelope.get("is_error")
+                           and self.detect_completion(text)),
                 exit_code=proc.returncode,
-                output=stdout,
+                output=text,
                 error=("" if proc.returncode == 0 else (proc.stderr or "")),
                 duration_ms=int((time.time() - t0) * 1000),
-                structured={"stderr": proc.stderr or ""},
+                structured={**envelope, "stderr": proc.stderr or ""},
             )
         except subprocess.TimeoutExpired:
             return AgentResult(
