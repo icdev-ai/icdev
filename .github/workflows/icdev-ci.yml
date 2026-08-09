@@ -241,6 +241,7 @@ jobs:
             tests/test_local_agent_adapter.py \
             tests/genesis/test_rubric_build_tools.py \
             tests/test_toolset_portability.py \
+            tests/test_pytest_timeout_declared.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries

@@ -81,8 +81,17 @@ def _t(
 
 
 _CONTEXT = """
-Card: HGX — Harness Agent Parity and Graph Runtime. MANUAL-ONLY, gated on
-hgx-gate-00. Open any PR as --draft (pr_watcher auto-merges green kanban/*).
+Card: HGX — Harness Agent Parity and Graph Runtime. Gated on hgx-gate-00; the
+self-modification slices are held separately behind hgx-gate-02.
+
+Open PRs NORMALLY, not --draft. The original rule said draft because pr_watcher
+auto-merges green kanban/* branches. That was right while the whole card was
+gated, and wrong the moment it was handed to the dispatcher: a draft is the one
+thing pr_watcher may NOT touch, so finished green work piled up and every batch
+needed a human to shepherd it. The hold that matters is the GATE — the dangerous
+slices sit behind hgx-gate-02 and never dispatch at all. Use --draft only for
+work touching the safety hooks, the executor chain or the approval path, which is
+exactly that gated set.
 
 GROUND RULE: extend the existing surface. Studio's workflow_runner.py is already
 a durable DAG runtime with human gates, restart-safe resume and per-node tool
