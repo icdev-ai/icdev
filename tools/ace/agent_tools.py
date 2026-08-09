@@ -11,6 +11,8 @@ no new execution paths are introduced:
 - ``run_tool``   → :class:`icdev.tools.ace.tool_runner.ToolRunner.run`
 - ``done``       → sentinel that terminates the agent loop
 - ``list_files`` → scoped directory listing (read-only)
+- ``list_skills``/``load_skill`` → :mod:`tools.agent_runtime.skill_tools`
+  (read-only; progressive disclosure of the ``.agents/skills`` library)
 
 Handlers receive ``(input_dict, stop_event)`` and return a string result, matching
 the :data:`icdev.tools.llm.agent_loop.ToolHandler` contract. Exceptions are left
@@ -30,6 +32,8 @@ import threading
 from typing import Any, Callable
 
 from icdev.tools.llm.agent_loop import DONE, AgentLoopUnsupported, run_agent_loop
+from tools.agent_runtime.skill_tools import HANDLERS as _SKILL_HANDLERS
+from tools.agent_runtime.skill_tools import SCHEMAS as _SKILL_SCHEMAS
 from tools.logging.icdev_logger import get_logger
 
 # Module-level LLMRouter reference so _spawn_agent can be monkeypatched in tests.
@@ -369,6 +373,35 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    # `run_tool`'s narrow sibling. A yellow-tier role whose job IS running the
+    # test suite needs an execution seam, but handing it `run_tool` would mean
+    # promoting it to green, which also unlocks write_file. This tool executes
+    # the same allowlist through the ToolRunner "test" profile: tools/testing
+    # modules only, mutating flags refused. See tool_trust_policy.MIN_TRUST_TIER.
+    "run_test_tool": {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": "run_test_tool",
+            "is_read_only": False,
+            "description": (
+                "Run an allowlisted ICDEV test/verification command (subprocess). "
+                "The command must exactly match an entry in the role's icdev_tools "
+                "list AND name a module under tools/testing/ (path or -m form). "
+                "Flags that ask a tool to change something (--fix, --apply, "
+                "--write, --heal, …) are refused: this tool reports, it does not "
+                "repair. Callable at trust tier yellow and above. Returns stdout, "
+                "stderr, and the exit code."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The exact allowlisted command string."},
+                },
+                "required": ["command"],
+            },
+        },
+    },
     "done": {
         "type": "function",
         "function": {
@@ -495,6 +528,13 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    # -- Skills (hgx-sess-02) ----------------------------------------------
+    # Shared verbatim with the SAG built-in toolset — one implementation in
+    # tools/agent_runtime/skill_tools.py backs both surfaces, so a co-worker and
+    # a standalone agent see the same skill library described the same way.
+    # Read-only and repo-scoped: neither tool touches folder_access, because
+    # .agents/skills is first-party procedure text, not co-worker workspace.
+    **_SKILL_SCHEMAS,
 }
 
 
@@ -548,9 +588,13 @@ class AgentToolRegistry:
         Unknown names are logged and skipped. ``tool_names`` defaults to the full
         core set when empty.
         """
+        # The fallback set lives in tool_trust_policy so the load-time validator
+        # checks the toolset a role will ACTUALLY get, not just what it declared.
+        from icdev.tools.ace.tool_trust_policy import DEFAULT_AGENT_TOOLS
+
         names = list(tool_names or [])
         if not names:
-            names = ["read_file", "write_file", "run_tool", "done"]
+            names = list(DEFAULT_AGENT_TOOLS)
 
         tools: list[dict[str, Any]] = []
         handlers: dict[str, ToolHandler] = {}
@@ -587,6 +631,8 @@ class AgentToolRegistry:
             return self._grep_files
         if name == "run_tool":
             return self._run_tool
+        if name == "run_test_tool":
+            return self._run_test_tool
         if name == "done":
             return self._done
         if name == "spawn_agent":
@@ -597,6 +643,9 @@ class AgentToolRegistry:
             return self._post_result
         if name == "read_result":
             return self._read_result
+        skill_handler = _SKILL_HANDLERS.get(name)
+        if skill_handler is not None:
+            return skill_handler
         return None
 
     # ------------------------------------------------------------------
@@ -856,6 +905,12 @@ class AgentToolRegistry:
         return "\n".join(results) if results else "(no matches)"
 
     def _run_tool(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        return self._run_with_profile(inp, "full")
+
+    def _run_test_tool(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        return self._run_with_profile(inp, "test")
+
+    def _run_with_profile(self, inp: dict[str, Any], profile: str) -> str:
         from icdev.tools.ace.tool_runner import ToolRunner
 
         command = inp.get("command", "")
@@ -865,6 +920,7 @@ class AgentToolRegistry:
             coworker_id=self._coworker_id,
             instance_id=self.instance_id,
             trust_tier=self._trust_tier,
+            profile=profile,
         )
         rc = result.get("returncode")
         out = result.get("stdout", "")

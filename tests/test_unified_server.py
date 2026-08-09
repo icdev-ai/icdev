@@ -243,7 +243,9 @@ class TestGapHandlerCoverage:
     def test_security_agentic_tools(self):
         """Security/agentic gap handler tools (original 9 + 6 added: blueprint_verify,
         credential_broker_request, credential_broker_status, egress_policy_resolve,
-        evaluate_aggregation_rules, guard_result)."""
+        evaluate_aggregation_rules, guard_result; + 3 reproduce-or-drop tools from
+        oss-poc-01: finding_replay, finding_enforce_reproduction,
+        finding_verify_discrimination)."""
         names = {
             "scan_code_patterns",
             "validate_tool_chain",
@@ -260,6 +262,9 @@ class TestGapHandlerCoverage:
             "egress_policy_resolve",
             "evaluate_aggregation_rules",
             "guard_result",
+            "finding_replay",
+            "finding_enforce_reproduction",
+            "finding_verify_discrimination",
         }
         actual = {n for n, e in TOOL_REGISTRY.items() if e["category"] == "security_agentic"}
         assert names == actual

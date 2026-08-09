@@ -39,6 +39,16 @@ NEVER redaction or provenance/audit — and the skip is recorded explicitly in
 the :class:`GovernanceReport` (outcome ``"skip"``) so governance stays
 observable, not implied.
 
+Profiles (hgx-gov-01): a caller may name a *governance profile* — a subset of
+the chain declared as data under ``governance.profiles`` in
+``args/cortex_config.yaml`` — so a node doing internal diligence need not pay
+the same seven gates as one emitting a customer-facing artifact. A caller that
+names none resolves to ``default``, the full chain, so behaviour is unchanged.
+``output_redaction`` and ``provenance`` are in :data:`MANDATORY_GATES` and no
+profile may omit them; attempting it is a config error at load, not a quiet
+per-call downgrade. Profile-driven skips are recorded the same way every other
+skip is.
+
 Fail-open/fail-closed: gate errors degrade to ``"warn"`` by default (matching
 ``args/redaction_config.yaml`` ``fail_closed: false``); when
 ``CortexContext.fail_closed`` is True, any gate error or ``"fail"`` outcome
@@ -92,6 +102,142 @@ OUTCOME_FAIL = "fail"
 OUTCOME_SKIP = "skip"
 
 _CLASSIFICATION_IL = {"CUI": "IL4", "CUI//SP-CTI": "IL5", "SECRET": "IL6"}
+
+
+# ---------------------------------------------------------------------------
+# Governance profiles (hgx-gov-01)
+# ---------------------------------------------------------------------------
+# GATE_ORDER above is the full chain, and until now it was also the ONLY chain:
+# a node doing internal diligence paid the same seven gates as one emitting a
+# customer-facing artifact. A *profile* names a subset of it, declared as data in
+# ``args/cortex_config.yaml`` under ``governance.profiles``, and a caller (a
+# Studio agent node, a facade) may name one.
+#
+# Two gates are NOT negotiable in any profile:
+#   ``output_redaction`` is the egress guarantee — the last thing between model
+#   output and a caller, and the only gate that runs for every result shape.
+#   ``provenance``       is the NIST-AU append-only audit row.
+# A profile able to drop either would turn a latency optimisation into a
+# compliance hole, so omitting one is a config error at LOAD time (loudly, once,
+# where the operator can see it) rather than a quiet per-call downgrade.
+# ``operation`` is listed alongside them because it IS the wrapped call: a
+# profile that "skips" it has skipped the work, not a gate.
+
+#: Gates no profile may omit. Enforced by :func:`load_governance_profiles`.
+MANDATORY_GATES = (GATE_OPERATION, GATE_OUTPUT_REDACTION, GATE_PROVENANCE)
+
+#: The gates a profile may leave out — screening and grounding, in chain order.
+SKIPPABLE_GATES = (
+    GATE_PRE_CHECK,
+    GATE_INPUT_REDACTION,
+    GATE_CITATION_GROUNDING,
+    GATE_CONTENT_GROUNDING,
+)
+
+#: Profile every caller that names none resolves to: the whole chain. Built into
+#: code, not read from YAML, so a missing/unreadable config cannot silently
+#: narrow governance and an existing caller's behaviour never depends on config.
+DEFAULT_PROFILE = "default"
+
+
+class GovernanceProfileError(ValueError):
+    """A governance profile is undeclared, or declared in a way that cannot load.
+
+    Raised at profile-resolution time — before any gate runs — for an unknown
+    profile name, a malformed ``governance.profiles`` block, an unknown gate
+    name, or a profile omitting one of :data:`MANDATORY_GATES`.
+    """
+
+
+def load_governance_profiles(config_path=None) -> dict:
+    """Validated ``{profile_name: frozenset(gate_names)}`` from Cortex config.
+
+    ``default`` is always present and is always the full :data:`GATE_ORDER`;
+    operators add named subsets under ``governance.profiles`` in
+    ``args/cortex_config.yaml``::
+
+        governance:
+          profiles:
+            internal_diligence:
+              gates: [operation, output_redaction, provenance]
+
+    Raises:
+        GovernanceProfileError: the block is not a mapping, a profile is not a
+            mapping, its ``gates`` is not a non-empty list, it names a gate that
+            does not exist, it omits a :data:`MANDATORY_GATES` entry, or it tries
+            to redefine ``default`` (which would change the behaviour of every
+            caller that names no profile — the one thing profiles must not do).
+    """
+    raw = (load_cortex_config(config_path).get("governance") or {}).get("profiles")
+    profiles = {DEFAULT_PROFILE: frozenset(GATE_ORDER)}
+    if raw is None:
+        return profiles
+    if not isinstance(raw, dict):
+        raise GovernanceProfileError(
+            f"governance.profiles must be a mapping of profile name -> "
+            f"{{gates: [...]}}, got {type(raw).__name__}."
+        )
+
+    for name, spec in raw.items():
+        key = str(name).strip()
+        if key == DEFAULT_PROFILE:
+            raise GovernanceProfileError(
+                "governance.profiles may not redefine 'default': it is the full "
+                "gate chain and is what every caller that names no profile gets. "
+                "Declare a differently named profile instead."
+            )
+        if not isinstance(spec, dict):
+            raise GovernanceProfileError(
+                f"governance profile '{key}' must be a mapping with a 'gates' "
+                f"list, got {type(spec).__name__}."
+            )
+        gates = spec.get("gates")
+        if not isinstance(gates, (list, tuple)) or not gates:
+            raise GovernanceProfileError(
+                f"governance profile '{key}' must declare a non-empty 'gates' "
+                f"list naming the gates it runs (one or more of "
+                f"{', '.join(GATE_ORDER)})."
+            )
+        named = [str(gate).strip() for gate in gates]
+        unknown = [gate for gate in named if gate not in GATE_ORDER]
+        if unknown:
+            raise GovernanceProfileError(
+                f"governance profile '{key}' names unknown gate(s) "
+                f"{', '.join(unknown)}. Valid gates: {', '.join(GATE_ORDER)}."
+            )
+        missing = [gate for gate in MANDATORY_GATES if gate not in named]
+        if missing:
+            raise GovernanceProfileError(
+                f"governance profile '{key}' omits non-skippable gate(s) "
+                f"{', '.join(missing)}. output_redaction is the egress guarantee "
+                f"and provenance is the NIST-AU audit row; operation is the "
+                f"wrapped call itself. Every profile must list all of "
+                f"{', '.join(MANDATORY_GATES)}."
+            )
+        profiles[key] = frozenset(named)
+    return profiles
+
+
+def resolve_profile(name: str = "", config_path=None) -> frozenset:
+    """Gates enabled for ``name``; the full chain when it is blank.
+
+    Raises:
+        GovernanceProfileError: ``name`` is not declared (a typo'd profile must
+            not silently fall back to the full chain and look like it worked, nor
+            to a narrower one), or the profiles block itself cannot load.
+    """
+    key = (name or "").strip()
+    if not key or key == DEFAULT_PROFILE:
+        return frozenset(GATE_ORDER)
+    profiles = load_governance_profiles(config_path)
+    try:
+        return profiles[key]
+    except KeyError:
+        raise GovernanceProfileError(
+            f"unknown governance profile '{key}'. Declared profiles: "
+            f"{', '.join(sorted(profiles))}. Add it under governance.profiles in "
+            f"args/cortex_config.yaml."
+        ) from None
 
 
 def _content_grounding_floor(config_path=None) -> float:
@@ -313,11 +459,24 @@ class GovernancePipeline:
     ``result.governance`` and ``result.grounded`` is set from the grounding
     gates. A blocked pre-check raises :class:`GovernanceBlockedError` — the
     wrapped operation is never invoked.
+
+    ``profile`` (hgx-gov-01) names a subset of the chain from
+    ``governance.profiles`` in ``args/cortex_config.yaml``; blank means the whole
+    chain, which is what every existing caller gets. A gate a profile leaves out
+    is recorded ``"skip"`` with the profile as the reason, so a narrowed chain is
+    as observable in the audit as a full one. ``output_redaction`` and
+    ``provenance`` are not narrowable — see :data:`MANDATORY_GATES`.
     """
 
-    def __init__(self, operation: str = "cortex", agent_id: str = "cortex"):
+    def __init__(
+        self,
+        operation: str = "cortex",
+        agent_id: str = "cortex",
+        profile: str = "",
+    ):
         self.operation = operation
         self.agent_id = agent_id
+        self.profile = (profile or "").strip()
 
     # -- gate bookkeeping ---------------------------------------------------
     @staticmethod
@@ -327,6 +486,20 @@ class GovernancePipeline:
         report.outcomes[gate] = outcome
         if detail:
             logger.debug("cortex governance gate %s=%s: %s", gate, outcome, detail)
+
+    def _profile_skip(
+        self, report: GovernanceReport, gate: str, enabled, profile_name: str
+    ) -> bool:
+        """True — and recorded as ``skip`` — when the profile leaves ``gate`` out.
+
+        Only ever consulted for :data:`SKIPPABLE_GATES`; the mandatory three are
+        guaranteed present by :func:`load_governance_profiles`, so no call site
+        for them exists and none should be added.
+        """
+        if gate in enabled:
+            return False
+        self._record(report, gate, OUTCOME_SKIP, f"profile '{profile_name}'")
+        return True
 
     def _degrade(
         self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception
@@ -372,6 +545,7 @@ class GovernancePipeline:
                 "blocked": report.blocked,
                 "blocked_gate": blocked_gate,
                 "blocked_reason": report.blocked_reason,
+                "profile": report.profile or DEFAULT_PROFILE,
                 "gates_run": list(report.gates_run),
                 "outcomes": dict(report.outcomes),
                 "redactions_applied": report.redactions_applied,
@@ -403,6 +577,7 @@ class GovernancePipeline:
         context_sources=None,
         retrieval: bool = True,
         attach: bool = True,
+        profile: Optional[str] = None,
     ) -> tuple:
         """Run ``fn(governed_prompt)`` inside the full TRUST chain.
 
@@ -420,9 +595,18 @@ class GovernancePipeline:
         audit + provenance are the "no bypass" guarantee), but the native
         result is left byte-for-byte intact and the outer report is returned
         separately for the caller to surface.
+
+        ``profile`` overrides the pipeline's own profile for this one call;
+        ``None`` (the default) means "use the pipeline's". Resolution happens
+        BEFORE any gate runs, so an unknown profile name raises
+        :class:`GovernanceProfileError` instead of running an unintended chain.
         """
         ctx = ctx or CortexContext()
-        report = GovernanceReport()
+        profile_name = (
+            self.profile if profile is None else (profile or "").strip()
+        ) or DEFAULT_PROFILE
+        enabled = resolve_profile(profile_name)
+        report = GovernanceReport(profile=profile_name)
 
         # 1. Gateway pre-invoke check — a block ALWAYS fails closed.
         #    SKIPPED for trusted first-party content (ctx.trusted_content): the
@@ -430,7 +614,9 @@ class GovernancePipeline:
         #    trusted callers (e.g. docgen ingesting a document already inside the
         #    tenant boundary) mirror the router's skip_injection_scan contract.
         #    The skip is recorded so it stays observable in the audit report.
-        if ctx.trusted_content:
+        if self._profile_skip(report, GATE_PRE_CHECK, enabled, profile_name):
+            pass
+        elif ctx.trusted_content:
             self._record(report, GATE_PRE_CHECK, OUTCOME_SKIP, "trusted content")
         else:
             try:
@@ -454,7 +640,9 @@ class GovernancePipeline:
         #    as gate 1). Output redaction below is NOT affected: egress is always
         #    screened regardless of trust.
         governed_prompt = prompt
-        if ctx.trusted_content:
+        if self._profile_skip(report, GATE_INPUT_REDACTION, enabled, profile_name):
+            pass
+        elif ctx.trusted_content:
             self._record(report, GATE_INPUT_REDACTION, OUTCOME_SKIP, "trusted content")
         else:
             try:
@@ -479,9 +667,13 @@ class GovernancePipeline:
         is_cortex_result = isinstance(result, CortexResult)
         text = result.text if is_cortex_result else (result if isinstance(result, str) else str(result))
 
-        # 4. Citation grounding (retrieval calls only; skip recorded).
+        # 4. Citation grounding (retrieval calls only; skip recorded). A profile
+        #    that leaves this gate out also leaves the answer un-attested, so
+        #    `grounded` is False — a skipped gate never certifies its own subject.
         grounded = True
-        if retrieval:
+        if self._profile_skip(report, GATE_CITATION_GROUNDING, enabled, profile_name):
+            grounded = False
+        elif retrieval:
             allowed = _allowed_source_ids(context_sources)
             if allowed is None:
                 # Nothing to validate against — a retrieval call should
@@ -521,7 +713,9 @@ class GovernancePipeline:
         #    (report.content_grounding) so the gate is observable, and the
         #    warn/block threshold is the SHARED citation_grounding band, not a
         #    local constant. Fail-open/ctx.fail_closed semantics are preserved.
-        if retrieval:
+        if self._profile_skip(report, GATE_CONTENT_GROUNDING, enabled, profile_name):
+            pass
+        elif retrieval:
             try:
                 issues = []
                 placeholders = _gate_find_placeholders(text)
@@ -676,6 +870,7 @@ def governed(
     retrieval: bool = True,
     operation: str = "cortex",
     pipeline: Optional[GovernancePipeline] = None,
+    profile: str = "",
 ):
     """Decorator form of :meth:`GovernancePipeline.wrap`.
 
@@ -690,7 +885,7 @@ def governed(
     """
 
     def decorate(func: Callable):
-        pipe = pipeline or GovernancePipeline(operation=operation)
+        pipe = pipeline or GovernancePipeline(operation=operation, profile=profile)
 
         @functools.wraps(func)
         def inner(prompt: str, *args, ctx: Optional[CortexContext] = None,

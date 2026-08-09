@@ -1267,15 +1267,33 @@ python tools/studio/executors/agent_executor.py --prompt "Summarise tools/foo.py
 python tools/studio/executors/agent_executor.py --prompt "Add a docstring to tools/foo.py" \
   --agent-tools worktree_build --work-dir /path/to/worktree \
   --run-id "run-xxx" --step-id "build" --json
-# Bundles compose; `terminal` adds the allowlisted run_command.
+# Bundles compose; `terminal` adds the allowlisted run_command — but a bundle grants the
+# CAPABILITY, not the ACCESS: AGENT-WF-001 withholds run_command below IL5 (see below).
 python tools/studio/executors/agent_executor.py --prompt "Fix the failing test" \
-  --agent-tools worktree_build,terminal --llm-function code_generation --effort high
+  --agent-tools worktree_build,terminal --llm-function code_generation --effort high \
+  --caller-il IL5 --caller-roles isso --run-id "run-xxx" --approval-wait 3600
 # --llm-function is a ROUTING KEY, never a model id. There is no --model flag.
 # --approval-mode enforce (default) | dry_run | off  — the ars-appr-01 reversibility gate.
 # Exit 0 = the loop ran, OR the step degraded (`degraded: true` — the routed provider
 # cannot serve native tool use; the runner records `skipped` and the run continues).
 # Exit 1 = unrunnable as authored: no prompt, no declared bundle (default-deny), an
-# unknown bundle, or the loop raised.
+# unknown bundle, the loop raised, or AGENT-WF-001 withheld every tool it declared.
+
+# Agent tool authorization gate — AGENT-WF-001 (hgx-agent-02). Check a tool WITHOUT
+# running a loop: default-deny allowlist + per-tool min_il/roles from the
+# `agent_workflow_tools` section of args/security_gates.yaml.
+python tools/studio/executors/agent_tool_gate.py --list --json                       # the policy
+python tools/studio/executors/agent_tool_gate.py --tool read_file    --caller-il IL4 --json
+python tools/studio/executors/agent_tool_gate.py --tool run_command  --caller-il IL5 --json
+python tools/studio/executors/agent_tool_gate.py --tool write_file   --caller-il IL4 \
+  --caller-roles developer --run-id "run-xxx" --json
+# Exit 0 = authorized (`disposition`: allowed | requires_approval — the latter still needs
+# an approved human gate in the run before the call runs). Exit 1 = refused, `error_type`
+# naming the block condition: agent_tool_not_allowlisted / agent_tool_exceeds_caller_il /
+# agent_tool_missing_required_role / agent_gate_policy_unavailable.
+# Every decision the executor makes is audited to append-only studio_mcp_dispatch_audit —
+# the same table the mcp surface uses, so one query covers both node types:
+python -c "from tools.studio.executors.mcp_executor import query_dispatch_audit as q; import json; print(json.dumps(q(run_id='run-xxx'), indent=2, default=str))"
 ```
 
 ---
@@ -2650,6 +2668,9 @@ python tools/innovation/benchmark_compare.py --all --verdict gap
 # Offline by default so the checked-in file reproduces byte-for-byte and CI can diff it.
 # It writes BESIDE the hand-written map, never over it: the map is the cited source of
 # every declared reading, and its narrative lives in no config.
+# Exact module counts are NOT committed (kax-conflict-02) — the artifact carries the
+# classification against the floor, so adding a module changes nothing and two branches
+# never conflict on it. Use --json or --live for the integers.
 python tools/innovation/benchmark_report.py --write      # regenerate the checked-in report
 python tools/innovation/benchmark_report.py --check      # CI gate: fails on drift, prints a diff
 python tools/innovation/benchmark_report.py --live       # measure rows; retires findings; prints only

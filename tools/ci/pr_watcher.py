@@ -45,7 +45,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
@@ -60,6 +60,15 @@ DEFAULT_CONFIG = ROOT / "args" / "pr_watcher_config.yaml"
 
 # Max characters of CI log text we inject back into a resume message.
 DEFAULT_CI_LOG_MAX = 4000
+
+# Liveness heartbeat (kax-obs-02). Every COMPLETED poll appends a row to the
+# existing `heartbeat_checks` table — the same table tools/scout/daemon.py
+# already uses to prove a daemon is alive — so "is the watcher polling?" can be
+# answered without the log file landing anywhere. Deliberately NOT a new daemon
+# and NOT a new log: a process-exists check (which the launcher already does at
+# tools/genesis/launcher.py) cannot tell a live-but-wedged watcher from a
+# healthy one, and the log is exactly the surface that went missing.
+WATCHER_HEARTBEAT_CHECK_TYPE = "pr_watcher_poll"
 
 _PR_URL_RE = re.compile(
     r"https?://github\.com/[^/\s]+/[^/\s]+/pull/\d+",
@@ -121,6 +130,17 @@ def load_config(path: Optional[pathlib.Path] = None) -> dict:
 # ────────────────────────────────────────────────────────────────────────────
 # Task + PR lookups
 # ────────────────────────────────────────────────────────────────────────────
+
+
+def _parse_iso(raw: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO timestamp, tolerating a trailing 'Z' and a naive value."""
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _parse_pr_url(text: Optional[str]) -> Optional[str]:
@@ -418,12 +438,20 @@ def list_pr_tasks(
 # ────────────────────────────────────────────────────────────────────────────
 
 
-# Coordination / union-merged files that MANY task branches legitimately co-edit
-# (manifest shards, append-only-table registry, nav/registry configs, conftest
-# schema). Two PRs touching these is normal, not a collision — exclude them from
-# the sibling-conflict check so it only fires on genuine same-source-file races
-# (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
-# merge-conflict-hotspots prevention notes.
+# Coordination files that MANY task branches legitimately co-edit (manifest
+# shards, append-only-table registry, nav/registry configs, conftest schema).
+# Two PRs touching these is normal, not a collision — exclude them from the
+# sibling-conflict check so it only fires on genuine same-source-file races
+# (e.g. two branches each creating a different tools/cortex/blueprint.py). See
+# the merge-conflict-hotspots prevention notes.
+#
+# "Union-merged" is only literally true for the manifest entries: `.gitattributes`
+# declares `tools/manifest*` `merge=union` (kax-conflict-03), so concurrent
+# appends there really do resolve without a human. The remaining paths are
+# structured config/code, where union would produce duplicate keys or broken
+# syntax — they are excluded from the sibling check as a heuristic about how
+# they are edited, NOT because git resolves them automatically. Adding a path
+# here does not make it auto-mergeable.
 _ADDITIVE_PATH_MARKERS = (
     "tools/manifest/",
     "tools/manifest.md",
@@ -437,10 +465,44 @@ _ADDITIVE_PATH_MARKERS = (
     "docs/reference/commands.md",
 )
 
+#: Substrings marking a DERIVED artifact — a file produced by a generator and
+#: checked in, never hand-edited.
+#:
+#: These are excluded for a different reason than the coordination files above.
+#: A coordination file is safe to co-edit because it union-merges. A generated
+#: file is safe because a conflict in it is not a disagreement at all: re-running
+#: the generator over the merged tree produces the correct content, so there is
+#: nothing for a human to arbitrate and nothing for a serialized merge to protect.
+#:
+#: WHY THIS EXISTS. On 2026-08-09 a single generated file —
+#: docs/research/external-benchmark-map.generated.md — deadlocked the entire
+#: board. Every branch that added a module regenerated it, so every open PR
+#: touched it, so hold_on_sibling_conflict made every PR a sibling of every other
+#: and refused all six. The guard was behaving correctly; the input made it
+#: total. The daemons were healthy the whole time, which is what made it read as
+#: "the dispatcher is broken". One shared generated file is enough to stop
+#: everything, so the class is excluded rather than that one path.
+_GENERATED_PATH_MARKERS = (
+    ".generated.",
+    "/generated/",
+)
+
+
+def _is_generated_path(path: str) -> bool:
+    """True when `path` is a generator-produced artifact (regenerate, don't merge)."""
+    p = (path or "").replace("\\", "/")
+    return any(marker in p for marker in _GENERATED_PATH_MARKERS)
+
 
 def _is_additive_path(path: str) -> bool:
-    """True when `path` is a union-merged coordination file (not a collision risk)."""
+    """True when `path` is safe for two PRs to touch at once.
+
+    Either union-merged coordination state, or a derived artifact whose conflicts
+    are resolved by regeneration rather than by arbitration.
+    """
     p = (path or "").replace("\\", "/")
+    if _is_generated_path(p):
+        return True
     return any(marker in p for marker in _ADDITIVE_PATH_MARKERS)
 
 
@@ -1000,6 +1062,91 @@ class PRWatcher:
             except Exception:
                 pass
 
+    def _record_heartbeat(self, report: "WatcherReport") -> bool:
+        """Append this poll's liveness row to `heartbeat_checks`.
+
+        Written at the END of the poll, so the timestamp means "a poll ran to
+        completion", not "a poll started". `items_found` / `details` carry the
+        counts that separate the two states an operator has to tell apart:
+
+          * watcher stale   — last_run is hours old, nothing is polling
+          * watcher polling — last_run is fresh, actions_taken == 0, i.e.
+                              the board simply has nothing mergeable
+
+        Best-effort: a heartbeat failure must never stop the watch loop, and an
+        install whose DB predates `heartbeat_checks` just gets no row.
+        """
+        if self.dry_run:
+            return False
+        try:
+            get_conn = self._connection()
+            conn = get_conn()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: no DB connection for heartbeat: %s", exc)
+            return False
+        try:
+            started = _parse_iso(report.started_at)
+            finished = _parse_iso(report.finished_at)
+            duration_ms = 0
+            if started is not None and finished is not None:
+                duration_ms = max(0, int((finished - started).total_seconds() * 1000))
+
+            interval = int(self.config.get("poll_interval_seconds", 30) or 30)
+            next_run = (
+                (finished + timedelta(seconds=interval)).isoformat()
+                if finished is not None
+                else report.finished_at
+            )
+
+            actions_by_type: Dict[str, int] = {}
+            for a in report.actions:
+                actions_by_type[a.action] = actions_by_type.get(a.action, 0) + 1
+
+            # `result_summary` carries the JSON payload, NOT `details`: the live
+            # PostgreSQL `heartbeat_checks` has no `details` column even though
+            # init_icdev_db.py's SQLite DDL declares one. Naming it here would
+            # raise, be swallowed by the best-effort except below, and the
+            # heartbeat would silently never land on the primary backend —
+            # precisely the "reports success while persisting nothing" failure.
+            # tools/scout/daemon.py already writes its payload the same way.
+            conn.execute(
+                "INSERT INTO heartbeat_checks "
+                "(check_type, last_run, next_run, status, result_summary, "
+                " items_found, duration_ms) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (
+                    WATCHER_HEARTBEAT_CHECK_TYPE,
+                    report.finished_at,
+                    next_run,
+                    # 'ok', not 'healthy': the live PG status CHECK allows only
+                    # pending/ok/warning/critical/error. SQLite's DDL also lists
+                    # 'healthy', so this would have passed every local test and
+                    # silently violated the constraint on the primary backend.
+                    "ok",
+                    json.dumps({
+                        "tasks_checked": report.tasks_checked,
+                        "actions_taken": len(report.actions),
+                        "actions_by_type": actions_by_type,
+                        "started_at": report.started_at,
+                        "finished_at": report.finished_at,
+                        "poll_interval_seconds": interval,
+                    }),
+                    report.tasks_checked,
+                    duration_ms,
+                ),
+            )
+            if hasattr(conn, "commit"):
+                conn.commit()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: heartbeat write failed: %s", exc)
+            return False
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
     # ── main loop ───────────────────────────────────────────────────
 
     def poll_once(
@@ -1359,6 +1506,8 @@ class PRWatcher:
             self._audit(action)
 
         report.finished_at = datetime.now(timezone.utc).isoformat()
+        # Liveness proof, written only once the poll has actually completed.
+        self._record_heartbeat(report)
         return report
 
     def run_daemon(

@@ -465,7 +465,13 @@ CREATE TABLE IF NOT EXISTS harness_eval (
     metadata_json  TEXT DEFAULT '{}',
     actual_outcome TEXT,
     resolved_at    TEXT,
-    created_at     TEXT NOT NULL
+    created_at     TEXT NOT NULL,
+    -- Graph-node grain (migration 20260809041642). Nullable: a reflex decision
+    -- leaves all four NULL and every pre-existing query still matches it.
+    run_id         TEXT,
+    node_id        TEXT,
+    node_type      TEXT,
+    edge_condition TEXT
 );
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,

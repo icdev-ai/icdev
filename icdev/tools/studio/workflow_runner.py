@@ -138,7 +138,17 @@ _AGENT_STEP_FLAGS = (
     ("max_tokens", "--max-tokens"),
     ("effort", "--effort"),
     ("approval_mode", "--approval-mode"),
+    # hgx-gov-01: the gate subset this node runs its prompt/output through. A
+    # step naming none is ungoverned, exactly as agent nodes have always run —
+    # and a profile can only NARROW the screening/grounding gates, never the
+    # egress mask or the audit row (governance.MANDATORY_GATES), so this is safe
+    # to author in a template even though templates are authored content.
+    ("governance_profile", "--governance-profile"),
 )
+# Deliberately NOT here: the executor's --caller-il / --caller-roles. A template
+# is authored content, so letting a step declare its own impact level would let
+# it raise itself past AGENT-WF-001's per-tool limits. The caller comes from the
+# run's context (run memory's `caller` key, then the environment) instead.
 
 
 # ── DAG helpers ────────────────────────────────────────────

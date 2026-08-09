@@ -48,8 +48,12 @@ def _load_registry() -> List[Dict[str, Any]]:
         return []
 
 
-def _rls_violations() -> set:
-    """Return set of canvas keys that have canvas_rls_bypass violations."""
+def rls_violation_keys() -> set:
+    """Return set of canvas keys that have canvas_rls_bypass violations.
+
+    Public so other surfaces (the IDP component-facts IQE adapter) score the
+    same keys this dashboard shows, rather than re-deriving the mapping.
+    """
     try:
         from tools.workflow.coherence_checker import check_canvas_rls_bypass
         result = check_canvas_rls_bypass()
@@ -62,6 +66,10 @@ def _rls_violations() -> set:
         return keys
     except Exception:
         return set()
+
+
+# Back-compat alias for the original private name.
+_rls_violations = rls_violation_keys
 
 
 def get_canvas_health() -> List[Dict[str, Any]]:

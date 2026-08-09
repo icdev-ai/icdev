@@ -788,6 +788,42 @@ def check_fixture_schema(changed_files: Optional[List[Path]] = None) -> Coherenc
 # ---------------------------------------------------------------------------
 
 
+_MD_SEPARATOR_RE = re.compile(r"^\|[\s:\-|]+\|$")
+
+
+def _duplicate_manifest_rows(shard: Path) -> List[str]:
+    """Byte-identical duplicate data rows in a manifest shard.
+
+    `tools/manifest*` is merged with `merge=union` (see `.gitattributes`,
+    kax-conflict-03) so two branches can append a row to the same table without
+    a human resolving a conflict. Union takes the superset, which leaves an
+    exact duplicate behind whenever both sides added the same row — the one
+    failure mode the strategy introduces, so it is reported rather than trusted.
+    Header rows repeat legitimately (a shard may hold several tables) and are
+    identified by the separator row that follows them.
+    """
+    lines = _read_text(shard).splitlines()
+    seen: Dict[str, int] = {}
+    dupes: List[str] = []
+    for i, line in enumerate(lines):
+        row = line.strip()
+        if not (row.startswith("|") and row.endswith("|")):
+            continue
+        if _MD_SEPARATOR_RE.match(row):
+            continue
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        if _MD_SEPARATOR_RE.match(nxt):  # header row
+            continue
+        if row in seen:
+            first_cell = row.strip("|").split("|")[0].strip()[:60]
+            dupes.append(
+                f"{shard.name}:{i + 1} duplicate of line {seen[row]}: {first_cell}"
+            )
+        else:
+            seen[row] = i + 1
+    return dupes
+
+
 def check_manifest() -> CoherenceCheck:
     """Verify tool Python files are documented in tools/manifest.md."""
     manifest_path = PROJECT_ROOT / "tools" / "manifest.md"
@@ -807,9 +843,12 @@ def check_manifest() -> CoherenceCheck:
     # Manifest was split into shards (2026-04-14). Concatenate shards so tool
     # filename lookups span the whole documented surface, not just the index.
     shard_dir = PROJECT_ROOT / "tools" / "manifest"
+    duplicate_rows: List[str] = []
     if shard_dir.is_dir():
-        for shard in shard_dir.glob("*.md"):
+        for shard in sorted(shard_dir.glob("*.md")):
             manifest_text += "\n" + _read_text(shard).lower()
+            duplicate_rows.extend(_duplicate_manifest_rows(shard))
+    duplicate_rows.extend(_duplicate_manifest_rows(manifest_path))
 
     # Find tool directories with Python files
     config = _load_config()
@@ -834,23 +873,41 @@ def check_manifest() -> CoherenceCheck:
         if py.stem.lower() not in manifest_text:
             undocumented.append(str(rel))
 
-    if undocumented and len(undocumented) < checked * 0.5:  # Only flag if < 50% missing
+    # Only flag undocumented tools if < 50% missing (a larger gap means the
+    # scan, not the manifest, is wrong).
+    flag_undocumented = bool(undocumented) and len(undocumented) < checked * 0.5
+
+    if flag_undocumented or duplicate_rows:
+        parts = []
+        if flag_undocumented:
+            parts.append(f"{len(undocumented)} tool(s) not found in manifest.md")
+        if duplicate_rows:
+            parts.append(
+                f"{len(duplicate_rows)} duplicate manifest row(s) "
+                "(union-merge residue — delete the repeat)"
+            )
         return CoherenceCheck(
             check_id="manifest",
             check_name="Manifest Coherence",
             status="warn",
-            expected=[f"All {checked} tools documented in manifest"],
-            actual=[f"{len(undocumented)} undocumented"],
-            missing=undocumented[:20],  # Cap output
-            extra=[],
-            message=f"{len(undocumented)} tool(s) not found in manifest.md",
+            expected=[
+                f"All {checked} tools documented in manifest",
+                "No duplicate manifest rows",
+            ],
+            actual=[
+                f"{len(undocumented) if flag_undocumented else 0} undocumented",
+                f"{len(duplicate_rows)} duplicate rows",
+            ],
+            missing=undocumented[:20] if flag_undocumented else [],  # Cap output
+            extra=duplicate_rows[:20],
+            message="; ".join(parts),
         )
 
     return CoherenceCheck(
         check_id="manifest",
         check_name="Manifest Coherence",
         status="pass",
-        expected=["Tool files documented in manifest"],
+        expected=["Tool files documented in manifest", "No duplicate manifest rows"],
         actual=[f"Checked {checked} files"],
         missing=[],
         extra=[],
@@ -7999,7 +8056,15 @@ def _autofix_append_only(check: CoherenceCheck) -> List[str]:
 
 
 def _autofix_manifest(check: CoherenceCheck) -> List[str]:
-    """Auto-append missing tools to tools/manifest.md."""
+    """Auto-append missing tools to tools/manifest.md.
+
+    Re-reads the manifest surface immediately before writing rather than
+    trusting `check.missing`, which was computed earlier: `tools/manifest*` is
+    merged with `merge=union` (kax-conflict-03), so a row another branch added
+    can arrive between the scan and the fix. Appending it again produced the
+    two duplicated "Auto-Registered (Coherence Fix)" sections this guard now
+    reports.
+    """
     missing = check.missing
     if not missing:
         return []
@@ -8008,22 +8073,37 @@ def _autofix_manifest(check: CoherenceCheck) -> List[str]:
     if not manifest_path.exists():
         return []
 
+    documented = _read_text(manifest_path).lower()
+    shard_dir = PROJECT_ROOT / "tools" / "manifest"
+    if shard_dir.is_dir():
+        for shard in shard_dir.glob("*.md"):
+            documented += "\n" + _read_text(shard).lower()
+
     lines = []
+    skipped = 0
     for tool_path in missing:
         p = Path(tool_path)
+        if p.stem.lower() in documented:
+            skipped += 1  # landed from another branch since the scan
+            continue
         name = p.stem.replace("_", " ").title()
         desc = f"Auto-registered: {p.parent.name}/{p.name}"
         lines.append(f"| {name} | {tool_path} | {desc} | --json | JSON |")
 
-    if lines:
-        with open(manifest_path, "a", encoding="utf-8") as f:
-            f.write("\n\n## Auto-Registered (Coherence Fix)\n")
-            f.write("| Tool | File | Description | Input | Output |\n")
-            f.write("|------|------|-------------|-------|--------|\n")
-            for line in lines:
-                f.write(line + "\n")
+    if not lines:
+        return [f"No manifest rows appended ({skipped} already documented)"]
 
-    return [f"Appended {len(lines)} tools to manifest.md"]
+    with open(manifest_path, "a", encoding="utf-8") as f:
+        f.write("\n\n## Auto-Registered (Coherence Fix)\n")
+        f.write("| Tool | File | Description | Input | Output |\n")
+        f.write("|------|------|-------------|-------|--------|\n")
+        for line in lines:
+            f.write(line + "\n")
+
+    note = f"Appended {len(lines)} tools to manifest.md"
+    if skipped:
+        note += f" ({skipped} already documented, skipped)"
+    return [note]
 
 
 _AUTOFIX_HANDLERS: Dict[str, Any] = {

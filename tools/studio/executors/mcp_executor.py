@@ -171,14 +171,18 @@ def _candidate_gate_paths() -> list[Path]:
     return paths
 
 
-def _parse_policy(path: Path) -> dict | None:
-    """Return the policy section of ``path``, or None if absent/unreadable.
+def _parse_policy(path: Path, key: str = GATE_POLICY_KEY) -> dict | None:
+    """Return the ``key`` policy section of ``path``, or None if absent/unreadable.
 
     None means "keep looking" — several gate files exist in a checkout and only
     the authoritative one declares this section. Never returns a policy that is
     not default-deny: an edited ``default`` raises rather than being ignored,
     because silently enforcing a stricter rule than the file states hides the
     edit from whoever made it.
+
+    ``key`` is a parameter because the agent surface (hgx-agent-02) declares its
+    own default-deny section, ``agent_workflow_tools``, in the same file and is
+    loaded by the same fail-closed reader rather than by a second one.
     """
     try:
         import yaml  # noqa: PLC0415
@@ -189,14 +193,14 @@ def _parse_policy(path: Path) -> dict | None:
     except (OSError, ValueError, yaml.YAMLError):
         return None
 
-    policy = data.get(GATE_POLICY_KEY) if isinstance(data, dict) else None
+    policy = data.get(key) if isinstance(data, dict) else None
     if not isinstance(policy, dict):
         return None
 
     default = str(policy.get("default", "")).strip().lower()
     if default != "deny":
         raise MCPWorkflowGateError(
-            f"'{GATE_POLICY_KEY}.default' is {default or '(unset)'!r} in {path}, "
+            f"'{key}.default' is {default or '(unset)'!r} in {path}, "
             f"expected 'deny'. This executor implements a default-deny allowlist "
             f"only and will not guess what the edited policy permits.",
             reason="gate_policy_unavailable",
@@ -204,31 +208,37 @@ def _parse_policy(path: Path) -> dict | None:
     return policy
 
 
-def load_gate_policy(path: str | Path | None = None, *, refresh: bool = False) -> dict:
-    """Return the ``mcp_workflow_tools`` policy.
+def load_gate_policy(
+    path: str | Path | None = None, *, refresh: bool = False, key: str = GATE_POLICY_KEY
+) -> dict:
+    """Return the ``mcp_workflow_tools`` policy (or another default-deny section).
 
     Args:
         path: Read this gate file instead of probing for one.
         refresh: Bypass the cache and re-read from disk.
+        key: Top-level section to read. Defaults to :data:`GATE_POLICY_KEY`; the
+            agent surface passes ``agent_workflow_tools``.
 
     Raises:
         MCPWorkflowGateError: if no readable default-deny policy is found. The
             gate is fail-closed: without a policy nothing dispatches.
     """
     candidates = [Path(path)] if path else _candidate_gate_paths()
-    cache_key = str(candidates[0]) if path else GATE_POLICY_KEY
+    # Keyed by section as well as path: two sections of the same file are two
+    # policies, and caching them under one key would serve the wrong allowlist.
+    cache_key = f"{key}@{candidates[0]}" if path else key
     if not refresh and cache_key in _POLICY_CACHE:
         return _POLICY_CACHE[cache_key]
 
     for candidate in candidates:
-        policy = _parse_policy(candidate)
+        policy = _parse_policy(candidate, key)
         if policy is not None:
             policy = {**policy, "_source": str(candidate)}
             _POLICY_CACHE[cache_key] = policy
             return policy
 
     raise MCPWorkflowGateError(
-        f"Cannot enforce the MCP workflow allowlist: no '{GATE_POLICY_KEY}' "
+        f"Cannot enforce the workflow tool allowlist: no '{key}' "
         f"section found in any {GATES_FILENAME} (looked in "
         f"{', '.join(str(p.parent) for p in candidates[:4])}), or PyYAML is not "
         f"installed. Refusing to dispatch — the gate is fail-closed.",
@@ -329,9 +339,15 @@ APPROVAL_WAIT_ENV = "ICDEV_MCP_APPROVAL_WAIT"
 _DECIDED = ("approved", "rejected")
 
 
-def approval_step_id(tool: str) -> str:
-    """Step id of ``tool``'s gate within a run. Stable, so a resume re-attaches."""
-    return f"{APPROVAL_STEP_PREFIX}{tool}"
+def approval_step_id(tool: str, *, prefix: str = APPROVAL_STEP_PREFIX) -> str:
+    """Step id of ``tool``'s gate within a run. Stable, so a resume re-attaches.
+
+    ``prefix`` namespaces the gate by surface. The agent surface passes its own
+    (``approval:agent:``) so that approving ``run_command`` for a reviewed mcp
+    step cannot also authorize an agent loop to run whatever it likes — the two
+    are different questions and must be two gates even in the same run.
+    """
+    return f"{prefix}{tool}"
 
 
 def approval_wait_seconds(policy: dict | None = None) -> float:
@@ -394,16 +410,28 @@ def _set_run_status(run_id: str, status: str) -> None:
         pass
 
 
-def open_approval_gate(run_id: str, tool: str) -> dict:
+def open_approval_gate(
+    run_id: str,
+    tool: str,
+    *,
+    prefix: str = APPROVAL_STEP_PREFIX,
+    label: str = "Approve MCP tool",
+) -> dict:
     """Return ``tool``'s gate in ``run_id``, creating a pending one if absent.
 
     Find-or-create, not create: a run resumed after a restart, or a tool
     dispatched twice, must re-attach to the gate an approver has already been
     shown rather than silently opening a second one beside it.
+
+    Args:
+        prefix: Gate-id namespace (see :func:`approval_step_id`).
+        label: What the approver reads in the pending-approvals list. Names the
+            surface, because "approve write_file" means something different for
+            an authored step than for a loop that chose it.
     """
     import uuid  # noqa: PLC0415
 
-    step_id = approval_step_id(tool)
+    step_id = approval_step_id(tool, prefix=prefix)
     conn = _gate_connection()
     try:
         existing = _read_gate(conn, run_id, step_id)
@@ -419,7 +447,7 @@ def open_approval_gate(run_id: str, tool: str) -> dict:
                 step_run_id,
                 run_id,
                 step_id,
-                f"Approve MCP tool: {tool}",
+                f"{label}: {tool}",
                 _utcnow(),
             ),
         )
@@ -470,18 +498,30 @@ def await_approval(
     wait_seconds: float | None = None,
     poll_seconds: float = APPROVAL_POLL_SECONDS,
     policy: dict | None = None,
+    prefix: str = APPROVAL_STEP_PREFIX,
+    label: str = "Approve MCP tool",
+    surface: str = "MCP tool",
+    policy_key: str = GATE_POLICY_KEY,
 ) -> dict:
     """Block dispatch of ``tool`` until a human approves its gate in ``run_id``.
 
     Returns the approval record on approval. Raises on rejection, on expiry,
     and when there is no run to park a gate on — the gate is fail-closed in
     every direction, including an unreachable gate store.
+
+    Args:
+        prefix / label: Gate namespace and approver-facing name (see
+            :func:`open_approval_gate`).
+        surface / policy_key: What the refusal messages call this tool and the
+            policy section they point the reader at. The agent surface reuses
+            this whole function rather than growing a parallel approval path;
+            only the wording and the gate namespace differ.
     """
-    step_id = approval_step_id(tool)
+    step_id = approval_step_id(tool, prefix=prefix)
     if not run_id:
         raise MCPWorkflowGateError(
-            f"MCP tool '{tool}' is state-changing and dispatches only behind an "
-            f"approved human gate ({GATE_POLICY_KEY}.requires_approval), but "
+            f"{surface} '{tool}' is state-changing and dispatches only behind an "
+            f"approved human gate ({policy_key}.requires_approval), but "
             f"this dispatch has no run to park one on (no --run-id / "
             f"ICDEV_RUN_ID). Run it as a workflow step so an approver can see "
             f"and decide the gate. Refusing — the gate is fail-closed.",
@@ -490,10 +530,10 @@ def await_approval(
         )
 
     try:
-        gate = open_approval_gate(run_id, tool)
+        gate = open_approval_gate(run_id, tool, prefix=prefix, label=label)
     except Exception as exc:  # noqa: BLE001
         raise MCPWorkflowGateError(
-            f"MCP tool '{tool}' requires a human gate, but the gate store is "
+            f"{surface} '{tool}' requires a human gate, but the gate store is "
             f"unreachable ({type(exc).__name__}: {exc}). Refusing to dispatch "
             f"an unapproved state-changing tool — the gate is fail-closed.",
             tool=tool,
@@ -522,7 +562,7 @@ def await_approval(
 
     if status == "rejected":
         raise MCPWorkflowGateError(
-            f"MCP tool '{tool}' was refused by its human gate: "
+            f"{surface} '{tool}' was refused by its human gate: "
             f"{reason or '(no reason given)'}. The step is denied, not failed — "
             f"re-running it will re-read this decision.",
             tool=tool,
@@ -531,7 +571,7 @@ def await_approval(
         )
 
     raise MCPWorkflowGateError(
-        f"MCP tool '{tool}' is waiting on human approval and nobody decided its "
+        f"{surface} '{tool}' is waiting on human approval and nobody decided its "
         f"gate in time. The gate stays parked as step_run_id "
         f"'{step_run_id}' — approve or reject it (workflow Details modal, or "
         f"workflow_runner.approve_step/reject_step) and resume the run; the "

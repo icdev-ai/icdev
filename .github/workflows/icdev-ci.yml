@@ -134,6 +134,26 @@ jobs:
         # invisible by construction: nothing fails, a log just stops. ~1s, pure
         # Python, no DB service/LLM/network (kax-obs-01).
         #
+        # test_executor_parity.py earns a slot for its two NON-GOAL guards. The
+        # parity benchmark exists to inform a later human decision about the
+        # executor chain; the criterion that it must not MAKE that decision is
+        # exactly the kind that erodes silently, because reordering
+        # args/strategos_config.yaml's fallback_chain or defaulting
+        # KANBAN_RUBRIC_LOOP on breaks no test that anyone runs. It also pins the
+        # changed-file computation the whole benchmark rests on -- a commit-range
+        # diff there reports an empty set, which makes every scoped delivery gate
+        # vacuously green. Fakes only: no LLM, no network, no DB service; the git
+        # work runs against a throwaway repo in tmp_path. ~15s (hgx-exec-04).
+        #
+        # test_ollama_tool_use.py earns a slot because the regression it pins is
+        # silent by construction. The provider parsed tool_calls back but never
+        # sent `tools`, so no model could emit one; and because llm_config
+        # declares supports_tools: true, the agent loop did not raise
+        # AgentLoopUnsupported either -- it got prose on turn 1 and recorded
+        # done=True. A completed agent run and a model answering in prose are
+        # the same object, which is how this survived to be found by a
+        # benchmark rather than a test. ~0.5s, payload asserted directly, no
+        # network (hgx-exec-04).
         # test_rubric_build_tools.py and test_toolset_portability.py run HERE as
         # well as in the windows-latest job, and the pairing is the point. Their
         # claims -- "one logical edit is one changed line in git", "the build
@@ -183,6 +203,8 @@ jobs:
             tests/kanban/test_reverify_roundtrip.py \
             tests/kanban/test_one_task_one_pr.py \
             tests/kanban/test_cli_reverify.py \
+            tests/kanban/test_cli_done_gate.py \
+            tests/kanban/test_cli_merge_landing.py \
             tests/test_verifier_contract.py \
             tests/test_dic_chat_memory_schema.py \
             tests/test_dic_chat_surfaces_send_session_id.py \
@@ -206,9 +228,13 @@ jobs:
             tests/test_memory_tier_measure.py \
             tests/test_notification_worthiness.py \
             tests/test_kanban_throughput_stall.py \
+            tests/test_kanban_startup_recovery.py \
+            tests/test_failure_triage_recency.py \
             tests/test_localai_provider.py \
             tests/studio/test_workflow_parallel.py \
             tests/studio/test_workflow_conditional.py \
+            tests/studio/test_agent_tool_gate.py \
+            tests/test_dwo_agent_allowlist.py \
             tests/browser/test_backend.py \
             tests/browser/test_driver_manager_airgap.py \
             tests/browser/test_driver_staleness.py \
@@ -239,6 +265,8 @@ jobs:
             tests/test_sbom_conformance_gate.py \
             tests/test_pr_watcher_heartbeat.py \
             tests/test_local_agent_adapter.py \
+            tests/genesis/test_executor_parity.py \
+            tests/llm/test_ollama_tool_use.py \
             tests/genesis/test_rubric_build_tools.py \
             tests/test_toolset_portability.py \
             tests/test_pytest_timeout_declared.py \
