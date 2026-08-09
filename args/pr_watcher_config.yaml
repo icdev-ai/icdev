@@ -11,6 +11,21 @@ max_resume_cycles_per_task: 5
 auto_merge_enabled: true
 auto_merge_require_approval: false
 
+# Take a GREEN PR out of draft so auto-merge can actually run.
+#
+# Without this the pipeline is autonomous right up to the last step and then
+# stops: a dispatched session opens its PR as a draft, CI goes green, and
+# `gh pr merge` is refused with "Pull Request is still a draft" on every cycle
+# thereafter. Nothing in the loop could clear it, so finished work piled up
+# waiting for a human to click a button — 5 of 10 open PRs on 2026-08-09.
+#
+# This is NOT a way around a human hold. Un-drafting is refused for a manual
+# gate row, and for any task whose `depends_on_task_id` is unsatisfied — which
+# is how a MANUAL-ONLY card (e.g. AGOV) expresses "a human decides when this
+# ships". For those the draft IS the brake, and it stays on. Set false to
+# require a human on every PR regardless.
+auto_ready_draft_prs: true
+
 # Truncate CI log excerpts before injecting as resume context
 ci_log_max_chars: 4000
 

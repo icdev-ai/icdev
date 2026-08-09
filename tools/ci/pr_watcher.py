@@ -174,6 +174,37 @@ def _is_gate_task(conn, task_id: str) -> bool:
     return bool(is_manual_gate(task_id, title))
 
 
+def _held_by_a_gate(conn, task_id: str) -> bool:
+    """True when this task's own dependency is not satisfied.
+
+    This is the predicate that keeps auto-ready honest. A MANUAL-ONLY card (AGOV)
+    expresses "a human decides when this ships" by holding a gate row that every
+    task depends on — `depends_on_task_id`, which is what
+    promote_backlog_to_scheduled actually checks, not the held row alone. So a
+    task whose dependency is unsatisfied must keep its draft: the draft is that
+    card's brake, and taking it off would ship work a human deliberately held.
+
+    Errs toward HELD. A lookup that fails answers True, because the cost of a
+    false "held" is one PR a human marks ready, and the cost of a false "free"
+    is auto-merging gated work.
+    """
+    try:
+        row = conn.execute(
+            "SELECT d.status AS dep_status "
+            "FROM kanban_tasks t "
+            "LEFT JOIN kanban_tasks d ON d.id = t.depends_on_task_id "
+            "WHERE t.id = %s AND t.depends_on_task_id IS NOT NULL",
+            (task_id,),
+        ).fetchone()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pr_watcher: dependency lookup failed for %s: %s", task_id, exc)
+        return True
+    if row is None:
+        return False  # no dependency declared — nothing holding it
+    data = dict(row) if not isinstance(row, dict) else row
+    return (data.get("dep_status") or "") not in ("done", "decomposed")
+
+
 def _record_gate_refusal(conn, task_id: str, reason: str) -> None:
     """Append-only audit row for a refused gate completion. Best-effort."""
     try:
@@ -506,8 +537,13 @@ def _is_additive_path(path: str) -> bool:
     return any(marker in p for marker in _ADDITIVE_PATH_MARKERS)
 
 
+#: `isDraft` is not cosmetic. GitHub refuses `gh pr merge` on a draft with
+#: "Pull Request is still a draft", and without this field the watcher could not
+#: SEE that — so it re-attempted the same refused merge every cycle, forever.
+#: Five of ten open PRs on 2026-08-09 were green drafts sitting untouched for
+#: exactly that reason, each waiting on a human to click "Ready for review".
 _GH_JSON_FIELDS = (
-    "state,statusCheckRollup,reviews,mergeable,"
+    "state,statusCheckRollup,reviews,mergeable,isDraft,"
     "headRefName,baseRefName,updatedAt,number,url"
 )
 
@@ -854,6 +890,61 @@ class PRWatcher:
             task_id, verdict.get("result"), str(verdict.get("reason"))[:120],
         )
         return bool(verdict.get("written"))
+
+    def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
+        """Take a green PR out of draft so the merge below can actually run.
+
+        The pipeline is autonomous up to this exact point and then stops: a
+        dispatched session opens its PR as a draft, CI goes green, and
+        `gh pr merge` is refused with "Pull Request is still a draft" on every
+        subsequent cycle. Nothing in the loop could clear that, so finished work
+        accumulated until a human clicked a button — 5 of 10 open PRs on
+        2026-08-09, and the same jam twice before that.
+
+        Two things must remain true after this, and both are checked by the
+        caller, not assumed here: the task is not a gate sentinel, and its
+        dependency is satisfied. A held card keeps its draft, because for a
+        MANUAL-ONLY card the draft IS the brake.
+        """
+        if self.dry_run:
+            return True
+        if not self.config.get("auto_ready_draft_prs", True):
+            logger.info("pr_watcher: %s is a draft and auto_ready_draft_prs is "
+                        "off — leaving it for a human", pr_url)
+            return False
+        try:
+            conn = get_conn()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pr_watcher: cannot check gates for %s: %s", task_id, exc)
+            return False
+        try:
+            if _is_gate_task(conn, task_id):
+                logger.warning("pr_watcher: REFUSING to un-draft manual gate %s", task_id)
+                return False
+            if _held_by_a_gate(conn, task_id):
+                logger.info("pr_watcher: %s is held by an unsatisfied dependency — "
+                            "its draft stays", task_id)
+                return False
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            proc = self._auto_merge_runner(
+                ["gh", "pr", "ready", pr_url],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=60,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pr_watcher: gh pr ready failed for %s: %s", pr_url, exc)
+            return False
+        if proc.returncode != 0:
+            logger.warning("pr_watcher: gh pr ready refused %s: %s",
+                           pr_url, (proc.stderr or "")[:200])
+            return False
+        logger.info("pr_watcher: marked %s ready for review (task %s)", pr_url, task_id)
+        return True
 
     def _auto_merge(self, pr_url: str) -> bool:
         if self.dry_run:
@@ -1377,6 +1468,17 @@ class PRWatcher:
                         not require_approval
                         or ec.is_approved_and_passing(state)
                     )
+                    # A draft cannot be merged, only refused — so clear it here,
+                    # AFTER every other gate has passed (green CI, no sibling
+                    # conflict, approval satisfied). Ordering is the safety
+                    # property: un-drafting is visible and hard to walk back, so
+                    # it must never happen for a PR that was not about to merge
+                    # anyway. _mark_ready refuses for a gate task or a held
+                    # dependency; if it declines, fall through to the same "wait"
+                    # branch a blocked merge takes.
+                    if approved_ok and state.get("isDraft"):
+                        approved_ok = self._mark_ready(
+                            pr_url, task["id"], self._connection())
                     if approved_ok and self._auto_merge(pr_url):
                         action = WatcherAction(
                             task_id=task["id"], pr_url=pr_url,

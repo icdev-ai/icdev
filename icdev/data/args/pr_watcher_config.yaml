@@ -11,12 +11,72 @@ max_resume_cycles_per_task: 5
 auto_merge_enabled: true
 auto_merge_require_approval: false
 
+# Take a GREEN PR out of draft so auto-merge can actually run.
+#
+# Without this the pipeline is autonomous right up to the last step and then
+# stops: a dispatched session opens its PR as a draft, CI goes green, and
+# `gh pr merge` is refused with "Pull Request is still a draft" on every cycle
+# thereafter. Nothing in the loop could clear it, so finished work piled up
+# waiting for a human to click a button — 5 of 10 open PRs on 2026-08-09.
+#
+# This is NOT a way around a human hold. Un-drafting is refused for a manual
+# gate row, and for any task whose `depends_on_task_id` is unsatisfied — which
+# is how a MANUAL-ONLY card (e.g. AGOV) expresses "a human decides when this
+# ships". For those the draft IS the brake, and it stays on. Set false to
+# require a human on every PR regardless.
+auto_ready_draft_prs: true
+
 # Truncate CI log excerpts before injecting as resume context
 ci_log_max_chars: 4000
+
+# Auto-rebase a DIRTY PR before spending a resume (kax-conflict-01).
+# A branch that has merely drifted behind main goes DIRTY, and today that is a
+# resume class: the PR burns all max_resume_cycles_per_task LLM resumes on a
+# conflict a plain `git rebase origin/main` would have cleared, then lands in a
+# permanent human queue. When enabled, the watcher rebases the branch in an
+# isolated scratch worktree and force-with-lease-pushes it — but ONLY when the
+# rebase applies cleanly and ONLY for kanban/<task-id> (or its -rN retry
+# sibling). A rebase with real conflicts aborts, pushes nothing, and escalates
+# exactly as before. Rebase attempts are counted separately from resumes, so
+# this never eats into the resume budget.
+auto_rebase_on_conflict: true
+max_rebase_attempts_per_task: 2
 
 # Sibling-file-conflict guard (kph): before auto-merging a PR, fetch every open
 # PR's changed files and flag when the candidate races another open PR on the same
 # SOURCE file (union-merged coordination files are excluded). Warn + audit always;
 # set hold_on_sibling_conflict to also serialize the merge (wait) instead of racing.
+#
+# MEASURED 2026-08-08, which is why hold is now ON. The `sbx` card had 12 sibling
+# PRs open at once (#1351 #1352 #1354 #1355 #1357 #1359 #1361 #1362 #1364 #1365
+# #1367 and the since-closed #1350), every one of them editing the same four
+# files: tools/compliance/sbom_generator.py, the 2026 gap-analysis doc,
+# docs/security/sandbox-coverage.md and docs/reference/commands.md. With hold
+# OFF the watcher merged whichever won the race and left the other eleven DIRTY;
+# each then burned its whole resume budget on the conflict, and a dry poll that
+# day reported `merge_conflict` + "resume cap reached (5/5) - manual intervention
+# required" for every one of them. That is the entire AWAITING MERGE backlog, and
+# no auto_merge_enabled setting could have prevented it: a CONFLICTING branch is
+# unmergeable by construction.
+#
+# Serializing costs one poll interval per queued sibling (30s). Racing costs a
+# rebase, a CI cycle and up to five LLM resumes per loser. auto_rebase_on_conflict
+# below is the repair path; this is the prevention, and prevention is cheaper.
 sibling_conflict_check: true
-hold_on_sibling_conflict: false
+hold_on_sibling_conflict: true
+
+# Bounded self-heal of a stale done-gate block (kpr-rvfy-03).
+# The enforced done-gate reads only the LATEST kanban_verifications row, and
+# nothing writes one except a dispatch — so a green PR whose verification went
+# stale waits forever, then ages into is_stale -> FAILED and gets re-dispatched,
+# which opens a SECOND PR instead of merging the first.
+# When the gate holds, re-verify ONCE from git state and re-check.
+reverify_on_hold: true
+reverify_max_attempts_per_task: 1
+
+# Whether to also re-verify a task that has NO verification row at all.
+# OFF by default and it should stay off: such a task has never been judged, so
+# writing a passing verdict from git state would merge a PR that no conformance
+# review ever saw — the exact thing the enforced gate exists to prevent.
+# A conformance failure (review_passed=0) is NEVER refreshed, regardless.
+reverify_when_missing: false
