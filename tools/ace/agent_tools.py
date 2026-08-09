@@ -11,6 +11,8 @@ no new execution paths are introduced:
 - ``run_tool``   → :class:`icdev.tools.ace.tool_runner.ToolRunner.run`
 - ``done``       → sentinel that terminates the agent loop
 - ``list_files`` → scoped directory listing (read-only)
+- ``list_skills``/``load_skill`` → :mod:`tools.agent_runtime.skill_tools`
+  (read-only; progressive disclosure of the ``.agents/skills`` library)
 
 Handlers receive ``(input_dict, stop_event)`` and return a string result, matching
 the :data:`icdev.tools.llm.agent_loop.ToolHandler` contract. Exceptions are left
@@ -30,6 +32,8 @@ import threading
 from typing import Any, Callable
 
 from icdev.tools.llm.agent_loop import DONE, AgentLoopUnsupported, run_agent_loop
+from tools.agent_runtime.skill_tools import HANDLERS as _SKILL_HANDLERS
+from tools.agent_runtime.skill_tools import SCHEMAS as _SKILL_SCHEMAS
 from tools.logging.icdev_logger import get_logger
 
 # Module-level LLMRouter reference so _spawn_agent can be monkeypatched in tests.
@@ -495,6 +499,13 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    # -- Skills (hgx-sess-02) ----------------------------------------------
+    # Shared verbatim with the SAG built-in toolset — one implementation in
+    # tools/agent_runtime/skill_tools.py backs both surfaces, so a co-worker and
+    # a standalone agent see the same skill library described the same way.
+    # Read-only and repo-scoped: neither tool touches folder_access, because
+    # .agents/skills is first-party procedure text, not co-worker workspace.
+    **_SKILL_SCHEMAS,
 }
 
 
@@ -597,6 +608,9 @@ class AgentToolRegistry:
             return self._post_result
         if name == "read_result":
             return self._read_result
+        skill_handler = _SKILL_HANDLERS.get(name)
+        if skill_handler is not None:
+            return skill_handler
         return None
 
     # ------------------------------------------------------------------

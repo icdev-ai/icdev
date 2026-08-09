@@ -7,6 +7,14 @@ before dynamic tool auto-discovery lands in sag-reg-01:
 - ``read_file``    — read a UTF-8 text file under the repo root (read-only).
 - ``search_files`` — ripgrep-style content search under the repo root (read-only).
 - ``health_check`` — run the platform health check (read-only).
+- ``list_skills``  — name + description of every indexed skill (read-only).
+- ``load_skill``   — one named skill's full instructions (read-only).
+
+The two skill tools come from ``tools.agent_runtime.skill_tools`` and are folded
+in here rather than defined here, because ACE's own registry offers the same pair
+and one implementation should back both. They are a matched pair on purpose: the
+listing is cheap and body-size independent, so it can always be offered, and a
+body is only paid for once the agent has picked one — progressive disclosure.
 
 The loop terminates naturally on ``end_turn`` (the model answers with no further
 tool calls), which is the correct completion path for an interactive Q&A/coding
@@ -24,6 +32,8 @@ import re
 import threading
 from pathlib import Path
 from typing import Any, Callable
+
+from tools.agent_runtime import skill_tools
 
 ToolHandler = Callable[[dict[str, Any], "threading.Event | None"], str]
 
@@ -136,6 +146,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    **skill_tools.SCHEMAS,
 }
 
 
@@ -230,6 +241,7 @@ _HANDLERS: dict[str, ToolHandler] = {
     "read_file": _handle_read_file,
     "search_files": _handle_search_files,
     "health_check": _handle_health_check,
+    **skill_tools.HANDLERS,
 }
 
 
