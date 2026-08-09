@@ -125,6 +125,7 @@ REASON_EMPTY_STATEMENT = "empty-statement"
 REASON_REDIRECT_TARGET = "redirect-without-target"
 REASON_UNSUPPORTED_REDIRECT = "unsupported-redirect"
 REASON_WRAPPER_OPTION = "unknown-wrapper-option"
+REASON_WRAPPER_SPLITS = "wrapper-splits-command"
 REASON_ASSIGNMENT_ONLY = "assignment-only"
 REASON_WRAPPER_DEPTH = "wrapper-depth-exceeded"
 
@@ -185,6 +186,11 @@ class _WrapperSpec:
 
     flags: frozenset = frozenset()
     value_flags: frozenset = frozenset()
+    #: Options that make the wrapper re-split its own argument into a command
+    #: this parser cannot see. Encountering one is a refusal, never a parse:
+    #: `env -S "rm -rf /x"` runs `rm`, and reporting `name="env"` would be a
+    #: confident wrong answer rather than an honest decline.
+    refuse_flags: frozenset = frozenset()
     positionals: int = 0
     takes_assignments: bool = False
 
@@ -213,9 +219,8 @@ WRAPPERS: Mapping[str, _WrapperSpec] = {
     ),
     "env": _WrapperSpec(
         flags=frozenset({"-i", "-0", "--ignore-environment", "--null"}),
-        value_flags=frozenset({
-            "-u", "-C", "-S", "--unset", "--chdir", "--split-string",
-        }),
+        value_flags=frozenset({"-u", "-C", "--unset", "--chdir"}),
+        refuse_flags=frozenset({"-S", "--split-string"}),
         takes_assignments=True,
     ),
     "nohup": _WrapperSpec(),
@@ -602,6 +607,8 @@ def _consume_wrapper(argv: Sequence[str], spec: _WrapperSpec) -> Any:
             break
         if token.startswith("--"):
             long_name, sep, _value = token.partition("=")
+            if long_name in spec.refuse_flags:
+                return REASON_WRAPPER_SPLITS
             if sep:
                 if long_name not in spec.value_flags and long_name not in spec.flags:
                     return REASON_WRAPPER_OPTION
@@ -619,6 +626,8 @@ def _consume_wrapper(argv: Sequence[str], spec: _WrapperSpec) -> Any:
         j = 0
         while j < len(chars):
             flag = "-" + chars[j]
+            if flag in spec.refuse_flags:
+                return REASON_WRAPPER_SPLITS
             if flag in spec.value_flags:
                 i += 1 if j + 1 < len(chars) else 2  # attached value, else next
                 j = len(chars)

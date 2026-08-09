@@ -208,6 +208,17 @@ class TestWrappersAndAssignments:
         assert command_names("timeout 30") == ("timeout",)
         assert only(parse_command("env")).wrappers == ()
 
+    @pytest.mark.parametrize(
+        "command",
+        ['env -S "rm -rf /x"', 'env --split-string="rm -rf /x"'],
+    )
+    def test_a_wrapper_that_resplits_its_argument_refuses(self, command):
+        """`env -S` runs `rm`. Reporting `name="env"` would be a confident wrong
+        answer — the kind of under-detection a rule cannot tell from safety."""
+        parsed = parse_command(command)
+        assert parsed.parsed is False
+        assert parsed.names == ()
+
     def test_an_unknown_wrapper_option_refuses_rather_than_guessing(self):
         """Guessing where sudo's options end can promote an argument to a command."""
         parsed = parse_command("sudo --not-a-real-sudo-flag rm -rf /x")
