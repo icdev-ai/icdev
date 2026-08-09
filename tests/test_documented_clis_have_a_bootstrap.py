@@ -72,7 +72,7 @@ _FIRST_PARTY = re.compile(r"^\s*(?:from|import)\s+(?:tools|icdev)\b")
 
 
 def _first_party_imports_above_bootstrap(path: Path) -> list[str]:
-    lines = path.read_text(encoding="utf-8", newline="").split("\n")
+    lines = open(path, encoding="utf-8", newline="").read().split("\n")
     boot = next((i for i, ln in enumerate(lines) if "sys.path.insert" in ln), None)
     if boot is None:
         return []
@@ -95,7 +95,7 @@ def test_no_first_party_import_above_the_bootstrap(base, rel):
 @pytest.mark.parametrize("rel", GUARDED)
 def test_the_guarded_modules_still_have_a_bootstrap_to_be_above(rel):
     """If the bootstrap is deleted, the check above silently passes forever."""
-    src = (REPO / rel).read_text(encoding="utf-8", newline="")
+    src = open((REPO / rel), encoding="utf-8", newline="").read()
     assert "sys.path.insert" in src, (
         f"{rel} lost its sys.path bootstrap — the import-order test above becomes "
         "vacuous, and the CLI breaks again for a different reason"

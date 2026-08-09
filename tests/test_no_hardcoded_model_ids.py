@@ -172,7 +172,7 @@ def collect_findings() -> dict[str, list[tuple[str, int, str]]]:
             if _is_exempt(rel, exempt):
                 continue
             try:
-                source = path.read_text(encoding="utf-8", newline="")
+                source = open(path, encoding="utf-8", newline="").read()
             except (OSError, UnicodeDecodeError):  # pragma: no cover - defensive
                 continue
             for lineno, model_id in scan_source(source, rel):
@@ -216,7 +216,7 @@ def test_kanban_reflex_has_no_hardcoded_model_ids():
             path = REPO_ROOT / (rel if tree_name == "tools" else f"icdev/{rel}")
             if not path.is_file():
                 continue
-            source = path.read_text(encoding="utf-8", newline="")
+            source = open(path, encoding="utf-8", newline="").read()
             for lineno, model_id in scan_source(source, rel):
                 offenders.append(
                     f"{path.relative_to(REPO_ROOT).as_posix()}:{lineno}: {model_id}"
