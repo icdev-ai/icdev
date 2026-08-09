@@ -168,6 +168,51 @@ governance:
   # grounding gates.)
   skip_grounding_for_plain_complete: true
 
+  # -- Governance profiles (hgx-gov-01) ---------------------------------------
+  # A profile names the SUBSET of the gate chain a caller runs. Studio agent
+  # nodes name one with `governance_profile:`; Cortex callers pass
+  # GovernancePipeline(profile=...) or wrap(..., profile=...).
+  #
+  # Gate vocabulary (tools/cortex/governance.py::GATE_ORDER, in chain order):
+  #   pre_check           injection / PII / rate / cost screen on the prompt
+  #   input_redaction     PII masked out of the prompt before any provider
+  #   operation           the wrapped call itself
+  #   citation_grounding  [source: N] tags validated against injected sources
+  #   content_grounding   semantic claim-vs-context grounding of the output
+  #   output_redaction    PII/secrets masked out of the response  (MANDATORY)
+  #   provenance          registry row + append-only cortex_audit row (MANDATORY)
+  #
+  # NON-NEGOTIABLE: every profile must list operation, output_redaction AND
+  # provenance. output_redaction is the egress guarantee; provenance is the
+  # NIST-AU audit row. A profile that dropped either would turn a latency
+  # optimisation into a compliance hole, so omitting one raises
+  # GovernanceProfileError when the profile is resolved — at load, loudly, once.
+  #
+  # `default` is NOT declared here: it is built into code as the full chain and
+  # is what every caller that names no profile gets, so a missing or unreadable
+  # config can never silently narrow governance. Redefining it here is an error.
+  profiles:
+    # Internal diligence: a node reasoning over first-party data already inside
+    # the tenant boundary, whose output feeds another node rather than a person.
+    # Drops the injection screen (the input is not untrusted user text) and both
+    # grounding gates (there is no evidence set to attest against). Egress
+    # masking and the audit row still run.
+    internal_diligence:
+      gates: [input_redaction, operation, output_redaction, provenance]
+
+    # Free-form generation from UNTRUSTED input: keeps the full input screen
+    # (injection / rate / cost) and drops only the two grounding gates, which
+    # have nothing to attest against when no evidence set is injected. This is
+    # the profile for a node taking user text and drafting from it.
+    screened_generation:
+      gates: [pre_check, input_redaction, operation, output_redaction, provenance]
+
+    # Trusted first-party ingestion (docgen reading a document already inside the
+    # boundary). Mirrors what ctx.trusted_content already does per call, as a
+    # named profile a workflow node can declare.
+    trusted_ingest:
+      gates: [operation, citation_grounding, content_grounding, output_redaction, provenance]
+
   # Content-grounding gate (gate 5) knobs. The gate runs semantic
   # claim-vs-context grounding (tools/quality/content_grounding.ground_content)
   # when a retrieval call injects snippet text, and falls back to the
