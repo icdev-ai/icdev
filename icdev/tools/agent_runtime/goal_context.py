@@ -104,6 +104,15 @@ def _env_flag(name: str, default: bool = True) -> bool:
     return raw.strip().lower() not in ("0", "false", "no", "off")
 
 
+def goals_enabled() -> bool:
+    """False when the operator has turned standing goals off (``ICDEV_SAG_GOALS=0``).
+
+    Public so that other goal surfaces — the chat status payload (hgx-goal-03),
+    say — honour the same kill-switch without each re-spelling the env var.
+    """
+    return _env_flag(ENV_DISABLE)
+
+
 def goal_limit(default: int = DEFAULT_LIMIT) -> int:
     """How many goals to inject: ``ICDEV_SAG_GOAL_LIMIT`` clamped to sane bounds.
 
@@ -376,7 +385,7 @@ def build_for_runtime(
 
     Never raises. ``ICDEV_SAG_GOALS=0`` disables the block entirely.
     """
-    if not _env_flag(ENV_DISABLE):
+    if not goals_enabled():
         return ""
     try:
         return describe(
