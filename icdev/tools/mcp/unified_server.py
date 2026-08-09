@@ -4,7 +4,6 @@ import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent.parent))
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Unified MCP Gateway Server — single entry point for all ICDEV™ tools.
 
@@ -42,6 +41,8 @@ from typing import Any, Callable, Dict
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.mcp.base_server import MCPServer  # noqa: E402
 

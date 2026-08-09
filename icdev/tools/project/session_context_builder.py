@@ -25,7 +25,6 @@ import argparse
 import json
 import sqlite3
 import sys
-from tools.db.storage import get_connection
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +34,8 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Import sibling tools
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 from tools.project.manifest_loader import (  # noqa: E402
     load_manifest,
     _apply_defaults,

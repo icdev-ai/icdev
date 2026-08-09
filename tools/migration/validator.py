@@ -22,13 +22,14 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.migration.validator")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.migration.validator")
 
 _ARTIFACTS_DIR = _ROOT / "data" / "studio_artifacts" / "migration"
 

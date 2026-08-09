@@ -18,7 +18,6 @@ import argparse
 import hashlib
 import json
 import logging
-from tools.logging.icdev_logger import get_logger
 import sys
 import urllib.request
 import urllib.error
@@ -27,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("icdev.geoint")
 

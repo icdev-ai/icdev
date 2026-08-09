@@ -12,7 +12,6 @@ Implements the contract documented in
 clean-room rewrite).
 """
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import json
 import os
@@ -23,16 +22,18 @@ from typing import Optional
 
 import yaml
 
-from tools.testing.data_types import (
-    AgentPromptRequest,
-    AgentPromptResponse,
-    AgentTemplateRequest,
-)
 
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.testing.data_types import (
+    AgentPromptRequest,
+    AgentPromptResponse,
+    AgentTemplateRequest,
+)  # noqa: E402
 
 _module_logger = get_logger(__name__)
 

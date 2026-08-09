@@ -1,5 +1,4 @@
 
-from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -37,7 +36,6 @@ import sqlite3
 import sys
 import time
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -50,6 +48,9 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = get_logger("icdev.mbse.diagram_extractor")
 

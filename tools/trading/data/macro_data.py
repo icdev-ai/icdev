@@ -8,7 +8,6 @@ Falls back to sample data when FRED/yfinance are unavailable.
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import sys
@@ -17,6 +16,8 @@ from pathlib import Path
 
 # ICDEV™ parent path setup
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.trading.data.bond_etf_data import (  # noqa: E402
     classify_bond_etf_regime,

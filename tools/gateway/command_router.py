@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Command Router — Parse, validate, and dispatch ICDEV™ commands.
 
@@ -17,13 +16,15 @@ import subprocess
 import sys
 import time
 import uuid
-from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 from tools.gateway.event_envelope import CommandEnvelope  # noqa: E402
 from tools.gateway.response_filter import (  # noqa: E402

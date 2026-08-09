@@ -29,7 +29,6 @@ import argparse
 import json
 import os
 import sys
-from tools.db.storage import get_connection
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -39,6 +38,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(ICDEV_DB)))

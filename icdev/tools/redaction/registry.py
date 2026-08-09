@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Redaction Registry — conversation-scoped real<->surrogate mapping.
 
@@ -31,6 +30,8 @@ from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402
 

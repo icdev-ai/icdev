@@ -52,7 +52,6 @@ Configuration (env vars or args/datahub_config.yaml)
 
 from __future__ import annotations
 import re
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -69,6 +68,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logger = get_logger("icdev.ddc.datahub")

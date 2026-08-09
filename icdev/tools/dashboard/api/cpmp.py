@@ -21,20 +21,21 @@ import os
 import sys
 import uuid
 from datetime import datetime, timezone
-from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, g, jsonify, make_response, request
 
-from tools.dashboard.auth import require_role
-from tools.dashboard.config import DEFAULT_CLASSIFICATION
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.dashboard.api.cpmp")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
+from tools.dashboard.config import DEFAULT_CLASSIFICATION  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.dashboard.api.cpmp")
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 

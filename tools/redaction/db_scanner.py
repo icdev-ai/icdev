@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Database PII Scanner — scan proposal tables for unprotected sensitive fields.
 
@@ -28,6 +27,8 @@ from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection, table_exists  # noqa: E402
 from tools.redaction.detector import RedactionDetector  # noqa: E402

@@ -7,7 +7,6 @@ back to the log so signal_scout can observe the drift on the next cycle.
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import sys
 from datetime import datetime, timedelta, timezone
@@ -17,6 +16,8 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parents[4]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Semantic layer MCP server for on-demand context delivery (Phase 44 — D277).
 
@@ -13,13 +12,15 @@ Usage:
 
 import sqlite3
 import sys
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = get_logger("icdev.context_server")
 

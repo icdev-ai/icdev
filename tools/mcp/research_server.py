@@ -24,13 +24,14 @@ Runs as MCP server over stdio with Content-Length framing.
 
 import os
 import sys
-from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 from tools.mcp.base_server import MCPServer  # noqa: E402
 
 

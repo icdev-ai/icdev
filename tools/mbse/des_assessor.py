@@ -21,7 +21,6 @@ Categories assessed:
 import argparse
 import json
 import sys
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +34,15 @@ try:
     from audit_logger import log_event as _audit_log_event
 except ImportError:
     _audit_log_event = None
+
+# Launched by path only this file's own directory is on sys.path, so the repo
+# root must be inserted before the first-party imports below can resolve. The
+# sys.path entry above adds a SIBLING package directory, not the root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 
 # -----------------------------------------------------------------

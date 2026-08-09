@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """GovCon-Specific Presidio Recognizers.
 
@@ -28,10 +27,12 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-logger = get_logger("icdev.redaction.govcon_recognizers")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.redaction.govcon_recognizers")
 
 
 def build_govcon_recognizers(govcon_config: Dict[str, Any]) -> list:

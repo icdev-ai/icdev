@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Genesis Ingest Reflex — feed data into knowledge graph.
 
@@ -26,6 +25,8 @@ import xml.etree.ElementTree as ET
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.security.injection_scanner import scan_text  # noqa: E402

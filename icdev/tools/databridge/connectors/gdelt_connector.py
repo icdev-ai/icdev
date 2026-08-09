@@ -28,7 +28,6 @@ Usage (standalone CLI):
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -41,6 +40,8 @@ from urllib.error import HTTPError
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.databridge.connector import (  # noqa: E402
     ConnectorCapabilities,

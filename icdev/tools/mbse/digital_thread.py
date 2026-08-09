@@ -14,7 +14,6 @@ import json
 import re
 import sqlite3
 import sys
-from tools.db.storage import get_connection
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +29,8 @@ except ImportError:
 
     def log_event(**kwargs):
         pass
+
+from tools.db.storage import get_connection  # noqa: E402
 
 
 # Valid artifact types in the digital thread

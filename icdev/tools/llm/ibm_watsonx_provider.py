@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """IBM watsonx.ai LLM Provider (D238).
 
@@ -18,6 +17,8 @@ from typing import Any, Dict, Generator, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse  # noqa: E402
 

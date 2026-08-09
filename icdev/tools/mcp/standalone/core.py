@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Standalone MCP Server -- Core.
 
@@ -14,8 +13,6 @@ import os
 import sys
 from pathlib import Path
 
-logger = get_logger("icdev.mcp.standalone.core")
-
 
 def _resolve_base_dir():
     """Resolve ICDEV™ base directory."""
@@ -24,6 +21,19 @@ def _resolve_base_dir():
         return Path(env_dir)
     # Infer from package location (tools/mcp/standalone/core.py -> 4 levels up)
     return Path(__file__).resolve().parent.parent.parent.parent
+
+
+# Launched by path (``python tools/mcp/standalone/<name>.py``) only this file's
+# own directory is on sys.path, so the first-party import below is unresolvable
+# until the installation root is added. main() re-inserts it for the server's own
+# imports; this earlier insert is what lets THIS module finish importing at all.
+_BASE_DIR = _resolve_base_dir()
+if str(_BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(_BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+
+logger = get_logger("icdev.mcp.standalone.core")
 
 
 def main():

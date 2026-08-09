@@ -10,22 +10,23 @@ import json as _mac_json
 import os
 import sys
 import uuid
-from tools.db.storage import get_connection
-from tools.security.abac_engine import abac_protect
-from tools.dashboard.auth import require_role
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, jsonify, make_response, request
 
-from tools.common.helpers import now_iso
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.dashboard.api.proposals")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+from tools.security.abac_engine import abac_protect  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
+from tools.common.helpers import now_iso  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.dashboard.api.proposals")
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """LLM Proxy MCP Server — exposes ICDEV™'s LLMRouter as an MCP tool for Goose.
 
@@ -36,6 +35,8 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.mcp.base_server import MCPServer  # noqa: E402
 

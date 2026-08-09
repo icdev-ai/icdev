@@ -23,11 +23,12 @@ import json
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.genesis.reflexes.fathomdesk_correlation_monitor")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.genesis.reflexes.fathomdesk_correlation_monitor")
 
 _ARGS_PATH = Path(__file__).resolve().parents[3] / "args" / "fathomdesk_correlation_monitor.yaml"
 
