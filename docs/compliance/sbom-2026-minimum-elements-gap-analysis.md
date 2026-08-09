@@ -430,8 +430,14 @@ Per-ecosystem tests live in `tests/test_sbom_coverage_resolution.py`, each over 
 project whose transitive tree is known by construction. The agreed generation-time budget is
 recorded there as `RESOLUTION_BUDGET_SECONDS`.
 
+Artifact hashes were the other thing resolution unlocked, and **sbx-fld-03** has since
+consumed it: `_component()` now also carries `declared_hashes` and `artifact_path`, under
+the same division of labour as `declared_license` — a resolver reports what its source
+carries and where the artifact is, and `component_hasher` decides what may be adopted.
+See §3.2.2.
+
 **Still open:** emitting the CycloneDX `dependencies` array from the edges the resolver now
-collects is **sbx-cov-02**; artifact hashes, which resolution unlocks, are **sbx-fld-03**.
+collects is **sbx-cov-02**.
 
 ### 2.8 Component Producer (sbx-fld-02)
 
@@ -647,8 +653,8 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 |---|---|---|
 | Component Producer | **MET (sbx-fld-02)** | `tools/compliance/component_producer.py` resolves the producing organization per ecosystem from the package's own metadata, maps a Go host path or a reverse-DNS groupId through `args/sbom_producer_registry.yaml`, and marks anything left over as being of unknown provenance. `group` is never a candidate. See §2.8. |
 | Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
-| Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
-| Component Hash Algorithm | **GAP** | Consequent to the above. |
+| Component Hash Value | **MET (sbx-fld-03)** | `tools/compliance/component_hasher.py` states the element for every component and for the target component, as an ASCII hexadecimal digest of the executable artifact — recomputed from a local file where one exists, otherwise adopted from the digest the resolved source declared — or as an explicit unknown marker with a machine-readable reason. Never omitted. `sbom_components.hash_value` is populated by the same resolution. See §3.2.2. |
+| Component Hash Algorithm | **MET (sbx-fld-03)** | Every algorithm ICDEV emits is an IANA Hash Function Textual Name from the vendored registry AND one an authority still approves. `md5`/`sha-1` parse so that a digest under them is refused with its reason rather than published; `shake128`/`shake256` validate as names but are never emitted. See §3.2.2. |
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
 | Component License | **MET (sbx-fld-04)** | `tools/compliance/component_licenser.py` emits the element for every component and for the target component, in one of the four shapes the standard allows — a validated SPDX expression, a URL to full terms, a license name, or an explicit unknown/withheld marker — plus a tri-state proprietary-conditions flag. Never omitted. `sbom_components.license` is populated by the same resolution. See §3.2.1. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
@@ -727,6 +733,102 @@ Pinned by `tests/test_sbom_component_license.py` (107 tests), which runs the rea
 generator against a real database and asserts the rows land with populated licenses, and
 by `tests/pg_tier/test_sbom_component_license_pg.py` against a live PostgreSQL.
 
+#### 3.2.2 Component Hash Value and Algorithm — what sbx-fld-03 landed
+
+`tools/compliance/component_hasher.py` (mirrored to `icdev/tools/compliance/`) resolves
+both elements for every component. It carries the IANA Hash Function Textual Names
+registry — 9 names — vendored, and validates against it allow-list only.
+
+The two elements were the last of the gap analysis's "no design supports this" entries:
+the generator read declared manifests and never touched an artifact. sbx-cov-01 is what
+changed the input, because a *resolved* source is the first thing in the pipeline that
+knows either where an artifact is or what its producer said its digest was.
+
+- **The element is a digest of an artifact, and that distinction is the whole design.**
+  A digest is adopted only where its subject is one distributable artifact under an
+  approved, IANA-named function. npm and yarn `integrity`, `Cargo.lock` `checksum`,
+  NuGet `sha512`/`contentHash` and a Python lock's single `sha256:` file hash all
+  qualify. Two things that look like they qualify do not. `go.sum`'s `h1:` is a SHA-256
+  over a *synthesized listing of per-file hashes*, not over the module zip — publishing
+  it under the name `sha-256` would tell a recipient that hashing the artifact they hold
+  reproduces it, which is false. A Python lock that pins an sdist and fourteen platform
+  wheels names no installed one, so picking a digest would name the wrong file for
+  thirteen recipients in fourteen. Both are refused.
+- **Nothing refused is dropped.** A refused value travels on
+  `icdev:component-hash-unadopted` beside `icdev:component-hash-unadopted-reason`, so a
+  recipient who wants the go.sum line or the Maven `.sha1` sidecar still has it and
+  cannot mistake it for the element.
+- **Recomputation is preferred over repetition.** Where a component names a local
+  artifact file, it is read and hashed with `hashlib` — the one path where ICDEV states a
+  digest it produced over bytes it read rather than a claim it repeats, recorded as
+  `recomputed-from-artifact` against `declared-by-resolved-source`. Maven is the case
+  where this actually bites: the jar in the local repository (`$MAVEN_REPO_LOCAL`, else
+  `~/.m2/repository`) *is* the executable component artifact and it is on disk. The read
+  is a filesystem read like every other one here — nothing shells out, so it behaves
+  identically in an enclave.
+- **Registered and approved are separate questions, and both are required.** `md2`,
+  `md5` and `sha-1` are on the IANA registry and are not approved (SP 800-131A Rev. 2),
+  so they parse — which is what lets a digest under one be refused *with its reason*
+  rather than fail to parse — and are never emitted. A Maven `.sha1` sidecar with no jar
+  beside it therefore yields the unknown marker plus the sidecar as unadopted evidence,
+  not a SHA-1 presented as the element. `shake128`/`shake256` are approved functions but
+  extendable-output ones, so their registry name underspecifies the digest; they
+  validate as names and are never emitted.
+- **A declared digest is length-checked against its own label.** A value labelled
+  `sha-512` that decodes to 20 bytes is a mislabelled SHA-1, and adopting it would hand
+  the recipient a verification that cannot succeed. The same check is what disambiguates
+  hexadecimal from base64 without either being declared: SHA-512 is 128 hex characters
+  or 88 base64 ones and no value is both. Everything emitted is ASCII hexadecimal,
+  lower-cased, which is the encoding the element specifies.
+- **Algorithm-name normalization is built from the registry, never by stripping
+  punctuation.** `sha3-256` differs from `sha-256` only in punctuation and is a different
+  function that is not in this registry at all, so a normalizer that deleted separators
+  would relabel a SHA3 digest as SHA-2 — the one error in this area a recipient cannot
+  detect.
+- **Unknown and withheld go through sbx-prc-01, not a marker of this module's own.** An
+  unreachable artifact records `FIELD_HASH_VALUE` *and* `FIELD_HASH_ALGORITHM` on the
+  component's `Disclosure` with `artifact-not-accessible`; the finer local reason
+  (`artifact-not-on-disk`, `resolved-source-carries-no-digest`,
+  `declared-digest-algorithm-not-approved`, …) travels as the disclosure *detail*. Both
+  fields are recorded because they stand or fall together — the algorithm that produced
+  a digest nobody has is not a fact about the component. A withheld hash suppresses the
+  `hashes` array, the method, the evidence path and the unadopted digest: any of those
+  left in place would publish what was withheld.
+- **The target component states that it is not built yet.** ICDEV generates from source
+  before a build — that is the Generation Context the document already states — so its
+  own artifact genuinely does not exist. The element is the explicit unknown marker
+  naming exactly that, not a digest of some stand-in file.
+- **`hash_value` and `hash_algorithm` are now written**, from the same finished
+  CycloneDX components the licenser's row is built from, so the table cannot become a
+  second opinion. Both columns landed unwritten in migration `20260808030213`. Neither
+  is left NULL: a row silent about a hash is indistinguishable from one that was never
+  asked.
+- **Emission is CycloneDX `hashes[]`, which is the native slot for both elements at
+  once** — `alg` is the algorithm and `content` is the value — and `spdx_writer`
+  translates it into SPDX `checksums`, so one emission gives both serializations the
+  elements. `hashes` is left absent rather than faked when the digest is undisclosed:
+  CycloneDX has no way to say "unknown" inside it, and a recipient *verifies* against
+  what is there.
+- **Coverage today.** A real run over this repo yields **174 components: 132 with a
+  validated SHA-512 digest** of the npm registry tarball, read from `package-lock.json`'s
+  `integrity` and adopted as `declared-by-resolved-source`, **and 42 with the explicit
+  unknown marker** — the Python set, which resolves from `requirements.txt` /
+  `pyproject.toml`, formats that carry no digest and name no artifact. Every one of the 42
+  records `artifact-not-accessible` with the local detail
+  `component-came-from-a-declared-manifest`. The target component is unknown too, for
+  `target-component-is-not-built-at-generation-time`. **Zero omitted, zero NULL, and zero
+  algorithm names that are not on the IANA registry**; the same run's SPDX translation
+  carries all 132 digests as `checksums` with `algorithm: SHA512`. The unknowns are the
+  correct answer rather than a shortfall — the standard's own instruction for an
+  inaccessible artifact is to state it — and they are the number that moves as an
+  ecosystem gains a lockfile: the same tree resolved against a Python lock would adopt
+  digests for that half by the rule above, with no change to this module.
+
+Pinned by `tests/test_sbom_component_hash.py` (52 tests), which has a dedicated section
+for the artifact-inaccessible path — marker, shared reason, specific detail, absent
+`hashes` array, persisted row — and asserts the columns land from a real generator run
+against a real database.
+
 ### 3.3 Practices and Processes
 
 | Element | Status | Evidence / what is missing |
@@ -743,13 +845,18 @@ by `tests/pg_tier/test_sbom_component_license_pg.py` against a live PostgreSQL.
 met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — counting strictly, 2
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
-**Current: 5 of 17 data-field elements** — Component Producer joined them with
-sbx-fld-02, SBOM Author Signature with sbx-sig-01 and SBOM Data Format Version with
-sbx-fmt-01 — **and 5 of 7 practices**: Coverage (sbx-cov-01), Frequency plus
-Accommodation of Updates (sbx-prc-02), Explicitly Identifying Unknown Information
-(sbx-prc-01), and Machine-Processable Data for generation (sbx-fmt-01, whose ingest
-half is sbx-fmt-02). The matrix rows above are kept current as each task lands, so
-they, not this paragraph, are the authoritative statement.
+**Current: 13 of 17 data-field elements.** The whole 9-element SBOM Metadata block, which
+sbx-fld-01 closed out and sbx-sig-01 and sbx-fmt-01 contributed to, plus four in Component
+Data: Component Producer (sbx-fld-02), Component License (sbx-fld-04) and both halves of
+the component hash, Value and Algorithm (sbx-fld-03). **And 5 of 7 practices**: Coverage
+(sbx-cov-01), Frequency plus Accommodation of Updates (sbx-prc-02), Explicitly Identifying
+Unknown Information (sbx-prc-01), and Machine-Processable Data for generation (sbx-fmt-01,
+whose ingest half is sbx-fmt-02).
+
+What is left is **1 outright GAP** — Component Dependency Relationship (sbx-cov-02) — and
+**3 PARTIAL rows**, all on the component side: Identifiers, Name and Version. The matrix
+rows above are kept current as each task lands, so they, not this paragraph, are the
+authoritative statement — count from them rather than trusting this sentence.
 
 ---
 
