@@ -7484,6 +7484,9 @@ projects:
   - key: obs
     title: OBS - pr_watcher liveness is observable
     priority: high
+  - key: recover
+    title: RECOVER - Autonomous recovery must not act on stale or non-code failures
+    priority: high
 - key: agov
   name: 'AGOV - Agent Governance (detection, forensics, unattended approval)'
   description: 'Adapt the four things ICDEV genuinely lacks from perplexityai/numbat
