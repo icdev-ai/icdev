@@ -1,0 +1,33 @@
+# Reflexes that are `enabled: true` in args/genesis_config.yaml but are NOT in
+# tools/genesis/daemon.py::REFLEX_NAMES, and are therefore never dispatched.
+#
+# WHY THIS FILE EXISTS. The daemon dispatches from REFLEX_NAMES; the config only
+# says whether a dispatched reflex should run. Nothing asserted the two agreed,
+# so a reflex could be shipped, configured, documented and completely inert —
+# with the config actively claiming it was enabled.
+#
+# failure_triage was in that state: the entire autonomous triage -> autofix ->
+# escalate path, `enabled: true`, callable run(), and ZERO executions in the
+# daemon log since the day it was written.
+#
+# Entries below are grandfathered so the new gate does not fail main on arrival.
+# Each is a real gap. Lower this list; do not add to it. An entry with no module
+# is a config lie and should be DELETED from genesis_config.yaml rather than
+# added here.
+grandfathered:
+  # module missing entirely — the config entry names nothing
+  - aadc_compliance
+  - cost_optimizer
+  - goal_learner
+  - oracle
+  - remediation_lens
+  # module exists but has no callable run() — cannot be dispatched as-is
+  - quality
+  # runnable, deliberately NOT wired yet: each has live side effects that need a
+  # review before it starts running unattended on this board
+  - fathomdesk_pc_ratio
+  - fathomdesk_trap_sweep
+  - govcon_scan
+  - nocc_sla_watcher
+  - peering_agreement_renewal
+  - socmint
