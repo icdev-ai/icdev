@@ -184,8 +184,11 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
       if (await homeLink.count() > 0) {
         await homeLink.first().click();
         await page.waitForLoadState('domcontentloaded').catch(() => {});
-        // Should redirect to home
-        expect(page.url()).toMatch(/localhost:\d+\/?$/);
+        // Should redirect to home. Assert the PATH, not the host: the config's
+        // own isolation recipe (ICDEV_DASHBOARD_URL/ICDEV_DASHBOARD_PORT) serves
+        // the suite from 127.0.0.1, and a hardcoded `localhost` here failed the
+        // test for a redirect that had actually worked.
+        expect(new URL(page.url()).pathname).toBe('/');
       }
     }
   });

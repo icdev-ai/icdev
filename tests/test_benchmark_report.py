@@ -11,6 +11,16 @@ d3's verdicts as one markdown document. What these pin, and why each is here:
    with extra steps. ``test_the_checked_in_report_is_in_sync`` fails the moment
    an inventory, watchlist or promoter-config edit lands without a regenerate.
 
+1b. **...and adding a module is not one of those edits (kax-conflict-02).** The
+   document used to quote exact module counts, which are globs over the tree, so
+   two branches that each added a module produced two different files and the
+   thing conflicted with itself: three of six blocked PRs on 2026-08-08 were held
+   up by this file and nothing else. The counts are no longer committed — the
+   classification against the floor is — so the rendering is invariant to adding
+   a module and there is nothing to merge. The section below proves that with a
+   two-branch git rehearsal rather than by assertion, and proves in the same
+   place that crossing the floor, which IS a state change, still fails the gate.
+
 2. **The render is deterministic.** Rendering twice must be byte-identical and
    the body must carry no wall-clock stamp — a timestamp in the document would
    make the check above fail on every run and it would be switched off within a
@@ -39,6 +49,7 @@ depends on row counts fails on whichever database the runner had lying around.
 """
 
 import doctest
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -69,9 +80,19 @@ def test_the_checked_in_report_is_in_sync(rendered):
     markdown, _ = rendered
     report = br.check_report(REPORT_FILE, markdown)
     assert report["in_sync"], (
-        f"{br.REPORT_PATH.as_posix()} is stale — regenerate it with "
-        f"`python {br.TOOL} --write`.\n{report['diff']}"
+        f"{br.REPORT_PATH.as_posix()} is stale — {report['reason']}\n{report['diff']}"
     )
+
+
+def test_the_gates_failure_message_names_the_fix(tmp_path, rendered):
+    """Criterion 3: whoever hits this red is usually mid-merge on an unrelated branch."""
+    markdown, _ = rendered
+    stale = tmp_path / "stale.md"
+    stale.write_text(markdown.replace("## Summary", "## Sumary"), encoding="utf-8")
+    reason = br.check_report(stale, markdown)["reason"]
+    assert br.TOOL in reason
+    assert "--write" in reason
+    assert "Adding a module no longer changes" in reason
 
 
 def test_check_reports_drift_with_a_diff(tmp_path, rendered):
@@ -103,6 +124,182 @@ def test_write_uses_lf_endings(tmp_path, rendered):
     out = tmp_path / "endings.md"
     br.write_report(out, markdown)
     assert b"\r\n" not in out.read_bytes()
+
+
+# ── 1b. the artifact does not conflict with itself (kax-conflict-02) ─────
+
+
+_SYNTHETIC_MODULES = 8  # comfortably above every module_floor in the inventory
+
+
+def _module_dirs():
+    """Every directory the inventory's module globs point at, repo-root relative."""
+    inventory = br.load_inventory()
+    dirs = []
+    for spec in inventory.values():
+        for pattern in spec.get("modules", []):
+            parent = Path(pattern).parent
+            if parent not in dirs:
+                dirs.append(parent)
+    return dirs
+
+
+def _synthetic_tree(root: Path) -> Path:
+    """A tree the module globs can be counted against, with no repo in it.
+
+    The real checkout is not usable for this: writing probe modules into it to
+    see what happens is how you get a probe module committed. The counts here do
+    not have to match the real ones — what is under test is whether *changing*
+    them changes the document.
+    """
+    for directory in _module_dirs():
+        target = root / directory
+        target.mkdir(parents=True, exist_ok=True)
+        for index in range(_SYNTHETIC_MODULES):
+            (target / f"m{index}.py").write_text("", encoding="utf-8")
+    return root
+
+
+def _render_for(root: Path) -> str:
+    markdown, _ = br.generate(base_dir=root)
+    return markdown
+
+
+def test_adding_a_module_does_not_change_the_committed_rendering(tmp_path):
+    """The root cause, stated as an invariant: this is why there is nothing to merge."""
+    root = _synthetic_tree(tmp_path / "tree")
+    before = _render_for(root)
+    (root / "tools" / "rag" / "brand_new_module.py").write_text("", encoding="utf-8")
+    (root / "tools" / "kanban" / "another_new_module.py").write_text("", encoding="utf-8")
+    assert _render_for(root) == before
+
+
+def _subsystem_owning_its_directories():
+    """A subsystem whose module directories no other subsystem also counts.
+
+    Several subsystems share a surface, so emptying one directory does not
+    necessarily drop anybody below a floor. This picks one where it does.
+    """
+    inventory = br.load_inventory()
+    owners = {}
+    for tag, spec in inventory.items():
+        for pattern in spec.get("modules", []):
+            owners.setdefault(Path(pattern).parent, set()).add(tag)
+    for tag, spec in sorted(inventory.items()):
+        dirs = [Path(p).parent for p in spec.get("modules", [])]
+        if dirs and all(owners[d] == {tag} for d in dirs):
+            return tag, dirs
+    raise AssertionError("no subsystem owns its module directories exclusively")
+
+
+def test_dropping_below_the_floor_does_change_it(tmp_path):
+    """The invariance is to the count, not to the tree. A state change must still show."""
+    root = _synthetic_tree(tmp_path / "tree")
+    before = _render_for(root)
+    _, dirs = _subsystem_owning_its_directories()
+    for directory in dirs:
+        for path in (root / directory).glob("*.py"):
+            path.unlink()
+    (root / dirs[0] / "only_one_left.py").write_text("", encoding="utf-8")
+    after = _render_for(root)
+    assert after != before
+    assert "`thin`" in after
+
+
+def _git(repo: Path, *args: str):
+    """git with an identity supplied inline — the CI runner has none configured.
+
+    Signing is disabled for the same reason: this is a throwaway repository in a
+    temp directory, and a GPG prompt here would hang the suite.
+    """
+    return subprocess.run(
+        [
+            "git",
+            "-c", "user.name=benchmark-rehearsal",
+            "-c", "user.email=rehearsal@example.invalid",
+            "-c", "commit.gpgsign=false",
+            *args,
+        ],
+        cwd=str(repo), capture_output=True, text=True,
+    )
+
+
+def _commit_report(repo: Path, root: Path, message: str) -> None:
+    br.write_report(repo / "report.md", _render_for(root))
+    assert _git(repo, "add", "-A").returncode == 0
+    result = _git(repo, "commit", "-m", message)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not on PATH")
+def test_two_branches_that_each_add_a_module_both_merge_cleanly(tmp_path):
+    """Acceptance criterion 1, rehearsed rather than asserted.
+
+    Two branches off the same base, each adding a module under a different
+    counted surface, each regenerating the report. Both merge into main with no
+    human touching the document, and the merged main is still in sync with what
+    the merged tree produces.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert _git(repo, "init").returncode == 0
+    assert _git(repo, "symbolic-ref", "HEAD", "refs/heads/main").returncode == 0
+
+    root = _synthetic_tree(repo / "tree")
+    _commit_report(repo, root, "base: the report as main has it")
+
+    for branch, module in (
+        ("branch-a", Path("tools") / "rag" / "a_new_module.py"),
+        ("branch-b", Path("tools") / "observability" / "b_new_module.py"),
+    ):
+        assert _git(repo, "checkout", "-b", branch, "main").returncode == 0
+        (root / module).write_text("", encoding="utf-8")
+        # Each branch does exactly what the old workflow demanded of it.
+        _commit_report(repo, root, f"{branch}: add a module and regenerate")
+
+    assert _git(repo, "checkout", "main").returncode == 0
+    for branch in ("branch-a", "branch-b"):
+        merge = _git(repo, "merge", "--no-edit", branch)
+        assert merge.returncode == 0, (
+            f"{branch} did not merge cleanly:\n{merge.stdout}\n{merge.stderr}"
+        )
+
+    committed = (repo / "report.md").read_text(encoding="utf-8")
+    assert "<<<<<<<" not in committed, "the merge left conflict markers in the report"
+    # main now carries both modules; the gate must be green with nobody having
+    # regenerated after the merge.
+    assert br.check_report(repo / "report.md", _render_for(root))["in_sync"]
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not on PATH")
+def test_the_rehearsal_would_have_caught_the_old_conflict(tmp_path):
+    """The same rehearsal against a rendering that still quotes counts, to show
+    the proof above is not vacuous: with the integer in the file, the two
+    branches write different values to the same line and git cannot merge them."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert _git(repo, "init").returncode == 0
+    assert _git(repo, "symbolic-ref", "HEAD", "refs/heads/main").returncode == 0
+
+    def counted(n_a: int, n_b: int) -> str:
+        return f"# report\n\nrag: **{n_a} modules**\nobservability: **{n_b} modules**\n"
+
+    def commit(message: str, text: str) -> None:
+        (repo / "report.md").write_text(text, encoding="utf-8")
+        assert _git(repo, "add", "-A").returncode == 0
+        assert _git(repo, "commit", "-m", message).returncode == 0
+
+    commit("base", counted(61, 32))
+    assert _git(repo, "checkout", "-b", "branch-a", "main").returncode == 0
+    commit("branch-a regenerates", counted(62, 32))
+    assert _git(repo, "checkout", "-b", "branch-b", "main").returncode == 0
+    commit("branch-b regenerates", counted(61, 33))
+
+    assert _git(repo, "checkout", "main").returncode == 0
+    assert _git(repo, "merge", "--no-edit", "branch-a").returncode == 0
+    conflicted = _git(repo, "merge", "--no-edit", "branch-b")
+    assert conflicted.returncode != 0, "expected the count-bearing rendering to conflict"
+    assert "<<<<<<<" in (repo / "report.md").read_text(encoding="utf-8")
 
 
 # ── 2. determinism ───────────────────────────────────────────────────────

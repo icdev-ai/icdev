@@ -218,7 +218,11 @@ def _page_bounds() -> tuple[int, int]:
 def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "system") -> None:
     """Write an append-only audit entry."""
     conn.execute(
-        "INSERT INTO qdc_audit (id, design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
+        # "user" is a reserved word in PostgreSQL and must stay quoted — the DDL
+        # in db/init_db.py quotes it, this INSERT did not, so every write here
+        # raised a SyntaxError and /quality/canvas/new returned 500 on the
+        # primary backend.
+        'INSERT INTO qdc_audit (id, design_id, "user", action, detail, created_at) VALUES (%s,%s,%s,%s,%s,%s)',
         (_gen_id(), design_id, user, action, detail, _utcnow()),
     )
 
