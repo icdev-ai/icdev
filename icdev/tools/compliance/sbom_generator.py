@@ -77,6 +77,17 @@ from tools.compliance.component_licenser import (
     resolve_declared_license,
     resolve_license,
 )
+from tools.compliance.component_hasher import (
+    PROPERTY_ALGORITHM as PROPERTY_HASH_ALGORITHM,
+)
+from tools.compliance.component_hasher import (
+    PROPERTY_HASH,
+    REASON_TARGET_NOT_BUILT,
+    apply_hash_to_cyclonedx,
+    record_hash_disclosure,
+    resolve_hash,
+    unknown_hash,
+)
 from tools.compliance.component_producer import (
     PROPERTY_PRODUCER,
     ProducerContext,
@@ -965,6 +976,12 @@ def _persist_components(conn, cdx_components):
     element, so it is populated here — an SPDX expression, a URL, a license name, or one
     of the two explicit undisclosed markers. It is never left NULL.
 
+    `hash_value` and `hash_algorithm` (migration `20260808030213`) are populated the same
+    way and under the same rule: the hexadecimal digest and its IANA Hash Function
+    Textual Name where the artifact was reachable, and one of the two undisclosed
+    markers where it was not. Neither is left NULL either, because an SBOM row that is
+    silent about a hash is indistinguishable from one that was never asked.
+
     Rows are read back out of the FINISHED CycloneDX components rather than re-resolved
     from the parsed input. That is what makes the table incapable of disagreeing with the
     document: the same dedup, the same disclosure policy and the same resolution produced
@@ -999,11 +1016,14 @@ def _persist_components(conn, cdx_components):
             conn.execute(
                 """INSERT INTO sbom_components
                    (id, component_name, version, component_type, purl, license,
-                    producer, unknown_fields_json, withheld_fields_json, classification)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    producer, hash_value, hash_algorithm, unknown_fields_json,
+                    withheld_fields_json, classification)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT(id) DO UPDATE SET
                        license = EXCLUDED.license,
                        producer = EXCLUDED.producer,
+                       hash_value = EXCLUDED.hash_value,
+                       hash_algorithm = EXCLUDED.hash_algorithm,
                        unknown_fields_json = EXCLUDED.unknown_fields_json,
                        withheld_fields_json = EXCLUDED.withheld_fields_json,
                        purl = EXCLUDED.purl,
@@ -1017,6 +1037,8 @@ def _persist_components(conn, cdx_components):
                     cdx_comp.get("purl"),
                     _property_value(cdx_comp, PROPERTY_LICENSE),
                     _property_value(cdx_comp, PROPERTY_PRODUCER),
+                    _property_value(cdx_comp, PROPERTY_HASH),
+                    _property_value(cdx_comp, PROPERTY_HASH_ALGORITHM),
                     unknown_json,
                     withheld_json,
                     "CUI",
@@ -1386,6 +1408,16 @@ def _build_cyclonedx_sbom(
         apply_producer_to_cyclonedx(cdx_comp, producer, active_spec_version)
         cdx_comp.setdefault("properties", []).extend(producer_properties(producer))
 
+        # Component Hash Value and Algorithm — a digest of the executable artifact,
+        # recomputed from a local file where one exists and otherwise repeated from the
+        # digest the resolved source declared. An inaccessible artifact is stated as
+        # unknown with its reason rather than the fields being dropped, and a digest
+        # that is not over an artifact (go.sum's `h1:`) or is under an unapproved
+        # algorithm is never adopted, only carried as unadopted evidence.
+        hash_result = resolve_hash(comp)
+        record_hash_disclosure(hash_result, disclosure)
+        apply_hash_to_cyclonedx(cdx_comp, hash_result, disclosure)
+
         # An unidentifiable producer is an *unknown* field like any other, so it
         # also joins the uniform convention — a validator then reads every
         # undisclosed field of every element from one pair of property prefixes,
@@ -1412,6 +1444,15 @@ def _build_cyclonedx_sbom(
     # license its producer did not provide, not one an offline build could not reach.
     target_license = resolve_declared_license(project_license_from_manifests(project_dir))
     record_license_disclosure(target_license, target_disclosure, resolved=True)
+
+    # The target component's hash is the one this generator genuinely cannot supply. An
+    # SBOM produced from source before a build has no executable artifact to hash yet —
+    # that is the Generation Context this document states — so the element is the
+    # explicit unknown marker naming exactly that, rather than a digest of some
+    # stand-in file. Recorded before `disclosures` is read, so the document's
+    # completeness statement counts it.
+    target_hash = unknown_hash(REASON_TARGET_NOT_BUILT)
+    record_hash_disclosure(target_hash, target_disclosure)
     disclosures.append(target_disclosure)
 
     target_component = {
@@ -1426,6 +1467,7 @@ def _build_cyclonedx_sbom(
     if target_entries:
         target_component["licenses"] = target_entries
     apply_producer_to_cyclonedx(target_component, target_producer, active_spec_version)
+    apply_hash_to_cyclonedx(target_component, target_hash, target_disclosure)
     apply_to_cyclonedx(target_component, target_disclosure)
 
     sbom = {

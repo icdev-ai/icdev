@@ -1554,3 +1554,58 @@ distribution metadata**, read as text from `*.dist-info/METADATA` via
   `SEE LICENSE IN <file>`) and reading that file's text — that is a new ingress with a
   path-traversal question this decision does not cover; or if license data begins arriving
   over the network from a registry API rather than from a manifest already on disk.
+
+### Gap 54 — SBOM component hashing (`tools/compliance/component_hasher.py`)
+
+**Module:** `tools/compliance/component_hasher.py` (sbx-fld-03), imported by
+`tools/compliance/sbom_generator.py`. The digest-reading and artifact-locating additions
+to `tools/compliance/dependency_resolver.py` are covered here too, since they are the
+ingress that feeds it.
+
+**Ingress path:** Three, all third-party by construction. (1) **Digest strings declared
+by a lockfile** — npm/yarn `integrity`, `Cargo.lock` `checksum`, NuGet `sha512` /
+`contentHash`, a Python lock's `sha256:` file hashes, `go.sum` `h1:` lines — every one
+attacker-controlled if a registry account or a lockfile is. (2) **Artifact bytes**: this
+is the first module in the SBOM pipeline that opens a third-party binary and reads it end
+to end, namely a jar in the Maven local repository. (3) `--validate` reads a CycloneDX
+JSON SBOM from an operator-supplied path, which may have come from another vendor's tool.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The artifact is read as an opaque byte stream and fed to `hashlib` — it
+  is never unpacked, never parsed, never imported and never executed. A jar is a zip and
+  this module has no zip machinery; `hash_file` opens in `"rb"`, iterates fixed-size
+  chunks into a digest object and returns hexadecimal. Declared digests are consumed as
+  text: the algorithm token is looked up in a closed dict of IANA names and the value is
+  either hexadecimal-validated by an anchored regex or `base64.b64decode(validate=True)`.
+  There is no `exec`/`eval`/`subprocess`/`pickle`/`yaml.load`/`zipfile`/`tarfile` in the
+  module, and no network call of any kind — recomputation is a local filesystem read, so
+  it behaves identically in an air-gapped enclave.
+- **Guardrails:**
+  - The IANA Hash Function Textual Names registry is **vendored**, and validation is
+    **allow-list only**. An unrecognized algorithm name can only cause the unknown
+    marker to be emitted; it can never cause an unvalidated name to reach a document.
+    Because approval is tracked separately from registration, a `md5`/`sha-1` digest is
+    recognized and *refused*, not silently passed through.
+  - A declared digest is length-checked against its own algorithm before adoption, so a
+    crafted lockfile cannot get a short or oversized value emitted as the element.
+    `b64decode(validate=True)` rejects any character outside the standard alphabet.
+  - `hash_file` returns `""` rather than raising on any `OSError`, so an artifact that
+    is unreadable, a dangling symlink, or removed between resolution and generation
+    degrades to the unknown marker instead of aborting the document the ~25 call sites
+    and the blocking `bdc_canvas` gate consume.
+  - Artifact paths are **composed from the component's own coordinates** under a
+    caller-supplied or environment-supplied root (`MAVEN_REPO_LOCAL` / `~/.m2`), and are
+    hashed only when `Path.is_file()` holds — a directory or a device node is not read.
+    No path is taken verbatim from third-party content.
+  - Reads are chunked at 1 MiB, so a hostile or merely enormous artifact cannot be used
+    to exhaust memory.
+  - A digest is only ever *emitted*, never dispatched on, and reaches SQL solely as a
+    bound parameter through `_persist_components`.
+  - `tests/test_sbom_component_hash.py` pins the refusal set (unapproved algorithm,
+    unregistered name, mislabelled length, non-artifact digest, ambiguous multi-artifact
+    lock) and has a dedicated section for the artifact-inaccessible path.
+- **Revisit if:** the module starts reading *inside* an artifact — computing per-entry
+  digests from a jar or wheel, or following a manifest within it — which introduces
+  archive parsing and a zip-slip question this decision does not cover; or if digests
+  begin arriving over the network from a registry or a transparency log rather than from
+  a lockfile already on disk.

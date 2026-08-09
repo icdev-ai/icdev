@@ -189,6 +189,9 @@ python tools/compliance/component_producer.py --purl "pkg:golang/k8s.io/client-g
 python tools/compliance/component_producer.py --name flask --version 3.0.0 --ecosystem python --project-dir "/path/to/project" --json
 python tools/compliance/component_producer.py --validate "/path/to/sbom.cdx.json" --json          # every component states a producer or unknown provenance
 python tools/compliance/component_producer.py --registry --json                                    # the namespace -> organization registry in force
+python tools/compliance/component_hasher.py --registry --json                                      # the IANA Hash Function Textual Names, and which are emittable
+python tools/compliance/component_hasher.py --validate "/path/to/sbom.cdx.json" --json             # every component states a digest or an explicit unknown, with an IANA-registered algorithm
+python tools/compliance/component_hasher.py --file "/path/to/artifact.jar" --json                  # sha-256 of one artifact, the way recomputation does it
 python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --json            # gate on the 2026 minimum elements, not on presence
 python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --gate swft       # deployment_gates | swft | devsecops; exit 1 when it blocks
 

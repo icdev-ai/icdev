@@ -134,6 +134,12 @@ COMPONENT_ELEMENTS = (
 )
 DATA_FIELD_ELEMENTS = METADATA_ELEMENTS + COMPONENT_ELEMENTS
 
+#: Where `component_hasher` (sbx-fld-03) states the two hash elements when the answer is
+#: an explicit unknown or withheld marker rather than a digest. Named rather than
+#: imported, like every other `icdev:` property this scorer reads.
+PROPERTY_HASH_VALUE = "icdev:component-hash"
+PROPERTY_HASH_ALGORITHM = "icdev:component-hash-algorithm"
+
 
 class SbomGateConfigError(RuntimeError):
     """``args/security_gates.yaml`` does not configure this gate."""
@@ -288,6 +294,28 @@ def _all_components(sbom):
     return components
 
 
+def _component_property(component, name):
+    for prop in component.get("properties") or []:
+        if isinstance(prop, dict) and prop.get("name") == name:
+            return prop.get("value")
+    return None
+
+
+def _states_hash(component, hashes_key, property_name):
+    """Does this component state one of the answers the hash elements permit?
+
+    Two shapes count. A native CycloneDX ``hashes[]`` entry is what a third-party SBOM
+    carries and what an ICDEV component carries when its artifact was reachable. The
+    ``icdev:component-hash*`` property is what carries the other permitted answer — the
+    explicit unknown or withheld marker — because CycloneDX has no way to spell either
+    inside ``hashes``. `component_hasher` owns that property; only its name is repeated
+    here, the same way this scorer already names ``icdev:sbom-author``.
+    """
+    if any(_text(entry.get(hashes_key)) for entry in (component.get("hashes") or []) if isinstance(entry, dict)):
+        return True
+    return _text(_component_property(component, property_name))
+
+
 def _metadata_property(sbom, name):
     for prop in ((sbom.get("metadata") or {}).get("properties") or []):
         if isinstance(prop, dict) and prop.get("name") == name:
@@ -352,8 +380,17 @@ def _score_structural(sbom, sbom_path=None):
         # --- Component Data (§1.2) ---
         "component_producer": has_components and not producer_errors,
         "component_dependency_relationship": bool(sbom.get("dependencies")),
-        "component_hash_value": every(lambda c: any(_text(h.get("content")) for h in (c.get("hashes") or []) if isinstance(h, dict))),
-        "component_hash_algorithm": every(lambda c: any(_text(h.get("alg")) for h in (c.get("hashes") or []) if isinstance(h, dict))),
+        # NOT "every component has a digest". The standard's own text for Component Hash
+        # Value says an artifact the author cannot access is marked unknown rather than
+        # the field omitted, so a document where every artifact was out of reach still
+        # meets the element. Scoring the `hashes` array alone would report that
+        # conformant document as a gap forever, because there is nothing a generator
+        # reading lockfiles could ever have put in the array. A native `hashes[]` entry
+        # is still what a third-party SBOM will carry, so both are accepted.
+        "component_hash_value": every(lambda c: _states_hash(c, "content", PROPERTY_HASH_VALUE)),
+        "component_hash_algorithm": every(
+            lambda c: _states_hash(c, "alg", PROPERTY_HASH_ALGORITHM)
+        ),
         "component_identifiers": every(lambda c: _text(c.get("purl")) or _text(c.get("cpe"))),
         "component_license": every(lambda c: bool(c.get("licenses"))),
         "component_name": every(lambda c: _text(c.get("name"))),
