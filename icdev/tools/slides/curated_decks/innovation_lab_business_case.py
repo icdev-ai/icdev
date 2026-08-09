@@ -24,6 +24,16 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import sys
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.logging.icdev_logger import get_logger
 # Use the same namespace as the rest of tools/slides/ to avoid shim/object mismatch.
 from tools.slides.db.init_db import get_connection, init_db

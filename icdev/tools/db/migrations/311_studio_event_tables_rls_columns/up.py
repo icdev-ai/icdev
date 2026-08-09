@@ -33,6 +33,17 @@ Same shape as 162 / 305 / 309: PostgreSQL takes IF NOT EXISTS; SQLite has no
 such clause on ADD COLUMN, so duplicate-column errors are tolerated instead,
 which also makes this safe on a database already patched by hand.
 """
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection, is_pg
 
 _TABLES = (
