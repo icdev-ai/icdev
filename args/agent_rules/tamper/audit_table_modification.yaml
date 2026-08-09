@@ -1,0 +1,29 @@
+# CUI // SP-CTI
+# Monitor-only. See args/agent_rules/README.md before changing `enforce`.
+id: tamper.audit_table_modification
+version: "1"
+title: UPDATE, DELETE, DROP or TRUNCATE against an append-only audit table
+severity: critical
+tags:
+  - T1070
+  - defense-evasion
+  - NIST-AU-9
+enabled: true
+enforce: false
+# This overlaps is_append_only_table_modification() in
+# .claude/hooks/pre_tool_use.py ON PURPOSE, and does not replace it. That check
+# is hardcoded, load-bearing and stays exactly as it is (agov-det-06 scope
+# fence). What this rule adds is a persisted, queryable finding: the hook blocks
+# and exits, leaving nothing that answers "has anyone tried this, and when".
+deny_message: >-
+  Audit tables are append-only (NIST 800-53 AU-9). A correction is a new row,
+  never an edit to the row being corrected.
+expr:
+  event_type:
+    - command.exec
+  command_matches:
+    - "(?is)\\b(update|delete\\s+from|drop\\s+table|truncate)\\b[^;]*\\baudit_trail\\b"
+    - "(?is)\\b(update|delete\\s+from|drop\\s+table|truncate)\\b[^;]*\\bhook_events\\b"
+    - "(?is)\\b(update|delete\\s+from|drop\\s+table|truncate)\\b[^;]*\\bagent_approval_log\\b"
+    - "(?is)\\b(update|delete\\s+from|drop\\s+table|truncate)\\b[^;]*\\bagent_findings\\b"
+    - "(?is)\\b(update|delete\\s+from|drop\\s+table|truncate)\\b[^;]*\\bcomponent_audit_log\\b"

@@ -245,3 +245,63 @@ tests/ci/test_gated_test_list.py
 # reintroduces a pre-2026 "unspecified"/"managed" version literal. ~1.5s, pure
 # Python plus an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-06).
 tests/test_sbom_component_names.py
+# test_agov_rules.py earns a slot because the AGOV rule engine is a security
+# control whose failure mode is silent breadth: an unknown matcher key, a bad
+# regex or a rule carrying both `expr` and `sequence` must SKIP the whole rule,
+# because dropping only the offending clause loosens the surviving AND until a
+# targeted rule matches every event. Nothing else asserts that, and once
+# agov-det-06 wires the evaluator into pre_tool_use.py the same loosening turns
+# an `enforce: true` rule into a blanket block on live sessions. Also pins
+# `enforce` defaulting to False — monitor-only-by-default is the entire safety
+# story of the design. ~1s, pure Python, rules written to tmp_path, no
+# DB/LLM/network (agov-det-03).
+tests/test_agov_rules.py
+
+# test_agov_sequence.py earns a slot because it pins the one correctness property
+# a chain evaluator cannot be allowed to lose: candidate events never leave their
+# (session_id, agent, project_id, source) partition. ICDEV runs many concurrent
+# sessions against one database, so a regression that let a chain span two of them
+# would not be a subtle miss — it would report session A's `.env` read plus session
+# B's outbound POST as exfiltration, continuously, and the whole rule pack would be
+# discredited on its first day. The out-of-order, window-expiry and max_matches
+# cases pin the rest of the semantics. ~0.6s, pure Python, no DB/LLM/network
+# (agov-det-04).
+tests/test_agov_sequence.py
+
+# test_agov_rule_pack.py earns a slot because the invariant it pins is one
+# boolean wide and catastrophic in exactly one direction. Every rule shipped
+# under args/agent_rules/ must set `enforce: false`; a rule that flips to true
+# starts BLOCKING live tool calls for every session on the next pull, and the
+# first thing it blocks is whatever it is wrong about. Nothing else notices —
+# a detection pack is silent when it is behaving and silent when it is not, so
+# the failure surfaces as sessions mysteriously refusing work. It also compiles
+# every regex and rejects a matcher key outside the loader's vocabulary, which
+# is the other silent half: the loader SKIPS an unknown key rather than failing
+# open, so a typo is a rule that never fires and looks like a clean environment.
+# ~1s, pure Python, no DB service/LLM/network (agov-det-05).
+tests/test_agov_rule_pack.py
+
+# test_agov_agent_findings.py earns a slot for the append-only registration.
+# Adding a table to APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py is a
+# one-line edit that nothing else verifies, and an unregistered audit table is
+# indistinguishable from a registered one until someone edits a row that was
+# supposed to be evidence. It also pins the INSERT column list against the
+# migration DDL and the conftest fixture — the drift that made module_budget_usage
+# report success while persisting nothing, because CREATE TABLE IF NOT EXISTS
+# never alters an existing table and the failed INSERT was swallowed. ~1s, pure
+# Python plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-det-05).
+tests/test_agov_agent_findings.py
+
+# test_agov_gate.py earns a slot because it guards the one property that makes
+# shipping a rule pack safe at all: enforcement authority is the DIRECTORY a rule
+# file sits in, not the `enforce` field inside it. If that inverts, an
+# `enforce: true` landing in args/agent_rules/ — by a bad merge, a rogue edit, or
+# a PR nobody read — turns the shipped pack into a live blocklist in every
+# session, and pr_watcher.py auto-merges any CI-green kanban/* branch, so review
+# is not the control. Also pins that the gate runs LAST (the scope fence over the
+# eight hardcoded blocks), that it fails OPEN, and structurally that the hot path
+# never imports the `tools` shim or the NDJSON logger — 92ms and 43ms that would
+# land before every single tool call. ~2s, pure Python, rules written to
+# tmp_path, SQLite only via the migration's own DDL, no LLM/network
+# (agov-det-06).
+tests/test_agov_gate.py
