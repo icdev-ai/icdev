@@ -626,6 +626,59 @@ argument key **names** — is the only sanctioned way to build a deliverable bod
 
 ---
 
+## Unattended Sessions — Routing, Not Autonomy (agov-inbox-04)
+
+`unattended` decides **where** an approval ask is delivered. It does **not**
+change what the agent may do.
+
+```bash
+# Enable for a session (persisted — `--resume` keeps it)
+icdev chat --unattended --unattended-reason "overnight backlog run"
+icdev chat --resume <ctx-id> --attended     # explicitly route back to this console
+
+# A cron job carries its own flag, because a cron tick has no console at all
+icdev cron create nightly --mode agent --payload "..." --interval 1h --unattended
+icdev cron unattended <job-id> --on
+icdev cron unattended <job-id> --off
+
+# Inspect and set it directly
+python tools/agent_runtime/unattended.py --list --json
+python tools/agent_runtime/unattended.py --show <session_id> --json
+python tools/agent_runtime/unattended.py --set <session_id> --on \
+    --reason "overnight backlog run" --json
+python tools/agent_runtime/unattended.py --set <session_id> --off --json
+python tools/agent_runtime/unattended.py --clear <session_id> --json
+
+# The invariant, printed: what currently requires approval
+python tools/agent_runtime/unattended.py --surface --json
+```
+
+**What it does not do.** It does not widen the toolset, downgrade any tier,
+remove a tier from `require_approval_tiers`, change `default_tier` (still
+`unknown`), change the gate's `enforce` / `dry_run` / `off` mode, or approve
+anything. An irreversible call still halts — it now **suspends** on a pending
+`approval_items` row a human will answer, instead of being denied on EOF by a
+console prompt that could not be shown.
+
+`--surface` prints exactly that claim in comparable form (policy tiers,
+per-tool classification, resolved gate mode). Its output is asserted
+byte-identical with the flag on and off by `tests/test_unattended_flag.py`.
+
+**Never inferred from a missing TTY.** Enabling it is an explicit human act — a
+CLI flag, a cron job field, or `ICDEV_UNATTENDED` exported by an operator (a
+tri-state: `ICDEV_UNATTENDED=0` is a statement, not an absence). "No TTY" is
+true of a CI runner, a cron tick, a Docker `exec` and a pytest run, so an
+inference would silently re-route exactly the contexts nobody is watching.
+
+Stored in `agent_unattended_sessions` (migration `20260809213046`) and in
+`agent_cron_jobs.unattended`, so a restart resumes with the same routing rather
+than reverting mid-run to an approver that denies everything. A read that fails
+resolves to *attended* — the stricter path — while `set_unattended` raises
+rather than leave an operator with a session that refuses everything for no
+visible reason.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)

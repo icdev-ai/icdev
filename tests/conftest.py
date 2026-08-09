@@ -666,6 +666,23 @@ CREATE TABLE IF NOT EXISTS approval_items (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT
 );
+-- agov-inbox-04 / migration 20260809213046. The per-session unattended flag.
+-- ROUTING ONLY: it decides WHERE an approval ask is delivered (the inbox above
+-- instead of a console nobody is watching), never what the agent may do. MUTABLE
+-- and deliberately NOT append-only -- an operator turns it on and off, and the
+-- record of who flipped it goes to the append-only hook_events trail.
+CREATE TABLE IF NOT EXISTS agent_unattended_sessions (
+    session_id TEXT PRIMARY KEY,
+    unattended INTEGER NOT NULL DEFAULT 0,
+    source TEXT,
+    actor TEXT,
+    reason TEXT,
+    inbox TEXT,
+    tenant_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    set_at TEXT,
+    updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,

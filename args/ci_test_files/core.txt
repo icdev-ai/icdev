@@ -273,3 +273,24 @@ tests/test_approval_inbox.py
 # in-tmpdir SQLite file and two short-lived threads, no DB service/LLM/network
 # (agov-inbox-02).
 tests/test_inbox_approver.py
+
+# test_unattended_flag.py earns a slot because the invariant it pins is the
+# entire premise of the flag and it fails INVISIBLY in the direction that looks
+# like success. (1) With unattended set, an irreversible call must still queue a
+# pending approval_items row and BLOCK -- the test drives the real
+# build_approval_hook AND the real dispatch handler with an execution sentinel,
+# so a regression that let the call through is a red run rather than an
+# auto-approver nobody notices until an overnight session force-pushes. Both
+# mutations were checked: returning an auto-approver reddens five tests, and
+# leaking "unattended implies mode=off" reddens three. (2) The approval surface
+# -- policy tiers, per-tool classification AND the resolved gate mode -- must be
+# byte-identical with the flag True and False; the mode is in there because
+# "unattended implies mode=off" would not show up in the policy file at all.
+# (3) The flag must survive a restart (asserted against a second, independent
+# module instance and against the bytes on disk) and must NEVER be inferred from
+# a non-TTY stdin -- which is true of CI, cron, Docker and pytest, so an
+# inference would silently re-route exactly the contexts nobody is watching. A
+# source-level assertion backs that one, because a TTY branch would pass every
+# behavioural test by construction. ~2s, pure Python plus an in-tmpdir SQLite
+# file and two short-lived threads, no DB service/LLM/network (agov-inbox-04).
+tests/test_unattended_flag.py
