@@ -1015,6 +1015,31 @@ Env overrides win over YAML: `ICDEV_BOARD_STALL_ENABLED`,
 `ICDEV_BOARD_STALL_WINDOW_HOURS`, `ICDEV_BOARD_STALL_MIN_ACTIVE`,
 `ICDEV_BOARD_STALL_COOLDOWN_HOURS`, `ICDEV_BOARD_STALL_SEVERITY`.
 
+### PR watcher liveness probe (kax-obs-02)
+
+"Is the PR watcher actually polling?" answered without the log file. Each
+COMPLETED poll appends one row to the existing `heartbeat_checks` table
+(`check_type = 'pr_watcher_poll'`, `items_found` = tasks checked,
+`details.actions_taken` = actions taken). No new daemon, no new log file — the
+launcher already restarts a *dead* watcher, so what this detects is a
+**live-but-not-progressing** one, which a process-exists check cannot see.
+
+```bash
+python tools/kanban/metrics.py --watcher      # {state, last_poll_at, minutes_since_last_poll, tasks_checked, actions_taken}
+python tools/kanban/metrics.py --stall        # same signal joined onto the stall check as `watcher` + `stall_attribution`
+python tools/monitor/heartbeat_daemon.py --status   # pr_watcher_poll listed alongside every other check
+curl -s localhost:5050/api/live-check | python -m json.tool   # dashboard Live Activity -> `pr_watcher`
+```
+
+`stall_attribution` is what makes a flatline actionable — the two situations
+that used to look identical:
+
+| value | meaning |
+|-------|---------|
+| `throughput_present` | tasks are completing; not a stall |
+| `watcher_not_polling` | last poll is older than `stale_after_minutes` (default 15) — broken pipe |
+| `watcher_polling_nothing_mergeable` | watcher is alive and took zero actions — look at executors / done-gate / CI |
+
 ---
 
 ## Loop Engineering — GEPA Optimizer & Adversarial Verify

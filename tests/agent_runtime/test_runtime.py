@@ -1,8 +1,8 @@
 # CUI // SP-CTI
 """Unit tests for the standalone agent runtime (SAG sag-rt-01).
 
-Covers the built-in starter toolset (read_file / search_files / health_check
-with repo-root confinement) and the AgentRuntime orchestration (turn execution,
+Covers the built-in starter toolset (read_file / search_files / health_check /
+list_skills / load_skill with repo-root confinement) and the AgentRuntime orchestration (turn execution,
 usage roll-forward, session resume, and the minimal built-in slash dispatcher /
 REPL). Persistence layers (ChatManager, agent_loop_session) are faked so the
 tests are DB-independent and match the shared conftest schema, which does not
@@ -91,12 +91,17 @@ def no_save(monkeypatch):
 def test_toolset_shape():
     tools, handlers = bt.build_builtin_toolset()
     names = {t["function"]["name"] for t in tools}
-    assert names == {"read_file", "search_files", "health_check"}
+    # list_skills/load_skill are folded in from skill_tools (hgx-sess-02) so the
+    # skill library is reachable from the default runtime, not just from a bundle.
+    assert names == {
+        "read_file", "search_files", "health_check", "list_skills", "load_skill",
+    }
     assert set(handlers) == names
-    # read/search are marked read-only for parallel dispatch.
+    # Every starter tool is read-only, which is what lets the loop dispatch them
+    # in parallel and lets them skip the mutation safety gate.
     for t in tools:
-        if t["function"]["name"] in ("read_file", "search_files", "health_check"):
-            assert t.get("is_read_only") is True
+        assert t.get("is_read_only") is True
+        assert t["function"].get("is_read_only") is True
 
 
 def test_read_file_ok(tmp_path, monkeypatch):
