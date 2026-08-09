@@ -648,6 +648,48 @@ classify("Bash", {"tool_input": {"command": "git push"}})
 
 ---
 
+## Agent Detection Operator CLI (agov-det-07)
+
+The operator surface over the declarative rule pack in `args/agent_rules/`.
+Four verbs, all with `--json`.
+
+```bash
+python tools/agent_detect/cli.py --list --json
+python tools/agent_detect/cli.py --check --json
+python tools/agent_detect/cli.py --check --rules-dir args/agent_rules_enforce --json
+python tools/agent_detect/cli.py --test --json
+python tools/agent_detect/cli.py --scan --session <session_id> --json
+python tools/agent_detect/cli.py --scan --session <session_id> --record --json
+python -m tools.agent_detect.cli --list --json
+```
+
+| Verb | What it does |
+|------|--------------|
+| `--list` | Catalog the loaded rules — id, severity, kind, enforce, source path — plus any files skipped and why |
+| `--check` | Validate a rule directory. **Exits non-zero on any invalid rule.** Run it before copying a rule into `args/agent_rules_enforce/` |
+| `--test` | Evaluate the rules against the fixture events in `context/agent_detect/fixtures/`. Exits non-zero on a mismatch, and on zero cases |
+| `--scan` | Evaluate the rules against the events already stored for one session. Read-only unless `--record` |
+
+**Exit codes:** `0` completed and every check passed · `1` a check failed
+(invalid rule, fixture mismatch) · `2` usage error or the verb could not run.
+
+`--check` exists because an invalid rule is **inert, not match-all** — it is
+skipped into `RuleSet.errors` rather than degraded into a partial matcher. The
+exit code is therefore the only signal an operator ever gets that an enforcement
+directory is not doing what its author thinks it is.
+
+`--scan` is read-only by default so an operator can re-run it while tuning rules
+without accumulating rows in an append-only table they cannot delete. With
+`--record`, matches are appended to `agent_findings` as `decision="observed"`,
+`enforced=False` — the CLI runs after the fact and has nothing left to deny.
+
+> **A finding is a RULE MATCH AND NOT PROOF OF EXECUTION.** What the detector
+> sees, what it does not, and the measured per-source fidelity are in
+> [docs/features/agov-det-coverage-and-limits.md](../features/agov-det-coverage-and-limits.md).
+> Read it before reporting a clean `--scan` as evidence.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)

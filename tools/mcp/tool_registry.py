@@ -42,13 +42,14 @@ Categories:
     canvas (8)
     system_graph (3)
     intelligence (3)
+    agent_detection (3)
     integrity (2)
     nova (9)
     pulse (1)
     cortex (8)
     analyzers (2)
 
-Total: 463 tools, 6 resources
+Total: 466 tools, 6 resources
 """
 
 from types import MappingProxyType
@@ -6767,6 +6768,85 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
+    # AGENT DETECTION — AGOV/DET declarative rules (3 tools)
+    # ============================================================
+    "agent_detect_list_rules": {
+        "category": "agent_detection",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_agent_detect_list_rules",
+        "description": (
+            "Catalog the AGOV detection rules loaded from a rule directory (default "
+            "args/agent_rules). Returns each rule's id, version, severity, kind (expr|sequence), "
+            "enabled/enforce flags and source path, plus any files that were skipped and why. "
+            "Read-only. Note: `enforce: true` only blocks from the operator enforcement "
+            "directory, so a rule in the shipped pack that declares it is inert."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rules_dir": {
+                    "type": "string",
+                    "description": "Rule directory (default: args/agent_rules)",
+                },
+            },
+        },
+    },
+    "agent_detect_check_rules": {
+        "category": "agent_detection",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_agent_detect_check_rules",
+        "description": (
+            "Validate an AGOV detection rule directory. Returns ok=false with the offending "
+            "file path and reason for every rule that does not compile. An invalid rule is "
+            "INERT rather than match-all, so this is the only signal that an enforcement "
+            "directory is not doing what its author thinks. Run it before copying a rule into "
+            "args/agent_rules_enforce/."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rules_dir": {
+                    "type": "string",
+                    "description": "Rule directory to validate (default: args/agent_rules)",
+                },
+            },
+        },
+    },
+    "agent_detect_scan_session": {
+        "category": "agent_detection",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_agent_detect_scan_session",
+        "description": (
+            "Evaluate the AGOV detection rules against the events already stored for one "
+            "session. Read-only unless record=true, which appends matches to agent_findings as "
+            "observations. A MATCH IS A RULE MATCH AND NOT PROOF OF EXECUTION, and the stored "
+            "event stream carries no operands today, so a clean result means the rows had "
+            "nothing to match rather than that the session was clean — see "
+            "docs/features/agov-det-coverage-and-limits.md."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Session to scan"},
+                "rules_dir": {
+                    "type": "string",
+                    "description": "Rule directory (default: args/agent_rules)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Per-source row cap",
+                    "default": 500,
+                },
+                "record": {
+                    "type": "boolean",
+                    "description": "Append matches to agent_findings (default false)",
+                    "default": False,
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
+    # ============================================================
     # INTEGRITY — SIPA Software Integrity & Provenance Assessor (2 tools)
     # ============================================================
     "integrity_assess": {
@@ -9082,6 +9162,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "mc_net_ingest_csv":                        False,
     "mc_net_ingest_netbox":                     False,
     "mc_net_ingest_topology":                   False,
+    # -- agent detection ---------------------------------------------------
+    "agent_detect_list_rules":                  True,
+    "agent_detect_check_rules":                 True,
+    "agent_detect_scan_session":                False,   # record=true appends findings
     # -- integrity ---------------------------------------------------------
     "integrity_assess":                         False,
     "integrity_list_assessments":               True,
