@@ -631,15 +631,15 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 
 | Element | Status | Evidence / what is missing |
 |---|---|---|
-| SBOM Author | **GAP** | No author field. `metadata.tools[].vendor = "ICDEV™"` identifies the tool vendor, which the standard explicitly says is *not* the author. |
+| SBOM Author | **MET (sbx-fld-01)** | `metadata.authors[0].name`, plus the `icdev:sbom:author` property that carries the element into SPDX as an `Organization:` creator. Resolved from `--author`, then `$ICDEV_SBOM_AUTHOR`, then a full-name default. `metadata.tools[].vendor` is untouched and still means the tool's vendor — the two are separate statements. |
 | SBOM Author Signature | **MET** (sbx-sig-01) | `sbom_signer.sign_sbom` writes a detached `<sbom>.sig.json` over the canonicalized document and persists `author_signature` + `signature_algorithm`. FIPS 186-5 algorithms only (ECDSA P-256/384/521, Ed25519); HMAC and empty signatures refused. Offline both ways. See §2.3. |
 | SBOM Data Format Name | **MET** | `bomFormat: "CycloneDX"`, or `spdxVersion` naming SPDX. |
 | SBOM Data Format Version | **MET (sbx-fmt-01)** | `specVersion` defaults to **1.7** (ECMA-424, Dec 2025) rather than the 2022 spec 1.4; 1.4-1.6 stay selectable for lagging consumers. SPDX emits `SPDX-2.3`. See §2.6. |
-| SBOM Generation Context | **GAP** | Nothing records lifecycle phase. ICDEV generates from source manifests, i.e. "before build" — knowable and currently unstated. |
-| SBOM Timestamp | **PARTIAL** | Emitted as `%Y-%m-%dT%H:%M:%SZ`. Needs explicit RFC 9557 conformance and a test. |
+| SBOM Generation Context | **MET (sbx-fld-01)** | `icdev:sbom-generation-context = "before build"` on every document — this generator reads source manifests and never opens a built artifact — plus `metadata.lifecycles = [{phase: "pre-build"}]` on 1.5+. Both vocabularies, not redundancy: only the property carries the standard's own term, and 1.4 has no `lifecycles` field to hold it. |
+| SBOM Timestamp | **MET (sbx-fld-01)** | `_rfc9557_timestamp()` — the RFC 3339 profile RFC 9557 extends, which is what CycloneDX's `format: date-time` and SPDX 2.3's `created` both accept; the `[UTC]` suffix form is deliberately not used because it would fail both. A naive datetime now raises instead of being stamped `Z`, and a non-UTC one is converted rather than relabelled. |
 | SBOM Tool Name | **MET** | `metadata.tools[].name = "icdev-sbom-generator"`. |
-| SBOM Tool Version | **PARTIAL** | **Hardcoded `"1.0.0"`** — not derived from anything. It is a constant that will never change and therefore misidentifies the code delivery. |
-| SBOM Version | **PARTIAL** | Document always carries `"version": 1` while `sbom_records.version` independently counts 1.0, 2.0, 3.0… The two disagree, and neither follows the "major version should be 1, use minor/patch for content changes" guidance. |
+| SBOM Tool Version | **MET (sbx-fld-01)** | Derived from `icdev._version`, then installed distribution metadata, then `pyproject.toml`, then the literal `"unknown"` the standard requires when the version is unavailable. The `"1.0.0"` constant is gone from both copies and an AST check keeps it gone. |
+| SBOM Version | **MET (sbx-fld-01)** | One counter, two spellings, settled before the document is built. CycloneDX `version` carries it as 1, 2, 3…; `icdev:sbom:version` and `sbom_records.sbom_version` carry it as semver `1.<N-1>.0` — major pinned to 1 per the standard, minor counting content revisions, patch reserved for corrections (sbx-prc-02). `sbom_records.version` remains the legacy `"N.0"` spelling of the same N. Legacy float rows still parse to their revision, so an existing project continues its count rather than restarting. Serial numbers are `uuid4`, the random UUID of RFC 9562 §5.4. |
 
 ### 3.2 Component Data
 

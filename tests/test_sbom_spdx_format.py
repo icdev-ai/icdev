@@ -26,9 +26,11 @@ from tools.compliance.sbom_generator import (
     CYCLONEDX_SCHEMA,
     CYCLONEDX_SPEC_VERSION,
     CYCLONEDX_SUPPORTED_VERSIONS,
+    DEFAULT_SBOM_AUTHOR,
     FORMAT_CYCLONEDX,
     FORMAT_EXTENSIONS,
     FORMAT_SPDX,
+    SBOM_TOOL_VENDOR,
     SUPPORTED_FORMATS,
     _build_cyclonedx_sbom,
     generate_sbom,
@@ -395,12 +397,22 @@ def test_relationship_translation_ignores_edges_to_components_that_are_not_there
 
 
 def test_the_tool_vendor_is_not_claimed_as_the_sbom_author():
-    """The standard is explicit that the tool vendor is not the SBOM Author."""
+    """The standard is explicit that the tool vendor is not the SBOM Author.
+
+    Before sbx-fld-01 there was no author at all, so this held by there being no
+    `Organization:` creator to get wrong. Now that the generator emits one, the
+    invariant is the stronger statement: the Organization creator is the *entity*,
+    and the tool's vendor string is not it.
+    """
     spdx = sw.to_spdx(_cyclonedx())
     creators = spdx["creationInfo"]["creators"]
 
     assert any(creator.startswith("Tool: icdev-sbom-generator") for creator in creators)
-    assert not any(creator.startswith("Organization:") for creator in creators)
+
+    organizations = [c for c in creators if c.startswith("Organization:")]
+    assert organizations == [f"Organization: {DEFAULT_SBOM_AUTHOR}"]
+    assert f"Organization: {SBOM_TOOL_VENDOR}" not in creators
+
     # The vendor is still recorded — as the vendor of the tool, in free text.
     assert "ICDEV" in spdx["creationInfo"]["comment"]
 
@@ -465,7 +477,14 @@ def test_generate_sbom_writes_a_valid_spdx_document_and_records_the_format(icdev
 
 
 def test_the_same_project_in_both_formats_scores_identically(icdev_db, tmp_path):
-    """The acceptance criterion, over a real generation rather than a fixture."""
+    """The acceptance criterion, over a real generation rather than a fixture.
+
+    Parity is asserted between the two serializations of ONE build, which is what
+    `compare_element_coverage` is for. Two separate `generate_sbom` calls are two
+    SBOMs, not two views of one: sbx-prc-02 makes every generation a new document
+    and sbx-fld-01 gives each one its own SBOM Version, so comparing across them
+    would be comparing builds and would fail on an element that is *correct*.
+    """
     project_dir = tmp_path / "project"
     project_dir.mkdir()
     (project_dir / "requirements.txt").write_text("requests==2.31.0\nurllib3==2.2.1\n", encoding="utf-8")
@@ -477,9 +496,18 @@ def test_the_same_project_in_both_formats_scores_identically(icdev_db, tmp_path)
     cyclonedx = json.loads(Path(cyclonedx_path).read_text(encoding="utf-8"))
     spdx = json.loads(Path(spdx_path).read_text(encoding="utf-8"))
 
-    result = sw.compare_element_coverage(cyclonedx, spdx)
+    # The SPDX serialization of the CycloneDX build above — the same translation
+    # `generate_sbom(format=spdx)` performs internally, on one document.
+    result = sw.compare_element_coverage(cyclonedx, sw.to_spdx(cyclonedx))
     assert result["element_count"] > 0
     assert result["parity"], json.dumps(result, indent=2)
+
+    # And the separately generated SPDX document differs only by being a later
+    # build: same elements, its own SBOM Version.
+    across_builds = sw.compare_element_coverage(cyclonedx, spdx)
+    assert [entry.split("=")[0] for entry in across_builds["missing_in_spdx"]] == [
+        "SPDXRef-DOCUMENT::icdev:sbom:version"
+    ]
 
     # Same components, both ways round. The SPDX document adds one package for
     # the document's own target component, which CycloneDX carries as

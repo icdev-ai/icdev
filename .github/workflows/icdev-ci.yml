@@ -124,6 +124,18 @@ jobs:
         # from the CHECK made the correction event silently vanish. ~2s, pure
         # Python, no DB service/LLM/network (sbx-prc-02).
         #
+        # test_sbom_metadata_2026.py earns a slot because two of the nine SBOM
+        # Metadata elements it pins fail silently. The Tool Version was the literal
+        # "1.0.0" for the life of the generator -- a well-formed value that named no
+        # delivery, so every consumer read a version and none could act on it. And
+        # the document's version counter and sbom_records.version were two
+        # independent numbers that always disagreed after the first generation,
+        # which no schema check catches because both are individually valid. The
+        # file also holds the RFC 9557 timestamp parse and the guard against the
+        # SQLite-dialect GLOB/CAST query returning, which was wrong AND fatal on the
+        # PostgreSQL-primary backend. ~1.2s, pure Python, no DB service/LLM/network
+        # (sbx-fld-01).
+        #
         # test_pr_watcher_heartbeat.py earns a slot because the bug it pins makes
         # every daemon's log silence meaningless. get_logger(__name__) resolves to
         # "__main__" when a module is executed rather than imported -- which is how
@@ -199,6 +211,7 @@ jobs:
             tests/test_sbom_coverage_resolution.py \
             tests/test_icdev_comply_sbom_step.py \
             tests/test_sbom_revision_2026.py \
+            tests/test_sbom_metadata_2026.py \
             tests/ci/test_error_classifier.py \
             tests/kanban/test_pr_linker.py \
             tests/kanban/test_reverify.py \
