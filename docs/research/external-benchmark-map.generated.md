@@ -17,6 +17,13 @@ measured half can overrule the declared one in **both** directions: a declared g
 closing condition is now satisfied is reported retired, and a declared lead that has
 fallen below its module floor becomes a gap.
 
+**Why you will not find an exact module count below.** The counts move on every branch
+that adds a module, so writing them here made this file conflict with itself: three of
+six blocked PRs on 2026-08-08 were held up by this document and nothing else. What is
+committed is the count's *classification* against its floor — `built`, `thin`, `absent`
+— which only changes when the subsystem's state really changes. For the integers run
+`python tools/innovation/benchmark_report.py --json`, or `--live` for the measured rendering.
+
 **Row counts were not measured.** This file is generated offline so it reproduces byte-for-byte anywhere, which is what lets CI diff it. Offline, nothing retires a declared finding — the conservative reading is the one that gets committed. `--live` opens the database and re-checks every closing condition.
 
 ---
@@ -25,28 +32,28 @@ fallen below its module floor becomes a gap.
 
 15 subsystems: ahead=1, gap=4, no_adaptation_needed=3, parity=4, not_comparable=3
 
-| # | Subsystem | Benchmarked against | Position | Verdict | Modules | Outstanding |
+| # | Subsystem | Benchmarked against | Position | Verdict | Code | Outstanding |
 |---|---|---|---|---|---|---|
-| 1 | Developer portal / catalog | Backstage, Cortex.io, Port, OpsLevel | Behind | **Gap** | 48 | 2 |
-| 2 | Observability / LLM telemetry | OpenTelemetry GenAI conventions, Langfuse | Ahead | **Ahead, with items outstanding** | 32 | 1 |
-| 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | 120 | 9 |
-| 4 | Security ops / threat analysis | TheHive Cortex, MISP, OpenCTI | Behind | **Gap** | 153 | 1 |
-| 5 | RAG & knowledge graph | LlamaIndex, Haystack, Microsoft GraphRAG | Parity | **Parity, with named work** | 61 | 4 |
-| 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | 101 | 0 |
-| 7 | Delivery pipeline | Temporal, Argo, GitHub Actions | Ahead | **No adaptation needed** | 109 | 0 |
-| 8 | Data quality & lineage | OpenLineage, DataHub, Great Expectations | Behind | **Gap** | 18 | 1 |
-| 9 | LLM evaluation & red teaming | promptfoo, DeepEval, Giskard | Behind | **Gap** | 11 | 1 |
-| 10 | IaC & infrastructure | Crossplane, Checkov, Atlantis | Parity | **No adaptation needed** | 45 | 0 |
+| 1 | Developer portal / catalog | Backstage, Cortex.io, Port, OpsLevel | Behind | **Gap** | `built` | 2 |
+| 2 | Observability / LLM telemetry | OpenTelemetry GenAI conventions, Langfuse | Ahead | **Ahead, with items outstanding** | `built` | 1 |
+| 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | `built` | 9 |
+| 4 | Security ops / threat analysis | TheHive Cortex, MISP, OpenCTI | Behind | **Gap** | `built` | 1 |
+| 5 | RAG & knowledge graph | LlamaIndex, Haystack, Microsoft GraphRAG | Parity | **Parity, with named work** | `built` | 4 |
+| 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | `built` | 0 |
+| 7 | Delivery pipeline | Temporal, Argo, GitHub Actions | Ahead | **No adaptation needed** | `built` | 0 |
+| 8 | Data quality & lineage | OpenLineage, DataHub, Great Expectations | Behind | **Gap** | `built` | 1 |
+| 9 | LLM evaluation & red teaming | promptfoo, DeepEval, Giskard | Behind | **Gap** | `built` | 1 |
+| 10 | IaC & infrastructure | Crossplane, Checkov, Atlantis | Parity | **No adaptation needed** | `built` | 0 |
 
 Subsystems the benchmark map has not covered:
 
-| # | Subsystem | Benchmarked against | Position | Verdict | Modules | Outstanding |
+| # | Subsystem | Benchmarked against | Position | Verdict | Code | Outstanding |
 |---|---|---|---|---|---|---|
-| — | Genesis / autoresearch loops | — not benchmarked — | Not positioned | **Parity, with named work** | 54 | 2 |
-| — | Generated-UI and presentation quality | — not benchmarked — | Not positioned | **Parity, with named work** | 53 | 1 |
-| — | SparkPilot / RTOS | — not benchmarked — | Not positioned | **Not comparable** | 0 | 1 |
-| — | Local model serving | — not benchmarked — | Not positioned | **Not comparable** | 69 | 0 |
-| — | Model lifecycle | — not benchmarked — | Not positioned | **Not comparable** | 33 | 0 |
+| — | Genesis / autoresearch loops | — not benchmarked — | Not positioned | **Parity, with named work** | `built` | 2 |
+| — | Generated-UI and presentation quality | — not benchmarked — | Not positioned | **Parity, with named work** | `built` | 1 |
+| — | SparkPilot / RTOS | — not benchmarked — | Not positioned | **Not comparable** | `absent` | 1 |
+| — | Local model serving | — not benchmarked — | Not positioned | **Not comparable** | `built` | 0 |
+| — | Model lifecycle | — not benchmarked — | Not positioned | **Not comparable** | `built` | 0 |
 
 ---
 
@@ -64,7 +71,7 @@ Subsystems the benchmark map has not covered:
 
 **ICDEV today.** developer_scorecards ships A-F grading across five dimensions and holds 0 rows, with zero writers and zero readers.
 
-Measured: **48 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `args/component_registry.yaml`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `args/component_registry.yaml`.
 
 **Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
@@ -97,7 +104,7 @@ Measured: **48 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `a
 
 **ICDEV today.** Already OTel-GenAI-native. tools/observability/ carries a dedicated genai_attributes.py and otel_tracer.py, and tools/llm/router.py — the path effectively all routed calls take — emits gen_ai.* spans.
 
-Measured: **32 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/observability/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/observability/`.
 
 **Verdict.** Ahead, with items outstanding; position **Ahead** — ICDEV leads and there is still something worth taking.
 
@@ -134,7 +141,7 @@ Measured: **32 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** Both layers of the 2026 two-layer pattern are already present — the agent_loop.py inner loop and the completed DWO card for durable outer execution — with budgets more mature than expected.
 
-Measured: **120 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/ace/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/ace/`.
 
 **Verdict.** Parity, with named work; position **Parity** — ICDEV's side clears its floor with named work outstanding.
 
@@ -174,7 +181,7 @@ Measured: **120 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `
 
 **ICDEV today.** ~79 analyzer-shaped modules across tools/strategos/, tools/security/ and tools/supply_chain/ with no shared base class among them; every feed, importer, scorer and triage path is hand-wired and the outputs share no vocabulary.
 
-Measured: **153 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/analyzers/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/analyzers/`.
 
 **Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
@@ -208,7 +215,7 @@ Measured: **153 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `
 
 **ICDEV today.** Retrieval is mature; the gap is the graph. kg_edges was 0 for the self-awareness graph and derive_edges() implemented one heuristic — nodes without the relationships GraphRAG's premise rests on.
 
-Measured: **61 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/rag/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/rag/`.
 
 **Verdict.** Parity, with named work; position **Parity** — ICDEV's side clears its floor with named work outstanding.
 
@@ -241,7 +248,7 @@ Measured: **61 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** OSCAL generate/validate/convert/profile-resolve, FedRAMP 20x KSI, CMMC, eMASS and Xacta sync, STIG checking, SSP/POAM/SBOM generation, a multi-framework crosswalk, cATO monitoring, IL4-IL6 classification and append-only NIST AU audit.
 
-Measured: **101 modules** (floor 5) → `built`; rows `not_expected`. Surface: `tools/compliance/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_expected`. Surface: `tools/compliance/`.
 
 **Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
@@ -269,7 +276,7 @@ Measured: **101 modules** (floor 5) → `built`; rows `not_expected`. Surface: `
 
 **ICDEV today.** kanban -> worktree -> build -> PR -> CI -> merge-verified done, with a real dated build ledger behind it. None of the external tools close the loop from detected gap to merged fix.
 
-Measured: **109 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/kanban/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/kanban/`.
 
 **Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
@@ -297,7 +304,7 @@ Measured: **109 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `
 
 **ICDEV today.** The engines are there — profiler, quality engine, anomaly detector, freshness guardian, PII scanner, plus a data-mesh model. The gap is data, not code: dm_domains held 4 rows and dm_data_products 8, and the cf_applications and mc_app_inventory inventories were empty.
 
-Measured: **18 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/data_quality/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/data_quality/`.
 
 **Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
@@ -328,7 +335,7 @@ Measured: **18 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** tools/evaluation/ holds 2 modules against 38 in tools/rag/ — the thinnest major subsystem measured. ATLAS red-teaming and an OWASP-agentic assessor mean SECURITY evaluation exists; systematic QUALITY evaluation does not.
 
-Measured: **11 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/genesis/harness/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/genesis/harness/`.
 
 **Verdict.** Gap; position **Behind** — the benchmark pass found ICDEV behind and nothing has retired that.
 
@@ -360,7 +367,7 @@ Measured: **11 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** IDC canvas with Terraform/Pulumi emitters, tf_state / pulumi_state / AWS Resource Groups Tagging importers, Ansible, K8s deploy, Helm, Iron Bank, SLSA and SBOM — comparable coverage with better compliance integration.
 
-Measured: **45 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/deploy/`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`. Surface: `tools/deploy/`.
 
 **Verdict.** No adaptation needed; position **Parity** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
@@ -394,7 +401,7 @@ Declared in the inventory and measured here, but no external pass has judged the
 
 **ICDEV today.** No finding declared.
 
-Measured: **54 modules** (floor 5) → `built`; rows `not_assessed`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`.
 
 **Verdict.** Parity, with named work; position **Not positioned** — ICDEV's side clears its floor with named work outstanding.
 
@@ -422,7 +429,7 @@ Measured: **54 modules** (floor 5) → `built`; rows `not_assessed`.
 
 **ICDEV today.** No finding declared.
 
-Measured: **53 modules** (floor 5) → `built`; rows `not_assessed`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`.
 
 **Verdict.** Parity, with named work; position **Not positioned** — ICDEV's side clears its floor with named work outstanding.
 
@@ -451,7 +458,7 @@ Measured: **53 modules** (floor 5) → `built`; rows `not_assessed`.
 
 **ICDEV today.** No finding declared.
 
-Measured: **0 modules** (floor 5) → `absent`; rows `not_expected`.
+Measured: **no modules matched its globs** → `absent`; rows `not_expected`.
 
 **Verdict.** Not comparable; position **Not positioned** — not owned in this tree, so its absence is intentional, not a deficit.
 
@@ -477,7 +484,7 @@ Measured: **0 modules** (floor 5) → `absent`; rows `not_expected`.
 
 **ICDEV today.** No finding declared.
 
-Measured: **69 modules** (floor 5) → `built`; rows `not_assessed`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`.
 
 **Verdict.** Not comparable; position **Not positioned** — no benchmark pass has declared what is outstanding here and nothing is queued against it, so there is no external reading to compare against.
 
@@ -501,7 +508,7 @@ Measured: **69 modules** (floor 5) → `built`; rows `not_assessed`.
 
 **ICDEV today.** No finding declared.
 
-Measured: **33 modules** (floor 5) → `built`; rows `not_assessed`.
+Measured: **at or above its floor of 5 modules** → `built`; rows `not_assessed`.
 
 **Verdict.** Not comparable; position **Not positioned** — no benchmark pass has declared what is outstanding here and nothing is queued against it, so there is no external reading to compare against.
 
