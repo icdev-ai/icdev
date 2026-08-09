@@ -130,6 +130,34 @@ def test_scheduled_but_undispatched_is_review_bound(conn):
     assert "merge or close" in d["detail"]
 
 
+def test_review_bound_also_names_the_gated_backlog_behind_it(conn):
+    """Both facts, one line — the omission cost a second diagnosis.
+
+    review_bound wins precedence whenever ANY task is scheduled, so on 2026-08-09
+    the scheduler reported three withheld tasks for hours and never said the 37
+    backlog tasks behind them were gate-held. Merging the three PRs bought three
+    dispatches and idled again, because the real ceiling was never mentioned.
+    """
+    _task(conn, "t-1", status="scheduled")
+    _gate(conn, "g-00")
+    _task(conn, "t-2", status="backlog", dep="g-00")
+    _task(conn, "t-3", status="backlog", dep="g-00")
+    d = A.diagnose(conn)
+    assert d["reason"] == A.REVIEW_BOUND, "precedence is unchanged"
+    assert "merge or close" in d["detail"]
+    assert "2 backlog task(s) sit behind 1 held gate(s)" in d["detail"]
+    assert "g-00" in d["detail"], "name the gate — the operator has to pick one"
+
+
+def test_review_bound_says_nothing_extra_when_no_gate_is_held(conn):
+    """The clause is evidence, not decoration: no gate, no sentence."""
+    _task(conn, "t-1", status="scheduled")
+    _task(conn, "t-2", status="backlog")
+    d = A.diagnose(conn)
+    assert d["reason"] == A.REVIEW_BOUND
+    assert "held gate" not in d["detail"]
+
+
 def test_backlog_behind_held_gates_is_decision_bound(conn):
     _gate(conn, "g-00")
     _task(conn, "t-1", status="backlog", dep="g-00")

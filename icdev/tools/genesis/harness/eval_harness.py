@@ -18,6 +18,21 @@ Usage (from any reflex):
     # Harness reflex calls this every 6h:
     metrics = compute_metrics("oracle_triage", window_days=30)
     gates   = check_gates()
+
+Graph runs use the same table at a finer grain (hgx-eval-01). A Studio workflow
+executes many nodes under one run_id, so correlating by task_id alone averages
+a node that is consistently right together with one that is consistently wrong:
+
+    from tools.genesis.harness.eval_harness import (
+        record_graph_node_decision, record_node_outcome, graph_run_metrics)
+
+    record_graph_node_decision(task_id="kt-123", reflex="studio_workflow",
+                               decision="proceed", confidence=0.82,
+                               run_id="run-9", node_id="verify",
+                               node_type="agent", edge_condition="tests_passed")
+    record_node_outcome(run_id="run-9", node_id="verify", actual_outcome="resolved")
+
+    graph_run_metrics("run-9")   # per-node precision/recall, worst node first
 """
 from __future__ import annotations
 
@@ -174,50 +189,71 @@ class _AnomalyDetector:
             "false_heal_max_ceiling": float(bounds.get("false_heal_max_ceiling", 0.60)),
             "heal_success_min_floor": float(bounds.get("heal_success_min_floor", 0.30)),
         }
-        self._cache: dict[str, dict] = {}
+        # Keyed by (reflex, node_type) — a per-node_type baseline must not be
+        # served from a pooled entry, or the partitioning above is cosmetic.
+        self._cache: dict[tuple[str, str | None], dict] = {}
 
-    def get_thresholds(self, reflex: str) -> dict[str, float]:
+    def get_thresholds(self, reflex: str, node_type: str | None = None) -> dict[str, float]:
         """Return adaptive gate thresholds for *reflex*, falling back to config defaults.
 
         Keys: precision_min, ece_max, false_heal_max, heal_success_min.
-        """
-        if reflex in self._cache:
-            return self._cache[reflex]
 
+        ``node_type`` partitions the history. A graph run mixes node kinds — a
+        deterministic ``tool`` step, an ``mcp`` dispatch, an ``agent`` loop — with
+        wildly different error profiles, and pooling them derives one threshold
+        from a distribution that is really several. The effect is not merely
+        imprecise: an agent node drifting drags the pooled mean down, which
+        *loosens* the threshold a well-behaved tool node is then judged against,
+        so the strong node stops being gated at the moment the weak one starts
+        failing. Passing a node_type keeps each kind's baseline its own.
+
+        ``node_type=None`` reproduces the pre-existing pooled behaviour exactly,
+        so every existing caller is unaffected.
+        """
+        cache_key = (reflex, node_type)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        label = reflex if node_type is None else f"{reflex}/{node_type}"
         thresholds = dict(self._base)
-        snapshots = self._collect_snapshots(reflex)
+        snapshots = self._collect_snapshots(reflex, node_type)
         if len(snapshots) >= self.min_samples:
             thresholds.update(self._compute_adaptive(snapshots))
-            LOG.debug("[harness] adaptive thresholds for %s from %d snapshots", reflex, len(snapshots))
+            LOG.debug("[harness] adaptive thresholds for %s from %d snapshots", label, len(snapshots))
         else:
             LOG.debug(
                 "[harness] static thresholds for %s (%d snapshots < %d required)",
-                reflex, len(snapshots), self.min_samples,
+                label, len(snapshots), self.min_samples,
             )
 
-        self._cache[reflex] = thresholds
+        self._cache[cache_key] = thresholds
         return thresholds
 
-    def _collect_snapshots(self, reflex: str) -> list[dict]:
+    def _collect_snapshots(self, reflex: str, node_type: str | None = None) -> list[dict]:
         conn = None
         # window_days is the per-snapshot window size; total lookback spans min_samples windows
         total_days = self.window_days * self.min_samples
-        try:
-            conn = _conn()
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(days=total_days)
-            ).isoformat(timespec="seconds")
-            rows = conn.execute(
-                """
+        # Built rather than parameterised unconditionally: `node_type = NULL`
+        # never matches in SQL, so a None must drop the predicate, not bind it.
+        sql = """
                 SELECT decision, confidence, actual_outcome
                   FROM harness_eval
                  WHERE reflex = %s
                    AND created_at >= %s
                    AND actual_outcome IS NOT NULL
-                ORDER BY created_at
-                """,
-                (reflex, cutoff),
-            ).fetchall()
+        """
+        params: list[Any] = [reflex, None]
+        if node_type is not None:
+            sql += "           AND node_type = %s\n"
+            params.append(node_type)
+        sql += "        ORDER BY created_at"
+        try:
+            conn = _conn()
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(days=total_days)
+            ).isoformat(timespec="seconds")
+            params[1] = cutoff
+            rows = conn.execute(sql, tuple(params)).fetchall()
         except Exception as exc:
             LOG.debug("[harness] anomaly_detector query failed for %s: %s", reflex, exc)
             return []
@@ -344,6 +380,215 @@ def record_decision(
     finally:
         _safe_close(conn)
     return row_id
+
+
+#: Columns added by migration 20260809041642. Probed once per process rather
+#: than per call: an unmigrated database would otherwise raise on every INSERT,
+#: and the surrounding handler would swallow it into a warning nobody reads
+#: while the row was silently dropped.
+_GRAPH_COLUMNS = ("run_id", "node_id", "node_type", "edge_condition")
+_graph_columns_present: bool | None = None
+
+
+def _has_graph_columns() -> bool:
+    """Whether harness_eval carries the graph-node columns on THIS database.
+
+    Cached for the life of the process. A migration does not land mid-run, and
+    the alternative — an information_schema round trip per decision — would cost
+    more than the write it guards.
+    """
+    global _graph_columns_present
+    if _graph_columns_present is not None:
+        return _graph_columns_present
+
+    conn = None
+    try:
+        from tools.db.storage import column_exists
+        conn = _conn()
+        _graph_columns_present = all(
+            column_exists(conn, "harness_eval", c) for c in _GRAPH_COLUMNS
+        )
+    except Exception as exc:
+        LOG.debug("[harness] graph-column probe failed: %s", exc)
+        _graph_columns_present = False
+    finally:
+        _safe_close(conn)
+    return _graph_columns_present
+
+
+def record_graph_node_decision(
+    task_id: str,
+    reflex: str,
+    decision: str,
+    run_id: str | None = None,
+    node_id: str | None = None,
+    node_type: str | None = None,
+    edge_condition: str | None = None,
+    confidence: float | None = None,
+    metadata: dict | None = None,
+) -> str:
+    """Insert one harness_eval row for a decision made by a single graph NODE.
+
+    :func:`record_decision`'s grain is the task, which is right for a reflex —
+    one reflex, one task, one decision. A graph run is not that shape: Studio's
+    workflow_runner executes many nodes under one run, each with its own
+    decision and its own confidence, and rolled up by ``task_id`` they are
+    indistinguishable. This records the run/node identity alongside the decision
+    so a node can be scored on its own record.
+
+    Parameters
+    ----------
+    task_id:        Kanban task or failure id the run serves; "" when standalone.
+    reflex:         Originating surface name (kept for continuity with the
+                    existing gate loop and with ``compute_metrics``).
+    decision:       What the node decided.
+    run_id:         Correlator for the whole graph run (Studio's
+                    ``studio_workflow_runs.run_id``).
+    node_id:        Step id within that run.
+    node_type:      Node kind — ``tool`` | ``mcp`` | ``agent`` | ``human`` |
+                    ``approval`` in workflow_runner's vocabulary. This is the
+                    key :class:`_AnomalyDetector` partitions on.
+    edge_condition: Branch predicate that selected this node, when reached
+                    conditionally. Without it, a node's precision averages over
+                    branches that were never comparable.
+    confidence:     Score used by the node (0.0–1.0); None if not applicable.
+    metadata:       Extra context stored as JSON.
+
+    Returns the new row id.
+
+    Degrades rather than fails on a database that has not applied migration
+    20260809041642: the graph fields are folded into ``metadata_json`` and the
+    row is written at the task grain. Losing the *grain* is recoverable; losing
+    the *row* is not, and a swallowed INSERT is how a measurement table stays
+    empty while every caller believes it is recording.
+    """
+    graph_fields = {
+        "run_id": run_id,
+        "node_id": node_id,
+        "node_type": node_type,
+        "edge_condition": edge_condition,
+    }
+
+    if not _has_graph_columns():
+        LOG.warning(
+            "[harness] harness_eval lacks %s — recording %s/%s at the task grain "
+            "instead. Apply migration 20260809041642_harness_eval_graph_node_columns "
+            "to make this node independently scoreable.",
+            ", ".join(_GRAPH_COLUMNS), node_id, node_type,
+        )
+        folded = dict(metadata or {})
+        folded["graph_node"] = graph_fields
+        return record_decision(task_id, reflex, decision, confidence, folded)
+
+    row_id = str(uuid.uuid4())
+    conn = None
+    try:
+        conn = _conn()
+        conn.execute(
+            """
+            INSERT INTO harness_eval
+                (id, task_id, reflex, decision, confidence, metadata_json, created_at,
+                 run_id, node_id, node_type, edge_condition)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                row_id,
+                task_id or "",
+                reflex,
+                decision,
+                confidence,
+                json.dumps(metadata or {}),
+                _utcnow(),
+                run_id,
+                node_id,
+                node_type,
+                edge_condition,
+            ),
+        )
+        conn.commit()
+    except Exception as exc:
+        LOG.warning("[harness] record_graph_node_decision failed: %s", exc)
+    finally:
+        _safe_close(conn)
+    return row_id
+
+
+def record_node_outcome(
+    run_id: str,
+    node_id: str,
+    actual_outcome: str,
+) -> dict[str, Any]:
+    """Set the actual outcome for ONE node of one graph run.
+
+    :func:`record_outcome` matches on ``task_id`` alone, so on a graph run it
+    stamps every node of that task with the same verdict — which makes per-node
+    precision a constant and defeats the whole point of the node grain. This
+    scopes the UPDATE to (run_id, node_id).
+
+    Same contract as :func:`record_outcome`: never raises, and reports
+    ``no_decision_row`` rather than assuming success when nothing matched.
+    """
+    result: dict[str, Any] = {
+        "status": "error",
+        "rows": 0,
+        "run_id": run_id,
+        "node_id": node_id,
+        "actual_outcome": actual_outcome,
+    }
+    if actual_outcome not in VALID_OUTCOMES:
+        LOG.warning(
+            "[harness] record_node_outcome called with off-vocabulary outcome %r "
+            "for run_id=%r node_id=%r; metrics recognise only %s",
+            actual_outcome, run_id, node_id, sorted(VALID_OUTCOMES),
+        )
+
+    if not _has_graph_columns():
+        result["status"] = "no_graph_columns"
+        LOG.warning(
+            "[harness] record_node_outcome cannot scope to a node: harness_eval "
+            "lacks %s. Apply migration 20260809041642.", ", ".join(_GRAPH_COLUMNS),
+        )
+        return result
+
+    conn = None
+    try:
+        conn = _conn()
+        cur = conn.execute(
+            """
+            UPDATE harness_eval
+               SET actual_outcome = %s,
+                   resolved_at    = %s
+             WHERE run_id = %s
+               AND node_id = %s
+               AND actual_outcome IS NULL
+            """,
+            (actual_outcome, _utcnow(), run_id, node_id),
+        )
+        conn.commit()
+
+        rows = getattr(cur, "rowcount", -1)
+        rows = -1 if rows is None else int(rows)
+        result["rows"] = rows
+
+        if rows > 0:
+            result["status"] = "recorded"
+        elif rows == 0:
+            result["status"] = "no_decision_row"
+            LOG.warning(
+                "[harness] record_node_outcome matched no decision row for "
+                "run_id=%r node_id=%r (outcome=%r) — the outcome was NOT recorded.",
+                run_id, node_id, actual_outcome,
+            )
+        else:
+            result["status"] = "unknown"
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        LOG.warning(
+            "[harness] record_node_outcome failed for %s/%s: %s", run_id, node_id, exc
+        )
+    finally:
+        _safe_close(conn)
+    return result
 
 
 def record_outcome(
@@ -473,6 +718,22 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
     if not rows:
         return {"reflex": reflex, "window_days": window_days, "total_decisions": 0}
 
+    return {
+        "reflex": reflex,
+        "window_days": window_days,
+        **_metrics_from_rows(rows, reflex),
+    }
+
+
+def _metrics_from_rows(rows: list, reflex: str | None = None) -> dict[str, Any]:
+    """Precision / recall / ECE / AUROC over an already-selected set of rows.
+
+    Extracted from :func:`compute_metrics` so the per-node reads below score
+    identically to the per-reflex read. Two copies of this arithmetic drifting
+    apart is not hypothetical here — ``_compute_ece`` already shipped exactly
+    that bug, filtering outcomes in one caller and not the other, so the same
+    rows scored differently depending on who asked.
+    """
     total = len(rows)
     resolved = [r for r in rows if r["actual_outcome"] == "resolved"]
     false_pos = [r for r in rows if r["actual_outcome"] == "false_positive"]
@@ -503,8 +764,6 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
     heal_success_rate = len(resolved) / heal_denom if heal_denom and reflex == "heal" else None
 
     return {
-        "reflex": reflex,
-        "window_days": window_days,
         "total_decisions": total,
         "resolved_count": len(resolved),
         "false_positive_count": len(false_pos),
@@ -515,6 +774,130 @@ def compute_metrics(reflex: str, window_days: int = 30) -> dict[str, Any]:
         "auroc": round(auroc, 4) if auroc is not None else None,
         "false_heal_rate": round(false_heal_rate, 4) if false_heal_rate is not None else None,
         "heal_success_rate": round(heal_success_rate, 4) if heal_success_rate is not None else None,
+    }
+
+
+def _select_graph_rows(
+    run_id: str | None = None,
+    node_id: str | None = None,
+    node_type: str | None = None,
+    reflex: str | None = None,
+    window_days: int | None = None,
+) -> list:
+    """Fetch harness_eval rows narrowed to a graph run / node / node kind.
+
+    A None filter drops its predicate rather than binding NULL — ``node_id =
+    NULL`` matches nothing in SQL, so binding one would silently return an empty
+    set that reads as "this node made no decisions".
+    """
+    if not _has_graph_columns():
+        LOG.warning(
+            "[harness] per-node metrics unavailable: harness_eval lacks %s. "
+            "Apply migration 20260809041642.", ", ".join(_GRAPH_COLUMNS),
+        )
+        return []
+
+    clauses: list[str] = []
+    params: list[Any] = []
+    for column, value in (
+        ("run_id", run_id),
+        ("node_id", node_id),
+        ("node_type", node_type),
+        ("reflex", reflex),
+    ):
+        if value is not None:
+            clauses.append(f"{column} = %s")
+            params.append(value)
+    if window_days is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat(timespec="seconds")
+        clauses.append("created_at >= %s")
+        params.append(cutoff)
+
+    where = " AND ".join(clauses) if clauses else "1=1"
+    # `where` is joined from the four column-name literals above; every
+    # caller-supplied value is bound as a parameter, never spliced into the SQL.
+    sql = (
+        "SELECT decision, confidence, actual_outcome, run_id, node_id, "
+        "node_type, edge_condition FROM harness_eval WHERE " + where  # nosec B608
+    )
+    conn = None
+    try:
+        conn = _conn()
+        return conn.execute(sql, tuple(params)).fetchall()
+    except Exception as exc:
+        LOG.warning("[harness] graph row query failed: %s", exc)
+        return []
+    finally:
+        _safe_close(conn)
+
+
+def compute_node_metrics(
+    node_id: str | None = None,
+    run_id: str | None = None,
+    node_type: str | None = None,
+    reflex: str | None = None,
+    window_days: int | None = None,
+) -> dict[str, Any]:
+    """Metrics for ONE graph node, scored on its own decisions.
+
+    Every argument is an optional narrowing filter, so the same function answers
+    "how did this node do in this run", "how does this node do across all runs"
+    (omit ``run_id``) and "how does this node *kind* do" (pass ``node_type``
+    alone). ``window_days=None`` means no time bound — a single run is the unit
+    of analysis, and clipping it at 30 days would drop the tail of a long run.
+
+    Returns the same key set as :func:`compute_metrics` plus the filters echoed
+    back, so a caller can tell which slice a number describes.
+    """
+    rows = _select_graph_rows(run_id, node_id, node_type, reflex, window_days)
+    scope = {
+        "run_id": run_id,
+        "node_id": node_id,
+        "node_type": node_type,
+        "reflex": reflex,
+        "window_days": window_days,
+    }
+    if not rows:
+        return {**scope, "total_decisions": 0}
+    return {**scope, **_metrics_from_rows(rows, reflex)}
+
+
+def graph_run_metrics(run_id: str, reflex: str | None = None) -> dict[str, Any]:
+    """Per-node metric breakdown for one graph run, plus the run total.
+
+    The point of the breakdown is discrimination: the run total tells you the
+    run went badly, the per-node rows tell you *which node* went badly, which is
+    the only version of that fact anyone can act on. Nodes are sorted worst
+    precision first so the actionable one is at the top; a node whose precision
+    is unmeasurable (no labelled outcomes yet) sorts last rather than being
+    treated as perfect.
+    """
+    rows = _select_graph_rows(run_id=run_id, reflex=reflex)
+    if not rows:
+        return {"run_id": run_id, "total_decisions": 0, "nodes": []}
+
+    by_node: dict[tuple, list] = {}
+    for r in rows:
+        by_node.setdefault((r["node_id"], r["node_type"], r["edge_condition"]), []).append(r)
+
+    nodes: list[dict[str, Any]] = []
+    for (node_id, node_type, edge_condition), node_rows in by_node.items():
+        nodes.append({
+            "node_id": node_id,
+            "node_type": node_type,
+            "edge_condition": edge_condition,
+            **_metrics_from_rows(node_rows, reflex),
+        })
+
+    # (precision is None) sorts True/last — "unmeasured" is not "perfect".
+    nodes.sort(key=lambda n: (n["precision"] is None, n["precision"] or 0.0, str(n["node_id"])))
+
+    return {
+        "run_id": run_id,
+        "reflex": reflex,
+        "node_count": len(nodes),
+        "nodes": nodes,
+        **_metrics_from_rows(rows, reflex),
     }
 
 

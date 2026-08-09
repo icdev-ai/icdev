@@ -18,8 +18,12 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# BELOW the sys.path bootstrap, not above it. This import is only resolvable
+# BECAUSE of the two lines above, so hoisting it to the top made the module's
+# own documented CLI (`python tools/.../<this>.py --query`) die on
+# ModuleNotFoundError before reaching main() — running a file by path puts the
+# FILE's directory on sys.path, never the repo root.
 from tools.logging.icdev_logger import get_logger  # noqa: E402
-
 from tools.db.storage import get_connection, table_exists  # noqa: E402
 
 log = get_logger(__name__)
