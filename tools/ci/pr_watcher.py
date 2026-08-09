@@ -287,6 +287,18 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
         conn.commit()
         logger.info("pr_watcher: %s -> %s (%s)", task_id, status, reason)
 
+        # WAKE EVENTS (agov-wake-03): `wake_on_event("task:kax-merge-02:done")`.
+        # The watcher owns the pr_opened -> done edge, so a task completing
+        # through the PR flow is only ever observed here — state_machine's
+        # emitter never sees it. Best-effort; a wake must never undo a committed
+        # status change.
+        try:
+            from tools.agent_runtime.wake_signals import emit_task_status
+
+            emit_task_status(task_id, status, conn=conn)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: wake event emit skipped for %s: %s", task_id, exc)
+
         # Harness co-learning: this is a TERMINAL transition, so the harness
         # needs the outcome here. _move_task() in the kanban reflex carries the
         # same hook, but under the PR flow it deliberately does NOT mark the
@@ -796,6 +808,29 @@ class PRWatcher:
         except Exception as exc:
             logger.warning("pr_watcher: queue_message import failed: %s", exc)
             return False
+
+    def _emit_wake_events(
+        self, pr_url: str, classification: Any, state: dict,
+    ) -> Dict[str, Any]:
+        """Fire this PR's wake event keys. Best-effort — never raises.
+
+        Kept as a method purely so a test can observe (or replace) it without
+        reaching into the wake store. `dry_run` emits nothing: a --dry-run poll
+        must not resume a real agent.
+        """
+        if self.dry_run:
+            return {"keys": [], "promoted": []}
+        try:
+            from tools.agent_runtime.wake_signals import emit_pr_state
+
+            return emit_pr_state(
+                pr_url,
+                classification=classification,
+                pr_state=(state or {}).get("state"),
+            )
+        except Exception as exc:  # noqa: BLE001 — a wake must never break the watch loop
+            logger.debug("pr_watcher: wake event emit failed for %s: %s", pr_url, exc)
+            return {"keys": [], "promoted": [], "error": str(exc)}
 
     def _open_pr_files(self) -> Dict[str, set]:
         """Map every open PR's url -> set of changed file paths (single gh call).
@@ -1533,6 +1568,16 @@ class PRWatcher:
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
+
+            # WAKE EVENTS (agov-wake-03). This is the one place in ICDEV that
+            # observes "PR #N just went green", so it is where
+            # `wake_on_event("pr:1342:ci_green")` gets satisfied. Emitted right
+            # after classification and BEFORE any of the holds below — a wake
+            # subscriber is waiting on the CI verdict, not on whether the
+            # watcher went on to merge. Re-emitting the same key every cycle is
+            # harmless: fire_event only promotes wakes that are still pending.
+            self._emit_wake_events(pr_url, classification, state)
+
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
 
             if classification == KanbanState.DONE:
