@@ -9,12 +9,22 @@ before dynamic tool auto-discovery lands in sag-reg-01:
 - ``health_check`` — run the platform health check (read-only).
 - ``list_skills``  — name + description of every indexed skill (read-only).
 - ``load_skill``   — one named skill's full instructions (read-only).
+- ``sleep_for`` / ``sleep_until`` / ``wake_on`` / ``wake_on_event`` — suspend the
+  session until a time, a job, or an event (agov-wake-02).
 
 The two skill tools come from ``tools.agent_runtime.skill_tools`` and are folded
 in here rather than defined here, because ACE's own registry offers the same pair
 and one implementation should back both. They are a matched pair on purpose: the
 listing is cheap and body-size independent, so it can always be offered, and a
 body is only paid for once the agent has picked one — progressive disclosure.
+
+The four wake tools come from ``tools.agent_runtime.wake_tools`` and are folded
+in the same way. They are the only members of this toolset that write anything,
+and they are here rather than in a capability bundle because they are runtime
+CONTROL, not capability: what they do is end the turn. They are the counterpart
+to the natural ``end_turn`` below — the exit an agent takes when it is not done,
+just not able to make progress yet. Without them the only way to wait for
+something is to keep the session open and poll it.
 
 The loop terminates naturally on ``end_turn`` (the model answers with no further
 tool calls), which is the correct completion path for an interactive Q&A/coding
@@ -33,7 +43,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from tools.agent_runtime import skill_tools
+from tools.agent_runtime import skill_tools, wake_tools
 
 ToolHandler = Callable[[dict[str, Any], "threading.Event | None"], str]
 
@@ -147,6 +157,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         },
     },
     **skill_tools.SCHEMAS,
+    **wake_tools.SCHEMAS,
 }
 
 
@@ -242,6 +253,7 @@ _HANDLERS: dict[str, ToolHandler] = {
     "search_files": _handle_search_files,
     "health_check": _handle_health_check,
     **skill_tools.HANDLERS,
+    **wake_tools.HANDLERS,
 }
 
 
