@@ -168,6 +168,16 @@ tests/test_sbom_conformance_gate.py
 # an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-05).
 tests/test_sbom_component_identifiers.py
 
+# test_sbom_distribution.py earns a slot because it is the only place the RBAC
+# DENY case on SBOM retrieval is asserted (sbx-gov-02). The 2026 revision folded
+# Access Control into Distribution and Delivery in both directions, and a
+# regression in either one is silent: a decorator dropped from the route serves
+# a CUI component inventory to any authenticated caller, and an over-tight role
+# list blocks the authorized sharing the standard requires. It also pins the
+# exact-bytes contract — a re-serialization would invalidate the sbx-sig-01
+# author signature computed over the artifact. ~1.3s, SQLite only, no network.
+tests/test_sbom_distribution.py
+
 # test_pr_watcher_heartbeat.py earns a slot because the bug it pins makes every
 # daemon's log silence meaningless. get_logger(__name__) resolves to "__main__"
 # when a module is executed rather than imported — which is how launcher.py starts

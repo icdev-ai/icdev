@@ -201,9 +201,12 @@
       <table class="sc-table" id="tbl-sbom">
         <thead><tr>
           <th>Project</th><th>Format</th><th>Version</th>
-          <th>Components</th><th>Vulnerabilities</th><th>Generated</th>
+          <th>Components</th><th>Vulnerabilities</th>
+          <th title="2026 Minimum Elements conformance (sbx-sig-02)">Conformance</th>
+          <th title="Version-specific retrieval URL — 2026 Distribution and Delivery">Retrieval</th>
+          <th>Generated</th>
         </tr></thead>
-        <tbody><tr><td class="empty" colspan="6"><div class="sc-loading">Loading…</div></td></tr></tbody>
+        <tbody><tr><td class="empty" colspan="8"><div class="sc-loading">Loading…</div></td></tr></tbody>
       </table>
     </div>
   </div>
@@ -380,20 +383,56 @@
     _sbomLoaded = true;
     fetch('/api/supply_chain/sbom').then(function(r){return r.json();}).then(function(rows){
       document.getElementById('sbom-count').textContent = rows.length + ' record(s)';
-      if (!rows.length) { setTbody('tbl-sbom','<tr><td class="empty" colspan="6">No SBOM records found</td></tr>'); return; }
+      if (!rows.length) { setTbody('tbl-sbom','<tr><td class="empty" colspan="8">No SBOM records found</td></tr>'); return; }
       var html = rows.map(function(s){
         return '<tr><td>' + esc(s.project_name||s.project_id||'—') + '</td>'
           + '<td>' + esc((s.format||'CycloneDX').toUpperCase()) + '</td>'
-          + '<td>' + esc(s.version||'—') + '</td>'
+          + '<td>' + esc(s.sbom_version_effective||s.version||'—') + '</td>'
           + '<td style="text-align:center">' + (s.component_count||0) + '</td>'
           + '<td style="text-align:center">'
             + (s.vulnerability_count > 0 ? '<span style="color:#f85149">' + s.vulnerability_count + '</span>' : '<span style="color:#3fb950">0</span>')
           + '</td>'
+          + '<td style="text-align:center">' + sbomConformance(s) + '</td>'
+          + '<td>' + sbomRetrieval(s) + '</td>'
           + '<td>' + fmtDate(s.generated_at) + '</td>'
           + '</tr>';
       }).join('');
       setTbody('tbl-sbom', html);
-    }).catch(function(){ setTbody('tbl-sbom','<tr><td class="empty" colspan="6">Error loading SBOM records</td></tr>'); });
+    }).catch(function(){ setTbody('tbl-sbom','<tr><td class="empty" colspan="8">Error loading SBOM records</td></tr>'); });
+  }
+
+  // 2026 Minimum Elements conformance. The validator is sbx-sig-02's
+  // deliverable; until it lands the API reports available:false and this shows
+  // "not assessed". It must never render 0 or a blank for an unmeasured SBOM —
+  // both read as a score, and neither one has been earned.
+  function sbomConformance(s) {
+    var c = s.conformance || {};
+    if (!c.available) {
+      var label = (c.reason === 'withheld') ? 'withheld' : 'not assessed';
+      return '<span style="color:var(--text-muted,#8b949e)" title="'
+        + esc(c.reason || 'no conformance score available') + '">' + label + '</span>';
+    }
+    if (!c.total) return '<span>' + esc(String(c.score)) + '</span>';
+    var pct = c.score / c.total;
+    var color = pct >= 1 ? '#3fb950' : (pct >= 0.7 ? '#d29922' : '#f85149');
+    return '<span style="color:' + color + '">' + c.score + ' / ' + c.total + '</span>';
+  }
+
+  // Distribution and Delivery: the version-specific URL. A withheld artifact
+  // says so rather than offering a link that will 403.
+  function sbomRetrieval(s) {
+    if (!s.retrieval_url) {
+      return '<span style="color:var(--text-muted,#8b949e)" title="no SBOM version recorded">—</span>';
+    }
+    if (s.accessible === false) {
+      return '<span style="color:var(--text-muted,#8b949e)" title="'
+        + esc(s.access || 'withheld') + '">withheld</span>';
+    }
+    if (!s.retrievable) {
+      return '<span style="color:#d29922" title="the recorded artifact is not on disk">artifact missing</span>';
+    }
+    return '<a href="' + esc(s.retrieval_url) + '" title="' + esc(s.retrieval_url)
+      + '" style="color:var(--accent,#58a6ff)">download</a>';
   }
 
   // ── Tab switching ─────────────────────────────────────────────────────────

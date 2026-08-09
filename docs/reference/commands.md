@@ -215,6 +215,16 @@ python tools/compliance/unknown_information.py --policy --json                  
 python tools/compliance/unknown_information.py --vocabulary --json                                 # the 17 fields and the two disjoint reason vocabularies
 python tools/compliance/sbom_identifiers.py --validate "/path/to/sbom.cdx.json" --json           # Component Identifiers conformance; exit 1 on a component with none, or a malformed one
 python tools/compliance/sbom_identifiers.py --component "pkg:pypi/flask@3.0.0" --json             # every identifier derivable for one component, CPE included
+
+# SBOM Distribution and Delivery (2026 Minimum Elements) — version-specific retrieval.
+# Served over HTTP at $ICDEV_BASE_URL/api/supply_chain/sbom/<project_id>/<version>,
+# with /record/<id> as a permalink and /versions/<project_id> as the index. RBAC and
+# classification are enforced on every one of them.
+python tools/compliance/sbom_distribution.py --list --json                                         # every SBOM record + its retrieval URL
+python tools/compliance/sbom_distribution.py --list --project-id "sparkpilot"                      # one project's versions
+python tools/compliance/sbom_distribution.py --project-id "sparkpilot" --version 2.0 --json        # resolve one version: sha256, markings, conformance
+python tools/compliance/sbom_distribution.py --record-id 7 --out "./sbom.cdx.json"                 # the artifact's exact bytes, unmodified
+
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"
