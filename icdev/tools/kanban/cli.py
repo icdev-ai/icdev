@@ -441,20 +441,39 @@ def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
     params = []
 
     if prefix:
-        conditions.append("id LIKE %s")
+        conditions.append("t.id LIKE %s")
         params.append(prefix + "%")
     if status:
         if status not in VALID_STATUSES:
             print(f"ERROR: invalid status '{status}'.", file=sys.stderr)
             return 1
-        conditions.append("status = %s")
+        conditions.append("t.status = %s")
         params.append(status)
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     with get_connection() as conn:
+        # depends_on_task_id is selected because it is the field that decides
+        # whether a task can run at all: promote_backlog_to_scheduled refuses to
+        # promote a task whose dependency is not done/decomposed, so a held
+        # dependency is the single most common reason the board looks stuck.
+        #
+        # Omitting it did not make this output terse, it made it MISLEADING. A
+        # reader who checks ``task.get("depends_on_task_id")`` gets None for every
+        # row and concludes the backlog is ready to run. That happened on
+        # 2026-08-09: 37 backlog tasks read as ungated when every one was held
+        # behind a manual gate, and the board was reported as broken while it was
+        # obeying its own rules exactly.
+        #
+        # The blocker's STATUS is joined for the same reason — the id alone does
+        # not say whether it is satisfied, and needing a second query per task to
+        # answer that is what made the wrong answer easy to reach.
         rows = conn.execute(
-            f"SELECT id, title, status, priority FROM kanban_tasks {where} ORDER BY id",
+            "SELECT t.id, t.title, t.status, t.priority, t.depends_on_task_id, "
+            "       d.status AS depends_on_status "
+            "FROM kanban_tasks t "
+            "LEFT JOIN kanban_tasks d ON d.id = t.depends_on_task_id "  # nosec B608
+            f"{where} ORDER BY t.id",
             params,
         ).fetchall()
 
@@ -466,7 +485,13 @@ def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
         if not results:
             print("  (no tasks found)")
         for r in results:
-            print(f"  [{r['status']:15s}] {r['id']:25s} {r.get('title','')[:60]}")
+            dep = r.get("depends_on_task_id")
+            held = dep and r.get("depends_on_status") not in ("done", "decomposed")
+            blocked = (
+                f"  <- blocked by {dep} ({r.get('depends_on_status') or 'MISSING'})"
+                if held else ""
+            )
+            print(f"  [{r['status']:15s}] {r['id']:25s} {r.get('title','')[:60]}{blocked}")
     return 0
 
 
