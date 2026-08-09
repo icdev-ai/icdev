@@ -7,6 +7,7 @@
 
 | Tool | Purpose |
 |------|---------|
+| `tools/agent_runtime/config.py` | Declarative runtime configuration (hgx-cfg-01) — `AgentRuntimeConfig` + `load_config()` over `args/agent_runtime.yaml`. Added **beneath** the existing environment variables, never above them: resolution is `explicit argument > env var > YAML > built-in default`, so every flag that worked before still works and still wins. Each accessor (`flag`/`integer`/`number`/`text`/`subsystem_enabled`) takes the env name it defers to and reads it first; an unparseable env value falls through a layer rather than zeroing the setting, and an out-of-vocabulary approval mode resolves to the strictest value at every layer (never `off`). The YAML is parsed once and cached (it is consulted on every turn boundary); `os.environ` is **not** cached, so a `/set` or a test's `monkeypatch` applies immediately. Never raises — a missing, unreadable or malformed file degrades to the built-in defaults, because configuration is not a hard dependency of starting an agent. Path resolved from `__file__` (worktree-safe), probing both `<root>/args/` and the wheel's `icdev/data/args/`; read `encoding="utf-8", newline=""` with a leading BOM stripped. **No `model:` key by design** — only `llm_function`, a routing function resolved by `LLMRouter`. `enabled` is the same flag as the `sag` component's `ICDEV_SAG_ENABLED` in `args/component_registry.yaml`, so `icdev enable/disable sag` and the config file cannot disagree; `icdev chat` refuses to start when it is off. CLI: `python -m tools.agent_runtime.config [--config PATH] [--json]` — prints the resolved values **and the env vars currently overriding the file**. |
 | `tools/agent_runtime/runtime.py` | `AgentRuntime` engine. `run_turn()` wraps `icdev.tools.llm.agent_loop.run_agent_loop` (native tool-use, budget caps, context compression, memory injection, session resume). Interactive `loop()` REPL with injectable I/O. LLM calls flow through `LLMRouter` (no hardcoded model IDs). `_effective_system_prompt()` composes, in order, `_project_context()` (hgx-sess-01), `_goals_context()` (hgx-goal-02) and the profile preamble ahead of `system_prompt`; the first two are cached per session, but the goal block also has a public `invalidate_goals()` because goals change *during* a session while the project's instructions do not. CLI: `python -m tools.agent_runtime.runtime`. |
 | `tools/agent_runtime/sessions.py` | `RuntimeSession` couples `chat_manager` (human-readable transcript in `chat_contexts`/`chat_messages`) with `agent_loop_session` (`save_session`/`load_session` in `agent_loop_sessions`, keyed by `AgentLoopResult.session_id`). Rolls token/cost usage forward across turns; `resume_session_id` restores tool-use history. No new persistence. |
 | `tools/agent_runtime/builtin_tools.py` | `build_builtin_toolset()` — the small hardcoded starter toolset (read-only `read_file`, `search_files`, `health_check`), all confined to the repo root (`..` escapes rejected). Dynamic tool auto-discovery lands in sag-reg-01. |
@@ -31,6 +32,49 @@
 | `tools/agent_runtime/standing_goals.py` | Standing goals (hgx-goal-01) — durable objectives that outlive a session and are re-injected into the system prompt while `active`. `GoalStatus` (pending/active/paused/blocked/completed/cancelled) owns the transition table in ONE place: `can_transition()` / `GoalManager.transition()`, with `completed`/`cancelled` terminal and an illegal move raising `InvalidGoalTransition` (a caller bug, unlike a missing subsystem). `GoalManager(user_id, tenant_id)` = create/get/list_goals/list_active/list_for_context/activate/pause/complete/block/cancel/update_progress/delete, plus `render_active(limit=5)` for capped prompt injection. `list_for_context()` includes operator-global goals (no `context_id`) alongside context-pinned ones. Backed by `sag_standing_goals` (migration `20260808161736`; `user_id`+`tenant_id`+`classification`, RLS-eligible via `get_connection()`), self-creating via `_ensure_schema()`; JSON columns are parsed in Python, never with `json_extract`. Every read/write degrades to empty/None/False when the table or DB is absent. NOT append-only (`delete` is a real DELETE; use `cancel` to keep history). No LLM call — goal text is operator-authored. |
 | `tools/agent_runtime/goal_context.py` | Budgeted standing-goal injection (hgx-goal-02) — the seam between the `standing_goals` store and `AgentRuntime._effective_system_prompt()`. Deliberately separate from `standing_goals.py`, which knows nothing of models or windows, so the goal store stays usable with no LLM config present. **Two caps, neither subsuming the other**: a count cap (`ICDEV_SAG_GOAL_LIMIT`, default `DEFAULT_LIMIT=5`, clamped to `MAX_LIMIT=25`, bad values falling back rather than disabling injection) and a token cap of `WINDOW_SHARE` (5%) of `context_budget.available_input_tokens()` — five goals is five *short* goals only if nobody pasted a paragraph into `detail`. Under pressure the block **shortens before it drops** (per-goal share split title-first, so every objective stays at least named) and announces both: `shortened` adds a "goal text shortened" footer, `truncated`/count overflow adds an "N further active goal(s) not shown" footer. `_FOOTER_RESERVE` is measured, not guessed, so announcing a cut cannot itself overrun the budget; a budget below `MIN_BLOCK_TOKENS` (128) drops the block whole. `active_goals()` uses `list_for_context()` so operator-global goals appear alongside context-pinned ones. `build_for_runtime()` never raises; `ICDEV_SAG_GOALS=0` disables. CLI: `python tools/agent_runtime/goal_context.py [--function <fn>] [--user <id>] [--tenant <id>] [--context <ctx>] [--limit N] [--json]`. Exports `goals_enabled()` so other goal surfaces honour `ICDEV_SAG_GOALS` without re-spelling the env var. |
 | `tools/dashboard/chat_manager.py::get_context_status()` | Standing goals in the chat status payload (hgx-goal-03) — `get_context()` plus a `standing_goals` block (`total`/`shown`/`withheld`/`by_status`/`progress`/`goals[]`), so a conversation can *show* the objectives steering it instead of only the model seeing them in its system prompt. Reports the non-terminal goals for the context (`GOAL_OPEN_STATUSES`; completed/cancelled are history and would grow forever), sorts `active`/`blocked` ahead of `pending`/`paused` so the `goal_limit()` cap can never hide a goal in flight, and marks each goal `scope: context|global`. **The key is omitted, never empty or an error**, when the table is absent, `ICDEV_SAG_GOALS=0`, the lookup raises, or there are simply no goals — chat must not break because an optional subsystem is not migrated. Served by `GET /api/chat/contexts/<id>` and `GET /api/chat/<id>/state`. |
+
+## Configuration surface (hgx-cfg-01)
+
+`args/agent_runtime.yaml` is the one place the runtime's ~12 environment
+variables are collected, documented and given shippable defaults. It is a
+**layer, not a replacement**: every key names the env var that overrides it, and
+that env var is read first.
+
+| Key | Env var (wins) | Read by |
+|-----|----------------|---------|
+| `enabled` | `ICDEV_SAG_ENABLED` | `config.AgentRuntimeConfig.enabled` → `cli.chat_main` refuses when off |
+| `runtime.llm_function` | `ICDEV_SAG_LLM_FUNCTION` | `AgentRuntime.__init__` |
+| `runtime.max_iterations` | `ICDEV_SAG_MAX_ITERATIONS` | `AgentRuntime.__init__` |
+| `runtime.max_total_tokens` | `ICDEV_SAG_MAX_TOTAL_TOKENS` | `AgentRuntime.__init__` |
+| `runtime.max_cost_usd` | `ICDEV_SAG_MAX_COST_USD` | `AgentRuntime.__init__` |
+| `subsystems.project_context.enabled` | `ICDEV_SAG_PROJECT_CONTEXT` | `project_context.context_enabled()` |
+| `subsystems.project_context.include_project_state` | `ICDEV_SAG_PROJECT_STATE` | `project_context.project_state_enabled()` |
+| `subsystems.standing_goals.enabled` | `ICDEV_SAG_GOALS` | `goal_context.goals_enabled()` |
+| `subsystems.standing_goals.limit` | `ICDEV_SAG_GOAL_LIMIT` | `goal_context.goal_limit()` |
+| `subsystems.profile_memory.enabled` | `ICDEV_SAG_PROFILE_MEMORY` | `AgentRuntime._profile_memory_enabled()` |
+| `subsystems.skill_proposals.enabled` | `ICDEV_SAG_SKILL_PROPOSALS` | `skills_lifecycle.proposals_enabled()` |
+| `subsystems.approval.mode` | `ICDEV_SAG_APPROVAL_MODE` | `safety.resolve_mode()` |
+| `subsystems.approval.risk_function` | `ICDEV_SAG_RISK_FUNCTION` | `safety.resolve_risk_function()` |
+| `subsystems.approval.command_mode` | `ICDEV_AGENT_APPROVAL_MODE` | `approval_gate.resolve_mode()` |
+| `subsystems.mutation.allow` | `ICDEV_SAG_ALLOW_MUTATION` | `dispatch.mutation_allowed()` |
+| `subsystems.delegation.child_can_delegate` | `ICDEV_SAG_CAN_DELEGATE` | `delegation._child_can_delegate()` |
+| `subsystems.toolsets.bundle_path` | `ICDEV_AGENT_TOOLSETS` | `toolsets._bundle_path()` |
+
+There are deliberately no keys whose only effect is to exist — every row above
+names the function that reads it. Adding a key without wiring it would read as a
+supported setting and be worse than no key at all. Override the file's location
+with `ICDEV_AGENT_RUNTIME_CONFIG`. Tests: `tests/agent_runtime/test_config.py`.
+
+## Component registration (hgx-cfg-01)
+
+SAG is declared in `args/component_registry.yaml` as `key: sag`,
+`kind: core_extension`, `env_flag: ICDEV_SAG_ENABLED`. The registry is what makes
+a component visible to `icdev enable` / `disable` / `status` / `list`, the
+`icdev setup` TUI, the generated `.env` and the registry-reading coherence
+checks — before this entry SAG was reachable from none of them. It declares no
+`module`/`blueprint_attr`: it is a CLI subsystem, and the dashboard's
+core-extension loop registers a blueprint only when `blueprint_attr` is set, so
+nothing is mounted on a route.
 
 ## Genesis reflexes (SAG-owned)
 

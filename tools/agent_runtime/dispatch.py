@@ -77,17 +77,39 @@ _FAILURE_PREFIX = "error ["
 # ---------------------------------------------------------------------------
 # Safety gate (seam for sag-safe-01)
 # ---------------------------------------------------------------------------
+def mutation_allowed() -> bool:
+    """Whether the fail-closed default gate lets a mutating tool through.
+
+    ``ICDEV_SAG_ALLOW_MUTATION`` → ``args/agent_runtime.yaml`` → ``False``. The
+    env var is read first and still wins (hgx-cfg-01); the config layer only
+    supplies the fallback, and its default is ``False`` so the gate stays
+    fail-closed when the config file is missing, empty or malformed.
+    """
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().flag(
+            "subsystems.mutation.allow",
+            env="ICDEV_SAG_ALLOW_MUTATION",
+            default=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("dispatch: config layer unavailable: %s", exc)
+        return os.environ.get("ICDEV_SAG_ALLOW_MUTATION", "").strip().lower() in _TRUTHY
+
+
 def default_safety_gate(
     tool_name: str, tool_input: dict[str, Any], read_only: bool
 ) -> "tuple[bool, str]":
     """Fail-closed default gate used until sag-safe-01 wires an approval UX.
 
     Read-only tools always pass. Mutating tools are refused unless the operator
-    opts in with ``ICDEV_SAG_ALLOW_MUTATION`` in the environment.
+    opts in with ``ICDEV_SAG_ALLOW_MUTATION`` (or ``subsystems.mutation.allow``
+    in ``args/agent_runtime.yaml``).
     """
     if read_only:
         return True, ""
-    if os.environ.get("ICDEV_SAG_ALLOW_MUTATION", "").strip().lower() in _TRUTHY:
+    if mutation_allowed():
         return True, ""
     return (
         False,

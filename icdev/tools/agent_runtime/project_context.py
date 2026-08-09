@@ -123,8 +123,13 @@ _HEADER = (
     "the named path when you need the rest."
 )
 
-_ENV_DISABLE = "ICDEV_SAG_PROJECT_CONTEXT"
-_ENV_DISABLE_STATE = "ICDEV_SAG_PROJECT_STATE"
+ENV_DISABLE = "ICDEV_SAG_PROJECT_CONTEXT"
+ENV_DISABLE_STATE = "ICDEV_SAG_PROJECT_STATE"
+
+# Legacy private aliases — kept because they were the module's only names for
+# these before hgx-cfg-01 made them public for the config layer to reference.
+_ENV_DISABLE = ENV_DISABLE
+_ENV_DISABLE_STATE = ENV_DISABLE_STATE
 
 
 def _env_flag(name: str, default: bool = True) -> bool:
@@ -132,6 +137,41 @@ def _env_flag(name: str, default: bool = True) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() not in ("0", "false", "no", "off")
+
+
+def context_enabled() -> bool:
+    """Whether the project-context block is injected at all.
+
+    ``ICDEV_SAG_PROJECT_CONTEXT`` → ``args/agent_runtime.yaml`` → on. The env
+    var is read first and still wins (hgx-cfg-01).
+    """
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().subsystem_enabled(
+            "project_context", env=ENV_DISABLE, default=True
+        )
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("project_context: config layer unavailable: %s", exc)
+        return _env_flag(ENV_DISABLE)
+
+
+def project_state_enabled() -> bool:
+    """Whether the (DB-backed) project-state summary is included in the block.
+
+    ``ICDEV_SAG_PROJECT_STATE`` → ``args/agent_runtime.yaml`` → on.
+    """
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().flag(
+            "subsystems.project_context.include_project_state",
+            env=ENV_DISABLE_STATE,
+            default=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("project_context: config layer unavailable: %s", exc)
+        return _env_flag(ENV_DISABLE_STATE)
 
 
 @dataclass
@@ -398,15 +438,16 @@ def build_for_runtime(llm_function: str, system_prompt: str = "") -> str:
 
     ``ICDEV_SAG_PROJECT_CONTEXT=0`` disables the block entirely;
     ``ICDEV_SAG_PROJECT_STATE=0`` keeps the instruction files but skips the
-    (DB-backed) project-state summary.
+    (DB-backed) project-state summary. Both fall back to
+    ``args/agent_runtime.yaml`` when unset (hgx-cfg-01).
     """
-    if not _env_flag(_ENV_DISABLE):
+    if not context_enabled():
         return ""
     try:
         return build_project_context(
             llm_function=llm_function,
             system_prompt=system_prompt,
-            include_project_state=_env_flag(_ENV_DISABLE_STATE),
+            include_project_state=project_state_enabled(),
         )
     except Exception as exc:  # noqa: BLE001 — context injection is best-effort
         logger.debug("project_context: injection skipped: %s", exc)

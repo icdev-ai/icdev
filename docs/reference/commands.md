@@ -417,6 +417,53 @@ finally:
 
 ---
 
+## SAG Runtime Configuration (hgx-cfg-01)
+
+`args/agent_runtime.yaml` collects the standalone agent runtime's settings in one
+documented file. It is a **layer beneath** the existing environment variables,
+not a replacement: resolution is
+
+```
+explicit argument  >  environment variable  >  args/agent_runtime.yaml  >  built-in default
+```
+
+so every env var that worked before still works and still wins. The file is
+optional — deleting it changes nothing about how the agent runs.
+
+```bash
+# Resolved configuration, plus the env vars currently overriding the file
+python -m tools.agent_runtime.config
+
+# Machine-readable (config_path, config_found, env_overrides, resolved)
+python -m tools.agent_runtime.config --json
+
+# Resolve against a site-local file instead of args/agent_runtime.yaml
+python -m tools.agent_runtime.config --config /etc/icdev/agent_runtime.yaml --json
+```
+
+Point the loader at a different file for a whole process with
+`ICDEV_AGENT_RUNTIME_CONFIG=/path/to/file.yaml`.
+
+The runtime is registered as the `sag` component, so the toggle is reachable from
+the normal component surfaces:
+
+```bash
+icdev list                 # sag — Standalone Agent Runtime  (flags: ICDEV_SAG_ENABLED)
+icdev status --json        # current on/off state read from .env
+icdev disable sag          # `icdev chat` then refuses to start
+icdev enable sag
+```
+
+`enabled:` in the YAML and `ICDEV_SAG_ENABLED` are the same switch, so the CLI
+toggle and the config file cannot disagree. There is deliberately **no `model:`
+key** — only `llm_function`, a routing function resolved through `LLMRouter`
+against `args/llm_config.yaml`. Per-subsystem toggles (project context, standing
+goals, profile memory, skill proposals, approval mode, mutation gate, delegation,
+toolset bundles) and the env var that overrides each are documented inline in the
+file and tabulated in `tools/manifest/standalone-agent-runtime.md`.
+
+---
+
 ## SAG Project Context — Instruction Loading at Session Start (hgx-sess-01)
 
 Loads `CLAUDE.md`, `AGENTS.md`, `memory/MEMORY.md` and the
