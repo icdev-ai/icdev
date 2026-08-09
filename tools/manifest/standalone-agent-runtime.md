@@ -91,9 +91,13 @@ The SAG runtime is surfaced via the **CLI** (`icdev chat`/`sessions`/`cron`/`pro
 ## Extension seams
 
 - **Slash commands (sag-rt-02):** `AgentRuntime.command_handler` is an injectable
-  `(runtime, raw) -> (handled, response, should_exit)` dispatcher. A minimal
-  built-in set (`/new`, `/tools`, `/help`, `/exit`) ships here; the full
-  data-driven registry plugs in via this seam.
+  `(runtime, raw) -> (handled, response, should_exit)` dispatcher. `runtime.py`
+  keeps a minimal fallback set (`/new`, `/tools`, `/help`, `/exit`) for a runtime
+  constructed with `command_handler=None`; the full data-driven registry
+  (`commands.REGISTRY`, 14 commands) SHIPPED and is wired in by
+  `commands.build_runtime()`. Nothing in the registry is a stub —
+  `tests/agent_runtime/test_goal_commands.py::test_docstring_matches_registry`
+  fails the build if a registered command is missing from the module docstring.
 - **Gateway agent-mode (sag-gw-01):** reuses the same runtime + command handler
   behind the Remote Command Gateway's 8-gate security chain.
 - **Tool discovery (sag-reg-01):** `discovery.build_registry()` supersedes the
@@ -108,8 +112,32 @@ The SAG runtime is surfaced via the **CLI** (`icdev chat`/`sessions`/`cron`/`pro
   be built). Mutating tools cannot execute without passing `run_pre_tool_check`
   and, per mode, operator approval.
 - **Checkpoints (sag-safe-02):** the approval flow is the trigger point — before an
-  approved destructive command runs, snapshot affected paths (wires the `/rollback`
-  stub in `commands.py`).
+  approved destructive command runs, `snapshot_for_tool()` snapshots the affected
+  paths. SHIPPED, not stubs: `/snapshot` in `commands.py` calls
+  `checkpoints.create_checkpoint(paths, label="manual /snapshot")`, and
+  `/rollback` calls `list_checkpoints()` / `describe_changes()` / `rollback(id,
+  confirm=…)` — it previews by default and mutates only with an explicit
+  `--yes`, and the rollback itself snapshots first so it can be undone.
 - **Gateway agent-mode (sag-gw-01):** inject a messaging-adapter `approver` into
   `build_safety_gate()` so approvals happen via confirmation replies.
 | `tools/agent_runtime/loop_context.py` | Versioned loop feedback + human-written golden patterns (clx-fb-01, clx-gold-01). `build_loop_context(loop_id, patterns)` assembles a block for a system prompt from `context/loop_feedback/<id>.md` (append-only, dated corrections) and `context/golden_patterns/<name>/` (before.py / after.py / notes.md references). Both live under FORGE's Context layer rather than the `.icdev/` directory the source analysis proposed. Identifiers are validated against path traversal and both inputs are size-capped so they cannot crowd out the task. Golden patterns are the counterweight to LLM-generated skills — written by a person to correct what the model gets wrong, and chosen where output is measurably wrong (the two seeded patterns each cite a live violation count). | library | `str` prompt block |
+
+## Design rule — loop or graph? (hgx-doc-02)
+
+**[docs/patterns/loop-vs-graph-decision-tree.md](../../docs/patterns/loop-vs-graph-decision-tree.md)**
+is the standing rule for choosing between this runtime and Studio's DAG runtime
+(`tools/studio/workflow_runner.py`, shard:
+[icdev-studio-low-code-no-code-platform.md](icdev-studio-low-code-no-code-platform.md)).
+
+Short form: **if the steps are known ahead of time, author a graph; if the task
+is open-ended, start with a plain agent loop and only add structure once a stage
+has proven it always happens.** Do not force a graph onto exploratory work — a
+graph node cannot look somewhere its author did not name, so the DAG quietly
+turns "find out what is wrong" into "confirm the author's hypothesis". And a
+graph costs materially more: `max_parallel: 4` is four concurrent contexts, each
+carrying its own system prompt, project-context block and tool schemas, not one
+agent doing four things.
+
+The hybrid is the common case, and it is what `node_type: agent` (hgx-agent-01)
+exists for: author the known skeleton as a graph, and make the one stage that is
+not enumerable a bounded agent loop inside a node.
