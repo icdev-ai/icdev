@@ -306,6 +306,10 @@ def record_audit(payload: dict, conn=None) -> str:
                 payload.get("user_id") or None,
                 json.dumps(
                     {
+                        # Which governance profile ran (hgx-gov-01). "default"
+                        # is the full chain; a narrower one shows up as `skip`
+                        # outcomes below, and this names which one it was.
+                        "profile": payload.get("profile") or "default",
                         "gates_run": payload.get("gates_run") or [],
                         "outcomes": payload.get("outcomes") or {},
                         "redactions_applied": payload.get("redactions_applied", 0),
