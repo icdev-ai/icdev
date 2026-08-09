@@ -34,7 +34,19 @@ if str(_ROOT) not in sys.path:
 
 from tools.studio.automation_builder import CONDITION_OPERATORS  # noqa: E402
 
-TEMPLATES_DIR = Path(__file__).parent.parent.parent / "args" / "workflow_templates"
+# Both template directories, because both are shipped and both are executed by
+# the same runner. `args/workflow_templates` holds the built-in set the FORGE
+# composer reads; `context/workflow_templates` holds the Studio gallery served
+# by `/api/studio/workflows/templates`, which a user copies into a workflow and
+# runs. A gallery template that a lint pass never opens is a template whose DAG
+# defects are found by the first person to run it (hgx-tmpl-01).
+TEMPLATE_DIRS: tuple[Path, ...] = (
+    Path(__file__).parent.parent.parent / "args" / "workflow_templates",
+    Path(__file__).parent.parent.parent / "context" / "workflow_templates",
+)
+
+#: Retained for callers that imported the single directory by name.
+TEMPLATES_DIR = TEMPLATE_DIRS[0]
 
 # ── Step schema ────────────────────────────────────────────
 #
@@ -356,15 +368,42 @@ def save_template(path: Path, data: dict) -> None:
 # Runner
 # ---------------------------------------------------------------------------
 
+def _template_paths() -> list[Path]:
+    """Every template file to lint, both directories, in declaration order.
+
+    A missing directory is skipped rather than raised: a packaged install may
+    ship one set and not the other.
+    """
+    paths: list[Path] = []
+    for directory in TEMPLATE_DIRS:
+        if directory.is_dir():
+            paths.extend(sorted(directory.glob("*.yaml")))
+    return paths
+
+
+def _display_dir(path: Path) -> str:
+    """Repo-relative posix directory of a template, for reporting.
+
+    The `file` field stays the bare name it has always been; this rides
+    alongside it so two templates sharing a stem across the two directories are
+    still distinguishable in the report.
+    """
+    parent = path.parent
+    try:
+        return parent.relative_to(Path(__file__).parent.parent.parent).as_posix()
+    except ValueError:
+        return parent.as_posix()
+
+
 def run(check_only: bool, as_json: bool, gate: bool) -> int:
     results = []
     any_bad = False
 
-    for path in sorted(TEMPLATES_DIR.glob("*.yaml")):
+    for path in _template_paths():
         try:
             data = load_template(path)
         except Exception as e:
-            results.append({"file": path.name, "error": str(e)})
+            results.append({"file": path.name, "dir": _display_dir(path), "error": str(e)})
             continue
 
         steps = data.get("steps", [])
@@ -385,6 +424,7 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
 
         entry: dict = {
             "file": path.name,
+            "dir": _display_dir(path),
             "id": path.stem,
             "steps": len(steps),
             "components": info["components"],
@@ -429,7 +469,7 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
     else:
         for r in results:
             tag = {"ok": "OK   ", "fail": "FAIL ", "fixed": "FIXED"}.get(r.get("status", ""), "?    ")
-            line = f"  [{tag}] {r['file']}"
+            line = f"  [{tag}] {r.get('dir', '')}/{r['file']}"
             if r.get("isolated"):
                 line += f"  isolated={r['isolated']}"
             if r.get("dangling"):

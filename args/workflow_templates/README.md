@@ -338,9 +338,15 @@ steps:
 
 ## Validation
 
-`tools/studio/template_linter.py` validates all templates in this directory.
+`tools/studio/template_linter.py` validates every template in **both** shipped
+template directories — this one, and `context/workflow_templates/`, the Studio
+gallery served by `/api/studio/workflows/templates` and copied into a workflow by
+the user (`TEMPLATE_DIRS`, widened in hgx-tmpl-01: a gallery template a lint pass
+never opens is one whose DAG defects are found by the first person to run it).
 It checks DAG connectivity (isolated nodes, disconnected subgraphs, dangling
-`depends_on` references) **and** `node_type` values.
+`depends_on` references) **and** `node_type` values.  Each report line names the
+directory alongside the file, so two templates sharing a stem across the two
+directories stay distinguishable.
 
 ```bash
 python tools/studio/template_linter.py --check        # report

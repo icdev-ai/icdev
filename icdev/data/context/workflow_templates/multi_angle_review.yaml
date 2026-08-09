@@ -1,0 +1,266 @@
+# CUI // SP-CTI
+name: Multi-Angle Review — Parallel Review Lenses with Per-Lens Tool Scoping
+description: >
+  Fan one change out to four independent review agents, each in its own context
+  window and each bounded by its OWN tool allowlist, then join on a single
+  synthesis node that waits for all of them. The orchestrator pattern, expressed
+  as a DAG rather than as a skill that calls other skills.
+category: devsecops
+tags: [review, agent, parallel, capability-scoping, hgx]
+author: builtin
+
+# hgx-tmpl-01. This template needs ZERO new Python: the diamond is graphlib's
+# (hgx-par-01 wave-parallel dispatch), the nodes are `node_type: agent`
+# (hgx-agent-01), the allowlists are enforced by AGENT-WF-001
+# (hgx-agent-02) and the per-node gate subsets are hgx-gov-01 profiles.
+#
+# ── The point of this template ────────────────────────────────────────────
+# The lenses are not four copies of one reviewer with different wording. They
+# differ in CAPABILITY:
+#
+#   scope, correctness, simplification   worktree_read            read-only
+#   security, compliance                 worktree_read + terminal read + execute
+#   synthesis                            worktree_read + terminal read + execute
+#
+# `terminal` is the single `run_command` tool, whose allowlist is python-only
+# (`python tools/`, `python -m tools`, `python -c`, `python -m pytest`,
+# `python -m ruff` — tools/genesis/rubric_build_tools.py). So the security and
+# compliance lenses can RUN their scanners; the simplification lens can only
+# read, and asking it to run anything produces nothing. NO lens declares
+# `worktree_build`, so no reviewer can write to or patch the tree it is
+# reviewing — a review that can edit its subject is not a review.
+#
+# ── What the allowlist does NOT decide ────────────────────────────────────
+# Declaring a bundle says what the STEP wants; AGENT-WF-001 decides what the
+# CALLER may have (args/security_gates.yaml::agent_workflow_tools). `run_command`
+# is declared `min_il: IL5` there, so below IL5 the two executing lenses are
+# handed the read-only subset instead and name the withheld tool in the step
+# payload's `tools_refused`. That is the gate working, not the template failing:
+# start the run as an IL5 caller (run memory's `caller` key, or
+# ICDEV_MCP_CALLER_IL) when you want the scanners to actually execute.
+#
+# ── Why each lens re-derives the diff ─────────────────────────────────────
+# A step's `prompt:` is authored text — the runner does not interpolate an
+# upstream step's output into it. Each lens therefore calls `git_diff` itself
+# rather than being handed the scope step's prose. That is the isolated-context
+# property this pattern is for: four reviewers looking at the same diff with no
+# shared conversation to anchor on each other's conclusions. `scope` still runs
+# first, because its payload is the run's record of WHAT was reviewed.
+#
+# ── Why the lenses are `required: false` ──────────────────────────────────
+# A failed *required* step cancels its descendants (workflow_runner
+# `_block_downstream`). One lens failing — a withheld toolset, a provider that
+# cannot serve native tool use — must not cancel the synthesis; three angles is
+# a thinner review, not no review. `scope` and `synthesis` stay required.
+
+# Four lenses, four slots. Without this the runner defaults to 1 and the diamond
+# executes serially — every other template in this tree keeps that default.
+max_parallel: 4
+
+steps:
+  # ── Fan-out ─────────────────────────────────────────────────────────────
+  - id: scope
+    name: Establish Review Scope
+    node_type: agent
+    required: true
+    timeout: 900
+    depends_on: []
+    llm_function: task_decomposition
+    governance_profile: internal_diligence
+    agent_tools: [worktree_read]
+    max_iterations: 6
+    description: >
+      The single root of the diamond. Records what is under review so the run
+      itself answers "what did these four lenses look at".
+    system_prompt: >
+      You are scoping a code review. You have read-only tools. Do not attempt to
+      change anything.
+    prompt: >
+      Establish the scope of this review. Call git_diff to get the uncommitted
+      changes, then list_files and read_file as needed to identify which modules
+      the change touches. Produce a short scope note: the changed files, what
+      each change appears to do, and any file a reviewer should read for context
+      even though it did not change. Do not review the change yet — four
+      specialist reviewers do that next. Call done when the scope note is
+      written.
+
+  # ── The four lenses — one wave, four isolated context windows ───────────
+  - id: lens_correctness
+    name: Lens — Correctness
+    node_type: agent
+    required: false
+    timeout: 900
+    depends_on: [scope]
+    llm_function: agent_software_craftsperson
+    governance_profile: internal_diligence
+    # Read-only. A correctness reviewer reasons about the code in front of it;
+    # it does not need to execute anything to say "this branch is unreachable".
+    agent_tools: [worktree_read]
+    max_iterations: 12
+    description: Logic errors, unhandled cases, contract mismatches.
+    system_prompt: >
+      You are the CORRECTNESS lens of a multi-angle review. Other agents are
+      reviewing the same change for security, compliance and simplicity in
+      parallel — stay in your lane and do not duplicate theirs. You have
+      read-only tools and cannot modify the tree.
+    prompt: >
+      Review the uncommitted change for CORRECTNESS. Start with git_diff, then
+      read the surrounding code with read_file and find call sites with
+      grep_files. Look for: logic that does not do what its name and docstring
+      claim, unhandled error and empty-collection cases, off-by-one and boundary
+      errors, a caller and callee that disagree about a return shape, state
+      mutated under concurrency without a lock, and exceptions swallowed so a
+      failure reports success. For each finding give the file and line, what
+      breaks, and the concrete input or state that triggers it. Say plainly when
+      you find nothing rather than padding the list. Call done when finished.
+
+  - id: lens_security
+    name: Lens — Security
+    node_type: agent
+    required: false
+    timeout: 900
+    depends_on: [scope]
+    llm_function: agent_security
+    governance_profile: internal_diligence
+    # THE scanners lens: worktree_read to inspect, terminal to actually run the
+    # repo's scanners. This is the widest allowlist in the fan-out wave, and the
+    # only reason it is wider is that a security review that cannot run a
+    # scanner is a security review by assertion.
+    agent_tools: [worktree_read, terminal]
+    max_iterations: 16
+    description: Injection, authz, secrets, and the repo's own scanners.
+    system_prompt: >
+      You are the SECURITY lens of a multi-angle review. You are the only
+      reviewer in this wave that can execute commands; use that. Your command
+      tool is python-only and allowlisted — `python tools/...`, `python -m
+      tools...`, `python -c`, `python -m pytest`, `python -m ruff`. Nothing else
+      will run, and it will be refused rather than silently doing nothing.
+    prompt: >
+      Review the uncommitted change for SECURITY defects, and run the repo's own
+      scanners over what it touched rather than reasoning about them from
+      memory. Useful commands: `python tools/security/code_pattern_scanner.py`
+      for insecure patterns, `python tools/security/dependency_auditor.py` for
+      dependency exposure, and `python -m ruff check <changed paths>` for the
+      lint classes that hide real defects. Read git_diff first so you scan what
+      changed. Look for: SQL and command injection, an authorization check that
+      is missing or fails open, a secret or credential in source, unvalidated
+      input reaching a sink, a path that escapes its intended root, and audit or
+      classification handling that the change weakened. Report each finding with
+      the file, the line, the attack, and — where a scanner produced it — the
+      scanner's own output. If a command is refused, say so and note which
+      finding you could therefore not confirm; do not present an unrun check as
+      clean. Call done when finished.
+
+  - id: lens_compliance
+    name: Lens — Compliance
+    node_type: agent
+    required: false
+    timeout: 900
+    depends_on: [scope]
+    llm_function: agent_compliance
+    governance_profile: internal_diligence
+    # Also executing: this repo's compliance posture is decided by gates that are
+    # scripts (coherence_checker and friends), so a compliance lens that cannot
+    # run them can only guess at the answer they would give.
+    agent_tools: [worktree_read, terminal]
+    max_iterations: 16
+    description: CUI markings, append-only audit, RLS, and the coherence gates.
+    system_prompt: >
+      You are the COMPLIANCE lens of a multi-angle review. You can execute the
+      repo's gate scripts through an allowlisted python-only command tool. Judge
+      against what the gates and CLAUDE.md actually require, not against a
+      generic control catalogue.
+    prompt: >
+      Review the uncommitted change for COMPLIANCE and platform-invariant
+      defects. Run the repo's own gates over it — `python
+      tools/workflow/coherence_checker.py --tier fast --changed-files <paths>`
+      is the fast one — and read args/security_gates.yaml for the gate a new
+      surface should have declared. Look for: an artifact emitted without its
+      classification marking, an UPDATE or DELETE against an append-only audit
+      table, a canvas connection opened with get_connection instead of
+      get_canvas_connection, an INSERT naming a column the live schema does not
+      have, a hardcoded model id where the router should have been used, and a
+      new tool or dashboard page that shipped without its registration
+      checklist. Report each with the file, the line, and the specific rule or
+      gate it violates. If a gate script cannot run here, say which one and what
+      it would have checked. Call done when finished.
+
+  - id: lens_simplification
+    name: Lens — Simplification
+    node_type: agent
+    required: false
+    timeout: 900
+    depends_on: [scope]
+    llm_function: agent_software_craftsperson
+    governance_profile: internal_diligence
+    # Deliberately the narrowest allowlist in the wave: read-only, no execution.
+    # Judging whether three similar lines beat one clever abstraction is a
+    # reading task, and handing this lens a command tool it has no use for would
+    # make the per-node scoping decorative.
+    agent_tools: [worktree_read]
+    max_iterations: 12
+    description: Duplication, over-abstraction, and code that already exists.
+    system_prompt: >
+      You are the SIMPLIFICATION lens of a multi-angle review. You have
+      read-only tools by design — you have no reason to execute anything.
+      Karpathy principle 3 is the standard you apply: three similar lines beats
+      one clever abstraction, and code written for a hypothetical future
+      requirement is code to delete.
+    prompt: >
+      Review the uncommitted change for SIMPLIFICATION and REUSE. Read git_diff,
+      then use grep_files and search_files to check whether what it adds already
+      exists somewhere in this tree — a helper, a manifest entry, a gate, a
+      shared module. Look for: a new function duplicating an existing one, an
+      abstraction introduced for a single call site, a configuration layer with
+      one consumer, speculative error handling for a condition that cannot
+      occur, a drive-by refactor unrelated to the change's purpose, and dead
+      branches left behind. For each finding name the simpler alternative and,
+      when the code already exists, the file and symbol that has it. Do not
+      propose a rewrite of code the change did not touch. Call done when
+      finished.
+
+  # ── Barrier ─────────────────────────────────────────────────────────────
+  - id: synthesis
+    name: Synthesise the Four Lenses
+    node_type: agent
+    required: true
+    timeout: 1200
+    # FOUR depends_on entries and no barrier primitive: graphlib does not hand
+    # this node to a worker until all four lenses have been retired, whatever
+    # order they finish in and whichever of them skipped or failed.
+    depends_on: [lens_correctness, lens_security, lens_compliance, lens_simplification]
+    llm_function: cot_synthesizer
+    # screened_generation, not internal_diligence: this node's output is the
+    # artifact a human reads, so it pays the pre_check screen the four internal
+    # lenses do not. Neither profile can drop output_redaction or provenance.
+    governance_profile: screened_generation
+    # terminal is what lets this node READ the four lens payloads: each agent
+    # step writes its result to run memory under `step:<id>`, and
+    # `python tools/studio/run_memory.py --get step:<id>` is how a later step
+    # reads it. worktree_read is kept so a claim can be checked against the file
+    # it is about instead of taken on faith.
+    agent_tools: [worktree_read, terminal]
+    max_iterations: 16
+    description: >
+      The join. Reads all four lens payloads from run memory, de-duplicates
+      across them, and produces one ranked review.
+    system_prompt: >
+      You are the synthesis node of a multi-angle review. Four specialist
+      reviewers ran in parallel in isolated context windows and did not see each
+      other's findings; you are the only place they meet. Your command tool is
+      python-only and allowlisted.
+    prompt: >
+      Read each lens's result from this run's memory, then synthesise one
+      review. The run id is in the ICDEV_RUN_ID environment variable, which the
+      run_memory CLI reads for you, so `python tools/studio/run_memory.py --get
+      step:lens_correctness` works as written — repeat it for step:lens_security,
+      step:lens_compliance, step:lens_simplification and step:scope. Each payload
+      carries the lens's `final_content`, plus `tools_offered`, `tools_refused`
+      and `degraded`. Then: (1) merge findings that two lenses reported about the
+      same file and line into one entry naming both lenses; (2) rank by severity,
+      correctness and security defects above simplification ones; (3) spot-check
+      the highest-ranked claims with read_file before repeating them, and drop
+      any the file does not support; (4) state explicitly which lenses degraded
+      or had tools withheld, and therefore which angles this review does NOT
+      cover. A lens that produced nothing is a gap in the review, not a clean
+      bill of health — say so. Call done when the synthesis is written.
