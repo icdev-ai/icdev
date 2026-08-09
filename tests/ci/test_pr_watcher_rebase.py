@@ -367,7 +367,7 @@ def test_b_conflicting_branch_escalates_and_is_not_force_pushed():
 
     watcher, audit, queue = _build("task-dirty", _real_conflict)
     # Resume budget already exhausted, so the pre-existing behaviour is escalate.
-    watcher._resume_cycle = lambda task_id: 5  # noqa: SLF001
+    watcher._resume_cycle = lambda task_id, pr_url=None: 5  # noqa: SLF001
     report = watcher.poll_once()
 
     assert pushes == [], "a genuinely conflicting branch must never be force-pushed"

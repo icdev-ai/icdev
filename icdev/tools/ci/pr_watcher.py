@@ -996,6 +996,83 @@ class PRWatcher:
             except Exception:
                 pass
 
+    def _hitl_alert(self, task_id: str, pr_url: str, reason: str) -> None:
+        """Raise a FIRING alert when a task genuinely needs a human.
+
+        The pipeline is meant to run unattended; the honest exception is a task
+        whose automatic recovery is spent. Until now that parked SILENTLY — the
+        watcher logged an escalation and moved on, the scheduler reported a
+        different reason entirely, and the task waited until somebody happened to
+        look. On 2026-08-09 three tasks sat that way at once.
+
+        Writes to `alerts`, which the dashboard already lists and counts, so the
+        notification appears there with no new surface. `tools/kanban/cli.py
+        --needs-human` reads the same rows for the terminal.
+
+        Deduped on source: one firing alert per task, not one per poll (the
+        watcher polls every 30s, which would be 2880 rows a day). Best-effort —
+        a notification failure must never stop the loop.
+        """
+        source = f"pr_watcher:hitl:{task_id}"
+        try:
+            conn = self._connection()()
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            existing = conn.execute(
+                "SELECT id FROM alerts WHERE source = %s AND status = 'firing'",
+                (source,),
+            ).fetchone()
+            if existing:
+                return
+            conn.execute(
+                "INSERT INTO alerts "
+                "(project_id, severity, source, title, description, status, "
+                " auto_healed, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, 'firing', %s, %s)",
+                (None, "warning", source,
+                 f"{task_id} needs a human",
+                 f"{reason} PR: {pr_url}", False,
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            try:
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning("pr_watcher: HITL alert raised for %s — %s", task_id, reason)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: HITL alert failed for %s: %s", task_id, exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _resolve_hitl_alert(self, task_id: str) -> None:
+        """Clear the alert once the task moves — the queue must drain itself."""
+        source = f"pr_watcher:hitl:{task_id}"
+        try:
+            conn = self._connection()()
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            conn.execute(
+                "UPDATE alerts SET status = 'resolved', resolved_at = %s "
+                "WHERE source = %s AND status = 'firing'",
+                (datetime.now(timezone.utc).isoformat(), source),
+            )
+            try:
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: HITL resolve failed for %s: %s", task_id, exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
     def _audit(self, action: WatcherAction) -> None:
         if self.dry_run:
             return

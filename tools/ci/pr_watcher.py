@@ -1036,7 +1036,12 @@ class PRWatcher:
         logger.info("pr_watcher: reclaimed worktree for %s at %s", task_id, path)
         return {"reclaimed": True, "path": str(path)}
 
-    def _count_audit_actions(self, task_id: str, actions: Tuple[str, ...]) -> int:
+    def _count_audit_actions(
+        self,
+        task_id: str,
+        actions: Tuple[str, ...],
+        pr_url: Optional[str] = None,
+    ) -> int:
         """Best-effort count of prior pr_watcher audit rows for this task.
 
         Reads audit_trail details JSON. The `action` filter is what keeps the
@@ -1055,12 +1060,39 @@ class PRWatcher:
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
             details_col = "details::text" if _pg else "details"
             rows = conn.execute(
-                f"SELECT details FROM audit_trail "
+                f"SELECT {details_col} AS d FROM audit_trail "  # nosec B608
                 f"WHERE action IN ({placeholders}) "
                 f"AND {details_col} LIKE %s",
                 (*actions, f"%{task_id}%"),
             ).fetchall()
-            return len(rows)
+            if pr_url is None:
+                return len(rows)
+            # PER-PR BUDGET. Counting a task's whole audit history made these
+            # budgets permanent: a task that burned 5 resumes on an abandoned PR
+            # inherited 5/5 on its NEXT one and could never be auto-recovered
+            # again. Measured 2026-08-09 — sbx-fld-05 was at 5/5 and 2/2 while
+            # holding a clean, green PR the watcher would have refused to help.
+            # A new PR is a new attempt, so the ledger is scoped to it.
+            #
+            # Parse `details` as the JSON it is rather than scanning the blob:
+            # the payload embeds reasons naming OTHER PRs, so a substring test
+            # over-counts (it matched six tasks where one had escalated).
+            n = 0
+            for r in rows:
+                blob = (dict(r) if not isinstance(r, dict) else r).get("d")
+                if not blob:
+                    continue
+                try:
+                    payload = json.loads(blob)
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if payload.get("task_id") != task_id:
+                    continue
+                if (payload.get("pr_url") or "") == pr_url:
+                    n += 1
+            return n
         except Exception:
             return 0
         finally:
@@ -1069,14 +1101,16 @@ class PRWatcher:
             except Exception:
                 pass
 
-    def _resume_cycle(self, task_id: str) -> int:
-        """Count of prior pr_watcher resume events for this task."""
-        return self._count_audit_actions(task_id, ("pr_watcher.resume",))
+    def _resume_cycle(self, task_id: str, pr_url: Optional[str] = None) -> int:
+        """Prior pr_watcher resume events for this task, on THIS PR."""
+        return self._count_audit_actions(
+            task_id, ("pr_watcher.resume",), pr_url=pr_url)
 
-    def _rebase_attempts(self, task_id: str) -> int:
-        """Count of prior auto-rebase attempts (successful or not) for this task."""
+    def _rebase_attempts(self, task_id: str, pr_url: Optional[str] = None) -> int:
+        """Prior auto-rebase attempts (successful or not) for this task, on THIS PR."""
         return self._count_audit_actions(
             task_id, ("pr_watcher.rebase", "pr_watcher.rebase_failed"),
+            pr_url=pr_url,
         )
 
     def _maybe_rebase(self, task: dict, state: dict) -> Dict[str, Any]:
@@ -1096,7 +1130,8 @@ class PRWatcher:
                     "reason": "auto_rebase_on_conflict=false"}
 
         cap = int(self.config.get("max_rebase_attempts_per_task", 2))
-        attempts = self._rebase_attempts(task_id)
+        attempts = self._rebase_attempts(
+            task_id, pr_url=(state.get("url") or "").strip() or None)
         if attempts >= cap:
             return {"attempted": False, "pushed": False,
                     "reason": f"rebase attempts exhausted ({attempts}/{cap})"}
@@ -1132,6 +1167,83 @@ class PRWatcher:
             logger.warning("pr_watcher: auto-rebase errored for %s: %s", task_id, exc)
             return {"attempted": True, "pushed": False,
                     "reason": f"rebase errored: {exc}"}
+
+    def _hitl_alert(self, task_id: str, pr_url: str, reason: str) -> None:
+        """Raise a FIRING alert when a task genuinely needs a human.
+
+        The pipeline is meant to run unattended; the honest exception is a task
+        whose automatic recovery is spent. Until now that parked SILENTLY — the
+        watcher logged an escalation and moved on, the scheduler reported a
+        different reason entirely, and the task waited until somebody happened to
+        look. On 2026-08-09 three tasks sat that way at once.
+
+        Writes to `alerts`, which the dashboard already lists and counts, so the
+        notification appears there with no new surface. `tools/kanban/cli.py
+        --needs-human` reads the same rows for the terminal.
+
+        Deduped on source: one firing alert per task, not one per poll (the
+        watcher polls every 30s, which would be 2880 rows a day). Best-effort —
+        a notification failure must never stop the loop.
+        """
+        source = f"pr_watcher:hitl:{task_id}"
+        try:
+            conn = self._connection()()
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            existing = conn.execute(
+                "SELECT id FROM alerts WHERE source = %s AND status = 'firing'",
+                (source,),
+            ).fetchone()
+            if existing:
+                return
+            conn.execute(
+                "INSERT INTO alerts "
+                "(project_id, severity, source, title, description, status, "
+                " auto_healed, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, 'firing', %s, %s)",
+                (None, "warning", source,
+                 f"{task_id} needs a human",
+                 f"{reason} PR: {pr_url}", False,
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            try:
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning("pr_watcher: HITL alert raised for %s — %s", task_id, reason)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: HITL alert failed for %s: %s", task_id, exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _resolve_hitl_alert(self, task_id: str) -> None:
+        """Clear the alert once the task moves — the queue must drain itself."""
+        source = f"pr_watcher:hitl:{task_id}"
+        try:
+            conn = self._connection()()
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            conn.execute(
+                "UPDATE alerts SET status = 'resolved', resolved_at = %s "
+                "WHERE source = %s AND status = 'firing'",
+                (datetime.now(timezone.utc).isoformat(), source),
+            )
+            try:
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: HITL resolve failed for %s: %s", task_id, exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _audit(self, action: WatcherAction) -> None:
         if self.dry_run:
@@ -1347,12 +1459,16 @@ class PRWatcher:
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
-            cycle = self._resume_cycle(task["id"])
+            cycle = self._resume_cycle(task["id"], pr_url=pr_url)
 
             if classification == KanbanState.DONE:
                 merged = (
                     (state.get("state") or "").upper() == "MERGED"
                 )
+                # The task moved, so any HITL alert against it is stale. Clearing
+                # here keeps the queue self-draining: an alert list nobody can
+                # empty is one people stop reading.
+                self._resolve_hitl_alert(task["id"])
                 if merged:
                     # Reclaim here rather than at task-done: this is the point
                     # where the watcher OBSERVES the merge, and it is the only
@@ -1607,6 +1723,12 @@ class PRWatcher:
                     ),
                     resume_cycle=cycle,
                 )
+                # This is the legitimate HITL case: every automatic recovery is
+                # spent. Notify rather than only logging.
+                self._hitl_alert(
+                    task["id"], pr_url,
+                    f"resume cap reached ({cycle}/{max_cycles}) after "
+                    f"{classification.value}.")
                 report.actions.append(action)
                 self._audit(action)
                 continue

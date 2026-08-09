@@ -66,6 +66,9 @@ if str(_BASE) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.kanban.gates import declared_risk, is_manual_gate  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+
+logger = get_logger(__name__)
 
 #: A task whose TITLE announces it cannot proceed. These are the expensive ones:
 #: dispatched, an agent spends a full session rediscovering why, and usually
@@ -84,6 +87,7 @@ _UNJUSTIFIED_PRECEDENCE = 10_000.0
 
 PAUSED = "paused"
 WEDGED = "wedged"
+STUCK = "stuck"
 REVIEW_BOUND = "review_bound"
 DECISION_BOUND = "decision_bound"
 CHAIN_BOUND = "chain_bound"
@@ -91,7 +95,7 @@ DRAINED = "drained"
 
 #: Reasons a human should act on. `drained` is healthy; `paused` is already a
 #: deliberate human act, so neither warrants a recommendation.
-ACTIONABLE = frozenset({WEDGED, REVIEW_BOUND, DECISION_BOUND, CHAIN_BOUND})
+ACTIONABLE = frozenset({STUCK, WEDGED, REVIEW_BOUND, DECISION_BOUND, CHAIN_BOUND})
 
 
 @dataclasses.dataclass
@@ -265,6 +269,79 @@ def _gate_backlog_clause(conn) -> str:
         return ""
 
 
+def _exhausted_tasks(conn) -> list:
+    """Tasks pr_watcher has escalated: every automatic recovery is spent.
+
+    A task reaches this only after the watcher has tried and failed — up to 2
+    rebases and 5 resume cycles, deliberately separate ledgers. At that point it
+    is parked CORRECTLY; the defect was that it parked SILENTLY. On 2026-08-09
+    sbx-gov-02 sat at 2/2 rebases and 5/5 resumes with an unmergeable PR while
+    the scheduler reported only "19 task(s) held behind a manual gate" — true,
+    about a different problem, so the dead-ended task stayed invisible until
+    someone ran the watcher by hand.
+
+    Reads the SAME audit rows the watcher writes, and parses `details` as the
+    JSON it is to take `task_id` from the field. A substring scan over that blob
+    looks equivalent and is not: the escalation payload embeds reasons that name
+    OTHER tasks' PRs, so scanning matched six tasks where one had escalated.
+
+    Only OPEN tasks count — an escalation against a task that later merged is
+    history, not a queue.
+    """
+    try:
+        _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+        details_col = "details::text" if _pg else "details"
+        rows = conn.execute(
+            f"SELECT {details_col} AS d FROM audit_trail "  # nosec B608
+            "WHERE action = %s",
+            ("pr_watcher.escalate",),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — reporting must never break dispatch
+        logger.debug("idle_advisor: escalation lookup failed: %s", exc)
+        return []
+
+    try:
+        open_rows = conn.execute(
+            # Only tasks actually IN FLIGHT can be waiting on a human. A
+            # backlog task still carrying an old executor_url is queued behind
+            # its dependency, not stuck — counting those reported 4 where 1 was
+            # genuinely blocked.
+            "SELECT id, executor_url FROM kanban_tasks WHERE status IN "
+            "('in_progress', 'scheduled', 'pr_opened', 'ci_failed', "
+            " 'merge_conflict', 'changes_requested')"
+        ).fetchall()
+        # Current PR per open task. The escalation must be against THAT PR:
+        # recovery budgets are per-PR (a new PR is a new attempt), so an
+        # escalation recorded against a superseded PR is history, not a queue.
+        # Ignoring this reported 6 tasks where 1 was actually stuck.
+        current_pr = {
+            (dict(r) if not isinstance(r, dict) else r)["id"]:
+            ((dict(r) if not isinstance(r, dict) else r).get("executor_url") or "").strip()
+            for r in open_rows
+        }
+    except Exception:  # noqa: BLE001
+        return []
+
+    ids = set()
+    for r in rows:
+        blob = (dict(r) if not isinstance(r, dict) else r).get("d")
+        if not blob:
+            continue
+        try:
+            payload = json.loads(blob)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        tid = payload.get("task_id")
+        if not tid or tid not in current_pr:
+            continue
+        escalated_pr = (payload.get("pr_url") or "").strip()
+        if escalated_pr and escalated_pr == current_pr[tid]:
+            ids.add(tid)
+    return sorted(ids)
+
+
 def diagnose(conn=None, *, stale_heartbeat_hours: float = 2.0) -> Dict[str, Any]:
     """Classify why dispatch produced nothing. Pure read — mutates nothing."""
     own = conn is None
@@ -279,6 +356,21 @@ def diagnose(conn=None, *, stale_heartbeat_hours: float = 2.0) -> Dict[str, Any]
                                        "suppressed until it is lifted or expires")
         except Exception:  # noqa: BLE001 — never let the advisor break the scheduler
             pass
+
+        stuck = _exhausted_tasks(conn)
+
+        if stuck:
+            # Reported BEFORE review/gates: those are choices a human makes at
+            # leisure, this is work the pipeline has already given up on. It was
+            # ranked last (i.e. never reported) and that is exactly how a
+            # dead-ended task stayed invisible for hours.
+            return _result(
+                STUCK,
+                f"{len(stuck)} task(s) have exhausted every automatic recovery "
+                f"(rebase and resume budgets both spent) and will not move "
+                f"without a human: {', '.join(stuck)}",
+                stuck=stuck,
+            )
 
         live = _live_work(conn)
         stale = [r for r in live
