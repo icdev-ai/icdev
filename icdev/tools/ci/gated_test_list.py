@@ -285,6 +285,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="with --extract-workflow, ignore pytest chains shorter than this")
     args = parser.parse_args(argv)
 
+    # LF on every platform. `print()` translates "\n" to "\r\n" on Windows, and
+    # bash's `read -r` strips only the newline — so the consumer got
+    # "tests/foo.py\r" and pytest reported "file or directory not found" for a
+    # file that plainly exists. The Linux jobs never see it; the windows-latest
+    # job fails on every entry. Caught on the empty-list proof run before merge,
+    # and it is the same CRLF class as the hgx-exec-01 build-toolset bug.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(newline="\n")  # type: ignore[union-attr]
+
     if args.extract_workflow:
         targets = extract_from_workflow(
             args.extract_workflow.read_text(encoding="utf-8"), args.job, args.min_targets

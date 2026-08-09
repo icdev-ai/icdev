@@ -117,7 +117,10 @@ jobs:
           CI_TESTS=()
           while IFS= read -r line; do
             if [ -n "$line" ]; then CI_TESTS+=("$line"); fi
-          done < <(python tools/ci/gated_test_list.py --print --list core)
+          # `| tr -d` is belt-and-braces: the resolver forces LF on every platform,
+          # but a stray CR is invisible in a log and makes pytest report
+          # "file or directory not found" for a file that plainly exists.
+          done < <(python tools/ci/gated_test_list.py --print --list core | tr -d '\015')
           # Belt-and-braces after the --check step: process substitution hides
           # python's exit status, and an empty array would make the line below
           # `pytest -v --tb=short -x`, i.e. collect the WHOLE suite — the opposite
@@ -223,7 +226,10 @@ jobs:
           WIN_TESTS=()
           while IFS= read -r line; do
             if [ -n "$line" ]; then WIN_TESTS+=("$line"); fi
-          done < <(python tools/ci/gated_test_list.py --print --list windows)
+          # `| tr -d` is belt-and-braces: the resolver forces LF on every platform,
+          # but a stray CR is invisible in a log and makes pytest report
+          # "file or directory not found" for a file that plainly exists.
+          done < <(python tools/ci/gated_test_list.py --print --list windows | tr -d '\015')
           if [ "${#WIN_TESTS[@]}" -eq 0 ]; then
             echo "::error::resolved Windows test list is empty — refusing to run pytest"
             exit 1

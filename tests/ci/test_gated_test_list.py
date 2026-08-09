@@ -20,6 +20,8 @@ The list moved to args/ci_test_files/*.txt, which `.gitattributes` marks
 from __future__ import annotations
 
 import pathlib
+import subprocess
+import sys
 
 import pytest
 import yaml
@@ -64,6 +66,25 @@ def test_repo_root_is_derived_from_file_not_cwd(monkeypatch, tmp_path):
     """cwd drifts in worktrees and on CI runners; resolution must not depend on it."""
     monkeypatch.chdir(tmp_path)
     assert (repo_root() / "args" / "ci_test_files").is_dir()
+
+
+def test_print_emits_lf_even_on_windows():
+    """`print()` translates "\\n" to "\\r\\n" on Windows and `read -r` keeps the CR.
+
+    The consumer then got "tests/foo.py\\r" and pytest reported "file or directory
+    not found" for a file that plainly exists — invisible in a log, and invisible
+    to the Linux jobs, which is how it reached the windows-latest runner before
+    being caught. Must be a SUBPROCESS: stdout translation only happens on a real
+    console/pipe, so an in-process call cannot observe it.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "ci" / "gated_test_list.py"),
+         "--print", "--list", "core"],
+        capture_output=True, cwd=str(ROOT),
+    )
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+    assert b"\r" not in proc.stdout
+    assert proc.stdout.split(b"\n")[0] == b"tests/test_circuit_breaker.py"
 
 
 def test_parse_ignores_comments_and_blanks():
