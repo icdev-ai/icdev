@@ -782,12 +782,31 @@ def _check_board_throughput(conn: Any, config: Dict[str, Any]) -> Dict[str, Any]
         f"Board throughput stalled — nothing done in {signal['window_hours']:.0f}h "
         f"with {signal['active_tasks']} task(s) active"
     )
+    # kax-obs-02: name WHICH of the two stalls this is. "Nothing reached done"
+    # with a stale watcher is a broken pipe; the same sentence with a polling
+    # watcher means the board has nothing mergeable. They used to read identical.
+    watcher = signal.get("watcher") or {}
+    if signal.get("stall_attribution") == "watcher_not_polling":
+        verdict = (
+            f"{watcher.get('summary', 'PR watcher liveness unknown')} — "
+            "the watcher is NOT polling; nothing will merge until it is back."
+        )
+    elif signal.get("stall_attribution") == "watcher_polling_nothing_mergeable":
+        verdict = (
+            f"{watcher.get('summary', 'PR watcher is polling')} — the watcher is "
+            "alive and finding nothing mergeable; look at the executors, the "
+            "done-gate, or CI, not at the watcher."
+        )
+    else:
+        verdict = (
+            "The scheduler, the PR watcher, or the executors are not moving work through."
+        )
     description = (
         f"No kanban task reached 'done' in the last {signal['window_hours']:.0f} hours while "
         f"{signal['active_tasks']} task(s) sat in {list(signal['active_by_status'].keys()) or 'scheduled/in_progress'}. "
         f"Last completion: {signal.get('last_done_at') or 'none on record'} ({since} ago). "
         f"Active breakdown: {json.dumps(signal['active_by_status'], ensure_ascii=False)}. "
-        "The scheduler, the PR watcher, or the executors are not moving work through."
+        f"{verdict}"
     )
 
     # Already firing → refresh in place. This is the no-duplicate guarantee.
