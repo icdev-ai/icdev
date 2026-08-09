@@ -189,7 +189,12 @@ def _register(repo: Path, layout: str, tool: str) -> None:
     _write(path, text)
 
 
-def _assembled_text(repo: Path, layout: str) -> str:
+def _assembled_text(repo: Path) -> str:
+    """Every manifest file concatenated — the view a reader/grep sees.
+
+    Layout-agnostic on purpose: it must answer "did both entries survive?"
+    identically whether the entries live in one table or one file each.
+    """
     root = repo / "tools" / "manifest"
     if not root.exists():
         return ""
@@ -244,9 +249,10 @@ def _merge_tree(
                 if "CONFLICT" in line and line.split()
             })
             result.conflicted_paths.extend(paths)
+            first_line = next((ln for ln in body.splitlines() if ln.strip()), "")
             result.notes.append(
                 f"server-side merge of feat/{tool} conflicted: "
-                f"{', '.join(paths) or body.strip().splitlines()[:1]}"
+                f"{', '.join(paths) or first_line or 'no detail from git'}"
             )
             return
         tree = proc.stdout.splitlines()[0].strip()
@@ -291,7 +297,7 @@ def run_scenario(
             _merge_worktree(repo, result, new_tools)
 
         if not result.conflicted:
-            text = _assembled_text(repo, layout)
+            text = _assembled_text(repo)
             missing = [t for t in new_tools if t not in text]
             result.all_entries_present = not missing
             if missing:
