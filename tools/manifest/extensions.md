@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Workflow Loop Chat Hook | tools/extensions/builtins/030_workflow_loop_chat.py | Chat hook: workflow loop status advisory | (hook) | Advisory message |
+| Graph Execution Chat Hook | tools/extensions/builtins/031_graph_execution_chat.py | Chat hook: Studio graph run node/barrier/gate status | (hook) | Advisory message |
 | Bayesian Learning Chat Hook | tools/extensions/builtins/040_bayesian_learning_chat.py | Chat hook: Bayesian teaching integration | (hook) | Learning context |
 | RAG Context Chat Hook | tools/extensions/builtins/050_rag_context_chat.py | Chat hook: RAG context injection | (hook) | Injected context |
 | Code Quality Chat Hook | tools/extensions/builtins/060_code_quality_chat.py | Chat hook: code quality advisory | (hook) | Quality advisory |
