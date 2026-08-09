@@ -62,11 +62,7 @@ except Exception:  # pragma: no cover - yaml is a core dep but stay defensive
     yaml = None  # type: ignore
     _HAS_YAML = False
 
-from tools.foundry.db.init_db import _is_pg, init_db
-from tools.db.storage import sql_placeholder
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.foundry.engine")
 
 
 # =========================================================================
@@ -845,3 +841,8 @@ if __name__ == "__main__":  # pragma: no cover
     if str(BASE_DIR) not in sys.path:
         sys.path.insert(0, str(BASE_DIR))
     raise SystemExit(main())
+
+from tools.foundry.db.init_db import _is_pg, init_db  # noqa: E402
+from tools.db.storage import sql_placeholder  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.foundry.engine")

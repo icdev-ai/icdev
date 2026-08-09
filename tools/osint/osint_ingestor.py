@@ -21,7 +21,6 @@ import hashlib
 import io
 import json
 import logging
-from tools.logging.icdev_logger import get_logger
 import ssl
 import sys
 import urllib.request
@@ -37,6 +36,8 @@ _SSL_CTX.check_hostname = False
 _SSL_CTX.verify_mode = ssl.CERT_NONE
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("icdev.osint")
 

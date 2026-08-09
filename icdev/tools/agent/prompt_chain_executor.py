@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Declarative prompt-chain executor for LLM-to-LLM sequential reasoning.
 
@@ -22,8 +21,6 @@ import sqlite3
 import sys
 import time
 import uuid
-from tools.db.storage import get_connection
-from tools.common.helpers import now_iso
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -36,6 +33,10 @@ except ImportError:
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
+from tools.common.helpers import now_iso  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CHAINS_PATH = BASE_DIR / "args" / "prompt_chains.yaml"

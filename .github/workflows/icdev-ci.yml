@@ -193,6 +193,7 @@ jobs:
             tests/test_idp_scorecard.py \
             tests/test_idp_catalog_scorecards.py \
             tests/test_migration_version_uniqueness.py \
+            tests/test_script_bootstrap_import_order.py \
             tests/test_sbom_coverage_resolution.py \
             tests/test_icdev_comply_sbom_step.py \
             tests/test_sbom_revision_2026.py \
@@ -262,6 +263,7 @@ jobs:
             tests/integration/test_dashboard_panels.py \
             tests/innovation/test_innovation_kanban_promoter.py \
             tests/test_sbom_component_producer.py \
+            tests/test_sbom_component_license.py \
             tests/test_sbom_conformance_gate.py \
             tests/test_pr_watcher_heartbeat.py \
             tests/test_local_agent_adapter.py \

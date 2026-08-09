@@ -22,11 +22,19 @@ Usage:
 """
 
 import sys
-from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Launched by path only this file's own directory is on sys.path, so the repo
+# root must be inserted before the first-party imports below can resolve. The
+# sys.path entry above adds a SIBLING package directory, not the root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.db.storage import get_connection  # noqa: E402
 from base_assessor import BaseAssessor
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

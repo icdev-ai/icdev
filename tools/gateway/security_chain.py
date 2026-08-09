@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """8-Gate Security Chain for the Remote Command Gateway.
 
@@ -35,6 +34,8 @@ from typing import Any, Dict, List, Tuple
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.gateway.event_envelope import CommandEnvelope  # noqa: E402
 

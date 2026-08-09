@@ -23,7 +23,6 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -36,6 +35,8 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 MEMORY_DB_PATH = BASE_DIR / "data" / "memory.db"
 
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Shutdown flag (module-level for signal handler)

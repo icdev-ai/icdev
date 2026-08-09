@@ -52,7 +52,6 @@ import json
 import re
 import sqlite3
 import sys
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -73,6 +72,8 @@ REGISTRY_PATH = DATA_DIR / "installation.json"
 # when invoked directly (consistent with other ICDEV™ CLI tools).
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Lazy imports — keep module-level import list minimal so that the installer

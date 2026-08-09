@@ -30,13 +30,14 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.testing.route_smoke")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.testing.route_smoke")
 
 # ── Nav routes extracted from base.html ─────────────────────────────────────
 # These are the routes reachable from the nav menu — the ones users actually hit.

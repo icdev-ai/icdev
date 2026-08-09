@@ -17,13 +17,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.genesis.reflexes.fathomdesk_pc_ratio")
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.genesis.reflexes.fathomdesk_pc_ratio")
 
 try:
     from tools.db.storage import get_connection

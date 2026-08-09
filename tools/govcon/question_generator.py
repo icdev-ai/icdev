@@ -39,12 +39,9 @@ import os
 import re
 import sys
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.govcon.question_generator")
 
 # =========================================================================
 # PATH SETUP
@@ -52,6 +49,10 @@ logger = get_logger("icdev.govcon.question_generator")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.govcon.question_generator")
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 CONFIG_PATH = BASE_DIR / "args" / "govcon_config.yaml"

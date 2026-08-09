@@ -21,7 +21,6 @@ import json
 import struct
 import sys
 import time
-from tools.db.storage import get_connection, is_pg
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,6 +49,8 @@ def _write_embedding(cursor, entry_id, emb, pg: bool) -> None:
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection, is_pg  # noqa: E402
 
 
 def _load_config():

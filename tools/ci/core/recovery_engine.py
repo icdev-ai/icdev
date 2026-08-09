@@ -32,10 +32,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from tools.ci.core.failure_parser import parse_failure_output, ParsedFailure
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.ci.core.failure_parser import parse_failure_output, ParsedFailure  # noqa: E402
 
 
 @dataclass

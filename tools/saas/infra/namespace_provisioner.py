@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS -- Namespace Provisioner.
 
 CUI // SP-CTI
@@ -43,6 +42,8 @@ TEMPLATE_DIR = BASE_DIR / "k8s" / "saas"
 
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Logging

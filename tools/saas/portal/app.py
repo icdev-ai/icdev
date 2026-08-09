@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS Tenant Admin Portal -- Flask Blueprint.
 
 CUI // SP-CTI
@@ -44,7 +43,6 @@ import os
 import secrets
 import sys
 import time
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -68,6 +66,9 @@ TENANTS_DIR = DATA_DIR / "tenants"
 
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = get_logger("saas.portal")
 

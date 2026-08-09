@@ -44,9 +44,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -58,6 +56,9 @@ TENANTS_DIR = DATA_DIR / "tenants"
 # Ensure project root is importable
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Imports from sibling SaaS modules

@@ -22,12 +22,13 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.ndc.agentic_netops")
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.ndc.agentic_netops")
 
 _NOW_UTC = datetime.now(timezone.utc)
 

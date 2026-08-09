@@ -31,17 +31,18 @@ Public API:
   register() -> bool
 """
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-LOG = get_logger("awareness.hooks")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+LOG = get_logger("awareness.hooks")
 
 # Tool names that carry a file_path we care about
 _TRACKED_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit"})

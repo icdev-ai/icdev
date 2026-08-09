@@ -34,13 +34,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.genesis.reflexes.academy_reflex")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.genesis.reflexes.academy_reflex")
 
 COOLDOWN_HOURS = 6
 FALLBACK_THRESHOLD = 0.70   # used when adaptive computation is unavailable

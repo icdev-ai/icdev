@@ -1,0 +1,7 @@
+{
+  "description": "sbx-fld-04: restore migration 209's tables on PostgreSQL. The consolidated snapshot (through_version 301) certifies 209 as applied but does not contain sbom_components, supply_chain_vulnerabilities or supply_chain_risk_scores, so a freshly bootstrapped PG has none of them - which also silently voids 20260808030213's ALTERs and sbom_dependencies.",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}

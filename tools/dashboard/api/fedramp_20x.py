@@ -7,7 +7,6 @@ summary, and authorization package status.
 """
 
 import sys
-from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -15,6 +14,15 @@ from flask import Blueprint, jsonify, request
 # Add compliance tools to path for imports
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+
+# Launched by path only this file's own directory is on sys.path, so the repo
+# root must be inserted before the first-party imports below can resolve. The
+# sys.path entry above adds a SIBLING package directory, not the root.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = str(BASE_DIR / "data" / "icdev.db")
 

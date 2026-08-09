@@ -46,7 +46,6 @@ Configuration (env vars or args/collibra_config.yaml)
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import base64
@@ -65,6 +64,8 @@ from typing import Any
 _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("icdev.ddc.collibra_import")
 

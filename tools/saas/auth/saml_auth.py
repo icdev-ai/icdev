@@ -23,7 +23,6 @@ DoD Identity Provider integration:
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import base64
 import json
@@ -55,6 +54,8 @@ from cryptography.hazmat.primitives.asymmetric import padding
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("saas.auth.saml")
 

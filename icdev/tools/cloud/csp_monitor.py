@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -46,8 +45,6 @@ import sys
 import time
 import uuid
 import xml.etree.ElementTree as ET
-from tools.db.storage import get_connection, table_exists
-from tools.common.helpers import now_iso
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -56,6 +53,10 @@ from typing import Dict, List, Optional, Any
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection, table_exists  # noqa: E402
+from tools.common.helpers import now_iso  # noqa: E402
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 CONFIG_PATH = BASE_DIR / "args" / "csp_monitor_config.yaml"

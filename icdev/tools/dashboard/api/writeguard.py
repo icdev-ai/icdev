@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Dashboard API: WriteGuard — Content Quality Analysis, Export & History.
 
@@ -27,6 +26,8 @@ from flask import Blueprint, jsonify, request, send_file
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 from tools.dashboard.auth import require_role  # noqa: E402
