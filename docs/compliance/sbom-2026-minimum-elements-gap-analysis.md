@@ -845,20 +845,18 @@ against a real database.
 met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — counting strictly, 2
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
-**Current: 8 of 17 data-field elements.** Four in SBOM Metadata — SBOM Author Signature
-(sbx-sig-01), Data Format Name, Data Format Version (sbx-fmt-01) and Tool Name — and four
-in Component Data: Component Producer (sbx-fld-02), Component License (sbx-fld-04) and
-both halves of the component hash, Value and Algorithm (sbx-fld-03). **And 5 of 7
-practices**: Coverage (sbx-cov-01), Frequency plus Accommodation of Updates (sbx-prc-02),
-Explicitly Identifying Unknown Information (sbx-prc-01), and Machine-Processable Data for
-generation (sbx-fmt-01, whose ingest half is sbx-fmt-02).
+**Current: 13 of 17 data-field elements.** The whole 9-element SBOM Metadata block, which
+sbx-fld-01 closed out and sbx-sig-01 and sbx-fmt-01 contributed to, plus four in Component
+Data: Component Producer (sbx-fld-02), Component License (sbx-fld-04) and both halves of
+the component hash, Value and Algorithm (sbx-fld-03). **And 5 of 7 practices**: Coverage
+(sbx-cov-01), Frequency plus Accommodation of Updates (sbx-prc-02), Explicitly Identifying
+Unknown Information (sbx-prc-01), and Machine-Processable Data for generation (sbx-fmt-01,
+whose ingest half is sbx-fmt-02).
 
-What is left is **3 outright GAPs** — SBOM Author, SBOM Generation Context and Component
-Dependency Relationship (sbx-cov-02) — and **6 PARTIAL rows**: SBOM Timestamp, Tool
-Version and SBOM Version on the metadata side, Component Identifiers, Name and Version on
-the component side. The matrix rows above are kept current as each task lands, so they,
-not this paragraph, are the authoritative statement — count from them rather than
-trusting this sentence.
+What is left is **1 outright GAP** — Component Dependency Relationship (sbx-cov-02) — and
+**3 PARTIAL rows**, all on the component side: Identifiers, Name and Version. The matrix
+rows above are kept current as each task lands, so they, not this paragraph, are the
+authoritative statement — count from them rather than trusting this sentence.
 
 ---
 
