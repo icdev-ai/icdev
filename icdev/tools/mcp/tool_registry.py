@@ -6219,6 +6219,58 @@ TOOL_REGISTRY = {
         "description": "Initialize Studio database tables (idempotent).",
         "input_schema": {"type": "object", "properties": {}},
     },
+    # hgx-cx-03 — the write half of the Studio surface. The four tools above
+    # only read; these start, inspect and resume an actual graph run, so a
+    # headless agent can drive one without the dashboard.
+    "studio_run_start": {
+        "category": "studio",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_studio_run_start",
+        "description": "Start a Studio workflow run and return its run_id and step state.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "workflow_id": {"type": "string", "description": "Saved workflow to run"},
+                "project_id": {"type": "string", "description": "Owning project", "default": "default"},
+                "inputs": {"type": "object", "description": "Run inputs recorded on the run row"},
+                "wait_seconds": {
+                    "type": "number",
+                    "description": "Block up to this long for the run to finish or park on a gate (0 = return immediately, capped at 900)",
+                    "default": 0,
+                },
+            },
+            "required": ["workflow_id"],
+        },
+    },
+    "studio_run_status": {
+        "category": "studio",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_studio_run_status",
+        "description": "Report a Studio workflow run and its steps, including each step_run_id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"run_id": {"type": "string", "description": "Run to report"}},
+            "required": ["run_id"],
+        },
+    },
+    "studio_run_resume": {
+        "category": "studio",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_studio_run_resume",
+        "description": "Re-attach a worker to a Studio run left mid-flight and continue it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "run_id": {"type": "string", "description": "Run to resume"},
+                "wait_seconds": {
+                    "type": "number",
+                    "description": "Block up to this long for the resumed run to settle (0 = return immediately, capped at 900)",
+                    "default": 0,
+                },
+            },
+            "required": ["run_id"],
+        },
+    },
     # ============================================================
     # KANBAN (7 tools)
     # ============================================================
@@ -8987,6 +9039,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "studio_tool_catalog":                      True,
     "studio_list_templates":                    True,
     "studio_init_db":                           False,
+    "studio_run_start":                         False,
+    "studio_run_status":                        True,
+    "studio_run_resume":                        False,
     # -- kanban ------------------------------------------------------------
     "kanban_list_tasks":                        True,
     "kanban_get_task":                          True,
