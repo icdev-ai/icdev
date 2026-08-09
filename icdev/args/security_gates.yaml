@@ -30,13 +30,51 @@ deployment_gates:
   block_on:
     - any_merge_gate_failure
     - sbom_not_generated
+    # Presence is not conformance: an empty CycloneDX file satisfies
+    # sbom_not_generated. See the sbom_conformance block for the thresholds.
+    - sbom_minimum_elements_not_met
     - ssp_not_current
     - poam_has_overdue_items
+  warn_on:
+    - sbom_conformance_below_threshold
   auto_rollback_on:
     - health_check_failure
     - cat1_finding_post_deploy
     - critical_vuln_runtime
     - error_rate_spike
+
+# SBOM Minimum Elements Conformance (2026 standard, sbx-gov-01)
+#
+# The five pre-existing SBOM conditions — sbom_not_generated,
+# sbom_attestation_missing, sbom_stale_over_30_days, sbom_generation_failed and
+# sbom_generation_skipped — are presence, freshness and exit-code checks. None of
+# them opens the document, so a two-line CycloneDX file with no components
+# satisfies every one. These two conditions gate on what the SBOM actually says.
+#
+# Evaluated by tools/compliance/sbom_conformance_gate.py. Every number below is
+# read from this file at evaluation time; the module carries no default for any
+# of them and refuses to run if this block is missing or incomplete.
+sbom_conformance:
+  # The gates these conditions are wired into. Each of the three also carries the
+  # condition names in its own blocking/warning list.
+  gates:
+    - deployment_gates
+    - swft
+    - devsecops
+  blocking:
+    - sbom_minimum_elements_not_met
+  warning:
+    - sbom_conformance_below_threshold
+  thresholds:
+    # Percentage of the 17 data-field elements (9 SBOM Metadata + 8 Component
+    # Data) that must be met before the SBOM is usable as evidence.
+    block_below_pct: 70
+    # The standard is a floor, not a target: anything short of the full set is
+    # worth saying out loud even when it clears the blocking threshold.
+    warn_below_pct: 100
+    # An SBOM that lists no components meets no Component Data element at all,
+    # whatever its metadata scores. Blocking, independent of the percentage.
+    require_components: true
 
 cssp:
   blocking:
@@ -60,6 +98,18 @@ sbd:
   warning:
     - partial_sbd_requirements_below_80_pct
     - memory_unsafe_language_without_tooling
+    # SBOM 2026 Frequency element (sbx-prc-02). The requirement is per-build:
+    # "every software version or update has an associated SBOM", and a new build
+    # counts even when it only integrates updated dependencies. That is the rule
+    # CLAUDE.md always claimed ICDEV enforced; sbom_max_age_days is the BACKSTOP
+    # for evidence that has simply gone stale, not a restatement of it. Both are
+    # evaluated by tools/compliance/sbom_revision.py::evaluate_frequency, which is
+    # what SBD-21 now calls, and each condition below is a string that function
+    # returns. Reported as warnings because SBD-21's catalog priority is `high`,
+    # not `critical`, and the sbd gate blocks on critical-only — raise the priority
+    # in context/compliance/cisa_sbd_requirements.json to make them block.
+    - sbom_not_regenerated_for_current_build
+    - sbom_build_identity_unknown
     - sbom_stale_over_30_days
     - threat_model_missing
     - security_headers_incomplete
@@ -239,6 +289,11 @@ thresholds:
   sbd:
     min_satisfied_pct: 80
     max_critical_not_satisfied: 0
+    # SBOM 2026 Frequency (sbx-prc-02): sbom_required_per_build is the rule, and
+    # sbom_max_age_days is the backstop for stale evidence. They answer different
+    # questions and the per-build one is checked first — see the comment on the
+    # sbd.warning conditions above and gap-analysis §3.3.
+    sbom_required_per_build: true
     sbom_max_age_days: 30
     mfa_required: true
     vuln_disclosure_required: true
@@ -381,6 +436,9 @@ devsecops:
     - policy_as_code_violation_critical
     - image_attestation_missing
     - sbom_attestation_missing
+    # A signed SBOM that states nothing is still an SBOM that states nothing —
+    # attestation covers integrity, this covers content.
+    - sbom_minimum_elements_not_met
     - critical_sast_finding_unresolved
     - secrets_detected_in_pipeline
   warning:
@@ -388,6 +446,7 @@ devsecops:
     - image_attestation_stale
     - rasp_rule_bypass_detected
     - license_compliance_violation
+    - sbom_conformance_below_threshold
   thresholds:
     policy_violations:
       max_critical: 0
@@ -836,6 +895,7 @@ swft:
   blocking:
     - slsa_provenance_missing
     - sbom_not_generated
+    - sbom_minimum_elements_not_met
     - sast_scan_not_completed
     - secret_detection_not_run
     - dependency_audit_not_completed
@@ -845,8 +905,15 @@ swft:
     - container_scan_not_completed
     - image_attestation_missing
     - swft_evidence_stale
+    # Same reconciliation as sbd above: a bundle whose SBOM predates the build it
+    # attests to is not current evidence, however recent the file happens to be.
+    - sbom_not_regenerated_for_current_build
+    - sbom_conformance_below_threshold
   thresholds:
     min_slsa_level: 2
+    # sbom_required_per_build is the SBOM 2026 Frequency rule; sbom_max_age_days
+    # is the stale-evidence backstop, not a substitute for it (sbx-prc-02).
+    sbom_required_per_build: true
     sbom_max_age_days: 30
     sast_required: true
     dependency_audit_required: true
@@ -1709,6 +1776,82 @@ mcp_workflow_tools:
     - emass_sync            # egress of compliance data to eMASS
     - xacta_sync            # egress of compliance data to Xacta
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent tool allowlist for Studio workflow steps (hgx-agent-02)
+#
+# A `node_type: agent` step runs an agent LOOP, so the difference from
+# `mcp_workflow_tools` above is *who chooses the tool*. An mcp step names one
+# tool at authoring time and a reviewer can read it off the template. An agent
+# step names a set of bundles and a MODEL picks, per turn, which of them to
+# call — so the same default-deny treatment has to be applied twice:
+#
+#   at offer time  — the tools handed to the model are the declared bundles
+#                    INTERSECTED with what this policy allows for the caller's
+#                    impact level and roles. A tool the caller may not use is
+#                    never described to the model, so it cannot be asked for.
+#   at call time   — every call is re-checked before the handler runs, because
+#                    "not offered" is a weaker claim than "not authorized": a
+#                    model can name a tool it was never given, and a future
+#                    caller of build_step_toolset could get the offer wrong.
+#
+#   default            — policy for any tool not named here. Always `deny`.
+#   allowed            — offered and called with no human gate. Read-only:
+#                        inspection of the step's own worktree.
+#   requires_approval  — offered, but the first call parks an `awaiting_approval`
+#                        gate in the same run and blocks until a human decides
+#                        it. One gate per (run, tool), exactly as mcp does — an
+#                        agent that writes ten files asks once.
+#   default_min_il     — impact level a tool with no `tool_limits` entry runs at.
+#                        The platform baseline is CUI/IL4.
+#   tool_limits        — per-tool `min_il` and `required_roles`. This is where an
+#                        agent tool differs from an mcp tool: an mcp tool inherits
+#                        its limits from the registry component that owns its
+#                        handler module, and a worktree tool has no owning
+#                        component, so the limit is declared here instead. A tool
+#                        that IS registry-backed gets the STRICTER of the two.
+#
+# Rules for editing this list:
+#   * Names are the tool names the step's toolset actually offers — the worktree
+#     toolset in tools/genesis/rubric_build_tools.py. A name no toolset offers is
+#     inert, not an error, so a typo here removes a tool rather than raising.
+#   * A tool appears in at most ONE of the two lists.
+#   * Anything that writes to disk, executes, or egresses belongs in
+#     `requires_approval`. Adding it to `allowed` is a gate violation.
+#   * Refusals, parked gates and authorized calls are all audited append-only to
+#     studio_mcp_dispatch_audit with a params_sha256 — the same table the mcp
+#     surface writes to, so "what did this run try to do" is one query.
+agent_workflow_tools:
+  default: deny
+  nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
+  default_min_il: IL4
+
+  # Read-only inspection of the step's own worktree. Every path is resolved and
+  # traversal-guarded inside the step's work_dir by the worktree toolset, so
+  # these cannot reach the wider disk.
+  allowed:
+    - read_file       # read one file inside the worktree
+    - list_files      # list one directory inside the worktree
+    - grep_files      # content search inside the worktree
+    - search_files    # glob inside the worktree
+    - git_diff        # read uncommitted changes; argv-only, path after `--`
+    - done            # loop termination sentinel, touches nothing
+
+  # Mutating: a human gate must be approved in the same run before the first
+  # call reaches the handler.
+  requires_approval:
+    - write_file      # writes a file in the worktree
+    - patch_file      # edits a file in the worktree
+    - run_command     # executes an allowlisted command
+
+  tool_limits:
+    # Arbitrary (allowlisted) execution inside the platform's own process tree
+    # is the one agent tool that is not merely a worktree edit, so it is held
+    # above the CUI baseline. An IL4 run is refused it — and because the refusal
+    # happens at offer time, an IL4 step is simply never handed the tool.
+    run_command:
+      min_il: IL5
+      # required_roles: [isso]   # also enforced; unset means "no role limit"
+
 # Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
 gates:
   - id: AI-TRACE-001
@@ -1745,6 +1888,35 @@ gates:
     warn_on:
       - mcp_tool_unknown_to_registry
     policy: mcp_workflow_tools
+    nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
+
+  - id: AGENT-WF-001
+    name: Agent Workflow Tool Allowlist Gate
+    description: >-
+      Refuses a tool call from a `node_type: agent` workflow step when the tool is
+      absent from agent_workflow_tools.allowed, blocks an
+      agent_workflow_tools.requires_approval tool until its human gate is approved
+      in the same run, and refuses a caller whose impact level or roles do not meet
+      the limits declared for that tool. Enforced twice — at offer time, so an
+      unauthorized tool is never described to the model, and again at call time
+      before the handler runs. Policy lives in the agent_workflow_tools section of
+      this file; every decision is audited append-only to
+      studio_mcp_dispatch_audit alongside the mcp surface's.
+    severity: HIGH
+    block_on:
+      - agent_tool_not_allowlisted
+      - agent_tool_awaiting_human_approval
+      - agent_tool_approval_rejected
+      - agent_tool_approval_gate_unavailable
+      - agent_tool_exceeds_caller_il
+      - agent_tool_missing_required_role
+      # Fail-closed: an unreadable or non-default-deny policy blocks every tool
+      # rather than falling back to an unbounded toolset.
+      - agent_gate_policy_unavailable
+    warn_on:
+      - agent_tool_offered_but_unauthorized
+    policy: agent_workflow_tools
+    tool: tools/studio/executors/agent_tool_gate.py
     nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
 
   - id: URL-SEC-001

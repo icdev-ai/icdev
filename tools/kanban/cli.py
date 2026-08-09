@@ -24,6 +24,10 @@ Usage examples:
   # Clear a stale done-gate block without re-dispatching the task
   python tools/kanban/cli.py --reverify zig-ext-08 --dry-run
   python tools/kanban/cli.py --reverify zig-ext-08 --json
+
+  # SATISFY the done-gate: land the task's PR, then mark done
+  python tools/kanban/cli.py --set-status zig-ext-08 done --merge --dry-run
+  python tools/kanban/cli.py --set-status zig-ext-08 done --merge --json
 """
 
 import argparse
@@ -212,6 +216,9 @@ def cmd_set_status(
     json_out: bool,
     force_done: bool = False,
     reason: str = "",
+    merge: bool = False,
+    dry_run: bool = False,
+    lander=None,
 ) -> int:
     if status not in VALID_STATUSES:
         print(
@@ -220,9 +227,62 @@ def cmd_set_status(
         )
         return 1
 
+    # --merge: SATISFY the done-gate instead of bypassing it. Lands the task's
+    # PR (all gates in tools/kanban/land.py) and only then writes 'done'.
+    merge_verdict = None
+    if merge:
+        if status != "done":
+            print("ERROR: --merge only applies to --set-status <id> done",
+                  file=sys.stderr)
+            return 1
+        if force_done:
+            # A merge that needs forcing is not a merge. Allowing both would
+            # turn --merge into the softer bypass it exists to replace.
+            print("ERROR: --merge and --force-done are mutually exclusive",
+                  file=sys.stderr)
+            return 1
+        if len(task_ids) != 1:
+            # Merging is an irreversible per-task side effect, so there is no
+            # honest all-or-nothing batch: a failure after the first merge would
+            # leave landed work with no 'done' row.
+            print("ERROR: --merge lands exactly one task's PR — pass a single "
+                  "task id", file=sys.stderr)
+            return 1
+        if lander is None:
+            from tools.kanban.land import land as lander  # noqa: PLC0415
+        merge_verdict = lander(task_ids[0], dry_run=dry_run)
+        if dry_run:
+            # Nothing was merged, so nothing may be marked done. Exit code
+            # reports the preflight verdict so it is scriptable.
+            if json_out:
+                print(json.dumps({"merge": merge_verdict}, indent=2, default=str))
+            else:
+                state = "WOULD LAND" if merge_verdict.get("ok") else "REFUSED"
+                print(f"  {state}: {task_ids[0]}: "
+                      f"{_ascii(merge_verdict.get('reason'))}")
+                for c in merge_verdict.get("checks", []):
+                    print(f"    [{'ok' if c.get('ok') else 'XX'}] {c.get('name')} "
+                          f"{_ascii(c.get('detail'))}".rstrip())
+            return 0 if merge_verdict.get("ok") else 1
+        if not merge_verdict.get("merged"):
+            if json_out:
+                print(json.dumps({"error": "refused_merge",
+                                  "merge": merge_verdict}, indent=2, default=str))
+            else:
+                print(f"  REFUSED: {task_ids[0]}: "
+                      f"{_ascii(merge_verdict.get('reason'))}", file=sys.stderr)
+                for c in merge_verdict.get("checks", []):
+                    mark = "ok" if c.get("ok") else "XX"
+                    print(f"    [{mark}] {c.get('name')} "
+                          f"{_ascii(c.get('detail'))}".rstrip(), file=sys.stderr)
+            return 1
+
     # Merge-verify before writing anything: refuse the whole batch rather than
-    # marking some tasks done and rejecting others halfway through.
-    if status == "done" and not force_done:
+    # marking some tasks done and rejecting others halfway through. Skipped
+    # after a --merge: a PR observed MERGED on GitHub is strictly stronger
+    # evidence than the local `git cherry` heuristic, which would false-refuse
+    # whenever this checkout's origin/<default> has not been fetched since.
+    if status == "done" and not force_done and not merge:
         refusals = [r for r in (_refuses_done(t) for t in task_ids) if r]
         if refusals:
             if json_out:
@@ -267,10 +327,19 @@ def cmd_set_status(
                 vals.append(tid)
                 conn.execute(sql, tuple(vals))
             if prior_row:
+                if status == "done" and force_done:
+                    _transition_reason = (
+                        f"FORCED done (merge check overridden): {reason}")
+                elif status == "done" and merge_verdict is not None:
+                    # Same audit path as --force-done, opposite meaning: the
+                    # gate was satisfied, not overridden.
+                    _transition_reason = (
+                        f"MERGED via CLI --merge: {merge_verdict.get('pr_url')} "
+                        f"({merge_verdict.get('reason')})")
+                else:
+                    _transition_reason = ""
                 _record_manual_transition(
-                    conn, tid, prior_status, status,
-                    reason=(f"FORCED done (merge check overridden): {reason}"
-                            if (status == 'done' and force_done) else ""),
+                    conn, tid, prior_status, status, reason=_transition_reason,
                 )
             row = conn.execute(
                 "SELECT id, title, status FROM kanban_tasks WHERE id = %s", (tid,)
@@ -281,14 +350,55 @@ def cmd_set_status(
                 results.append({"id": tid, "error": "not found"})
 
     if json_out:
-        print(json.dumps(results, indent=2))
+        payload = ({"merge": merge_verdict, "tasks": results}
+                   if merge_verdict is not None else results)
+        print(json.dumps(payload, indent=2, default=str))
     else:
+        if merge_verdict is not None:
+            print(f"  MERGED: {_ascii(merge_verdict.get('pr_url'))}")
         for r in results:
             if "error" in r:
                 print(f"  NOT FOUND: {r['id']}")
             else:
                 print(f"  {r['id']}: {r['status']}  {r.get('title', '')[:70]}")
     return 0
+
+
+def cmd_requeue(task_ids: list, status: str, json_out: bool,
+                reason: str = "", force: bool = False) -> int:
+    """Re-queue tasks for a clean rebuild — the supported alternative to a
+    hand-written UPDATE.
+
+    ``--set-status <id> backlog`` is NOT the same thing: it leaves
+    ``branch_name`` pointing at the branch whose PR was just closed, and it
+    cannot touch a task parked in a pipeline-owned state like ``pr_opened``
+    (see VALID_STATUSES above). ``tools/kanban/requeue.py`` owns the field set;
+    this is only the surface. Exit 1 if any task was refused, so a batch
+    re-queue cannot silently half-apply.
+    """
+    from tools.kanban.requeue import requeue_task
+
+    results = [
+        requeue_task(tid, status=status, reason=reason, actor="cli", force=force)
+        for tid in task_ids
+    ]
+
+    if json_out:
+        print(json.dumps(results, indent=2, default=str))
+    else:
+        for r in results:
+            if not r["requeued"]:
+                print(f"  REFUSED: {r['task_id']}: {r['error']}", file=sys.stderr)
+                continue
+            print(
+                f"  {r['task_id']}: {r['from_status']} -> {r['to_status']}  "
+                f"(cleared {', '.join(r['cleared']) or 'nothing'}; "
+                f"failure_count preserved at {r['failure_count']})"
+            )
+            if not r["transition_recorded"]:
+                print("    WARNING: no kanban_status_transitions row was written",
+                      file=sys.stderr)
+    return 0 if all(r["requeued"] for r in results) else 1
 
 
 def cmd_show(task_id: str, json_out: bool) -> int:
@@ -404,20 +514,39 @@ def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
     params = []
 
     if prefix:
-        conditions.append("id LIKE %s")
+        conditions.append("t.id LIKE %s")
         params.append(prefix + "%")
     if status:
         if status not in VALID_STATUSES:
             print(f"ERROR: invalid status '{status}'.", file=sys.stderr)
             return 1
-        conditions.append("status = %s")
+        conditions.append("t.status = %s")
         params.append(status)
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     with get_connection() as conn:
+        # depends_on_task_id is selected because it is the field that decides
+        # whether a task can run at all: promote_backlog_to_scheduled refuses to
+        # promote a task whose dependency is not done/decomposed, so a held
+        # dependency is the single most common reason the board looks stuck.
+        #
+        # Omitting it did not make this output terse, it made it MISLEADING. A
+        # reader who checks ``task.get("depends_on_task_id")`` gets None for every
+        # row and concludes the backlog is ready to run. That happened on
+        # 2026-08-09: 37 backlog tasks read as ungated when every one was held
+        # behind a manual gate, and the board was reported as broken while it was
+        # obeying its own rules exactly.
+        #
+        # The blocker's STATUS is joined for the same reason — the id alone does
+        # not say whether it is satisfied, and needing a second query per task to
+        # answer that is what made the wrong answer easy to reach.
         rows = conn.execute(
-            f"SELECT id, title, status, priority FROM kanban_tasks {where} ORDER BY id",
+            "SELECT t.id, t.title, t.status, t.priority, t.depends_on_task_id, "
+            "       d.status AS depends_on_status "
+            "FROM kanban_tasks t "
+            "LEFT JOIN kanban_tasks d ON d.id = t.depends_on_task_id "  # nosec B608
+            f"{where} ORDER BY t.id",
             params,
         ).fetchall()
 
@@ -429,7 +558,13 @@ def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
         if not results:
             print("  (no tasks found)")
         for r in results:
-            print(f"  [{r['status']:15s}] {r['id']:25s} {r.get('title','')[:60]}")
+            dep = r.get("depends_on_task_id")
+            held = dep and r.get("depends_on_status") not in ("done", "decomposed")
+            blocked = (
+                f"  <- blocked by {dep} ({r.get('depends_on_status') or 'MISSING'})"
+                if held else ""
+            )
+            print(f"  [{r['status']:15s}] {r['id']:25s} {r.get('title','')[:60]}{blocked}")
     return 0
 
 
@@ -622,6 +757,8 @@ def cmd_build_model(model: str, json_out: bool) -> int:
 
 
 def main():
+    from tools.kanban.requeue import REQUEUE_STATUSES
+
     parser = argparse.ArgumentParser(
         description="Kanban task manager — always routes through get_connection() (PG in prod).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -644,8 +781,31 @@ def main():
                         help="Override the merge check on --set-status done "
                              "(requires --reason; audit-logged)")
     parser.add_argument("--reason", metavar="TEXT",
-                        help="Justification recorded with --force-done")
+                        help="Justification recorded with --force-done or --requeue")
+    parser.add_argument("--merge", action="store_true",
+                        help="With --set-status <id> done: SATISFY the merge "
+                             "gate instead of bypassing it — land the task's PR "
+                             "(requires an OPEN PR based on the default branch, "
+                             "green CI, no requested changes, and the enforced "
+                             "done-gate) and mark done only once GitHub reports "
+                             "it MERGED. One task id; not combinable with "
+                             "--force-done. Add --dry-run to preflight only.")
     parser.add_argument("--show", metavar="TASK_ID", help="Show details of one task")
+
+    # --requeue <id ...> — send tasks back for a clean rebuild
+    parser.add_argument("--requeue", nargs="+", metavar="TASK_ID",
+                        help="Re-queue tasks for a clean rebuild: clears "
+                             "last_failure_reason and branch_name, preserves "
+                             "failure_count, records the transition. Use this "
+                             "instead of --set-status backlog, whose "
+                             "fresh-updated_at + stale-failure_reason pairing "
+                             "failure_triage reads as a brand-new failure.")
+    parser.add_argument("--requeue-status", metavar="STATUS", default="backlog",
+                        choices=sorted(REQUEUE_STATUSES),
+                        help="Target status for --requeue (default: backlog)")
+    parser.add_argument("--force", action="store_true",
+                        help="With --requeue: re-queue a manual-mode gate "
+                             "sentinel anyway (releases every task behind it)")
 
     # --pipeline <id> — delivery-pipeline (gate) status; CLI mirror of the dashboard stepper
     parser.add_argument("--pipeline", metavar="TASK_ID",
@@ -657,7 +817,9 @@ def main():
                              "append a fresh verdict, clearing a stale done-gate block "
                              "without re-dispatching (exit 0=passed, 1=failed, 2=unknown)")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true",
-                        help="With --reverify: compute the verdict without writing it")
+                        help="With --reverify: compute the verdict without writing it. "
+                             "With --merge: run the landing preflight only "
+                             "(nothing is merged, nothing is marked done)")
 
     # --list [--prefix PREFIX] [--status STATUS]
     parser.add_argument("--list", action="store_true", help="List tasks")
@@ -707,7 +869,12 @@ def main():
         status = tokens[-1]
         task_ids = tokens[:-1]
         sys.exit(cmd_set_status(task_ids, status, args.json_out,
-                            force_done=args.force_done, reason=args.reason or ''))
+                            force_done=args.force_done, reason=args.reason or '',
+                            merge=args.merge, dry_run=args.dry_run))
+
+    elif args.requeue:
+        sys.exit(cmd_requeue(args.requeue, args.requeue_status, args.json_out,
+                             reason=args.reason or '', force=args.force))
 
     elif args.show:
         sys.exit(cmd_show(args.show, args.json_out))

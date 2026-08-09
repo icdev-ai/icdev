@@ -45,3 +45,11 @@ tests/test_audit_tail_cli.py
 # green. The PG case seeds rows inside a transaction and ROLLS BACK, so the
 # append-only audit_trail accumulates nothing.
 tests/ci/test_pr_watcher_rebase.py
+# sbx-fld-04: the Component License upsert into sbom_components. That table has
+# never been written by any runtime path before, and _persist_components reports a
+# failure as a stderr warning rather than raising — so a PG-only breakage in its
+# `ON CONFLICT … DO UPDATE SET … = EXCLUDED.…` would show up as "0 rows recorded"
+# while the SQLite suite stayed green. The file has no sqlite-forcing fixture; it
+# reads the AMBIENT connection via get_connection and deletes its probe row in a
+# fixture teardown, so nothing accumulates.
+tests/pg_tier/test_sbom_component_license_pg.py

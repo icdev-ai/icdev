@@ -52,6 +52,47 @@ opens the database, re-checks every ``closes_when``, and will say a finding has
 been retired. It prints; it does not write the checked-in artifact, because a
 live render is not reproducible and committing one turns the gate red for the
 next person.
+
+**Why the exact module count is not written into the committed file
+(kax-conflict-02).** The counts are globs over the tree, so every branch that
+adds a module under a counted surface rewrites the same two lines — one
+summary-table cell and one prose sentence — and rewrites them to a *different*
+value than every other branch in flight. The document therefore conflicted with
+itself by construction. Measured on 2026-08-08: of six blocked open PRs, three
+were held up by this file and nothing else (#1405 and #1384 went red on the
+in-sync test; #1383's only merge conflict was this file). A first attempt masked
+the counts during the equality CHECK. That fixed the red test and did nothing at
+all for the merge conflict, because git merges text and knows nothing about a
+mask applied inside a Python function.
+
+So the committed rendering states the count's *classification* — ``built`` /
+``thin`` / ``absent``, and whether the floor was met — and not the integer.
+Adding a module to an already-``built`` subsystem now produces a byte-identical
+document: nothing to regenerate, nothing to conflict. Crossing the floor still
+changes the file, because that is a real change of state and catching it is the
+whole job of the gate. The integers are still measured on every run and still
+reachable — ``--json`` carries ``module_count`` per subsystem and ``--live``
+prints them into the prose — they are simply not what git is asked to track.
+Because nothing tree-volatile is left in the artifact, ``check_report`` compares
+byte-exactly again; there is no masking anywhere in the gate.
+
+The three alternatives that were considered, and why each loses:
+
+* *Stop tracking the file; generate it in the gate.* Removes the conflict by
+  removing the artifact, and with it the reason d4 exists — the report is
+  useful because a reader who opens ``docs/research/`` finds it, and
+  ``docs/research/external-benchmark-map.md`` links to it by name. It also
+  leaves the gate diffing a fresh render against nothing, which passes
+  unconditionally and is the same as deleting the check.
+* *A ``.gitattributes`` merge driver that regenerates on conflict.* A custom
+  driver must be installed per clone (``git config merge.<name>.driver``), so it
+  silently does nothing for anyone who has not run the repo's setup — and
+  GitHub's server-side merge never runs custom drivers at all, which is where
+  the measured conflicts actually happened.
+* *A pre-commit hook that regenerates when the tree changed.* Writes files out
+  from under the author mid-commit, makes *every* commit touch the document
+  (more conflicts, not fewer), and cannot work on the CI runner, which has no
+  git identity to commit with.
 """
 
 import argparse
@@ -67,6 +108,8 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.innovation.benchmark_compare import (
+    CODE_ABSENT,
+    CODE_THIN,
     MAP_DOC,
     POSITION_AHEAD,
     POSITION_PARITY,
@@ -244,6 +287,34 @@ def _limits(record: Dict[str, Any]) -> List[str]:
     ]
 
 
+def _module_reading(measured: Dict[str, Any], code_state: str, live: bool) -> str:
+    """The module evidence: the exact count live, its classification when committed.
+
+    The integer is a glob over the tree and moves on any branch that adds a
+    module, which is what made the committed document conflict with itself. The
+    classification does not move unless the subsystem crosses its floor, which
+    is a real change of state and one the gate should catch. See the module
+    docstring for why this beats masking the count in the check.
+
+    >>> _module_reading({"module_count": 61, "module_floor": 5}, "built", True)
+    '**61 modules** (floor 5)'
+    >>> _module_reading({"module_count": 61, "module_floor": 5}, "built", False)
+    '**at or above its floor of 5 modules**'
+    >>> _module_reading({"module_count": 3, "module_floor": 5}, "thin", False)
+    '**below its floor of 5 modules**'
+    >>> _module_reading({"module_count": 0, "module_floor": 5}, "absent", False)
+    '**no modules matched its globs**'
+    """
+    if live:
+        return f"**{measured['module_count']} modules** (floor {measured['module_floor']})"
+    floor = measured["module_floor"]
+    if code_state == CODE_ABSENT:
+        return "**no modules matched its globs**"
+    if code_state == CODE_THIN:
+        return f"**below its floor of {floor} modules**"
+    return f"**at or above its floor of {floor} modules**"
+
+
 def _projects_for(subsystem: str, targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     rows = [t for t in targets if (t.get("subsystem") or "").strip() == subsystem]
     return sorted(rows, key=lambda t: project_label(t).lower())
@@ -282,6 +353,13 @@ def _render_header(result: Dict[str, Any], live: bool) -> List[str]:
         "closing condition is now satisfied is reported retired, and a declared lead that has",
         "fallen below its module floor becomes a gap.",
         "",
+        "**Why you will not find an exact module count below.** The counts move on every branch",
+        "that adds a module, so writing them here made this file conflict with itself: three of",
+        "six blocked PRs on 2026-08-08 were held up by this document and nothing else. What is",
+        "committed is the count's *classification* against its floor — `built`, `thin`, `absent`",
+        "— which only changes when the subsystem's state really changes. For the integers run",
+        f"`python {TOOL} --json`, or `--live` for the measured rendering.",
+        "",
         (
             "**Row counts were measured against a live database.** This rendering is therefore"
             " not reproducible on another machine and must not be committed."
@@ -309,7 +387,7 @@ def _render_header(result: Dict[str, Any], live: bool) -> List[str]:
 
 
 def _render_summary_table(records: List[Dict[str, Any]], numbered: bool) -> List[str]:
-    head = "| # | Subsystem | Benchmarked against | Position | Verdict | Modules | Outstanding |"
+    head = "| # | Subsystem | Benchmarked against | Position | Verdict | Code | Outstanding |"
     lines = [head, "|---|---|---|---|---|---|---|"]
     for record in records:
         section = record.get("benchmark_section")
@@ -320,7 +398,7 @@ def _render_summary_table(records: List[Dict[str, Any]], numbered: bool) -> List
             f"| {_cell(against)} "
             f"| {POSITION_LABELS.get(record['position'], record['position'])} "
             f"| **{_verdict_label(record)}** "
-            f"| {record['measured']['module_count']} "
+            f"| `{record['code_state']}` "
             f"| {len(record['outstanding'])} |"
         )
     lines.append("")
@@ -356,8 +434,8 @@ def _render_section(record: Dict[str, Any], targets: List[Dict[str, Any]], live:
     lines.append("")
     surface = declared.get("icdev_surface")
     measurement = (
-        f"Measured: **{measured['module_count']} modules** "
-        f"(floor {measured['module_floor']}) → `{record['code_state']}`"
+        f"Measured: {_module_reading(measured, record['code_state'], live)} "
+        f"→ `{record['code_state']}`"
     )
     if live and measured.get("db_measured"):
         measurement += (
@@ -583,12 +661,26 @@ def write_report(path: Path, markdown: str) -> Dict[str, Any]:
             "lines": markdown.count("\n")}
 
 
+#: What the gate says when it fails. It has to name the fix, because the person
+#: reading it is usually mid-merge on a branch that did not touch this document.
+DRIFT_REASON = (
+    "the checked-in report is not what its sources now produce — regenerate it with "
+    f"`python {TOOL} --write` and commit the result. Adding a module no longer changes "
+    "this file (exact counts are deliberately not committed; see the module docstring "
+    "for kax-conflict-02), so a diff here is a real content change: an edited inventory, "
+    "watchlist or promoter config, or a subsystem that crossed its module floor."
+)
+
+
 def check_report(path: Path, markdown: str) -> Dict[str, Any]:
     """Is the checked-in file what the sources currently produce?
 
-    Compared on universal-newline reads so a checkout with CRLF line endings is
-    not reported as a content change — the gate is about content drift, and git
-    already owns line endings.
+    Compared byte-for-byte. There is deliberately no tolerance anywhere in here:
+    the one thing that used to drift for reasons unrelated to the branch — the
+    tree-derived module count — is no longer written into the artifact at all,
+    so a difference now means a content change and should be regenerated. See
+    the module docstring for why masking the count in the check was the wrong
+    fix (it left the git-level merge conflict entirely untouched).
     """
     if not path.exists():
         return {
@@ -600,6 +692,7 @@ def check_report(path: Path, markdown: str) -> Dict[str, Any]:
     current = path.read_text(encoding="utf-8")
     if current == markdown:
         return {"in_sync": True, "path": str(path), "reason": None, "diff": ""}
+
     diff = "".join(
         difflib.unified_diff(
             current.splitlines(keepends=True),
@@ -612,7 +705,7 @@ def check_report(path: Path, markdown: str) -> Dict[str, Any]:
     return {
         "in_sync": False,
         "path": str(path),
-        "reason": "the checked-in report is not what its sources now produce",
+        "reason": DRIFT_REASON,
         "diff": diff,
     }
 

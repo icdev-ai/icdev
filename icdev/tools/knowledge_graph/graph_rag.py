@@ -22,6 +22,17 @@ Usage:
 """
 
 from __future__ import annotations
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.logging.icdev_logger import get_logger
 
 import argparse
@@ -1746,7 +1757,7 @@ def expand_bm25_top_k(
         }
 
         # Persist for restart/timeout recovery
-        cache_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+        cache_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8", newline="")
 
         return result
 
@@ -1764,7 +1775,7 @@ def expand_bm25_top_k(
         }
         try:
             cache_path.write_text(
-                json.dumps(error_result, indent=2, default=str), encoding="utf-8"
+                json.dumps(error_result, indent=2, default=str), encoding="utf-8", newline=""
             )
         except Exception:
             pass

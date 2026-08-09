@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from tools.logging.icdev_logger import get_logger
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +25,8 @@ from pathlib import Path
 _BASE = Path(__file__).resolve().parent.parent.parent
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -265,7 +266,7 @@ def run(dry_run: bool = False) -> dict:
                 continue
 
             # Write updated skill file
-            skill_file.write_text(updated_content, encoding="utf-8")
+            skill_file.write_text(updated_content, encoding="utf-8", newline="")
             logger.info(
                 "gepa_optimizer: updated %s (artifact %s, delta=+%.2f, traces=%d)",
                 skill_file, artifact_id, composite_score - baseline_score, n_traces,

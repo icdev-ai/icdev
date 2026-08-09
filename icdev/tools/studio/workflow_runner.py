@@ -11,6 +11,8 @@ multi-user and multi-tab runs isolated.
 
 from __future__ import annotations
 
+import argparse
+import itertools
 import json
 import os
 import queue
@@ -19,6 +21,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
@@ -32,6 +35,8 @@ if str(_ROOT) not in sys.path:
 from tools.db.storage import get_connection  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.studio import run_memory  # noqa: E402
+# hgx-cond-01: the one condition DSL — see the "Conditional edges" section.
+from tools.studio.automation_builder import evaluate_conditions  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -115,24 +120,148 @@ def _gate_deadline(step: dict, started_at: str | None) -> float:
 MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
 
 
+# ── Agent steps (hgx-agent-01) ─────────────────────────────
+
+# A `node_type: agent` step runs an agent loop instead of a script: it names the
+# task in `prompt` and bounds its tools with `agent_tools` (bundle names from
+# args/agent_toolsets.yaml). Every such step runs through this one executor,
+# the same way every mcp step runs through mcp_executor.
+AGENT_EXECUTOR = "tools/studio/executors/agent_executor.py"
+
+# Step keys forwarded to the executor as `--<flag> <value>`, in the order the
+# executor documents them. Absent keys are simply not passed, so the executor's
+# own defaults apply and this list never has to restate them.
+_AGENT_STEP_FLAGS = (
+    ("system_prompt", "--system-prompt"),
+    ("llm_function", "--llm-function"),
+    ("work_dir", "--work-dir"),
+    ("max_iterations", "--max-iterations"),
+    ("max_tokens", "--max-tokens"),
+    ("effort", "--effort"),
+    ("approval_mode", "--approval-mode"),
+    # hgx-gov-01: the gate subset this node runs its prompt/output through. A
+    # step naming none is ungoverned, exactly as agent nodes have always run —
+    # and a profile can only NARROW the screening/grounding gates, never the
+    # egress mask or the audit row (governance.MANDATORY_GATES), so this is safe
+    # to author in a template even though templates are authored content.
+    ("governance_profile", "--governance-profile"),
+)
+# Deliberately NOT here: the executor's --caller-il / --caller-roles. A template
+# is authored content, so letting a step declare its own impact level would let
+# it raise itself past AGENT-WF-001's per-tool limits. The caller comes from the
+# run's context (run memory's `caller` key, then the environment) instead.
+
+
 # ── DAG helpers ────────────────────────────────────────────
 
-def _resolve_dag(steps: list) -> list:
+def _dag_graph(steps: list) -> dict:
+    """{step_id: {dependency_id, ...}} for the template's steps."""
     graph: dict[str, set] = {}
     for step in steps:
         graph[step["id"]] = set(step.get("depends_on", []) or [])
-    sorter = TopologicalSorter(graph)
-    return list(sorter.static_order())
+    return graph
+
+
+def _resolve_dag(steps: list) -> list:
+    """A flattened topological order — the announcement order, not the run order.
+
+    Execution walks a prepared sorter instead (see `_prepare_dag`), so a fan-out
+    can dispatch concurrently. This flattening still backs the `run_started`
+    payload and the generated-script path, both of which need a single list.
+    """
+    return list(TopologicalSorter(_dag_graph(steps)).static_order())
+
+
+def _dependents(steps: list) -> dict:
+    """{step_id: {ids of steps declaring it in depends_on}} — reverse of `_dag_graph`."""
+    children: dict[str, set] = {step["id"]: set() for step in steps}
+    for step in steps:
+        for dep in step.get("depends_on", []) or []:
+            if dep in children:
+                children[dep].add(step["id"])
+    return children
+
+
+def _block_downstream(children: dict, failed_id: str, conditional: set | None = None) -> list:
+    """Every step that transitively depends on `failed_id`, breadth-first.
+
+    Ported from `tools/agent/team_orchestrator.py::_block_downstream`, which
+    cascades through the whole graph rather than one level: if A fails, B
+    depends on A and C on B, then both B and C are blocked. Iterative rather
+    than recursive — a chain long enough to matter is a template typo, not a
+    reason to raise RecursionError inside a pool thread.
+
+    ONE addition the Studio runner needs that the orchestrator does not: the
+    cascade stops at a step listed in `conditional` — a step declaring `when:`.
+    That step IS the remediation branch. It asked to be routed on its
+    predecessor's recorded outcome, so cancelling it for having a failed
+    predecessor would make `fail -> remediate` unreachable and leave `when` able
+    to express only conditions that never fire after a failure. Such a step is
+    neither blocked nor walked through: it evaluates its own condition, and what
+    it produces then governs its own descendants.
+    """
+    conditional = conditional or set()
+    pending = [sid for sid in children.get(failed_id, ()) if sid not in conditional]
+    seen = set(pending)
+    blocked: list[str] = []
+    while pending:
+        step_id = pending.pop(0)
+        blocked.append(step_id)
+        for nxt in children.get(step_id, ()):
+            if nxt not in seen and nxt not in conditional:
+                seen.add(nxt)
+                pending.append(nxt)
+    return blocked
+
+
+def _prepare_dag(steps: list) -> TopologicalSorter:
+    """A prepared sorter for wave-parallel dispatch (`get_ready`/`done`).
+
+    Mirrors `tools/agent/team_orchestrator.py::execute_workflow` — decisions D40
+    (graphlib) and D36 (threads, not asyncio). `prepare()` raises CycleError here
+    rather than at the first `get_ready()`, so a circular template fails at the
+    same point in `_worker` as it did when the order was resolved eagerly.
+
+    A join needs no barrier primitive: a step with several `depends_on` entries
+    is simply not handed out by `get_ready()` until every one of them is `done()`.
+    """
+    sorter = TopologicalSorter(_dag_graph(steps))
+    sorter.prepare()
+    return sorter
+
+
+# Concurrency is capped so a template typo (`max_parallel: 500`) cannot spawn a
+# thread per step. Steps are subprocesses, so the useful ceiling is low anyway.
+_MAX_PARALLEL_CAP = 16
+
+
+def _max_parallel(data: dict) -> int:
+    """Concurrent step slots for a run, from the template's `max_parallel` key.
+
+    DEFAULT 1 — a template that does not declare it runs exactly as it did
+    before parallel dispatch existed: one step at a time, in `_resolve_dag`
+    order. An unparseable or out-of-range value degrades to the nearest legal
+    one rather than failing the run.
+    """
+    try:
+        value = int(data.get("max_parallel", 1) or 1)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(value, _MAX_PARALLEL_CAP))
 
 
 def _step_tool_path(step: dict) -> str:
     """Repo-relative script this step runs ('' when it declares none).
 
     An `mcp` node names a registry tool, not a script — every one of them runs
-    through the shared executor, so the path is fixed rather than authored.
+    through the shared executor, so the path is fixed rather than authored. An
+    `agent` node names a prompt and a toolset, and is fixed the same way.
     """
-    if step.get("node_type") == "mcp":
+    node_type = step.get("node_type")
+    if node_type == "mcp":
         return MCP_EXECUTOR
+    if node_type == "agent":
+        return AGENT_EXECUTOR
     return step.get("tool", "") or ""
 
 
@@ -172,6 +301,48 @@ def _build_mcp_command(step: dict, project_id: str, run_id: str = "") -> list:
     return cmd
 
 
+def _agent_tools_arg(step: dict) -> str:
+    """A step's `agent_tools` as the executor's comma-separated --agent-tools.
+
+    A list is how a template authors it; a string is accepted so a hand-edited
+    template that wrote `agent_tools: "worktree_build, terminal"` still runs.
+    The executor re-parses and de-duplicates either form.
+    """
+    raw = step.get("agent_tools")
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    return ",".join(str(name).strip() for name in raw if str(name).strip())
+
+
+def _build_agent_command(step: dict, project_id: str, run_id: str = "") -> list:
+    """Command for a `node_type: agent` step — run the loop via agent_executor.py."""
+    prompt = str(step.get("prompt", "") or "").strip()
+    if not prompt:
+        return []
+    cmd = [
+        sys.executable, str(_ROOT / AGENT_EXECUTOR),
+        "--prompt", prompt,
+        "--agent-tools", _agent_tools_arg(step),
+    ]
+    for key, flag in _AGENT_STEP_FLAGS:
+        value = step.get(key)
+        if value is None or str(value).strip() == "":
+            continue
+        cmd.extend([flag, str(value)])
+    step_id = str(step.get("id", "") or "")
+    if step_id:
+        cmd.extend(["--step-id", step_id])
+    if step.get("inject_project_id", True):
+        cmd.extend(["--project-id", project_id])
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
+    if step.get("json_output", True):
+        cmd.append("--json")
+    return cmd
+
+
 def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
     # argv only. The run's inputs reach the step through the environment
     # instead — see RUN_INPUTS_ENV_VAR / _build_step_env — because an inputs
@@ -179,6 +350,8 @@ def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
     # line at ~32k characters.
     if step.get("node_type") == "mcp":
         return _build_mcp_command(step, project_id, run_id)
+    if step.get("node_type") == "agent":
+        return _build_agent_command(step, project_id, run_id)
     tool_path = step.get("tool", "")
     if not tool_path:
         return []
@@ -258,6 +431,106 @@ def _build_step_env(run_id: str = "") -> dict:
     return env
 
 
+# ── Conditional edges (hgx-cond-01) ────────────────────────
+#
+# A step may declare `when:` — the SAME {field, operator, value} DSL that
+# `studio_workflow_triggers.filter_json` and the automation surface already
+# filter events with. `tools/studio/automation_builder.py` holds the one
+# implementation of CONDITION_OPERATORS; this imports `evaluate_conditions`
+# from it rather than growing a second rules DSL that would drift from the
+# operator list the builder UI renders.
+#
+# Conditions are evaluated against the PREDECESSOR's recorded result:
+#
+#   * a flat name (`status`, `exit_code`, `stderr`, `duration_ms`) reads the
+#     FIRST entry in this step's `depends_on` — "the predecessor" for a step
+#     with one incoming edge, and a defined choice for a join;
+#   * `steps.<step_id>.<field>` reaches any predecessor already recorded, which
+#     is how a join addresses one branch in particular;
+#   * `output.<path>` walks the predecessor's stdout parsed as JSON, so a step
+#     can branch on what the tool actually reported rather than on its exit code.
+#
+# EVERY condition must be met (AND), matching how the automation surface reads
+# the same list. A step with no `when` key is unconditional — byte-for-byte the
+# behaviour that predates this.
+
+
+def _when_conditions(step: dict) -> list:
+    """A step's `when:` block normalised to a list of condition dicts.
+
+    A single mapping is accepted as well as a list, and `value` is coerced to
+    str: YAML types a bare `value: 0` as an int while the DSL compares strings.
+    A malformed entry is dropped rather than raising mid-run — the linter is
+    where an authoring mistake is meant to surface.
+    """
+    raw = step.get("when")
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    conditions = []
+    for cond in raw:
+        if not isinstance(cond, dict):
+            continue
+        value = cond.get("value")
+        conditions.append({
+            "field": str(cond.get("field", "") or ""),
+            "operator": str(cond.get("operator", "equals") or "equals"),
+            "value": "" if value is None else str(value),
+        })
+    return conditions
+
+
+def _step_view(result: dict) -> dict:
+    """One recorded step result as the condition DSL sees it."""
+    view = {
+        "step_id": result.get("step_id", ""),
+        "step_name": result.get("step_name", ""),
+        "status": result.get("status", ""),
+        "exit_code": result.get("exit_code"),
+        "stdout": result.get("stdout") or "",
+        "stderr": result.get("stderr") or "",
+        "duration_ms": result.get("duration_ms", 0),
+    }
+    try:
+        parsed = json.loads(result.get("stdout") or "")
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+    view["output"] = parsed if isinstance(parsed, dict) else {}
+    return view
+
+
+def _condition_context(step: dict, recorded: dict) -> dict:
+    """Evaluation context for a step's `when:` — see the section comment."""
+    context: dict = {}
+    for dep in step.get("depends_on", []) or []:
+        if dep in recorded:
+            context.update(_step_view(recorded[dep]))
+            break
+    # Set last: `steps` is the addressing map, never a predecessor field.
+    context["steps"] = {sid: _step_view(res) for sid, res in recorded.items()}
+    return context
+
+
+def _evaluate_when(step: dict, recorded: dict) -> tuple[bool, str]:
+    """(met, reason) for a step's `when:`. Met is True when it declares none."""
+    conditions = _when_conditions(step)
+    if not conditions:
+        return True, ""
+
+    results = evaluate_conditions(conditions, _condition_context(step, recorded))
+    unmet = [r for r in results if not r["met"]]
+    if not unmet:
+        return True, ""
+    detail = "; ".join(
+        f"{r['field']} {r['operator']} {r['expected']!r} (actual: {r['actual']!r})"
+        for r in unmet
+    )
+    return False, f"Condition not met: {detail}"
+
+
 # ── Step execution ─────────────────────────────────────────
 
 # A single backoff sleep is capped here so a typo in a template
@@ -307,6 +580,32 @@ def _exec_step_with_retries(step: dict, project_id: str, run_id: str = "") -> di
     return result
 
 
+# What a node type is missing when it builds no command. A `tool` node has no
+# script path; the two executor-backed node types are each missing the one key
+# that names their work.
+_MISSING_STEP_KEY = {
+    "mcp": "node_type: mcp step declares no 'mcp_tool'",
+    "agent": "node_type: agent step declares no 'prompt'",
+}
+
+
+def _agent_degradation(result: dict) -> str:
+    """Why an agent step degraded, or '' when it did not (hgx-agent-01).
+
+    An unsupported provider is not a failed step: `agent_executor.py` exits 0
+    with `degraded: true` so the run continues, and this lifts the reason out of
+    its stdout so the step is recorded as `skipped` with that reason rather than
+    as a `success` that never ran a loop.
+    """
+    try:
+        payload = json.loads(result.get("stdout") or "")
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(payload, dict) or not payload.get("degraded"):
+        return ""
+    return str(payload.get("degrade_reason") or "Agent step degraded")
+
+
 def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     result: dict = {
         "step_id": step["id"],
@@ -328,10 +627,8 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     cmd = _build_command(step, project_id, run_id)
     if not cmd:
         result["status"] = "skipped"
-        result["stderr"] = (
-            "node_type: mcp step declares no 'mcp_tool'"
-            if node_type == "mcp"
-            else "No tool path configured"
+        result["stderr"] = _MISSING_STEP_KEY.get(
+            node_type, "No tool path configured"
         )
         return result
 
@@ -359,6 +656,11 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
         result["stdout"] = proc.stdout.strip()[:32000] if proc.stdout else None
         result["stderr"] = proc.stderr.strip()[:4000] if proc.stderr else None
         result["status"] = "success" if proc.returncode == 0 else "failed"
+        if node_type == "agent" and result["status"] == "success":
+            degraded = _agent_degradation(result)
+            if degraded:
+                result["status"] = "skipped"
+                result["stderr"] = degraded[:4000]
     except subprocess.TimeoutExpired:
         result["status"] = "timeout"
         result["stderr"] = f"Timed out after {timeout}s"
@@ -391,6 +693,12 @@ def _remember_canvas(run_id: str, canvas: str) -> None:
         logger.warning("Could not record canvas for run %s: %s", run_id, exc)
 
 
+# The artifacts key is one JSON blob updated read-modify-write, so two steps of
+# the same parallel wave publishing at once would drop one of the two. Held for
+# the whole get/set pair, not just the set.
+_artifacts_lock = threading.Lock()
+
+
 def _remember_artifacts(run_id: str, step_name: str, artifacts: list) -> None:
     """Record a step's artifacts under run memory's ``artifacts`` key.
 
@@ -401,11 +709,12 @@ def _remember_artifacts(run_id: str, step_name: str, artifacts: list) -> None:
     if not run_id or not artifacts:
         return
     try:
-        current = run_memory.get(run_id, run_memory.ARTIFACTS_KEY, default={})
-        if not isinstance(current, dict):
-            current = {}
-        current[step_name] = artifacts
-        run_memory.set(run_id, run_memory.ARTIFACTS_KEY, current)
+        with _artifacts_lock:
+            current = run_memory.get(run_id, run_memory.ARTIFACTS_KEY, default={})
+            if not isinstance(current, dict):
+                current = {}
+            current[step_name] = artifacts
+            run_memory.set(run_id, run_memory.ARTIFACTS_KEY, current)
     except Exception as exc:
         logger.warning("Could not record artifacts for run %s: %s", run_id, exc)
 
@@ -737,6 +1046,7 @@ def _worker(
 
         try:
             order = _resolve_dag(steps)
+            sorter = _prepare_dag(steps)
         except CycleError as exc:
             msg = f"Circular dependency detected: {exc}"
             _update_run_status(run_id, "failed", json.dumps({"error": msg}))
@@ -745,6 +1055,7 @@ def _worker(
 
         step_map = {s["id"]: s for s in steps}
         ordered_steps = [step_map[sid] for sid in order if sid in step_map]
+        parallel = _max_parallel(data)
 
         # The template's `canvas:` key is the authoritative slug for this run —
         # publish it before any step runs so executors read it from memory
@@ -756,6 +1067,7 @@ def _worker(
             "type": "run_started",
             "run_id": run_id,
             "total_steps": len(ordered_steps),
+            "max_parallel": parallel,
             "steps": [{"id": s["id"], "name": s.get("name", s["id"])} for s in ordered_steps],
         })
 
@@ -763,25 +1075,103 @@ def _worker(
         overall_ok = True
         all_artifacts: list[dict] = []
         prior = _load_prior_steps(run_id) if resume else {}
+        total = len(ordered_steps)
 
-        for i, step in enumerate(ordered_steps):
+        # Guards every mutation of results/all_artifacts/overall_ok, all of which
+        # a parallel wave writes from several threads at once.
+        state_lock = threading.Lock()
+        # A rejected or timed-out human gate stops the run. Under the old linear
+        # walk that was a `break`; the equivalent here has to be a flag, because
+        # a sibling of the gate may already be sitting in the pool's queue.
+        abort = threading.Event()
+        # hgx-cond-01: step_id -> why it was cancelled. A required step that
+        # fails writes every transitive dependent here, so a descendant is never
+        # run against a precondition that is known to be broken. Safe without a
+        # barrier: `sorter.done()` is called only after a node's future resolves,
+        # so no dependent can have been dispatched yet when this is written.
+        dependents = _dependents(steps)
+        # A step declaring `when:` is exempt from the cascade — it is the
+        # remediation branch, and routing on a failed predecessor is what it
+        # asked for. See `_block_downstream`.
+        conditional = {s["id"] for s in steps if _when_conditions(s)}
+        blocked: dict[str, str] = {}
+        # Emission is no longer ordered, so an event carries a monotonic sequence
+        # number rather than its position in `ordered_steps`.
+        _seq = itertools.count()
+
+        def _next_seq() -> int:
+            with state_lock:
+                return next(_seq)
+
+        def _skip_step(step: dict, reason: str) -> None:
+            """Record a step that will not run, with why, and announce it.
+
+            Uses the EXISTING `skipped` status and its existing reason field
+            (`stderr`, where "Tool not found: …" already lands), so nothing
+            downstream — the CHECK constraint, the run summary, the details
+            modal — needs to learn a new value.
+            """
+            step_id = step["id"]
+            step_name = step.get("name", step_id)
+            result = {
+                "step_id": step_id,
+                "step_name": step_name,
+                "tool": _step_tool_path(step),
+                "status": "skipped",
+                "stdout": None,
+                "stderr": reason,
+                "exit_code": None,
+                "duration_ms": 0,
+            }
+            step_run_id = _create_step_record(
+                run_id, step_id, step_name, _step_tool_path(step)
+            )
+            _update_step_record(step_run_id, result)
+            with state_lock:
+                results.append(result)
+            _push(run_queue, {
+                "type": "step_done",
+                "run_id": run_id,
+                "step_id": step_id,
+                "step_name": step_name,
+                "status": "skipped",
+                "duration_ms": 0,
+                "error": reason,
+                "reason": reason,
+                "artifacts": [],
+                "seq": _next_seq(),
+                "total": total,
+            })
+
+        def _run_node(step: dict) -> None:
+            """Execute one DAG node. Runs on a pool thread; may block on a gate."""
+            nonlocal overall_ok
+
+            if abort.is_set():
+                # Queued behind the gate that stopped the run. The old linear
+                # walk never reached this step either, so it leaves no record.
+                return
+
+            step_id = step["id"]
+            step_name = step.get("name", step_id)
+
             _push(run_queue, {
                 "type": "step_started",
                 "run_id": run_id,
-                "step_id": step["id"],
-                "step_name": step.get("name", step["id"]),
-                "index": i,
-                "total": len(ordered_steps),
+                "step_id": step_id,
+                "step_name": step_name,
+                "seq": _next_seq(),
+                "total": total,
             })
 
-            prior_row = prior.get(step["id"]) or {}
+            prior_row = prior.get(step_id) or {}
             prior_status = prior_row.get("status")
 
             if prior_status in ("success", "approved", "skipped"):
                 # Already satisfied before the restart — replay it, don't re-run.
                 result = {
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "tool": _step_tool_path(step),
                     "status": prior_status,
                     "stdout": prior_row.get("stdout"),
@@ -797,8 +1187,25 @@ def _worker(
                 result = _exec_step(step, project_id, run_id)
                 result["status"] = "awaiting_approval"
             else:
+                # hgx-cond-01. Both checks sit on the about-to-execute path
+                # only: a step already replayed or re-attached to its gate above
+                # keeps the resume semantics it had.
+                with state_lock:
+                    cancel_reason = blocked.get(step_id)
+                    recorded = {r["step_id"]: r for r in results}
+                if cancel_reason:
+                    _skip_step(step, cancel_reason)
+                    return
+                met, unmet_reason = _evaluate_when(step, recorded)
+                if not met:
+                    # A condition that did not hold is not a failure: this step's
+                    # own dependents go on to evaluate their `when` against the
+                    # `skipped` result recorded here.
+                    _skip_step(step, unmet_reason)
+                    return
+
                 step_run_id = _create_step_record(
-                    run_id, step["id"], step.get("name", step["id"]), _step_tool_path(step)
+                    run_id, step_id, step_name, _step_tool_path(step)
                 )
                 result = _exec_step_with_retries(step, project_id, run_id)
 
@@ -806,38 +1213,41 @@ def _worker(
                 # Replayed step: emit its artifacts and move on without touching
                 # the append-only record again.
                 replayed_artifacts = _step_artifacts(result)
-                all_artifacts.extend(replayed_artifacts)
+                with state_lock:
+                    all_artifacts.extend(replayed_artifacts)
+                    results.append(result)
                 _remember_artifacts(run_id, result["step_name"], replayed_artifacts)
-                results.append(result)
                 _push(run_queue, {
                     "type": "step_done",
                     "run_id": run_id,
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "status": result["status"],
                     "duration_ms": result.get("duration_ms", 0),
                     "resumed": True,
-                    "index": i,
-                    "total": len(ordered_steps),
+                    "seq": _next_seq(),
+                    "total": total,
                 })
-                continue
+                return
 
             if result["status"] == "awaiting_approval":
-                # Persist the gate state and pause the run
+                # Persist the gate state and pause the run. Only THIS branch
+                # parks: `_await_gate` blocks this pool thread, leaving the other
+                # `max_parallel - 1` slots free for sibling branches.
                 _update_step_record(step_run_id, result)
                 _update_run_status(run_id, "awaiting_approval")
                 _push(run_queue, {
                     "type": "step_awaiting_approval",
                     "run_id": run_id,
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "step_run_id": step_run_id,
                     "role": step.get("role", "approver"),
                 })
                 if not prior_status:
                     # Only notify on the first park, not on every resume.
                     _notify_approval_gate(
-                        run_id, step_run_id, step.get("name", step["id"]),
+                        run_id, step_run_id, step_name,
                         step.get("role", "approver"), project_id,
                     )
 
@@ -853,50 +1263,110 @@ def _worker(
                 else:
                     result["status"] = "rejected" if (signaled and decision == "rejected") else "timeout"
                     result["stderr"] = reason or ("Rejected" if decision == "rejected" else "Approval timed out after 24h")
-                    overall_ok = False
+                    with state_lock:
+                        overall_ok = False
                     _update_step_record(step_run_id, result)
             else:
                 _update_step_record(step_run_id, result)
 
-            results.append(result)
+            with state_lock:
+                results.append(result)
+                if result["status"] in ("failed", "timeout", "rejected") and step.get("required", True):
+                    overall_ok = False
+                    # hgx-cond-01: a failed required step cancels its descendants
+                    # instead of letting them run against a broken precondition.
+                    # `setdefault` so the FIRST failure that reached a step is the
+                    # reason it reports, not the last one to be recorded.
+                    cancel_reason = (
+                        f"Cancelled: required step '{step_name}' "
+                        f"{result['status']}"
+                    )
+                    for dependent_id in _block_downstream(
+                        dependents, step_id, conditional
+                    ):
+                        blocked.setdefault(dependent_id, cancel_reason)
 
-            if result["status"] in ("failed", "timeout", "rejected") and step.get("required", True):
-                overall_ok = False
             if result["status"] in ("rejected", "timeout") and step.get("node_type") in ("human", "approval"):
-                # Stop processing further steps after a rejected/timed-out approval
+                # Stop the run after a rejected/timed-out approval. Steps already
+                # queued behind this one return early on the `abort` check above.
+                abort.set()
                 _push(run_queue, {
                     "type": "step_done",
                     "run_id": run_id,
-                    "step_id": step["id"],
-                    "step_name": step.get("name", step["id"]),
+                    "step_id": step_id,
+                    "step_name": step_name,
                     "status": result["status"],
                     "duration_ms": result.get("duration_ms", 0),
                     "artifacts": [],
-                    "index": i,
-                    "total": len(ordered_steps),
+                    "seq": _next_seq(),
+                    "total": total,
                 })
-                break
+                return
 
             # Extract artifacts list from stdout JSON if present, and publish it
-            # to run memory so the next step reads it there (dwo-mem-02).
+            # to run memory so a downstream step reads it there (dwo-mem-02).
             artifacts = _step_artifacts(result)
-            all_artifacts.extend(artifacts)
-            _remember_artifacts(run_id, step.get("name", step["id"]), artifacts)
+            with state_lock:
+                all_artifacts.extend(artifacts)
+            _remember_artifacts(run_id, step_name, artifacts)
 
             _push(run_queue, {
                 "type": "step_done",
                 "run_id": run_id,
-                "step_id": step["id"],
-                "step_name": step.get("name", step["id"]),
+                "step_id": step_id,
+                "step_name": step_name,
                 "status": result["status"],
                 "duration_ms": result.get("duration_ms", 0),
                 "output_preview": (result.get("stdout") or "")[:500],
                 "error": result.get("stderr"),
                 "attempts": result.get("attempts", 1),
                 "artifacts": artifacts,
-                "index": i,
-                "total": len(ordered_steps),
+                "seq": _next_seq(),
+                "total": total,
             })
+
+        # ── Wave-parallel dispatch ─────────────────────────
+        # get_ready() hands out every node whose dependencies are all done();
+        # done() retires one and unblocks its successors. At max_parallel == 1
+        # this walks the graph in exactly `_resolve_dag` order: the pool's queue
+        # is FIFO, so submission order is execution order, and retiring in
+        # submission order keeps graphlib's ready-queue in the same state
+        # static_order() would have left it in.
+        pool = ThreadPoolExecutor(
+            max_workers=parallel, thread_name_prefix=f"dwf-{run_id}",
+        )
+        try:
+            futures: dict = {}          # future -> (submission index, step_id)
+            submitted = 0
+            while sorter.is_active():
+                ready = list(sorter.get_ready())
+                for sid in ready:
+                    if sid not in step_map or abort.is_set():
+                        # A dangling depends_on target (no such step), or the run
+                        # has been stopped by a rejected gate. Retire the node
+                        # without executing it so the walk can finish.
+                        sorter.done(sid)
+                        continue
+                    futures[pool.submit(_run_node, step_map[sid])] = (submitted, sid)
+                    submitted += 1
+                if not futures:
+                    if not ready:
+                        break       # nothing ready and nothing in flight
+                    continue
+                done_set, _pending = wait(list(futures), return_when=FIRST_COMPLETED)
+                # Retire in SUBMISSION order, not set-iteration order: graphlib
+                # appends each newly-unblocked node as its last dependency is
+                # retired, so walking a set here would make the dispatch order
+                # depend on thread scheduling.
+                for fut in sorted(done_set, key=lambda f: futures[f][0]):
+                    _, sid = futures.pop(fut)
+                    fut.result()        # re-raise into the run-level handler
+                    sorter.done(sid)
+        finally:
+            # wait=False: a sibling still parked at a human gate must not hold
+            # this thread for the rest of the approval window when the loop exits
+            # early. Every future is already resolved on the normal path.
+            pool.shutdown(wait=False, cancel_futures=True)
 
         summary = {
             "total": len(results),
@@ -1361,3 +1831,208 @@ def generate_python_script(workflow_id: str) -> str:
     ]
 
     return "\n".join(lines)
+
+
+# ── CLI ────────────────────────────────────────────────────
+#
+# hgx-cx-03: a graph run must be startable without the dashboard — by an agent,
+# or by a cron job on an air-gapped box. This is a thin front end over the
+# public API above; it adds no execution path of its own.
+#
+# WHY WAITING IS THE DEFAULT. `start_run` spawns the worker as a DAEMON thread
+# in the calling process. A CLI that returned immediately would exit, take the
+# interpreter down with it, and leave a run row stuck at `running` — technically
+# resumable, but nothing would ever resume it. `--no-wait` is the deliberate
+# fire-and-forget form and is only correct when a supervisor will `--resume`.
+
+_CLI_POLL_SECONDS = 0.5
+_CLI_DEFAULT_TIMEOUT = 600.0
+
+#: Statuses the CLI stops waiting on. `awaiting_approval` counts as settled:
+#: the gate is a human decision, and no amount of further waiting resolves it.
+_CLI_SETTLED_STATUSES = ("success", "failed", "awaiting_approval")
+
+#: Exit codes. Distinguishing "did not finish" from "failed" is the whole point
+#: for a cron caller: a run parked on a human gate is not a broken run.
+EXIT_OK = 0          # finished successfully, or a read completed
+EXIT_FAILED = 1      # the run failed, or the command itself errored
+EXIT_UNFINISHED = 2  # parked on a gate, or still running at --timeout
+
+
+def wait_for_run(run_id: str, timeout: float) -> dict | None:
+    """Poll the run row until it settles or ``timeout`` elapses.
+
+    "Settled" is ``_CLI_SETTLED_STATUSES``: finished, or parked on a human gate
+    that no further waiting resolves. Returns the last row read — which is
+    ``None`` for an unknown run, and a still-``running`` row on timeout.
+
+    Polls the DB rather than draining the SSE queue: the queue is bounded at 500
+    events and is shared with any live stream_run consumer, so a headless reader
+    would compete with the dashboard for the same events.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        run = get_run(run_id)
+        if run is None or run.get("status") in _CLI_SETTLED_STATUSES:
+            return run
+        if time.monotonic() >= deadline:
+            return run
+        time.sleep(_CLI_POLL_SECONDS)
+
+
+def _cli_exit_code(run_status: str | None) -> int:
+    if run_status == "success":
+        return EXIT_OK
+    if run_status == "failed":
+        return EXIT_FAILED
+    return EXIT_UNFINISHED
+
+
+def _jsonable(value):
+    """Coerce a DB row value to something ``json.dumps`` accepts.
+
+    PostgreSQL hands back ``datetime`` for timestamp columns where SQLite hands
+    back ``str``; without this the same command would print on one backend and
+    raise on the other.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def run_report(run_id: str) -> dict:
+    """JSON-safe envelope describing a run and its steps, or a not-found refusal.
+
+    Shared by the CLI below and by the ``studio_run_*`` MCP handlers so both
+    surfaces answer "what is this run doing" with the identical shape.
+    """
+    run = get_run(run_id)
+    if not run:
+        return {
+            "status": "failed",
+            "error_type": "run_not_found",
+            "run_id": run_id,
+            "error": f"No such run: {run_id}",
+        }
+    summary = run.get("summary_json")
+    if isinstance(summary, str) and summary:
+        try:
+            summary = json.loads(summary)
+        except ValueError:
+            pass  # keep the raw text rather than dropping the only diagnostic
+    return {
+        "status": "success",
+        "run_id": run_id,
+        "workflow_id": _jsonable(run.get("workflow_id")),
+        "workflow_name": _jsonable(run.get("workflow_name")),
+        "project_id": _jsonable(run.get("project_id")),
+        "run_status": _jsonable(run.get("status")),
+        "started_at": _jsonable(run.get("started_at")),
+        "completed_at": _jsonable(run.get("completed_at")),
+        "summary": summary if isinstance(summary, dict) else _jsonable(summary),
+        # step_run_id is carried because it is the handle approve_step/reject_step
+        # take — without it a headless caller cannot clear its own gate.
+        "steps": [
+            {
+                "step_run_id": _jsonable(s.get("step_run_id")),
+                "step_id": _jsonable(s.get("step_id")),
+                "step_name": _jsonable(s.get("step_name")),
+                "tool": _jsonable(s.get("tool")),
+                "status": _jsonable(s.get("status")),
+                "exit_code": _jsonable(s.get("exit_code")),
+                "duration_ms": _jsonable(s.get("duration_ms")),
+            }
+            for s in get_run_steps(run_id)
+        ],
+    }
+
+
+def _cli_print(payload: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload))
+        return
+    if payload.get("status") != "success":
+        print(f"ERROR [{payload.get('error_type', 'error')}] {payload.get('error', '')}")
+        return
+    print(f"run_id:     {payload['run_id']}")
+    print(f"workflow:   {payload.get('workflow_id')}")
+    print(f"status:     {payload.get('run_status')}")
+    for step in payload.get("steps", []):
+        print(f"  [{step['status']:>18}] {step['step_id']} — {step['step_name']}")
+
+
+def _cli_parse_inputs(raw: str) -> dict | None:
+    """Parse ``--inputs``. Absent stays None (SQL NULL), not ``{}``."""
+    if not raw.strip():
+        return None
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"--inputs must be a JSON object, not {type(parsed).__name__}")
+    return parsed
+
+
+def main(argv: list | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Studio — headless workflow run control",
+    )
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--start", metavar="WORKFLOW_ID", help="Start a new run")
+    action.add_argument("--resume", metavar="RUN_ID", help="Re-attach and continue a run")
+    action.add_argument("--status", metavar="RUN_ID", help="Report a run and its steps")
+    parser.add_argument("--project-id", default="default")
+    parser.add_argument("--inputs", default="",
+                        help="Run inputs as a JSON object; omitted records SQL NULL")
+    parser.add_argument("--no-wait", action="store_true",
+                        help="Return as soon as the run is created — the worker "
+                             "dies with this process, so something must --resume it")
+    parser.add_argument("--timeout", type=float, default=_CLI_DEFAULT_TIMEOUT,
+                        help=f"Seconds to wait for the run to settle (default {_CLI_DEFAULT_TIMEOUT:.0f})")
+    parser.add_argument("--json", action="store_true", help="Emit a JSON envelope")
+    args = parser.parse_args(argv)
+
+    try:
+        if args.status:
+            payload = run_report(args.status)
+            _cli_print(payload, args.json)
+            return EXIT_OK if payload.get("status") == "success" else EXIT_FAILED
+
+        if args.resume:
+            if not resume_run(args.resume):
+                payload = {
+                    "status": "failed",
+                    "error_type": "run_not_resumable",
+                    "run_id": args.resume,
+                    "error": ("Run is unknown, already finished, or a live worker "
+                              "in this process already owns it"),
+                }
+                _cli_print(payload, args.json)
+                return EXIT_FAILED
+            run_id = args.resume
+        else:
+            run_id = start_run(
+                args.start,
+                project_id=args.project_id,
+                inputs=_cli_parse_inputs(args.inputs),
+            )
+
+        if not args.no_wait:
+            wait_for_run(run_id, args.timeout)
+        payload = run_report(run_id)
+        payload["waited"] = not args.no_wait
+        _cli_print(payload, args.json)
+        return _cli_exit_code(payload.get("run_status"))
+
+    except ValueError as exc:
+        # start_run raises ValueError for an unknown workflow and for a
+        # non-object inputs payload; _cli_parse_inputs for malformed JSON.
+        _cli_print({"status": "failed", "error_type": "invalid_request",
+                    "error": str(exc)}, args.json)
+        return EXIT_FAILED
+    except Exception as exc:  # noqa: BLE001
+        _cli_print({"status": "failed", "error_type": "runner_error",
+                    "error": f"{type(exc).__name__}: {exc}"}, args.json)
+        return EXIT_FAILED
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -40,6 +40,7 @@ from tools.migration_canvas.constants import (  # noqa: E402
     MIGRATION_OBJECTS,
     MC_COMPLIANCE_RULES,
     MIGRATION_TYPES,
+    NET_SESSION_STATUSES,
     SOP_TYPES,
 )
 from tools.migration_canvas.migration_engine import (  # noqa: E402
@@ -121,23 +122,27 @@ def create_migration_blueprint():
             pass
         try:
             with get_connection() as conn:
+                # "user" is quoted: it is a reserved word, and unquoted it is a
+                # syntax error on PostgreSQL rather than a wrong-column error.
                 conn.execute(
-                    "INSERT INTO mc_audit (design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s)",
+                    'INSERT INTO mc_audit (design_id, "user", action, detail, created_at) VALUES (%s,%s,%s,%s,%s)',
                     (design_id, user_id, action, detail, now_isoformat()),
                 )
+                conn.commit()
         except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
             logger.warning("_audit: best-effort INSERT into mc_audit failed (non-blocking): %s", exc)
         # Bridge to main icdev.db audit_trail for compliance chain
         try:
             from tools.db.storage import get_connection as _icdev_conn
             import json as _json
-            import uuid as _uuid
             with _icdev_conn() as _ic:
+                # `id` is omitted on purpose: audit_trail.id is an integer backed
+                # by a sequence, so supplying a uuid string raised
+                # InvalidTextRepresentation on every call and was swallowed here.
                 _ic.execute(
-                    "INSERT INTO audit_trail (id, event_type, actor, action, details, classification, created_at) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                    "INSERT INTO audit_trail (event_type, actor, action, details, classification, created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (
-                        str(_uuid.uuid4()),
                         "migration_canvas",
                         user_id or "system",
                         action,
@@ -146,6 +151,7 @@ def create_migration_blueprint():
                         now_isoformat(),
                     ),
                 )
+                _ic.commit()
         except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
             logger.warning("_audit: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
@@ -811,13 +817,21 @@ def create_migration_blueprint():
     @mdc_login_required
     def mc_net_migration_new():
         """Network migration wizard — new session."""
-        return render_template("migration_canvas/network_wizard.html", session_id=None)
+        return render_template(
+            "migration_canvas/network_wizard.html",
+            session_id=None,
+            net_session_statuses=NET_SESSION_STATUSES,
+        )
 
     @bp.route("/network-migration/<session_id>")
     @mdc_login_required
     def mc_net_migration_wizard(session_id):
         """Network migration wizard — resume existing session."""
-        return render_template("migration_canvas/network_wizard.html", session_id=session_id)
+        return render_template(
+            "migration_canvas/network_wizard.html",
+            session_id=session_id,
+            net_session_statuses=NET_SESSION_STATUSES,
+        )
 
     @bp.route("/network-migration/<session_id>/port-diagram")
     @mdc_login_required
@@ -935,13 +949,27 @@ def create_migration_blueprint():
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
+        # status is free-form TEXT in the schema, so the vocabulary is only
+        # enforceable here.  An unchecked value silently strands the session
+        # outside every active/terminal query that filters on these names.
+        if "status" in fields and fields["status"] not in NET_SESSION_STATUSES:
+            return jsonify({
+                "error": f"Invalid status '{fields['status']}'",
+                "allowed": sorted(NET_SESSION_STATUSES),
+            }), 400
         set_clause = ", ".join(f"{k}=%s" for k in fields)
         with get_connection() as conn:
+            if conn.execute("SELECT id FROM mc_net_sessions WHERE id=%s", (sid,)).fetchone() is None:
+                return jsonify({"error": "Session not found"}), 404
             conn.execute(
                 f"UPDATE mc_net_sessions SET {set_clause}, updated_at=%s WHERE id=%s",  # nosec B608
                 list(fields.values()) + [now_isoformat(), sid],
             )
             conn.commit()
+        if "status" in fields:
+            _audit(sid, "net_session_status_changed", f"status={fields['status']}")
+        else:
+            _audit(sid, "net_session_updated", "fields=" + ",".join(sorted(fields)))
         return jsonify({"ok": True})
 
     @bp.route("/api/network-migration/<sid>/hardware-profiles", methods=["GET"])

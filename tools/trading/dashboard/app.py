@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-from tools.logging.icdev_logger import get_logger
 """FathomDesk Trading Dashboard — separate Flask app on port 5100.
 
 Reads all data from data/fathomdesk.db. Supports:
@@ -25,6 +24,8 @@ from flask import Flask, g, jsonify, redirect, render_template, request, session
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 # Load .env so get_connection() uses PostgreSQL (where ad_users lives)
 try:
@@ -217,7 +218,7 @@ def _set_cache(key: str, value):
     """Store value in cache (serializes once, serves raw bytes on hit)."""
     cache_file = _CACHE_DIR / f"{key}.json"
     try:
-        cache_file.write_text(json.dumps(value, default=str), encoding="utf-8")
+        cache_file.write_text(json.dumps(value, default=str), encoding="utf-8", newline="")
     except Exception:
         pass
 

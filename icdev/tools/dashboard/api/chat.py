@@ -1,5 +1,4 @@
 
-from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Flask Blueprint for multi-stream parallel chat API (Phase 44 — D257-D260).
 
@@ -13,7 +12,6 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-logger = get_logger("icdev.dashboard.api.chat")
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -22,6 +20,9 @@ logger = get_logger("icdev.dashboard.api.chat")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.dashboard.api.chat")
 
 # ---------------------------------------------------------------------------
 # Backend imports (graceful)
@@ -133,12 +134,12 @@ def list_contexts():
 
 @chat_api.route("/contexts/<context_id>", methods=["GET"])
 def get_context(context_id):
-    """Get context details with recent messages."""
+    """Get context details with recent messages and any standing goals."""
     err = _require_chat()
     if err:
         return err
 
-    ctx = chat_manager.get_context(context_id)
+    ctx = chat_manager.get_context_status(context_id)
     if not ctx:
         return jsonify({"error": "Context not found"}), 404
 
@@ -224,13 +225,15 @@ def get_messages(context_id):
 def get_state(context_id):
     """Get context state with dirty-tracking (Feature 4).
 
+    Includes ``standing_goals`` when this conversation has any (hgx-goal-03).
+
     Query params: since_version? (dirty version)
     """
     err = _require_chat()
     if err:
         return err
 
-    ctx = chat_manager.get_context(context_id)
+    ctx = chat_manager.get_context_status(context_id)
     if not ctx:
         return jsonify({"error": "Context not found"}), 404
 

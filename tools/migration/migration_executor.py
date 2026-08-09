@@ -23,13 +23,14 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.migration.migration_executor")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.migration.migration_executor")
 
 _ARTIFACTS_DIR = _ROOT / "data" / "studio_artifacts" / "migration"
 
@@ -302,9 +303,9 @@ def run(project_id: str = "default") -> dict:
         inventory_path = ans_dir / "inventory.ini"
         runbook_path = _ARTIFACTS_DIR / "03_runbook.md"
 
-        playbook_path.write_text(_ansible_playbook(apps, all_waves, project), encoding="utf-8")
-        inventory_path.write_text(_inventory(apps, project), encoding="utf-8")
-        runbook_path.write_text(_runbook(apps, all_waves, project), encoding="utf-8")
+        playbook_path.write_text(_ansible_playbook(apps, all_waves, project), encoding="utf-8", newline="")
+        inventory_path.write_text(_inventory(apps, project), encoding="utf-8", newline="")
+        runbook_path.write_text(_runbook(apps, all_waves, project), encoding="utf-8", newline="")
 
         # ── Persist runbook to mc_runbooks ────────────────────────────────────
         design_id = conn.execute("SELECT id FROM migration_designs LIMIT 1").fetchone()

@@ -276,7 +276,8 @@ def resolve_record(conn, project_id: str = None, version: str = None,
     """
     if record_id is not None:
         rows = _rows(conn.execute(
-            f"SELECT {_RECORD_COLUMNS} FROM sbom_records s WHERE s.id = %s",
+            # _RECORD_COLUMNS is a module constant; the id is bound, not interpolated.
+            f"SELECT {_RECORD_COLUMNS} FROM sbom_records s WHERE s.id = %s",  # nosec B608
             (int(record_id),),
         ))
         return rows[0] if rows else None
@@ -286,7 +287,9 @@ def resolve_record(conn, project_id: str = None, version: str = None,
 
     for column in ("sbom_version", "version"):
         rows = _rows(conn.execute(
-            f"SELECT {_RECORD_COLUMNS} FROM sbom_records s "
+            # _RECORD_COLUMNS is a module constant and `column` comes from the
+            # literal tuple above — never from the request. Both values are bound.
+            f"SELECT {_RECORD_COLUMNS} FROM sbom_records s "  # nosec B608
             f"WHERE s.project_id = %s AND s.{column} = %s "
             "ORDER BY s.generated_at DESC, s.id DESC LIMIT 1",
             (str(project_id), str(version)),
@@ -299,7 +302,8 @@ def resolve_record(conn, project_id: str = None, version: str = None,
 def list_records(conn, project_id: str = None, limit: int = 100) -> list:
     """SBOM records newest first, each carrying its version-specific URL."""
     sql = (
-        f"SELECT {_RECORD_COLUMNS}, p.name AS project_name "
+        # _RECORD_COLUMNS is a module constant; project_id and limit are bound below.
+        f"SELECT {_RECORD_COLUMNS}, p.name AS project_name "  # nosec B608
         "FROM sbom_records s LEFT JOIN projects p ON p.id = s.project_id "
     )
     params: tuple = ()

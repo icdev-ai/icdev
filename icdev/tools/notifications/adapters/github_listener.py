@@ -62,7 +62,7 @@ def _load_offset() -> str:
 
 def _save_offset(iso: str) -> None:
     _OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _OFFSET_FILE.write_text(iso, encoding="utf-8")
+    _OFFSET_FILE.write_text(iso, encoding="utf-8", newline="")
 
 
 def _reply(issue_number: int, text: str) -> None:

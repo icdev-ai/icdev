@@ -40,7 +40,7 @@ def export_tournament_report(
             _log.info("VIZ kernel not available; falling back to JSON export")
             json_path = output_path.replace(f".{output_format}", ".json")
             Path(json_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(json_path).write_text(json.dumps(spec, indent=2), encoding="utf-8")
+            Path(json_path).write_text(json.dumps(spec, indent=2), encoding="utf-8", newline="")
             return {
                 "success": True,
                 "path": json_path,

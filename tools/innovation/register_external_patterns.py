@@ -18,12 +18,13 @@ import json
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 # Centralized DB path resolution (D145 pattern)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from tools.db.storage import get_connection  # noqa: E402
 from tools.compat.db_utils import get_icdev_db_path
 
 DB_PATH = get_icdev_db_path()

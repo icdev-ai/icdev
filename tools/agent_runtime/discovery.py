@@ -6,7 +6,7 @@ by an OpenAI function-calling schema, that can be assembled into bounded toolset
 (sag-reg-02) and dispatched by :func:`icdev.tools.llm.agent_loop.run_agent_loop`.
 
 Rather than invent a third registration pattern, this module derives agent-loop
-tool specs from the two registries that already exist:
+tool specs from the registries that already exist:
 
 1. **The MCP registry** — ``tools.mcp.tool_registry.TOOL_REGISTRY`` already maps
    ``name -> {module, handler, description, input_schema}`` for 440+ tools. Its
@@ -16,6 +16,13 @@ tool specs from the two registries that already exist:
    new-tool checklist already requires MCP registration).
 2. **The built-in starter toolset** — ``tools.agent_runtime.builtin_tools`` — whose
    schemas are already in OpenAI format.
+3. **Third-party MCP servers** — ``tools.mcp_client`` already ships a complete
+   outbound client (transports, per-server allowlist, classification ceiling,
+   air-gap interlock, description sanitiser). :func:`discover_external_tools`
+   surfaces its allowlisted tools as ``ext__<server>__<tool>`` specs. Every one
+   of those controls stays where it is; this module only reads what the client
+   already decided to expose, and returns nothing at all unless an operator has
+   enabled a server in ``args/external_mcp_servers.yaml`` (shipped off).
 
 For *new* first-party functions that are not MCP-registered, a lightweight
 :func:`tool` decorator (or a ``__tool_schema__`` attribute) marks a callable as a
@@ -79,9 +86,13 @@ class ToolSpec:
         name: Unique tool name (the OpenAI function name).
         schema: OpenAI function-calling schema
             (``{"type": "function", "function": {...}}``).
-        source: Where it came from — ``"mcp"``, ``"builtin"``, or ``"decorated"``.
+        source: Where it came from — ``"mcp"``, ``"builtin"``, ``"decorated"``,
+            or ``"external"`` (a tool on a third-party MCP server).
         read_only: True if the tool performs no state mutation (enables the agent
-            loop's parallel read-only dispatch and skips the safety gate).
+            loop's parallel read-only dispatch and skips the safety gate). For
+            MCP tools this is DECLARED in
+            ``tools.mcp.tool_registry.READ_ONLY_DECLARATIONS``, not inferred
+            from the name — see :func:`_resolve_read_only`.
         module: Import path of the module holding the handler (for lazy dispatch).
         handler: Attribute name of the handler within ``module``.
         check: Optional availability probe; when it returns falsey the tool is
@@ -374,9 +385,20 @@ def discover_decorated(module_names: list[str]) -> list[ToolSpec]:
 # ---------------------------------------------------------------------------
 # MCP-registry derivation
 # ---------------------------------------------------------------------------
-# Heuristic: MCP tools whose names clearly only read state. The agent loop only
-# uses this to enable parallel dispatch; the safety layer (sag-safe-01) is the
-# real mutation gate, so a conservative guess here is safe.
+# LAST-RESORT heuristic: MCP tools whose names look like they only read state.
+#
+# This is NOT how a registered tool's read-only flag is decided any more. The
+# flag drives the agent loop's PARALLEL dispatch partition, and that partition
+# is chosen before the safety layer (sag-safe-01) gets a vote — so a mutating
+# tool whose name happens to start with ``scan_`` or ``check_`` was being handed
+# to a worker thread concurrently with everything else in the turn. Deferring to
+# the safety layer does not help when the safety layer runs afterwards.
+#
+# The flag is now DECLARED per tool in ``tools/mcp/tool_registry.py``
+# (``READ_ONLY_DECLARATIONS``). This heuristic is reached only for a tool with
+# no declaration at all, and every such tool is logged once by
+# :func:`_resolve_read_only` so the residual gap is measurable rather than
+# invisible.
 _READ_ONLY_PREFIXES = (
     "get_", "list_", "search_", "query_", "check_", "status", "health",
     "lookup", "read_", "show_", "detect_", "scan_", "summary", "validate_",
@@ -388,10 +410,65 @@ def _guess_read_only(name: str) -> bool:
     return low.startswith(_READ_ONLY_PREFIXES) or low.endswith(("_status", "_summary"))
 
 
+#: Names already reported as undeclared, so the warning fires once per process
+#: per tool rather than once per schema build.
+_UNDECLARED_READ_ONLY: set[str] = set()
+
+
+def _load_read_only_declarations() -> "dict[str, bool]":
+    """Return ``tool_registry.READ_ONLY_DECLARATIONS`` (empty if unimportable)."""
+    try:
+        from tools.mcp.tool_registry import READ_ONLY_DECLARATIONS
+
+        return READ_ONLY_DECLARATIONS
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("discovery: read_only declarations unavailable: %s", exc)
+        return {}
+
+
+def _resolve_read_only(name: str, entry: Optional[dict[str, Any]] = None) -> bool:
+    """Return the read-only flag for an MCP tool, preferring its declaration.
+
+    Resolution order: an explicit ``read_only`` boolean on the entry itself
+    (which lets a caller synthesising an entry classify it inline), then the
+    hand-authored ``tool_registry.READ_ONLY_DECLARATIONS`` table. Only a tool
+    that appears in neither falls through to :func:`_guess_read_only`, and that
+    fallback is logged at WARNING — once per tool per process — so the set of
+    unclassified tools can be counted instead of guessed at.
+    """
+    declared = entry.get("read_only") if isinstance(entry, dict) else None
+    if not isinstance(declared, bool):
+        declared = _load_read_only_declarations().get(name)
+    if isinstance(declared, bool):
+        return declared
+    guessed = _guess_read_only(name)
+    if name not in _UNDECLARED_READ_ONLY:
+        _UNDECLARED_READ_ONLY.add(name)
+        logger.warning(
+            "discovery: tool %r has no read_only declaration in "
+            "tools/mcp/tool_registry.py::READ_ONLY_DECLARATIONS; falling back to "
+            "the name heuristic (guessed read_only=%s). Declare it — the agent "
+            "loop dispatches read-only tools in PARALLEL.",
+            name,
+            guessed,
+        )
+    return guessed
+
+
+def undeclared_read_only_tools() -> list[str]:
+    """Return the MCP tools that fell back to the name heuristic, sorted.
+
+    Populated as schemas are built; empty until :func:`discover_mcp_tools` (or
+    :func:`schema_from_mcp_entry`) has run. This is the measurable half of the
+    fallback — a non-empty list is a gap in ``READ_ONLY_DECLARATIONS``.
+    """
+    return sorted(_UNDECLARED_READ_ONLY)
+
+
 def schema_from_mcp_entry(name: str, entry: dict[str, Any]) -> dict[str, Any]:
     """Wrap an MCP ``TOOL_REGISTRY`` entry in the OpenAI function envelope."""
     input_schema = entry.get("input_schema") or {"type": "object", "properties": {}}
-    read_only = _guess_read_only(name)
+    read_only = _resolve_read_only(name, entry)
     return {
         "type": "function",
         "is_read_only": read_only,
@@ -430,12 +507,17 @@ def discover_mcp_tools(names: Optional[set[str]] = None) -> list[ToolSpec]:
             continue
         if not isinstance(entry, dict):
             continue
+        schema = schema_from_mcp_entry(tname, entry)
         specs.append(
             ToolSpec(
                 name=tname,
-                schema=schema_from_mcp_entry(tname, entry),
+                schema=schema,
+                # Read back off the schema rather than re-deriving: one
+                # resolution per tool, so the spec and the schema the model is
+                # shown can never disagree about which half of the dispatch
+                # partition the tool belongs to.
+                read_only=bool(schema["function"]["is_read_only"]),
                 source="mcp",
-                read_only=_guess_read_only(tname),
                 module=entry.get("module"),
                 handler=entry.get("handler"),
             )
@@ -472,13 +554,140 @@ def discover_builtin_tools() -> list[ToolSpec]:
 
 
 # ---------------------------------------------------------------------------
+# External MCP server derivation (hgx-fed-01)
+# ---------------------------------------------------------------------------
+#: OpenAI caps a function name at 64 characters. ``ext__<server>__<tool>`` is
+#: assembled from two independently-capped 64-char halves, so a long pair can
+#: exceed it. Such a tool is dropped rather than offered: one over-long name
+#: makes the provider reject the whole request, taking every other tool with it.
+_MAX_TOOL_NAME_CHARS = 64
+
+
+def _external_registry_module():
+    """Return the canonical external-MCP registry module, or ``None``.
+
+    Imported from ``icdev.tools.mcp_client`` deliberately. Unlike
+    ``tools/llm/agent_loop.py``, ``tools/mcp_client/`` is a physical *copy*
+    rather than a re-export shim, so ``tools.mcp_client.registry`` and
+    ``icdev.tools.mcp_client.registry`` are different module objects holding
+    different process-wide singletons — and therefore different live transports.
+    Dispatch resolves the same way, so a tool discovered here is dispatched over
+    the connection it was discovered on rather than against a registry that has
+    never dialed.
+    """
+    try:
+        from icdev.tools.mcp_client import registry as ext_registry
+
+        return ext_registry
+    except Exception as exc:  # noqa: BLE001 — the client is optional
+        logger.debug("discovery: external MCP client unavailable: %s", exc)
+        return None
+
+
+def schema_from_external_tool(entry: dict[str, Any]) -> dict[str, Any]:
+    """Wrap an ``ExternalTool.to_dict()`` entry in the OpenAI function envelope.
+
+    ``description`` arrives already stripped and framed as untrusted by
+    ``mcp_client.sanitize``; this function is the point at which it enters a
+    prompt, so it is passed through verbatim and never re-derived from the raw
+    remote text. A description that sanitised to nothing (one that was pure
+    payload) is replaced with a neutral first-party line rather than restored.
+    """
+    input_schema = entry.get("input_schema")
+    if not isinstance(input_schema, dict) or not input_schema:
+        input_schema = {"type": "object", "properties": {}}
+    name = str(entry.get("name") or "")
+    remote_name = str(entry.get("remote_name") or name)
+    server = str(entry.get("server") or "?")
+    description = (entry.get("description") or "").strip() or (
+        f"Tool {remote_name!r} on external MCP server {server!r}. "
+        "No usable description was supplied."
+    )
+    return {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": name,
+            "is_read_only": False,
+            "description": description,
+            "parameters": input_schema,
+        },
+    }
+
+
+def discover_external_tools(names: Optional[set[str]] = None) -> list[ToolSpec]:
+    """Derive :class:`ToolSpec`\\ s from allowlisted third-party MCP servers.
+
+    Every control lives upstream of this function and none is re-implemented
+    here: the air-gap interlock and the per-server allowlist run inside
+    ``ExternalToolRegistry.discover()``, and descriptions are sanitised there
+    before they can reach a schema. When no server is enabled — the shipped
+    default — this returns ``[]`` without constructing a registry or opening a
+    connection, so discovery is unchanged for every current deployment.
+
+    External tools are never marked read-only. ICDEV cannot know whether
+    somebody else's tool mutates state, and a remote server's own claim about
+    that is not evidence, so they are routed through the dispatch safety gate
+    like any other mutating tool.
+
+    Args:
+        names: Optional whitelist of namespaced tool names to include.
+    """
+    ext = _external_registry_module()
+    if ext is None:
+        return []
+
+    try:
+        if not ext.enabled_servers():
+            return []
+        entries = ext.get_external_registry().list_tools()
+    except Exception as exc:  # noqa: BLE001 — a broken server never breaks discovery
+        logger.warning("discovery: external MCP discovery failed: %s", exc)
+        return []
+
+    prefix = getattr(ext, "NAMESPACE_PREFIX", "ext__")
+    specs: list[ToolSpec] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        tname = str(entry.get("name") or "")
+        if not tname.startswith(prefix):
+            logger.warning(
+                "discovery: dropping external tool %r — not namespaced with %r",
+                tname, prefix,
+            )
+            continue
+        if len(tname) > _MAX_TOOL_NAME_CHARS:
+            logger.warning(
+                "discovery: dropping external tool %r — name exceeds %d characters",
+                tname, _MAX_TOOL_NAME_CHARS,
+            )
+            continue
+        if names is not None and tname not in names:
+            continue
+        specs.append(
+            ToolSpec(
+                name=tname,
+                schema=schema_from_external_tool(entry),
+                source="external",
+                read_only=False,
+                module=None,   # dispatched through the external registry, not by import
+                handler=None,
+            )
+        )
+    return specs
+
+
+# ---------------------------------------------------------------------------
 # Registry assembly + JSON cache
 # ---------------------------------------------------------------------------
 def build_registry(
     *,
     include_builtin: bool = True,
     include_mcp: bool = True,
+    include_external: bool = True,
     mcp_names: Optional[set[str]] = None,
+    external_names: Optional[set[str]] = None,
     decorated_modules: Optional[list[str]] = None,
     extra_specs: Optional[list[ToolSpec]] = None,
     apply_checks: bool = True,
@@ -486,8 +695,19 @@ def build_registry(
     """Assemble the unified tool registry as ``{name: ToolSpec}``.
 
     Sources are layered so later ones win on a name clash: MCP → built-in →
-    decorated → ``extra_specs``. Specs whose :meth:`ToolSpec.available` probe is
-    falsey are dropped when ``apply_checks`` is True.
+    decorated → external → ``extra_specs``. Specs whose :meth:`ToolSpec.available`
+    probe is falsey are dropped when ``apply_checks`` is True.
+
+    An **external** spec is the one exception to "later wins": it is dropped if
+    its name is already registered, so a third-party server cannot shadow a
+    first-party tool by advertising its name. Namespacing makes that unreachable
+    in practice — nothing in ICDEV starts with ``ext__`` — but it is enforced
+    anyway, because the cost of being wrong is an agent reaching somebody else's
+    ``sandbox_execute``.
+
+    ``include_external`` is honoured against a registry that is off by default;
+    with the shipped ``args/external_mcp_servers.yaml`` (``enabled: false``) the
+    external source contributes nothing and the result is identical either way.
     """
     specs: list[ToolSpec] = []
     if include_mcp:
@@ -496,6 +716,8 @@ def build_registry(
         specs.extend(discover_builtin_tools())
     if decorated_modules:
         specs.extend(discover_decorated(decorated_modules))
+    if include_external:
+        specs.extend(discover_external_tools(external_names))
     if extra_specs:
         specs.extend(extra_specs)
 
@@ -503,6 +725,12 @@ def build_registry(
     for spec in specs:
         if apply_checks and not spec.available():
             logger.info("discovery: %r excluded (availability check false)", spec.name)
+            continue
+        if spec.source == "external" and spec.name in registry:
+            logger.warning(
+                "discovery: external tool %r would shadow an existing tool — dropped",
+                spec.name,
+            )
             continue
         registry[spec.name] = spec  # later source wins
     return registry
@@ -518,7 +746,7 @@ def write_cache(
         "version": 1,
         "tools": [spec.to_cache_entry() for spec in registry.values()],
     }
-    dest.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    dest.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8", newline="")
     return dest
 
 
@@ -551,11 +779,18 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(description="SAG tool auto-discovery")
     parser.add_argument("--no-mcp", action="store_true", help="skip MCP derivation")
+    parser.add_argument(
+        "--no-external",
+        action="store_true",
+        help="skip third-party MCP server derivation (no-op unless one is enabled)",
+    )
     parser.add_argument("--write-cache", action="store_true", help="write JSON cache")
     parser.add_argument("--json", action="store_true", help="emit JSON")
     args = parser.parse_args(argv)
 
-    registry = build_registry(include_mcp=not args.no_mcp)
+    registry = build_registry(
+        include_mcp=not args.no_mcp, include_external=not args.no_external
+    )
     if args.write_cache:
         dest = write_cache(registry)
         logger.info("discovery: wrote cache to %s", dest)

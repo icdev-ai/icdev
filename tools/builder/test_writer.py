@@ -19,6 +19,16 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import sys
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -215,7 +225,7 @@ def generate_feature(
         lines.append("")
 
     content = "\n".join(lines)
-    feature_file.write_text(content, encoding="utf-8")
+    feature_file.write_text(content, encoding="utf-8", newline="")
     print(f"Feature file created: {feature_file}")
 
     # Log audit trail
@@ -300,7 +310,7 @@ def _generate_python_steps(
         py_lines.append("")
 
     step_content = "\n".join(py_lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -369,7 +379,7 @@ def _generate_java_steps(
     lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -433,7 +443,7 @@ def _generate_go_steps(
     lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -481,7 +491,7 @@ def _generate_typescript_steps(
         lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -548,7 +558,7 @@ def _generate_csharp_steps(
     lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -604,7 +614,7 @@ def _generate_rust_steps(
         lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -670,7 +680,7 @@ def generate_agentic_tests(
             # Parameterize agent_count placeholder
             content = content.replace("{agent_count}", str(len(agents)))
 
-            dest.write_text(content, encoding="utf-8")
+            dest.write_text(content, encoding="utf-8", newline="")
             generated_files.append(str(dest))
             print(f"Agentic BDD template: {dest}")
 
@@ -679,7 +689,7 @@ def generate_agentic_tests(
         for template_file in AGENTIC_TEMPLATE_DIR.glob("test_*.py"):
             dest = agentic_test_dir / template_file.name
             content = template_file.read_text(encoding="utf-8")
-            dest.write_text(content, encoding="utf-8")
+            dest.write_text(content, encoding="utf-8", newline="")
             generated_files.append(str(dest))
             print(f"Agentic pytest template: {dest}")
 
@@ -736,7 +746,7 @@ def _generate_agent_skill_feature(test_dir: Path, agents: List[str]) -> str:
     content = "\n".join(lines)
 
     feature_file = test_dir / "test_project_agent_skills.feature"
-    feature_file.write_text(content, encoding="utf-8")
+    feature_file.write_text(content, encoding="utf-8", newline="")
     print(f"Agentic skill feature: {feature_file}")
     return str(feature_file)
 
@@ -792,7 +802,7 @@ def _generate_agent_health_pytest(test_dir: Path, agents: List[str]) -> str:
     content = "\n".join(lines)
 
     test_file = test_dir / "test_project_agent_health.py"
-    test_file.write_text(content, encoding="utf-8")
+    test_file.write_text(content, encoding="utf-8", newline="")
     print(f"Agentic health pytest: {test_file}")
     return str(test_file)
 

@@ -229,7 +229,7 @@ def _store_bridge(opp_id: str, doc_md: str) -> str:
     BRIDGES_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     path = BRIDGES_DIR / f"bridge_{opp_id[:12]}_{timestamp}.md"
-    path.write_text(doc_md, encoding="utf-8")
+    path.write_text(doc_md, encoding="utf-8", newline="")
 
     # Audit
     conn = get_connection()

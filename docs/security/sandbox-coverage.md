@@ -513,6 +513,12 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 
 ### Gap 18 — Kanban Adversarial Verifier (`tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify`)
 - **File:** `tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify()`
+- **Where the subprocess actually starts:** since hgx-exec-03 both this verifier and the
+  primary build dispatch call `tools/agents/adapters/claude_cli.py`
+  (`ClaudeCliAdapter.invoke` / `.spawn`) rather than each building their own command
+  line. That module is the single review point for every property below — argv,
+  `shell=False`, the `.tmp/` prompt file and its deletion, and the environment handed to
+  the child.
 - **Risk:** Spawns a second Claude CLI subprocess (`claude --dangerously-skip-permissions
   --max-turns 10`) in the task worktree directory to adversarially review completed work.
   The subprocess receives a reviewer prompt via stdin piped from a `.tmp/` temp file and
@@ -770,7 +776,8 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - Air-gap egress guard: `assert_airgap_ready()` (`CortexAirgapError`) blocks cloud LLM routing when `ICDEV_CORTEX_AIRGAP`/strict mode is set, keeping CUI prompts local-only.
   - TRUST governance pipeline (`governance.GovernancePipeline`) enforces `[source: …]` citation grounding on drafted output; citation defects gate promote/export.
   - No `exec()`/`eval()`/`subprocess`/`os.system`/`__import__` anywhere under `tools/cortex/` — the only `re.compile()` uses are static pattern definitions.
-- **Revisit if:** the analyst path is ever allowed to emit non-SELECT statements, the SELECT-only/allowlist gates are removed or bypassed, or any Cortex module adds a step that `exec`s, `eval`s, or `subprocess`-runs user-derived content → re-decide as **sandboxed** via `tools/security/sandbox_executor.py`.
+  - **`POST /cortex/api/v1/agent` (hgx-cx-02) — the one Cortex endpoint that starts EXECUTION.** It does not weaken the decision above, and the guardrails are what keep that true: (a) it requires `cortex:agent`, which is deliberately absent from `DEFAULT_SCOPES` — a search key cannot reach it; (b) `tools` and `tool_handlers` are refused from the wire, so the single-agent loop runs with no tools at all and a remote caller can never name the capabilities its agent holds; (c) tool-bearing work is only reachable through `mode="graph"`, which runs a Studio workflow an **operator** authored, on the durable DAG runtime whose nodes carry their own per-node tool authorization (MCP-WF-001) and human gates; (d) `rubric` is refused, because grading a loop shells out to the server's own checkout; (e) `webhook_url` is refused (SSRF — a caller-named address the server reaches from inside). The goal text itself is still data: it is injection-screened and input-redacted by the `cortex.agent` governed facade before dispatch.
+- **Revisit if:** the analyst path is ever allowed to emit non-SELECT statements, the SELECT-only/allowlist gates are removed or bypassed, `/agent` starts accepting `tools`/`tool_handlers`/`rubric`/`webhook_url` from the request body or `cortex:agent` enters the default grant, or any Cortex module adds a step that `exec`s, `eval`s, or `subprocess`-runs user-derived content → re-decide as **sandboxed** via `tools/security/sandbox_executor.py`.
 
 ### Gap 28 — Rotating LLM egress-proxy resolver (`tools/llm/proxy_resolver.py`)
 
@@ -1270,7 +1277,339 @@ another vendor's tool.
   and a different threat model — or if it starts reading *artifacts* rather than
   metadata, which is sbx-fld-03's territory.
 
-### Gap 50 — SBOM distribution and version-specific retrieval (`tools/compliance/sbom_distribution.py`)
+### Gap 50 — SBOM correction ingress (`tools/compliance/sbom_revision.py`)
+
+**Modules:** `tools/compliance/sbom_revision.py` (mirrored at
+`icdev/tools/compliance/sbom_revision.py`), consumed by
+`tools/compliance/sbom_generator.py` and `tools/compliance/sbd_assessor.py`
+
+**Ingress path:** Two surfaces, and only one of them is first-party.
+`plan_revision` / `content_digest` on the generation path only ever see a
+document this tree just built, so that half is trusted-first-party. `--correct
+--sbom <path>` is not: the corrected SBOM is an operator-supplied JSON document
+that may well have originated with an upstream producer, and it is the document
+that becomes the project's SBOM of record. `source_revision` additionally shells
+out to `git` in a caller-supplied directory.
+
+- **Decision:** **trusted-first-party** for the generation path; **bypass-documented**
+  for the correction path (parse-and-record only; no execution path exists)
+- **Rationale:** The module's whole toolkit is `json`, `hashlib`, `pathlib` and
+  one fixed-argv `git rev-parse`. It contains no `exec`, `eval`, `__import__`,
+  `pickle`, `yaml.load` or `os.system`, and no network client. A corrected SBOM
+  is round-tripped through `json.load`/`json.dump` and digested; **nothing in it
+  is ever dispatched on, resolved as a path, or used to build SQL**. The only
+  values from the document that reach the database are the component count, the
+  `serialNumber` string and the digest, each as a bound parameter. `git rev-parse`
+  is not a shell: fixed argv, `shell=False`, a 15-second timeout, and a
+  non-zero exit or any `OSError` yields `None` — which is reported as
+  `sbom_build_identity_unknown` rather than being smoothed into a pass.
+- **Guardrails:**
+  - The output path for a correction is derived from the **predecessor's own
+    recorded `file_path`**, never from anything inside the supplied document, so
+    a hostile SBOM cannot choose where bytes land.
+  - A correction is append-only by construction: it can only INSERT a successor
+    row. There is no code path by which a supplied document rewrites, blanks or
+    deletes the record it corrects, which is what stops a bad artifact from
+    *destroying* prior evidence rather than merely adding wrong evidence.
+  - `revision_reason` is validated against the closed `REVISION_REASONS`
+    vocabulary and `apply_correction` refuses a non-corrective code, so the
+    caller cannot mislabel a correction as a routine build.
+  - A correction must state a reason; an empty one raises rather than recording
+    an unexplained change to a compliance artifact.
+  - The head is re-resolved inside `apply_correction` and compared to the row it
+    was prepared against, so a concurrent writer cannot make a correction
+    supersede the wrong document.
+  - `gate_threshold` reads only ICDEV's own `args/security_gates.yaml`, via
+    `yaml.safe_load`, and a missing or corrupt file degrades to the documented
+    default.
+  - `tests/test_sbom_revision_2026.py` records every statement a correction
+    issues and fails on an `UPDATE` or `DELETE`, and compares the predecessor row
+    field-by-field before and after — so the append-only property is pinned, not
+    merely intended.
+- **Revisit if:** the correction path ever resolves anything *out of* the supplied
+  document — a file path, a URL, a tool name, a signing key reference — which
+  would turn parsed content into a resource reference; or if `source_revision`
+  gains a remote lookup (a CI API call to name the build), which is a network
+  path over attacker-influenceable material and a different threat model.
+### Gap 50 — SBOM disclosure convention and policy (`tools/compliance/unknown_information.py`)
+
+**Module:** `tools/compliance/unknown_information.py` (sbx-prc-01), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two inputs. `load_disclosure_policy` reads ICDEV's own
+`args/sbom_disclosure_policy.yaml`, which is first-party configuration but is
+edited by an operator to declare redactions. `validate_sbom_disclosure`, reached
+through `--validate`, reads a **CycloneDX JSON SBOM from an operator-supplied
+path** — which may be another vendor's output, since the point of a conformance
+validator is to be pointed at documents ICDEV did not produce.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module compares strings against closed vocabularies and
+  emits property dicts. Its total contact with untrusted content is
+  `json.loads`, `yaml.safe_load`, `str()`, `.strip()`, `.lower()` and set
+  membership. There is no `exec`/`eval`/`compile`, no `subprocess`, no
+  `pickle`, no SQL, no regex over attacker input, and no network call. Nothing
+  read from a foreign SBOM is dispatched on: a reason code either *is* a member
+  of `UNKNOWN_REASONS`/`WITHHELD_REASONS` or becomes a validation error, and a
+  field name either *is* one of the 17 minimum elements or becomes one.
+- **Guardrails:**
+  - `_clean_rules` drops a policy rule whose field or reason is unrecognised
+    rather than defaulting it, so a typo cannot silently widen or narrow a
+    redaction. `policy_defects()` reports every dropped rule, and the CLI exits
+    non-zero when there are any, so a mistyped redaction is loud rather than
+    absent.
+  - `_rule_matches` treats an unmatched key as a **non**-match. A redaction that
+    accidentally applied to every component would be far worse than one that
+    applied to nothing, because only the second is visible on inspection.
+  - A withheld field carries no free-text detail — :meth:`Disclosure.withheld`
+    evicts any detail the field had. Explaining a redaction inside the document
+    the redaction protects would undo it, and the validator fails a document
+    that does so.
+  - `yaml.safe_load` (never `yaml.load`) on the policy; a missing or corrupt
+    policy degrades to a default that withholds nothing and still names an
+    enquiry route, because an SBOM that withholds without one is what the
+    standard forbids.
+  - `Disclosure.from_db_values` treats unreadable JSON as empty, so a corrupt
+    `unknown_fields_json` column cannot raise inside SBOM rendering.
+  - `tests/test_sbom_unknown_information.py` exercises the rejection paths
+    directly: a withheld reason under the unknown prefix, an unknown reason
+    under the withheld prefix, a field in both states, an unrecognised field
+    name, and the pre-2026 conflating literals.
+- **Revisit if:** the enquiry process gains an actual transport (an API endpoint
+  that accepts recipient requests, rather than a property naming a route) — that
+  turns a document property into an attack surface with its own authorization
+  model, and belongs with sbx-gov-02.
+
+### Gap 51 — SPDX writer and validator (`tools/compliance/spdx_writer.py`)
+
+**Module:** `tools/compliance/spdx_writer.py` (sbx-fmt-01, mirrored at
+`icdev/tools/compliance/spdx_writer.py`), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** In its library role the module only ever sees the CycloneDX
+document ICDEV itself just built, which is first-party. Its CLI is the
+untrusted surface: `--validate` and `--compare` read an SBOM JSON document from
+an operator-supplied path, and that document may have been produced by another
+vendor's tool or handed over by a supplier. The vendored SPDX 2.3 schema at
+`context/compliance/schemas/spdx-2.3.schema.json` is first-party content
+committed to the repo.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module translates and validates; it never executes. Its
+  total contact with untrusted content is `json.load`, dict/list traversal, one
+  anchored character-class regex used to sanitize SPDX identifiers, and
+  `jsonschema.Draft7Validator` over a schema that is read from disk rather than
+  fetched. There is no `exec`/`eval`/`compile`, no `subprocess`, no `pickle`, no
+  `yaml.load`, no SQL and no network call — validation is deliberately offline
+  so it behaves identically in an air-gapped enclave, which is why the official
+  schema is vendored rather than resolved from `spdx.org` at runtime.
+- **Guardrails:**
+  - `jsonschema` is never given a `$ref`-resolvable remote schema: `load_schema`
+    reads one local file and the validator is constructed directly from it, so a
+    hostile document cannot steer schema resolution anywhere.
+  - Every value copied out of the source document is coerced with `str()` before
+    it reaches an SPDX field, and identifiers pass through `_sanitize_id`, which
+    admits only `[A-Za-z0-9.-]`. A component name cannot forge an `SPDXRef-`
+    collision: `_spdx_id` de-duplicates against the identifiers already issued.
+  - Malformed input degrades rather than aborting. A non-dict component, a
+    non-dict property entry, or an annotation whose comment is not JSON is
+    skipped; a dependency edge naming a `bom-ref` that is not in the document is
+    dropped rather than emitted as a dangling relationship.
+  - A missing `jsonschema` is reported as a validation **error**, not as a pass.
+    A validator that silently approves everything is worse than none.
+  - Nothing the module reads reaches SQL, a filesystem path, or a shell. The
+    only path it writes is the one the caller passes to `write_spdx`.
+  - `tests/test_sbom_spdx_format.py` pins the deliberate failure modes: a
+    document with a field removed fails validation, a broken parity check fails,
+    and edges to absent components produce no relationships.
+- **Revisit if:** the module gains an SPDX *parser* that maps a third-party
+  document back into ICDEV's component model — that is sbx-fmt-02's ingest
+  parity work and a materially different posture, because the values would then
+  reach the database rather than only a report.
+
+### Gap 52 — Agent-node tool authorization gate (`tools/studio/executors/agent_tool_gate.py`)
+
+**Module:** `tools/studio/executors/agent_tool_gate.py` (+ `icdev/` mirror) —
+decides which tools a Studio `node_type: agent` step may offer a model and which
+calls that model may actually make (task hgx-agent-02, gate `AGENT-WF-001`).
+
+**Ingress path:** Two inputs, from two different trust levels. The **policy** is
+the `agent_workflow_tools` section of `args/security_gates.yaml` — repo-authored,
+first-party, read with `yaml.safe_load`. The **tool name and arguments** come
+from an LLM mid-loop: `hook(tool_name, tool_input)` is called by
+`run_agent_loop` with whatever the model emitted. That is
+**model-generated content**, and the whole point of this module is that it is
+treated as such.
+
+- **Decision:** **trusted-first-party** (policy) + **bypass-documented**
+  (model-supplied names/arguments — used as dictionary keys and hashed, never
+  resolved, executed, or interpolated).
+- **Rationale:** No model-supplied string reaches an interpreter, an import, a
+  path, a shell, or SQL from this module. `tool_name` is used only as a set
+  membership test against the two committed allowlists and as a key into
+  `tool_limits`; a miss is a refusal, so the reachable set is a fixed nine-name
+  list, not an open namespace. `tool_input` is never inspected for meaning at
+  all — it is passed to `params_digest()`, which canonicalises it with
+  `json.dumps(..., default=repr)` and returns a SHA-256 hex digest. The digest,
+  not the arguments, is what reaches the parameterised audit INSERT, so an
+  agent's `write_file` content cannot appear in the audit trail or steer the
+  query. There is no `exec`/`eval`/`compile`, no `subprocess`, no `importlib`
+  driven by model output, no filesystem path built from model output, and no
+  network call. The handlers the authorized call eventually reaches are the
+  worktree toolset's (`tools/genesis/rubric_build_tools.py`), which resolve and
+  traversal-guard every path inside the step's `work_dir` — that confinement is
+  theirs, not this module's, and is unchanged by it.
+- **Guardrails:**
+  - **Default-deny, fail-closed policy** — `load_policy()` refuses a section
+    whose `default` is not `deny`, and refuses when no section is readable at
+    all (`agent_gate_policy_unavailable`). `agent_executor.apply_tool_gate`
+    turns that into `agent_step_gate_unavailable`: no policy means **no
+    toolset**, never an unbounded one.
+  - **Enforced twice** — `authorize_toolset()` withholds an unauthorized tool
+    before it is described to the model; `build_gate_hook()` re-checks every
+    call before the handler runs. The second layer is the one that decides, so a
+    model naming a tool it was never offered is refused rather than dispatched.
+  - **Human gate on anything mutating** — `write_file` / `patch_file` /
+    `run_command` are `requires_approval`, so the first call parks an
+    `awaiting_approval` step row and blocks. No run to park a gate on is a
+    refusal, not a pass.
+  - **Caller IL / RBAC** — `check_caller_authorized()` refuses a caller below
+    the tool's declared `min_il` (or holding an unrecognised level — the gate
+    does not guess) or missing a required role. `run_command` is held at IL5.
+  - **Composed with, not substituted for, the reversibility gate** — the hook
+    chains to `tools/agent_runtime/approval_gate.py`; a call must clear both.
+  - **Append-only audit with digested arguments** — every decision (allowed,
+    refused, pending_approval) writes one `studio_mcp_dispatch_audit` row via
+    the existing `record_dispatch_audit`, classification-marked from the
+    caller's IL. The write is best-effort and never changes the decision.
+  - **Regression tests** — `tests/studio/test_agent_tool_gate.py` (28 tests)
+    covers the allowlist refusal, the parked/approved/rejected/undecided human
+    gate, the IL and role refusals, gate-ordering, the fail-closed policy paths
+    and the executor wiring; `tests/test_dwo_agent_allowlist.py` (17) pins the
+    policy data, the mirrors, and that every `block_on` condition is actually
+    raised somewhere in the module.
+- **Revisit if:** the policy becomes tenant-editable or derivable from anything
+  other than a committed repo file; `tool_input` starts being inspected,
+  interpolated into a path/command, or stored verbatim; registry-backed bundles
+  become dispatchable from an agent node (the dispatch path then needs its own
+  entry — this one covers authorization only); or the allowlist is made
+  default-allow → re-decide as **sandboxed**
+  (`tools/security/sandbox_executor.py`).
+
+### Gap 53 — SBOM component licensing (`tools/compliance/component_licenser.py`)
+
+*(There are two entries numbered 50 above: `sbom_revision` and `unknown_information`
+landed from sibling `sbx` branches that each allocated the next number concurrently.
+Left as-is rather than renumbered — the headings are referenced from those PRs.)*
+
+**Module:** `tools/compliance/component_licenser.py` and its data module
+`tools/compliance/spdx_license_data.py` (sbx-fld-04), imported by
+`tools/compliance/sbom_generator.py`. The license-reading additions to
+`tools/compliance/dependency_resolver.py` are covered here too, since they are the
+ingress that feeds it.
+
+**Ingress path:** Three, all third-party by construction. (1) A **license string declared
+by a dependency manifest** — `package-lock.json` `license`/`licenses` — which is
+attacker-controlled if a registry account or a lockfile is. (2) **Installed Python
+distribution metadata**, read as text from `*.dist-info/METADATA` via
+`importlib.metadata.PathDistribution`. (3) The **project's own manifests**
+(`pyproject.toml`, `package.json`, `Cargo.toml`, `pom.xml`), read whole off disk by
+`project_license_from_manifests()` to resolve the document's target component.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** No ingress reaches an execution or deserialization path. A declared
+  license is consumed as text: it is tokenized on whitespace and parentheses, each token
+  is looked up in a closed frozenset of SPDX identifiers, and an unrecognized token is
+  *reported* as a license name, never dispatched on. Manifest files are read with
+  `Path.read_text()` and matched with anchored regular expressions and `json.loads` —
+  there is no `exec`/`eval`/`subprocess`/`os.system`/`pickle`/`yaml.load` in either
+  module, no TOML/XML parser is instantiated, and no file a manifest names is ever opened
+  (a `license = { file = "…" }` pointer is carried through as text, not followed).
+  `PathDistribution` parses METADATA as text and imports nothing from the target
+  environment, which is the same posture sbx-cov-01 already recorded for it.
+- **Guardrails:**
+  - The SPDX License List is **vendored**, not fetched and not imported from a
+    third-party package, so the set of identifiers ICDEV will emit cannot change under a
+    dependency upgrade or a network response. It is data with no behaviour.
+  - Validation is **allow-list only and fails soft in the safe direction**: an identifier
+    absent from the vendored set can only cause a license to be emitted as a *name*
+    instead of an SPDX id. A stale list can never cause an unvalidated id to be emitted,
+    which is the direction that would matter.
+  - A `License:` metadata field that is multi-line or longer than `_LICENSE_FIELD_MAX`
+    (120 chars) is discarded rather than carried, so a distribution that pastes its whole
+    license body — or a crafted one that pastes anything else — cannot inject unbounded
+    third-party text into the SBOM as a license *name*.
+  - `project_license_from_manifests()` cannot raise: an unreadable or malformed manifest
+    is treated as an absent one, so a hostile project directory cannot abort SBOM
+    generation for the ~25 call sites and the blocking `bdc_canvas` gate that consume the
+    document. `_python_metadata_license` is likewise called inside the resolver's existing
+    per-distribution `try`.
+  - Every regex is anchored or non-greedy and bounded by a literal delimiter; none is
+    built from input.
+  - `tests/test_sbom_component_license.py` pins the rejection set (invented identifiers,
+    a license used as an exception, malformed expressions), the malformed-manifest path,
+    the metadata-length guard, and the guarantee that every emitted SPDX identifier is on
+    the vendored list.
+- **Revisit if:** the module starts *following* a license-file pointer (`license-file`,
+  `SEE LICENSE IN <file>`) and reading that file's text — that is a new ingress with a
+  path-traversal question this decision does not cover; or if license data begins arriving
+  over the network from a registry API rather than from a manifest already on disk.
+
+### Gap 54 — SBOM component hashing (`tools/compliance/component_hasher.py`)
+
+**Module:** `tools/compliance/component_hasher.py` (sbx-fld-03), imported by
+`tools/compliance/sbom_generator.py`. The digest-reading and artifact-locating additions
+to `tools/compliance/dependency_resolver.py` are covered here too, since they are the
+ingress that feeds it.
+
+**Ingress path:** Three, all third-party by construction. (1) **Digest strings declared
+by a lockfile** — npm/yarn `integrity`, `Cargo.lock` `checksum`, NuGet `sha512` /
+`contentHash`, a Python lock's `sha256:` file hashes, `go.sum` `h1:` lines — every one
+attacker-controlled if a registry account or a lockfile is. (2) **Artifact bytes**: this
+is the first module in the SBOM pipeline that opens a third-party binary and reads it end
+to end, namely a jar in the Maven local repository. (3) `--validate` reads a CycloneDX
+JSON SBOM from an operator-supplied path, which may have come from another vendor's tool.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The artifact is read as an opaque byte stream and fed to `hashlib` — it
+  is never unpacked, never parsed, never imported and never executed. A jar is a zip and
+  this module has no zip machinery; `hash_file` opens in `"rb"`, iterates fixed-size
+  chunks into a digest object and returns hexadecimal. Declared digests are consumed as
+  text: the algorithm token is looked up in a closed dict of IANA names and the value is
+  either hexadecimal-validated by an anchored regex or `base64.b64decode(validate=True)`.
+  There is no `exec`/`eval`/`subprocess`/`pickle`/`yaml.load`/`zipfile`/`tarfile` in the
+  module, and no network call of any kind — recomputation is a local filesystem read, so
+  it behaves identically in an air-gapped enclave.
+- **Guardrails:**
+  - The IANA Hash Function Textual Names registry is **vendored**, and validation is
+    **allow-list only**. An unrecognized algorithm name can only cause the unknown
+    marker to be emitted; it can never cause an unvalidated name to reach a document.
+    Because approval is tracked separately from registration, a `md5`/`sha-1` digest is
+    recognized and *refused*, not silently passed through.
+  - A declared digest is length-checked against its own algorithm before adoption, so a
+    crafted lockfile cannot get a short or oversized value emitted as the element.
+    `b64decode(validate=True)` rejects any character outside the standard alphabet.
+  - `hash_file` returns `""` rather than raising on any `OSError`, so an artifact that
+    is unreadable, a dangling symlink, or removed between resolution and generation
+    degrades to the unknown marker instead of aborting the document the ~25 call sites
+    and the blocking `bdc_canvas` gate consume.
+  - Artifact paths are **composed from the component's own coordinates** under a
+    caller-supplied or environment-supplied root (`MAVEN_REPO_LOCAL` / `~/.m2`), and are
+    hashed only when `Path.is_file()` holds — a directory or a device node is not read.
+    No path is taken verbatim from third-party content.
+  - Reads are chunked at 1 MiB, so a hostile or merely enormous artifact cannot be used
+    to exhaust memory.
+  - A digest is only ever *emitted*, never dispatched on, and reaches SQL solely as a
+    bound parameter through `_persist_components`.
+  - `tests/test_sbom_component_hash.py` pins the refusal set (unapproved algorithm,
+    unregistered name, mislabelled length, non-artifact digest, ambiguous multi-artifact
+    lock) and has a dedicated section for the artifact-inaccessible path.
+- **Revisit if:** the module starts reading *inside* an artifact — computing per-entry
+  digests from a jar or wheel, or following a manifest within it — which introduces
+  archive parsing and a zip-slip question this decision does not cover; or if digests
+  begin arriving over the network from a registry or a transparency log rather than from
+  a lockfile already on disk.
+### Gap 55 — SBOM distribution and version-specific retrieval (`tools/compliance/sbom_distribution.py`)
 
 **Module:** `tools/compliance/sbom_distribution.py` (sbx-gov-02, mirrored at
 `icdev/tools/compliance/sbom_distribution.py`), backing three routes in

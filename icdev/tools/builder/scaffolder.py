@@ -19,6 +19,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from pathlib import Path
 from typing import List
@@ -92,13 +103,13 @@ CUI_BANNER_MD = _DEFAULT_CUI_BANNER_MD
 def _write_file(path: Path, content: str) -> None:
     """Write content to a file, creating parent dirs as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
 
 
 def _create_gitkeep(directory: Path) -> None:
     """Create a .gitkeep in an empty directory."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / ".gitkeep").write_text("", encoding="utf-8")
+    (directory / ".gitkeep").write_text("", encoding="utf-8", newline="")
 
 
 def _common_gitignore() -> str:
@@ -1602,7 +1613,7 @@ def main():
                     original = p.read_text(encoding="utf-8")
                     updated = _apply_profile_overrides(original, dev_profile, language=lang)
                     if updated != original:
-                        p.write_text(updated, encoding="utf-8")
+                        p.write_text(updated, encoding="utf-8", newline="")
             except Exception:
                 pass  # Non-critical: profile overrides are best-effort
 

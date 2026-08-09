@@ -80,13 +80,14 @@ import math
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 # ICDEV™ parent path setup
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Paths

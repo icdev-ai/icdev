@@ -15,7 +15,6 @@ Usage:
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import json
 import os
@@ -26,6 +25,8 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.databridge.connector import (  # noqa: E402
     ConnectorCapabilities,
@@ -56,7 +57,7 @@ def _load_offset() -> int:
 
 def _save_offset(offset: int):
     _OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _OFFSET_FILE.write_text(str(offset), encoding="utf-8")
+    _OFFSET_FILE.write_text(str(offset), encoding="utf-8", newline="")
 
 
 @register_connector

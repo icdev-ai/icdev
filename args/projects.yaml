@@ -7478,3 +7478,300 @@ projects:
   - key: stall
     title: STALL - Alert when board throughput goes to zero
     priority: high
+  - key: merge
+    title: MERGE - The CLI can land a PR, not just refuse to mark it done
+    priority: high
+  - key: obs
+    title: OBS - pr_watcher liveness is observable
+    priority: high
+  - key: recover
+    title: RECOVER - Autonomous recovery must not act on stale or non-code failures
+    priority: high
+- key: agov
+  name: 'AGOV - Agent Governance (detection, forensics, unattended approval)'
+  description: 'Adapt the four things ICDEV genuinely lacks from perplexityai/numbat
+    and andrewyng/openworker, and NOTHING else. Scope was set by measuring the repo
+    on 2026-08-08, not by reading the two READMEs. PRIOR ART IS CLOSED AND MUST NOT
+    BE REOPENED: openworker''s risk.py (READ/WRITE_LOCAL/EXEC/EXTERNAL) is strictly
+    WEAKER than what ICDEV already ships in args/agent_approval_policy.yaml plus
+    tools/agent_runtime/approval_gate.py, which fails CLOSED on an unenumerated tool
+    (default_tier unknown, unknown in require_approval_tiers) and has the
+    escalation-asymmetry and command_tools carve-out openworker lacks entirely - do
+    not "adopt" it, do not refactor toward it. numbat''s artifact scanning is covered
+    by SIPA (tools/integrity/, 39 modules, 5 tables, static-only contract). numbat''s
+    OTLP receiver is OUT OF SCOPE: args/otel_collector_config.yaml plus
+    tools/observability_canvas/mitre_coverage_twin.py ingest_otel_batch already cover
+    it and an in-repo receiver buys nothing. openworker''s personas, skills,
+    connectors and desktop shell are covered by 90 role YAMLs in args/ace/roles/, 24
+    .agents/skills/icdev-*/SKILL.md, ~44 connectors across tools/databridge and
+    tools/gateway, and the icdev chat terminal REPL. WHAT SURVIVES IS FOUR GAPS.
+    (1) DET - ICDEV writes rich agent activity into hook_events (HMAC-signed,
+    session_id-keyed), agent_executions, ai_telemetry, audit_trail and ace_audit_log,
+    and never reads any of it back for detection. There is no rule engine over the
+    event stream at all; every block is hardcoded Python in a 1250-line
+    .claude/hooks/pre_tool_use.py and the only config-driven rule family is
+    args/file_access_tiers.yaml. The consequence that matters is that ICDEV cannot
+    express a multi-step chain - "read .env, then POST to an external host" is
+    invisible because every check is single-action. Also
+    tools/observability/sigma_generator.py emits Sigma rules and nothing consumes
+    them. (2) CASE - grep for session_replay / reconstruct_session / session_timeline
+    returns ZERO. The forensic raw material exists and is already tamper-evident
+    (hook_events.signature HMACs, hash-chained audit from migration 149) but nothing
+    joins it by session_id and nothing exports it; SWFT (tools/compliance/
+    swft_evidence_bundler.py) and SIPA bundle software supply-chain evidence, not
+    agent behaviour. (3) INBOX - tools/agent_runtime/safety.py:78 console_approver
+    DENIES ON EOF and approval_gate.py:403 does the same before falling back to
+    deny_all_approver, so a headless overnight SAG or cron run refuses every
+    irreversible action, and the only way round it today is to inject an
+    auto-approver, which discards the gate entirely. openworker''s insight is that
+    unattended is NOT an autonomy setting: it does not change what the agent may do
+    (the permission mode does), it changes WHERE the ask is delivered - route it to
+    an inbox and suspend the session instead of blocking on a console nobody is
+    watching. ICDEV has every piece and has joined none: four separate approval gates
+    (ace/coworker_thread.py HITLGate, agent_runtime/approval_gate.py,
+    integration/approval_manager.py, workflow_hitl/gate.py) and several unrelated
+    inbox modules (document_intelligence/inbox.py, agent/mailbox.py,
+    agentic_ai_canvas/findings_inbox.py). (4) WAKE - an agent cannot schedule its own
+    resumption; ICDEV has external scheduling only (124 Genesis reflexes,
+    agent_cron_jobs, the kanban scheduler), so nothing can say "wake me when PR #1342
+    goes CI-green". MANUAL-ONLY: this card touches .claude/hooks/pre_tool_use.py and
+    the approval gate, and tools/ci/pr_watcher.py auto-merges any CI-green kanban/*
+    branch, so every task is gated behind agov-gate-00 via depends_on_task_id (the
+    held gate row alone does not hold - the dependency is what
+    promote_backlog_to_scheduled.py actually checks) and every PR opens --draft.'
+  task_prefix: agov-
+  default_open: true
+  briefs:
+  - 'DET: the core. A rule is one YAML file under args/agent_rules/ with
+    id/version/title/severity/tags/enabled/enforce/deny_message and either a
+    single-event expr or a sequence, evaluated against a normalized read-only view
+    over the tables ICDEV already writes. Monitor-only by DEFAULT - enforcement is
+    opt-in per rule in an operator-controlled directory, and detection and
+    enforcement share one expression. Conditions are STRUCTURED YAML MATCHERS in the
+    style already proven by args/agent_approval_policy.yaml and
+    args/file_access_tiers.yaml - decided against CEL and against a restricted-AST
+    evaluator, because no new third-party dependency is acceptable here and a
+    hand-rolled expression evaluator is a security surface ICDEV would have to
+    defend. A second, concrete payoff: agent_approval_policy.yaml:110-116 documents
+    a real fail-open it had to work around, where a git_push carrying
+    {"note": "mkdir logs"} matched the mkdir DOWNGRADE pattern because patterns run
+    against a flattened string; a parsed shell view is the actual fix for that bug
+    class (agov-det-01..07)'
+  - 'CASE: join the existing per-session records into an ordered timeline and export
+    a portable, SHA-256-manifested case bundle that can be verified independently.
+    Reuse swft_evidence_bundler.py and prov_recorder.export_prov_json rather than
+    writing a third bundler. Verification must re-check the hook_events HMACs and
+    the migration-149 hash chain and name WHICH records failed, not return a
+    boolean. CLI-only on purpose: a dashboard page would trigger the 8-component
+    completeness gate (template + icdev/ mirror + route + module + constants +
+    migration + nav + full IQE wiring) and that is a separate card
+    (agov-case-01..04)'
+  - 'INBOX: separate the autonomy ceiling from the delivery channel. The seam is
+    already clean - Approver in approval_gate.py is an injectable callable and every
+    gateway adapter exposes the same send_message(channel_user_id, text, thread_id) -
+    so an inbox approver is a DROP-IN with no gate signature change. Deliver with an
+    embedded [icdev:<item_id>] correlation token so a Slack/Teams/Telegram/email
+    reply resolves the right item; in-app is the store of record and channels are
+    mirrors. The load-bearing test is that an irreversible action is still GATED in
+    unattended mode and merely routed - without it this feature silently becomes an
+    auto-approver (agov-inbox-01..05)'
+  - 'WAKE: a WakeStore (PENDING -> DUE -> FIRED) plus four agent tools - sleep_for,
+    sleep_until, wake_on(job_id), wake_on_event(key). Tick it from the existing
+    genesis/reflexes/agent_cron_reflex.py; do NOT add a daemon. Fire event keys from
+    tools/ci/pr_watcher.py and the kanban pipeline so "wake me when PR #N is green"
+    works, which is the same failure mode that produced a four-day board flatline
+    (agov-wake-01..03)'
+  epics:
+  - key: det
+    title: DET - Declarative detection rules over the agent event stream
+    priority: high
+  - key: inbox
+    title: INBOX - Unattended mode and a unified approval inbox
+    priority: high
+  - key: case
+    title: CASE - Agent-session timeline and portable case bundle
+    priority: medium
+  - key: wake
+    title: WAKE - Agent-scheduled resumption
+    priority: medium
+- key: hgx
+  name: HGX - Harness Agent Parity and Graph Runtime
+  description: 'Promote ICDEV from a platform that ORCHESTRATES agent harnesses into
+    one that IS one. Research 2026-08-08 found five agentic execution surfaces built
+    on one primitive (icdev/tools/llm/agent_loop.py, 2161 lines, 143 tests) - SAG
+    interactive, ACE coworkers, the kanban rubric loop, the ANVIL agentic runner and
+    cortex.agent(mode=single) - each re-deciding its own toolset, safety gate and
+    audit trail. The abstraction built to unify them (tools/agents/adapter_base.py
+    AgentAdapter + registry.pick_default, OPT-71, four adapters, config at
+    args/agent_adapters.yaml) has ZERO consumers. The only executor that can
+    autonomously edit files is the vendor claude CLI - args/agent_adapters.yaml says
+    so in a comment and _dispatch_via_llm_router says so in its docstring. The owned
+    alternative (_dispatch_via_rubric_loop, KANBAN_RUBRIC_LOOP, default off) has five
+    tools and no shell, search, test-run or git. SCOPE BOUNDARY, PRIOR ART IS CLOSED -
+    the graph layer proposed in plans/agent-runtime-implementation-plan.md and the
+    four C:\AI\searches graph-engine docs is LARGELY ALREADY BUILT and those docs are
+    wrong on inventory. tools/studio/workflow_runner.py is a durable DAG runtime with
+    node_type human gates that survive restart, a single approval inbox via
+    gate_bridge.py, run-scoped memory, retries and per-node tool authorization (gate
+    MCP-WF-001 in args/security_gates.yaml is Video 3 refund-example isolation,
+    already shipped). tools/agent/team_orchestrator.py already does wave-parallel DAG
+    execution (D36/D40). tools/gateway/adapters ships 9 channels behind an 8-gate
+    security chain. tools/kanban already has atomic claim/lease. DO NOT build
+    tools/workflow/graph_engine.py, a second kanban board, or a second messaging
+    ingress - extend the existing surface, per
+    docs/spikes/dwo-00-superplane-workflow-adaptation.md line 116. MANUAL-ONLY - this
+    card touches the safety hooks, the executor chain and the approval path, so
+    hgx-gate-00 is held in_progress and every epic head declares depends_on_task_id.
+    PR POLICY CHANGED 2026-08-08 - open PRs NORMALLY, not --draft. The old rule said
+    draft because pr_watcher auto-merges green kanban branches; that was right while
+    the whole card was gated, but once the card went to the dispatcher it became the
+    throttle - a draft is the one thing pr_watcher may NOT touch, so finished green
+    work piled up untouched (8 PRs, then 7 more) and every batch needed a human to
+    shepherd it. The hold that matters is the GATE, not the draft flag: the genuinely
+    dangerous slices sit behind hgx-gate-02 and never dispatch at all. Draft remains
+    correct for anything touching the safety hooks, the executor chain or the
+    approval path - which is exactly the set already behind that gate.
+    LLM-agnostic and OS-agnostic are BINDING acceptance criteria on every task, not a
+    later hardening pass - no model IDs in Python, catch AgentLoopUnsupported and
+    degrade, chain-aware context windows, encoding utf-8 AND newline empty-string on
+    every agent file write, no shell, pathlib only, explicit two-sided platform
+    branches, and a windows-latest CI job or none of it is enforced.'
+  task_prefix: hgx-
+  # SINGLE SOURCE for the operating policy embedded in every hgx- task
+  # description. Edit here and run `python tools/kanban/policy_drift.py --fix`
+  # (or wait for the kanban_policy_drift reflex) — do NOT hand-edit the rows.
+  # The dispatched session reads its description, so a policy change that stops
+  # at the card changes nothing (kax-merge-02).
+  policy: |-
+    Card: HGX - Harness Agent Parity and Graph Runtime. The manual hold is
+    RELEASED: hgx-gate-00, hgx-gate-01 and hgx-gate-02 are all done as of
+    2026-08-09, so this card dispatches autonomously and no gate row holds it.
+    Open PRs NORMALLY, not --draft. pr_watcher auto-merges green kanban/* and a
+    draft is the one thing it may NOT touch, so a draft stops the pipeline at
+    its last step and waits for a human. What sequences the remaining work is
+    depends_on_task_id, not a draft flag and not a gate.
+    This block is generated from the card - do not edit it on the task row, it
+    will be overwritten. Change `policy:` on the hgx entry in args/projects.yaml.
+  default_open: true
+  briefs:
+  - 'GATE: manual hold - do not dispatch. Released by hand once a human is driving
+    (hgx-gate-00)'
+  - 'EXEC: equip the owned build agent (run_command, grep_files, git_diff) and fix its
+    newline round-trip, then put it behind the AgentAdapter seam and benchmark parity
+    against claude_cli. The default executor does NOT change - this epic produces the
+    data and a working air-gap fallback (hgx-exec-01..04)'
+  - 'CTXW: long-horizon context. _estimate_message_tokens counts tool_use and
+    tool_result blocks as ZERO tokens, and compaction fires on a static 64000 rather
+    than context_budget.floor_window_for_function - that is the concrete cause of the
+    long-horizon degradation the source docs only theorize about. Plus mid-turn
+    interruptibility (hgx-ctxw-01..03)'
+  - 'SESS: the agent never reads CLAUDE.md, AGENTS.md or memory/MEMORY.md, and skills
+    are invisible to the model - no skill tool exists in any bundle, so there is no
+    progressive disclosure because there is no disclosure. record_use has zero callers
+    so the curator grades on a field nothing writes (hgx-sess-01..03)'
+  - 'GUARD: hook_compat.run_pre_tool_check implements 2 of the 8 checks
+    .claude/hooks/pre_tool_use.py runs, so an agent running OUTSIDE Claude Code is
+    less guarded than one inside it. Extract the checks into one shared module both
+    call. Also stop guessing is_read_only from name prefixes when that flag decides
+    what runs concurrently (hgx-guard-01..03)'
+  - 'FED: tools/mcp_client is a complete, tested, security-hardened outbound MCP
+    client with zero consumers - discovery.py names only three sources and dispatch.py
+    has no ext__ branch. This is WIRING, not building (hgx-fed-01)'
+  - 'OBS: tools/agent_runtime has zero references to invocation_recorder, tracer or
+    trace_id, so SAG runs are invisible; and nothing is replayable because arg VALUES
+    and tool RESULTS are never stored. Also reconcile daemon.REFLEX_NAMES with
+    args/genesis_config.yaml - 34 reflex files are never dispatched (hgx-obs-01..02)'
+  - 'PORT: five hardcoded claude-haiku model IDs in the kanban reflex, and all nine CI
+    jobs are ubuntu-latest so the OS the team develops on is never tested - which is
+    exactly how the rubric_build_tools newline bug survived (hgx-port-01..02)'
+  - 'PAR: Studio resolves the DAG with static_order and runs one step at a time, so
+    templates authored as fan-out execute serially. Mirror the proven
+    prepare/get_ready/done loop from team_orchestrator. max_parallel defaults to 1 so
+    all 61 existing templates stay byte-for-byte sequential (hgx-par-01)'
+  - 'COND: no conditional edges - a failed non-approval step sets overall_ok False and
+    execution CONTINUES, with no route to remediation. Reuse
+    automation_builder.CONDITION_OPERATORS because the repo forbids a second rules DSL
+    (hgx-cond-01)'
+  - 'AGENT: node_type agent - the per-node harness with its own scoped capabilities
+    that Video 3 actually asks for, built on the surface that already enforces
+    per-node tool authorization (hgx-agent-01..02)'
+  - 'CX: cortex.agent mode graph. Note the latent bug - mode is unvalidated, so an
+    unknown mode silently falls through to single-agent. Also no /agent REST endpoint,
+    no .agent() SDK method, and workflow_runner has no CLI and no write MCP tool, so a
+    graph run cannot be started headlessly (hgx-cx-01..03)'
+  - 'GOAL: standing goals - the ONE capability in the source docs that genuinely does
+    not exist anywhere in the tree (hgx-goal-01..03)'
+  - 'EVAL: per-node harness evaluation - nullable columns on harness_eval, mirrored
+    into conftest MINIMAL_ICDEV_SCHEMA and pg_consolidated.sql or fresh PG is left
+    behind (hgx-eval-01)'
+  - 'GOV: per-node governance profiles. output_redaction and provenance stay
+    non-skippable in every profile - they are the egress and NIST-AU guarantees
+    (hgx-gov-01)'
+  - 'CFG: args/agent_runtime.yaml + AgentRuntimeConfig, and register SAG in
+    component_registry.yaml where it is currently absent (hgx-cfg-01)'
+  - 'TMPL: multi-angle review as a TEMPLATE, not a module - once par, cond and agent
+    land it is a diamond of lens-specialised agent nodes with zero new Python
+    (hgx-tmpl-01)'
+  - 'DOC: chat status extension at 031 because 040 is taken by
+    bayesian_learning_chat, plus the loop-vs-graph decision tree and a refresh of the
+    stale commands.py docstring and standalone-agent-runtime manifest shard
+    (hgx-doc-01..02)'
+  - 'VV: end-to-end verification, portability proof and companion sync (hgx-vv-01)'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: exec
+    title: EXEC - Owned executor parity behind the AgentAdapter seam
+    priority: critical
+  - key: ctxw
+    title: CTXW - Long-horizon context budgeting and interruptibility
+    priority: critical
+  - key: guard
+    title: GUARD - Headless guardrail parity and declared read-only
+    priority: critical
+  - key: port
+    title: PORT - LLM-agnostic and OS-agnostic enforcement
+    priority: critical
+  - key: sess
+    title: SESS - Project context loading and skill visibility
+    priority: high
+  - key: fed
+    title: FED - Wire the external MCP client
+    priority: high
+  - key: obs
+    title: OBS - SAG observability and reflex dispatch repair
+    priority: high
+  - key: par
+    title: PAR - Parallel DAG dispatch in Studio
+    priority: high
+  - key: cond
+    title: COND - Conditional edges and downstream cancellation
+    priority: high
+  - key: agent
+    title: AGENT - node_type agent with per-node tool scoping
+    priority: high
+  - key: cx
+    title: CX - Cortex graph mode and headless entry points
+    priority: high
+  - key: vv
+    title: VV - Verification and portability proof
+    priority: high
+  - key: goal
+    title: GOAL - Standing goals
+    priority: medium
+  - key: eval
+    title: EVAL - Per-node harness evaluation
+    priority: medium
+  - key: gov
+    title: GOV - Per-node governance profiles
+    priority: medium
+  - key: cfg
+    title: CFG - Runtime config surface and component registration
+    priority: medium
+  - key: tmpl
+    title: TMPL - Multi-angle review template
+    priority: medium
+  - key: doc
+    title: DOC - Chat extension and design-rule documentation
+    priority: medium

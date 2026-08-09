@@ -23,6 +23,16 @@ The ``agent`` intent is returned with ``requires_confirm=True``: the chat
 surface must NOT auto-launch an agent loop / ACE team — it surfaces a confirm
 affordance first (see blueprint ``api_chat``).
 
+A message that describes a GRAPH — ordered steps with conditions, branches that
+run in parallel, a named approval gate, a named workflow template — additionally
+carries ``agent_mode="graph"`` and a ``graph_signal`` block naming which of those
+four families fired (hgx-cx-02). ``cortex.agent``'s ``"auto"`` mode can never
+select graph on its own (a graph run names a workflow, and that cannot be
+inferred), so without this hint a user who described a DAG was silently handed a
+single agent loop. ``requires_confirm`` stays True regardless — a graph launch
+starts a durable run holding per-node tool authorizations, which is the last
+thing that should begin from an unconfirmed chat message.
+
 Boundary — three "classify" surfaces, deliberately kept separate
 (cxo-adopt-07):
 
@@ -137,8 +147,109 @@ _AGENT_RULES = _c([
 _DESIGN_MODES = {"cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
 
 
+# ---------------------------------------------------------------------------
+# Graph-shaped signal (hgx-cx-02)
+# ---------------------------------------------------------------------------
+# _AGENT_RULES above detect "this is more than one step". These detect
+# something narrower and more useful: the user has described a SHAPE — a DAG.
+# Four families, because a graph is exactly these four things and nothing the
+# _AGENT_RULES catch implies any of them:
+#
+#   sequence   ordered steps, and steps CONDITIONAL on an earlier outcome
+#   parallel   branches that run at the same time (a DAG, not a list)
+#   gate       a named point where a human approves before it continues
+#   template   a workflow that already exists and is being named
+#
+# Why this matters rather than being a nicety: cortex.agent's "auto" mode will
+# NEVER select graph — a graph run names a workflow and that cannot be inferred,
+# so auto falls through to team or single. A user who described a DAG and got a
+# single agent loop got the wrong runtime silently. The decision therefore
+# carries agent_mode="graph" as a HINT, and the confirm affordance is what turns
+# a hint into a launch. requires_confirm stays True either way (see _decision):
+# a graph launch starts a durable, resumable run holding per-node tool
+# authorizations, which is the LAST thing that should start from a chat message
+# nobody confirmed.
+_GRAPH_SEQUENCE_RULES = _c([
+    r"\bif\b.{0,80}\bthen\b",
+    r"\b(only\s+)?(if|when|once|after)\s+(it|that|they|the\s+\w+)\s+"
+    r"(pass(es)?|fail(s)?|succeed(s)?|complet(es?|ed)|finish(es|ed)?)\b",
+    r"\bon\s+(success|failure|error|approval|completion)\b",
+    r"\b(otherwise|else)\b.{0,60}\b(stop|halt|skip|retry|rollback|notify|fail)\b",
+    r"\bstep\s*\d+\b",
+    r"\bstage\s+(one|two|three|\d+)\b",
+    r"\b(first|firstly)\b.{0,120}\b(then|next|finally|lastly)\b",
+    r"\bdepends?\s+on\s+(the\s+)?(previous|prior|first|earlier)\b",
+    r"\bretry\b.{0,40}\b(if|on|when)\b",
+])
+
+_GRAPH_PARALLEL_RULES = _c([
+    r"\bin\s+parallel\b",
+    r"\bparallel\s+(branch|step|node|path|track|run)",
+    r"\bconcurrent(ly)?\b",
+    r"\bsimultaneous(ly)?\b",
+    r"\bat\s+the\s+same\s+time\b",
+    r"\bfan[- ]?(out|in)\b",
+    r"\bside[- ]by[- ]side\b",
+])
+
+_GRAPH_GATE_RULES = _c([
+    r"\b(approval|sign[- ]?off|review)\s+gate\b",
+    r"\bgate\s+(called|named|for)\b",
+    r"\b(human|manual|human[- ]in[- ]the[- ]loop|hitl)\s+"
+    r"(approval|review|gate|check|sign[- ]?off)\b",
+    r"\b(wait|pause|hold|block)\s+for\s+(\w+\s+){0,3}"
+    r"(approval|sign[- ]?off|review|confirmation)\b",
+    r"\b(require|need)s?\s+(\w+\s+){0,3}(approval|sign[- ]?off)\b",
+    r"\bapprov(al|ed|es)\s+(by|from)\s+\w+",
+])
+
+_GRAPH_TEMPLATE_RULES = _c([
+    r"\b(run|start|launch|kick\s?off|execute|trigger)\s+(the\s+)?"
+    r"[\w.-]+\s+(workflow|pipeline|template|graph|dag)\b",
+    r"\b(workflow|pipeline)\s+template\b",
+    r"\b(using|with|from)\s+the\s+[\w.-]+\s+(workflow|template)\b",
+    r"\bworkflow[_ ]id\b",
+    r"\b[\w-]+\.(ya?ml)\b.{0,20}\b(workflow|pipeline|template)\b",
+    r"\b(dag|directed\s+acyclic\s+graph)\b",
+    r"\bstudio\s+(workflow|run|graph)\b",
+])
+
+_GRAPH_FAMILIES = (
+    ("sequence", _GRAPH_SEQUENCE_RULES),
+    ("parallel", _GRAPH_PARALLEL_RULES),
+    ("gate", _GRAPH_GATE_RULES),
+    ("template", _GRAPH_TEMPLATE_RULES),
+)
+
+# How many distinct families must fire before the message is called graph-shaped.
+# TWO, not one — deliberately. "explain the approval gate for FedRAMP" hits the
+# gate family and is a question about a gate, not a request to build one; "run
+# the report pipeline" hits template and is one step. Requiring two independent
+# families is what separates a description of a DAG from a passing mention of a
+# word that appears in one.
+_GRAPH_MIN_FAMILIES = 2
+
+
 def _score(message: str, rules: list[re.Pattern]) -> int:
     return sum(1 for pat in rules if pat.search(message))
+
+
+def graph_signal(message: str) -> dict[str, Any]:
+    """Which graph families *message* exhibits, and whether that is a DAG.
+
+    Returns ``{"families": [...], "hits": {family: n}, "is_graph": bool}``.
+    Exposed (not private) because the confirm affordance shows the user WHY a
+    graph run is being proposed — "you described parallel branches and an
+    approval gate" is an explanation; "confidence 0.8" is not.
+    """
+    text = message or ""
+    hits = {name: _score(text, rules) for name, rules in _GRAPH_FAMILIES}
+    families = sorted(name for name, n in hits.items() if n)
+    return {
+        "families": families,
+        "hits": {name: n for name, n in hits.items() if n},
+        "is_graph": len(families) >= _GRAPH_MIN_FAMILIES,
+    }
 
 
 def _base_signal(message: str) -> dict[str, Any]:
@@ -167,8 +278,9 @@ def route(message: str) -> dict[str, Any]:
     """
     text = (message or "").strip()
     base = _base_signal(text)
+    graph = graph_signal(text)
     if not text:
-        return _decision(DEFAULT_INTENT, 1.0, "empty message", base)
+        return _decision(DEFAULT_INTENT, 1.0, "empty message", base, graph)
 
     scores = {
         "search": _score(text, _SEARCH_RULES),
@@ -184,6 +296,13 @@ def route(message: str) -> dict[str, Any]:
     if base_mode in _DESIGN_MODES:
         scores["agent"] += 2
 
+    # A described DAG is a multi-step goal by construction. +2 — enough to win
+    # against a single incidental keyword from another family (a graph
+    # description says "generate the report", which is a _COMPLETE_RULES hit),
+    # not enough to override a message that is emphatically something else.
+    if graph["is_graph"]:
+        scores["agent"] += 2
+
     best_intent = max(scores, key=lambda k: scores[k])
     best_score = scores[best_intent]
 
@@ -197,21 +316,36 @@ def route(message: str) -> dict[str, Any]:
                 float(base.get("confidence", 0.6)),
                 f"base classifier → {base_mode} (design/build goal)",
                 base,
+                graph,
             )
-        return _decision(DEFAULT_INTENT, 0.4, "no intent signal; default to ask", base)
+        return _decision(DEFAULT_INTENT, 0.4, "no intent signal; default to ask",
+                         base, graph)
 
     # Confidence scales with hit count (diminishing), capped at 0.95.
     confidence = min(0.5 + 0.15 * best_score, 0.95)
     reason = f"keyword match: {best_score} rule(s) for {best_intent}"
-    return _decision(best_intent, round(confidence, 3), reason, base)
+    if best_intent == "agent" and graph["is_graph"]:
+        reason += f"; graph-shaped ({', '.join(graph['families'])})"
+    return _decision(best_intent, round(confidence, 3), reason, base, graph)
 
 
-def _decision(intent: str, confidence: float, reason: str, base: dict) -> dict[str, Any]:
+def _decision(intent: str, confidence: float, reason: str, base: dict,
+              graph: dict | None = None) -> dict[str, Any]:
+    graph = graph or {"families": [], "hits": {}, "is_graph": False}
     return {
         "intent": intent,
         "facade": INTENT_FACADES[intent],
         "confidence": confidence,
         "reason": reason,
+        # ALWAYS True for the agent intent, graph-shaped or not. A graph launch
+        # starts a durable, resumable run whose nodes hold their own tool
+        # authorizations — the strongest reason to confirm, never a reason to skip.
         "requires_confirm": intent == "agent",
+        # The mode to PROPOSE on the confirm card. cortex.agent's "auto" never
+        # picks graph (a graph run names a workflow; that cannot be inferred), so
+        # without this hint a user who described a DAG would be handed a single
+        # agent loop and told nothing about it.
+        "agent_mode": "graph" if (intent == "agent" and graph["is_graph"]) else "auto",
+        "graph_signal": graph,
         "base_classifier": base,
     }

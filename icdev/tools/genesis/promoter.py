@@ -56,6 +56,10 @@ ARTIFACT_TYPES = [
     "code_patch",
     "training_pair",
     "anticipation_report",
+    # hgx-obs-02: staged output of an ORANGE-tier reflex run in proposal mode.
+    # Deliberately has NO _import_to_v1x handler — an ORANGE proposal must be
+    # acted on by a human, so it can never auto-promote.
+    "orange_proposal",
 ]
 
 # Promotion statuses
@@ -228,7 +232,7 @@ def export_gkp(
         "promotion_status": STATUS_PENDING,
         "created_at": _utcnow_iso(),
     }
-    gkp_file.write_text(json.dumps(gkp_doc, indent=2), encoding="utf-8")
+    gkp_file.write_text(json.dumps(gkp_doc, indent=2), encoding="utf-8", newline="")
 
     _log_audit(
         "genesis.promoter.exported",
@@ -433,6 +437,8 @@ def _import_to_v1x(artifact_type: str, payload: Dict, confidence: float) -> Dict
             return _import_training_pair(payload)
         elif artifact_type == "anticipation_report":
             return _import_anticipation_report(payload, confidence)
+        elif artifact_type == "orange_proposal":
+            return _import_orange_proposal(payload)
         else:
             return {"success": False, "error": f"No import handler for: {artifact_type}"}
     except Exception as e:
@@ -611,6 +617,33 @@ def _import_anticipation_report(payload: Dict, confidence: float) -> Dict:
         }
     except Exception as e:
         return {"success": False, "error": f"kanban_bridge.create_suggested_task: {e}"}
+
+
+def _import_orange_proposal(payload: Dict) -> Dict:
+    """Acknowledge a human decision on an ORANGE-tier reflex proposal (hgx-obs-02).
+
+    Promoting an ``orange_proposal`` writes nothing to a v1.x store: the payload
+    is the *record of a run already performed in proposal mode*, not a change to
+    apply.  Whatever the reflex actually wants merged travels as its own GKP —
+    ``evolve`` exports a ``code_patch``, which carries its own ``human_approve``
+    rule — and is reviewed separately.
+
+    A handler exists purely so the reviewer's Promote click succeeds and is
+    audited instead of erroring with "No import handler".  ``orange_proposal``
+    is deliberately absent from ``promoter.auto_promote`` in
+    ``args/genesis_config.yaml`` and listed under ``human_approve``, so
+    ``auto_promote_eligible()`` never matches it — acknowledgement is always a
+    human action.
+    """
+    return {
+        "success": True,
+        "table": None,
+        "id": payload.get("reflex", ""),
+        "note": (
+            "ORANGE proposal acknowledged — no v1.x import. Any change the reflex "
+            "proposes is carried by its own GKP and reviewed separately."
+        ),
+    }
 
 
 def _import_training_pair(payload: Dict) -> Dict:

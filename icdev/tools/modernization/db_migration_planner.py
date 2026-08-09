@@ -31,6 +31,16 @@ import re
 import sqlite3
 import sys
 import textwrap
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from collections import OrderedDict
 from datetime import datetime
@@ -425,7 +435,7 @@ def generate_schema_ddl(app_id: str, target_db: str, output_dir: str) -> str:
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     file_path = out_path / "schema_ddl.sql"
-    file_path.write_text("\n".join(lines), encoding="utf-8")
+    file_path.write_text("\n".join(lines), encoding="utf-8", newline="")
     print(f"Schema DDL written to {file_path}")
     return str(file_path)
 
@@ -583,7 +593,7 @@ def generate_data_migration_scripts(app_id: str, target_db: str, output_dir: str
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     file_path = out_path / "data_migration.sql"
-    file_path.write_text("\n".join(lines), encoding="utf-8")
+    file_path.write_text("\n".join(lines), encoding="utf-8", newline="")
     print(f"Data migration script written to {file_path}")
     return str(file_path)
 
@@ -776,7 +786,7 @@ def translate_stored_procedures(app_id: str, target_db: str, source_path: str, o
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     file_path = out_path / "stored_procedures.sql"
-    file_path.write_text("\n".join(translated_blocks), encoding="utf-8")
+    file_path.write_text("\n".join(translated_blocks), encoding="utf-8", newline="")
     print(f"Stored procedure translation written to {file_path}")
 
     if untranslatable:
@@ -922,7 +932,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     file_path = out_path / "validation_queries.sql"
-    file_path.write_text("\n".join(lines), encoding="utf-8")
+    file_path.write_text("\n".join(lines), encoding="utf-8", newline="")
     print(f"Validation queries written to {file_path}")
     return str(file_path)
 
@@ -1169,7 +1179,7 @@ def _generate_migration_index(summary: dict, output_dir: str) -> str:
 
     out_path = Path(output_dir)
     file_path = out_path / "migration_index.md"
-    file_path.write_text("\n".join(lines), encoding="utf-8")
+    file_path.write_text("\n".join(lines), encoding="utf-8", newline="")
     print(f"Migration index written to {file_path}")
     return str(file_path)
 

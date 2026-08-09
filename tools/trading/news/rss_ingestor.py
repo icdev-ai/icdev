@@ -13,7 +13,6 @@ CLI:
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import calendar
@@ -30,6 +29,8 @@ from typing import Iterator
 
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 import feedparser
 import yaml

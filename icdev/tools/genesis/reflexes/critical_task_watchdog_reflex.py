@@ -115,7 +115,7 @@ def _write_sidecar_alert(task: dict, alerted_at: str) -> None:
         "alerted_at": alerted_at,
     }
     try:
-        alert_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        alert_file.write_text(json.dumps(payload, indent=2), encoding="utf-8", newline="")
     except Exception as exc:
         logger.warning("watchdog: could not write sidecar alert %s: %s", alert_file, exc)
 

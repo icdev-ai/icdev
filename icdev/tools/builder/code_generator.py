@@ -25,6 +25,16 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import sys
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 
 # --- Core: constants and utilities (re-exported for backward compatibility) ---
@@ -177,7 +187,7 @@ def generate_from_spec(
     if language == "python":
         init_file = src_dir / "__init__.py"
         if not init_file.exists():
-            init_file.write_text(f"{CUI_HEADER}\n", encoding="utf-8")
+            init_file.write_text(f"{CUI_HEADER}\n", encoding="utf-8", newline="")
 
     # Detect code type and entity
     code_type = force_type or _detect_spec_type(spec)
@@ -209,7 +219,7 @@ def generate_from_spec(
     ext = _LANGUAGE_EXTENSIONS.get(language, ".py")
     filename = f"{_slugify(entity)}{ext}"
     output_file = src_dir / filename
-    output_file.write_text(code, encoding="utf-8")
+    output_file.write_text(code, encoding="utf-8", newline="")
 
     generated_files = [str(output_file)]
     print(f"Generated [{language}/{code_type}]: {output_file}")

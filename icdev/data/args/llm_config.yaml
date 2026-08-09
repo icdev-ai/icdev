@@ -1237,6 +1237,48 @@ routing:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
+  # Kanban executor reflex (hgx-port-01) — the five short NLP calls in
+  # tools/genesis/reflexes/kanban.py. Each AUGMENTS a deterministic regex and
+  # returns None/pass on any failure, so a chain that cannot be served degrades
+  # to the existing heuristic rather than breaking dispatch. Declared here so an
+  # air-gapped or non-Anthropic deployment routes them through its own chain
+  # instead of the generic `default` (which is neither cheap nor local-first).
+  #
+  # timeout_extraction: parse "allow 25 minutes" -> seconds. 32 output tokens.
+  timeout_extraction:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  # gap_subject_extraction: pull a tool path / route / table name out of a task.
+  gap_subject_extraction:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  # resume_at_extraction: parse a rate-limit reset hint -> wait seconds.
+  resume_at_extraction:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
+    effort: low
+
+  # acceptance_judge: JSON pass/fail verdict on task output vs acceptance
+  # criteria. Judgement, not extraction — local reasoning model leads so the
+  # verdict is reproducible offline; haiku is the cloud fallback.
+  acceptance_judge:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
+  # triage_decomposition: split a triage task into 3-7 child tasks. Longest of
+  # the five (2000 output tokens, temperature 0.3) so it gets the wider chain.
+  triage_decomposition:
+    chain: [qwen3-local, claude-haiku, claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: medium
+
+  # task_specify: draft goal / approach / acceptance criteria for a board task
+  # (tools/dashboard/api/kanban.py). Writing, not extraction — same tier as
+  # triage_decomposition.
+  task_specify:
+    chain: [qwen3-local, claude-haiku, claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: medium
+
   oracle_anomaly_detection:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low

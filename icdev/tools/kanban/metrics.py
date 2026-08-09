@@ -9,6 +9,17 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -387,11 +398,136 @@ DEFAULT_STALL_MIN_ACTIVE_TASKS = 1
 _STALL_PREFILTER_SLACK_HOURS = 48.0
 
 
+# --- PR watcher liveness (kax-obs-02) ---------------------------------------
+# "Nothing reached done in N hours" has two completely different causes that
+# looked identical: the watcher is not polling at all, or the watcher is polling
+# fine and the board has nothing mergeable. The watcher appends one row per
+# COMPLETED poll to the existing `heartbeat_checks` table
+# (tools/ci/pr_watcher.py::_record_heartbeat); this reads the newest one. It is
+# deliberately not a process-exists check — the launcher already restarts a dead
+# watcher, so the gap is a LIVE-but-not-progressing one.
+WATCHER_HEARTBEAT_CHECK_TYPE = "pr_watcher_poll"
+
+# The watcher polls every `poll_interval_seconds` (default 30s). 15 minutes is
+# ~30 missed polls: long enough that a slow `gh` call or a restart cannot trip
+# it, short enough that a wedged watcher is visible well inside the 24h stall
+# window. Documented default only — callers may override.
+DEFAULT_WATCHER_STALE_AFTER_MINUTES = 15.0
+
+
+def watcher_heartbeat(
+    conn=None,
+    now: Optional[datetime] = None,
+    stale_after_minutes: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Last completed PR-watcher poll: when, how much it saw, and is it stale.
+
+    Returns ``state`` ∈ {``never_polled``, ``stale``, ``polling``}. A stale
+    watcher and a busy-but-idle watcher both report ``actions_taken == 0``; the
+    timestamp is what separates them, which is the whole point of the row.
+
+    Never raises — an install whose DB predates ``heartbeat_checks`` reports
+    ``present: False`` rather than breaking whatever surface called it.
+    """
+    now = now or datetime.now(timezone.utc)
+    stale_after = float(
+        DEFAULT_WATCHER_STALE_AFTER_MINUTES
+        if stale_after_minutes is None
+        else stale_after_minutes
+    )
+
+    result: Dict[str, Any] = {
+        "check_type": WATCHER_HEARTBEAT_CHECK_TYPE,
+        "present": False,
+        "last_poll_at": None,
+        "minutes_since_last_poll": None,
+        "tasks_checked": None,
+        "actions_taken": None,
+        "stale_after_minutes": stale_after,
+        "stale": True,
+        "state": "never_polled",
+        "summary": "PR watcher has never recorded a completed poll",
+        "checked_at": now.isoformat(),
+    }
+
+    own = conn is None
+    if own:
+        from tools.db.storage import get_connection  # noqa: PLC0415
+        conn = get_connection()
+    row = None
+    try:
+        # `result_summary`, not `details` — the live PG table has no `details`
+        # column. See the matching note in pr_watcher.py::_record_heartbeat.
+        row = conn.execute(
+            "SELECT last_run, items_found, result_summary FROM heartbeat_checks "
+            "WHERE check_type = %s ORDER BY last_run DESC, id DESC LIMIT 1",
+            (WATCHER_HEARTBEAT_CHECK_TYPE,),
+        ).fetchone()
+    except Exception as exc:  # noqa: BLE001 — table may not exist yet
+        logger.debug("watcher_heartbeat: read failed: %s", exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        if own:
+            conn.close()
+
+    if row is None:
+        return result
+
+    d = row if isinstance(row, dict) else {
+        "last_run": row[0], "items_found": row[1], "result_summary": row[2],
+    }
+    last_poll = _sla_parse_ts(d.get("last_run"))
+    if last_poll is None:
+        return result
+
+    actions_taken = None
+    raw_summary = d.get("result_summary")
+    if raw_summary:
+        try:
+            import json  # noqa: PLC0415
+
+            parsed = json.loads(raw_summary)
+            if isinstance(parsed, dict) and parsed.get("actions_taken") is not None:
+                actions_taken = int(parsed["actions_taken"])
+        except (ValueError, TypeError):
+            pass
+
+    minutes_since = round((now - last_poll).total_seconds() / 60.0, 2)
+    stale = minutes_since > stale_after
+    tasks_checked = int(d.get("items_found") or 0)
+
+    result.update({
+        "present": True,
+        "last_poll_at": last_poll.isoformat(),
+        "minutes_since_last_poll": minutes_since,
+        "tasks_checked": tasks_checked,
+        "actions_taken": actions_taken,
+        "stale": stale,
+        "state": "stale" if stale else "polling",
+    })
+    if stale:
+        result["summary"] = (
+            f"PR watcher last polled {minutes_since / 60.0:.1f}h ago "
+            f"({last_poll.isoformat()})"
+        )
+    else:
+        result["summary"] = (
+            f"PR watcher polling ({minutes_since:.1f} min ago, "
+            f"{tasks_checked} task(s) checked, "
+            f"{'?' if actions_taken is None else actions_taken} action(s))"
+        )
+    return result
+
+
 def throughput_stall_check(
     conn=None,
     window_hours: Optional[float] = None,
     min_active_tasks: Optional[int] = None,
     now: Optional[datetime] = None,
+    watcher_stale_after_minutes: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Is the board completing work? Reads the append-only transition timeline.
 
@@ -454,6 +590,12 @@ def throughput_stall_check(
         for r in active_rows:
             d = r if isinstance(r, dict) else {"status": r[0], "cnt": r[1]}
             active_by_status[d["status"]] = int(d["cnt"])
+
+        # Read the watcher liveness row LAST: on PG a missing `heartbeat_checks`
+        # aborts the transaction, and everything above must already be read.
+        watcher = watcher_heartbeat(
+            conn=conn, now=now, stale_after_minutes=watcher_stale_after_minutes,
+        )
     finally:
         if own:
             conn.close()
@@ -472,9 +614,22 @@ def throughput_stall_check(
     if last_done is not None:
         hours_since = round((now - last_done).total_seconds() / 3600.0, 2)
 
+    # Attribution is what makes zero throughput actionable: a stale watcher is a
+    # broken pipe, a polling watcher with zero actions is a board with nothing
+    # mergeable. `reason` keeps its original three values so existing callers
+    # and the stall verifier are unaffected.
+    if completed > 0:
+        attribution = "throughput_present"
+    elif watcher["state"] in ("stale", "never_polled"):
+        attribution = "watcher_not_polling"
+    else:
+        attribution = "watcher_polling_nothing_mergeable"
+
     return {
         "stalled": stalled,
         "reason": reason,
+        "stall_attribution": attribution,
+        "watcher": watcher,
         "window_hours": window,
         "min_active_tasks": min_active,
         "completed_in_window": completed,
@@ -496,6 +651,9 @@ def board_metrics(conn=None, weeks: int = 4) -> Dict[str, Any]:
         return {
             "sla": sla_snapshot(conn=conn),
             "cycle_time": cycle_time_metrics(conn=conn, weeks=weeks),
+            # kax-obs-02: last completed PR-watcher poll. Read last — see the
+            # note in throughput_stall_check about aborting a PG transaction.
+            "watcher": watcher_heartbeat(conn=conn),
         }
     finally:
         if own:
@@ -512,8 +670,13 @@ def _main(argv: Optional[List[str]] = None) -> int:
                         help="Report only the board throughput stall check")
     parser.add_argument("--window-hours", type=float, default=None,
                         help="Stall window override (default: genesis_config self_monitor.board_throughput)")
+    parser.add_argument("--watcher", action="store_true",
+                        help="Report only the PR-watcher liveness heartbeat")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    if args.watcher:
+        print(json.dumps(watcher_heartbeat(), indent=2, default=str))
+        return 0
     if args.stall:
         print(json.dumps(throughput_stall_check(window_hours=args.window_hours), indent=2, default=str))
         return 0

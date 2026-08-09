@@ -62,7 +62,7 @@ def should_run_today() -> bool:
 def _mark_ran_today() -> None:
     try:
         META_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        META_STATE_PATH.write_text(_utcnow().date().isoformat(), encoding="utf-8")
+        META_STATE_PATH.write_text(_utcnow().date().isoformat(), encoding="utf-8", newline="")
     except OSError as exc:
         LOG.warning("[meta_harness] Could not write state file: %s", exc)
 
@@ -166,8 +166,15 @@ def _get_error_case_heuristic_hits(reflex: str = "oracle_triage") -> dict[str, i
     """Count how many harness error cases each heuristic name was likely responsible for.
 
     We approximate by matching the heuristic's `reason` text against the
-    harness_eval `metadata` field (which stores the triage reason).
+    harness_eval `metadata_json` field (which stores the triage reason).
     Returns {heuristic_name: error_count}.
+
+    The column is ``metadata_json``; this read asked for ``metadata``, which has
+    never existed on ``harness_eval`` (see migration 302 and pg_consolidated.sql).
+    Every execution therefore raised, was caught below, and returned ``{}`` — so
+    ``_propose_heuristic_retirements`` has always been handed an empty hit map
+    and the meta-harness has never proposed retiring a heuristic, whatever
+    precision did. Fixed alongside hgx-eval-01 because it is the same read path.
     """
     from tools.db.storage import get_connection
 
@@ -176,7 +183,7 @@ def _get_error_case_heuristic_hits(reflex: str = "oracle_triage") -> dict[str, i
         conn = get_connection()
         rows = conn.execute(
             """
-            SELECT metadata
+            SELECT metadata_json
             FROM harness_eval
             WHERE reflex = %s
               AND created_at >= %s
@@ -198,7 +205,7 @@ def _get_error_case_heuristic_hits(reflex: str = "oracle_triage") -> dict[str, i
 
     import json
     for row in rows:
-        meta_raw = row[0] if isinstance(row, (list, tuple)) else row.get("metadata", "")
+        meta_raw = row[0] if isinstance(row, (list, tuple)) else row["metadata_json"]
         if not meta_raw:
             continue
         try:
@@ -345,7 +352,7 @@ def _write_meta_proposals(
         + yaml.dump(content, default_flow_style=False, sort_keys=False)
     )
 
-    META_PROPOSALS_PATH.write_text(text, encoding="utf-8")
+    META_PROPOSALS_PATH.write_text(text, encoding="utf-8", newline="")
     return META_PROPOSALS_PATH
 
 

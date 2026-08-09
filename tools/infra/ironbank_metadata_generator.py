@@ -25,6 +25,16 @@ import json
 import sqlite3
 import sys
 import uuid
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -252,11 +262,11 @@ def generate_hardening_manifest(
         out.mkdir(parents=True, exist_ok=True)
 
         manifest_path = out / "hardening_manifest.yaml"
-        manifest_path.write_text(manifest_yaml, encoding="utf-8")
+        manifest_path.write_text(manifest_yaml, encoding="utf-8", newline="")
         output_paths["hardening_manifest"] = str(manifest_path)
 
         approval_path = out / "container_approval.json"
-        approval_path.write_text(json.dumps(approval_record, indent=2), encoding="utf-8")
+        approval_path.write_text(json.dumps(approval_record, indent=2), encoding="utf-8", newline="")
         output_paths["container_approval"] = str(approval_path)
 
     return {

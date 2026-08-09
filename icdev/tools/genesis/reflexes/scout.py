@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Genesis Scout Reflex — monitor competitor/adjacent GitHub repos.
 
@@ -23,6 +22,8 @@ from urllib.request import Request, urlopen
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.security.injection_scanner import scan_text  # noqa: E402
 
@@ -487,7 +488,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     reports_dir.mkdir(parents=True, exist_ok=True)
     date_str = _utcnow().strftime("%Y-%m-%d")
     brief_file = reports_dir / f"scout-{date_str}.md"
-    brief_file.write_text(brief_md, encoding="utf-8")
+    brief_file.write_text(brief_md, encoding="utf-8", newline="")
 
     successful = len(valid_targets)
     anomaly_repos = list(anomalies.keys())

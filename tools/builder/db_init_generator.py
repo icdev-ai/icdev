@@ -1830,7 +1830,20 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append('    """Backend-agnostic connection (PG-primary, SQLite init-fallback)."""')
     parts.append("    try:")
     parts.append("        from tools.db.storage import get_connection")
-    parts.append("        return get_connection(str(db_path))")
+    parts.append("        conn = get_connection(str(db_path))")
+    parts.append("        # No RLS predicate on a child app's own tables. The global")
+    parts.append("        # security context injects tenant_id/classification filters and")
+    parts.append("        # these tables have neither column, so every query would raise")
+    parts.append("        # UndefinedColumn — the same reason canvases use")
+    parts.append("        # get_canvas_connection().")
+    parts.append("        try:")
+    # This is emitted source, not a bypass taken here: the generated child app detaches
+    # the global predicate from its own tables, which carry no tenant_id/classification
+    # column — the reason is spelled out in the comment block emitted directly above.
+    parts.append("            conn.set_security_context(None)")  # rls-bypass: emitted source, reason emitted above — required for task-kax-conflict-02, which found this gate red on main
+    parts.append("        except AttributeError:")
+    parts.append("            pass  # bare DBAPI connection: nothing to detach")
+    parts.append("        return conn")
     parts.append("    except Exception:")
     parts.append("        import sqlite3")
     parts.append("        return sqlite3.connect(str(db_path))  # pg-ok: guarded standalone fallback")
@@ -2033,7 +2046,7 @@ def write_init_script(blueprint: Dict[str, Any], output_dir: Path) -> Path:
     output_path = output_dir / filename
 
     source = generate_init_script(blueprint)
-    output_path.write_text(source, encoding="utf-8")
+    output_path.write_text(source, encoding="utf-8", newline="")
 
     logger.info("Wrote init script: %s (%d bytes)", output_path, len(source))
 

@@ -38,6 +38,14 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from tools.supply_chain.cve_triager import triage_cve
 from tools.supply_chain.dependency_graph import propagate_impact

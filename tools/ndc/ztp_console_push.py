@@ -220,7 +220,7 @@ def run(server: str = "http://localhost:3080",
         report_lines.append("")
 
     rpt_path = _ARTIFACTS_DIR / f"ztp_push_report_{uid}.md"
-    rpt_path.write_text("\n".join(report_lines), encoding="utf-8")
+    rpt_path.write_text("\n".join(report_lines), encoding="utf-8", newline="")
 
     # Update DB ztp_status
     try:

@@ -136,6 +136,11 @@ Baseline as analysed:
 - `sbom_components` gains `producer`, `hash_value`, `hash_algorithm`, `identifiers_json`,
   `unknown_fields_json`, `withheld_fields_json`. The dead `license` and `vendor` columns
   are **reused** — `license` is the 2026 Component License element — not duplicated.
+  `license` is no longer dead: **sbx-fld-04** made the generator write `sbom_components`
+  at all, and it is the single writer of that table (see 3.2.1). It populates `license`,
+  `producer` and the two disclosure blobs from the finished document. `vendor` stays
+  deliberately NULL — Component Producer is the 2026 element that replaced Supplier Name,
+  and `producer` is the column that carries it.
 - `sbom_dependencies` is new: the Component Dependency Relationship element as an edge
   table (`sbom_record_id`, `parent_component_id`, `child_component_id`,
   `relationship_type`, `scope`) rather than a parent-ref column, because a component has
@@ -159,6 +164,25 @@ Baseline as analysed:
 Shape is pinned by `tests/test_sbom_2026_schema.py`, which applies the real migration to
 a pre-migration database and round-trips a value through every new column, and asserts
 `MINIMAL_ICDEV_SCHEMA` in `tests/conftest.py` declares the identical column set.
+
+**None of it existed on a fresh PostgreSQL until sbx-fld-04.** `bootstrap_pg.py` loads
+`tools/db/schema/pg_consolidated.sql` and marks every migration at or below
+`through_version` (301) applied *without running it*. Migration 209 is below that pivot
+but its three tables — `sbom_components`, `supply_chain_vulnerabilities`,
+`supply_chain_risk_scores` — are **not in the snapshot**, which was dumped from a
+canonical database where 209 had never actually run. So a freshly bootstrapped PG had no
+`sbom_components` at all, and the migration above therefore failed every one of its
+`sbom_components` ALTERs and its `sbom_dependencies` CREATE with `UndefinedTable` — each
+swallowed by the runner's skip-failed-statement guard and then recorded as applied. The
+entire SBOM storage layer was absent on the primary backend while every version marker
+said otherwise. Repaired by `20260808043009_restore_migration_209_tables_on_postgresql`,
+which sits above the pivot, recreates the three tables idempotently (plus
+`sbom_dependencies`, and `sbom_components` in its full post-fnd-02 shape since it sorts
+after that migration), and no-ops on any database that already has them. Found by
+`tests/pg_tier/test_sbom_component_license_pg.py`, the first runtime test to write
+`sbom_components` on the ambient backend — the SQLite suite could not have caught it.
+**Not audited:** whether other pre-301 migrations are missing from the snapshot the same
+way. That is a schema-wide sweep, not this card.
 
 ### 2.3 Signing — SBOM Author Signature (sbx-sig-01)
 
@@ -235,14 +259,108 @@ Sandbox posture for the verification path (attacker-supplied SBOM + signature + 
 Every one of these is a **presence, freshness or exit-code check**. Nothing validates
 conformance to the minimum elements.
 
+**RESOLVED (sbx-gov-01).** Two conditions now gate on what the document says:
+`sbom_minimum_elements_not_met` (blocking) and `sbom_conformance_below_threshold` (warning),
+wired into `deployment_gates`, `swft` and `devsecops`, and evaluated by
+`tools/compliance/sbom_conformance_gate.py`.
+
+The concrete case that motivated the card is now covered: `{"bomFormat": "CycloneDX",
+"specVersion": "1.4"}` clears all five pre-existing conditions — it was generated, is not
+stale, neither failed nor was skipped, and can be signed and attested — and is blocked by the
+new one, because an SBOM that lists no components meets no Component Data element at all.
+
+Every number the gate applies lives in `args/security_gates.yaml` under
+`sbom_conformance.thresholds` (`block_below_pct`, `warn_below_pct`, `require_components`).
+The module carries **no default for any of them** and raises `SbomGateConfigError` when the
+block is missing or incomplete, so the gate's strictness cannot silently become whatever a
+Python literal happened to say. `tests/test_sbom_conformance_gate.py` covers both directions
+against real documents, proves retuning the YAML retunes the decision, and asserts that
+removing any single threshold raises rather than falls back.
+
+Scoring is **not** this module's job. It imports sbx-sig-02's
+`sbom_minimum_elements_validator` and delegates the moment that module is importable, with no
+edit needed here on the day it merges; the interim structural check that keeps the gate from
+being inert until then reports `scored_by: structural-interim` on every result so no caller
+can mistake one for the other. Component Producer is delegated to
+`component_producer.validate_sbom_producers`.
+
+Measured against the generator's own output as of this writing, ICDEV scores **9 of 17**
+data fields (52.94%) and is blocked — the eight gaps are precisely the elements the open
+`sbx` tasks add: SBOM Author and Generation Context (sbx-fld-01), Author Signature
+(sbx-sig-01), Hash Value and Hash Algorithm (sbx-fld-03), Component License (sbx-fld-04),
+Component Identifiers (sbx-fld-05) and the Dependency Relationship graph (sbx-cov-02).
+That is the gate working, not the gate misconfigured. Note that the conditions in this file
+are declarative — no central engine evaluates the `block_on` lists automatically — so the
+score above is what a caller of the gate sees today, not a CI failure.
+
+**Also updated by sbx-prc-02.** Conformance is one half of the question; currency is the
+other, and a document can be fully conformant and still describe a build that shipped three
+commits ago. The freshness check now asks the per-build question first —
+`sbom_not_regenerated_for_current_build` and `sbom_build_identity_unknown` joined
+`sbd.warning`, the first also joined `swft.warning`, and `sbom_required_per_build: true`
+sits beside `sbom_max_age_days` in both threshold blocks. See §2.9 and §3.3.
+
 ### 2.6 SPDX
 
-There is **no SPDX generator and no SPDX parser** anywhere in the tree. SPDX appears only in
-assessor glob patterns, in third-party CI templates ICDEV emits, and in GovCon proposal /
-knowledge-base seed content that states ICDEV produces SBOMs "in SPDX and CycloneDX formats"
-(`tools/govcon/generate_icdev_proposal_content.py`,
-`tools/govcon/seed_icdev_knowledge_base.py`, `tools/govcon/seed_solicitation_requirements.py`).
-That claim is not currently true and is customer-facing.
+### 2.6 SPDX and the CycloneDX default (sbx-fmt-01)
+
+Baseline as analysed: there was **no SPDX generator and no SPDX parser** anywhere in the tree.
+SPDX appeared only in assessor glob patterns, in third-party CI templates ICDEV emits, and in
+GovCon proposal / knowledge-base seed content that states ICDEV produces SBOMs "in SPDX and
+CycloneDX formats" — a customer-facing claim that was not true.
+
+**Resolved for generation by sbx-fmt-01.** `tools/compliance/spdx_writer.py` (mirrored at
+`icdev/tools/compliance/`) emits **SPDX 2.3 JSON**, reachable as
+`sbom_generator.py --format spdx`. Ingest parity — parsing and validating a *received* SPDX
+document instead of glob-matching its filename — remains **sbx-fmt-02**, and correcting the
+customer-facing claim remains **sbx-gov-03**.
+
+Four decisions carry the design:
+
+1. **The SPDX document is derived from the CycloneDX document, not built beside it.** The
+   acceptance criterion is that one project scores identically in both formats, and the only
+   way to hold that as the remaining element tasks land is for there to be one producer of the
+   elements and one translation of them. A second independent builder would drift the first
+   time someone added a field to one of them. `compare_element_coverage()` is that criterion in
+   executable form and is what sbx-sig-02 can call: it fails if either document makes an
+   element statement the other does not.
+2. **Native where SPDX has a field, annotation where it does not.** Component Producer becomes
+   `originator` — not `supplier`, because SPDX's `supplier` is "the immediate supplier", which
+   is exactly the ambiguity the 2026 standard removed when it replaced *Supplier Name*.
+   Name, `versionInfo`, `licenseDeclared`, `checksums` and `externalRefs` (purl, CPE) likewise
+   map natively, and the mappings for License and Hash Value/Algorithm are already in place so
+   sbx-fld-03/04 reach both formats the day they land. ICDEV's `icdev:*` properties have no
+   native home — SPDX 2.3 has no extension point equivalent to CycloneDX `properties` — so they
+   travel losslessly in one `annotations` entry per element whose comment is a JSON object,
+   which is SPDX's own mechanism for a statement the SBOM author makes about an element. The
+   Coverage element's `compositions` array rides in the same annotation, because dropping it
+   would make the SPDX document score lower on Coverage than the CycloneDX one.
+3. **Relationships are translated, never invented.** Dependency edges come from the CycloneDX
+   `dependencies` array (sbx-cov-02) and become SPDX `DEPENDS_ON` RELATIONSHIP entries;
+   `DESCRIBES` is emitted because it is document structure. Until cov-02 lands, the CycloneDX
+   document asserts no edges and so does the SPDX one — synthesizing a root-depends-on-
+   everything graph on one side is precisely how the two would stop scoring identically.
+4. **Validation is offline.** The official SPDX 2.3 JSON schema is vendored at
+   `context/compliance/schemas/spdx-2.3.schema.json` (mirrored under `icdev/context/`), so
+   `spdx_writer.py --validate` works in an air-gapped enclave. A missing `jsonschema` is
+   reported as an error, never as a pass.
+
+**Version choices.** SPDX **2.3**: ISO/IEC 5962:2021 standardizes SPDX 2.2.1, 2.3 is its
+backward-compatible successor and is what current tooling reads, and SPDX 3.0's JSON-LD
+serialization is not yet what consumers ingest — the standard asks for widely used formats.
+CycloneDX default **1.7**, up from 1.4: the standard warns against deprecated versions of a
+format and cites ECMA-424 of December 2025, and below 1.6 there is no `manufacturer` field, so
+Component Producer had to travel in `supplier`. 1.4, 1.5 and 1.6 remain selectable via
+`--spec-version` for consumers whose tooling has not caught up; all four validate against their
+official CycloneDX schema.
+
+**SWID.** Removed from the accepted format list in 2026. ICDEV has never emitted SWID, so
+nothing had to be undone; `SUPPORTED_FORMATS` names only the two formats the standard does.
+
+Tests live in `tests/test_sbom_spdx_format.py`: the generated SPDX validates against the
+official schema, the same project generated twice scores identically across the two formats, a
+field added to one document and not the other breaks the parity check, and the CycloneDX
+default is asserted to be at least the version that can name a producer.
 
 **Resolved (sbx-gov-03, 2026-08-08).** `sbx-fmt-01` had not landed on `main`, so the claim was
 softened rather than made true. Every ICDEV capability and past-performance claim now states
@@ -312,8 +430,14 @@ Per-ecosystem tests live in `tests/test_sbom_coverage_resolution.py`, each over 
 project whose transitive tree is known by construction. The agreed generation-time budget is
 recorded there as `RESOLUTION_BUDGET_SECONDS`.
 
+Artifact hashes were the other thing resolution unlocked, and **sbx-fld-03** has since
+consumed it: `_component()` now also carries `declared_hashes` and `artifact_path`, under
+the same division of labour as `declared_license` — a resolver reports what its source
+carries and where the artifact is, and `component_hasher` decides what may be adopted.
+See §3.2.2.
+
 **Still open:** emitting the CycloneDX `dependencies` array from the edges the resolver now
-collects is **sbx-cov-02**; artifact hashes, which resolution unlocks, are **sbx-fld-03**.
+collects is **sbx-cov-02**.
 
 ### 2.8 Component Producer (sbx-fld-02)
 
@@ -375,6 +499,131 @@ waits on the `_persist_components` writer that sbx-fld-04 introduces — this ta
 `producer_db_value()`, which never returns `NULL`, for that writer to call in one line. Adding a
 second writer here would only collide with it.
 
+### 2.9 Frequency and Accommodation of Updates (sbx-prc-02)
+
+Two practices, one mechanism, in `tools/compliance/sbom_revision.py`. Migration
+`20260808063350_sbom_revision_frequency` adds the three columns the mechanism needs on top of the
+`supersedes_sbom_id` that sbx-fnd-02 left for it: `content_digest`, `source_revision`,
+`revision_reason`.
+
+**The chain is append-only, and supersession is derived.** `apply_correction` inserts a
+*successor* row whose `supersedes_sbom_id` points at the row it replaces, and appends an
+`sbom_corrected` audit event. It issues no `UPDATE` and no `DELETE`. The corrected row keeps every
+value it had — file path, signature, component count, version — because a recipient may hold that
+exact document and its record has to keep describing it. There is deliberately **no `superseded`
+column**: a row is superseded exactly when another row points at it, which
+`revision_chain` computes at read time and marks there. `tests/test_sbom_revision_2026.py` asserts
+both halves — the predecessor row compared field-by-field before and after, and every statement the
+correction issues inspected for a mutation.
+
+**Content digest, not file hash.** Every regeneration mints a fresh `serialNumber`, timestamp and
+SBOM Version, so the file hash of two SBOMs of one unchanged tree never matches.
+`content_digest` strips exactly those fields and digests the rest, which is what distinguishes a
+substantive **revision** (new or corrected component data) from a **re-issue** (same bill of
+materials, new build). Frequency requires a new SBOM for both; `revision_reason` records which
+happened — `initial`, `new_build`, `dependency_change`, `correction`, `detail_discovered`. That
+vocabulary is a Python constant with no DDL `CHECK` behind it, for the reason sbx-fnd-02 gave for
+`sbom_dependencies.relationship_type`.
+
+**Version bump.** The per-build bump stays in the generator (sbx-fld-01's). A correction is a
+*patch* bump of an already-published version rather than a new revision of the software, so
+`next_sbom_version(prior, correction=True)` owns that one case, and reads both the semver
+`1.<minor>.<patch>` spelling and the legacy `<N>.0` float so it works either side of that merge.
+
+**The reconciliation.** CLAUDE.md asserted "SBOM regenerated on every build" while the only
+enforced rule was a 30-day file-mtime threshold, and the weaker rule was the one with teeth — six
+releases in a fortnight off one SBOM passed. Per-build conformance is not checkable without
+recording which build each SBOM came from, hence `source_revision` (explicit `--build-id`, then
+`$ICDEV_BUILD_ID`, then the project directory's git commit, then **unknown and reported as such**).
+`evaluate_frequency` answers the build question first and the age question second; `sbd_assessor`'s
+SBD-21 now calls it, and its own requirement text already demanded both rules.
+
+Two defects in that check were fixed in passing. It subtracted a naive `utcfromtimestamp` from an
+aware `now` — a `TypeError` on every file, swallowed by `except Exception`, which put every SBOM in
+`stale_files` with age `-1`. SBD-21 could not return `satisfied` at all. And the 30-day threshold
+was a literal in the function while `sbom_max_age_days` sat in the YAML, free to drift; the
+config value now applies, read through `gate_threshold`, which tries both nesting shapes the file
+uses (`thresholds.sbd.*` and `swft.thresholds.*`) rather than guessing one and silently returning
+its own default.
+
+`sbom_revised` and `sbom_corrected` were also added to `VALID_EVENT_TYPES`, with migration
+`20260808064841_audit_event_types_sbom_revision` rebuilding `audit_trail`'s generated CHECK.
+Without it the correction event is rejected by the constraint, swallowed by the caller's `except`,
+and the correction looks recorded while nothing was written.
+
+### 2.10 Explicitly Identifying Unknown Information (sbx-prc-01)
+
+`tools/compliance/unknown_information.py` (mirrored at `icdev/tools/compliance/`) defines the one
+convention for the two states the 2026 element **separates**: a field **unknown to the author**
+versus a field **withheld by the author**. ICDEV wrote both as the literal `"unspecified"` (and
+`"managed"` for a Maven version held by a parent POM), which says neither.
+
+**The convention, applied uniformly to all 17 data-field elements:**
+
+1. **An in-band sentinel** in the native field — `unknown` or `withheld` — so a schema that
+   requires the field still validates and no plausible-looking value stands in for one that was
+   never established.
+2. **An out-of-band property per undisclosed field**, which is the authoritative statement:
+   `icdev:unknown:<field>` or `icdev:withheld:<field>`, whose value is a machine-readable reason
+   code. The *name* carries the state and the *value* carries the why, so a reader that
+   understands only the two prefixes already has the distinction the standard asks for. Fields
+   whose CycloneDX carrier is not a plain string (`hashes`, `licenses`, `dependencies`) have no
+   sentinel and live only here — which is why the properties, not the sentinel, are authoritative.
+3. **Disjoint reason vocabularies.** `UNKNOWN_REASONS` and `WITHHELD_REASONS` share no member, so
+   a reason code identifies its own state and a withheld reason filed under the unknown prefix is
+   a structural error rather than a matter of discipline. `Disclosure.unknown()` raises on a
+   withheld reason and `.withheld()` raises on an unknown one, so the mistake cannot be made at
+   authoring time either. A field is in at most one state: recording either evicts the other.
+
+Four properties of the design matter more than the mechanics:
+
+1. **Unknown is discovered; withheld is declared.** An unknown is a fact found at generation time
+   — nobody can configure a field into being unknown. A withholding is an operator decision in
+   `args/sbom_disclosure_policy.yaml`. A rule whose field or reason is unrecognised is **dropped,
+   not defaulted**, and `--policy` reports every dropped rule and exits non-zero: guessing which
+   redaction category the operator meant is the invention this element exists to prevent. An
+   unmatched `match` key is a non-match, never a wildcard, because a redaction that accidentally
+   covered the whole tree is worse than one covering nothing — only the second is visible on
+   inspection.
+2. **The enquiry route rides with the markings that make it necessary.** ICDEV emits
+   `CUI // SP-CTI` and `Distribution D`; those *are* the withholding case, so
+   `icdev:sbom:enquiry-*` is emitted next to them on **every** document, not only when a field is
+   withheld. Withholding anything without it is a validation error, and a missing or corrupt
+   policy file degrades to a default that withholds nothing and still names a route — the route
+   can never come back empty.
+3. **Completeness is stated, and unknowns never affect it.** `icdev:sbom:disclosure-completeness`
+   is `incomplete-withheld` when one of the essential component fields (`producer`, `name`,
+   `version`, `identifiers`, `license`) is withheld — the standard's "may be considered
+   incomplete" sentence made machine-readable. `hash_value` is deliberately not essential: the
+   standard's own example of legitimately absent data is an author who cannot reach the artifact.
+   The document totals are two properties, `icdev:sbom:fields-unknown` and
+   `icdev:sbom:fields-withheld`; a single number would re-create the conflation the split removes.
+   This is a different property from `icdev:sbom:coverage` — Coverage is which components are
+   listed, this is which fields on a listed component are disclosed.
+4. **The distinction survives SPDX.** SPDX has one marker and no way to say "withheld", so both
+   states map to `NOASSERTION` in the native field and the state moves into an annotation whose
+   wording is fixed on the words `UNKNOWN`/`WITHHELD`. `spdx_mapping()` renders it for
+   sbx-fmt-01's writer to emit rather than re-derive.
+
+The Component Producer element joins the convention rather than keeping a private marker:
+sbx-fld-02's `icdev:component-producer*` properties are untouched (its finer-grained reason
+survives as the unknown's detail) and the component *additionally* states
+`icdev:unknown:producer`, so one validator reads every undisclosed field of every element from one
+pair of prefixes.
+
+`validate_sbom_disclosure()` is the acceptance criterion in executable form — it fails a document
+on a cross-filed reason, a field in both states, a bare sentinel, a sentinel disagreeing with its
+property, a surviving `unspecified`/`managed`, an unrecognised field name, a withholding with no
+enquiry process, a false completeness claim, and a detail property that explains a redaction — and
+is reachable as `unknown_information.py --validate <sbom.cdx.json>`. Its summary keeps
+`fields_unknown` and `fields_withheld` as two numbers that are never added. Tests live in
+`tests/test_sbom_unknown_information.py`; the feature doc, including the recipient enquiry process
+itself, is [docs/features/sbom-2026-unknown-vs-withheld.md](../features/sbom-2026-unknown-vs-withheld.md).
+
+**Still open:** persisting to `sbom_components.unknown_fields_json` / `withheld_fields_json` waits
+on sbx-fld-04's `_persist_components`, exactly as the producer does — `Disclosure.db_values()` is
+exported for that writer.
+
 ---
 
 ---
@@ -388,15 +637,15 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 
 | Element | Status | Evidence / what is missing |
 |---|---|---|
-| SBOM Author | **GAP** | No author field. `metadata.tools[].vendor = "ICDEV™"` identifies the tool vendor, which the standard explicitly says is *not* the author. |
+| SBOM Author | **MET (sbx-fld-01)** | `metadata.authors[0].name`, plus the `icdev:sbom:author` property that carries the element into SPDX as an `Organization:` creator. Resolved from `--author`, then `$ICDEV_SBOM_AUTHOR`, then a full-name default. `metadata.tools[].vendor` is untouched and still means the tool's vendor — the two are separate statements. |
 | SBOM Author Signature | **MET** (sbx-sig-01) | `sbom_signer.sign_sbom` writes a detached `<sbom>.sig.json` over the canonicalized document and persists `author_signature` + `signature_algorithm`. FIPS 186-5 algorithms only (ECDSA P-256/384/521, Ed25519); HMAC and empty signatures refused. Offline both ways. See §2.3. |
-| SBOM Data Format Name | **MET** | `bomFormat: "CycloneDX"`. |
-| SBOM Data Format Version | **PARTIAL** | `specVersion` present, but defaults to **1.4** (2022). The standard cites ECMA-424 (Dec 2025) and warns against deprecated versions. Default should move up. |
-| SBOM Generation Context | **GAP** | Nothing records lifecycle phase. ICDEV generates from source manifests, i.e. "before build" — knowable and currently unstated. |
-| SBOM Timestamp | **PARTIAL** | Emitted as `%Y-%m-%dT%H:%M:%SZ`. Needs explicit RFC 9557 conformance and a test. |
+| SBOM Data Format Name | **MET** | `bomFormat: "CycloneDX"`, or `spdxVersion` naming SPDX. |
+| SBOM Data Format Version | **MET (sbx-fmt-01)** | `specVersion` defaults to **1.7** (ECMA-424, Dec 2025) rather than the 2022 spec 1.4; 1.4-1.6 stay selectable for lagging consumers. SPDX emits `SPDX-2.3`. See §2.6. |
+| SBOM Generation Context | **MET (sbx-fld-01)** | `icdev:sbom-generation-context = "before build"` on every document — this generator reads source manifests and never opens a built artifact — plus `metadata.lifecycles = [{phase: "pre-build"}]` on 1.5+. Both vocabularies, not redundancy: only the property carries the standard's own term, and 1.4 has no `lifecycles` field to hold it. |
+| SBOM Timestamp | **MET (sbx-fld-01)** | `_rfc9557_timestamp()` — the RFC 3339 profile RFC 9557 extends, which is what CycloneDX's `format: date-time` and SPDX 2.3's `created` both accept; the `[UTC]` suffix form is deliberately not used because it would fail both. A naive datetime now raises instead of being stamped `Z`, and a non-UTC one is converted rather than relabelled. |
 | SBOM Tool Name | **MET** | `metadata.tools[].name = "icdev-sbom-generator"`. |
-| SBOM Tool Version | **PARTIAL** | **Hardcoded `"1.0.0"`** — not derived from anything. It is a constant that will never change and therefore misidentifies the code delivery. |
-| SBOM Version | **PARTIAL** | Document always carries `"version": 1` while `sbom_records.version` independently counts 1.0, 2.0, 3.0… The two disagree, and neither follows the "major version should be 1, use minor/patch for content changes" guidance. |
+| SBOM Tool Version | **MET (sbx-fld-01)** | Derived from `icdev._version`, then installed distribution metadata, then `pyproject.toml`, then the literal `"unknown"` the standard requires when the version is unavailable. The `"1.0.0"` constant is gone from both copies and an AST check keeps it gone. |
+| SBOM Version | **MET (sbx-fld-01)** | One counter, two spellings, settled before the document is built. CycloneDX `version` carries it as 1, 2, 3…; `icdev:sbom:version` and `sbom_records.sbom_version` carry it as semver `1.<N-1>.0` — major pinned to 1 per the standard, minor counting content revisions, patch reserved for corrections (sbx-prc-02). `sbom_records.version` remains the legacy `"N.0"` spelling of the same N. Legacy float rows still parse to their revision, so an existing project continues its count rather than restarting. Serial numbers are `uuid4`, the random UUID of RFC 9562 §5.4. |
 
 ### 3.2 Component Data
 
@@ -404,33 +653,210 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 |---|---|---|
 | Component Producer | **MET (sbx-fld-02)** | `tools/compliance/component_producer.py` resolves the producing organization per ecosystem from the package's own metadata, maps a Go host path or a reverse-DNS groupId through `args/sbom_producer_registry.yaml`, and marks anything left over as being of unknown provenance. `group` is never a candidate. See §2.8. |
 | Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
-| Component Hash Value | **GAP** | The generator reads manifests, never artifacts, so no hash is computable on the current design. |
-| Component Hash Algorithm | **GAP** | Consequent to the above. |
+| Component Hash Value | **MET (sbx-fld-03)** | `tools/compliance/component_hasher.py` states the element for every component and for the target component, as an ASCII hexadecimal digest of the executable artifact — recomputed from a local file where one exists, otherwise adopted from the digest the resolved source declared — or as an explicit unknown marker with a machine-readable reason. Never omitted. `sbom_components.hash_value` is populated by the same resolution. See §3.2.2. |
+| Component Hash Algorithm | **MET (sbx-fld-03)** | Every algorithm ICDEV emits is an IANA Hash Function Textual Name from the vendored registry AND one an authority still approves. `md5`/`sha-1` parse so that a digest under them is refused with its reason rather than published; `shake128`/`shake256` validate as names but are never emitted. See §3.2.2. |
 | Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
-| Component License | **GAP** | Not emitted, though `sbom_components.license` already exists in schema. |
+| Component License | **MET (sbx-fld-04)** | `tools/compliance/component_licenser.py` emits the element for every component and for the target component, in one of the four shapes the standard allows — a validated SPDX expression, a URL to full terms, a license name, or an explicit unknown/withheld marker — plus a tri-state proprietary-conditions flag. Never omitted. `sbom_components.license` is populated by the same resolution. See §3.2.1. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
-| Component Version | **PARTIAL** | Unresolved versions are written as the literal strings `"unspecified"` (most parsers) and `"managed"` (Maven). These are not machine-interpretable unknown markers and collide with the Explicitly Identifying Unknown Information element. |
+| Component Version | **PARTIAL** | The conflating literals are **gone (sbx-prc-01)**: an unresolved version is now the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. What remains for the element itself is stating the version the *producer* assigned where ICDEV currently reports a resolver's normalization. |
+
+#### 3.2.1 Component License — what sbx-fld-04 landed
+
+`tools/compliance/component_licenser.py` (mirrored to `icdev/tools/compliance/`) resolves
+the element for every component, and `tools/compliance/spdx_license_data.py` carries the
+698 SPDX license identifiers and 88 exception identifiers it validates against.
+
+- **Emitted for every component without exception**, as CycloneDX `licenses` plus the
+  `icdev:component-license*` properties. The properties are what make the element
+  unomittable: CycloneDX has no way to spell "unknown" inside `licenses`, so an
+  undisclosed license leaves that array empty and states itself in
+  `icdev:component-license`. `icdev:component-license-proprietary` is always present as
+  `true`, `false` or `unknown`.
+- **Only validated SPDX identifiers are emitted as identifiers.** A declaration that is
+  not a well-formed expression over the SPDX List — `Apache License 2.0`, a misspelling,
+  an invented id, a license used where an exception belongs — is carried through as a
+  license *name* or a URL instead. Nothing is dropped, and nothing the recipient cannot
+  resolve is presented as resolvable. Expressions are parsed with the ISO/IEC 5962
+  Annex D grammar and canonicalized, so a manifest writing `mit` yields `MIT`.
+- **The proprietary flag is tri-state and set only from positive evidence**: npm
+  `UNLICENSED` / `SEE LICENSE IN <file>`, an SPDX `LicenseRef-`/`DocumentRef-` custom
+  reference, the `NONE` keyword, or proprietary vocabulary in the declared text. `false`
+  means "no conditions the recipient cannot look up", *not* "open source" — a
+  source-available licence with an SPDX id (BUSL-1.1, SSPL-1.0) flags `false` because its
+  terms are published and identified, which is what the element is for. Where it cannot
+  be determined (a bare URL, a bare name) it is stated as `unknown` rather than defaulted
+  to `false`, which would assert the absence of conditions nobody checked for.
+- **The list is vendored, not fetched and not imported.** ICDEV runs air-gapped, and an
+  SBOM generator whose notion of a valid license changes with an undeclared transitive
+  dependency's version is the "incorrect license information" failure the standard calls a
+  risk-management problem. Validation is allow-list only, so a stale list can only
+  downgrade an id to a name — never emit an unvalidated id.
+- **Unknown and withheld go through sbx-prc-01, not a marker of this element's own.** An
+  absent license records `FIELD_LICENSE` on the component's `Disclosure` with a reason
+  from the closed `UNKNOWN_REASONS` vocabulary; the finer-grained local reason
+  (`license-not-declared` and friends) travels as the disclosure *detail*, so precision
+  survives without a second vocabulary a recipient's tooling would not recognise. This
+  module emits **no** unknown-reason property of its own. Which shared reason applies
+  depends on where the component came from: reading a package's real metadata and finding
+  no license means the producer published none (`not-provided-by-producer`), while a
+  `requirements.txt` line means nothing about the package at all — that format cannot
+  carry a license, so the value is one an offline build cannot reach
+  (`not-resolvable-offline`). A license the operator's disclosure policy **withholds**
+  suppresses the `licenses` array, the declaration shape, the evidence and the URL, and
+  reduces to the `withheld` sentinel: leaving any of those in place would publish exactly
+  what was withheld.
+- **`sbom_components` is now written, and this is its single writer.** The generator had
+  never written that table, which is why `license` sat dead since migration 209. Rows are
+  built from the **finished** CycloneDX components rather than re-resolved from the parsed
+  input, so the table cannot become a second, drifting opinion about the element — the
+  same dedup, the same policy and the same resolution produced both. The row id is the
+  component's `bom-ref`, so a row and its document entry correlate by identity and
+  regeneration updates rather than accumulates. `license`, `producer` and the
+  `unknown_fields_json` / `withheld_fields_json` blobs are all written from that one row.
+- **The target component is covered too.** Its license is read from the project's own
+  manifest (`pyproject.toml`, `package.json`, `Cargo.toml`, `pom.xml`), so ICDEV's own SBOM
+  reports `Apache-2.0` rather than unknown.
+- **Coverage today.** A real run over this repo against its installed Python environment
+  and `package-lock.json` yields **558 components: 399 with a validated SPDX expression**
+  (`MIT` 223, `Apache-2.0` 61, `BSD-3-Clause` 43, `ISC` 35, …), **147 carried as license
+  names** — `MIT License`, `BSD License`, `Apache 2.0` and other trove-classifier or
+  free-text spellings that are deliberately *not* laundered into SPDX ids — **and 12 with
+  the explicit unknown marker. Zero omitted, zero NULL or empty**, and zero invalid SPDX
+  identifiers emitted. `dependency_resolver` reads `License-Expression`, `License` and the
+  `License ::` trove classifier from each installed distribution's `*.dist-info/METADATA`
+  in PEP 639 order, which is the only place an air-gapped build can learn a Python
+  package's license; a `License:` field that is multi-line or over 120 characters is
+  discarded rather than carried, because several distributions paste their entire license
+  body into it.
+
+Pinned by `tests/test_sbom_component_license.py` (107 tests), which runs the real
+generator against a real database and asserts the rows land with populated licenses, and
+by `tests/pg_tier/test_sbom_component_license_pg.py` against a live PostgreSQL.
+
+#### 3.2.2 Component Hash Value and Algorithm — what sbx-fld-03 landed
+
+`tools/compliance/component_hasher.py` (mirrored to `icdev/tools/compliance/`) resolves
+both elements for every component. It carries the IANA Hash Function Textual Names
+registry — 9 names — vendored, and validates against it allow-list only.
+
+The two elements were the last of the gap analysis's "no design supports this" entries:
+the generator read declared manifests and never touched an artifact. sbx-cov-01 is what
+changed the input, because a *resolved* source is the first thing in the pipeline that
+knows either where an artifact is or what its producer said its digest was.
+
+- **The element is a digest of an artifact, and that distinction is the whole design.**
+  A digest is adopted only where its subject is one distributable artifact under an
+  approved, IANA-named function. npm and yarn `integrity`, `Cargo.lock` `checksum`,
+  NuGet `sha512`/`contentHash` and a Python lock's single `sha256:` file hash all
+  qualify. Two things that look like they qualify do not. `go.sum`'s `h1:` is a SHA-256
+  over a *synthesized listing of per-file hashes*, not over the module zip — publishing
+  it under the name `sha-256` would tell a recipient that hashing the artifact they hold
+  reproduces it, which is false. A Python lock that pins an sdist and fourteen platform
+  wheels names no installed one, so picking a digest would name the wrong file for
+  thirteen recipients in fourteen. Both are refused.
+- **Nothing refused is dropped.** A refused value travels on
+  `icdev:component-hash-unadopted` beside `icdev:component-hash-unadopted-reason`, so a
+  recipient who wants the go.sum line or the Maven `.sha1` sidecar still has it and
+  cannot mistake it for the element.
+- **Recomputation is preferred over repetition.** Where a component names a local
+  artifact file, it is read and hashed with `hashlib` — the one path where ICDEV states a
+  digest it produced over bytes it read rather than a claim it repeats, recorded as
+  `recomputed-from-artifact` against `declared-by-resolved-source`. Maven is the case
+  where this actually bites: the jar in the local repository (`$MAVEN_REPO_LOCAL`, else
+  `~/.m2/repository`) *is* the executable component artifact and it is on disk. The read
+  is a filesystem read like every other one here — nothing shells out, so it behaves
+  identically in an enclave.
+- **Registered and approved are separate questions, and both are required.** `md2`,
+  `md5` and `sha-1` are on the IANA registry and are not approved (SP 800-131A Rev. 2),
+  so they parse — which is what lets a digest under one be refused *with its reason*
+  rather than fail to parse — and are never emitted. A Maven `.sha1` sidecar with no jar
+  beside it therefore yields the unknown marker plus the sidecar as unadopted evidence,
+  not a SHA-1 presented as the element. `shake128`/`shake256` are approved functions but
+  extendable-output ones, so their registry name underspecifies the digest; they
+  validate as names and are never emitted.
+- **A declared digest is length-checked against its own label.** A value labelled
+  `sha-512` that decodes to 20 bytes is a mislabelled SHA-1, and adopting it would hand
+  the recipient a verification that cannot succeed. The same check is what disambiguates
+  hexadecimal from base64 without either being declared: SHA-512 is 128 hex characters
+  or 88 base64 ones and no value is both. Everything emitted is ASCII hexadecimal,
+  lower-cased, which is the encoding the element specifies.
+- **Algorithm-name normalization is built from the registry, never by stripping
+  punctuation.** `sha3-256` differs from `sha-256` only in punctuation and is a different
+  function that is not in this registry at all, so a normalizer that deleted separators
+  would relabel a SHA3 digest as SHA-2 — the one error in this area a recipient cannot
+  detect.
+- **Unknown and withheld go through sbx-prc-01, not a marker of this module's own.** An
+  unreachable artifact records `FIELD_HASH_VALUE` *and* `FIELD_HASH_ALGORITHM` on the
+  component's `Disclosure` with `artifact-not-accessible`; the finer local reason
+  (`artifact-not-on-disk`, `resolved-source-carries-no-digest`,
+  `declared-digest-algorithm-not-approved`, …) travels as the disclosure *detail*. Both
+  fields are recorded because they stand or fall together — the algorithm that produced
+  a digest nobody has is not a fact about the component. A withheld hash suppresses the
+  `hashes` array, the method, the evidence path and the unadopted digest: any of those
+  left in place would publish what was withheld.
+- **The target component states that it is not built yet.** ICDEV generates from source
+  before a build — that is the Generation Context the document already states — so its
+  own artifact genuinely does not exist. The element is the explicit unknown marker
+  naming exactly that, not a digest of some stand-in file.
+- **`hash_value` and `hash_algorithm` are now written**, from the same finished
+  CycloneDX components the licenser's row is built from, so the table cannot become a
+  second opinion. Both columns landed unwritten in migration `20260808030213`. Neither
+  is left NULL: a row silent about a hash is indistinguishable from one that was never
+  asked.
+- **Emission is CycloneDX `hashes[]`, which is the native slot for both elements at
+  once** — `alg` is the algorithm and `content` is the value — and `spdx_writer`
+  translates it into SPDX `checksums`, so one emission gives both serializations the
+  elements. `hashes` is left absent rather than faked when the digest is undisclosed:
+  CycloneDX has no way to say "unknown" inside it, and a recipient *verifies* against
+  what is there.
+- **Coverage today.** A real run over this repo yields **174 components: 132 with a
+  validated SHA-512 digest** of the npm registry tarball, read from `package-lock.json`'s
+  `integrity` and adopted as `declared-by-resolved-source`, **and 42 with the explicit
+  unknown marker** — the Python set, which resolves from `requirements.txt` /
+  `pyproject.toml`, formats that carry no digest and name no artifact. Every one of the 42
+  records `artifact-not-accessible` with the local detail
+  `component-came-from-a-declared-manifest`. The target component is unknown too, for
+  `target-component-is-not-built-at-generation-time`. **Zero omitted, zero NULL, and zero
+  algorithm names that are not on the IANA registry**; the same run's SPDX translation
+  carries all 132 digests as `checksums` with `algorithm: SHA512`. The unknowns are the
+  correct answer rather than a shortfall — the standard's own instruction for an
+  inaccessible artifact is to state it — and they are the number that moves as an
+  ecosystem gains a lockfile: the same tree resolved against a Python lock would adopt
+  digests for that half by the rule above, with no change to this module.
+
+Pinned by `tests/test_sbom_component_hash.py` (52 tests), which has a dedicated section
+for the artifact-inaccessible path — marker, shared reason, specific detail, absent
+`hashes` array, persisted row — and asserts the columns land from a real generator run
+against a real database.
 
 ### 3.3 Practices and Processes
 
 | Element | Status | Evidence / what is missing |
 |---|---|---|
-| Accommodation of Updates | **PARTIAL** | `sbom_records` versions rows, but there is no correction/revision workflow and no way to mark a prior SBOM superseded. |
+| Accommodation of Updates | **MET (sbx-prc-02)** | `tools/compliance/sbom_revision.py::apply_correction` records a correction as a **successor** row carrying `supersedes_sbom_id`, plus an `sbom_corrected` audit event. The corrected row is never written to — supersession is derived at read time by `revision_chain`. See §2.9. |
 | Coverage | **MET (sbx-cov-01)** | `tools/compliance/dependency_resolver.py` resolves each ecosystem from its **lockfile**, not its declared manifest, and the generator consumes that instead of parsing manifests itself. See §2.7. |
 | Distribution and Delivery | **MET (sbx-gov-02)** | `tools/compliance/sbom_distribution.py` serves each `sbom_records` row at a version-specific URL, `/api/supply_chain/sbom/<project_id>/<version>` (plus a `/record/<id>` permalink and a `/versions/<project_id>` index), returning the artifact's exact bytes. The URL is embedded in the document it addresses as a CycloneDX top-level `externalReferences` entry of type `bom`, so an SBOM that has travelled away from ICDEV still names its authoritative copy. Access control limits sharing with unauthorized parties — unauthenticated, no supply-chain role, or a classification the caller's clearance does not dominate — and nothing else does: `service` accounts are admitted so trusted security tools can integrate, read-down means a cleared caller is never refused lower-classification data, and there is no per-record share toggle. See §3.3.1. |
-| Explicitly Identifying Unknown Information | **GAP** | No unknown/withheld distinction anywhere; `"unspecified"` conflates them and is not machine-processable. No documented process for recipients to query redactions. |
-| Frequency | **PARTIAL** | `CLAUDE.md` asserts "SBOM regenerated on every build"; the enforced gate is a **30-day staleness** threshold, which is materially weaker than per-release. |
-| Machine-Processable Data | **PARTIAL** | CycloneDX yes; **SPDX absent** although the standard names both. No SWID emitted, which the 2026 removal makes correct by accident. |
+| Explicitly Identifying Unknown Information | **MET (sbx-prc-01)** | `tools/compliance/unknown_information.py` defines one convention for both states across all 17 elements — sentinel plus `icdev:unknown:<field>` / `icdev:withheld:<field>` properties over two **disjoint** reason vocabularies — and the generator emits it. The recipient enquiry route ships in `args/sbom_disclosure_policy.yaml` and is emitted on every document beside the CUI and distribution markings. See §2.10. |
+| Frequency | **MET (sbx-prc-02)** | Every generation appends a linked row; `sbom_records.source_revision` records the build, and `sbom_revision.evaluate_frequency` — which SBD-21 now calls — answers the per-build question first and treats `sbom_max_age_days` as the stale-evidence backstop. CLAUDE.md and `args/security_gates.yaml` now say the same thing. See §2.9. |
+| Machine-Processable Data | **MET for generation (sbx-fmt-01)** | Both named formats are emitted — CycloneDX 1.4-1.7 (default 1.7) and SPDX 2.3 — and the two carry identical elements by construction. No SWID, which the 2026 removal makes correct. **Ingest** still glob-matches filenames rather than parsing (sbx-fmt-02). See §2.6. |
 | Access Control (removed) | **N/A** | ICDEV's CUI classification and Distribution D properties remain appropriate under Distribution and Delivery, and are now the *only* thing that withholds an artifact — see §3.3.1. |
 
 **Baseline score, as analysed before any `sbx` task landed: 3 of 17 data-field elements fully
 met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — counting strictly, 2
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
-**Current: 4 of 17 data-field elements** — Component Producer joined them with sbx-fld-02 — **and
-2 of 7 practices**: Coverage with sbx-cov-01 and Distribution and Delivery with sbx-gov-02. The
-matrix rows above are kept current as each task lands, so they, not this paragraph, are the
-authoritative statement.
+**Current: 13 of 17 data-field elements.** The whole 9-element SBOM Metadata block, which
+sbx-fld-01 closed out and sbx-sig-01 and sbx-fmt-01 contributed to, plus four in Component
+Data: Component Producer (sbx-fld-02), Component License (sbx-fld-04) and both halves of
+the component hash, Value and Algorithm (sbx-fld-03). **And 6 of 7 practices**: Coverage
+(sbx-cov-01), Frequency plus Accommodation of Updates (sbx-prc-02), Explicitly Identifying
+Unknown Information (sbx-prc-01), Machine-Processable Data for generation (sbx-fmt-01,
+whose ingest half is sbx-fmt-02), and Distribution and Delivery (sbx-gov-02).
+
+What is left is **1 outright GAP** — Component Dependency Relationship (sbx-cov-02) — and
+**3 PARTIAL rows**, all on the component side: Identifiers, Name and Version. The matrix
+rows above are kept current as each task lands, so they, not this paragraph, are the
+authoritative statement — count from them rather than trusting this sentence.
 
 ### 3.3.1 Where the line is drawn on withholding (sbx-gov-02)
 

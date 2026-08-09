@@ -31,7 +31,7 @@ def migrate_file(py_file: Path) -> bool:
         # Already imported — just replace usages
         new_src = re.sub(r"\blogging\.getLogger\s*\(", "get_logger(", src)
         if new_src != src:
-            py_file.write_text(new_src, encoding="utf-8")
+            py_file.write_text(new_src, encoding="utf-8", newline="")
             return True
         return False
 
@@ -58,7 +58,7 @@ def migrate_file(py_file: Path) -> bool:
     new_src = "".join(lines)
     new_src = re.sub(r"\blogging\.getLogger\s*\(", "get_logger(", new_src)
 
-    py_file.write_text(new_src, encoding="utf-8")
+    py_file.write_text(new_src, encoding="utf-8", newline="")
     return True
 
 

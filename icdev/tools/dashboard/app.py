@@ -2033,6 +2033,10 @@ def create_app(testing: bool = False) -> Flask:
 
         conn = _gc()
         pending_count = 0
+        # kax-obs-02: the scheduler's liveness above is a log-file mtime, which
+        # is exactly what goes missing when logging breaks. The PR watcher's is
+        # a DB row written by each completed poll instead.
+        watcher = {}
         try:
             rows = conn.execute(
                 "SELECT id, title, priority, task_type, failure_count, status, "
@@ -2053,6 +2057,11 @@ def create_app(testing: bool = False) -> Flask:
         except Exception:
             tasks = []
         finally:
+            try:
+                from tools.kanban.metrics import watcher_heartbeat as _wh
+                watcher = _wh(conn=conn)
+            except Exception:
+                watcher = {}
             conn.close()
 
         # Enrich each task with per-task liveness from its agent log file.
@@ -2081,6 +2090,7 @@ def create_app(testing: bool = False) -> Flask:
             "staleness": staleness,
             "tasks": tasks,
             "pending_tasks_count": pending_count,
+            "pr_watcher": watcher,
         })
 
     @app.route("/api/kanban/scheduler/status")
@@ -2241,7 +2251,7 @@ def create_app(testing: bool = False) -> Flask:
             _NOTIFY_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
             import json as _j
             _NOTIFY_SETTINGS_PATH.write_text(
-                _j.dumps(settings, indent=2), encoding="utf-8"
+                _j.dumps(settings, indent=2), encoding="utf-8", newline=""
             )
 
         if flask_request.method == "PUT":

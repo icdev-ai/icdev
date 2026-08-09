@@ -86,7 +86,7 @@ def load_state(watch_dir: Path) -> dict[str, Any]:
 def save_state(watch_dir: Path, state: dict[str, Any]) -> None:
     try:
         _state_path(watch_dir).write_text(
-            json.dumps(state, indent=2, sort_keys=True), encoding="utf-8"
+            json.dumps(state, indent=2, sort_keys=True), encoding="utf-8", newline=""
         )
     except Exception as exc:
         logger.warning("dic inbox: could not persist state: %s", exc)

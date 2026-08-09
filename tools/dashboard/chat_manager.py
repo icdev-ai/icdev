@@ -18,6 +18,8 @@ Enhanced integrations (Phase 44+):
 - Context pressure monitoring: stuck detection + pressure alerts (D-GSD-4 to D-GSD-6)
 - Bayesian teaching: info-gain advisory for compliance ordering (D-BT-1)
 - Intake enrichment: RICOAS session linking + readiness scoring
+- Standing goals: get_context_status() reports the durable objectives in play
+  for a conversation and their progress (hgx-goal-03)
 
 Usage:
     from tools.dashboard.chat_manager import chat_manager
@@ -48,6 +50,19 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Max concurrent contexts per user
 MAX_CONCURRENT_PER_USER = 5
+
+# --- Standing goals in the status payload (hgx-goal-03) --------------------
+#: Statuses a status panel reports on. Terminal goals (completed/cancelled) are
+#: history: including them would make the list grow for the life of the operator
+#: and push the goals actually in play past the display cap.
+GOAL_OPEN_STATUSES = ("active", "blocked", "pending", "paused")
+
+#: Goals being pursued right now. Sorted ahead of pending/paused ones so the
+#: display cap can never hide an active goal behind a queued one.
+_GOAL_LIVE_STATUSES = frozenset({"active", "blocked"})
+
+#: Longest ``detail`` echoed per goal. This payload is polled, not read once.
+_GOAL_DETAIL_CHARS = 200
 
 
 # ---------------------------------------------------------------------------
@@ -1173,6 +1188,101 @@ class ChatManager:
         except Exception:
             return None
 
+    def get_context_status(self, context_id: str) -> Optional[dict]:
+        """Context payload for a status surface — :meth:`get_context` plus goals.
+
+        Adds a ``standing_goals`` block so a conversation can show the durable
+        objectives it is being steered by (hgx-goal-01/02) and how far along they
+        are, rather than only the ones the model silently sees in its system
+        prompt.
+
+        The key is **present only when there is something to show**. Standing
+        goals are optional infrastructure: the migration may not have run, the
+        operator may have set ``ICDEV_SAG_GOALS=0``, and this conversation may
+        simply have no goals. All three are the same answer for a caller — no
+        goal state — and none of them may break chat, so all three omit the key
+        instead of reporting an error the UI would have to special-case.
+
+        Returns ``None`` when the context itself does not exist, matching
+        :meth:`get_context`.
+        """
+        ctx = self.get_context(context_id)
+        if ctx is None:
+            return None
+        goals = self._standing_goal_status(
+            context_id,
+            user_id=str(ctx.get("user_id") or ""),
+            tenant_id=str(ctx.get("tenant_id") or ""),
+        )
+        if goals:
+            ctx["standing_goals"] = goals
+        return ctx
+
+    @staticmethod
+    def _standing_goal_status(
+        context_id: str,
+        *,
+        user_id: str = "",
+        tenant_id: str = "",
+    ) -> Optional[dict]:
+        """Open standing goals for one conversation, or None when unavailable.
+
+        Imported lazily and inside the ``try`` on purpose: ``chat_manager`` is
+        imported at dashboard start-up, and a chat window must not depend on the
+        agent-runtime package or its table being present.
+        """
+        try:
+            from tools.agent_runtime.goal_context import goal_limit, goals_enabled
+            from tools.agent_runtime.standing_goals import GoalManager
+
+            if not goals_enabled():
+                return None
+            manager = GoalManager(user_id=user_id or "default", tenant_id=tenant_id)
+            goals = manager.list_for_context(
+                context_id or "", statuses=GOAL_OPEN_STATUSES
+            )
+            limit = goal_limit()
+        except Exception as exc:  # noqa: BLE001 — goal state is best-effort
+            logger.debug("chat: standing goals unavailable for %s: %s", context_id, exc)
+            return None
+        if not goals:
+            return None
+
+        # Stable sort: keeps the manager's (priority, age) order within each half.
+        ordered = sorted(
+            goals, key=lambda g: g.status.value not in _GOAL_LIVE_STATUSES
+        )
+        shown = ordered[:limit] if limit else ordered
+
+        by_status: Dict[str, int] = {}
+        for goal in goals:
+            by_status[goal.status.value] = by_status.get(goal.status.value, 0) + 1
+
+        return {
+            "total": len(goals),
+            "shown": len(shown),
+            # Named so a UI can say "+2 more" rather than implying it has them all.
+            "withheld": len(goals) - len(shown),
+            "by_status": by_status,
+            "progress": round(sum(g.progress for g in goals) / len(goals)),
+            "goals": [
+                {
+                    "goal_id": goal.goal_id,
+                    "title": goal.title,
+                    "status": goal.status.value,
+                    "priority": goal.priority,
+                    "progress": goal.progress,
+                    "detail": goal.detail.strip()[:_GOAL_DETAIL_CHARS],
+                    "blocked_reason": goal.blocked_reason,
+                    # A standing goal with no context_id belongs to the operator
+                    # and is in play in every conversation — worth distinguishing
+                    # from one pinned to this one.
+                    "scope": "context" if goal.context_id else "global",
+                }
+                for goal in shown
+            ],
+        }
+
     def set_reasoning_mode(self, context_id: str, reasoning_mode: str) -> dict:
         """Update a session's reasoned-codegen mode mid-conversation (off|auto|on)."""
         mode = reasoning_mode if reasoning_mode in ("off", "auto", "on") else "off"
@@ -1895,6 +2005,12 @@ class ChatManager:
     _ADVISORY_TYPES = {
         "governance_advisory": ("[AI Governance Advisory]", "governance_advisory", "governance_advisory"),
         "workflow_advisory": ("[Workflow Status]", "workflow_status", "workflow_status"),
+        # hgx-doc-01 — Studio graph runs (031_graph_execution_chat.py). Reuses the
+        # workflow_status content type on purpose: it is already in the live
+        # chat_messages CHECK constraint and already has a chat.js badge, so a new
+        # type would have bought a migration and a frontend change for the same
+        # rendering. The label is what distinguishes it from 030's loop advisory.
+        "graph_advisory": ("[Graph Run]", "workflow_status", "workflow_status"),
         "bayesian_advisory": ("[Bayesian Learning]", "bayesian_advisory", "bayesian_advisory"),
         "rag_advisory": ("[Knowledge Sources]", "rag_attribution", "rag_attribution"),
         "code_quality_advisory": ("[Code Quality]", "code_quality_advisory", "code_quality_advisory"),
@@ -1931,7 +2047,7 @@ class ChatManager:
                 dirty_data = {
                     k: v
                     for k, v in advisory.items()
-                    if k in ("gap_id", "severity", "total_gaps", "loop_id", "score", "source_count", "fitness_domain")
+                    if k in ("gap_id", "severity", "total_gaps", "loop_id", "run_id", "score", "source_count", "fitness_domain")
                 }
             _mark_dirty(context_id, dirty_type, dirty_data)
 

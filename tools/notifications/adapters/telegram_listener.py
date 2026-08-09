@@ -252,7 +252,7 @@ def _load_offset() -> int:
 def _save_offset(offset: int):
     """Save last processed update_id."""
     OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OFFSET_FILE.write_text(str(offset), encoding="utf-8")
+    OFFSET_FILE.write_text(str(offset), encoding="utf-8", newline="")
 
 
 # ── Inbox helpers ───────────────────────────────────────────────

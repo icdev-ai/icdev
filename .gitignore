@@ -28,6 +28,24 @@ data/backups/
 data/llm_embedding_unavailable.json
 data/llm_degraded_tier2.json
 
+# Canvas run output — written by the *_generator / *_scanner tools on every run
+# (IaC bundles, iac_report_<hash>.md, compliance_report_<hash>.md, deploy_<hash>/).
+#
+# Untracked, and indistinguishable from intentional content, these were swept
+# into unrelated commits by `git add -A` and by the auto-commit hook: 73 had
+# already been committed that way, in the same hash-suffixed shape the tools
+# still emit. They are pure runtime output — nothing reads the committed copies,
+# and the DWO tests that mention these paths use them only as fixture STRINGS.
+#
+# Untracked in the same commit that added this rule; the files stay on disk and
+# remain recoverable from history. Enforced by
+# tests/test_generated_artifacts_untracked.py.
+data/studio_artifacts/
+
+# Alert spool and failed-audit dead-letter file — per-machine runtime state.
+data/alerts/
+data/failed_audit_entries.jsonl
+
 # Temporary files
 .tmp/
 

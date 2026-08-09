@@ -474,7 +474,7 @@ def main() -> None:
         output = report
 
     if args.output:
-        Path(args.output).write_text(output, encoding="utf-8")
+        Path(args.output).write_text(output, encoding="utf-8", newline="")
         print(f"Report written to {args.output}")
     else:
         print(output)

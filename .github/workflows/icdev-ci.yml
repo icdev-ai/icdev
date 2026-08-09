@@ -80,40 +80,26 @@ jobs:
       - name: Component scoring sweep (dry run)
         working-directory: ${{ github.workspace }}
         run: python -m tools.quality.run_component_scoring --dry-run
+      # The gated test list lives in args/ci_test_files/core.txt, NOT here
+      # (kax-conflict-07). It used to be a line-continuation chain in this file,
+      # which made every task that added a test edit this hand-written workflow at
+      # the same offset: five PRs collided on it in one night on 2026-08-09, and
+      # because pr_watcher's sibling-conflict guard correctly refuses to co-merge
+      # PRs sharing a non-additive file, each of the five became a sibling of
+      # every other and none could merge. The list is the only ADDITIVE part of
+      # this file, so only the list moved out; the job definitions here keep
+      # their serialized protection.
+      #
+      # This is a separate step from the pytest run on purpose. It is the "the
+      # gate cannot silently shrink" guard the explicit list existed for in the
+      # first place: an empty list, a list below its floor, a listed path that
+      # does not exist, or a duplicate is a RED step naming the cause, ~1s in,
+      # rather than a green suite that quietly ran nothing. Do NOT add `|| true`.
+      - name: Resolve gated test list
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/gated_test_list.py --check --list core
       - name: Run core unit tests
-        # NOTE: this list is a shell line-continuation chain -- do NOT put `#`
-        # comments between the entries. A comment after a trailing `\` swallows
-        # the remaining paths and silently shrinks the gate.
-        #
-        # test_component_registry.py guards the registry-derived PATH_CANVAS /
-        # IQE map against drift between args/component_registry.yaml and the
-        # pages registered directly in app.py. It earns a slot because it caught
-        # a real divergence that then sat red on main for a day while every
-        # gated check stayed green (#636). ~6s, pure Python, no DB/LLM/network.
-        #
-        # test_reflex_circuit_breaker_recovery.py earns a slot because the bug it
-        # pins was silent and cost five weeks: three transient GitHub outages
-        # tripped the `scout` reflex's breaker in June 2026, nothing ever closed
-        # it, and the state row blamed a metric threshold that the value in fact
-        # satisfied. Nothing failed, nothing alerted -- a CORE reflex simply
-        # stopped. ~1s, pure Python, no DB/LLM/network (xbm-wake-01).
-        #
-        # test_init_goals_and_selective.py pins icdev/data/claude_bootstrap/
-        # CLAUDE.md byte-for-byte against the repo's CLAUDE.md. That copy is
-        # only refreshed when someone runs prebuild_bootstrap, so editing
-        # CLAUDE.md alone makes `icdev init` scaffold a stale instruction file
-        # for installed users -- which is exactly what shipped in #960. Off the
-        # gate the drift is invisible; on it, the fix is one prebuild run.
-        # ~13s, pure Python, no DB/LLM/network.
-        #
-        # test_innovation_kanban_promoter.py earns a slot because it is the only
-        # thing standing between KANBAN_PROMOTE_ENABLED and an unbounded seeder.
-        # The promoter reads a table that has held 1,179 signals; the last time
-        # promotion ran without a cap it queued 266 approved CVEs and produced
-        # 353 branches. This seeds 20 findings into a real SQLite
-        # innovation_signals and asserts the run stops at 5 -- unstubbed, so a
-        # cap that regresses to a silent slice fails here rather than on the
-        # board. ~1.5s, pure Python, no DB service/LLM/network (xbm-promote-01).
+        working-directory: ${{ github.workspace }}
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -125,86 +111,27 @@ jobs:
             kill -- -$$ 2>/dev/null || true
           }
           trap _abort SIGTERM SIGINT
-          pytest tests/test_circuit_breaker.py \
-            tests/test_reflex_circuit_breaker_recovery.py \
-            tests/test_retry.py \
-            tests/test_correlation.py \
-            tests/test_errors.py \
-            tests/test_init_icdev_db.py \
-            tests/test_schemas.py \
-            tests/test_prompt_injection_detector.py \
-            tests/test_dev_profile_manager.py \
-            tests/test_manifest_loader.py \
-            tests/test_session_context_builder.py \
-            tests/test_code_analyzer.py \
-            tests/test_component_registry.py \
-            tests/test_component_registry_ownership.py \
-            tests/test_idp_portal.py \
-            tests/test_idp_scorecard.py \
-            tests/test_idp_catalog_scorecards.py \
-            tests/test_migration_version_uniqueness.py \
-            tests/test_sbom_coverage_resolution.py \
-            tests/test_icdev_comply_sbom_step.py \
-            tests/test_sbom_distribution.py \
-            tests/ci/test_error_classifier.py \
-            tests/kanban/test_pr_linker.py \
-            tests/kanban/test_reverify.py \
-            tests/kanban/test_reverify_selfheal.py \
-            tests/kanban/test_reverify_roundtrip.py \
-            tests/kanban/test_one_task_one_pr.py \
-            tests/kanban/test_cli_reverify.py \
-            tests/test_verifier_contract.py \
-            tests/test_dic_chat_memory_schema.py \
-            tests/test_dic_chat_surfaces_send_session_id.py \
-            tests/test_dic_citation_publish_gate.py \
-            tests/test_migration_engine_detection.py \
-            tests/test_claim_grounding.py \
-            tests/test_docgen_bridge_scrub.py \
-            tests/test_publish_gates.py \
-            tests/test_dic_cove_gate.py \
-            tests/test_mirror_drift_baseline.py \
-            tests/test_freshness_guardian_parity.py \
-            tests/test_data_canvas_mirror_parity.py \
-            tests/test_quality_monitor_parity.py \
-            tests/test_ai_gameday_mirror_parity.py \
-            tests/test_no_direct_provider_calls.py \
-            tests/test_coordination_lease_namespaces.py \
-            tests/test_dic_claim_grounding_wiring.py \
-            tests/test_reflex_registry_integrity.py \
-            tests/test_memory_maintenance_reflex.py \
-            tests/test_memory_read_db.py \
-            tests/test_memory_tier_measure.py \
-            tests/test_notification_worthiness.py \
-            tests/test_kanban_throughput_stall.py \
-            tests/test_localai_provider.py \
-            tests/browser/test_backend.py \
-            tests/browser/test_driver_manager_airgap.py \
-            tests/browser/test_driver_staleness.py \
-            tests/browser/test_browser_locator.py \
-            tests/browser/cdp/test_preflight.py \
-            tests/browser/cdp/test_session.py \
-            tests/browser/cdp/test_driver.py \
-            tests/browser/cdp/test_webdriver.py \
-            tests/browser/cdp/test_ws_client.py \
-            tests/test_context_budget.py \
-            tests/test_init_goals_and_selective.py \
-            tests/test_coherence_swallowed_persistence.py \
-            tests/test_analyzer_contract.py \
-            tests/test_agent_approval_gate.py \
-            tests/test_analyzer_dispatch.py \
-            tests/test_analyzer_rate_limit.py \
-            tests/test_cxo_adopt_04_mcp_cortex_adapters.py \
-            tests/test_awareness_edge_deriver.py \
-            tests/test_benchmark_compare.py \
-            tests/test_benchmark_report.py \
-            tests/workflow/test_vendor_parity.py \
-            tests/quality/test_run_component_scoring.py \
-            tests/slides/test_blueprint.py \
-            tests/integration/test_runtime_cli.py \
-            tests/integration/test_dashboard_panels.py \
-            tests/innovation/test_innovation_kanban_promoter.py \
-            tests/test_sbom_component_producer.py \
-            -v --tb=short -x
+          # No temp file: a `/tmp` path means one thing to bash and another to
+          # Python on the Windows runner, and RUNNER_TEMP is a backslash path.
+          # Read the resolver's stdout straight into an array instead.
+          CI_TESTS=()
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then CI_TESTS+=("$line"); fi
+          # `| tr -d` is belt-and-braces: the resolver forces LF on every platform,
+          # but a stray CR is invisible in a log and makes pytest report
+          # "file or directory not found" for a file that plainly exists.
+          done < <(python tools/ci/gated_test_list.py --print --list core | tr -d '\015')
+          # Belt-and-braces after the --check step: process substitution hides
+          # python's exit status, and an empty array would make the line below
+          # `pytest -v --tb=short -x`, i.e. collect the WHOLE suite — the opposite
+          # of a shrunk gate, but just as wrong, and it would run for over an hour
+          # before anyone noticed.
+          if [ "${#CI_TESTS[@]}" -eq 0 ]; then
+            echo "::error::resolved CI test list is empty — refusing to run pytest"
+            exit 1
+          fi
+          echo "Running ${#CI_TESTS[@]} gated test targets from args/ci_test_files/core.txt"
+          pytest "${CI_TESTS[@]}" -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
         # via the RAG ingestion status probe. Run it in isolation with a tight
@@ -219,6 +146,96 @@ jobs:
           done
           echo "::error::/knowledge-search route test failed after 3 attempts"
           exit 1
+
+  # ── Tier 1: Windows portability tier ─────────────────────────────────────
+  # Every other job in this file is ubuntu-latest. ICDEV is DEVELOPED on Windows
+  # and was TESTED only on Linux, so an OS-portability defect was structurally
+  # invisible to the pipeline: it cannot fail on the only OS the pipeline runs.
+  # That is exactly how the rubric_build_tools newline bug survived review
+  # (hgx-exec-01) — on Windows the owned build agent rewrote every file it
+  # touched to CRLF, turning a one-line edit into a whole-file diff, and every
+  # Linux assertion stayed green throughout.
+  #
+  # Scope is the portability-SENSITIVE subset, not the suite. These are the
+  # modules that touch the filesystem, spawn processes or thread wall-clock
+  # timing — the three places where Windows and POSIX actually diverge. Adding
+  # the whole suite here would buy noise, not signal, and would double CI time.
+  #
+  # NON-REQUIRED ON PURPOSE, for now. "Test (Windows)" is deliberately absent
+  # from the branch-protection required checks (Lint, Test, Security Scan, Helm
+  # Lint), so a Windows-only flake cannot block a merge while this job's own
+  # stability is being characterised. It still reports red in the checks list —
+  # `continue-on-error` is NOT used, because a job that cannot go red is not a
+  # gate, it is decoration. Promote it by adding the check to branch protection
+  # once it has a clean run history; nothing in this file needs to change.
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+    needs: lint
+    timeout-minutes: 30
+    defaults:
+      run:
+        # bash, not the windows-latest default pwsh: the same shell as every
+        # other job here, so a step body means one thing across the file.
+        shell: bash
+        # Same path isolation the rest of the workflow has — steps resolve
+        # against the canonical checkout root rather than wherever the runner
+        # happened to start, which is what keeps coherence/RLS-style
+        # repo-root-relative logic honest.
+        working-directory: ${{ github.workspace }}
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      # conftest forces sqlite anyway; stated here so the job's backend does not
+      # depend on a file it does not own.
+      ICDEV_STORAGE_BACKEND: sqlite
+      PYTHONIOENCODING: utf-8
+    steps:
+      # BEFORE checkout, deliberately. The hosted Windows image ships
+      # core.autocrlf=true, which would rewrite every LF in the tree to CRLF on
+      # the way to disk — so this job would be reading different BYTES than the
+      # Linux jobs and any difference in outcome would be unattributable. The
+      # line-ending behaviour under test is what the build TOOLSET writes into
+      # its own temp files, not what git checked out, so pinning the checkout
+      # to LF costs no coverage and removes a whole class of false signal.
+      - name: Check out with Linux-identical line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e . || true
+      # Same treatment as the Linux job (kax-conflict-07): the list lives in
+      # args/ci_test_files/windows.txt, which is union-merged, so a task adding a
+      # portability test never touches this workflow. It is still an EXPLICIT
+      # list rather than a glob — a glob that matches nothing silently shrinks
+      # the gate, which is the failure mode this whole job was created to stop
+      # happening — and --check re-earns that property outside the YAML.
+      - name: Resolve portability test list
+        run: python tools/ci/gated_test_list.py --check --list windows
+      - name: Run portability-sensitive suite
+        # No `-x`. The Linux `test` job stops at the first failure because it is
+        # a merge gate and the first failure is the answer; this job exists to
+        # CHARACTERISE Windows behaviour, so it must report every failure in one
+        # run rather than one per push.
+        run: |
+          WIN_TESTS=()
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then WIN_TESTS+=("$line"); fi
+          # `| tr -d` is belt-and-braces: the resolver forces LF on every platform,
+          # but a stray CR is invisible in a log and makes pytest report
+          # "file or directory not found" for a file that plainly exists.
+          done < <(python tools/ci/gated_test_list.py --print --list windows | tr -d '\015')
+          if [ "${#WIN_TESTS[@]}" -eq 0 ]; then
+            echo "::error::resolved Windows test list is empty — refusing to run pytest"
+            exit 1
+          fi
+          echo "Running ${#WIN_TESTS[@]} targets from args/ci_test_files/windows.txt"
+          pytest "${WIN_TESTS[@]}" -v --tb=short --durations=15
 
   # ── PostgreSQL pytest tier — %s / PG-portability regression guard ─────────
   # The ordinary `test` job runs on SQLite (conftest forces it), where

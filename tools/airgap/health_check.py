@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Air-gap-aware health check.
 
@@ -21,10 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-logger = get_logger("icdev.airgap.health_check")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.airgap.health_check")
 
 
 def check_local_llm() -> Dict[str, Any]:

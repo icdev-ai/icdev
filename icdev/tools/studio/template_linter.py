@@ -6,6 +6,7 @@ Catches:
   - Isolated nodes  (no edges at all)
   - Disconnected subgraphs  (multiple connected components)
   - Dangling depends_on references  (depend on a step that doesn't exist)
+  - Malformed conditional edges  (a `when:` block the runner could never satisfy)
 
 Usage:
   python tools/studio/template_linter.py --check           # report only
@@ -27,12 +28,55 @@ except ImportError:
     print("pyyaml not installed -- pip install pyyaml", file=sys.stderr)
     sys.exit(1)
 
-TEMPLATES_DIR = Path(__file__).parent.parent.parent / "args" / "workflow_templates"
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+from tools.studio.automation_builder import CONDITION_OPERATORS  # noqa: E402
+
+# Both template directories, because both are shipped and both are executed by
+# the same runner. `args/workflow_templates` holds the built-in set the FORGE
+# composer reads; `context/workflow_templates` holds the Studio gallery served
+# by `/api/studio/workflows/templates`, which a user copies into a workflow and
+# runs. A gallery template that a lint pass never opens is a template whose DAG
+# defects are found by the first person to run it (hgx-tmpl-01).
+TEMPLATE_DIRS: tuple[Path, ...] = (
+    Path(__file__).parent.parent.parent / "args" / "workflow_templates",
+    Path(__file__).parent.parent.parent / "context" / "workflow_templates",
+)
+
+#: Retained for callers that imported the single directory by name.
+TEMPLATES_DIR = TEMPLATE_DIRS[0]
+
+# ── Step schema ────────────────────────────────────────────
+#
 # "mcp" (dwo-mcp-03): the step names a TOOL_REGISTRY tool in `mcp_tool`
 # rather than a script path in `tool`.
-VALID_NODE_TYPES: frozenset[str] = frozenset({"tool", "human", "approval", "mcp"})
+# "agent" (hgx-agent-01): the step names a task in `prompt` and bounds its tools
+# with `agent_tools` (bundle names from args/agent_toolsets.yaml), and runs an
+# agent loop instead of a script.
+VALID_NODE_TYPES: frozenset[str] = frozenset(
+    {"tool", "human", "approval", "mcp", "agent"}
+)
 VALID_AUDIENCES: frozenset[str] = frozenset({"leadership", "technical", "compliance", "board", "customer"})
+
+# `when:` (hgx-cond-01) is an OPTIONAL conditional edge — a condition, or a list
+# of conditions ANDed together, evaluated against the predecessor's recorded
+# result. A step whose `when` does not hold records the `skipped` status with the
+# unmet condition as its reason; its own dependents still evaluate theirs.
+#
+#   - id: remediate
+#     depends_on: [scan]
+#     when:
+#       - field: status          # or steps.<step_id>.status, or output.<path>
+#         operator: not_equals
+#         value: success
+#
+# The operator vocabulary is NOT declared here: it is imported from
+# `automation_builder.CONDITION_OPERATORS`, the one implementation the trigger
+# filters and the builder UI already share, so the linter cannot drift from what
+# the runner will actually evaluate.
+VALID_CONDITION_OPERATORS: frozenset[str] = frozenset(op["id"] for op in CONDITION_OPERATORS)
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +141,66 @@ def validate_narrative_context(nc: dict) -> list[str]:
     return errors
 
 
+def validate_when(step: dict) -> list[str]:
+    """Return error strings for a step's `when:` block. No block -> no errors."""
+    raw = step.get("when")
+    if raw is None:
+        return []
+
+    conditions = [raw] if isinstance(raw, dict) else raw
+    if not isinstance(conditions, list):
+        return [f"when must be a condition mapping or a list of them, got {type(raw).__name__!r}"]
+
+    errors: list[str] = []
+    for i, cond in enumerate(conditions):
+        if not isinstance(cond, dict):
+            errors.append(f"when[{i}] must be a mapping, got {type(cond).__name__!r}")
+            continue
+        if not str(cond.get("field", "") or "").strip():
+            errors.append(f"when[{i}] has no 'field'")
+        operator = cond.get("operator", "equals")
+        if operator not in VALID_CONDITION_OPERATORS:
+            errors.append(
+                f"when[{i}].operator {operator!r} not in {sorted(VALID_CONDITION_OPERATORS)}"
+            )
+    if conditions and not _deps(step):
+        # Conditions read the PREDECESSOR's result, and a step with no
+        # depends_on is dispatched in the first wave — there is no predecessor
+        # for it to read, so every field would resolve empty.
+        errors.append("when on a step with no depends_on has no predecessor result to read")
+    return errors
+
+
+def validate_agent(step: dict) -> list[str]:
+    """Return error strings for a `node_type: agent` step (hgx-agent-01).
+
+    Both keys are load-bearing and both fail quietly at run time if omitted: a
+    step with no `prompt` is skipped by the runner, and one with no
+    `agent_tools` is refused by the executor's default-deny allowlist. Neither
+    is worth discovering mid-run, so they are linted here.
+    """
+    if step.get("node_type") != "agent":
+        return []
+
+    errors: list[str] = []
+    if not str(step.get("prompt", "") or "").strip():
+        errors.append("node_type: agent step has no 'prompt' — it will be skipped")
+
+    tools = step.get("agent_tools")
+    if tools is not None and not isinstance(tools, (str, list)):
+        errors.append(
+            f"agent_tools must be a list of bundle names, got {type(tools).__name__!r}"
+        )
+    else:
+        names = tools.split(",") if isinstance(tools, str) else list(tools or [])
+        if not [n for n in names if str(n).strip()]:
+            errors.append(
+                "node_type: agent step has no 'agent_tools' — the allowlist is "
+                "default-deny, so the step is refused rather than handed every tool"
+            )
+    return errors
+
+
 def analyze(steps: list[dict]) -> dict:
     ids = {s["id"] for s in steps}
     has_in: set[str] = set()
@@ -111,12 +215,20 @@ def analyze(steps: list[dict]) -> dict:
         for s in steps
         if s.get("node_type") is not None and s["node_type"] not in VALID_NODE_TYPES
     ]
+    bad_when = [
+        (s["id"], err) for s in steps for err in validate_when(s)
+    ]
+    bad_agent = [
+        (s["id"], err) for s in steps for err in validate_agent(s)
+    ]
     return {
         "isolated":       [s["id"] for s in steps if s["id"] not in has_in and s["id"] not in has_out],
         "roots":          [s["id"] for s in steps if s["id"] not in has_in and s["id"] in has_out],
         "leaves":         [s["id"] for s in steps if s["id"] in has_in and s["id"] not in has_out],
         "dangling":       [d for s in steps for d in _deps(s) if d not in ids],
         "bad_node_types": bad_node_types,
+        "bad_when":       bad_when,
+        "bad_agent":      bad_agent,
         "components":     len(comps),
         "comp_groups":    [sorted(c) for c in sorted(comps, key=len, reverse=True)],
         "has_in":         has_in,
@@ -124,12 +236,27 @@ def analyze(steps: list[dict]) -> dict:
     }
 
 
-def is_ok(info: dict) -> bool:
+def _connectivity_ok(info: dict) -> bool:
+    """True when the GRAPH is clean — the subset `auto_fix` can actually repair.
+
+    A malformed `when:` — or an agent step missing its `prompt` / `agent_tools`
+    — is an authoring error in a step, not a missing edge, so both are excluded
+    here: including them would make `auto_fix` spin its full iteration budget
+    adding no edges, unable to reach `is_ok`.
+    """
     return (
         not info["isolated"]
         and not info["dangling"]
         and not info["bad_node_types"]
         and info["components"] <= 1
+    )
+
+
+def is_ok(info: dict) -> bool:
+    return (
+        _connectivity_ok(info)
+        and not info.get("bad_when")
+        and not info.get("bad_agent")
     )
 
 
@@ -168,7 +295,11 @@ def auto_fix(steps: list[dict]) -> tuple[list[dict], list[str]]:
 
     for _iteration in range(len(steps) + 1):
         info = analyze(steps)
-        if is_ok(info):
+        if _connectivity_ok(info):
+            # NOT `is_ok`: a malformed `when:` is an authoring error inside a
+            # step, and no edge this loop can add will clear it. Gating on the
+            # full check would spin the whole iteration budget wiring bogus
+            # dependencies onto an already-connected graph.
             break
 
         # -- Fix isolated nodes ----------------------------------------------
@@ -220,12 +351,15 @@ def auto_fix(steps: list[dict]) -> tuple[list[dict], list[str]]:
 # ---------------------------------------------------------------------------
 
 def load_template(path: Path) -> dict:
-    with open(path, encoding="utf-8") as f:
+    # newline="" on both halves: without it a template rewritten by --fix on
+    # Windows gains CRLF line endings the checkout does not use, so a lint pass
+    # would show up as a whole-file diff.
+    with open(path, encoding="utf-8", newline="") as f:
         return yaml.safe_load(f)
 
 
 def save_template(path: Path, data: dict) -> None:
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="") as f:
         f.write("# CUI // SP-CTI\n")
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
@@ -234,15 +368,42 @@ def save_template(path: Path, data: dict) -> None:
 # Runner
 # ---------------------------------------------------------------------------
 
+def _template_paths() -> list[Path]:
+    """Every template file to lint, both directories, in declaration order.
+
+    A missing directory is skipped rather than raised: a packaged install may
+    ship one set and not the other.
+    """
+    paths: list[Path] = []
+    for directory in TEMPLATE_DIRS:
+        if directory.is_dir():
+            paths.extend(sorted(directory.glob("*.yaml")))
+    return paths
+
+
+def _display_dir(path: Path) -> str:
+    """Repo-relative posix directory of a template, for reporting.
+
+    The `file` field stays the bare name it has always been; this rides
+    alongside it so two templates sharing a stem across the two directories are
+    still distinguishable in the report.
+    """
+    parent = path.parent
+    try:
+        return parent.relative_to(Path(__file__).parent.parent.parent).as_posix()
+    except ValueError:
+        return parent.as_posix()
+
+
 def run(check_only: bool, as_json: bool, gate: bool) -> int:
     results = []
     any_bad = False
 
-    for path in sorted(TEMPLATES_DIR.glob("*.yaml")):
+    for path in _template_paths():
         try:
             data = load_template(path)
         except Exception as e:
-            results.append({"file": path.name, "error": str(e)})
+            results.append({"file": path.name, "dir": _display_dir(path), "error": str(e)})
             continue
 
         steps = data.get("steps", [])
@@ -255,19 +416,23 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
             continue
 
         info = analyze(steps) if steps else {
-            "isolated": [], "dangling": [], "bad_node_types": [],
+            "isolated": [], "dangling": [], "bad_node_types": [], "bad_when": [],
+            "bad_agent": [],
             "components": 0, "comp_groups": [], "has_in": set(), "has_out": set(),
         }
         ok = is_ok(info) and not nc_errors
 
         entry: dict = {
             "file": path.name,
+            "dir": _display_dir(path),
             "id": path.stem,
             "steps": len(steps),
             "components": info["components"],
             "isolated": info["isolated"],
             "dangling": info["dangling"],
             "bad_node_types": info["bad_node_types"],
+            "bad_when": info["bad_when"],
+            "bad_agent": info["bad_agent"],
             "narrative_context_errors": nc_errors,
             "status": "ok" if ok else "fail",
         }
@@ -278,10 +443,24 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
             any_bad = True
             if not check_only:
                 patched, changes = auto_fix(steps)
-                data["steps"] = patched
-                save_template(path, data)
+                if changes:
+                    # Guarded: with nothing to add, rewriting would still push
+                    # the whole file back through yaml.dump and reformat a
+                    # template this pass did not repair.
+                    data["steps"] = patched
+                    save_template(path, data)
                 entry["auto_fixed"] = changes
-                entry["status"] = "fixed"
+                # `auto_fix` only ever adds EDGES. A malformed `when:`, an agent
+                # step missing its keys, and a narrative_context error all
+                # survive it untouched, so reporting "fixed" here would claim a
+                # repair that did not happen and let the next --check be the
+                # first thing to notice.
+                repatched = analyze(patched)
+                entry["status"] = (
+                    "fail"
+                    if (repatched["bad_when"] or repatched["bad_agent"] or nc_errors)
+                    else "fixed"
+                )
 
         results.append(entry)
 
@@ -290,13 +469,17 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
     else:
         for r in results:
             tag = {"ok": "OK   ", "fail": "FAIL ", "fixed": "FIXED"}.get(r.get("status", ""), "?    ")
-            line = f"  [{tag}] {r['file']}"
+            line = f"  [{tag}] {r.get('dir', '')}/{r['file']}"
             if r.get("isolated"):
                 line += f"  isolated={r['isolated']}"
             if r.get("dangling"):
                 line += f"  dangling={r['dangling']}"
             if r.get("bad_node_types"):
                 line += f"  bad_node_types={r['bad_node_types']}"
+            if r.get("bad_when"):
+                line += f"  bad_when={r['bad_when']}"
+            if r.get("bad_agent"):
+                line += f"  bad_agent={r['bad_agent']}"
             if r.get("narrative_context_errors"):
                 line += f"  narrative_context_errors={r['narrative_context_errors']}"
             if r.get("components", 1) > 1:

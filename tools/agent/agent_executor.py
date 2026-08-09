@@ -9,12 +9,13 @@ import subprocess
 import sys
 import time
 import uuid
-from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 from tools.agent.agent_models import AgentPromptRequest, AgentPromptResponse, RetryCode  # noqa: E402
 from tools.observability.invocation_recorder import (  # noqa: E402

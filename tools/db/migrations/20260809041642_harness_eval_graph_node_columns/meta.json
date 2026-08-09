@@ -1,0 +1,10 @@
+{
+  "id": "20260809041642_harness_eval_graph_node_columns",
+  "description": "Add nullable run_id, node_id, node_type and edge_condition to harness_eval so a graph node's decision can be scored independently of the task it ran under, plus (run_id, node_id) and (node_type, created_at) indexes (hgx-eval-01).",
+  "date": "2026-08-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": ["harness_eval"],
+  "reversible": true,
+  "reversible_note": "down.py drops the four columns and both indexes; any per-node correlation already recorded is lost because run/node identity is stored nowhere else."
+}

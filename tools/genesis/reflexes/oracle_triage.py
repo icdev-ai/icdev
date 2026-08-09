@@ -51,7 +51,6 @@ Genesis daemon
 from __future__ import annotations
 
 IMPLEMENTATION_STATUS = "full"
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -83,11 +82,13 @@ _NLP_BATCH_SUBJECTS_CACHE: Dict[Tuple[str, str], List[str]] = {}
 _ORACLE_NLP_MODEL_ENV = "ICDEV_ORACLE_NLP_MODEL"
 _ORACLE_NLP_MODEL_DEFAULT = "claude-haiku-4-5-20251001"
 
-LOG = get_logger("oracle_triage")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+LOG = get_logger("oracle_triage")
 
 try:
     from tools.db.storage import get_connection

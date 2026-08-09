@@ -4,10 +4,18 @@
 # ~25 live call sites (MCP sbom_generate, icdev_comply, dashboard batch API, CDRL, IronBank,
 # production audit/remediate, FedRAMP KSI/packager, SWFT) and a BLOCKING bdc_canvas gate.
 # Authored in both tools/compliance/ and icdev/tools/compliance/ — keep the two in sync.
-"""Generate CycloneDX Software Bill of Materials (SBOM).
+"""Generate a Software Bill of Materials (SBOM) in CycloneDX or SPDX.
+
 Resolves the project's transitive dependency set (SBOM 2026 Coverage element),
-generates CycloneDX 1.4 JSON format SBOM with CUI classification metadata,
-records in sbom_records table, and logs audit event.
+builds a CycloneDX JSON document with CUI classification metadata, records it in
+the sbom_records table, and logs an audit event.
+
+Formats (sbx-fmt-01): the 2026 standard names **CycloneDX (ECMA-424)** and
+**SPDX (ISO/IEC 5962:2021)** as the two widely used SBOM data formats and asks
+for support of all of them. `--format spdx` emits the same build as SPDX 2.3 by
+translating the CycloneDX document through `spdx_writer.to_spdx`, so the two
+serializations carry identical elements by construction rather than by
+maintenance.
 
 Coverage (sbx-cov-01): components come from `dependency_resolver.resolve_project`,
 which reads each ecosystem's *resolved* lockfile and degrades to this module's
@@ -20,15 +28,68 @@ Signature (sbx-sig-01): when an asymmetric signing key is configured, each
 generated SBOM gets a detached `<sbom>.sig.json` written beside it and its
 signature + algorithm persisted to `sbom_records`. Unsigned generation is the
 default and says so on stdout; set `ICDEV_SBOM_REQUIRE_SIGNATURE=1` to make it a
-hard failure instead. See `tools/compliance/sbom_signer.py`."""
+hard failure instead. See `tools/compliance/sbom_signer.py`.
+
+Component License (sbx-fld-04): every component and the target component carry the
+element in one of four shapes — an SPDX expression validated against the vendored SPDX
+License List, a URL to the full terms, a license name, or an explicit unknown/withheld
+marker — plus a proprietary-conditions flag. It is never omitted. The same resolution is
+written to `sbom_components.license`, a column dead since migration 209 because this
+generator had never written the table at all. See `tools/compliance/component_licenser.py`.
+
+Frequency / Accommodation of Updates (sbx-prc-02): every generation appends a row
+that links back to the SBOM it replaces (`supersedes_sbom_id`) and records the
+content digest, the build it came from and why it exists. Nothing is ever
+rewritten — a correction is a successor row, not an edit. See
+`tools/compliance/sbom_revision.py`.
+
+SBOM Metadata (sbx-fld-01): the nine document-level elements of §1.1 — Author,
+Data Format Name/Version, Generation Context, Timestamp, Tool Name/Version, SBOM
+Version, and the Author Signature sbx-sig-01 attaches. The Author is the *entity*
+operating this generator and is deliberately not read from the tool's vendor
+field; the Tool Version is derived from the delivery rather than being a literal;
+the Timestamp conforms to RFC 9557; and the document's version counter and the
+`sbom_records` row are computed once and used twice, so they cannot disagree."""
 
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import uuid
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.compliance.component_licenser import (
+    PROPERTY_LICENSE,
+    license_entries,
+    license_properties,
+    project_license_from_manifests,
+    record_license_disclosure,
+    resolve_declared_license,
+    resolve_license,
+)
+from tools.compliance.component_hasher import (
+    PROPERTY_ALGORITHM as PROPERTY_HASH_ALGORITHM,
+)
+from tools.compliance.component_hasher import (
+    PROPERTY_HASH,
+    REASON_TARGET_NOT_BUILT,
+    apply_hash_to_cyclonedx,
+    record_hash_disclosure,
+    resolve_hash,
+    unknown_hash,
+)
 from tools.compliance.component_producer import (
+    PROPERTY_PRODUCER,
     ProducerContext,
     apply_producer_to_cyclonedx,
     producer_properties,
@@ -42,22 +103,55 @@ from tools.compliance.dependency_resolver import (
     resolve_project,
 )
 from tools.compliance.sbom_distribution import retrieval_url as sbom_retrieval_url
+from tools.compliance.unknown_information import (
+    FIELD_NAME,
+    FIELD_PRODUCER,
+    FIELD_VERSION,
+    REASON_DECLARED_WITHOUT_VERSION,
+    REASON_NOT_PROVIDED_BY_PRODUCER,
+    REASON_VERSION_MANAGED_BY_PARENT,
+    UNKNOWN,
+    UNKNOWN_REASONS,
+    Disclosure,
+    apply_component_policy,
+    apply_document_policy,
+    apply_to_cyclonedx,
+    completeness_properties,
+    disclosure_from_producer,
+    enquiry_properties,
+    is_legacy_sentinel,
+    load_disclosure_policy,
+)
+from tools.compliance.sbom_revision import (
+    SBOM_VERSION_MAJOR,
+    latest_record,
+    next_sbom_version,
+    plan_revision,
+    revision_insert_fields,
+)
 from tools.compliance.sbom_signer import (
     SbomSigningError,
     sign_sbom,
     signature_required,
     signing_available,
 )
-from tools.db.storage import get_connection
+from tools.compliance.spdx_writer import to_spdx
+from tools.db.storage import column_exists, get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-# CycloneDX spec version (default 1.4, supports 1.4-1.7 via --spec-version)
-CYCLONEDX_SPEC_VERSION = "1.4"
-CYCLONEDX_SCHEMA = "http://cyclonedx.org/schema/bom-1.4.schema.json"
+# CycloneDX spec version. The default is 1.7 (sbx-fmt-01): the 2026 Minimum
+# Elements warn against deprecated versions of a format and cite ECMA-424 of
+# December 2025, which is CycloneDX 1.7. The previous default, 1.4, is a 2022
+# spec that cannot express the Component Producer element natively -- below 1.6
+# the nearest field is `supplier`, whose producer/distributor ambiguity is what
+# the 2026 standard set out to remove. 1.4-1.6 stay selectable via
+# --spec-version for consumers whose tooling has not caught up.
+CYCLONEDX_SPEC_VERSION = "1.7"
+CYCLONEDX_SCHEMA = "http://cyclonedx.org/schema/bom-1.7.schema.json"
 
 # Supported CycloneDX spec versions (D342)
 CYCLONEDX_SUPPORTED_VERSIONS = {
@@ -67,6 +161,72 @@ CYCLONEDX_SUPPORTED_VERSIONS = {
     "1.7": "http://cyclonedx.org/schema/bom-1.7.schema.json",
 }
 
+# SBOM output formats. Both are named by the 2026 standard; SWID was removed
+# from the accepted list in 2026 and ICDEV has never emitted it.
+FORMAT_CYCLONEDX = "cyclonedx"
+FORMAT_SPDX = "spdx"
+SUPPORTED_FORMATS = (FORMAT_CYCLONEDX, FORMAT_SPDX)
+
+#: File extension per format, so a consumer can tell them apart on disk.
+FORMAT_EXTENSIONS = {
+    FORMAT_CYCLONEDX: "cdx.json",
+    FORMAT_SPDX: "spdx.json",
+}
+
+# --- 2026 SBOM Metadata elements (§1.1) -----------------------------------------
+
+# SBOM Data Format Name and SBOM Tool Name. The Data Format Version is
+# CYCLONEDX_SPEC_VERSION above, already raised off the deprecated 1.4 by sbx-fmt-01.
+SBOM_DATA_FORMAT_NAME = "CycloneDX"
+SBOM_TOOL_NAME = "icdev-sbom-generator"
+SBOM_TOOL_VENDOR = "ICDEV™"
+
+# SBOM Author — the ENTITY that generated the SBOM, explicitly NOT the tool.
+# metadata.tools[].vendor names the tool's vendor and does not satisfy this element;
+# it stays exactly where it is and means exactly what it always meant. The standard
+# asks for full names with no acronyms unless the acronym is official, and allows the
+# Author and the Component Producer to be the same entity without being the same
+# element. A deployment SHOULD set ICDEV_SBOM_AUTHOR to the full legal name of the
+# entity operating this generator; the default names the platform in full.
+SBOM_AUTHOR_ENV = "ICDEV_SBOM_AUTHOR"
+DEFAULT_SBOM_AUTHOR = "Intelligent Certified Development Platform"
+
+# Property name the SBOM Author is also emitted under. Colon-separated rather than
+# hyphenated to match `spdx_writer._creators`, which reads this exact key to build the
+# SPDX `Organization:` creator — the element has to survive both serializations.
+PROPERTY_SBOM_AUTHOR = "icdev:sbom:author"
+
+# SBOM Generation Context — the lifecycle phase, and therefore the data available,
+# when the SBOM was generated. This generator reads declared and resolved source
+# manifests and never opens a built artifact, which is "before build" in the
+# standard's wording and "pre-build" in CycloneDX's metadata.lifecycles vocabulary.
+# Both are emitted: the CycloneDX field where the spec version has one, the property
+# always — only the property carries the standard's own term, and 1.4 has no
+# lifecycles field to put it in.
+SBOM_GENERATION_CONTEXT = "before build"
+CYCLONEDX_LIFECYCLE_PHASE = "pre-build"
+LIFECYCLES_MIN_SPEC_VERSION = (1, 5)
+PROPERTY_GENERATION_CONTEXT = "icdev:sbom-generation-context"
+
+# SBOM Version, as the standard's semver spelling. The major is pinned to 1 by
+# SBOM_VERSION_MAJOR (sbom_revision) and the minor counts content revisions.
+PROPERTY_SBOM_VERSION = "icdev:sbom:version"
+
+# The sbom_records columns added by migration
+# 20260808030213_sbom_2026_minimum_elements (sbx-fnd-02). Written only where they
+# exist: a database that predates that migration still records its row and names on
+# stderr what it could not persist, rather than raising into the caller.
+SBOM_RECORD_METADATA_COLUMNS = (
+    "sbom_author",
+    "data_format_name",
+    "data_format_version",
+    "generation_context",
+    "tool_name",
+    "tool_version",
+    "sbom_version",
+    "serial_number",
+)
+
 # Coverage status -> CycloneDX `compositions[].aggregate` vocabulary (spec 1.3+,
 # so this is valid across every version in CYCLONEDX_SUPPORTED_VERSIONS).
 COVERAGE_AGGREGATE = {
@@ -74,6 +234,23 @@ COVERAGE_AGGREGATE = {
     COVERAGE_INCOMPLETE: "incomplete",
     COVERAGE_UNKNOWN: "unknown",
 }
+
+# Mirrors the CHECK constraint on sbom_components.component_type (migration 209). A
+# component whose type falls outside it is stored as 'other' rather than raising — an
+# unexpected type must not cost the whole inventory write.
+SBOM_COMPONENT_TYPES = frozenset(
+    {
+        "library",
+        "framework",
+        "container",
+        "os",
+        "firmware",
+        "device",
+        "application",
+        "service",
+        "other",
+    }
+)
 
 
 def _get_connection(db_path=None):
@@ -187,10 +364,10 @@ def _parse_requirements_txt(file_path):
             match = re.match(r"^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?", line)
             if match:
                 name = match.group(1).lower().replace("_", "-")
-                version = match.group(3) or "unspecified"
+                version = match.group(3) or UNKNOWN
 
                 purl = f"pkg:pypi/{name}"
-                if version != "unspecified":
+                if version != UNKNOWN:
                     purl += f"@{version}"
 
                 components.append(
@@ -198,6 +375,7 @@ def _parse_requirements_txt(file_path):
                         "type": "library",
                         "name": name,
                         "version": version,
+                        "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                         "purl": purl,
                         "scope": "required",
                         "group": "",
@@ -230,12 +408,12 @@ def _parse_pyproject_toml(file_path):
                     dep_match = re.match(r"([a-zA-Z0-9._-]+)(?:\[.*?\])?\s*(?:([<>=!~]+)\s*(.+))?", dep_str)
                     if dep_match:
                         name = dep_match.group(1).lower().replace("_", "-")
-                        version = dep_match.group(3) or "unspecified"
+                        version = dep_match.group(3) or UNKNOWN
                         # Clean up version (take first version if multiple conditions)
                         version = version.split(",")[0].strip()
 
                         purl = f"pkg:pypi/{name}"
-                        if version != "unspecified":
+                        if version != UNKNOWN:
                             purl += f"@{version}"
 
                         components.append(
@@ -243,6 +421,7 @@ def _parse_pyproject_toml(file_path):
                                 "type": "library",
                                 "name": name,
                                 "version": version,
+                                "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                                 "purl": purl,
                                 "scope": "required",
                                 "group": "",
@@ -270,12 +449,12 @@ def _parse_package_json(file_path):
             # Clean version spec
             version = version_spec.lstrip("^~>=<")
             if not version or version == "*":
-                version = "unspecified"
+                version = UNKNOWN
 
             # Handle scoped packages
             purl_name = name.replace("/", "%2F") if "/" in name else name
             purl = f"pkg:npm/{purl_name}"
-            if version != "unspecified":
+            if version != UNKNOWN:
                 purl += f"@{version}"
 
             group = ""
@@ -291,6 +470,7 @@ def _parse_package_json(file_path):
                     "type": "library",
                     "name": pkg_name,
                     "version": version,
+                    "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                     "purl": purl,
                     "scope": scope,
                     "group": group,
@@ -401,13 +581,14 @@ def _parse_cargo_toml(file_path):
         simple_match = re.match(r'^([a-zA-Z0-9_-]+)\s*=\s*"([^"]*)"', stripped)
         if simple_match:
             name = simple_match.group(1)
-            version = simple_match.group(2) or "unspecified"
-            purl = f"pkg:cargo/{name}@{version}"
+            version = simple_match.group(2) or UNKNOWN
+            purl = f"pkg:cargo/{name}" if version == UNKNOWN else f"pkg:cargo/{name}@{version}"
             components.append(
                 {
                     "type": "library",
                     "name": name,
                     "version": version,
+                    "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                     "purl": purl,
                     "scope": scope,
                     "group": "",
@@ -422,13 +603,14 @@ def _parse_cargo_toml(file_path):
             name = table_match.group(1)
             inner = table_match.group(2)
             version_match = re.search(r'version\s*=\s*"([^"]*)"', inner)
-            version = version_match.group(1) if version_match else "unspecified"
-            purl = f"pkg:cargo/{name}@{version}"
+            version = version_match.group(1) if version_match else UNKNOWN
+            purl = f"pkg:cargo/{name}" if version == UNKNOWN else f"pkg:cargo/{name}@{version}"
             components.append(
                 {
                     "type": "library",
                     "name": name,
                     "version": version,
+                    "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                     "purl": purl,
                     "scope": scope,
                     "group": "",
@@ -463,8 +645,15 @@ def _parse_pom_xml(file_path):
             group_id = group_match.group(1).strip()
             artifact_id = artifact_match.group(1).strip()
 
+            # A POM that names no <version> is not silent about the version — the
+            # version lives in a parent POM's dependencyManagement, which this
+            # declared-only parser cannot read. That is a distinct unknown-reason,
+            # not the old "managed" literal, which said neither unknown nor withheld.
             version_match = re.search(r"<version>\s*(.*?)\s*</version>", block)
-            version = version_match.group(1).strip() if version_match else "managed"
+            version = version_match.group(1).strip() if version_match else UNKNOWN
+            version_reason = (
+                REASON_DECLARED_WITHOUT_VERSION if version_match else REASON_VERSION_MANAGED_BY_PARENT
+            )
 
             scope_match = re.search(r"<scope>\s*(.*?)\s*</scope>", block)
             maven_scope = scope_match.group(1).strip() if scope_match else "compile"
@@ -475,13 +664,16 @@ def _parse_pom_xml(file_path):
             else:
                 cdx_scope = "required"
 
-            purl = f"pkg:maven/{group_id}/{artifact_id}@{version}"
+            purl = f"pkg:maven/{group_id}/{artifact_id}"
+            if version != UNKNOWN:
+                purl += f"@{version}"
 
             components.append(
                 {
                     "type": "library",
                     "name": artifact_id,
                     "version": version,
+                    "version_unknown_reason": version_reason,
                     "purl": purl,
                     "scope": cdx_scope,
                     "group": group_id,
@@ -769,6 +961,105 @@ def _generate_bom_ref(component):
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+def _property_value(cdx_comp, name, default=None):
+    """Read one CycloneDX property off a built component."""
+    for prop in cdx_comp.get("properties") or []:
+        if prop.get("name") == name:
+            return prop.get("value")
+    return default
+
+
+def _persist_components(conn, cdx_components):
+    """Write the document's components to `sbom_components`, carrying their licenses.
+
+    The generator has never written this table, which is why `license` sat dead in the
+    schema from migration 209 until now. `license` is exactly the 2026 Component License
+    element, so it is populated here — an SPDX expression, a URL, a license name, or one
+    of the two explicit undisclosed markers. It is never left NULL.
+
+    `hash_value` and `hash_algorithm` (migration `20260808030213`) are populated the same
+    way and under the same rule: the hexadecimal digest and its IANA Hash Function
+    Textual Name where the artifact was reachable, and one of the two undisclosed
+    markers where it was not. Neither is left NULL either, because an SBOM row that is
+    silent about a hash is indistinguishable from one that was never asked.
+
+    Rows are read back out of the FINISHED CycloneDX components rather than re-resolved
+    from the parsed input. That is what makes the table incapable of disagreeing with the
+    document: the same dedup, the same disclosure policy and the same resolution produced
+    both, so a component cannot be described here in terms the recipient's copy does not
+    use. It is also why the row id is the component's `bom-ref` — a row and the document
+    entry it came from are the same string, and regenerating an SBOM updates the row
+    rather than accumulating a duplicate.
+
+    Only the dependency components are written. The document's target component lives in
+    `metadata.component`, not in `components`, and it is the subject of the inventory
+    rather than an entry in it.
+
+    A failure here is reported, not swallowed. The house rule against `except: pass`
+    around an INSERT exists because a swallowed schema mismatch reports success while
+    persisting nothing; the warning below names the table and the error, and
+    `tests/test_sbom_component_license.py` asserts the rows really land, so a mismatch
+    surfaces in CI rather than hiding. It is still not allowed to abort generation: the
+    document on disk is what ~25 call sites and a blocking gate consume, and losing that
+    over a supplementary inventory write would be the larger regression.
+    """
+    written = 0
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        for cdx_comp in cdx_components:
+            component_type = cdx_comp.get("type") or "library"
+            if component_type not in SBOM_COMPONENT_TYPES:
+                component_type = "other"
+            # Read back what the document says, including the two undisclosed states —
+            # so a withheld license persists as `withheld` and an unknown one as
+            # `unknown`, never as the value that was withheld.
+            unknown_json, withheld_json = Disclosure.from_cyclonedx(cdx_comp).db_values()
+            conn.execute(
+                """INSERT INTO sbom_components
+                   (id, component_name, version, component_type, purl, license,
+                    producer, hash_value, hash_algorithm, unknown_fields_json,
+                    withheld_fields_json, classification)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT(id) DO UPDATE SET
+                       license = EXCLUDED.license,
+                       producer = EXCLUDED.producer,
+                       hash_value = EXCLUDED.hash_value,
+                       hash_algorithm = EXCLUDED.hash_algorithm,
+                       unknown_fields_json = EXCLUDED.unknown_fields_json,
+                       withheld_fields_json = EXCLUDED.withheld_fields_json,
+                       purl = EXCLUDED.purl,
+                       component_type = EXCLUDED.component_type,
+                       updated_at = %s""",
+                (
+                    cdx_comp["bom-ref"],
+                    cdx_comp["name"],
+                    cdx_comp["version"],
+                    component_type,
+                    cdx_comp.get("purl"),
+                    _property_value(cdx_comp, PROPERTY_LICENSE),
+                    _property_value(cdx_comp, PROPERTY_PRODUCER),
+                    _property_value(cdx_comp, PROPERTY_HASH),
+                    _property_value(cdx_comp, PROPERTY_HASH_ALGORITHM),
+                    unknown_json,
+                    withheld_json,
+                    "CUI",
+                    now,
+                ),
+            )
+            written += 1
+        conn.commit()
+    except Exception as e:
+        # Leave the connection usable: on PostgreSQL a failed statement aborts the whole
+        # transaction, which would then take the audit event down with it.
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 — nothing better to do than keep going
+            pass
+        print(f"Warning: Could not record sbom_components rows: {e}", file=sys.stderr)
+        return 0
+    return written
+
+
 def _sign_generated_sbom(out_file):
     """Produce the SBOM Author Signature for a freshly written SBOM.
 
@@ -858,6 +1149,156 @@ def _build_coverage_blocks(coverage, cdx_components, target_bom_ref):
     return compositions, properties
 
 
+def _record_version_disclosure(comp, disclosure):
+    """State whether a component's version is unknown, and why (sbx-prc-01).
+
+    A version ICDEV could not establish used to be written as the bare literal
+    ``"unspecified"`` (or ``"managed"`` for Maven), which told a recipient neither
+    that the author had looked nor that the author was holding it back. Now the
+    absence is one of the two states the 2026 standard separates — always the
+    *unknown* one here, since a version nobody declared is not a version anybody
+    is withholding.
+    """
+    raw = str(comp.get("version") or "")
+    if raw.strip().lower() != UNKNOWN and not is_legacy_sentinel(raw):
+        return disclosure
+
+    reason = comp.get("version_unknown_reason")
+    if reason not in UNKNOWN_REASONS:
+        # A resolved lockfile that still has no version means the producer
+        # published none; a declared manifest means nobody pinned one.
+        reason = (
+            REASON_DECLARED_WITHOUT_VERSION
+            if comp.get("resolution") == RESOLUTION_DECLARED
+            else REASON_NOT_PROVIDED_BY_PRODUCER
+        )
+    return disclosure.unknown(FIELD_VERSION, reason)
+
+
+def _get_tool_version():
+    """SBOM Tool Version — derived from the delivery, never a literal.
+
+    This was hardcoded "1.0.0": a constant that could never change and therefore
+    identified no particular code delivery, which is the one thing the element
+    exists to do. The version is read from the package's single source of truth,
+    then from installed distribution metadata, then from pyproject.toml. If every
+    source fails the answer is "unknown" — what the standard requires the author to
+    state when a value is unavailable, rather than a placeholder that reads like a
+    real release.
+    """
+    try:
+        from icdev._version import __version__ as package_version
+
+        if package_version:
+            return str(package_version)
+    except Exception:
+        pass
+
+    try:
+        from importlib.metadata import version as _distribution_version
+
+        installed = _distribution_version("icdev")
+        if installed:
+            return str(installed)
+    except Exception:
+        pass
+
+    try:
+        text = (BASE_DIR / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+
+    return "unknown"
+
+
+def _get_sbom_author(sbom_author=None):
+    """SBOM Author — explicit argument, then $ICDEV_SBOM_AUTHOR, then the default."""
+    if sbom_author and str(sbom_author).strip():
+        return str(sbom_author).strip()
+    configured = os.environ.get(SBOM_AUTHOR_ENV, "")
+    if configured.strip():
+        return configured.strip()
+    return DEFAULT_SBOM_AUTHOR
+
+
+def _rfc9557_timestamp(moment):
+    """SBOM Timestamp, conformant to RFC 9557.
+
+    RFC 9557 extends RFC 3339 with optional bracketed suffixes, so an unsuffixed
+    RFC 3339 date-time is already a conformant Internet-Extended-Date/Time string.
+    The suffix form is deliberately not used: CycloneDX types metadata.timestamp as
+    JSON Schema `format: date-time` and SPDX 2.3 pins `created` to `...Z`, both of
+    which a trailing `[UTC]` would fail.
+
+    A naive datetime raises rather than being assumed UTC. The strftime format this
+    replaces stamped a literal "Z" onto whatever it was handed, so a non-UTC clock
+    produced a timestamp that was wrong and well-formed at the same time.
+    """
+    if moment.tzinfo is None or moment.tzinfo.utcoffset(moment) is None:
+        raise ValueError("SBOM timestamp requires a timezone-aware datetime (RFC 9557)")
+    utc = moment.astimezone(timezone.utc).replace(microsecond=0)
+    return utc.isoformat().replace("+00:00", "Z")
+
+
+def _spec_version_tuple(spec_version):
+    """Parse "1.6" into (1, 6) for ordered comparison; (0, 0) if unparseable."""
+    try:
+        return tuple(int(part) for part in str(spec_version).split("."))
+    except (TypeError, ValueError):
+        return (0, 0)
+
+
+def _revision_of(version_value):
+    """Map one `sbom_records.version` string to the revision number it stands for.
+
+    Computed in Python, not in SQL. The query this replaces was
+    `MAX(CAST(CASE WHEN version GLOB '[0-9]*' ... AS REAL))` — SQLite dialect on a
+    PostgreSQL-primary backend, where `translate_sql` rewrites GLOB to a POSIX `~`
+    whose `[0-9]*` matches every string including the empty one, and where
+    `CAST('1.0.0' AS REAL)` is a hard error rather than 1.0.
+
+    Both spellings are understood, so the counter stays monotonic across the change:
+    the legacy `"<N>.0"` float this column has always held, and the semver
+    `"1.<minor>.<patch>"` of the SBOM Version element, whose revision is minor + 1.
+    """
+    if version_value is None:
+        return 0
+    text = str(version_value).strip()
+    if not text:
+        return 0
+    parts = text.split(".")
+    try:
+        if len(parts) >= 3 and int(parts[0]) == SBOM_VERSION_MAJOR:
+            return int(parts[1]) + 1
+        return int(float(text))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _plan_sbom_version(conn, project_id):
+    """Settle the SBOM Version element BEFORE the document is built.
+
+    Returns ``(revision, record_version, sbom_version)``: the integer the CycloneDX
+    document's `version` carries, the legacy `sbom_records.version` spelling of that
+    same integer, and the semver spelling of the 2026 SBOM Version element. All
+    three come off one predecessor lookup, so the document and the row cannot
+    disagree — which they previously did, the document always saying 1 while the
+    column independently counted 1.0, 2.0, 3.0.
+    """
+    predecessor = latest_record(conn, project_id)
+    prior_semver = None
+    prior_record_version = None
+    if predecessor:
+        prior_record_version = predecessor.get("version")
+        prior_semver = predecessor.get("sbom_version") or prior_record_version
+
+    revision = _revision_of(prior_record_version) + 1
+    return revision, f"{revision}.0", next_sbom_version(prior_semver)
+
+
 def _build_cyclonedx_sbom(
     project,
     components,
@@ -866,9 +1307,19 @@ def _build_cyclonedx_sbom(
     schema=None,
     coverage=None,
     python_env=None,
+    disclosure_policy=None,
+    sbom_author=None,
+    tool_version=None,
+    document_version=1,
+    sbom_version=None,
     retrieval_url=None,
 ):
     """Build a CycloneDX JSON SBOM document.
+
+    ``document_version`` is the CycloneDX integer revision counter and
+    ``sbom_version`` is the same revision spelled as the standard's SBOM Version
+    element. A caller that passes neither gets revision 1 and its matching semver,
+    so the two agree by construction rather than by coincidence.
 
     ``retrieval_url`` is the version-specific URL this document will be served
     from (sbx-gov-02). It is embedded rather than merely recorded because
@@ -881,8 +1332,14 @@ def _build_cyclonedx_sbom(
     active_schema = schema or CYCLONEDX_SUPPORTED_VERSIONS.get(
         active_spec_version, CYCLONEDX_SUPPORTED_VERSIONS[CYCLONEDX_SPEC_VERSION]
     )
+    active_author = _get_sbom_author(sbom_author)
+    active_tool_version = tool_version or _get_tool_version()
+    active_document_version = int(document_version)
+    active_sbom_version = sbom_version or f"{SBOM_VERSION_MAJOR}.{max(active_document_version, 1) - 1}.0"
 
     if serial_number is None:
+        # uuid4 is the random UUID of RFC 9562 §5.4, the form the standard points at
+        # for serial-number style identifiers.
         serial_number = f"urn:uuid:{uuid.uuid4()}"
 
     # Deduplicate by full metadata identity, not by purl: two instances that
@@ -902,14 +1359,27 @@ def _build_cyclonedx_sbom(
     project_dir = project.get("directory_path") or None
     producers = ProducerContext(project_dir=project_dir, python_env=python_env)
 
+    # Explicitly Identifying Unknown Information (2026 minimum elements). The
+    # policy carries the recipient enquiry route and any field the operator
+    # deliberately withholds; unknowns are discovered below, not configured.
+    policy = disclosure_policy or load_disclosure_policy()
+    disclosures = []
+
     # Build CycloneDX components array
     cdx_components = []
     for comp in unique_components:
+        # Unknown first, then policy withholding: a field the operator withholds
+        # is withheld even where ICDEV also failed to establish it, because
+        # "we are not telling you" is the stronger and more actionable statement.
+        disclosure = _record_version_disclosure(comp, Disclosure())
+        apply_component_policy(comp, policy, into=disclosure)
+        disclosures.append(disclosure)
+
         cdx_comp = {
             "type": comp.get("type", "library"),
             "bom-ref": _generate_bom_ref(comp),
-            "name": comp["name"],
-            "version": comp["version"],
+            "name": disclosure.value_for(FIELD_NAME, comp["name"]),
+            "version": disclosure.value_for(FIELD_VERSION, comp["version"]),
         }
         if comp.get("group"):
             cdx_comp["group"] = comp["group"]
@@ -917,6 +1387,25 @@ def _build_cyclonedx_sbom(
             cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
+
+        # Component License — an SPDX expression validated against the SPDX License
+        # List, a URL to the full terms, a license name, or one of the two explicit
+        # undisclosed markers. Never omitted, and the proprietary-conditions flag is
+        # always stated rather than left to inference. Resolved AFTER the policy has
+        # been applied, so a license the operator withholds is not then overwritten
+        # with "unknown" and is never rendered into `licenses`.
+        license_result = resolve_license(comp)
+        record_license_disclosure(
+            license_result,
+            disclosure,
+            resolved=comp.get("resolution") != RESOLUTION_DECLARED,
+        )
+        entries = license_entries(license_result, disclosure)
+        if entries:
+            cdx_comp["licenses"] = entries
+        cdx_comp.setdefault("properties", []).extend(
+            license_properties(license_result, disclosure)
+        )
 
         # Component Producer — the entity that creates, defines and identifies
         # the component. Never taken from `group`, which is a namespace. Always
@@ -927,6 +1416,25 @@ def _build_cyclonedx_sbom(
         apply_producer_to_cyclonedx(cdx_comp, producer, active_spec_version)
         cdx_comp.setdefault("properties", []).extend(producer_properties(producer))
 
+        # Component Hash Value and Algorithm — a digest of the executable artifact,
+        # recomputed from a local file where one exists and otherwise repeated from the
+        # digest the resolved source declared. An inaccessible artifact is stated as
+        # unknown with its reason rather than the fields being dropped, and a digest
+        # that is not over an artifact (go.sum's `h1:`) or is under an unapproved
+        # algorithm is never adopted, only carried as unadopted evidence.
+        hash_result = resolve_hash(comp)
+        record_hash_disclosure(hash_result, disclosure)
+        apply_hash_to_cyclonedx(cdx_comp, hash_result, disclosure)
+
+        # An unidentifiable producer is an *unknown* field like any other, so it
+        # also joins the uniform convention — a validator then reads every
+        # undisclosed field of every element from one pair of property prefixes,
+        # without knowing that the producer element has properties of its own.
+        # A producer the policy withholds stays withheld: the bridge only adds.
+        if disclosure.state_of(FIELD_PRODUCER) is None:
+            disclosure_from_producer(producer, into=disclosure)
+        apply_to_cyclonedx(cdx_comp, disclosure)
+
         # Private marker, stripped before serialization — records whether this
         # instance came from a resolved set or from a declared manifest.
         cdx_comp["_declared"] = comp.get("resolution") == RESOLUTION_DECLARED
@@ -935,28 +1443,59 @@ def _build_cyclonedx_sbom(
     # The target component is a component too, so the element applies to it —
     # and unlike its dependencies, the operator can simply state the answer.
     target_producer = resolve_project_producer(project, project_dir=project_dir)
+    target_disclosure = disclosure_from_producer(target_producer)
+    apply_document_policy(policy, into=target_disclosure)
+
+    # Unlike its dependencies, the target component's license IS declared — in the
+    # project's own manifest — so it is read rather than left unknown. `resolved=True`:
+    # this project is the producer, so a manifest of ours that states no license is a
+    # license its producer did not provide, not one an offline build could not reach.
+    target_license = resolve_declared_license(project_license_from_manifests(project_dir))
+    record_license_disclosure(target_license, target_disclosure, resolved=True)
+
+    # The target component's hash is the one this generator genuinely cannot supply. An
+    # SBOM produced from source before a build has no executable artifact to hash yet —
+    # that is the Generation Context this document states — so the element is the
+    # explicit unknown marker naming exactly that, rather than a digest of some
+    # stand-in file. Recorded before `disclosures` is read, so the document's
+    # completeness statement counts it.
+    target_hash = unknown_hash(REASON_TARGET_NOT_BUILT)
+    record_hash_disclosure(target_hash, target_disclosure)
+    disclosures.append(target_disclosure)
+
     target_component = {
         "type": "application",
         "bom-ref": f"icdev-{project.get('id', 'unknown')}",
-        "name": project.get("name", "Unknown"),
-        "version": "0.0.0",
-        "properties": producer_properties(target_producer),
+        "name": target_disclosure.value_for(FIELD_NAME, project.get("name", "Unknown")),
+        "version": target_disclosure.value_for(FIELD_VERSION, "0.0.0"),
+        "properties": producer_properties(target_producer)
+        + license_properties(target_license, target_disclosure),
     }
+    target_entries = license_entries(target_license, target_disclosure)
+    if target_entries:
+        target_component["licenses"] = target_entries
     apply_producer_to_cyclonedx(target_component, target_producer, active_spec_version)
+    apply_hash_to_cyclonedx(target_component, target_hash, target_disclosure)
+    apply_to_cyclonedx(target_component, target_disclosure)
 
     sbom = {
         "$schema": active_schema,
         "bomFormat": "CycloneDX",
         "specVersion": active_spec_version,
         "serialNumber": serial_number,
-        "version": 1,
+        "version": active_document_version,
         "metadata": {
-            "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": _rfc9557_timestamp(now),
+            # SBOM Author, in CycloneDX's own metadata.authors slot — present in
+            # every spec version this module emits, unlike metadata.manufacturer
+            # (1.6+). The tools[] entry below is the Tool elements and keeps naming
+            # the tool's vendor; the two are deliberately separate statements.
+            "authors": [{"name": active_author}],
             "tools": [
                 {
-                    "vendor": "ICDEV™",
-                    "name": "icdev-sbom-generator",
-                    "version": "1.0.0",
+                    "vendor": SBOM_TOOL_VENDOR,
+                    "name": SBOM_TOOL_NAME,
+                    "version": active_tool_version,
                 }
             ],
             "component": target_component,
@@ -977,10 +1516,40 @@ def _build_cyclonedx_sbom(
                     "name": "icdev:distribution",
                     "value": "Distribution D -- Authorized DoD Personnel Only",
                 },
+                # SBOM Author again, under the key spdx_writer reads to build the
+                # SPDX `Organization:` creator. metadata.authors has no SPDX 2.3
+                # counterpart, so without this the element would reach one
+                # serialization and not the other.
+                {
+                    "name": PROPERTY_SBOM_AUTHOR,
+                    "value": active_author,
+                },
+                {
+                    "name": PROPERTY_GENERATION_CONTEXT,
+                    "value": SBOM_GENERATION_CONTEXT,
+                },
+                {
+                    "name": PROPERTY_SBOM_VERSION,
+                    "value": active_sbom_version,
+                },
             ],
         },
         "components": cdx_components,
     }
+
+    # SBOM Generation Context in CycloneDX's own vocabulary. metadata.lifecycles
+    # arrived in 1.5, so a 1.4 document carries the context in the property above
+    # only, rather than in a field its schema would reject.
+    if _spec_version_tuple(active_spec_version) >= LIFECYCLES_MIN_SPEC_VERSION:
+        sbom["metadata"]["lifecycles"] = [{"phase": CYCLONEDX_LIFECYCLE_PHASE}]
+
+    # Explicitly Identifying Unknown Information — the recipient enquiry route
+    # goes immediately after the classification and distribution markings, because
+    # those markings *are* the withholding posture the standard's process element
+    # is about: they tell a recipient what they may not have, and this tells them
+    # how to ask. Emitted on every document, withholding or not.
+    sbom["metadata"]["properties"].extend(enquiry_properties(policy))
+    sbom["metadata"]["properties"].extend(completeness_properties(disclosures))
 
     # Coverage (2026 Minimum Elements) — always emitted, including when the
     # answer is "incomplete" or "unknown".
@@ -1028,23 +1597,35 @@ def generate_sbom(
     db_path=None,
     spec_version=None,
     python_env=None,
+    build_id=None,
+    sbom_author=None,
 ):
     """Generate a Software Bill of Materials for a project.
 
     Args:
         project_id: The project identifier
-        sbom_format: Output format (currently only 'cyclonedx' supported)
+        sbom_format: Output format -- 'cyclonedx' or 'spdx'. The 2026 Minimum
+            Elements name both; SPDX is translated from the CycloneDX document
+            of the same build so the two carry identical elements.
         output_path: Override output file path
         db_path: Override database path
-        spec_version: CycloneDX spec version override (D342)
+        spec_version: CycloneDX spec version override (D342). Applies to the
+            CycloneDX document, including the one the SPDX document is
+            translated from -- the producer field it selects travels through.
         python_env: Virtualenv / site-packages directory whose installed
             distributions are the Python target environment (SBOM 2026 Coverage)
+        build_id: Identifier of the build this SBOM describes (SBOM 2026
+            Frequency). Falls back to `$ICDEV_BUILD_ID`, then to the project
+            directory's git commit, then to unknown.
+        sbom_author: SBOM Author — the full name of the entity generating this
+            SBOM, which is not the tool and not its vendor. Falls back to
+            `$ICDEV_SBOM_AUTHOR`, then to DEFAULT_SBOM_AUTHOR.
 
     Returns:
         Path to the generated SBOM file
     """
-    if sbom_format != "cyclonedx":
-        raise ValueError(f"Unsupported SBOM format: {sbom_format}. Only 'cyclonedx' is supported.")
+    if sbom_format not in SUPPORTED_FORMATS:
+        raise ValueError(f"Unsupported SBOM format: {sbom_format}. Supported: {list(SUPPORTED_FORMATS)}")
 
     # Apply spec version override (D342 — backward-compatible)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
@@ -1053,6 +1634,8 @@ def generate_sbom(
             f"Unsupported CycloneDX spec version: {active_spec_version}. Supported: {list(CYCLONEDX_SUPPORTED_VERSIONS.keys())}"
         )
     active_schema = CYCLONEDX_SUPPORTED_VERSIONS[active_spec_version]
+    active_author = _get_sbom_author(sbom_author)
+    active_tool_version = _get_tool_version()
 
     conn = _get_connection(db_path)
     try:
@@ -1084,22 +1667,17 @@ def generate_sbom(
             if eco["reason"]:
                 print(f"      {eco['reason']}")
 
-        # Determine version BEFORE building the document. The version is half
-        # of the version-specific retrieval URL (sbx-gov-02), and the URL has
-        # to be inside the bytes that get signed — so it cannot be assigned
-        # after the file is written, which is where this used to sit.
-        existing = conn.execute(
-            """SELECT MAX(CAST(
-                 CASE WHEN version GLOB '[0-9]*' THEN version ELSE '0' END
-               AS REAL)) as max_ver
-               FROM sbom_records WHERE project_id = %s""",
-            (project_id,),
-        ).fetchone()
-        max_ver = existing["max_ver"] if existing and existing["max_ver"] else 0.0
-        new_version = f"{max_ver + 1.0:.1f}"
+        # SBOM Version. Settled BEFORE the document is built, so the integer the
+        # document carries and the row that records it are one number written twice
+        # rather than two counters that happened to be near each other. It is also
+        # half of the version-specific retrieval URL (sbx-gov-02), and that URL has
+        # to be inside the bytes that get signed — so neither can be assigned after
+        # the file is written.
+        revision_number, new_version, new_sbom_version = _plan_sbom_version(conn, project_id)
         distribution_url = sbom_retrieval_url(project_id, new_version)
 
-        # Build CycloneDX SBOM
+        # Build CycloneDX SBOM. This is the document every format is derived
+        # from, so an element added here reaches both serializations.
         sbom, component_count = _build_cyclonedx_sbom(
             project,
             all_components,
@@ -1107,8 +1685,14 @@ def generate_sbom(
             schema=active_schema,
             coverage=coverage,
             python_env=python_env,
+            sbom_author=active_author,
+            tool_version=active_tool_version,
+            document_version=revision_number,
+            sbom_version=new_sbom_version,
             retrieval_url=distribution_url,
         )
+
+        document = sbom if sbom_format == FORMAT_CYCLONEDX else to_spdx(sbom)
 
         # Determine output path
         if output_path:
@@ -1120,40 +1704,116 @@ def generate_sbom(
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
             out_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            out_file = out_dir / f"sbom_{project_id}_{timestamp}.cdx.json"
+            extension = FORMAT_EXTENSIONS[sbom_format]
+            out_file = out_dir / f"sbom_{project_id}_{timestamp}.{extension}"
 
         out_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(out_file, "w", encoding="utf-8") as f:
-            json.dump(sbom, f, indent=2)
+            json.dump(document, f, indent=2)
 
         # SBOM Author Signature (2026 Minimum Elements, sbx-sig-01). Signed
         # after the bytes are on disk and before the row is written, so the
         # persisted signature always describes the artifact that shipped.
         signature = _sign_generated_sbom(out_file)
 
+        # Frequency + Accommodation of Updates (2026 Minimum Elements, sbx-prc-02).
+        # Resolved before the INSERT so the new row carries its link to the SBOM it
+        # replaces from the moment it exists, rather than being patched afterwards —
+        # and so nothing ever has to write to the predecessor.
+        revision = plan_revision(
+            conn,
+            project_id,
+            sbom,
+            project_dir=project_dir_path,
+            build_id=build_id,
+        )
+
         # Record in sbom_records table. author_signature holds the base64
         # signature value; the full block — fingerprint, public key, artifact
         # hash — lives in the detached <sbom>.sig.json beside the artifact,
         # which is what a downstream consumer actually receives.
-        conn.execute(
-            """INSERT INTO sbom_records
-               (project_id, version, format, file_path,
-                component_count, vulnerability_count,
-                author_signature, signature_algorithm)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (
-                project_id,
-                new_version,
-                sbom_format,
-                str(out_file),
-                component_count,
-                0,  # Vulnerability count starts at 0; updated by security scanning
-                signature["value"] if signature else None,
-                signature["algorithm"] if signature else None,
-            ),
+        record_columns = [
+            "project_id",
+            "version",
+            "format",
+            "file_path",
+            "component_count",
+            "vulnerability_count",
+            "author_signature",
+            "signature_algorithm",
+        ]
+        record_values = [
+            project_id,
+            new_version,
+            sbom_format,
+            str(out_file),
+            component_count,
+            0,  # Vulnerability count starts at 0; updated by security scanning
+            signature["value"] if signature else None,
+            signature["algorithm"] if signature else None,
+        ]
+
+        # The 2026 SBOM Metadata elements (sbx-fld-01), appended only where the
+        # sbx-fnd-02 migration has landed. A database that predates it still records
+        # its row and says on stderr exactly which elements are in the document but
+        # not in the table — the alternative is an INSERT that names a column the
+        # live schema lacks, which raises into a caller that has already written the
+        # artifact to disk.
+        metadata_elements = {
+            "sbom_author": active_author,
+            "data_format_name": SBOM_DATA_FORMAT_NAME,
+            "data_format_version": active_spec_version,
+            "generation_context": SBOM_GENERATION_CONTEXT,
+            "tool_name": SBOM_TOOL_NAME,
+            "tool_version": active_tool_version,
+            "sbom_version": new_sbom_version,
+            "serial_number": sbom["serialNumber"],
+        }
+        unpersisted = []
+        for column in SBOM_RECORD_METADATA_COLUMNS:
+            if column_exists(conn, "sbom_records", column):
+                record_columns.append(column)
+                record_values.append(metadata_elements[column])
+            else:
+                unpersisted.append(column)
+        if unpersisted:
+            print(
+                f"Warning: sbom_records is missing {', '.join(unpersisted)} — those 2026 SBOM "
+                "metadata elements are in the document but were not persisted. "
+                "Run: python tools/db/migrate.py",
+                file=sys.stderr,
+            )
+
+        revision_columns, revision_values, revision_unpersisted = revision_insert_fields(conn, revision)
+        record_columns.extend(revision_columns)
+        record_values.extend(revision_values)
+        if revision_unpersisted:
+            print(
+                f"Warning: sbom_records is missing {', '.join(revision_unpersisted)} — this SBOM was "
+                "recorded but its link to the one it supersedes was not, so the revision "
+                "chain has a break in it. Run: python tools/db/migrate.py",
+                file=sys.stderr,
+            )
+
+        # Every interpolated name is a module-level literal — the fixed base list,
+        # SBOM_RECORD_METADATA_COLUMNS, or SBOM_RECORD_REVISION_COLUMNS — filtered
+        # through column_exists. No caller input reaches the string; every value is
+        # bound.
+        cursor = conn.execute(
+            f"INSERT INTO sbom_records ({', '.join(record_columns)}) "  # nosec B608
+            f"VALUES ({', '.join(['%s'] * len(record_columns))})",
+            tuple(record_values),
         )
         conn.commit()
+        record_id = getattr(cursor, "lastrowid", None)
+
+        # Component inventory (sbx-fld-04). Written from the FINISHED document, so the
+        # table and the artifact describe the same components with the same licenses,
+        # and written after the record commits so rows only ever exist for an SBOM that
+        # was actually recorded. Format-independent: the SPDX serialization is a
+        # translation of this same document, so the rows describe it equally.
+        persisted = _persist_components(conn, sbom["components"])
 
         # Log audit event
         _log_audit_event(
@@ -1162,6 +1822,12 @@ def generate_sbom(
             f"SBOM v{new_version} generated",
             {
                 "version": new_version,
+                "sbom_version": new_sbom_version,
+                "document_version": revision_number,
+                "sbom_author": active_author,
+                "tool_name": SBOM_TOOL_NAME,
+                "tool_version": active_tool_version,
+                "generation_context": SBOM_GENERATION_CONTEXT,
                 "format": sbom_format,
                 "component_count": component_count,
                 "output_file": str(out_file),
@@ -1170,17 +1836,38 @@ def generate_sbom(
                 "signed": bool(signature),
                 "signature_algorithm": signature["algorithm"] if signature else None,
                 "public_key_fp": signature["public_key_fp"] if signature else None,
+                "sbom_record_id": record_id,
+                "components_persisted": persisted,
+                "supersedes_sbom_id": revision["supersedes_sbom_id"],
+                "revision_reason": revision["revision_reason"],
+                "content_digest": revision["content_digest"],
+                "content_changed": revision["content_changed"],
+                "source_revision": revision["source_revision"],
             },
             out_file,
         )
 
+        format_label = (
+            f"CycloneDX {active_spec_version}"
+            if sbom_format == FORMAT_CYCLONEDX
+            else f"{document['spdxVersion']} (translated from CycloneDX {active_spec_version})"
+        )
+
         print("\nSBOM generated successfully:")
         print(f"  File: {out_file}")
-        print(f"  Format: CycloneDX {active_spec_version}")
-        print(f"  Version: {new_version}")
-        print(f"  Components: {component_count}")
+        print(f"  Format: {format_label}")
+        print(f"  Version: {new_sbom_version} (document revision {revision_number})")
+        print(f"  Author: {active_author}")
+        print(f"  Tool: {SBOM_TOOL_NAME} {active_tool_version}")
+        print(f"  Context: {SBOM_GENERATION_CONTEXT}")
+        print(f"  Components: {component_count} ({persisted} recorded in sbom_components)")
         print(f"  Serial: {sbom['serialNumber']}")
         print(f"  Coverage: {coverage['status']}")
+        print(f"  Revision: {revision['revision_reason']}")
+        if revision["supersedes_sbom_id"]:
+            changed = "content changed" if revision["content_changed"] else "same content, re-issued"
+            print(f"    Supersedes SBOM record {revision['supersedes_sbom_id']} ({changed})")
+        print(f"    Build: {revision['source_revision'] or 'unknown'}")
         if coverage["status"] != COVERAGE_COMPLETE:
             print(f"  {coverage['statement']}")
         if signature:
@@ -1195,14 +1882,14 @@ def generate_sbom(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate CycloneDX Software Bill of Materials (SBOM)")
+    parser = argparse.ArgumentParser(description="Generate a Software Bill of Materials (CycloneDX or SPDX)")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument(
         "--format",
         dest="sbom_format",
-        default="cyclonedx",
-        choices=["cyclonedx"],
-        help="SBOM output format (default: cyclonedx)",
+        default=FORMAT_CYCLONEDX,
+        choices=list(SUPPORTED_FORMATS),
+        help="SBOM output format -- both are named by the 2026 Minimum Elements (default: cyclonedx)",
     )
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
@@ -1210,8 +1897,11 @@ def main():
         "--spec-version",
         dest="spec_version",
         default=None,
-        choices=["1.4", "1.5", "1.6", "1.7"],
-        help="CycloneDX spec version (default: 1.4, D342)",
+        choices=list(CYCLONEDX_SUPPORTED_VERSIONS.keys()),
+        help=(
+            f"CycloneDX spec version (default: {CYCLONEDX_SPEC_VERSION}, D342). "
+            "Older versions remain selectable for consumers whose tooling requires them."
+        ),
     )
     parser.add_argument(
         "--python-env",
@@ -1220,6 +1910,25 @@ def main():
         help=(
             "Virtualenv (or site-packages) directory to read installed Python distributions "
             "from, instead of resolving from a lockfile (SBOM 2026 Coverage)"
+        ),
+    )
+    parser.add_argument(
+        "--build-id",
+        dest="build_id",
+        default=None,
+        help=(
+            "Identifier of the build this SBOM describes (SBOM 2026 Frequency). "
+            "Defaults to $ICDEV_BUILD_ID, then the project directory's git commit"
+        ),
+    )
+    parser.add_argument(
+        "--author",
+        dest="sbom_author",
+        default=None,
+        help=(
+            "SBOM Author (SBOM 2026 §1.1) -- the full name of the entity generating this "
+            "SBOM, which is not the tool and not the tool's vendor. "
+            f"Defaults to ${SBOM_AUTHOR_ENV}, then to '{DEFAULT_SBOM_AUTHOR}'."
         ),
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
@@ -1233,6 +1942,8 @@ def main():
             db_path=Path(args.db) if args.db else None,
             spec_version=args.spec_version,
             python_env=args.python_env,
+            build_id=args.build_id,
+            sbom_author=args.sbom_author,
         )
         print(f"\nSBOM path: {path}")
     except (FileNotFoundError, ValueError) as e:

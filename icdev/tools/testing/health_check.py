@@ -11,7 +11,6 @@ Implements the contract documented in
 Phase 3 clean-room rewrite).
 """
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import importlib
@@ -27,6 +26,8 @@ from typing import Callable, Dict, List
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 # data_types is the canonical source for these models. Fall back only
 # if the rewrite is run in a stripped-down environment without the

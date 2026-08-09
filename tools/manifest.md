@@ -700,13 +700,6 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Module Budget Tracker | tools\budget\module_budget_tracker.py | Auto-registered: budget/module_budget_tracker.py | --json | JSON |
-| Osint Privacy Sanitizer | tools\strategos\osint_privacy_sanitizer.py | Auto-registered: strategos/osint_privacy_sanitizer.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
 | Data Validator | tools\data_validator.py | Auto-registered: tools/data_validator.py | --json | JSON |
 | Predictive Analysis | tools\strategos\predictive_analysis.py | Auto-registered: strategos/predictive_analysis.py | --json | JSON |
 | Osint Normalizer | tools\threat_analysis\osint_normalizer.py | Auto-registered: threat_analysis/osint_normalizer.py | --json | JSON |

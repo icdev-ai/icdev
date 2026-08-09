@@ -20,6 +20,7 @@ from tools.llm.provider import (
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    tools_to_openai,
 )
 
 logger = get_logger("icdev.llm.ollama")
@@ -210,6 +211,18 @@ class OllamaProvider(LLMProvider):
         if options:
             payload["options"] = options
 
+        # Tools — Ollama's /api/chat takes the OpenAI function shape on `tools`.
+        # This half of the wiring was missing: the RESPONSE side below already
+        # normalises `message.tool_calls`, but nothing ever advertised the tools,
+        # so the model could not emit a call and every agent loop over Ollama
+        # returned prose on turn 1 with `done=True` and zero tool calls. Because
+        # args/llm_config.yaml declares `supports_tools: true` for these models,
+        # the loop never raised AgentLoopUnsupported either — it silently
+        # degraded into a chat completion that looked like a completed agent run.
+        # Measured by hgx-exec-04: the owned executor could not edit a single file.
+        if request.tools and model_config.get("supports_tools", False):
+            payload["tools"] = tools_to_openai(request.tools)
+
         # Disable thinking mode when explicitly configured, when the model claims it
         # does not support thinking, or for qwen3 models. Some Ollama endpoints emit
         # reasoning in a "thinking" field that consumes the num_predict budget and
@@ -339,6 +352,10 @@ class OllamaProvider(LLMProvider):
 
         if options:
             payload["options"] = options
+
+        # Tools — same omission as invoke(); see the comment there.
+        if request.tools and model_config.get("supports_tools", False):
+            payload["tools"] = tools_to_openai(request.tools)
 
         # Disable thinking mode when explicitly configured, when the model claims it
         # does not support thinking, or for qwen3 models (see invoke() comment).

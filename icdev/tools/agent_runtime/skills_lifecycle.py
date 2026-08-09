@@ -47,6 +47,26 @@ _DEFAULT_ARCHIVE_DAYS = 30
 _MIN_NOVEL_TURNS = 2
 
 
+def proposals_enabled() -> bool:
+    """Whether the post-session skill-proposal hook runs.
+
+    ``ICDEV_SAG_SKILL_PROPOSALS`` → ``args/agent_runtime.yaml`` → off. The env
+    var is read first and still wins (hgx-cfg-01); the default stays OFF at every
+    layer, because the hook queues a NOVA proposal on every session close.
+    """
+    import os
+
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().subsystem_enabled(
+            "skill_proposals", env=_PROPOSALS_ENV, default=False
+        )
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("skills_lifecycle: config layer unavailable: %s", exc)
+        return os.environ.get(_PROPOSALS_ENV, "").lower() in ("1", "true", "yes")
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -328,7 +348,7 @@ def approve_proposal(
         skill_dir.mkdir(parents=True, exist_ok=True)
         # If the generated spec already carries a frontmatter block, keep the body.
         body = spec
-        (skill_dir / "SKILL.md").write_text(frontmatter + body + "\n", encoding="utf-8")
+        (skill_dir / "SKILL.md").write_text(frontmatter + body + "\n", encoding="utf-8", newline="")
     except Exception as exc:  # noqa: BLE001
         return {"approved": False, "error": f"write failed: {exc}", "artifact_id": artifact_id}
 
@@ -479,13 +499,13 @@ def maybe_propose_from_session(runtime: Any, *, force: bool = False) -> dict[str
     """Best-effort post-session skill proposal (env-gated unless ``force``).
 
     Called when a SAG session ends (``/new`` swap or ``/exit``). Gated behind
-    ``ICDEV_SAG_SKILL_PROPOSALS`` so it is silent by default. Derives a candidate
-    pattern from the session title (a novel, tool-solved task), novelty-gates it,
-    and queues a NOVA proposal. Never raises.
+    ``ICDEV_SAG_SKILL_PROPOSALS`` (falling back to
+    ``subsystems.skill_proposals.enabled`` in ``args/agent_runtime.yaml``) so it
+    is silent by default. Derives a candidate pattern from the session title (a
+    novel, tool-solved task), novelty-gates it, and queues a NOVA proposal.
+    Never raises.
     """
-    import os
-
-    if not force and os.environ.get(_PROPOSALS_ENV, "").lower() not in ("1", "true", "yes"):
+    if not force and not proposals_enabled():
         return {"proposed": False, "reason": "disabled"}
     try:
         session = getattr(runtime, "session", None)

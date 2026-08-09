@@ -20,13 +20,14 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.migration.discovery_scanner")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.migration.discovery_scanner")
 
 _ARTIFACTS_DIR = _ROOT / "data" / "studio_artifacts" / "migration"
 
@@ -201,7 +202,7 @@ def run(project_id: str = "default") -> dict:
         # ── Generate Markdown report ──────────────────────────────────────────
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
         report_path = _ARTIFACTS_DIR / "01_discovery_report.md"
-        report_path.write_text(_generate_report(data), encoding="utf-8")
+        report_path.write_text(_generate_report(data), encoding="utf-8", newline="")
 
         # ── Persist to mc_assessments ─────────────────────────────────────────
         design_id = designs[0]["id"] if designs else "default"

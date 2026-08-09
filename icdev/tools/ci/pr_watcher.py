@@ -24,6 +24,8 @@ CLI:
     python tools/ci/pr_watcher.py --once --dry-run --json
     python tools/ci/pr_watcher.py --daemon --interval 30
     python tools/ci/pr_watcher.py --once --task task-xyz
+    # Bounded run — one heartbeat, then exit (kax-obs-01):
+    python tools/ci/pr_watcher.py --daemon --interval 1 --max-iterations 1
 
 Non-goals:
     * GitLab / glab backend (deferred)
@@ -43,7 +45,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
@@ -58,6 +60,15 @@ DEFAULT_CONFIG = ROOT / "args" / "pr_watcher_config.yaml"
 
 # Max characters of CI log text we inject back into a resume message.
 DEFAULT_CI_LOG_MAX = 4000
+
+# Liveness heartbeat (kax-obs-02). Every COMPLETED poll appends a row to the
+# existing `heartbeat_checks` table — the same table tools/scout/daemon.py
+# already uses to prove a daemon is alive — so "is the watcher polling?" can be
+# answered without the log file landing anywhere. Deliberately NOT a new daemon
+# and NOT a new log: a process-exists check (which the launcher already does at
+# tools/genesis/launcher.py) cannot tell a live-but-wedged watcher from a
+# healthy one, and the log is exactly the surface that went missing.
+WATCHER_HEARTBEAT_CHECK_TYPE = "pr_watcher_poll"
 
 _PR_URL_RE = re.compile(
     r"https?://github\.com/[^/\s]+/[^/\s]+/pull/\d+",
@@ -121,12 +132,95 @@ def load_config(path: Optional[pathlib.Path] = None) -> dict:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def _parse_iso(raw: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO timestamp, tolerating a trailing 'Z' and a naive value."""
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 def _parse_pr_url(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
     match = _PR_URL_RE.search(text)
     return match.group(0) if match else None
 
+
+
+def _is_gate_task(conn, task_id: str) -> bool:
+    """True when `task_id` is a manual-gate sentinel.
+
+    Reads the title so the predicate sees both halves it matches on (the id
+    shape AND the title marker). A lookup failure answers False: this guard
+    must never be the reason the watch loop stalls.
+    """
+    try:
+        from tools.kanban.gates import is_manual_gate
+    except Exception:  # noqa: BLE001 — gates module unavailable
+        return False
+    title = ""
+    try:
+        row = conn.execute(
+            "SELECT title FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
+        if row is not None:
+            title = (row[0] if not isinstance(row, dict) else row.get("title")) or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pr_watcher: gate title lookup failed for %s: %s", task_id, exc)
+    return bool(is_manual_gate(task_id, title))
+
+
+def _held_by_a_gate(conn, task_id: str) -> bool:
+    """True when this task's own dependency is not satisfied.
+
+    This is the predicate that keeps auto-ready honest. A MANUAL-ONLY card (AGOV)
+    expresses "a human decides when this ships" by holding a gate row that every
+    task depends on — `depends_on_task_id`, which is what
+    promote_backlog_to_scheduled actually checks, not the held row alone. So a
+    task whose dependency is unsatisfied must keep its draft: the draft is that
+    card's brake, and taking it off would ship work a human deliberately held.
+
+    Errs toward HELD. A lookup that fails answers True, because the cost of a
+    false "held" is one PR a human marks ready, and the cost of a false "free"
+    is auto-merging gated work.
+    """
+    try:
+        row = conn.execute(
+            "SELECT d.status AS dep_status "
+            "FROM kanban_tasks t "
+            "LEFT JOIN kanban_tasks d ON d.id = t.depends_on_task_id "
+            "WHERE t.id = %s AND t.depends_on_task_id IS NOT NULL",
+            (task_id,),
+        ).fetchone()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pr_watcher: dependency lookup failed for %s: %s", task_id, exc)
+        return True
+    if row is None:
+        return False  # no dependency declared — nothing holding it
+    data = dict(row) if not isinstance(row, dict) else row
+    return (data.get("dep_status") or "") not in ("done", "decomposed")
+
+
+def _record_gate_refusal(conn, task_id: str, reason: str) -> None:
+    """Append-only audit row for a refused gate completion. Best-effort."""
+    try:
+        conn.execute(
+            "INSERT INTO kanban_status_transitions "
+            "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            ("kst-" + uuid.uuid4().hex[:12], task_id, "pr_opened", "refused",
+             "pr_watcher",
+             ("manual gate not completed by merge; "
+              f"release deliberately. {reason}")[:200],
+             datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pr_watcher: gate-refusal audit row failed: %s", exc)
 
 
 def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> bool:
@@ -136,6 +230,8 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
     Previously it recorded 'done' in the audit trail and never touched
     kanban_tasks — the board could not tell an open PR from a finished one.
     Never raises: a status-write failure must not stall the watch loop.
+
+    Refuses to complete a manual gate — see the comment at the guard below.
     """
     try:
         conn = get_conn()
@@ -144,6 +240,27 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
                        task_id, status, exc)
         return False
     try:
+        # A MANUAL GATE IS NEVER COMPLETED BY A MERGE.
+        #
+        # A gate is a sentinel, not work: other tasks depend on it precisely so
+        # they do NOT dispatch. On 2026-08-08 a dispatched session used the gate
+        # task `hgx-gate-01` to carry a fix and opened a PR against it. When that
+        # PR merged, this function set the gate `done` — releasing six slices that
+        # had an agent edit its own guardrails — and then re-applied `done` every
+        # 30s cycle, so every manual reset was undone within seconds.
+        #
+        # Guarding here rather than at the merge call site covers every caller.
+        # Only `done` is refused; the gate can still be parked or failed.
+        if status == "done" and _is_gate_task(conn, task_id):
+            logger.warning(
+                "pr_watcher: REFUSING to complete manual gate %s (%s). A gate is a "
+                "sentinel, not work — a PR should never be attached to one. Release "
+                "it deliberately: python -m tools.kanban.cli --set-status %s done",
+                task_id, reason or "no reason given", task_id,
+            )
+            _record_gate_refusal(conn, task_id, reason)
+            return False
+
         conn.execute(
             "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
             (status, datetime.now(timezone.utc).isoformat(), task_id),
@@ -358,9 +475,19 @@ def list_pr_tasks(
 # the sibling-conflict check so it only fires on genuine same-source-file races
 # (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
 # merge-conflict-hotspots prevention notes.
+#
+# `args/ci_test_files/` holds the pytest allowlists that used to be a
+# line-continuation chain inside .github/workflows/icdev-ci.yml, and is genuinely
+# `merge=union` in .gitattributes (kax-conflict-07). That inlining is what
+# deadlocked the board on 2026-08-09: five open PRs each appended a test path to
+# the same hand-written workflow, so this guard made each a sibling of every
+# other and refused all five. Note what is NOT listed here — the workflow itself.
+# It carries real job definitions, and two PRs editing a job's `run:` block is a
+# genuine collision worth serializing; only the additive list moved out.
 _ADDITIVE_PATH_MARKERS = (
     "tools/manifest/",
     "tools/manifest.md",
+    "args/ci_test_files/",
     ".claude/hooks/pre_tool_use.py",
     "tools/dashboard/templates/base.html",
     ".claude/commands/start.md",
@@ -372,14 +499,54 @@ _ADDITIVE_PATH_MARKERS = (
 )
 
 
-def _is_additive_path(path: str) -> bool:
-    """True when `path` is a union-merged coordination file (not a collision risk)."""
+#: Substrings marking a DERIVED artifact — a file produced by a generator and
+#: checked in, never hand-edited.
+#:
+#: These are excluded for a different reason than the coordination files above.
+#: A coordination file is safe to co-edit because it union-merges. A generated
+#: file is safe because a conflict in it is not a disagreement at all: re-running
+#: the generator over the merged tree produces the correct content, so there is
+#: nothing for a human to arbitrate and nothing for a serialized merge to protect.
+#:
+#: WHY THIS EXISTS. On 2026-08-09 a single generated file —
+#: docs/research/external-benchmark-map.generated.md — deadlocked the entire
+#: board. Every branch that added a module regenerated it, so every open PR
+#: touched it, so hold_on_sibling_conflict made every PR a sibling of every other
+#: and refused all six. The guard was behaving correctly; the input made it
+#: total. The daemons were healthy the whole time, which is what made it read as
+#: "the dispatcher is broken". One shared generated file is enough to stop
+#: everything, so the class is excluded rather than that one path.
+_GENERATED_PATH_MARKERS = (
+    ".generated.",
+    "/generated/",
+)
+
+
+def _is_generated_path(path: str) -> bool:
+    """True when `path` is a generator-produced artifact (regenerate, don't merge)."""
     p = (path or "").replace("\\", "/")
+    return any(marker in p for marker in _GENERATED_PATH_MARKERS)
+
+
+def _is_additive_path(path: str) -> bool:
+    """True when `path` is safe for two PRs to touch at once.
+
+    Either union-merged coordination state, or a derived artifact whose conflicts
+    are resolved by regeneration rather than by arbitration.
+    """
+    p = (path or "").replace("\\", "/")
+    if _is_generated_path(p):
+        return True
     return any(marker in p for marker in _ADDITIVE_PATH_MARKERS)
 
 
+#: `isDraft` is not cosmetic. GitHub refuses `gh pr merge` on a draft with
+#: "Pull Request is still a draft", and without this field the watcher could not
+#: SEE that — so it re-attempted the same refused merge every cycle, forever.
+#: Five of ten open PRs on 2026-08-09 were green drafts sitting untouched for
+#: exactly that reason, each waiting on a human to click "Ready for review".
 _GH_JSON_FIELDS = (
-    "state,statusCheckRollup,reviews,mergeable,"
+    "state,statusCheckRollup,reviews,mergeable,isDraft,"
     "headRefName,baseRefName,updatedAt,number,url"
 )
 
@@ -725,6 +892,61 @@ class PRWatcher:
         )
         return bool(verdict.get("written"))
 
+    def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
+        """Take a green PR out of draft so the merge below can actually run.
+
+        The pipeline is autonomous up to this exact point and then stops: a
+        dispatched session opens its PR as a draft, CI goes green, and
+        `gh pr merge` is refused with "Pull Request is still a draft" on every
+        subsequent cycle. Nothing in the loop could clear that, so finished work
+        accumulated until a human clicked a button — 5 of 10 open PRs on
+        2026-08-09, and the same jam twice before that.
+
+        Two things must remain true after this, and both are checked by the
+        caller, not assumed here: the task is not a gate sentinel, and its
+        dependency is satisfied. A held card keeps its draft, because for a
+        MANUAL-ONLY card the draft IS the brake.
+        """
+        if self.dry_run:
+            return True
+        if not self.config.get("auto_ready_draft_prs", True):
+            logger.info("pr_watcher: %s is a draft and auto_ready_draft_prs is "
+                        "off — leaving it for a human", pr_url)
+            return False
+        try:
+            conn = get_conn()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pr_watcher: cannot check gates for %s: %s", task_id, exc)
+            return False
+        try:
+            if _is_gate_task(conn, task_id):
+                logger.warning("pr_watcher: REFUSING to un-draft manual gate %s", task_id)
+                return False
+            if _held_by_a_gate(conn, task_id):
+                logger.info("pr_watcher: %s is held by an unsatisfied dependency — "
+                            "its draft stays", task_id)
+                return False
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            proc = self._auto_merge_runner(
+                ["gh", "pr", "ready", pr_url],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=60,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pr_watcher: gh pr ready failed for %s: %s", pr_url, exc)
+            return False
+        if proc.returncode != 0:
+            logger.warning("pr_watcher: gh pr ready refused %s: %s",
+                           pr_url, (proc.stderr or "")[:200])
+            return False
+        logger.info("pr_watcher: marked %s ready for review (task %s)", pr_url, task_id)
+        return True
+
     def _auto_merge(self, pr_url: str) -> bool:
         if self.dry_run:
             return True
@@ -799,6 +1021,91 @@ class PRWatcher:
             conn.commit() if hasattr(conn, "commit") else None
         except Exception as exc:
             logger.debug("pr_watcher: audit write failed: %s", exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def _record_heartbeat(self, report: "WatcherReport") -> bool:
+        """Append this poll's liveness row to `heartbeat_checks`.
+
+        Written at the END of the poll, so the timestamp means "a poll ran to
+        completion", not "a poll started". `items_found` / `details` carry the
+        counts that separate the two states an operator has to tell apart:
+
+          * watcher stale   — last_run is hours old, nothing is polling
+          * watcher polling — last_run is fresh, actions_taken == 0, i.e.
+                              the board simply has nothing mergeable
+
+        Best-effort: a heartbeat failure must never stop the watch loop, and an
+        install whose DB predates `heartbeat_checks` just gets no row.
+        """
+        if self.dry_run:
+            return False
+        try:
+            get_conn = self._connection()
+            conn = get_conn()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: no DB connection for heartbeat: %s", exc)
+            return False
+        try:
+            started = _parse_iso(report.started_at)
+            finished = _parse_iso(report.finished_at)
+            duration_ms = 0
+            if started is not None and finished is not None:
+                duration_ms = max(0, int((finished - started).total_seconds() * 1000))
+
+            interval = int(self.config.get("poll_interval_seconds", 30) or 30)
+            next_run = (
+                (finished + timedelta(seconds=interval)).isoformat()
+                if finished is not None
+                else report.finished_at
+            )
+
+            actions_by_type: Dict[str, int] = {}
+            for a in report.actions:
+                actions_by_type[a.action] = actions_by_type.get(a.action, 0) + 1
+
+            # `result_summary` carries the JSON payload, NOT `details`: the live
+            # PostgreSQL `heartbeat_checks` has no `details` column even though
+            # init_icdev_db.py's SQLite DDL declares one. Naming it here would
+            # raise, be swallowed by the best-effort except below, and the
+            # heartbeat would silently never land on the primary backend —
+            # precisely the "reports success while persisting nothing" failure.
+            # tools/scout/daemon.py already writes its payload the same way.
+            conn.execute(
+                "INSERT INTO heartbeat_checks "
+                "(check_type, last_run, next_run, status, result_summary, "
+                " items_found, duration_ms) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (
+                    WATCHER_HEARTBEAT_CHECK_TYPE,
+                    report.finished_at,
+                    next_run,
+                    # 'ok', not 'healthy': the live PG status CHECK allows only
+                    # pending/ok/warning/critical/error. SQLite's DDL also lists
+                    # 'healthy', so this would have passed every local test and
+                    # silently violated the constraint on the primary backend.
+                    "ok",
+                    json.dumps({
+                        "tasks_checked": report.tasks_checked,
+                        "actions_taken": len(report.actions),
+                        "actions_by_type": actions_by_type,
+                        "started_at": report.started_at,
+                        "finished_at": report.finished_at,
+                        "poll_interval_seconds": interval,
+                    }),
+                    report.tasks_checked,
+                    duration_ms,
+                ),
+            )
+            if hasattr(conn, "commit"):
+                conn.commit()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: heartbeat write failed: %s", exc)
+            return False
         finally:
             try:
                 conn.close()
@@ -1020,6 +1327,17 @@ class PRWatcher:
                         not require_approval
                         or ec.is_approved_and_passing(state)
                     )
+                    # A draft cannot be merged, only refused — so clear it here,
+                    # AFTER every other gate has passed (green CI, no sibling
+                    # conflict, approval satisfied). Ordering is the safety
+                    # property: un-drafting is visible and hard to walk back, so
+                    # it must never happen for a PR that was not about to merge
+                    # anyway. _mark_ready refuses for a gate task or a held
+                    # dependency; if it declines, fall through to the same "wait"
+                    # branch a blocked merge takes.
+                    if approved_ok and state.get("isDraft"):
+                        approved_ok = self._mark_ready(
+                            pr_url, task["id"], self._connection())
                     if approved_ok and self._auto_merge(pr_url):
                         action = WatcherAction(
                             task_id=task["id"], pr_url=pr_url,
@@ -1111,6 +1429,8 @@ class PRWatcher:
             self._audit(action)
 
         report.finished_at = datetime.now(timezone.utc).isoformat()
+        # Liveness proof, written only once the poll has actually completed.
+        self._record_heartbeat(report)
         return report
 
     def run_daemon(
@@ -1159,6 +1479,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="Poll forever at --interval")
     ap.add_argument("--interval", type=int, default=30,
                     help="Seconds between polls in daemon mode")
+    ap.add_argument("--max-iterations", type=int, default=0,
+                    help="Stop after N daemon ticks (0 = forever). Makes the "
+                         "iteration= heartbeat observable in a bounded run.")
     ap.add_argument("--task", default=None,
                     help="Limit the poll to a single task id")
     ap.add_argument("--dry-run", action="store_true",
@@ -1177,7 +1500,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     watcher = PRWatcher(config=config, dry_run=args.dry_run)
 
     if args.daemon:
-        watcher.run_daemon(interval=args.interval)
+        watcher.run_daemon(
+            interval=args.interval, max_iterations=args.max_iterations
+        )
         return 0
 
     report = watcher.poll_once(task_id=args.task)

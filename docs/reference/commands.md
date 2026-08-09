@@ -136,7 +136,13 @@ icdev audit tail --source runtime_invocations --follow --json
 icdev runtime top                         # Top 20 names by call count, all surfaces
 icdev runtime top --limit 50
 icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
+icdev runtime top --surface agent         # SAG tool calls, recorded from dispatch.py
 icdev runtime top --json                  # Machine-readable rollup
+
+# One RUN rather than all runs. The correlation id is AgentLoopResult.trace_id;
+# both the agent.turn spans and the gen_ai.invoke spans beneath them carry it.
+icdev runtime trace <correlation-id>      # Every span of one agent run, oldest first
+icdev runtime trace <correlation-id> --json
 
 # Core enterprise profiles
 icdev profile list                 # List available profiles
@@ -170,13 +176,32 @@ python tools/builder/forge_validator.py --gate               # FORGE gate for ch
 python tools/compliance/ssp_generator.py --project-id "sparkpilot"
 python tools/compliance/poam_generator.py --project-id "sparkpilot"
 python tools/compliance/stig_checker.py --project-id "sparkpilot"
-python tools/compliance/sbom_generator.py --project-id "sparkpilot"
+python tools/compliance/sbom_generator.py --project-id "sparkpilot"                                # CycloneDX (default spec 1.7)
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --format spdx                  # SPDX 2.3 — the other format the 2026 standard names
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --spec-version 1.6             # 1.4-1.7 selectable for lagging consumers
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --python-env /path/to/.venv   # resolve Python from the installed environment
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --author "Defense Information Systems Agency"  # SBOM Author: the entity, not the tool ($ICDEV_SBOM_AUTHOR)
+python tools/compliance/spdx_writer.py --convert "/path/to/sbom.cdx.json" --output "/path/to/sbom.spdx.json"
+python tools/compliance/spdx_writer.py --validate "/path/to/sbom.spdx.json" --json                # against the official SPDX 2.3 schema, offline
+python tools/compliance/spdx_writer.py --compare "/path/to/sbom.cdx.json" "/path/to/sbom.spdx.json" --json  # do both formats carry the same elements?
 python tools/compliance/dependency_resolver.py --project-dir "/path/to/project" --json            # resolved transitive set + coverage report
 python tools/compliance/component_producer.py --purl "pkg:golang/k8s.io/client-go@v0.29.0" --json  # Component Producer for one component
 python tools/compliance/component_producer.py --name flask --version 3.0.0 --ecosystem python --project-dir "/path/to/project" --json
 python tools/compliance/component_producer.py --validate "/path/to/sbom.cdx.json" --json          # every component states a producer or unknown provenance
 python tools/compliance/component_producer.py --registry --json                                    # the namespace -> organization registry in force
+python tools/compliance/component_hasher.py --registry --json                                      # the IANA Hash Function Textual Names, and which are emittable
+python tools/compliance/component_hasher.py --validate "/path/to/sbom.cdx.json" --json             # every component states a digest or an explicit unknown, with an IANA-registered algorithm
+python tools/compliance/component_hasher.py --file "/path/to/artifact.jar" --json                  # sha-256 of one artifact, the way recomputation does it
+python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --json            # gate on the 2026 minimum elements, not on presence
+python tools/compliance/sbom_conformance_gate.py --sbom "/path/to/sbom.cdx.json" --gate swft       # deployment_gates | swft | devsecops; exit 1 when it blocks
+
+# SBOM Frequency + Accommodation of Updates (2026 Minimum Elements). A correction is a
+# successor row; the SBOM it corrects is never rewritten.
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --build-id "$CI_PIPELINE_ID"   # record which build this SBOM describes
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --chain --json                 # the revision chain, each row marked superseded/head
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --frequency --json             # per-build first, 30-day age as the backstop
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --correct --sbom "/path/to/corrected.cdx.json" --reason "producer was wrong" --json
+python tools/compliance/sbom_revision.py --project-id "sparkpilot" --correct --sbom "/path/to/fixed.cdx.json" --reason "upstream published the hash" --reason-code detail_discovered --json
 
 # SBOM Author Signature (2026 Minimum Elements). Offline on both paths — no sigstore/Fulcio.
 python tools/crypto/key_manager.py --generate-keys --key-type ecdsa-p256 --json                   # one-time: create the signing key
@@ -185,6 +210,9 @@ python tools/compliance/sbom_signer.py --list-algorithms                        
 python tools/compliance/sbom_signer.py --sign "compliance/sbom.cdx.json" --json                   # writes detached compliance/sbom.cdx.json.sig.json
 python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --json                 # integrity; exit 1 if tampered or unsigned
 python tools/compliance/sbom_signer.py --verify "compliance/sbom.cdx.json" --expect-fp "<fp>"     # + authorship, fingerprint pinned out of band
+python tools/compliance/unknown_information.py --validate "/path/to/sbom.cdx.json" --json         # unknown vs withheld conformance; withheld is never counted as unknown
+python tools/compliance/unknown_information.py --policy --json                                     # the disclosure policy: enquiry route + declared withholdings (exit 1 on dropped rules)
+python tools/compliance/unknown_information.py --vocabulary --json                                 # the 17 fields and the two disjoint reason vocabularies
 
 # SBOM Distribution and Delivery (2026 Minimum Elements) — version-specific retrieval.
 # Served over HTTP at $ICDEV_BASE_URL/api/supply_chain/sbom/<project_id>/<version>,
@@ -275,6 +303,11 @@ python tools/security/sast_runner.py --project-dir "/path"
 python tools/security/dependency_auditor.py --project-dir "/path"
 python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "sparkpilot:latest"
+
+# ATO boundary tier tagging of scan findings (GREEN/YELLOW/ORANGE/RED)
+python tools/security/boundary_tagger.py --report .tmp/security-reports/scan.json --json
+python tools/security/boundary_tagger.py --report scan.json --project-id <id> --system-id <sys-id> --create-assessments --json
+python tools/security/boundary_tagger.py --report scan.json --gate --json   # exit 1 on any RED finding
 
 # Security Framework (Phase 74 — sec-fnd)
 python tools/security/security_context.py --whoami --json
@@ -400,6 +433,120 @@ try:
 finally:
     driver.quit()
 ```
+
+---
+
+## SAG Runtime Configuration (hgx-cfg-01)
+
+`args/agent_runtime.yaml` collects the standalone agent runtime's settings in one
+documented file. It is a **layer beneath** the existing environment variables,
+not a replacement: resolution is
+
+```
+explicit argument  >  environment variable  >  args/agent_runtime.yaml  >  built-in default
+```
+
+so every env var that worked before still works and still wins. The file is
+optional — deleting it changes nothing about how the agent runs.
+
+```bash
+# Resolved configuration, plus the env vars currently overriding the file
+python -m tools.agent_runtime.config
+
+# Machine-readable (config_path, config_found, env_overrides, resolved)
+python -m tools.agent_runtime.config --json
+
+# Resolve against a site-local file instead of args/agent_runtime.yaml
+python -m tools.agent_runtime.config --config /etc/icdev/agent_runtime.yaml --json
+```
+
+Point the loader at a different file for a whole process with
+`ICDEV_AGENT_RUNTIME_CONFIG=/path/to/file.yaml`.
+
+The runtime is registered as the `sag` component, so the toggle is reachable from
+the normal component surfaces:
+
+```bash
+icdev list                 # sag — Standalone Agent Runtime  (flags: ICDEV_SAG_ENABLED)
+icdev status --json        # current on/off state read from .env
+icdev disable sag          # `icdev chat` then refuses to start
+icdev enable sag
+```
+
+`enabled:` in the YAML and `ICDEV_SAG_ENABLED` are the same switch, so the CLI
+toggle and the config file cannot disagree. There is deliberately **no `model:`
+key** — only `llm_function`, a routing function resolved through `LLMRouter`
+against `args/llm_config.yaml`. Per-subsystem toggles (project context, standing
+goals, profile memory, skill proposals, approval mode, mutation gate, delegation,
+toolset bundles) and the env var that overrides each are documented inline in the
+file and tabulated in `tools/manifest/standalone-agent-runtime.md`.
+
+---
+
+## SAG Project Context — Instruction Loading at Session Start (hgx-sess-01)
+
+Loads `CLAUDE.md`, `AGENTS.md`, `memory/MEMORY.md` and the
+`session_context_builder` project-state summary into the agent's system prompt,
+budgeted against `context_budget.floor_window_for_function` (the minimum window
+across the routed chain) rather than a constant.
+
+```bash
+# Preview the block the runtime will inject
+python tools/agent_runtime/project_context.py
+
+# Budget accounting only — which sections were truncated, and by how much
+python tools/agent_runtime/project_context.py --json
+
+# Budget against a different routing function; skip the DB-backed state summary
+python tools/agent_runtime/project_context.py --function question_answering \
+    --no-project-state --json
+```
+
+A large-window model receives the documents intact; a 32k local chain receives a
+line-boundary-truncated block carrying an explicit
+`[... N of M lines omitted to fit the context budget — read <path> ...]` marker,
+so a partial rule set never reads as complete. Toggles:
+`ICDEV_SAG_PROJECT_CONTEXT=0` disables the block entirely;
+`ICDEV_SAG_PROJECT_STATE=0` keeps the instruction files but skips the project
+state summary. The block is built once per session and rebuilt on `/new`.
+
+---
+
+## SAG Standing Goals — `/goal` and Prompt Injection (hgx-goal-02)
+
+`/goal` manages durable objectives from inside a session; the **active** ones are
+injected into the system prompt on the next turn, capped and budgeted.
+
+```bash
+# Preview the goal block the runtime will inject
+python tools/agent_runtime/goal_context.py --user default
+
+# Budget accounting only — shown vs withheld, tokens vs budget
+python tools/agent_runtime/goal_context.py --json
+
+# Budget against a different routing function, with an explicit count cap
+python tools/agent_runtime/goal_context.py --function question_answering \
+    --limit 3 --json
+```
+
+In-session commands (`icdev chat`, or any runtime wired to
+`tools/agent_runtime/commands.py::dispatch`):
+
+```text
+/goal create <title> [| detail] [--priority=N]   Create and start pursuing it
+/goal list [status|all]                          Numbered list (default: live)
+/goal status [N|id]                              What is injected, or one goal
+/goal pause|resume|complete|cancel <N|id>        Lifecycle moves
+/goal block <N|id> [reason]                      Mark blocked, recording why
+/goal clear [--yes]                              Cancel every live goal
+```
+
+Two caps apply and both are announced in the block itself: a count cap
+(`ICDEV_SAG_GOAL_LIMIT`, default 5) and a token cap (5% of
+`context_budget.available_input_tokens`). Under pressure the block shortens goal
+text before it drops goals, so every objective stays at least named. Every
+mutation invalidates the runtime's cached block, so a `/goal create` reaches the
+model on the very next turn. `ICDEV_SAG_GOALS=0` disables injection entirely.
 
 ---
 
@@ -934,6 +1081,31 @@ Env overrides win over YAML: `ICDEV_BOARD_STALL_ENABLED`,
 `ICDEV_BOARD_STALL_WINDOW_HOURS`, `ICDEV_BOARD_STALL_MIN_ACTIVE`,
 `ICDEV_BOARD_STALL_COOLDOWN_HOURS`, `ICDEV_BOARD_STALL_SEVERITY`.
 
+### PR watcher liveness probe (kax-obs-02)
+
+"Is the PR watcher actually polling?" answered without the log file. Each
+COMPLETED poll appends one row to the existing `heartbeat_checks` table
+(`check_type = 'pr_watcher_poll'`, `items_found` = tasks checked,
+`details.actions_taken` = actions taken). No new daemon, no new log file — the
+launcher already restarts a *dead* watcher, so what this detects is a
+**live-but-not-progressing** one, which a process-exists check cannot see.
+
+```bash
+python tools/kanban/metrics.py --watcher      # {state, last_poll_at, minutes_since_last_poll, tasks_checked, actions_taken}
+python tools/kanban/metrics.py --stall        # same signal joined onto the stall check as `watcher` + `stall_attribution`
+python tools/monitor/heartbeat_daemon.py --status   # pr_watcher_poll listed alongside every other check
+curl -s localhost:5050/api/live-check | python -m json.tool   # dashboard Live Activity -> `pr_watcher`
+```
+
+`stall_attribution` is what makes a flatline actionable — the two situations
+that used to look identical:
+
+| value | meaning |
+|-------|---------|
+| `throughput_present` | tasks are completing; not a stall |
+| `watcher_not_polling` | last poll is older than `stale_after_minutes` (default 15) — broken pipe |
+| `watcher_polling_nothing_mergeable` | watcher is alive and took zero actions — look at executors / done-gate / CI |
+
 ---
 
 ## Loop Engineering — GEPA Optimizer & Adversarial Verify
@@ -955,6 +1127,45 @@ python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh v
 # This recomputes the verdict from the branch's real state (remote refs only, so it does not
 # depend on the dispatching process still being alive) and appends it. It does not weaken the
 # gate: a branch with no work still fails.
+
+# Kanban — LAND a task's PR instead of being refused by the done-gate (kax-merge-01)
+python tools/kanban/cli.py --set-status <task-id> done --merge --dry-run   # Preflight only, merges nothing
+python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Merge, confirm, then mark done
+# `--set-status done` only ever GATED on merge: it refuses while a branch carrying the task id
+# has commits not on origin/<default>, and offered --force-done as the audited bypass. Neither
+# lands the work. --merge is the way to SATISFY the gate, and it is strictly HARDER than the
+# refusal: an OPEN PR based on the default branch, not CONFLICTING, no requested changes, green
+# CI (an empty check rollup is unknown, not green), the enforced done-gate
+# (pr_watcher._enforced_done_ok — reused, not re-derived), the sibling-file-conflict guard when
+# hold_on_sibling_conflict is set, and finally `state == MERGED` read back from GitHub before
+# 'done' is written (gh pr merge --auto exits 0 while the merge is still queued). Fail-closed on
+# every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
+# local git heuristic, not a landing check. One task id per invocation; not combinable with
+# --force-done. Marking done records the same actor='manual' audit transition --force-done does.
+# Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
+python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
+python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
+# Use this INSTEAD of `--set-status <id> backlog`. A hand-written re-queue bumps updated_at
+# while leaving last_failure_reason set, and failure_triage.find_recent_failures selects on
+# exactly that pair — so a clean re-queue manufactures a phantom triage queue (measured
+# 2026-08-08: five healthy sbx tasks entered the autofix queue this way, PR #1379).
+# --requeue clears last_failure_reason and branch_name, records the transition, and
+# PRESERVES failure_count (the recovery guard's budget). It also works on a task parked in
+# a pipeline-owned status like pr_opened, which --set-status cannot write. Exit 1 if any
+# task was refused; a manual-mode gate sentinel needs --force.
+
+# Kanban — is restarting the scheduler safe right now? (kax-recover-04)
+python -m tools.kanban.startup_recovery --dry-run --json      # Classify only; changes nothing
+python -m tools.kanban.startup_recovery --dry-run --force     # Same, even while the daemon owns the runner
+python -m tools.kanban.startup_recovery --json                # Perform the sweep (what a restart does)
+# Ask BEFORE restarting. Both restart sweeps (the kanban_scheduler.py entrypoint and the
+# reflex's cycle-1 sweep) route through recover_interrupted_tasks, which HOLDS any in_progress
+# task with provable liveness — an in-process handle, a fresh agent_sessions heartbeat in the
+# task worktree, a live kanban:task:<id> lease holder, or an OS process naming the task — and
+# resets only genuinely orphaned rows. --dry-run reports, per task, whether its commits survive
+# on kanban/<id> or whether a reset discards its work, so a restart is no longer a guess.
+# Without --force it no-ops while another live scheduler owns the runner; --once bypasses the
+# entrypoint lockfile check, so that guard is what keeps a one-shot run off the live board.
 
 # Kanban — rebase a DIRTY PR branch before it burns its resume budget (kax-conflict-01)
 python tools/kanban/rebase_recovery.py --task <task-id> --dry-run --json  # Probe locally, never push
@@ -1168,6 +1379,76 @@ python tools/studio/executors/mcp_executor.py --tool terraform_apply   --params 
 # Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
 # params failing the entry's input_schema, the handler raised, or gate MCP-WF-001
 # refused it (not allowlisted / awaiting approval / caller IL too low / missing role).
+
+# Agent executor — run an agent loop as a workflow step (`node_type: agent`, hgx-agent-01)
+python tools/studio/executors/agent_executor.py --prompt "Summarise tools/foo.py" --agent-tools worktree_read
+python tools/studio/executors/agent_executor.py --prompt "Add a docstring to tools/foo.py" \
+  --agent-tools worktree_build --work-dir /path/to/worktree \
+  --run-id "run-xxx" --step-id "build" --json
+# Bundles compose; `terminal` adds the allowlisted run_command — but a bundle grants the
+# CAPABILITY, not the ACCESS: AGENT-WF-001 withholds run_command below IL5 (see below).
+python tools/studio/executors/agent_executor.py --prompt "Fix the failing test" \
+  --agent-tools worktree_build,terminal --llm-function code_generation --effort high \
+  --caller-il IL5 --caller-roles isso --run-id "run-xxx" --approval-wait 3600
+# --llm-function is a ROUTING KEY, never a model id. There is no --model flag.
+# --approval-mode enforce (default) | dry_run | off  — the ars-appr-01 reversibility gate.
+# Exit 0 = the loop ran, OR the step degraded (`degraded: true` — the routed provider
+# cannot serve native tool use; the runner records `skipped` and the run continues).
+# Exit 1 = unrunnable as authored: no prompt, no declared bundle (default-deny), an
+# unknown bundle, the loop raised, or AGENT-WF-001 withheld every tool it declared.
+
+# Agent tool authorization gate — AGENT-WF-001 (hgx-agent-02). Check a tool WITHOUT
+# running a loop: default-deny allowlist + per-tool min_il/roles from the
+# `agent_workflow_tools` section of args/security_gates.yaml.
+python tools/studio/executors/agent_tool_gate.py --list --json                       # the policy
+python tools/studio/executors/agent_tool_gate.py --tool read_file    --caller-il IL4 --json
+python tools/studio/executors/agent_tool_gate.py --tool run_command  --caller-il IL5 --json
+python tools/studio/executors/agent_tool_gate.py --tool write_file   --caller-il IL4 \
+  --caller-roles developer --run-id "run-xxx" --json
+# Exit 0 = authorized (`disposition`: allowed | requires_approval — the latter still needs
+# an approved human gate in the run before the call runs). Exit 1 = refused, `error_type`
+# naming the block condition: agent_tool_not_allowlisted / agent_tool_exceeds_caller_il /
+# agent_tool_missing_required_role / agent_gate_policy_unavailable.
+# Every decision the executor makes is audited to append-only studio_mcp_dispatch_audit —
+# the same table the mcp surface uses, so one query covers both node types:
+python -c "from tools.studio.executors.mcp_executor import query_dispatch_audit as q; import json; print(json.dumps(q(run_id='run-xxx'), indent=2, default=str))"
+```
+
+---
+
+## Studio Headless Run Control
+```bash
+# Start / inspect / resume a durable graph run WITHOUT the dashboard (hgx-cx-03).
+# Same engine the Studio UI drives — workflow_runner's public API, not a second runtime.
+python tools/studio/workflow_runner.py --start "wf-xxx" --json            # prints run_id
+python tools/studio/workflow_runner.py --start "wf-xxx" --project-id "proj-123" \
+  --inputs '{"target":"tools/foo.py"}' --json
+python tools/studio/workflow_runner.py --status "run-xxx" --json          # run + steps + step_run_ids
+python tools/studio/workflow_runner.py --resume "run-xxx" --json          # re-attach to a run left mid-flight
+
+# WAITING IS THE DEFAULT: the worker is a daemon thread in THIS process, so returning
+# immediately would kill it mid-step and strand the run at `running`. --timeout bounds
+# the wait (default 600s); --no-wait is fire-and-forget and only correct when something
+# else will --resume the run.
+python tools/studio/workflow_runner.py --start "wf-xxx" --timeout 1800 --json
+python tools/studio/workflow_runner.py --start "wf-xxx" --no-wait --json
+
+# Exit codes — a cron caller has to tell "parked on a human gate" from "broken":
+#   0 = run finished successfully (or --status read OK)
+#   1 = the run failed, or the command errored (unknown workflow/run, bad --inputs,
+#       run not resumable)
+#   2 = the run did not finish — parked at awaiting_approval, or still running at
+#       --timeout. Clear a gate with workflow_runner.approve_step(step_run_id) — the
+#       --status report carries every step_run_id — then --resume.
+
+# Same three operations over MCP (gate MCP-WF-001 authorizes them: studio_run_status is
+# allowlisted read-only; studio_run_start/_resume are `requires_approval` because a step
+# that spawns another run executes it under this run's authority and can recurse).
+python tools/studio/executors/mcp_executor.py --tool studio_run_status --params '{"run_id":"run-xxx"}'
+python tools/studio/executors/mcp_executor.py --tool studio_run_start \
+  --params '{"workflow_id":"wf-xxx","wait_seconds":60}' --run-id "run-xxx" --approval-wait 3600
+# wait_seconds (0 = return as soon as the run row exists) is clamped to 900s so a gate's
+# 24h window can never hold an MCP call open.
 ```
 
 ---
@@ -1799,6 +2080,15 @@ python tools/ci/modules/worktree.py --create --task-id test-123 --target-dir src
 python tools/ci/modules/worktree.py --list --json                                            # List worktrees
 python tools/ci/modules/worktree.py --cleanup --worktree-name icdev-test-123                # Cleanup worktree
 python tools/ci/modules/worktree.py --status --worktree-name icdev-test-123                 # Worktree status
+
+# Manifest merge rehearsal (kax-conflict-03) — measures which tools/manifest/ layout survives
+# two unrelated tasks each registering a new tool under the same topic
+python tools/git/manifest_merge_rehearsal.py                              # all layouts, both merge paths
+python tools/git/manifest_merge_rehearsal.py --json                       # machine-readable
+python tools/git/manifest_merge_rehearsal.py --layout union --branches 5  # one layout, 5 concurrent branches
+python tools/git/manifest_merge_rehearsal.py --mode merge-tree            # bare, forge-style server-side merge only
+python tools/git/manifest_merge_rehearsal.py --repo .                     # rehearse against a CLONE of this repo + the real shard
+python tools/git/manifest_merge_rehearsal.py --repo . --shard tools/manifest/browser.md
 
 # GitLab Task Board Monitor (Phase 41)
 python tools/ci/triggers/gitlab_task_monitor.py                    # Start monitor (polls every 20s)
@@ -2542,6 +2832,9 @@ python tools/innovation/benchmark_compare.py --all --verdict gap
 # Offline by default so the checked-in file reproduces byte-for-byte and CI can diff it.
 # It writes BESIDE the hand-written map, never over it: the map is the cited source of
 # every declared reading, and its narrative lives in no config.
+# Exact module counts are NOT committed (kax-conflict-02) — the artifact carries the
+# classification against the floor, so adding a module changes nothing and two branches
+# never conflict on it. Use --json or --live for the integers.
 python tools/innovation/benchmark_report.py --write      # regenerate the checked-in report
 python tools/innovation/benchmark_report.py --check      # CI gate: fails on drift, prints a diff
 python tools/innovation/benchmark_report.py --live       # measure rows; retires findings; prints only
@@ -2950,6 +3243,14 @@ python tools/mcp/cortex_server.py
 #   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
 #   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
 #   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
+#   POST /cortex/api/v1/agent    {"goal": "...", "mode": "auto"}   # mode: auto | team | single | graph
+#     team:   {"mode": "team", "roles": ["ai_developer"]}          -> data.instance_id, poll /coworker/<id>
+#     graph:  {"mode": "graph", "graph": {"workflow_id": "full_sdlc", "inputs": {...}}} -> data.run_id
+#     Scope cortex:agent — NEVER in the default grant (it is the one op that makes the platform ACT).
+#     Read `launched` FIRST: a provider that cannot serve native tool-use returns 200 +
+#     {"launched": false, "degraded": true, "reason": ...} rather than a 5xx.
+#     `tools`/`tool_handlers`/`rubric`/`webhook_url` are NOT accepted from the wire —
+#     tool-bearing work belongs in graph mode, where Studio authorizes tools per node.
 # Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
 #   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
 
@@ -2963,6 +3264,9 @@ python -m tools.cortex.service_keys revoke --key-id <id> --json
 
 # --- Client SDK (client.py — vendored into compass/idea_lab, ctx-expose-06) ---
 python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.is_available())"
+# .reason() and .agent() (hgx-cx-02) — reason had an endpoint but no client method:
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.reason('is this design sound?', mode='debate'))"
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.agent('run the SDLC', mode='graph', workflow_id='full_sdlc'))"
 
 # --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
 #   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
@@ -4541,3 +4845,53 @@ The scheduled writer is the Genesis reflex `idp_delivery_events` (6h, GREEN
 tier — `args/genesis_config.yaml`). It exists because the endpoint reads a
 *rolling* 30-day window: without a writer, a one-off backfill ages out and the
 endpoint returns to `metrics_assessed: 0` with nobody having changed a line.
+
+## Executor Parity Benchmark (hgx-exec-04)
+
+A/B replay of a fixed corpus of already-merged kanban tasks through two
+AgentAdapters — `claude_cli` (primary) and `local_agent` (the owned,
+file-editing rubric loop). Each pair gets a disposable detached worktree at the
+task's pre-fix parent commit, the identical `AgentSession`, and one grader:
+`tools/workflow/pipeline_grader.make_pipeline_grader`.
+
+Measurement only. It changes no default: `KANBAN_RUBRIC_LOOP` is on the `.env`
+import denylist so the benchmark cannot flip it even by accident, and
+`args/strategos_config.yaml` is never read or written.
+
+```bash
+# What is in the corpus (task ids, base commits, prompt size)
+python -m tools.workflow.executor_parity --list
+
+# Resolve corpus + adapters + base commits without building anything
+python -m tools.workflow.executor_parity --dry-run
+
+# Full benchmark: 10 tasks x 2 executors, JSON + markdown out
+python -m tools.workflow.executor_parity --run \
+  --out .tmp/parity.json --report .tmp/parity.md
+
+# One task, one executor (a smoke check before spending the full run)
+python -m tools.workflow.executor_parity --run \
+  --tasks cxo-doc-01 --executors claude_cli --timeout 300
+
+# Keep the worktrees to inspect what an executor actually produced
+python -m tools.workflow.executor_parity --run --limit 1 --keep-worktrees
+```
+
+Two rates are reported per executor and they are deliberately not the same
+number: `gate_pass_rate` is the harness's own verdict on the tree,
+`self_report_rate` is what the executor claimed about itself. The gap is the
+result — measured numbers live in
+[docs/features/hgx-executor-parity.md](../features/hgx-executor-parity.md).
+
+Corpus: `args/executor_parity_corpus.yaml`. Treat it as a frozen baseline —
+adding an entry is fine, rewording one changes what is being measured and
+requires re-running both executors.
+
+# CI test allowlist (kax-conflict-07) — the list icdev-ci.yml's `test` job runs
+python tools/ci/gated_test_list.py --check --list core       # validate: empty/short/missing/dup -> exit 1
+python tools/ci/gated_test_list.py --print --list windows    # resolved targets, one per line
+python tools/ci/gated_test_list.py --list core --json        # full report (count, floor, missing, duplicates)
+python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci.yml --job test --min-targets 2
+python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
+python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
+python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS -- Request Logger.
 
 CUI // SP-CTI
@@ -18,7 +17,6 @@ import json
 import os
 import sys
 import time
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +26,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = get_logger("saas.request_logger")
 

@@ -19,25 +19,110 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+import sqlite3
 from tools.logging.icdev_logger import get_logger
 from datetime import datetime, timezone
 
 logger = get_logger(__name__)
 
 
+class BoardBackendError(RuntimeError):
+    """Raised when a board write would land somewhere that is not the board."""
+
+
+#: Mirrors the live CHECK constraint ``kanban_tasks_task_type_check``.
+#:
+#: Note there is no ``bug`` — use ``fix``. SQLite does NOT enforce CHECK
+#: constraints, so an illegal value seeds cleanly against a fallback database and
+#: only aborts part-way through the insert loop on PostgreSQL, rolling the whole
+#: batch back. Validating in Python means the one backend that would not tell you
+#: no longer has to.
+VALID_TASK_TYPES = frozenset(
+    {"build", "run", "fix", "research", "deploy", "test", "chore"}
+)
+
+#: Escape hatch for tests and genuinely fresh installs, which legitimately seed
+#: an empty local board.
+_ALLOW_LOCAL_BOARD_ENV = "ICDEV_KANBAN_ALLOW_LOCAL_BOARD"
+
+
+def _assert_real_board(conn) -> None:
+    """Refuse to write the board when the connection is a local SQLite fallback.
+
+    ``.env`` is gitignored, so a git worktree has no PostgreSQL config and
+    ``get_connection()`` silently falls back to SQLite at
+    ``<worktree>/data/icdev.db``. On 2026-08-08 a seeder run that way reported
+    "36/36 created" against a database that was then deleted with the worktree —
+    the PR merged and the board had nothing on it. A write that goes nowhere must
+    fail loudly rather than succeed.
+
+    Set ``ICDEV_KANBAN_ALLOW_LOCAL_BOARD=1`` when a local board is what you mean.
+    """
+    if os.environ.get(_ALLOW_LOCAL_BOARD_ENV, "").strip().lower() in (
+        "1", "true", "yes", "on",
+    ):
+        return
+    backend = getattr(conn, "backend", None) or getattr(conn, "_backend", None)
+    is_sqlite = isinstance(conn, sqlite3.Connection) or (
+        isinstance(backend, str) and "sqlite" in backend.lower()
+    )
+    if not is_sqlite:
+        return
+    raise BoardBackendError(
+        "refusing to write kanban tasks to a SQLite fallback database. This is "
+        "almost always a seeder run from a git worktree, where .env is absent so "
+        "get_connection() fell back to a local file that dies with the worktree. "
+        "Copy .env into the worktree, or set "
+        f"{_ALLOW_LOCAL_BOARD_ENV}=1 if a local board is genuinely what you want."
+    )
+
+
 def create_tasks(task_specs: list[dict]) -> list[str]:
-    """Insert tasks that don't already exist. Returns list of inserted IDs."""
+    """Insert tasks that don't already exist. Returns list of inserted IDs.
+
+    Raises ``ValueError`` for a ``task_type`` the DB forbids, and
+    ``BoardBackendError`` when the write would land in a throwaway local
+    database — both BEFORE anything is inserted, so a batch never half-lands.
+    """
     if not task_specs:
         return []
 
+    bad_types = sorted({
+        str(t.get("task_type"))
+        for t in task_specs
+        if t.get("task_type") is not None
+        and t.get("task_type") not in VALID_TASK_TYPES
+    })
+    if bad_types:
+        raise ValueError(
+            f"task_type {', '.join(repr(b) for b in bad_types)} violates "
+            f"kanban_tasks_task_type_check; allowed: {sorted(VALID_TASK_TYPES)}. "
+            "(There is no 'bug' — use 'fix'.)"
+        )
+
     from tools.db.storage import get_connection
     from tools.kanban.init_db import init_kanban_tables
+    from tools.kanban import policy_drift
 
     init_kanban_tables()
     now = datetime.now(timezone.utc).isoformat()
 
+    # kax-merge-02: stamp the card's operating policy as a DELIMITED block
+    # rather than letting each seeder paste its own copy. A pasted copy is
+    # frozen at seed time — correcting the card then leaves every existing row
+    # saying the old thing, which is how 35 hgx rows went on telling sessions to
+    # open --draft after the card said not to. A block is re-synced against
+    # `policy:` in args/projects.yaml by tools/kanban/policy_drift.py.
+    # Loaded ONCE per batch, and a no-op for the ~156 cards with no `policy:`.
+    # load_exemptions (not load_rules) so a malformed rule can never take down
+    # every seeder — the seeder needs the exemption veto, not the rules.
+    _projects = policy_drift.load_projects()
+    _ruleset = policy_drift.load_exemptions()
+
     created: list[str] = []
     conn = get_connection()
+    _assert_real_board(conn)
     try:
         for t in task_specs:
             task_id = str(t.get("id") or "").strip()
@@ -83,7 +168,9 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
                 (
                     task_id,
                     str(t.get("title", "Untitled task"))[:255],
-                    t.get("description") or "",
+                    policy_drift.apply_policy_block(
+                        t.get("description") or "", task_id, _projects, _ruleset
+                    ),
                     t.get("task_type", "build"),
                     t.get("priority", "high"),
                     t.get("status", "backlog"),

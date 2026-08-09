@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Remote Command Gateway Agent — Flask app on port 8458.
 
@@ -25,6 +24,8 @@ from typing import Any, Dict
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 import yaml  # noqa: E402
 from flask import Flask, request, jsonify  # noqa: E402

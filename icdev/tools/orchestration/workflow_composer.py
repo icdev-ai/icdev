@@ -42,6 +42,30 @@ TEMPLATE_DIR = BASE_DIR / "args" / "workflow_templates"
 # tests/test_dwo_mcp_composer_parity.py asserts the two builders agree.
 MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
 
+# ── Agent steps (hgx-agent-01) ─────────────────────────────
+# A `node_type: agent` step names its task in `prompt` and bounds its tools with
+# `agent_tools` instead of a script path in `tool`, and runs an agent loop.
+# Same arrangement as mcp above: one shared executor, so a template with an
+# agent node behaves identically headless and in the UI. Without this branch the
+# composer would read the step's empty `tool` and silently skip it.
+AGENT_EXECUTOR = "tools/studio/executors/agent_executor.py"
+
+# Step keys forwarded as `--<flag> <value>`. Absent keys are not passed, so the
+# executor's own defaults apply and this list never has to restate them.
+_AGENT_STEP_FLAGS = (
+    ("system_prompt", "--system-prompt"),
+    ("llm_function", "--llm-function"),
+    ("work_dir", "--work-dir"),
+    ("max_iterations", "--max-iterations"),
+    ("max_tokens", "--max-tokens"),
+    ("effort", "--effort"),
+    ("approval_mode", "--approval-mode"),
+    # hgx-gov-01: the gate subset this node runs its prompt/output through. Kept
+    # in lockstep with workflow_runner._AGENT_STEP_FLAGS — a template must build
+    # the same command headless as it does in the UI.
+    ("governance_profile", "--governance-profile"),
+)
+
 
 def _load_template(template_name: str) -> dict:
     """Load a workflow template from YAML.
@@ -95,10 +119,14 @@ def _step_tool_path(step: dict) -> str:
     """Repo-relative script this step runs ('' when it declares none).
 
     An `mcp` node names a registry tool, not a script — every one of them runs
-    through the shared executor, so the path is fixed rather than authored.
+    through the shared executor, so the path is fixed rather than authored. An
+    `agent` node names a prompt and a toolset, and is fixed the same way.
     """
-    if step.get("node_type") == "mcp":
+    node_type = step.get("node_type")
+    if node_type == "mcp":
         return MCP_EXECUTOR
+    if node_type == "agent":
+        return AGENT_EXECUTOR
     return step.get("tool", "") or ""
 
 
@@ -144,6 +172,62 @@ def _build_mcp_command(step: dict, project_id: str, run_id: str = "") -> list:
     return cmd
 
 
+# What a node type is missing when it builds no command. A `tool` node has no
+# script path; the two executor-backed node types are each missing the one key
+# that names their work. Same table as workflow_runner._MISSING_STEP_KEY.
+_MISSING_STEP_KEY = {
+    "mcp": "node_type: mcp step declares no 'mcp_tool'",
+    "agent": "node_type: agent step declares no 'prompt'",
+}
+
+
+def _agent_tools_arg(step: dict) -> str:
+    """A step's `agent_tools` as the executor's comma-separated --agent-tools.
+
+    A list is how a template authors it; a string is accepted so a hand-edited
+    template still runs. The executor re-parses and de-duplicates either form.
+    """
+    raw = step.get("agent_tools")
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    return ",".join(str(name).strip() for name in raw if str(name).strip())
+
+
+def _build_agent_command(step: dict, project_id: str, run_id: str = "") -> list:
+    """Command for a `node_type: agent` step — run the loop via agent_executor.py.
+
+    Byte-identical to workflow_runner._build_agent_command for the same step, so
+    the headless composer and Studio run an agent node exactly the same way. The
+    step's `args` (and any composer overrides for them) are deliberately not
+    forwarded: an agent step takes its task from `prompt` only.
+    """
+    prompt = str(step.get("prompt", "") or "").strip()
+    if not prompt:
+        return []
+    cmd = [
+        sys.executable, str(BASE_DIR / AGENT_EXECUTOR),
+        "--prompt", prompt,
+        "--agent-tools", _agent_tools_arg(step),
+    ]
+    for key, flag in _AGENT_STEP_FLAGS:
+        value = step.get(key)
+        if value is None or str(value).strip() == "":
+            continue
+        cmd.extend([flag, str(value)])
+    step_id = str(step.get("id", "") or "")
+    if step_id:
+        cmd.extend(["--step-id", step_id])
+    if step.get("inject_project_id", True):
+        cmd.extend(["--project-id", project_id])
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
+    if step.get("json_output", True):
+        cmd.append("--json")
+    return cmd
+
+
 def _build_command(
     step: dict,
     project_id: str,
@@ -164,6 +248,8 @@ def _build_command(
     """
     if step.get("node_type") == "mcp":
         return _build_mcp_command(step, project_id, run_id)
+    if step.get("node_type") == "agent":
+        return _build_agent_command(step, project_id, run_id)
 
     tool_path = step.get("tool", "")
     if not tool_path:
@@ -340,10 +426,8 @@ def execute_workflow(
 
         if not step["command"]:
             step_result["status"] = "skip"
-            step_result["error"] = (
-                "node_type: mcp step declares no 'mcp_tool'"
-                if step.get("node_type") == "mcp"
-                else "No tool path configured"
+            step_result["error"] = _MISSING_STEP_KEY.get(
+                step.get("node_type"), "No tool path configured"
             )
             results["steps"].append(step_result)
             continue

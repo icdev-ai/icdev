@@ -27,7 +27,6 @@ CLI:
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -44,6 +43,8 @@ from typing import Any, Dict, List, Optional
 _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402, F401
 
@@ -1167,7 +1168,7 @@ def export_blueprint(
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     content = json.dumps(blueprint, indent=2, sort_keys=False, default=str)
-    dest.write_text(content, encoding="utf-8")
+    dest.write_text(content, encoding="utf-8", newline="")
 
     size = dest.stat().st_size
 

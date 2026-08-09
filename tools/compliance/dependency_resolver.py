@@ -57,6 +57,7 @@ CLI::
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -147,6 +148,10 @@ def _component(
     resolution=RESOLUTION_RESOLVED,
     direct=True,
     ctype="library",
+    declared_license=None,
+    declared_hashes=None,
+    artifact_path="",
+    artifact_subject="",
 ):
     """Build one component instance.
 
@@ -154,6 +159,26 @@ def _component(
     instances of the same name and version at different ``node_modules`` paths
     are two keys, so they survive deduplication and can each carry their own
     dependency relationship.
+
+    ``declared_license`` is whatever the source stated, uninterpreted — a string,
+    or npm's legacy object/array form. Classifying it is
+    ``component_licenser``'s job (2026 Component License, sbx-fld-04); resolvers
+    only report what they read, and ``None`` means this source carries no license
+    field at all.
+
+    ``declared_hashes``, ``artifact_path`` and ``artifact_subject`` feed the 2026
+    Component Hash Value / Algorithm elements (sbx-fld-03), under the same
+    division of labour: a resolver reports what its source carries and where the
+    artifact is, and ``component_hasher`` decides what may be adopted as the
+    element. Each ``declared_hashes`` entry is a dict — ``{"sri": ...}`` for a
+    Subresource Integrity string, or
+    ``{"algorithm": ..., "value": ..., "encoding": ...}`` — plus ``subject``
+    naming which artifact it covers and ``source`` naming where it was read. Two
+    flags let a resolver disqualify a value it read without deciding anything:
+    ``artifact_digest: False`` marks a value that is cryptographic but is not a
+    digest of a single artifact (``go.sum``'s ``h1:`` module hash), and
+    ``ambiguous: True`` marks one of several artifact digests where the source
+    does not say which artifact was installed.
     """
     return {
         "type": ctype,
@@ -168,7 +193,72 @@ def _component(
         "dependencies": list(dependencies or []),
         "resolution": resolution,
         "direct": bool(direct),
+        "declared_license": declared_license,
+        "declared_hashes": list(declared_hashes or []),
+        "artifact_path": str(artifact_path or ""),
+        "artifact_subject": artifact_subject,
     }
+
+
+# --- artifact digests (2026 Component Hash Value / Algorithm, sbx-fld-03) ----
+
+# What a declared digest is over. Reported, not interpreted: the standard's "executable
+# component artifact" is a tarball for npm, a `.crate` for Cargo, a `.nupkg` for NuGet
+# and a jar for Maven, and only the resolver that read the digest knows which it had.
+SUBJECT_NPM_TARBALL = "npm-package-tarball"
+SUBJECT_PYTHON_DISTRIBUTION = "python-distribution-artifact"
+SUBJECT_CRATE = "cargo-crate-file"
+SUBJECT_NUGET_PACKAGE = "nuget-package"
+SUBJECT_MAVEN_JAR = "maven-jar"
+SUBJECT_GO_MODULE = "go-module"
+
+
+def _python_lock_hashes(entry, source):
+    """Every artifact digest a `[[package]]` table carries, in the three lock spellings.
+
+    uv writes ``[package.sdist]`` and ``[[package.wheels]]``; poetry and pdm write a
+    ``files`` array. All three use ``"<algorithm>:<hex>"``.
+
+    A package with more than one artifact is flagged ``ambiguous``: the lock pins a
+    source distribution and every platform wheel, and none of them says which one this
+    environment installed. ``component_hasher`` refuses the lot and keeps them as
+    unadopted evidence, which is the honest answer — the alternative is naming a
+    file most recipients do not hold.
+    """
+    raw = []
+    sdist = entry.get("sdist")
+    if isinstance(sdist, dict) and sdist.get("hash"):
+        raw.append(sdist["hash"])
+    for wheel in entry.get("wheels") or []:
+        if isinstance(wheel, dict) and wheel.get("hash"):
+            raw.append(wheel["hash"])
+    for item in entry.get("files") or []:
+        if isinstance(item, dict) and item.get("hash"):
+            raw.append(item["hash"])
+
+    hashes = []
+    for value in raw:
+        algorithm, _, digest = str(value).partition(":")
+        if not digest:
+            continue
+        hashes.append(
+            {
+                "algorithm": algorithm,
+                "value": digest,
+                "encoding": "hex",
+                "subject": SUBJECT_PYTHON_DISTRIBUTION,
+                "source": str(source),
+                "ambiguous": len(raw) > 1,
+            }
+        )
+    return hashes
+
+
+def _sri_hash(integrity, subject, source):
+    """A Subresource Integrity string as a single declared-digest entry."""
+    if not integrity:
+        return []
+    return [{"sri": str(integrity), "subject": subject, "source": str(source)}]
 
 
 def _result(ecosystem, method, complete, components, reason="", source=""):
@@ -262,6 +352,7 @@ def _resolve_python_lock(path, ecosystem_method):
                 key=f"python|{name}@{version}",
                 source=path,
                 dependencies=[f"python|{d}" for d in _python_lock_edges(entry)],
+                declared_hashes=_python_lock_hashes(entry, path),
             )
         )
     return _result("python", ecosystem_method, True, components, source=path)
@@ -279,6 +370,8 @@ def _resolve_pipfile_lock(path):
                 continue
             name = _normalize_pypi_name(raw_name)
             version = str(info.get("version", "") or "").lstrip("=")
+            # Pipfile.lock's `hashes` is the same list of per-artifact digests the
+            # other Python locks carry, in a flat form.
             components.append(
                 _component(
                     "python",
@@ -288,6 +381,9 @@ def _resolve_pipfile_lock(path):
                     key=f"python|{name}@{version}",
                     scope=scope,
                     source=path,
+                    declared_hashes=_python_lock_hashes(
+                        {"files": [{"hash": h} for h in (info.get("hashes") or [])]}, path
+                    ),
                 )
             )
     if not components:
@@ -324,6 +420,45 @@ def _site_packages_dirs(project_dir, python_env=None):
     return [c for c in candidates if c.is_dir()]
 
 
+#: A `License:` field long enough or multi-line enough to be the license TEXT rather
+#: than its name. Several distributions paste the whole BSD or MIT body in there, and
+#: carrying that into an SBOM as a license *name* would be worse than saying nothing:
+#: the 2026 element exists so a recipient can look the terms up, not read them inline.
+_LICENSE_FIELD_MAX = 120
+
+
+def _python_metadata_license(metadata):
+    """The license a `*.dist-info/METADATA` file declares, or None.
+
+    PEP 639 order. ``License-Expression`` is an SPDX expression by definition, so it is
+    preferred outright. ``License`` is free text that is *usually* an identifier and
+    occasionally the entire license body. The trove classifier is last: it is a category
+    ("MIT License"), not an identifier, so it travels as a license name and
+    ``component_licenser`` never launders it into an SPDX id.
+    """
+    expression = (metadata.get("License-Expression") or "").strip()
+    if expression:
+        return expression
+
+    declared = (metadata.get("License") or "").strip()
+    if declared and "\n" not in declared and len(declared) <= _LICENSE_FIELD_MAX:
+        return declared
+
+    try:
+        classifiers = metadata.get_all("Classifier") or []
+    except AttributeError:
+        classifiers = []
+    for classifier in classifiers:
+        if not isinstance(classifier, str) or not classifier.startswith("License ::"):
+            continue
+        label = classifier.split("::")[-1].strip()
+        # "License :: OSI Approved" on its own names no license.
+        if label and label != "OSI Approved":
+            return label
+
+    return None
+
+
 def _resolve_python_environment(project_dir, python_env=None):
     """Read the *installed* distributions of a target environment.
 
@@ -351,6 +486,9 @@ def _resolve_python_environment(project_dir, python_env=None):
                 name = _normalize_pypi_name(raw_name)
                 version = str(dist.version or "")
                 edges = sorted({_requirement_name(r) for r in (dist.requires or [])} - {""})
+                # Component License, from the producer's own installed metadata — the
+                # only place an air-gapped build can read a Python package's license.
+                declared_license = _python_metadata_license(dist.metadata)
             except Exception:
                 continue
 
@@ -367,6 +505,7 @@ def _resolve_python_environment(project_dir, python_env=None):
                     key=key,
                     source=info,
                     dependencies=[f"python|{e}" for e in edges],
+                    declared_license=declared_license,
                 )
             )
 
@@ -519,6 +658,13 @@ def _resolve_package_lock_v2(path, packages):
                 source=path,
                 dependencies=sorted(set(edges)),
                 direct=pkg_path.count("node_modules/") == 1,
+                # npm records the resolved package's own license here, in either the
+                # current string form or the legacy object/array form.
+                declared_license=info.get("license") or info.get("licenses"),
+                # `integrity` is Subresource Integrity over the registry tarball —
+                # a digest of the distributed artifact itself, which is exactly the
+                # 2026 Component Hash Value.
+                declared_hashes=_sri_hash(info.get("integrity"), SUBJECT_NPM_TARBALL, path),
             )
         )
     if not components:
@@ -570,6 +716,13 @@ def _resolve_package_lock_v1(path, dependencies):
                 source=path,
                 dependencies=sorted(set(edges)),
                 direct=pkg_path.count("node_modules/") == 1,
+                # npm records the resolved package's own license here, in either the
+                # current string form or the legacy object/array form.
+                declared_license=info.get("license") or info.get("licenses"),
+                # v1 lockfiles from npm 5 carry `integrity`; older ones carry only a
+                # `sha1-` SRI, which component_hasher refuses as unapproved rather than
+                # publishing a digest a recipient must not rely on.
+                declared_hashes=_sri_hash(info.get("integrity"), SUBJECT_NPM_TARBALL, path),
             )
         )
     return _result("npm", "package-lock.json (lockfileVersion 1)", True, components, source=path)
@@ -620,6 +773,10 @@ def _yarn_components(entries, path, method):
                 group=group,
                 source=path,
                 dependencies=sorted(set(edges)),
+                # yarn v1 records the registry tarball's SRI. Berry's `checksum` is
+                # deliberately NOT read: it covers the zip in yarn's own cache, not the
+                # artifact the recipient can fetch, so it is a digest of the wrong thing.
+                declared_hashes=_sri_hash(entry.get("integrity"), SUBJECT_NPM_TARBALL, path),
             )
         )
     if not components:
@@ -647,6 +804,7 @@ def _parse_yarn_lock_v1(text):
                     "descriptors": [d.strip().strip('"') for d in line[:-1].split(",")],
                     "version": "",
                     "deps": {},
+                    "integrity": "",
                 }
             continue
 
@@ -658,6 +816,9 @@ def _parse_yarn_lock_v1(text):
             version_match = re.match(r'^version\s+"?([^"\s]+)"?$', line)
             if version_match:
                 current["version"] = version_match.group(1)
+            integrity_match = re.match(r'^integrity\s+"?([^"\s]+)"?$', line)
+            if integrity_match:
+                current["integrity"] = integrity_match.group(1)
             continue
 
         if in_deps:
@@ -793,9 +954,31 @@ def _go_directive_at_least_117(text):
     return (major, minor) >= (1, 17)
 
 
+def _go_module_hash(module_hash, path):
+    """A ``go.sum`` ``h1:`` line as a declared digest that is explicitly not adoptable.
+
+    ``h1:`` is a SHA-256 over a synthesized listing of the module's per-file hashes, not
+    over the module zip. Publishing it as the Component Hash Value would tell a recipient
+    that hashing the artifact they hold reproduces it, which is false. It is carried so
+    nothing is dropped, flagged so nothing is misstated.
+    """
+    if not module_hash:
+        return []
+    return [
+        {
+            "algorithm": module_hash.split(":", 1)[0],
+            "value": module_hash.partition(":")[2],
+            "encoding": "base64",
+            "subject": SUBJECT_GO_MODULE,
+            "source": str(path),
+            "artifact_digest": False,
+        }
+    ]
+
+
 def _go_components(pairs, path, source_label):
     components = []
-    for module, version, indirect in pairs:
+    for module, version, indirect, module_hash in pairs:
         components.append(
             _component(
                 "golang",
@@ -805,9 +988,25 @@ def _go_components(pairs, path, source_label):
                 key=f"golang|{module}@{version}",
                 source=path,
                 direct=not indirect,
+                declared_hashes=_go_module_hash(module_hash, path),
             )
         )
     return components
+
+
+def _parse_go_sum(path):
+    """``{(module, version): "h1:<base64>"}`` from a ``go.sum``.
+
+    The ``/go.mod`` lines are skipped: they hash the module's own go.mod file rather
+    than the module, and are a different subject again.
+    """
+    sums = {}
+    for line in (_read_text(path) or "").splitlines():
+        parts = line.split()
+        if len(parts) < 3 or parts[1].endswith("/go.mod"):
+            continue
+        sums.setdefault((parts[0], parts[1]), parts[2])
+    return sums
 
 
 def _resolve_golang(project_dir):
@@ -816,6 +1015,10 @@ def _resolve_golang(project_dir):
     if not go_mod.exists() and not go_sum.exists():
         return None
 
+    # Read once and use for both branches: the module set comes from go.mod when it is
+    # pruned, but the only digests Go records anywhere are in go.sum.
+    sums = _parse_go_sum(go_sum) if go_sum.exists() else {}
+
     text = _read_text(go_mod) if go_mod.exists() else None
     if text and _go_directive_at_least_117(text):
         requires = _parse_go_mod_requires(text)
@@ -823,35 +1026,28 @@ def _resolve_golang(project_dir):
             # Since Go 1.17 the main module's go.mod records every module in the
             # pruned module graph, indirect ones explicitly — that is the resolved
             # build list, not just the direct requirements.
+            pairs = [(m, v, indirect, sums.get((m, v), "")) for (m, v, indirect) in requires]
             return _result(
                 "golang",
                 "go.mod (Go >= 1.17 pruned module graph)",
                 True,
-                _go_components(requires, go_mod, "go.mod"),
+                _go_components(pairs, go_mod, "go.mod"),
                 reason="go.mod records the module set but no inter-module edges.",
                 source=go_mod,
             )
 
-    if go_sum.exists():
-        sum_text = _read_text(go_sum) or ""
-        seen = {}
-        for line in sum_text.splitlines():
-            parts = line.split()
-            if len(parts) < 3 or parts[1].endswith("/go.mod"):
-                continue
-            seen.setdefault((parts[0], parts[1]), True)
-        if seen:
-            # go.sum is a conservative superset: it can retain modules that the
-            # final build no longer selects. Over-listing is safe for Coverage;
-            # under-listing is not.
-            return _result(
-                "golang",
-                "go.sum",
-                True,
-                _go_components([(m, v, False) for (m, v) in seen], go_sum, "go.sum"),
-                reason="go.sum may be a superset of the selected build list and records no edges.",
-                source=go_sum,
-            )
+    if sums:
+        # go.sum is a conservative superset: it can retain modules that the
+        # final build no longer selects. Over-listing is safe for Coverage;
+        # under-listing is not.
+        return _result(
+            "golang",
+            "go.sum",
+            True,
+            _go_components([(m, v, False, h) for (m, v), h in sums.items()], go_sum, "go.sum"),
+            reason="go.sum may be a superset of the selected build list and records no edges.",
+            source=go_sum,
+        )
 
     return _result(
         "golang",
@@ -903,6 +1099,20 @@ def _resolve_cargo(project_dir):
                         key=f"cargo|{name}@{version}",
                         source=lock,
                         dependencies=sorted(set(edges)),
+                        # `checksum` is the SHA-256 of the registry `.crate` file, as
+                        # hexadecimal. Absent for path and git dependencies, which have
+                        # no registry artifact to have a checksum of.
+                        declared_hashes=[
+                            {
+                                "algorithm": "sha-256",
+                                "value": entry["checksum"],
+                                "encoding": "hex",
+                                "subject": SUBJECT_CRATE,
+                                "source": str(lock),
+                            }
+                        ]
+                        if entry.get("checksum")
+                        else [],
                     )
                 )
             if components:
@@ -943,6 +1153,48 @@ MAVEN_DEPENDENCY_LIST_PATHS = (
 )
 
 
+def _maven_local_repository():
+    """Where Maven caches artifacts locally. Offline, like everything else here.
+
+    `settings.xml` can relocate it, but parsing that file to find out would mean
+    reading a document whose own location is configurable; the environment variables
+    below are what CI runners and containerized builds actually set.
+    """
+    override = os.environ.get("MAVEN_REPO_LOCAL") or os.environ.get("M2_REPO")
+    return Path(override) if override else Path.home() / ".m2" / "repository"
+
+
+def _maven_artifact(group_id, artifact_id, version):
+    """`(artifact_path, declared_hashes)` for one Maven coordinate.
+
+    The jar in the local repository IS the executable component artifact, and it is
+    right there on disk — this is the one ecosystem where the element can be answered
+    by hashing the thing itself rather than by repeating a lockfile. When only the
+    `.sha1` sidecar is present it is carried as a declared digest and refused by
+    `component_hasher`: SHA-1 is a registered IANA name that no authority still approves
+    for integrity, so the honest answer is the unknown marker plus the sidecar as
+    unadopted evidence.
+    """
+    base = _maven_local_repository().joinpath(*group_id.split("."), artifact_id, version)
+    jar = base / f"{artifact_id}-{version}.jar"
+    if jar.is_file():
+        return jar, []
+
+    sidecar = Path(f"{jar}.sha1")
+    text = _read_text(sidecar)
+    if not text or not text.strip():
+        return "", []
+    return "", [
+        {
+            "algorithm": "sha-1",
+            "value": text.split()[0],
+            "encoding": "hex",
+            "subject": SUBJECT_MAVEN_JAR,
+            "source": str(sidecar),
+        }
+    ]
+
+
 def _resolve_maven(project_dir):
     pom = project_dir / "pom.xml"
     if not pom.exists():
@@ -965,6 +1217,7 @@ def _resolve_maven(project_dir):
             version = parts[-2]
             if not group_id or not artifact_id or not version:
                 continue
+            artifact_path, declared_hashes = _maven_artifact(group_id, artifact_id, version)
             components.append(
                 _component(
                     "maven",
@@ -975,6 +1228,9 @@ def _resolve_maven(project_dir):
                     group=group_id,
                     scope="optional" if scope in ("test", "provided") else "required",
                     source=listing,
+                    artifact_path=artifact_path,
+                    artifact_subject=SUBJECT_MAVEN_JAR,
+                    declared_hashes=declared_hashes,
                 )
             )
         if components:
@@ -1072,12 +1328,35 @@ def _resolve_gradle(project_dir):
 # --- nuget ------------------------------------------------------------------
 
 
+def _nuget_hash(digest, path):
+    """NuGet's base64 SHA-512 over the `.nupkg`, as a declared digest entry.
+
+    Both restore formats spell it the same way — `sha512` in `project.assets.json`,
+    `contentHash` in `packages.lock.json` — so one helper covers both.
+    """
+    if not digest:
+        return []
+    return [
+        {
+            "algorithm": "sha-512",
+            "value": digest,
+            "encoding": "base64",
+            "subject": SUBJECT_NUGET_PACKAGE,
+            "source": str(path),
+        }
+    ]
+
+
 def _resolve_project_assets(path):
     """``obj/project.assets.json`` — NuGet's resolved restore graph, with edges."""
     data = _read_json(path)
     targets = data.get("targets") if isinstance(data, dict) else None
     if not isinstance(targets, dict):
         return None
+
+    # `libraries`, not `targets`, is where the restore records each package's digest —
+    # base64 SHA-512 over the `.nupkg`, keyed by the same `name/version` coordinate.
+    libraries = data.get("libraries") if isinstance(data.get("libraries"), dict) else {}
 
     components = []
     seen = set()
@@ -1095,6 +1374,8 @@ def _resolve_project_assets(path):
                 continue
             seen.add(key)
             edges = [f"nuget|{d}" for d in (info.get("dependencies") or {})]
+            library = libraries.get(coordinate)
+            digest = library.get("sha512") if isinstance(library, dict) else ""
             components.append(
                 _component(
                     "nuget",
@@ -1104,6 +1385,7 @@ def _resolve_project_assets(path):
                     key=key,
                     source=path,
                     dependencies=sorted(set(edges)),
+                    declared_hashes=_nuget_hash(digest, path),
                 )
             )
     if not components:
@@ -1144,6 +1426,7 @@ def _resolve_packages_lock(path):
                     source=path,
                     dependencies=sorted(set(edges)),
                     direct=str(info.get("type", "")) == "Direct",
+                    declared_hashes=_nuget_hash(info.get("contentHash"), path),
                 )
             )
     if not components:

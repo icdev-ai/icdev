@@ -415,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         out_path = BASE_DIR / "plans" / f"{meta['slug']}.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(rendered, encoding="utf-8")
+    out_path.write_text(rendered, encoding="utf-8", newline="")
 
     summary = {
         "meta": meta,

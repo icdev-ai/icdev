@@ -16,7 +16,6 @@ the original (`[r for r in all_results if r.test_type == "security"]`
 was discarded).
 """
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -31,6 +30,8 @@ from typing import Any, List, Optional, Tuple
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.testing.data_types import (  # noqa: E402
     E2ETestResult,

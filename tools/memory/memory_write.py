@@ -10,6 +10,17 @@ import argparse
 import hashlib
 import json
 import sqlite3
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import StorageConnection, get_connection
 from pathlib import Path
 from datetime import datetime
@@ -150,7 +161,7 @@ def write_to_daily_log(content):
     if not log_file.exists():
         log_file.write_text(
             f"# Daily Log — {today}\n\n## Session Notes\n\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
 
     with open(log_file, "a", encoding="utf-8") as f:
@@ -203,7 +214,7 @@ def update_memory_md(content, section):
                 new_lines.append(f"- {content}")
                 inserted = True
         if inserted:
-            MEMORY_FILE.write_text("\n".join(new_lines), encoding="utf-8")
+            MEMORY_FILE.write_text("\n".join(new_lines), encoding="utf-8", newline="")
             print(f"Updated MEMORY.md section: {header}")
             return True
 
@@ -271,7 +282,7 @@ def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = 
             continue
 
         # Append back-link before the final newline
-        f.write_text(text.rstrip() + link_line + "\n", encoding="utf-8")
+        f.write_text(text.rstrip() + link_line + "\n", encoding="utf-8", newline="")
         updated.append(str(f))
 
     return updated

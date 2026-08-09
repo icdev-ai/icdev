@@ -17,6 +17,17 @@ Usage:
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -502,7 +513,7 @@ def main():
     if args.output and "yaml_content" in result:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(result["yaml_content"], encoding="utf-8")
+        out_path.write_text(result["yaml_content"], encoding="utf-8", newline="")
         result["output_file"] = str(out_path)
 
     if args.json or not args.human:

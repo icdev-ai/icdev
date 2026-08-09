@@ -19,6 +19,16 @@ import argparse
 import json
 import sys
 import uuid
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -235,7 +245,7 @@ def generate_tsp(project_id, output_dir=None, db_path=None):
         out = Path(output_dir) if output_dir else BASE_DIR / ".tmp" / "mosa" / "tsp"
         out.mkdir(parents=True, exist_ok=True)
         fp = out / f"{tid}.md"
-        fp.write_text(content, encoding="utf-8")
+        fp.write_text(content, encoding="utf-8", newline="")
         conn.execute(
             """INSERT INTO tsp_documents (id,project_id,version,standards,deviations,
             content,file_path,classification,status,approval_status,created_at,updated_at)

@@ -36,6 +36,16 @@ import sqlite3
 import sys
 import uuid
 import xml.etree.ElementTree as ET
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
@@ -515,7 +525,7 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
             )
             code_path = Path(row["code_path"])
             code_path.parent.mkdir(parents=True, exist_ok=True)
-            code_path.write_text(code_content, encoding="utf-8")
+            code_path.write_text(code_content, encoding="utf-8", newline="")
 
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(
@@ -561,7 +571,7 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
                 language=language,
             )
             code_path.parent.mkdir(parents=True, exist_ok=True)
-            code_path.write_text(code_content, encoding="utf-8")
+            code_path.write_text(code_content, encoding="utf-8", newline="")
 
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(
@@ -891,7 +901,7 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
 
     out_path = Path(output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(xmi_content, encoding="utf-8")
+    out_path.write_text(xmi_content, encoding="utf-8", newline="")
 
     # Step 5: Audit trail
     if _HAS_AUDIT:
@@ -984,7 +994,7 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
             )
             code_path = Path(row["code_path"])
             code_path.parent.mkdir(parents=True, exist_ok=True)
-            code_path.write_text(code_content, encoding="utf-8")
+            code_path.write_text(code_content, encoding="utf-8", newline="")
 
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(

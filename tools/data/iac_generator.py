@@ -1152,16 +1152,16 @@ def generate_iac(project_id: str) -> dict:
         checklist_md = _ARTIFACTS_DIR / f"validation_checklist_{uid}.md"
         discovery_md = _ARTIFACTS_DIR / f"discovery_report_{uid}.md"
 
-        main_tf.write_text("".join(blocks), encoding="utf-8")
-        vars_tf.write_text(_TF_VARIABLES, encoding="utf-8")
-        tfvars.write_text(_TFVARS_EXAMPLE.format(design_name=did), encoding="utf-8")
-        validate_py.write_text(_build_validation_script(did, nodes, uid), encoding="utf-8")
-        wave_plan_yaml.write_text(_build_wave_plan(did, nodes, ts), encoding="utf-8")
-        ansible_pb.write_text(_build_ansible_playbook(did, nodes, ts), encoding="utf-8")
-        ansible_inv.write_text(_build_ansible_inventory(did, nodes, ts), encoding="utf-8")
-        runbook_md.write_text(_build_migration_runbook(did, nodes, ts), encoding="utf-8")
-        checklist_md.write_text(_build_validation_checklist(did, nodes, ts), encoding="utf-8")
-        discovery_md.write_text(_build_discovery_report(did, nodes, edges, ts), encoding="utf-8")
+        main_tf.write_text("".join(blocks), encoding="utf-8", newline="")
+        vars_tf.write_text(_TF_VARIABLES, encoding="utf-8", newline="")
+        tfvars.write_text(_TFVARS_EXAMPLE.format(design_name=did), encoding="utf-8", newline="")
+        validate_py.write_text(_build_validation_script(did, nodes, uid), encoding="utf-8", newline="")
+        wave_plan_yaml.write_text(_build_wave_plan(did, nodes, ts), encoding="utf-8", newline="")
+        ansible_pb.write_text(_build_ansible_playbook(did, nodes, ts), encoding="utf-8", newline="")
+        ansible_inv.write_text(_build_ansible_inventory(did, nodes, ts), encoding="utf-8", newline="")
+        runbook_md.write_text(_build_migration_runbook(did, nodes, ts), encoding="utf-8", newline="")
+        checklist_md.write_text(_build_validation_checklist(did, nodes, ts), encoding="utf-8", newline="")
+        discovery_md.write_text(_build_discovery_report(did, nodes, edges, ts), encoding="utf-8", newline="")
 
         all_results.append({
             "design_id": did,
@@ -1242,7 +1242,7 @@ def main():
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
         uid = uuid.uuid4().hex[:8]
         report_path = _ARTIFACTS_DIR / f"iac_report_{uid}.md"
-        report_path.write_text(report_md, encoding="utf-8")
+        report_path.write_text(report_md, encoding="utf-8", newline="")
 
         artifacts = []
         for d in result["designs"]:

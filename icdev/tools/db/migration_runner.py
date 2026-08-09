@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Database Migration Runner.
 
@@ -32,6 +31,8 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import StorageConnection
 
@@ -83,6 +84,18 @@ TIMESTAMP_VERSION_FORMAT = "%Y%m%d%H%M%S"
 _VERSION_PATTERN = rf"(\d{{{LEGACY_VERSION_DIGITS}}}|\d{{{TIMESTAMP_VERSION_DIGITS}}})"
 _VERSION_DIR_RE = rf"^{_VERSION_PATTERN}_(.+)$"
 _VERSION_FILE_RE = rf"^{_VERSION_PATTERN}_(.+)\.sql$"
+
+
+def _write_lf(path: Path, text: str) -> None:
+    """Write UTF-8 text with LF endings on every platform.
+
+    ``Path.write_text`` performs universal-newline translation, so on Windows it
+    turns every "\\n" into "\\r\\n". This repo is LF, so a file scaffolded that way
+    shows up as a whole-file change the first time anyone edits it. ``newline=""``
+    disables the translation.
+    """
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
 
 
 def new_timestamp_version(now: Optional[datetime] = None) -> str:
@@ -745,14 +758,20 @@ class MigrationRunner:
         mdir = self.migrations_dir / dir_name
         mdir.mkdir(parents=True)
 
-        # Create scaffold files
-        (mdir / "up.sql").write_text(
+        # Create scaffold files.
+        #
+        # Every write goes through _write_lf. Path.write_text with no `newline`
+        # translates "\n" to "\r\n" on Windows, so a scaffolded migration arrived
+        # with CRLF endings in an LF repo and git reported the WHOLE file as
+        # changed the first time anyone edited it. Not reproducible on Linux,
+        # which is where CI runs — see tests/test_migration_scaffold_newlines.py.
+        _write_lf(
+            mdir / "up.sql",
             f"-- Migration: {dir_name}\n-- CUI // SP-CTI\n\n-- Add your schema changes here\n",
-            encoding="utf-8",
         )
-        (mdir / "down.sql").write_text(
+        _write_lf(
+            mdir / "down.sql",
             f"-- Rollback: {dir_name}\n-- CUI // SP-CTI\n\n-- Add rollback statements here\n",
-            encoding="utf-8",
         )
         meta = {
             "description": name,
@@ -761,7 +780,9 @@ class MigrationRunner:
             "database": "icdev",
             "reversible": True,
         }
-        (mdir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        # Trailing newline so the file is POSIX-clean and a later edit does not
+        # show a spurious "\ No newline at end of file" hunk.
+        _write_lf(mdir / "meta.json", json.dumps(meta, indent=2) + "\n")
 
         logger.info("Created migration scaffold: %s", mdir)
         return str(mdir)

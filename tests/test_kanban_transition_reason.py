@@ -33,8 +33,12 @@ WRITERS = [
     "tools/dashboard/api/kanban.py",
     "tools/kanban/cli.py",
     "tools/kanban/state_machine.py",
+    "tools/kanban/startup_recovery.py",
     "tools/ci/pr_watcher.py",
     "tools/mcp/kanban_server.py",
+    # kax-recover-02: re-queueing a task for a clean rebuild is a status change
+    # like any other, so it owes the table a row saying who sent it back and why.
+    "tools/kanban/requeue.py",
 ]
 
 # Not a production writer: this verification harness seeds synthetic 'done'
@@ -47,7 +51,7 @@ VERIFIER_WRITERS = [
     "tools/testing/verify_board_stall_rule.py",
 ]
 
-# The same six under the canonical ``icdev.tools.*`` namespace. These are not
+# The same seven under the canonical ``icdev.tools.*`` namespace. These are not
 # redundant: ``tools.X`` and ``icdev.tools.X`` are separate module objects in a
 # checkout, and a wheel ships only the ``icdev/`` copy. The first cut of this
 # file scanned ``tools/`` alone, so ``icdev/tools/genesis/reflexes/kanban.py``
@@ -228,7 +232,7 @@ def _writers_on_disk():
 
 
 def test_writer_inventory_is_current():
-    """If someone adds a seventh writer, this fails and they must extend the list."""
+    """If someone adds an eighth writer, this fails and they must extend the list."""
     assert _writers_on_disk() == sorted(ALL_WRITERS)
 
 

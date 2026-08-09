@@ -313,7 +313,7 @@ def run(run_id: str = "", project_id: str = "default", canvas: str = _CANVAS) ->
             content = f":log info \"ZTP: {node_name} — no role-specific config\"\n/system identity set name={node_name}\n"
 
         rsc_path = ztp_dir / f"ztp_{node_name}.rsc"
-        rsc_path.write_text(content, encoding="utf-8")
+        rsc_path.write_text(content, encoding="utf-8", newline="")
         artifacts.append({
             "name": f"ZTP Config — {node_name}",
             "path": rsc_path.relative_to(_ROOT).as_posix(),
@@ -336,7 +336,7 @@ def run(run_id: str = "", project_id: str = "default", canvas: str = _CANVAS) ->
         if device_map.get(name, {}).get("os") == "vpcs":
             content = _vpcs_startup(name, ip, prefix, gw)
             vpath = ztp_dir / f"vpcs_{name}.txt"
-            vpath.write_text(content, encoding="utf-8")
+            vpath.write_text(content, encoding="utf-8", newline="")
             artifacts.append({
                 "name": f"VPCS Config — {name}",
                 "path": vpath.relative_to(_ROOT).as_posix(),
@@ -352,7 +352,7 @@ def run(run_id: str = "", project_id: str = "default", canvas: str = _CANVAS) ->
     )
     playbook_content = _ansible_ztp_playbook(routers_meta, inv_path, ts)
     pb_path = _ARTIFACTS_DIR / f"ztp_playbook_{uid}.yml"
-    pb_path.write_text(playbook_content, encoding="utf-8")
+    pb_path.write_text(playbook_content, encoding="utf-8", newline="")
     artifacts.append({
         "name": "Ansible ZTP Playbook",
         "path": pb_path.relative_to(_ROOT).as_posix(),
@@ -405,7 +405,7 @@ def run(run_id: str = "", project_id: str = "default", canvas: str = _CANVAS) ->
         "```",
     ]
     rpt_path = _ARTIFACTS_DIR / f"ztp_report_{uid}.md"
-    rpt_path.write_text("\n".join(report_lines), encoding="utf-8")
+    rpt_path.write_text("\n".join(report_lines), encoding="utf-8", newline="")
     artifacts.append({
         "name": "ZTP Generation Report",
         "path": rpt_path.relative_to(_ROOT).as_posix(),

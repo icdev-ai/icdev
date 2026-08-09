@@ -702,7 +702,7 @@ def _main(argv=None) -> int:
 
     if fmt == "json":
         if args.output:
-            Path(args.output).write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+            Path(args.output).write_text(json.dumps(result, indent=2, default=str), encoding="utf-8", newline="")
         elif args.json or not args.format:
             json.dump(result, sys.stdout, indent=2, default=str)
             sys.stdout.write("\n")

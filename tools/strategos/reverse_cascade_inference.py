@@ -24,7 +24,6 @@ CLI
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -40,6 +39,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection, is_pg  # noqa: E402
 

@@ -26,7 +26,6 @@ Usage
   python tools/network/narrative_generator.py --flow-id <id> --json
 """
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -35,7 +34,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-logger = get_logger(__name__)
 
 # LLM stack — imported at module level so tests can monkeypatch these names on
 # tools.network.narrative_generator directly (see tests/test_ndc_narrative_egress.py),
@@ -53,6 +51,9 @@ except Exception:  # pragma: no cover - LLM stack optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger(__name__)
 
 # ── YAML config loader ────────────────────────────────────────────────────────
 

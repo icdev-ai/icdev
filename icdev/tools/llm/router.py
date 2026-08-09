@@ -2015,16 +2015,21 @@ class LLMRouter:
             # D286: Span with GenAI semantic conventions
             span = None
             if tracer:
+                _span_attrs = {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.system": provider_name,
+                    "gen_ai.request.model": model_id,
+                    "gen_ai.effort": request.effort or "medium",
+                    "icdev.llm_function": function,
+                }
+                # hgx-obs-01: stamp the caller's run id onto the span so an agent
+                # run's LLM calls join to its turns. Absent for direct router
+                # callers, and the attribute is then simply not set.
+                _correlation_id = getattr(request, "correlation_id", "") or ""
+                if _correlation_id:
+                    _span_attrs["icdev.correlation_id"] = _correlation_id
                 span = tracer.start_span(
-                    "gen_ai.invoke",
-                    kind="CLIENT",
-                    attributes={
-                        "gen_ai.operation.name": "chat",
-                        "gen_ai.system": provider_name,
-                        "gen_ai.request.model": model_id,
-                        "gen_ai.effort": request.effort or "medium",
-                        "icdev.llm_function": function,
-                    },
+                    "gen_ai.invoke", kind="CLIENT", attributes=_span_attrs,
                 )
 
             try:

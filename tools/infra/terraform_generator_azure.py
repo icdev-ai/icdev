@@ -16,21 +16,22 @@ expressions."""
 import argparse
 from pathlib import Path
 
-from tools.infra.terraform_generator import _cui_header, _write
+import sys
 
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-def _render(template_str: str, ctx: dict) -> str:
-    """Replace {{ key }} placeholders with ctx values.
-
-    Intentionally uses simple string replacement instead of Jinja2 so that
-    Terraform HCL interpolation (${{var.name}}) is preserved in the output.
-    Only keys present in *ctx* are substituted.
-    """
-    result = template_str
-    for key, val in ctx.items():
-        result = result.replace("{{ " + key + " }}", str(val))
-        result = result.replace("{{" + key + "}}", str(val))
-    return result
+# _render is IMPORTED, not redefined. This module used to carry its own copy —
+# simple string replacement, chosen precisely so Terraform's ${{var.name}}
+# survives — while terraform_generator used Jinja2 and broke on exactly that.
+# Two implementations of one idea is how the AWS side stayed broken while the
+# Azure side worked; one implementation means one behaviour.
+from tools.infra.terraform_generator import _cui_header, _render, _write
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

@@ -21,13 +21,14 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.genesis.reflexes.sim_training_export")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.genesis.reflexes.sim_training_export")
 
 try:
     from tools.db.storage import get_connection

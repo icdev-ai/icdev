@@ -17,6 +17,16 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -192,7 +202,7 @@ def _update_requirements_txt(file_path, package, from_ver, to_ver):
             updated = True
             break
     if updated:
-        Path(file_path).write_text(content, encoding="utf-8")
+        Path(file_path).write_text(content, encoding="utf-8", newline="")
     return updated
 
 
@@ -212,7 +222,7 @@ def _update_package_json(file_path, package, from_ver, to_ver):
             content[section][package] = f"{prefix}{to_ver}"
             updated = True
     if updated:
-        Path(file_path).write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8")
+        Path(file_path).write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8", newline="")
     return updated
 
 
@@ -227,7 +237,7 @@ def _update_pom_xml(file_path, package, from_ver, to_ver):
     )
     new_content = re.sub(pattern, rf"\g<1>{to_ver}\g<2>", content, flags=re.DOTALL)
     if new_content != content:
-        Path(file_path).write_text(new_content, encoding="utf-8")
+        Path(file_path).write_text(new_content, encoding="utf-8", newline="")
         return True
     return False
 
@@ -238,7 +248,7 @@ def _update_go_mod(file_path, module, from_ver, to_ver):
     pattern = rf"({re.escape(module)})\s+{re.escape(from_ver)}"
     new_content = re.sub(pattern, rf"\1 {to_ver}", content)
     if new_content != content:
-        Path(file_path).write_text(new_content, encoding="utf-8")
+        Path(file_path).write_text(new_content, encoding="utf-8", newline="")
         return True
     return False
 
@@ -258,7 +268,7 @@ def _update_cargo_toml(file_path, crate, from_ver, to_ver):
             updated = True
             break
     if updated:
-        Path(file_path).write_text(content, encoding="utf-8")
+        Path(file_path).write_text(content, encoding="utf-8", newline="")
     return updated
 
 
@@ -271,7 +281,7 @@ def _update_csproj(file_path, package, from_ver, to_ver):
     )
     new_content = re.sub(pattern, rf"\g<1>{to_ver}\g<2>", content)
     if new_content != content:
-        Path(file_path).write_text(new_content, encoding="utf-8")
+        Path(file_path).write_text(new_content, encoding="utf-8", newline="")
         return True
     return False
 

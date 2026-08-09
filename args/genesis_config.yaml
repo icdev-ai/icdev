@@ -678,7 +678,11 @@ reflexes:
   pmo_weekly_report:
     enabled: true
     risk_tier: yellow
-    schedule: "every Monday at 07:00"
+    # hgx-obs-02: was "every Monday at 07:00", which parse_schedule does not
+    # match — it returned None, so this reflex had no entry in daemon.schedules
+    # and never ran despite enabled:true. `interval_seconds` is only honoured
+    # when schedule == "continuous", so it was not a fallback either.
+    schedule: "weekly Mon 07:00"
     interval_seconds: 604800
     timeout_seconds: 300
     description: "AI-narrated weekly portfolio health report: EVM aggregates, overdue deliverables, option countdowns, top issues. Pushes to kanban and data/reports/"
@@ -690,7 +694,9 @@ reflexes:
   slides:
     enabled: true
     risk_tier: green
-    schedule: "0 17 * * 5"
+    # hgx-obs-02: was the cron string "0 17 * * 5" (Fri 17:00). parse_schedule
+    # has no cron form — it returned None and this reflex never ran.
+    schedule: "weekly Fri 17:00"
     interval_seconds: 604800
     timeout_seconds: 300
     description: "Weekly auto-generated ICDEV™ status deck: pulls canvases, kanban, genesis, capabilities → produces .pptx via Midnight Executive theme"
@@ -1204,6 +1210,22 @@ reflexes:
       threshold: 0
       operator: lte          # 0 failing checks on main is healthy; >0 means main has regressed
 
+  # ── Kanban policy drift (kax-merge-02) ───────────────────────────────────────
+
+  kanban_policy_drift:
+    timeout_seconds: 300     # one SELECT over kanban_tasks + N small UPDATEs
+    enabled: true
+    risk_tier: amber         # writes kanban_tasks.description for backlog/scheduled rows only
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "Operating policy is copied into every task description at seed time, so correcting the card does not correct the tasks that already exist (35 hgx rows kept telling sessions to open --draft for a day, and three batches of finished green work needed a human). Re-syncs descriptions against `policy:` on the project entry in args/projects.yaml. Rewrites only backlog/scheduled rows — done and in_progress are reported, never touched. Projects listed in args/kanban_policy_drift.yaml exempt_projects (agov, whose --draft is deliberate) are skipped entirely. Delegates to tools.kanban.policy_drift."
+    dry_run: false           # when true, reports drifted rows without rewriting any
+    success_metric:
+      name: unresolved_dispatchable
+      threshold: 0
+      operator: lte          # 0 dispatchable rows out of sync is healthy; >0 means a session will read stale policy
+
   # ── cATO Twin Continuous Monitoring (bdr-ops-1 — enabled after query soak) ───
 
   cato_twin:
@@ -1662,6 +1684,51 @@ reflexes:
       threshold: 0
       operator: gte
 
+  # ── Self-improvement flywheel (hgx-obs-02) ─────────────────────────────────
+  # These three were in daemon.REFLEX_NAMES (or, for gepa_optimizer, only in
+  # reflex_registry) but had NO block here, and DaemonBase.run_due_reflexes
+  # silently skips a reflex with no schedule entry.  Result: reflexion →
+  # evolution → GEPA, the whole self-improvement loop, never ran once — while
+  # gepa_optimizer's own docstring claimed it ran every 24 hours.
+  # tests/test_reflex_dispatch_parity.py now fails if this drift reappears.
+
+  reflexion_loop:
+    enabled: true
+    risk_tier: yellow
+    schedule: "weekly Sun 03:00"
+    description: "Batch Reflexion pass over recent task traces → agent_improvement_artifacts + amendment cards"
+    dry_run: false
+    # No-ops unless ICDEV_HARNESS_COLEARN is set (checked inside the reflex).
+    success_metric:
+      name: artifacts_created
+      threshold: 0
+      operator: gte
+
+  evolution:
+    enabled: true
+    risk_tier: yellow
+    schedule: "weekly Sun 04:00"
+    description: "SELA: mutate low-performing skill text, score variants, emit improvement artifacts"
+    # Tuning (trace_window_days, mutation_count, fitness weights, …) stays in
+    # args/nova_sela_config.yaml — run_evolution() merges this block on top of
+    # it, so keep this block to scheduling keys only.
+    success_metric:
+      name: artifacts_created
+      threshold: 0
+      operator: gte
+
+  gepa_optimizer:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 24h"
+    description: "GEPA: patch skill files from high-fitness reflexion artifacts, seed a human review card"
+    dry_run: false
+    # Promotion honours ICDEV_GEPA_FROZEN inside tools/skills/gepa_optimizer.py.
+    success_metric:
+      name: skills_patched
+      threshold: 0
+      operator: gte
+
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
 # (via the shared `alerts` table) and backs the reflex health-trend queries in
@@ -1725,6 +1792,12 @@ promoter:
     - artifact_type: code_patch
       min_confidence: 0.0  # Always human review
     - artifact_type: training_pair
+      min_confidence: 0.0  # Always human review
+    # hgx-obs-02: staged output of an ORANGE reflex run in proposal mode.
+    # Absent from auto_promote above on purpose — auto_promote_eligible() matches
+    # on artifact_type/reflex/source, so leaving it out is what keeps an ORANGE
+    # proposal from ever promoting itself.
+    - artifact_type: orange_proposal
       min_confidence: 0.0  # Always human review
 
   # Deduplication

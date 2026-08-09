@@ -24,6 +24,17 @@ import dataclasses
 import json
 import re
 import uuid
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from pathlib import Path
 
@@ -1039,7 +1050,7 @@ def main():
                 raise ValueError("--strip-markers requires --spec-file")
             cleaned = strip_markers(Path(args.spec_file))
             if args.output:
-                Path(args.output).write_text(cleaned, encoding="utf-8")
+                Path(args.output).write_text(cleaned, encoding="utf-8", newline="")
                 result = {"status": "ok", "message": f"Markers stripped, written to {args.output}"}
             else:
                 result = {"status": "ok", "content": cleaned}
@@ -1072,7 +1083,7 @@ def main():
             if args.annotate and result.get("status") == "ok":
                 annotated = annotate_spec(Path(args.spec_file), result.get("checks", []))
                 if args.output:
-                    Path(args.output).write_text(annotated, encoding="utf-8")
+                    Path(args.output).write_text(annotated, encoding="utf-8", newline="")
                     result["annotated_output"] = args.output
                     result["message"] = f"Annotated spec written to {args.output}"
                 else:

@@ -149,7 +149,7 @@ def _apply_file_transforms(file_path, transforms):
             print(f"[WARN] Regex error in transform for {fp}: {exc}", file=sys.stderr)
 
     if total_changes > 0:
-        fp.write_text(new_content, encoding="utf-8")
+        fp.write_text(new_content, encoding="utf-8", newline="")
 
     return total_changes
 
@@ -269,7 +269,7 @@ def _generate_migration_report(source_path, output_path, transformations):
     report_lines.append("")
 
     report_path = output / "migration_report.md"
-    report_path.write_text("\n".join(report_lines), encoding="utf-8")
+    report_path.write_text("\n".join(report_lines), encoding="utf-8", newline="")
     return str(report_path)
 
 
@@ -425,7 +425,7 @@ def migrate_struts_to_spring(source_path, output_path):
                 f"// Action paths found: {', '.join(action_paths)}\n"
                 f"// Form beans found: {', '.join(form_beans)}\n"
             )
-            xf.write_text(header + content, encoding="utf-8")
+            xf.write_text(header + content, encoding="utf-8", newline="")
             rel = xf.relative_to(output)
             transformations["file_details"][str(rel)] = {
                 "changes": 1,
@@ -473,7 +473,7 @@ def migrate_struts_to_spring(source_path, output_path):
     """)
 
     app_path = src_main_java / "Application.java"
-    app_path.write_text(app_class, encoding="utf-8")
+    app_path.write_text(app_class, encoding="utf-8", newline="")
     transformations["generated_files"].append(str(app_path.relative_to(output)))
 
     # --- Generate application.properties ---
@@ -501,7 +501,7 @@ def migrate_struts_to_spring(source_path, output_path):
     resources_dir = output / "src" / "main" / "resources"
     resources_dir.mkdir(parents=True, exist_ok=True)
     props_path = resources_dir / "application.properties"
-    props_path.write_text(props_content, encoding="utf-8")
+    props_path.write_text(props_content, encoding="utf-8", newline="")
     transformations["generated_files"].append(str(props_path.relative_to(output)))
 
     return transformations
@@ -655,12 +655,12 @@ def migrate_ejb_to_spring(source_path, output_path):
             config_lines.append(f"// {CUI_BANNER}")
 
             config_path = output / "EjbMigrationConfig.java"
-            config_path.write_text("\n".join(config_lines), encoding="utf-8")
+            config_path.write_text("\n".join(config_lines), encoding="utf-8", newline="")
             transformations["generated_files"].append(str(config_path.relative_to(output)))
 
             # Mark ejb-jar.xml as superseded
             header = "<!-- TODO [ICDEV™-MIGRATION]: This ejb-jar.xml has been superseded by Spring config -->\n"
-            xf.write_text(header + content, encoding="utf-8")
+            xf.write_text(header + content, encoding="utf-8", newline="")
             rel = xf.relative_to(output)
             transformations["file_details"][str(rel)] = {
                 "changes": 1,
@@ -774,7 +774,7 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
                 "<!-- TODO [ICDEV™-MIGRATION]: WCF <system.serviceModel> configuration "
                 "has been superseded by ASP.NET Core Kestrel + appsettings.json -->\n"
             )
-            cf.write_text(header + content, encoding="utf-8")
+            cf.write_text(header + content, encoding="utf-8", newline="")
             rel = cf.relative_to(output)
             transformations["file_details"][str(rel)] = {
                 "changes": 1,
@@ -815,7 +815,7 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
     proto_lines.append(f"// {CUI_BANNER}")
     proto_path = output / "Protos" / "services.proto"
     proto_path.parent.mkdir(parents=True, exist_ok=True)
-    proto_path.write_text("\n".join(proto_lines), encoding="utf-8")
+    proto_path.write_text("\n".join(proto_lines), encoding="utf-8", newline="")
     transformations["generated_files"].append(str(proto_path.relative_to(output)))
 
     # --- Generate Program.cs skeleton ---
@@ -844,7 +844,7 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
         // {CUI_BANNER}
     """)
     program_path = output / "Program.cs"
-    program_path.write_text(program_cs, encoding="utf-8")
+    program_path.write_text(program_cs, encoding="utf-8", newline="")
     transformations["generated_files"].append(str(program_path.relative_to(output)))
 
     # --- Generate appsettings.json skeleton ---
@@ -866,7 +866,7 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
         "_TODO": "Configure TLS certificates and additional service settings",
     }
     appsettings_path = output / "appsettings.json"
-    appsettings_path.write_text(json.dumps(appsettings, indent=2) + "\n", encoding="utf-8")
+    appsettings_path.write_text(json.dumps(appsettings, indent=2) + "\n", encoding="utf-8", newline="")
     transformations["generated_files"].append(str(appsettings_path.relative_to(output)))
 
     return transformations
@@ -1059,7 +1059,7 @@ def migrate_webforms_to_razor(source_path, output_path):
         pages_dir = output / "Pages"
         pages_dir.mkdir(parents=True, exist_ok=True)
         layout_path = pages_dir / "_Layout.cshtml"
-        layout_path.write_text(layout_content, encoding="utf-8")
+        layout_path.write_text(layout_content, encoding="utf-8", newline="")
         transformations["generated_files"].append(str(layout_path.relative_to(output)))
 
     return transformations

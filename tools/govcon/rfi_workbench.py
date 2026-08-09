@@ -979,7 +979,7 @@ def assemble_and_export(session_id, export_format="docx", force_placeholders=Fal
 
     md_content = _build_markdown(session, sections, profile, parsed)
     md_path = _EXPORT_DIR / f"{base_name}.md"
-    md_path.write_text(md_content, encoding="utf-8")
+    md_path.write_text(md_content, encoding="utf-8", newline="")
 
     if export_format == "md":
         _record_export(session_id, "md", str(md_path))
@@ -1047,7 +1047,7 @@ def export_questions(session_id, force_placeholders=False):
     _EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     entity_slug = entity.replace(" ", "_").replace(".", "")
     path = _EXPORT_DIR / f"{entity_slug}_{rfi_num.replace('/', '-')}_Questions.md"
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8", newline="")
     _record_export(session_id, "questions", str(path))
     return str(path)
 
@@ -2120,7 +2120,7 @@ def _persist_genall_progress(session_id: str) -> None:
     try:
         _GENALL_TMP_DIR.mkdir(parents=True, exist_ok=True)
         p = _GENALL_TMP_DIR / f"rfi_genall_{session_id}.json"
-        p.write_text(json.dumps(_generate_all_progress[session_id]), encoding="utf-8")
+        p.write_text(json.dumps(_generate_all_progress[session_id]), encoding="utf-8", newline="")
     except Exception as exc:
         logger.debug("Could not persist generate-all progress for %s: %s", session_id, exc)
 

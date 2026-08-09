@@ -20,6 +20,7 @@ so entry points can map it uniformly to HTTP 400 / an MCP error.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from .search_service import CORTEX_STRATEGIES
@@ -245,6 +246,159 @@ def validate_intake_turn(data: Any) -> dict:
         "session_id": _req_str(data, "session_id"),
         "message": _bounded_text(data, "message"),
     }
+
+
+# ---------------------------------------------------------------------------
+# agent — team / single / graph launch (hgx-cx-02)
+# ---------------------------------------------------------------------------
+# Mirrors tools.cortex.api._AGENT_MODES. Kept as a literal rather than imported
+# so validation stays importable without dragging in the facade module (and its
+# ACE / agent-loop seams) — the same reason ASK_MODES mirrors analyst's.
+AGENT_MODES = ("auto", "team", "single", "graph")
+
+_MAX_ITERATIONS_MIN, _MAX_ITERATIONS_MAX = 1, 50
+_MAX_ROLES = 20
+_AGENT_TEXT_MAX = 20000
+# A workflow/project id is a slug the runtime looks up, never a path. Bound the
+# shape here so a lookup can never be talked into traversing anything.
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+# llm_function names a routing chain in args/llm_config.yaml. An UNDECLARED
+# function does not error — LLMRouter silently falls back to routing.default —
+# so the only thing validation can do here is keep it a plain identifier and
+# refuse the injection-shaped values. Choosing the chain is the caller's job;
+# choosing the MODEL is never anybody's job in Python (LLM-agnostic rule).
+_LLM_FUNCTION_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _agent_graph(data: dict) -> Optional[dict]:
+    """Validate the ``graph`` spec for ``mode="graph"``.
+
+    Shape: ``{"workflow_id": str, "project_id"?: str, "inputs"?: {..}}`` — the
+    same three fields ``api.agent`` reads. ``inputs`` values are left as the
+    caller sent them (they are workflow inputs, not identity), but the KEYS are
+    bounded so a run row cannot be stuffed with arbitrary structure.
+    """
+    spec = data.get("graph")
+    if spec is None:
+        return None
+    if not isinstance(spec, dict):
+        raise CortexValidationError("'graph' must be a JSON object")
+
+    workflow_id = str(spec.get("workflow_id") or "").strip()
+    if not workflow_id:
+        raise CortexValidationError("graph['workflow_id'] is required")
+    if not _ID_RE.match(workflow_id):
+        raise CortexValidationError(
+            "graph['workflow_id'] must be a slug (letters, digits, . _ : -)"
+        )
+
+    out: dict = {"workflow_id": workflow_id}
+
+    project_id = str(spec.get("project_id") or "").strip()
+    if project_id:
+        if not _ID_RE.match(project_id):
+            raise CortexValidationError(
+                "graph['project_id'] must be a slug (letters, digits, . _ : -)"
+            )
+        out["project_id"] = project_id
+
+    inputs = spec.get("inputs")
+    if inputs is not None:
+        if not isinstance(inputs, dict):
+            raise CortexValidationError("graph['inputs'] must be a JSON object")
+        for key in inputs:
+            if not isinstance(key, str) or not _ID_RE.match(key):
+                raise CortexValidationError(
+                    f"graph['inputs'] key {key!r} must be a slug"
+                )
+        out["inputs"] = inputs
+
+    return out
+
+
+def validate_agent(data: Any) -> dict:
+    """Validate an agent-launch request into ``api.agent`` kwargs.
+
+    NOT accepted from the wire, deliberately:
+
+    * ``tools`` / ``tool_handlers`` — handlers are Python callables and a tool
+      schema is an authorization decision. A remote caller that could name the
+      tools an agent may run would be choosing its own privileges; over REST the
+      single-agent loop therefore runs with NO tools, which makes it a governed
+      completion with an iteration budget. Tool-bearing runs are what ``graph``
+      mode is for — Studio already gates tools per node (MCP-WF-001).
+    * ``rubric`` — grading a loop against the delivery pipeline shells out to the
+      repo's own gates on the SERVER's checkout. That is a local-operator knob,
+      not something a remote key gets to switch on.
+    * ``webhook_url`` — a caller-supplied URL the platform POSTs to when the run
+      finishes is a server-side request forgery primitive: the caller names an
+      internal address and we reach it, from inside, with the run's payload. The
+      launch is non-blocking and returns an id; polling is the supported way to
+      learn the outcome. (Same reason ``/slides`` drops ``image_path``: on a
+      remote surface, an address the server honours belongs to an allowlist, and
+      we do not have one yet.)
+    * identity of any kind — tenant/user/classification come from the key.
+    """
+    data = _require_dict(data)
+
+    mode = (_opt_str(data, "mode", "auto") or "auto").strip().lower()
+    if mode not in AGENT_MODES:
+        raise CortexValidationError(f"'mode' must be one of {list(AGENT_MODES)}")
+
+    roles = _str_list(data, "roles", required=False)
+    if roles is not None:
+        if len(roles) > _MAX_ROLES:
+            raise CortexValidationError(
+                f"'roles' may name at most {_MAX_ROLES} roles, got {len(roles)}"
+            )
+        for role in roles:
+            if not _ID_RE.match(role):
+                raise CortexValidationError(
+                    f"role {role!r} must be a slug (letters, digits, . _ : -)"
+                )
+
+    graph = _agent_graph(data)
+    if mode == "graph" and graph is None:
+        raise CortexValidationError(
+            'mode="graph" requires graph={"workflow_id": ...}'
+        )
+
+    out: dict = {
+        "goal": _bounded_text(data, "goal"),
+        "mode": mode,
+        "roles": roles or None,
+        "graph": graph,
+        "max_iterations": _opt_int(
+            data, "max_iterations", 12, _MAX_ITERATIONS_MIN, _MAX_ITERATIONS_MAX
+        ),
+    }
+
+    system_prompt = _opt_str(data, "system_prompt", "")
+    if system_prompt:
+        if len(system_prompt) > _AGENT_TEXT_MAX:
+            raise CortexValidationError(
+                f"'system_prompt' must be at most {_AGENT_TEXT_MAX} characters"
+            )
+        out["system_prompt"] = system_prompt
+
+    llm_function = _opt_str(data, "llm_function", "").strip()
+    if llm_function:
+        if not _LLM_FUNCTION_RE.match(llm_function):
+            raise CortexValidationError(
+                "'llm_function' must be a lowercase identifier naming a routing "
+                "chain in args/llm_config.yaml (never a model id)"
+            )
+        out["llm_function"] = llm_function
+
+    trigger_ref = _opt_str(data, "trigger_ref", "").strip()
+    if trigger_ref:
+        if not _ID_RE.match(trigger_ref):
+            raise CortexValidationError(
+                "'trigger_ref' must be a slug (letters, digits, . _ : -)"
+            )
+        out["trigger_ref"] = trigger_ref
+
+    return out
 
 
 def validate_govern(data: Any) -> dict:

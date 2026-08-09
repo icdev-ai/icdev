@@ -38,6 +38,13 @@ if _PYTEST_PG:
     os.environ["ICDEV_PG_NO_FALLBACK"] = "1"
 else:
     os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    # The pytest suite legitimately seeds an isolated SQLite board, so declare it
+    # here rather than making task_factory guess. `_assert_real_board` otherwise
+    # refuses the write — it exists because a seeder run from a git worktree (no
+    # `.env`, so no PostgreSQL config) reported "36/36 created" against a
+    # throwaway file that died with the worktree. That guard should fire for a
+    # real seeding run, never for a test.
+    os.environ.setdefault("ICDEV_KANBAN_ALLOW_LOCAL_BOARD", "1")
     # Make the backend guard's documented pytest exemption real. Its docstring
     # says "tests/conftest.py forces sqlite for the whole pytest suite and is
     # right to — those are short-lived, isolated databases"; the guard only means
@@ -93,6 +100,11 @@ CREATE TABLE IF NOT EXISTS runtime_invocations (
     error_class TEXT,
     error_message TEXT,
     arg_keys TEXT,
+    -- 20260808161052: correlation_id joins a run's tool calls to its spans;
+    -- arg_values/result_preview stay NULL unless ICDEV_OBS_REPLAY is enabled.
+    correlation_id TEXT,
+    arg_values TEXT,
+    result_preview TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
@@ -453,7 +465,13 @@ CREATE TABLE IF NOT EXISTS harness_eval (
     metadata_json  TEXT DEFAULT '{}',
     actual_outcome TEXT,
     resolved_at    TEXT,
-    created_at     TEXT NOT NULL
+    created_at     TEXT NOT NULL,
+    -- Graph-node grain (migration 20260809041642). Nullable: a reflex decision
+    -- leaves all four NULL and every pre-existing query still matches it.
+    run_id         TEXT,
+    node_id        TEXT,
+    node_type      TEXT,
+    edge_condition TEXT
 );
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -2358,12 +2376,17 @@ CREATE TABLE IF NOT EXISTS sbom_records (
     sbom_version        TEXT,
     serial_number       TEXT,
     supersedes_sbom_id  INTEGER REFERENCES sbom_records(id),
+    content_digest      TEXT,
+    source_revision     TEXT,
+    revision_reason     TEXT,
     classification      TEXT    NOT NULL DEFAULT 'CUI',
     tenant_id           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_project    ON sbom_records(project_id);
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_serial     ON sbom_records(serial_number);
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_supersedes ON sbom_records(supersedes_sbom_id);
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_digest     ON sbom_records(content_digest);
+CREATE INDEX IF NOT EXISTS idx_sbom_rec_srcrev     ON sbom_records(source_revision);
 CREATE INDEX IF NOT EXISTS idx_sbom_rec_tenant     ON sbom_records(tenant_id);
 
 -- SBOM component registry and supply chain risk tables (migration 209),

@@ -19,7 +19,27 @@ Keep it import-free.
 
 from __future__ import annotations
 
+#: The id a seeder gives a card's FIRST gate. Seeders still validate against this
+#: exact string (``tools/idp/gap_seeder.py``) — it is the convention to write.
 GATE_ID_SUFFIX = "-gate-00"
+
+#: The separator that makes an id gate-shaped. Recognition is deliberately WIDER
+#: than the seeding convention: a card may need a SECOND gate, and the natural id
+#: for it is ``-gate-01``.
+#:
+#: That is not hypothetical. ``hgx-gate-01`` held six tasks that have an agent edit
+#: its own guardrails — ``.claude/hooks/pre_tool_use.py``, parallel-dispatch
+#: eligibility, the kanban dispatcher, the genesis daemon. Matching only on
+#: ``-gate-00`` meant the predicate returned False for it, so the gate was promoted,
+#: dispatched to an unattended session, and handed a prompt instructing it to mark
+#: ITSELF done — which would have released all six. It was the only unrecognised
+#: gate among fifteen on the board, because it was the only one that was not a
+#: card's first.
+#:
+#: A gate that cannot protect itself is not a control, so recognition must not
+#: depend on a gate being numbered 00.
+GATE_ID_SEPARATOR = "-gate-"
+
 GATE_TITLE_MARKER = "MANUAL-MODE GATE"
 
 #: The line a gate uses to say WHY it is held (kpr-idle-02).
@@ -42,6 +62,20 @@ RISK_MARKER = "RISK:"
 #: gate that matches only by prose is reported as `implicit`, so the difference
 #: between "someone wrote a reason" and "someone wrote the reason down properly"
 #: stays visible.
+#:
+#: The second group states a CONSEQUENCE of dispatching rather than a property of
+#: the work. Added 2026-08-09, after the advisor recommended releasing
+#: agov-gate-00 — a gate whose description says in plain prose that "autonomous
+#: dispatch of this card is not acceptable", because its 19 tasks edit
+#: .claude/hooks/pre_tool_use.py and approval_gate.py while pr_watcher auto-merges
+#: anything CI-green. None of the phrases above matched, so it scored risk=None,
+#: took the +10000 unjustified penalty, and came out TOP of the release ranking.
+#: A guard that recommends releasing the one gate whose text says not to is worse
+#: than no guard: it is confidently wrong, and it was quoted to a human as a
+#: recommendation.
+#:
+#: Still not an intent-detector, and still not procedure. "Do not move this to
+#: done" says what to DO; these say what GOES WRONG if the runner builds the card.
 _IMPLICIT_RISK_PHRASES = (
     "not agent work",
     "not on an agent",
@@ -52,16 +86,33 @@ _IMPLICIT_RISK_PHRASES = (
     "private repo",
     "by a cli session",
     "needs a human",
+    # consequence of dispatching it
+    "is not acceptable",
+    "auto-merge",
+    "without review",
+    "unattended",
+    "no human",
 )
+
+
+def _has_gate_id(task_id: str | None) -> bool:
+    """True when the id is ``<card>-gate-<number>`` for any number.
+
+    Split from the right so a card prefix that itself contains the separator
+    cannot confuse the number. The prefix must be non-empty and the tail must be
+    all digits, so ``sme-gate-review`` and a bare ``-gate-01`` are not gates.
+    """
+    prefix, separator, number = str(task_id or "").rpartition(GATE_ID_SEPARATOR)
+    return bool(prefix) and bool(separator) and number.isdigit()
 
 
 def is_manual_gate(task_id: str | None, title: str | None) -> bool:
     """True when the task is a manual-mode gate sentinel.
 
-    Matches on EITHER the id suffix or the title marker, so a gate is still
+    Matches on EITHER the id shape or the title marker, so a gate is still
     recognised if one of the two is renamed.
     """
-    return str(task_id or "").endswith(GATE_ID_SUFFIX) or GATE_TITLE_MARKER in (title or "")
+    return _has_gate_id(task_id) or GATE_TITLE_MARKER in (title or "")
 
 
 def declared_risk(description: str | None) -> tuple[str | None, str]:

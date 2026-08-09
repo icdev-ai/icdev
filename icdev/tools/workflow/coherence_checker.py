@@ -5987,6 +5987,27 @@ def _is_sqlite_connect(call: ast.AST) -> bool:
     )
 
 
+def _only_raises(fn: ast.AST) -> bool:
+    """True when every statement in `fn` (docstring aside) is a ``raise``.
+
+    A replacement factory of this shape hands runtime code no connection at all
+    — it exists to drive the caller's "database unavailable" branch, which is
+    precisely the path that must NOT reach a sqlite3 handle. Treating it as an
+    untranslated raw connection is the same remedy-rejection the comments below
+    describe, one shape further out: the author writes the negative test the
+    gate wants and the gate fails them for it.
+    """
+    body = list(getattr(fn, "body", []) or [])
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    return bool(body) and all(isinstance(stmt, ast.Raise) for stmt in body)
+
+
 def _safe_connection_names(tree: ast.AST, safe_factories: Set[str]) -> Set[str]:
     """Extend the safe factories with local names bound to a translating connection.
 
@@ -6118,7 +6139,8 @@ def _sql_compat_factory_names(tree: ast.AST) -> Set[str]:
     funcs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
     safe: Set[str] = {
         fn.name for fn in funcs
-        if any(_is_compat_call(sub) for sub in ast.walk(fn)) and not _has_unwrapped_raw_connect(fn)
+        if (any(_is_compat_call(sub) for sub in ast.walk(fn)) and not _has_unwrapped_raw_connect(fn))
+        or _only_raises(fn)
     }
 
     # A helper that hands back what a safe factory produced is itself safe:
@@ -7993,7 +8015,7 @@ def _autofix_append_only(check: CoherenceCheck) -> List[str]:
         insert_point = existing_block.rstrip().rstrip("}")
         new_block = insert_point + "\n" + "\n".join(new_entries) + "\n}"
         content = content.replace(existing_block, new_block)
-        hook_path.write_text(content, encoding="utf-8")
+        hook_path.write_text(content, encoding="utf-8", newline="")
         fixes.append(f"Added {len(new_entries)} table(s) to APPEND_ONLY_TABLES: {', '.join(check.missing)}")
     return fixes
 

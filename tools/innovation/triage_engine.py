@@ -53,8 +53,6 @@ import re
 import sqlite3
 import sys
 import uuid
-from tools.common.helpers import now_iso
-from tools.db.storage import column_exists, get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -64,6 +62,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.common.helpers import now_iso  # noqa: E402
+from tools.db.storage import column_exists, get_connection  # noqa: E402
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"

@@ -18,7 +18,6 @@ CLI:
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -31,6 +30,8 @@ from typing import Any, Dict, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -215,7 +216,7 @@ def generate_svg_video(
         output_path = str(DEFAULT_VIDEO_DIR / f"video-{slug}.svg")
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(output_path).write_text(svg, encoding="utf-8")
+    Path(output_path).write_text(svg, encoding="utf-8", newline="")
 
     elapsed = int((time.time() - start) * 1000)
     return {

@@ -31,13 +31,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.genesis.reflexes.fathomdesk_trap_sweep")
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.genesis.reflexes.fathomdesk_trap_sweep")
 
 try:
     from tools.db.storage import get_connection

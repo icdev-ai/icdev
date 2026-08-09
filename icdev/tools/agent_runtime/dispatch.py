@@ -9,16 +9,41 @@ This module turns those coordinates into agent-loop handlers matching the
 
 1. **Source-aware invocation.** MCP registry handlers have signature
    ``handle_x(args: dict) -> Any``; decorated tools take named keyword arguments;
-   built-in starter tools already match the loop contract. Each is called the
-   right way and its result normalised to a string.
+   built-in starter tools already match the loop contract; ``external`` tools go
+   out through ``tools.mcp_client``'s gate rather than being imported at all.
+   Each is called the right way and its result normalised to a string.
 2. **Runtime injection.** Where a handler's signature accepts ``stop_event`` or
    ``task_id``, those are injected (matching ``run_agent_loop``'s plumbing) — a
    handler that does not declare them never sees them.
+
+   ``stop_event`` is the run's **cancellation token** (hgx-ctxw-03), and a
+   handler that declares it is expected to *poll* it — in any loop, before each
+   subprocess launch, and between phases of a long job — returning promptly once
+   it is set. This is cooperative by necessity: Python cannot kill a thread, so
+   the agent loop stops *waiting* on a handler as soon as the token fires but
+   the handler itself keeps running until it notices. A handler that ignores the
+   token cannot hang a turn any more, but it can still hold a worker thread (and
+   delay process exit) for as long as it runs. Declaring ``stop_event`` and then
+   discarding it is therefore a bug, not a formality; see
+   ``mutating_tools.run_command`` and ``builtin_tools._handle_search_files`` for
+   the two shapes this takes.
 3. **The safety hook point.** Every *mutating* tool is routed through a
    :data:`SafetyGate` before execution. sag-safe-01 injects the real approval UX
    here; until then :func:`default_safety_gate` fails closed unless
    ``ICDEV_SAG_ALLOW_MUTATION`` is set, so file writes / terminal execution can
    never run unguarded by accident.
+4. **The telemetry point (hgx-obs-01).** Every call — allowed, blocked or failed
+   — is recorded to ``runtime_invocations`` with ``surface="agent"``, so a SAG
+   tool call is visible to ``icdev runtime top --surface agent`` exactly like an
+   MCP one. This is the ONLY place a SAG tool call can be observed: a tool that
+   happens to route through the MCP unified server is recorded there, but a
+   built-in or decorated tool never touches that server, and every one of them
+   passes through here.
+
+   Recording is a wrapper around the whole handler body, gate included, because
+   "the model asked for a tool it was not allowed to run" is exactly the kind of
+   thing a run needs to show. A blocked call is recorded with status ``error``
+   and the gate's reason, not silently dropped.
 """
 from __future__ import annotations
 
@@ -44,21 +69,47 @@ SafetyGate = Callable[[str, dict[str, Any], bool], "tuple[bool, str]"]
 _MAX_RESULT_BYTES = 200_000
 _TRUTHY = {"1", "true", "yes", "on"}
 
+#: How ``error_recovery.ToolResult.render()`` opens an unsuccessful result. The
+#: telemetry wrapper uses it to tell a genuine failure from a retry that worked.
+_FAILURE_PREFIX = "error ["
+
 
 # ---------------------------------------------------------------------------
 # Safety gate (seam for sag-safe-01)
 # ---------------------------------------------------------------------------
+def mutation_allowed() -> bool:
+    """Whether the fail-closed default gate lets a mutating tool through.
+
+    ``ICDEV_SAG_ALLOW_MUTATION`` → ``args/agent_runtime.yaml`` → ``False``. The
+    env var is read first and still wins (hgx-cfg-01); the config layer only
+    supplies the fallback, and its default is ``False`` so the gate stays
+    fail-closed when the config file is missing, empty or malformed.
+    """
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().flag(
+            "subsystems.mutation.allow",
+            env="ICDEV_SAG_ALLOW_MUTATION",
+            default=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("dispatch: config layer unavailable: %s", exc)
+        return os.environ.get("ICDEV_SAG_ALLOW_MUTATION", "").strip().lower() in _TRUTHY
+
+
 def default_safety_gate(
     tool_name: str, tool_input: dict[str, Any], read_only: bool
 ) -> "tuple[bool, str]":
     """Fail-closed default gate used until sag-safe-01 wires an approval UX.
 
     Read-only tools always pass. Mutating tools are refused unless the operator
-    opts in with ``ICDEV_SAG_ALLOW_MUTATION`` in the environment.
+    opts in with ``ICDEV_SAG_ALLOW_MUTATION`` (or ``subsystems.mutation.allow``
+    in ``args/agent_runtime.yaml``).
     """
     if read_only:
         return True, ""
-    if os.environ.get("ICDEV_SAG_ALLOW_MUTATION", "").strip().lower() in _TRUTHY:
+    if mutation_allowed():
         return True, ""
     return (
         False,
@@ -139,6 +190,59 @@ def _invoke_decorated(
     if "task_id" in params:
         kwargs["task_id"] = task_id
     return fn(**kwargs)
+
+
+# ---------------------------------------------------------------------------
+# External MCP tools (hgx-fed-01)
+# ---------------------------------------------------------------------------
+#: Documented default for ``ICDEV_CLASSIFICATION`` (docs/operations/cicd-env-vars.md).
+_FALLBACK_CLASSIFICATION = "CUI"
+
+
+def default_classification() -> str:
+    """Sensitivity to declare for arguments leaving for an external MCP server.
+
+    This is the *deployment's* classification (``ICDEV_CLASSIFICATION`` — the
+    same variable core profiles set), not ``UNCLASSIFIED``. An agent running on
+    a CUI deployment can put CUI into a tool argument, and declaring those
+    arguments unclassified would make the per-server ``classification_ceiling``
+    inert in exactly the case it exists for. Unset falls back to ``CUI``,
+    matching the documented default; an operator enabling an external server on
+    an UNCLASSIFIED deployment sets the variable, and one sending CUI raises the
+    server's ceiling — either way the declaration is a deliberate act.
+    """
+    value = os.environ.get("ICDEV_CLASSIFICATION", "").strip()
+    return value.upper() if value else _FALLBACK_CLASSIFICATION
+
+
+def _invoke_external(
+    spec: ToolSpec, tool_input: dict[str, Any], classification: str
+) -> str:
+    """Call a third-party MCP tool through the external registry's gate.
+
+    The registry owns every control and none is duplicated here: the tool must
+    be on its server's allowlist (an unknown namespaced name is refused), the
+    classification ceiling is checked before the transport dials, and air-gap
+    mode leaves no server to reach. ``call`` never raises — it returns a dict —
+    so a remote failure arrives as a tool result the model can read rather than
+    as an exception the loop has to survive.
+
+    Resolved from ``icdev.tools.mcp_client`` for the reason
+    :func:`~tools.agent_runtime.discovery._external_registry_module` documents:
+    ``tools/mcp_client/`` is a physical copy, so the two import paths hold
+    different singletons, and dispatching through the other one would mean
+    calling a registry that has never connected.
+    """
+    from icdev.tools.mcp_client.registry import get_external_registry
+
+    result = get_external_registry().call(
+        spec.name, tool_input, classification=classification
+    )
+    if not isinstance(result, dict):
+        return _stringify(result)
+    if not result.get("ok"):
+        return f"error: {result.get('error') or 'external MCP call failed'}"
+    return _stringify(result.get("result"))
 
 
 # ---------------------------------------------------------------------------
@@ -238,11 +342,22 @@ def make_handler(
     gate: SafetyGate,
     task_id: Optional[str] = None,
     builtin_handlers: Optional[dict[str, ToolHandler]] = None,
+    classification: Optional[str] = None,
 ) -> ToolHandler:
-    """Build one agent-loop handler for ``spec``, wrapping it in the safety gate."""
+    """Build one agent-loop handler for ``spec``, wrapping it in the safety gate.
+
+    ``classification`` is the sensitivity declared for arguments sent to an
+    ``external`` tool; it is resolved per call from :func:`default_classification`
+    when not supplied, and ignored for every other source.
+    """
 
     def _execute(tool_input: dict[str, Any], stop: "threading.Event | None") -> str:
         """Run the tool once. Raises — the caller owns failure policy."""
+        if spec.source == "external":
+            return _invoke_external(
+                spec, tool_input, classification or default_classification()
+            )
+
         if spec.source == "builtin":
             bh = (builtin_handlers or {}).get(spec.name)
             if bh is None:
@@ -267,19 +382,93 @@ def make_handler(
             return f"error: handler unavailable for {spec.name!r}"
         return _stringify(_invoke_mcp(fn, tool_input, stop, task_id))
 
+    def _run(tool_input: dict[str, Any], stop: "threading.Event | None",
+             inv: Any) -> str:
+        """Gate, execute, and annotate the invocation record with the outcome."""
+        allowed, reason = gate(spec.name, tool_input, spec.read_only)
+        if not allowed:
+            _annotate(inv, status="error", error_class="SafetyGateBlocked",
+                      error_message=reason)
+            blocked = f"blocked: {reason}"
+            # Recorded like any other result so a replay shows what the model
+            # actually saw — the refusal is part of the run, not a gap in it.
+            _record_result(inv, blocked)
+            return blocked
+        try:
+            out = _execute(tool_input, stop)
+        except Exception as exc:  # noqa: BLE001 — never crash the agent loop
+            logger.exception("dispatch: %s failed", spec.name)
+            out = _handle_failure(spec, exc, tool_input, stop, _execute, task_id)
+            # _handle_failure retries transient read-only failures, and a retry
+            # that succeeded returns the tool's real output — that call did NOT
+            # fail and must not be counted as an error. Only its own rendered
+            # failure does, which ToolResult.render() always prefixes.
+            if out.startswith(_FAILURE_PREFIX):
+                _annotate(inv, status="error", error_class=type(exc).__name__,
+                          error_message=str(exc))
+        _record_result(inv, out)
+        return out
+
     def _handler(tool_input: dict[str, Any], stop: "threading.Event | None") -> str:
         if not isinstance(tool_input, dict):
             tool_input = {}
-        allowed, reason = gate(spec.name, tool_input, spec.read_only)
-        if not allowed:
-            return f"blocked: {reason}"
-        try:
-            return _execute(tool_input, stop)
-        except Exception as exc:  # noqa: BLE001 — never crash the agent loop
-            logger.exception("dispatch: %s failed", spec.name)
-            return _handle_failure(spec, exc, tool_input, stop, _execute, task_id)
+        recorder = _recorder()
+        if recorder is None:
+            return _run(tool_input, stop, None)
+        with recorder.record(
+            recorder.SURFACE_AGENT, spec.name, arg_keys=tool_input,
+            session_id=task_id or "",
+        ) as inv:
+            return _run(tool_input, stop, inv)
 
     return _handler
+
+
+# ---------------------------------------------------------------------------
+# Invocation telemetry (hgx-obs-01)
+# ---------------------------------------------------------------------------
+def _recorder() -> Any:
+    """The invocation recorder module, or None if it cannot be imported.
+
+    Imported lazily and never fatally: dispatch predates the recorder and must
+    keep working in a checkout where the observability package is unavailable.
+    """
+    try:
+        from tools.observability import invocation_recorder
+
+        return invocation_recorder
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dispatch: invocation telemetry unavailable: %s", exc)
+        return None
+
+
+def _annotate(inv: Any, *, status: str, error_class: str,
+              error_message: str) -> None:
+    """Mark an invocation handle as failed. Safe with None and with anything."""
+    if inv is None:
+        return
+    try:
+        inv.status = status
+        inv.error_class = error_class
+        inv.error_message = error_message
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dispatch: invocation annotation failed: %s", exc)
+
+
+def _record_result(inv: Any, out: str) -> None:
+    """Offer the tool result to the recorder.
+
+    ``record_result`` stores nothing unless the operator has explicitly enabled
+    replay; with the flag off this is a call that returns None and persists
+    nothing. The decision lives in the recorder, not here, so there is exactly
+    one place that decides whether a tool result may be written down.
+    """
+    if inv is None:
+        return
+    try:
+        inv.record_result(out)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dispatch: invocation result capture failed: %s", exc)
 
 
 def build_handlers(
@@ -287,6 +476,7 @@ def build_handlers(
     *,
     safety_gate: Optional[SafetyGate] = None,
     task_id: Optional[str] = None,
+    classification: Optional[str] = None,
 ) -> dict[str, ToolHandler]:
     """Build ``{tool_name: handler}`` for every spec in ``registry``.
 
@@ -295,6 +485,8 @@ def build_handlers(
         safety_gate: Gate applied to mutating tools; defaults to the fail-closed
             :func:`default_safety_gate`. sag-safe-01 injects the approval gate.
         task_id: Optional task id injected into handlers that accept one.
+        classification: Sensitivity declared for arguments sent to ``external``
+            tools; defaults to :func:`default_classification`.
     """
     gate = safety_gate or default_safety_gate
     builtin_handlers: dict[str, ToolHandler] = {}
@@ -309,6 +501,10 @@ def build_handlers(
     handlers: dict[str, ToolHandler] = {}
     for name, spec in registry.items():
         handlers[name] = make_handler(
-            spec, gate=gate, task_id=task_id, builtin_handlers=builtin_handlers
+            spec,
+            gate=gate,
+            task_id=task_id,
+            builtin_handlers=builtin_handlers,
+            classification=classification,
         )
     return handlers

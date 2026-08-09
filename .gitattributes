@@ -19,6 +19,57 @@
 *.ini text eol=lf
 *.env text eol=lf
 
+# Append-only coordination files (kax-conflict-03)
+#
+# The tool manifest concentrates edits from unrelated tasks into one markdown
+# table per topic: 219 commits in the 14 days to 2026-08-08, 95 added rows
+# against 22 removed on the three hottest shards alone. Two branches appending
+# a row to the same table conflict every time, and the resolution is always
+# "take the superset of both rows" — which is exactly what merge=union does.
+#
+# `tools/ci/pr_watcher.py::_ADDITIVE_PATH_MARKERS` already classified these
+# paths as "union-merged coordination files"; until now nothing implemented it.
+#
+# Verified conflict-free for 2/3/5 concurrent branches in BOTH the local
+# `git merge` path and the bare `git merge-tree --write-tree` plumbing a forge
+# runs server-side:  python tools/git/manifest_merge_rehearsal.py
+#
+# Scope note: union is safe here because these files are flat, line-oriented
+# tables whose rows are independent. Do NOT extend it to YAML/JSON/Python —
+# a union merge there produces duplicate keys or syntactically broken code.
+# Its one cost is that a row DELETED on one branch is resurrected when that
+# hunk conflicts with an append on another; `coherence_checker`'s manifest
+# check reports the byte-identical duplicate rows this leaves behind.
+tools/manifest.md merge=union
+tools/manifest/*.md merge=union
+icdev/tools/manifest.md merge=union
+icdev/tools/manifest/*.md merge=union
+
+# CI test allowlists (kax-conflict-07)
+#
+# These lines were extracted from a shell line-continuation chain inside
+# .github/workflows/icdev-ci.yml, where every task that added a test file
+# appended at the same offset in the same hand-written file. Five open PRs
+# collided on it in one night (2026-08-09), and because
+# `pr_watcher.hold_on_sibling_conflict` refuses to co-merge PRs sharing a
+# non-additive file, each of the five became a sibling of every other and the
+# board deadlocked. #1434's derived-file exclusion did not cover it: the
+# workflow is hand-written, and two PRs editing a job's `run:` block IS a
+# collision worth serializing. Only the LIST is additive — so only the list moved.
+#
+# Same safety argument as the manifest shards above: flat, line-oriented, one
+# independent pytest target per line, so the superset of two appends is the
+# correct resolution. `tools/ci/gated_test_list.py --check` catches the two things
+# union can leave behind (a duplicated entry, a resurrected deletion) plus the
+# property the explicit list existed for in the first place — it fails RED when
+# the list is empty, below its floor, or names a path that is not in the tree.
+#
+# Verified conflict-free for 2/3/5 concurrent branches in BOTH the local
+# `git merge` path and the bare `git merge-tree --write-tree` plumbing a forge
+# runs server-side:  python tools/git/ci_test_list_merge_rehearsal.py
+args/ci_test_files/*.txt merge=union
+icdev/data/args/ci_test_files/*.txt merge=union
+
 # Binary files
 *.db binary
 *.sqlite binary

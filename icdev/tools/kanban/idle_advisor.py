@@ -238,6 +238,33 @@ def _score_gate(conn, gate: Dict[str, Any]) -> GateCandidate:
     )
 
 
+def _gate_backlog_clause(conn) -> str:
+    """", and N backlog task(s) sit behind M held gate(s)" — or "" when none do.
+
+    Deliberately cheap: a gate listing plus one count, no per-gate scoring. This
+    runs inside a higher-precedence branch, so it must not make the common case
+    slower to report a secondary fact.
+    """
+    try:
+        gates = _held_gates(conn)
+        if not gates:
+            return ""
+        ids = [g["id"] for g in gates]
+        placeholders = ", ".join(["%s"] * len(ids))
+        held = int(dict(conn.execute(
+            "SELECT count(*) AS n FROM kanban_tasks "  # nosec B608 — ids are bound
+            f"WHERE status = 'backlog' AND depends_on_task_id IN ({placeholders})",
+            tuple(ids),
+        ).fetchone())["n"])
+        if not held:
+            return ""
+        return (f", and {held} backlog task(s) sit behind {len(gates)} held "
+                f"gate(s) ({', '.join(sorted(ids))}) — clearing review alone will "
+                "not refill the queue")
+    except Exception:  # noqa: BLE001 — a secondary clause must never break dispatch
+        return ""
+
+
 def diagnose(conn=None, *, stale_heartbeat_hours: float = 2.0) -> Dict[str, Any]:
     """Classify why dispatch produced nothing. Pure read — mutates nothing."""
     own = conn is None
@@ -273,11 +300,20 @@ def diagnose(conn=None, *, stale_heartbeat_hours: float = 2.0) -> Dict[str, Any]
             # Something is ready but dispatch yielded nothing: the respawn guard
             # is the only thing between the two, and it drops tasks with an open
             # PR. Naming it beats "idle".
+            #
+            # The gate clause matters as much as the reason does. review_bound
+            # wins the precedence race whenever ANY task is scheduled, so on
+            # 2026-08-09 the scheduler reported three withheld tasks for hours and
+            # never mentioned that all 37 backlog tasks behind them were held by
+            # manual gates. Both were true, and acting on only the first — merge
+            # the three PRs — bought three dispatches and idled again. Saying it
+            # here costs one count query and collapses two diagnoses into one.
             return _result(
                 REVIEW_BOUND,
                 f"{scheduled} task(s) are scheduled and due but every one was "
                 "withheld at dispatch — the usual cause is an open PR per task. "
-                "The unblock is review: merge or close them",
+                "The unblock is review: merge or close them"
+                + _gate_backlog_clause(conn),
             )
 
         gates = _held_gates(conn)

@@ -15,10 +15,8 @@ execute without human approval. The daemon monitors subprocess completion.
 
 from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
-from tools.logging.icdev_logger import get_logger
 
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -28,11 +26,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger(__name__)
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.kanban.transition_reason import (  # noqa: E402
@@ -421,7 +421,7 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
 
 
 def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
-    """Use LLM (Haiku) to extract a timeout in seconds from natural language.
+    """Use the routed ``timeout_extraction`` LLM to extract a timeout in seconds.
 
     Augments the structured ``timeout_hint:NNN`` regex so human-written phrases
     like "allow 25 minutes" or "needs about 1 hour" are also understood.
@@ -446,7 +446,6 @@ def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
                 "Return ONLY the JSON object, nothing else."
             ),
             messages=[{"role": "user", "content": desc[:500]}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=32,
             temperature=0.0,
             skip_injection_scan=True,
@@ -468,7 +467,7 @@ def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
 
 
 def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Optional[str]:
-    """Use LLM (Haiku) to extract a gap entity from natural language task text.
+    """Use the routed ``gap_subject_extraction`` LLM to extract a gap entity.
 
     Augments regex patterns in _pre_dispatch_check that require specific
     formatting (e.g. "tool_not_in_manifest: tools/foo.py") so natural language
@@ -519,7 +518,6 @@ def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Opt
         req = LLMRequest(
             system_prompt=system_prompt + " Return ONLY the JSON object, nothing else.",
             messages=[{"role": "user", "content": combined}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=48,
             temperature=0.0,
             skip_injection_scan=True,
@@ -710,7 +708,7 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
 
 
 def _nlp_extract_resume_at(reset_hint: str, now: datetime) -> Optional[datetime]:
-    """Use LLM (Haiku) to parse a reset time hint into a UTC datetime.
+    """Use the routed ``resume_at_extraction`` LLM to parse a reset hint to UTC.
 
     Augments the structured regex in _parse_resume_at for natural language
     expressions like "in about twenty minutes", "at noon", "try again tomorrow".
@@ -736,7 +734,6 @@ def _nlp_extract_resume_at(reset_hint: str, now: datetime) -> Optional[datetime]
                 "Clamp to [60, 21600]. Return ONLY the JSON object, nothing else."
             ),
             messages=[{"role": "user", "content": reset_hint[:200]}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=32,
             temperature=0.0,
             skip_injection_scan=True,
@@ -825,7 +822,7 @@ def _save_resume_at(task_id: str, resume_at: datetime):
     """Persist the resume-at timestamp for a token-exhausted task."""
     _ensure_prompt_dir()
     resume_file = PROMPT_DIR / f"{task_id}.resume_at"
-    resume_file.write_text(resume_at.isoformat(), encoding="utf-8")
+    resume_file.write_text(resume_at.isoformat(), encoding="utf-8", newline="")
 
 
 def _load_resume_at(task_id: str) -> Optional[datetime]:
@@ -907,7 +904,7 @@ def _increment_retry_count(task_id: str) -> int:
         except (ValueError, OSError):
             count = 0
     count += 1
-    retry_file.write_text(str(count), encoding="utf-8")
+    retry_file.write_text(str(count), encoding="utf-8", newline="")
     # The two counters are the only places the runner decides an execution gets
     # another go, so they are where agent_execution_retried belongs. Emitting at
     # the re-dispatch instead would conflate a retry with a first attempt, since
@@ -947,7 +944,7 @@ def _increment_timeout_count(task_id: str) -> int:
         except (ValueError, OSError):
             count = 0
     count += 1
-    timeout_file.write_text(str(count), encoding="utf-8")
+    timeout_file.write_text(str(count), encoding="utf-8", newline="")
     _audit_agent_execution(
         "agent_execution_retried", task_id, reason="timeout", attempt=count,
     )
@@ -3022,7 +3019,7 @@ def _dispatch_via_tool_runner(task: dict, work_dir: str, task_log: Path) -> bool
             f"[tool-runner dispatch — task {task_id}]\n"
             f"[work_dir {work_dir}]\n"
             f"[{kind} {label}] {'PASS' if ok else 'FAIL'} in {elapsed}s\n\n{detail}\n",
-            encoding="utf-8", errors="replace",
+            encoding="utf-8", errors="replace", newline="",
         )
     except Exception as exc:
         logger.debug("kanban: tool-runner log write failed for %s: %s", task_id, exc)
@@ -3933,7 +3930,7 @@ Execute this task as described above. When complete:
 """
 
     prompt_path = PROMPT_DIR / f"{task_id}.md"
-    prompt_path.write_text(prompt, encoding="utf-8")
+    prompt_path.write_text(prompt, encoding="utf-8", newline="")
     return str(prompt_path)
 
 
@@ -3980,34 +3977,26 @@ def _run_adversarial_verify(task_id: str, work_dir: str) -> tuple:
         "Be strict. Missing tests, unfulfilled criteria, or obvious bugs = REJECTED."
     )
 
-    import tempfile as _tempfile2
-    import os as _os2
-
     try:
-        _tmp = _tempfile2.NamedTemporaryFile(
-            mode="w", suffix="_adv_review.txt", delete=False,
-            dir=str(BASE_DIR / ".tmp"), encoding="utf-8",
-        )
-        _tmp.write(review_prompt)
-        _tmp.close()
+        # Same adapter as the build path, so the review session inherits the
+        # argv, the stdin temp-file and the PATHEXT-aware discovery from the
+        # one place that knows how to invoke the CLI. Deliberately NOT tagged
+        # with a dispatch_source: a review makes no commits to attribute.
+        from tools.agents.adapter_base import AgentSession  # noqa: PLC0415
+        from tools.agents.adapters.claude_cli import ADAPTER as _claude_adapter  # noqa: PLC0415
 
-        _stdin_fh = open(_tmp.name, "r", encoding="utf-8")
-        result = subprocess.run(
-            [claude_cli, "--dangerously-skip-permissions",
-             "--max-turns", "10", "--output-format", "text"],
-            cwd=work_dir,
-            stdin=_stdin_fh,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        _stdin_fh.close()
-        try:
-            _os2.unlink(_tmp.name)
-        except Exception:
-            pass
+        result = _claude_adapter.invoke(AgentSession(
+            task_id=task_id,
+            prompt=review_prompt,
+            working_dir=work_dir,
+            # --max-turns 10 is the review-only budget: enough to read the diff
+            # and judge, not enough to rewrite the work it is judging.
+            max_turns=10,
+            timeout_seconds=180,
+            metadata={"temp_dir": str(BASE_DIR / ".tmp")},
+        ))
 
-        output = (result.stdout or "").strip()
+        output = (result.output or "").strip()
         if not output:
             logger.warning("adversarial_verify: empty output for %s — passing", task_id)
             return True, ""
@@ -4266,40 +4255,99 @@ def _poll_all_channels():
 def _resolve_claude_cli() -> Optional[str]:
     """Absolute path to the ``claude`` CLI, or None.
 
-    The fallback used to test ``~/.local/bin/claude`` with no extension, which
-    never exists on Windows — the installed binary is ``claude.EXE``. So on
-    Windows resolution depended entirely on ``shutil.which``, i.e. on PATH, and
-    a process started with a thinner environment (a dashboard-spawned
-    scheduler, a service) silently found nothing. ``_claude_code_available()``
-    then returned False, the executor chain fell through gitlab and ollama, and
-    every task dispatched in that window was quarantined to ``suggested`` with
-    "no executor available" — 25 tasks on 2026-08-01 before it was traced.
+    Delegates to ``tools.agents.adapters.claude_cli.resolve_claude_cli`` — the
+    resolution rules live beside the shellout that uses them, so there is one
+    answer to "where is the CLI" rather than one per call site.
 
-    Suffixes come from PATHEXT so a ``.cmd``/``.bat`` shim resolves too.
+    The rules themselves are load-bearing history: the fallback used to test
+    ``~/.local/bin/claude`` with no extension, which never exists on Windows —
+    the installed binary is ``claude.EXE``. So on Windows resolution depended
+    entirely on ``shutil.which``, i.e. on PATH, and a process started with a
+    thinner environment (a dashboard-spawned scheduler, a service) silently
+    found nothing. ``_claude_code_available()`` then returned False, the
+    executor chain fell through gitlab and ollama, and every task dispatched in
+    that window was quarantined to ``suggested`` with "no executor available" —
+    25 tasks on 2026-08-01 before it was traced.
     """
-    found = shutil.which("claude")
-    if found:
-        return found
-    import os as _os
-
-    base = Path.home() / ".local" / "bin" / "claude"
-    suffixes = [""]
-    if _os.name == "nt":
-        suffixes += [
-            e.lower() for e in _os.environ.get(
-                "PATHEXT", ".EXE;.CMD;.BAT;.COM"
-            ).split(_os.pathsep) if e.strip()
-        ]
-    for suffix in suffixes:
-        candidate = base.with_name(base.name + suffix) if suffix else base
-        if candidate.exists():
-            return str(candidate)
-    return None
+    try:
+        from tools.agents.adapters.claude_cli import resolve_claude_cli
+    except Exception as exc:  # noqa: BLE001 — a broken adapter must be loud
+        logger.error(
+            "kanban: claude_cli adapter unimportable (%s) — the runner cannot "
+            "resolve its executor", exc,
+        )
+        return None
+    return resolve_claude_cli()
 
 
 def _claude_code_available() -> bool:
     """True if the `claude` CLI is invokable on this host."""
     return _resolve_claude_cli() is not None
+
+
+# Executor-chain tiers that are served by an AgentAdapter, mapped to the
+# adapter name in tools/agents/registry.py. Tiers absent from this map
+# (gitlab, github_actions, ollama_local) are dispatched by their own helpers —
+# they are CI/queue backends, not agent sessions.
+_ADAPTER_TIERS: Dict[str, str] = {
+    "claude_cli": "claude_cli",
+    "local_agent": "local_agent",
+}
+
+
+def _agent_adapter_override() -> str:
+    """The operator's forced adapter, if any. Read fresh — it is a live switch."""
+    import os as _os  # noqa: PLC0415
+
+    return _os.environ.get("ICDEV_AGENT_ADAPTER", "").strip()
+
+
+def _pick_chain_adapter(chain: list, task_type: Optional[str] = None):
+    """Resolve the AgentAdapter serving the adapter-backed tiers of ``chain``.
+
+    Selection goes through ``tools.agents.registry.pick_default`` so
+    ``ICDEV_AGENT_ADAPTER`` overrides the chain — that env var is the only
+    supported way to force the owned executor without editing config.
+
+    The EXECUTOR CHAIN, not ``args/agent_adapters.yaml``'s per-task-type table,
+    decides the order: the config handed to ``pick_default`` sets
+    ``per_task_type_preference`` empty and derives ``fallback_order`` from the
+    chain. That keeps default resolution byte-unchanged — with the CLI present,
+    claude_cli is still picked for every task type, including the ``chore``
+    tasks the adapter config would otherwise route to ``local_llm_router``.
+
+    Returns None when no adapter is available; the caller then walks on to the
+    non-adapter tiers exactly as before.
+    """
+    names = [_ADAPTER_TIERS[t] for t in chain if t in _ADAPTER_TIERS]
+    if not names:
+        return None
+    try:
+        from tools.agents import registry as _agent_registry  # noqa: PLC0415
+
+        return _agent_registry.pick_default(
+            task_type,
+            config={
+                "enabled_adapters": names,
+                "per_task_type_preference": {},
+                "fallback_order": names,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — falling through the chain is the fallback
+        if _agent_adapter_override():
+            # A typo'd override that silently changed nothing is exactly the
+            # "control that looks like it worked" failure this codebase keeps
+            # producing — say so at WARNING, not at INFO.
+            logger.warning(
+                "kanban: ICDEV_AGENT_ADAPTER=%r could not be resolved (%s) — "
+                "the executor chain is running WITHOUT your override",
+                _agent_adapter_override(), exc,
+            )
+        else:
+            logger.info(
+                "kanban: no agent adapter available for tiers %s: %s", names, exc,
+            )
+        return None
 
 
 # Track running task handles. Claude path stores subprocess.Popen, LLMRouter
@@ -4713,82 +4761,85 @@ def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: 
     )
 
 
-def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
-                             work_dir: str, task_log: Path) -> None:
-    """ClaudeCodeTaskExecutor — original behavior, isolated."""
+def _agent_session(task: dict, instruction: str, work_dir: str,
+                   dispatch_source: str = "genesis_scheduler"):
+    """Build the AgentSession an adapter needs to run this task.
+
+    Everything executor-specific about a kanban dispatch is expressed here as
+    session metadata: the stop-hook tags, the scratch directory for the stdin
+    temp file, and the operator's model override.
+
+    MODEL OVERRIDE: a Claude model selected in the dashboard is handed to the
+    adapter, which passes it through as ``--model``. The ``cli_capable`` guard
+    stays on this side because a NON-Claude selection must never be handed to
+    the Claude CLI — such a selection never reaches here at all, because it
+    removes claude_cli from the executor chain
+    (``_build_effective_executor_chain``); quietly ignoring the choice would
+    make the dropdown a lie.
+    """
+    from tools.agents.adapter_base import AgentSession  # noqa: PLC0415
+
     task_id = task["id"]
-    claude_cli = _resolve_claude_cli()
-    if not claude_cli:
+    metadata: Dict[str, Any] = {
+        # guard-23: propagate dispatch_source via env so the stop hook can tag
+        # this session's commits as 'genesis_scheduler' rather than
+        # 'claude_interactive'.
+        "dispatch_source": dispatch_source,
+        "temp_dir": str(BASE_DIR / ".tmp"),
+        "project_id": str(task.get("project_id") or ""),
+        "task_type": str(task.get("task_type") or ""),
+    }
+    _model = _selected_model()
+    if _model and _model.get("cli_capable") and _model.get("model_id"):
+        metadata["model_id"] = str(_model["model_id"])
+        logger.info("kanban: dispatching %s on model %s (%s)",
+                    task_id, _model["name"], _model["model_id"])
+
+    # The SAME budget the reaper uses to kill this task, so a blocking adapter
+    # stops itself just before the kill timer rather than being killed from
+    # outside with no result. An unreachable board must not stop a dispatch.
+    try:
+        timeout_seconds = int(_get_task_timeout(task_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("kanban: task timeout lookup failed for %s: %s", task_id, exc)
+        timeout_seconds = int(MAX_EXECUTION_SECONDS)
+
+    return AgentSession(
+        task_id=task_id,
+        prompt=instruction,
+        working_dir=work_dir,
+        max_turns=MAX_TURNS,
+        timeout_seconds=timeout_seconds,
+        metadata=metadata,
+    )
+
+
+def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
+                             work_dir: str, task_log: Path, adapter=None) -> None:
+    """ClaudeCodeTaskExecutor — the bookkeeping around the ONE claude shellout.
+
+    The shellout itself (argv, env tagging, the stdin temp-file that dodges the
+    Windows 32767-char command-line limit, the model override) lives in
+    ``tools/agents/adapters/claude_cli.py`` so exactly one implementation
+    exists. What stays here is what is genuinely kanban's: the task-source tag,
+    the ``_running`` handle the poll/timeout loop reaps, the agent-surface
+    invocation and the audit row.
+    """
+    task_id = task["id"]
+    if adapter is None:
+        adapter = _pick_chain_adapter(["claude_cli"], task.get("task_type"))
+    if adapter is None or not _claude_code_available():
         print("  Kanban: claude CLI not found — should have routed to LLM executor")
         return
     try:
         log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
-        # guard-23: propagate dispatch_source via env so the stop hook can
-        # tag this session's commits as 'genesis_scheduler' rather than
-        # 'claude_interactive'. Also tag the kanban task row immediately.
-        import os as _os
-        env = _os.environ.copy()
-        env["ICDEV_DISPATCH_SOURCE"] = "genesis_scheduler"
-        env["ICDEV_DISPATCH_TASK_ID"] = task_id
-
         _tag_task_source(task_id, "genesis_scheduler")
 
-        # Write instruction to a temp file and pipe via stdin to avoid the
-        # Windows 32767-char command-line length limit (WinError 206).
-        # Claude auto-detects non-TTY stdout and enters non-interactive mode.
-        import tempfile as _tempfile
-        _instr_tmp = _tempfile.NamedTemporaryFile(
-            mode="w", suffix="_instr.txt", delete=False,
-            dir=str(BASE_DIR / ".tmp"),
-            encoding="utf-8", errors="replace",
-        )
-        _instr_tmp.write(instruction)
-        _instr_tmp.close()
-        _stdin_fh = open(_instr_tmp.name, "r", encoding="utf-8", errors="replace")
-
-        # Model override: a Claude model selected in the dashboard is passed straight
-        # through to the CLI. A NON-Claude selection never reaches here at all — it
-        # removes claude_cli from the executor chain (_build_effective_executor_chain),
-        # because the CLI cannot serve it and quietly ignoring the choice would make the
-        # dropdown a lie.
-        _cli_args = [
-            claude_cli,
-            "--dangerously-skip-permissions",
-            "--max-turns",
-            str(MAX_TURNS),
-            "--output-format",
-            "text",
-        ]
-        _model = _selected_model()
-        if _model and _model.get("cli_capable") and _model.get("model_id"):
-            _cli_args += ["--model", str(_model["model_id"])]
-            logger.info("kanban: dispatching %s on model %s (%s)",
-                        task_id, _model["name"], _model["model_id"])
-
-        proc = subprocess.Popen(
-            _cli_args,
-            cwd=work_dir,
-            stdin=_stdin_fh,
+        proc = adapter.spawn(
+            _agent_session(task, instruction, work_dir),
             stdout=log_fh,
             stderr=subprocess.STDOUT,
-            env=env,
         )
-        _stdin_fh.close()  # subprocess inherits the fd; close our handle
-        # Clean up temp instruction file after 5 min (process has read it by then)
-        import threading as _threading
-        import os as _os2
-
-        def _cleanup_instr(path, delay=300.0):
-            import time
-            time.sleep(delay)
-            try:
-                _os2.unlink(path)
-            except Exception:
-                pass
-
-        _threading.Thread(
-            target=_cleanup_instr, args=(_instr_tmp.name,), daemon=True
-        ).start()
 
         _running[task_id] = proc
         _dispatch_times[task_id] = datetime.now(timezone.utc)
@@ -4820,6 +4871,72 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
     except Exception as e:
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
+
+
+def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
+                                instruction: str, work_dir: str,
+                                task_log: Path) -> bool:
+    """Dispatch through an AgentAdapter. Returns True if a handle is running.
+
+    Two shapes of adapter, one entry point:
+
+    * an adapter that can ``spawn`` (claude_cli) hands back a real process, so
+      the runner keeps its own poll/kill/timeout loop and the hardened
+      bookkeeping in ``_dispatch_via_claude_cli``;
+    * an adapter that only implements the protocol's blocking ``invoke``
+      (``local_agent``, ``local_llm_router``) runs on a thread behind
+      ``_LLMTaskHandle``, which is Popen-compatible — so everything downstream
+      (timeout sweeper, completion checker, verification) is unchanged.
+    """
+    task_id = task["id"]
+    if getattr(adapter, "name", "") == "claude_cli":
+        _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir,
+                                 task_log, adapter=adapter)
+        # Reaching the CLI executor counts as dispatched even when the spawn
+        # itself failed — unchanged from before hgx-exec-03. Walking on to
+        # gitlab/ollama after a transient claude error would put two competing
+        # implementations of the same task in flight.
+        return True
+
+    session = _agent_session(task, instruction, work_dir)
+    adapter_name = getattr(adapter, "name", "agent-adapter")
+
+    def _runner():
+        with open(task_log, "w", encoding="utf-8", newline="",
+                  errors="replace") as fh:
+            fh.write(f"[{adapter_name} dispatch — task {task_id}]\n")
+            fh.write(f"[work_dir {work_dir}]\n\n")
+            result = adapter.invoke(session)
+            fh.write(result.output or "")
+            if result.error:
+                fh.write(f"\n[error] {result.error}\n")
+            fh.flush()
+            if not result.completed:
+                # Signal failure (returncode 1) so the task is NOT marked done;
+                # the standard verify/remediation/lesson chain still runs.
+                raise RuntimeError(
+                    f"{adapter_name} did not complete {task_id}"
+                    + (f": {result.error}" if result.error else "")
+                )
+
+    handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
+    handle.start(_runner)
+    _running[task_id] = handle
+    _dispatch_times[task_id] = datetime.now(timezone.utc)
+    _close_agent_invocation(
+        _agent_invocations.pop(task_id, None), status="superseded",
+    )
+    _agent_invocations[task_id] = _open_agent_invocation(
+        _SURFACE_AGENT, task_id,
+        project_id=str(task.get("project_id") or ""),
+    )
+    _audit_agent_execution(
+        "agent_execution_started", task_id,
+        executor=adapter_name,
+        project_id=str(task.get("project_id") or ""),
+    )
+    print(f"  Kanban: dispatched {task_id} via agent adapter {adapter_name}")
+    return True
 
 
 def _rubric_loop_enabled() -> bool:
@@ -5982,12 +6099,27 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     # If all executors are degraded, fall back to the full chain anyway.
     effective_chain = _build_effective_executor_chain(_fallback_chain)
 
+    # Adapter-backed tiers (claude_cli, local_agent) resolve ONCE, through
+    # tools/agents/registry.pick_default(), so ICDEV_AGENT_ADAPTER is honoured
+    # here and not only by whatever else happens to call the registry. Order
+    # still comes from the executor chain, so the default is unchanged.
+    chain_adapter = _pick_chain_adapter(effective_chain, task_type)
+    adapter_forced = bool(_agent_adapter_override())
+
     dispatched = False
     for tier in effective_chain:
-        if tier == "claude_cli":
-            if _claude_code_available():
-                _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
-                _set_executor_type(task_id, "claude_cli")
+        if tier in _ADAPTER_TIERS:
+            if chain_adapter is None:
+                continue
+            # Without a forced override the adapter must be THIS tier's, or the
+            # chain order would be silently reshuffled (a later adapter tier
+            # jumping ahead of gitlab). With one, the operator's choice runs at
+            # the first adapter position in the chain.
+            if not adapter_forced and _ADAPTER_TIERS[tier] != chain_adapter.name:
+                continue
+            if _dispatch_via_agent_adapter(chain_adapter, task, prompt_path,
+                                           instruction, work_dir, task_log):
+                _set_executor_type(task_id, chain_adapter.name)
                 dispatched = True
                 break
         elif tier == "gitlab":
@@ -6843,7 +6975,7 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
                 },
                 indent=2,
             ),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.warning(
@@ -7589,6 +7721,13 @@ _SUCCESS_CLAUSE_PREFIXES = (
     "remediation=",
     "passed",
     "all validation gates passed",
+    # _verify_task_specific's non-failure default (see its final return).
+    # It starts with "Task-specific", not "passed", so it slipped through
+    # this filter and was stored as the failure clause — which is how a task
+    # with nothing wrong with it reached failure_triage's autofix queue on
+    # 2026-08-08 (kax-recover-01). Its FAILURE returns are prefixed
+    # "SPECIFIC CHECK FAILED:" and are unaffected.
+    "task-specific checks passed",
 )
 
 
@@ -7847,6 +7986,14 @@ def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
 
 _SUGGESTED_DECAY_HOURS = _int_env("KANBAN_SUGGESTED_DECAY_HOURS", 48)
 
+#: Why a decay promotion happened. Recorded on the ``kanban_status_transitions``
+#: row — never on ``last_failure_reason``, which is a *triage input*, not a
+#: general-purpose note field (see ``_promote_stale_suggested``).
+_DECAY_PROMOTION_REASON = (
+    f"suggested-decay: re-queued after {_SUGGESTED_DECAY_HOURS} h in 'suggested' "
+    "with no hard-quarantine signal (failure_count preserved)"
+)
+
 
 def _promote_stale_suggested() -> None:
     """Decay sweep: re-queue 'suggested' tasks that have been stuck >48 h
@@ -7857,38 +8004,73 @@ def _promote_stale_suggested() -> None:
     issue resolves on its own (transient resource exhaustion, flaky E2E,
     resolved dependency). Hard-quarantined tasks (fc >= 5 or explicit
     hard-quarantine reason) still require human review.
+
+    The promotion goes through ``tools/kanban/requeue.py::requeue_task`` rather
+    than a local UPDATE, because the local UPDATE had both of the failure modes
+    that module exists to prevent (kax-recover-05):
+
+    * It wrote the promotion *rationale* into ``last_failure_reason`` while
+      setting ``status='scheduled'`` and a fresh ``updated_at`` — precisely the
+      triple ``failure_triage.find_recent_failures`` selects on
+      (``last_failure_reason IS NOT NULL AND updated_at > cutoff AND status IN
+      (...,'scheduled',...)``). Every decay-promoted task therefore entered the
+      autofix queue carrying a "reason" that describes a promotion rather than a
+      failure; 114 rows on the live board still carry that string. The rationale
+      belongs on the ``kanban_status_transitions`` row, which is an audit
+      surface, not on a triage input.
+    * It set ``failure_count=0`` while the guard below uses ``fc >= 5`` as the
+      hard-quarantine test — so a task that passed through 'suggested' had its
+      quarantine budget reset every 48 h and could never reach hard quarantine.
+      ``requeue_task`` preserves the count on purpose: it is
+      ``recovery_guard.py``'s budget and the task's real history. Preserving it
+      cannot trip the dispatcher's circuit breaker here, because that fires at
+      ``failure_count >= max_retries`` (default 5) and this pass only promotes
+      tasks below 5.
     """
     try:
+        from tools.kanban.requeue import requeue_task  # noqa: PLC0415
+
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
+        ).isoformat()
         with get_connection() as conn:
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
-            ).isoformat()
             rows = conn.execute(
                 "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
                 "WHERE status = 'suggested' AND updated_at < %s",
                 (cutoff,),
             ).fetchall()
-            promoted = []
-            now_iso = datetime.now(timezone.utc).isoformat()
-            for r in rows:
-                d = dict(r)
-                fc = d.get("failure_count") or 0
-                reason = (d.get("last_failure_reason") or "").lower()
-                if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
-                    continue  # genuinely quarantined — leave for human review
-                conn.execute(
-                    "UPDATE kanban_tasks SET status='scheduled', scheduled_at=%s, "
-                    "updated_at=%s, failure_count=0, "
-                    "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
-                    "WHERE id=%s",
-                    (now_iso, now_iso, d["id"]),
-                )
-                promoted.append(d["id"])
-            if promoted:
-                logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
-                for tid in promoted:
-                    print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
 
+        candidates = []
+        for r in rows:
+            d = dict(r)
+            fc = d.get("failure_count") or 0
+            reason = (d.get("last_failure_reason") or "").lower()
+            if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
+                continue  # genuinely quarantined — leave for human review
+            candidates.append(d["id"])
+
+        # requeue_task opens its own connection, so the read above is closed
+        # before promoting rather than nesting a second connection inside it.
+        promoted = []
+        for tid in candidates:
+            outcome = requeue_task(
+                tid,
+                status="scheduled",
+                reason=_DECAY_PROMOTION_REASON,
+                actor="suggested-decay-sweep",
+            )
+            if outcome.get("requeued"):
+                promoted.append(tid)
+            else:
+                logger.warning(
+                    "suggested-decay: %s not re-queued: %s", tid, outcome.get("error"),
+                )
+        if promoted:
+            logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
+            for tid in promoted:
+                print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
+
+        with get_connection() as conn:
             # ── BOUNDED AUTO-REVIVE of failure-quarantined tasks ──────────
             # The decay pass above deliberately skips fc>=5 / HITL-quarantined
             # tasks. Without this pass they (and their dependency chains) rot
@@ -7943,6 +8125,7 @@ def _revive_quarantined_suggested(conn: Any) -> None:
     ).fetchall()
 
     revived: list[str] = []
+    revive_reasons: dict[str, str] = {}
     held: list[str] = []
     for r in rows:
         d = dict(r)
@@ -7983,17 +8166,30 @@ def _revive_quarantined_suggested(conn: Any) -> None:
             continue
 
         # Revive to backlog with a fresh failure budget.
+        #
+        # kax-recover-05: the rationale is NOT written to last_failure_reason.
+        # That column plus a fresh updated_at plus status='backlog' is exactly
+        # what failure_triage.find_recent_failures selects on, so describing a
+        # revival there put every revived task straight into the autofix queue
+        # carrying a non-failure "reason". It is cleared instead, and the
+        # rationale goes on the kanban_status_transitions row below.
+        #
+        # failure_count IS still reset here, unlike the decay pass above. This
+        # pass only acts on fc>=5 tasks, and the dispatcher's circuit breaker
+        # blocks at fc >= max_retries (default 5) — preserving the count would
+        # make the revival a no-op that re-parks the task immediately. The
+        # budget that bounds this path is revive_count in kanban_task_revivals,
+        # which survives re-quarantine; the failure count is not it.
         new_rc = revive_count + 1
+        revive_reason = (
+            f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
+            "re-queued to backlog for another attempt."
+        )
         conn.execute(
             "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
-            "last_failure_reason = %s, updated_at = %s "
+            "last_failure_reason = NULL, updated_at = %s "
             "WHERE id = %s AND status = 'suggested'",
-            (
-                f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
-                "re-queued to backlog for another attempt.",
-                now_iso,
-                tid,
-            ),
+            (now_iso, tid),
         )
         # Upsert the revival counter (works on both SQLite and PostgreSQL).
         if rc_row:
@@ -8010,10 +8206,17 @@ def _revive_quarantined_suggested(conn: Any) -> None:
                 (tid, new_rc, now_iso, now_iso),
             )
         revived.append(tid)
+        revive_reasons[tid] = revive_reason
 
     if revived or held:
         conn.commit()
     for tid in revived:
+        # Recorded after the commit so the audit row never describes a revival
+        # that did not land. This is where the rationale lives now.
+        _record_status_transition(
+            tid, "suggested", "backlog",
+            actor="auto-revive", reason=revive_reasons[tid],
+        )
         print(f"  Kanban: auto-revive quarantined {tid} -> backlog")
     if revived:
         logger.info("auto-revive: re-queued %d quarantined task(s): %s", len(revived), revived)
@@ -8063,6 +8266,7 @@ def _unblock_dep_chain(conn: Any) -> None:
             "WHERE p.status = 'suggested' AND c.status = 'backlog'"
         ).fetchall()
         unblocked: list[str] = []
+        unblock_reasons: dict[str, str] = {}
         for r in rows:
             d = dict(r)
             tid = d["id"]
@@ -8075,20 +8279,30 @@ def _unblock_dep_chain(conn: Any) -> None:
             is_hitl = "hitl" in reason or "hard-quarantine" in reason
             if is_hard_quarantine or is_hitl:
                 continue
+            # kax-recover-05: rationale goes on the transition row, not into
+            # last_failure_reason — writing it there made every unblocked task
+            # match failure_triage.find_recent_failures with a reason that
+            # describes an unblock rather than a failure. The failure_count
+            # reset stays: this pass lets fc>=5 "no executor" tasks through, and
+            # the dispatcher blocks at fc >= max_retries (default 5), so
+            # preserving it would re-park the task the moment it was unblocked.
+            unblock_reasons[tid] = (
+                f"dep-chain-unblock: child waiting in backlog, revived from suggested (fc was {fc})"
+            )
             conn.execute(
                 "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
-                "last_failure_reason = %s, updated_at = %s "
+                "last_failure_reason = NULL, updated_at = %s "
                 "WHERE id = %s AND status = 'suggested'",
-                (
-                    f"dep-chain-unblock: child waiting in backlog, revived from suggested (fc was {fc})",
-                    now_iso,
-                    tid,
-                ),
+                (now_iso, tid),
             )
             unblocked.append(tid)
         if unblocked:
             conn.commit()
             for tid in unblocked:
+                _record_status_transition(
+                    tid, "suggested", "backlog",
+                    actor="dep-chain-unblock", reason=unblock_reasons[tid],
+                )
                 print(f"  Kanban: dep-chain-unblock {tid} -> backlog (was blocking child)")
             logger.info(
                 "dep-chain-unblock: revived %d critical-path task(s): %s",
@@ -8136,7 +8350,6 @@ def _check_acceptance_criteria(task_id: str, output_text: str) -> tuple:
         req = LLMRequest(
             system_prompt="You are a quality acceptance evaluator. Return valid JSON only.",
             messages=[{"role": "user", "content": prompt}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=200,
             temperature=0.0,
             skip_injection_scan=True,
@@ -8236,7 +8449,6 @@ def _decompose_triage_task(task: dict) -> bool:
         req = LLMRequest(
             system_prompt="You are a software task decomposer. Return valid JSON array only.",
             messages=[{"role": "user", "content": prompt}],
-            model="claude-haiku-4-5-20251001",
             max_tokens=2000,
             temperature=0.3,
             skip_injection_scan=True,
@@ -8742,15 +8954,22 @@ def _startup_recover_stale_in_progress() -> None:
     'in_progress' back to 'backlog'.  After a crash, _running is empty but
     the DB still has rows from the previous session — they will never be
     promoted or timed-out without this sweep.
+
+    Policy lives in ``tools/kanban/startup_recovery.py``, shared with the
+    scheduler entrypoint's own sweep. Both run on a restart (this one on cycle
+    1), so a liveness guard in only one of them buys nothing — the other resets
+    the live task a minute later. That module also stops writing
+    ``last_failure_reason`` for an interruption: it is not a failure, and the
+    reason column is what pulls a task into ``failure_triage``'s autofix queue.
     """
     global _startup_recovery_done
     if _startup_recovery_done:
         return
 
-    # Hard guard: this sweep resets EVERY in_progress row, skipping only those
-    # in the process-local _running. Run from a second process (the heartbeat
-    # daemon's wakeup, a dashboard reflex trigger, an interactive --once) it
-    # would reset the owning scheduler's entire live board in one pass.
+    # Hard guard: this sweep resets EVERY in_progress row that is not provably
+    # live. Run from a second process (the heartbeat daemon's wakeup, a dashboard
+    # reflex trigger, an interactive --once) it would sweep the owning
+    # scheduler's board, and its _running is not visible from here.
     _foreign = _foreign_scheduler_pid()
     if _foreign:
         logger.info(
@@ -8759,40 +8978,29 @@ def _startup_recover_stale_in_progress() -> None:
         return
 
     _startup_recovery_done = True
-    conn = None
     try:
-        conn = get_connection()
-        rows = conn.execute(
-            "SELECT id, title, executor_type FROM kanban_tasks WHERE status = 'in_progress'"
-        ).fetchall()
-        if not rows:
-            return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        reason = (
-            "startup-recovery: task was in_progress when the scheduler "
-            "restarted — process died or scheduler crashed mid-run."
+        from tools.kanban.startup_recovery import recover_interrupted_tasks
+
+        result = recover_interrupted_tasks(
+            running_ids=set(_running),
+            # Ownership was just settled above via _foreign_scheduler_pid, which
+            # resolves the lockfile from the MAIN worktree; re-asking would only
+            # re-derive it from a second anchor.
+            respect_foreign_owner=False,
+            # Bind the sweep to THIS module's connection factory so a caller that
+            # redirected get_connection (tests, a scoped operator run) is not
+            # silently swept against the ambient database instead.
+            conn_factory=get_connection,
         )
-        for r in rows:
-            rd = dict(r)
-            tid = rd["id"]
-            if tid in _running:
-                continue  # live process from this session — skip
-            if rd.get("executor_type") == "github_actions":
-                continue  # external executor — GitHub Actions runs independently
-            if _is_manual_gate(tid, rd.get("title")):
-                continue  # manual-mode gate — held in_progress by design
-            conn.execute(
-                "UPDATE kanban_tasks SET status='backlog', "
-                "last_failure_reason=%s, updated_at=%s WHERE id=%s",
-                (reason, now_iso, tid),
+        for entry in result["reset"]:
+            print(
+                f"  Kanban: startup-recovery reset {entry['id']} in_progress -> "
+                f"backlog ({entry['provenance']['summary']})"
             )
-            print(f"  Kanban: startup-recovery reset {tid} in_progress -> backlog")
-        conn.commit()
+        for held in result["held"]:
+            print(f"  Kanban: startup-recovery HELD {held['id']} — {held['detail']}")
     except Exception as exc:
         logger.warning("startup-recovery sweep failed: %s", exc)
-    finally:
-        if conn is not None:
-            conn.close()
 
 
 def _check_completed():

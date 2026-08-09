@@ -144,12 +144,12 @@ def run_destroy(run_id: str, project_id: str, canvas: str = "") -> dict:
                 region = env.get("AWS_DEFAULT_REGION", "us-east-1")
                 (tmp_path / "localstack_override.tf").write_text(
                     LOCALSTACK_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
-                    encoding="utf-8",
+                    encoding="utf-8", newline="",
                 )
                 findings.append({"severity": "info", "check": "localstack_override",
                                   "message": f"Provider overridden → {docker_ep}"})
 
-            (tmp_path / "auto.tfvars").write_text(TFVARS_DEFAULTS, encoding="utf-8")
+            (tmp_path / "auto.tfvars").write_text(TFVARS_DEFAULTS, encoding="utf-8", newline="")
 
             rc, out, err = docker_run(_TF_IMAGE, tmp, docker_env, "terraform",
                                        "init", "-backend=false", "-input=false", "-no-color",
@@ -222,7 +222,7 @@ def run_destroy(run_id: str, project_id: str, canvas: str = "") -> dict:
         lines.append("")
 
     report_path = out_dir / f"destroy_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return {
         "gate": gate, "mode": mode, "canvas": canvas,

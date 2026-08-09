@@ -22,13 +22,14 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.migration.validator")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.migration.validator")
 
 _ARTIFACTS_DIR = _ROOT / "data" / "studio_artifacts" / "migration"
 
@@ -245,8 +246,8 @@ def run(project_id: str = "default") -> dict:
         checklist_path = _ARTIFACTS_DIR / "04_validation_checklist.md"
         script_path = _ARTIFACTS_DIR / "validate.py"
 
-        checklist_path.write_text(_checklist_md(categories, apps, project), encoding="utf-8")
-        script_path.write_text(_validate_script(apps, project), encoding="utf-8")
+        checklist_path.write_text(_checklist_md(categories, apps, project), encoding="utf-8", newline="")
+        script_path.write_text(_validate_script(apps, project), encoding="utf-8", newline="")
 
         # ── Persist to mc_assessments ─────────────────────────────────────────
         design_id = conn.execute("SELECT id FROM migration_designs LIMIT 1").fetchone()

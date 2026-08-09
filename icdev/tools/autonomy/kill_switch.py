@@ -44,7 +44,7 @@ def activate(reason: str = "manual") -> dict:
                 "reason": reason,
             }
         ),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
     os.environ[ENV_VAR] = "true"
     return {"status": "activated", "lockfile": str(LOCKFILE), "env_var": ENV_VAR}

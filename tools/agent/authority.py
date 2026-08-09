@@ -9,19 +9,20 @@ Decision D42: YAML-defined authority matrix, vetoes append-only.
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
 import logging
 import sqlite3
 import sys
-from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 AUTHORITY_CONFIG_PATH = BASE_DIR / "args" / "agent_authority.yaml"

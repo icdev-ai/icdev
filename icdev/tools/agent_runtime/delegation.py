@@ -80,6 +80,23 @@ def _current_depth() -> int:
         return 0
 
 
+def _child_can_delegate() -> bool:
+    """Whether a child process (depth > 0) may itself delegate.
+
+    ``ICDEV_SAG_CAN_DELEGATE`` → ``args/agent_runtime.yaml`` → ``False``. The
+    env var is read first and still wins (hgx-cfg-01) — it is how a parent hands
+    the policy to the child it spawns, and that hand-off must not be overridable
+    by a file the child happens to find.
+    """
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().child_can_delegate
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("delegation: config layer unavailable: %s", exc)
+        return os.environ.get("ICDEV_SAG_CAN_DELEGATE", "0") == "1"
+
+
 def _can_delegate_here() -> tuple[bool, str]:
     """Whether the *current* process is permitted to delegate.
 
@@ -90,7 +107,7 @@ def _can_delegate_here() -> tuple[bool, str]:
     depth = _current_depth()
     if depth >= MAX_ORCHESTRATOR_DEPTH:
         return False, f"delegation depth limit ({MAX_ORCHESTRATOR_DEPTH}) reached"
-    if depth > 0 and os.environ.get("ICDEV_SAG_CAN_DELEGATE", "0") != "1":
+    if depth > 0 and not _child_can_delegate():
         return False, "re-delegation not permitted for a leaf child"
     return True, ""
 

@@ -12,17 +12,26 @@ Each handler has signature ``handler(runtime, arg) -> tuple[str, bool]`` returni
 (handled, response, should_exit)`` and is injected via
 ``AgentRuntime(command_handler=dispatch)`` (see :func:`build_runtime`).
 
-Command set:
+Command set (kept in step with :data:`REGISTRY` —
+``tests/agent_runtime/test_goal_commands.py::test_docstring_matches_registry``
+asserts every registered command is documented here, because a drifted docstring
+is how a shipped command stays invisible). Every entry below is a live handler;
+none of them is a stub:
 
 - ``/new [title]``  — start a fresh session (new chat context).
 - ``/clear``        — alias for ``/new`` that keeps the current title.
 - ``/title [name]`` — show or set the session title.
 - ``/tools``        — list the currently discovered tools.
 - ``/skills``       — list ``icdev-*`` skills from ``tools/skills/registry.py``.
-- ``/memory``       — show remembered facts (stub until sag-mem-01 lands).
+- ``/skill``        — propose / review / promote auto-generated skills (HITL).
+- ``/memory``       — show, remember or forget durable profile facts.
+- ``/goal``         — manage standing goals; the active ones are injected into
+  the system prompt (hgx-goal-02).
 - ``/usage``        — token / cost stats for the current session.
+- ``/search``       — full-text search across past session turns.
+- ``/snapshot``     — checkpoint repo paths before a risky edit.
+- ``/rollback``     — preview or apply a rollback to a checkpoint.
 - ``/help`` (``/?``) — list commands.
-- ``/rollback``     — checkpoint rollback (stub until sag-safe-02 lands).
 - ``/exit`` (``/quit``) — graceful shutdown; the session is already persisted.
 """
 from __future__ import annotations
@@ -298,6 +307,267 @@ def _cmd_skill(runtime: Any, arg: str) -> "tuple[str, bool]":
         return f"error: {exc}", False
 
 
+# ---------------------------------------------------------------------------
+# /goal (hgx-goal-02)
+# ---------------------------------------------------------------------------
+
+#: Statuses a goal can still be acted on from. This ordering is the *canonical*
+#: one: ``/goal list`` prints it and the ``N`` references every subcommand
+#: accepts index into it, so "pause 2" always means the second line just shown.
+_LIVE_FILTER = ("active", "blocked", "paused", "pending")
+
+_GOAL_USAGE = (
+    "Usage: /goal create <title> [| detail] [--priority=N] | list [status|all] | "
+    "status [N|id] | pause|resume|complete|cancel <N|id> | block <N|id> [reason] "
+    "| clear [--yes]"
+)
+
+
+def _goal_manager(runtime: Any) -> Any:
+    """A GoalManager scoped to this runtime's operator + tenant."""
+    from tools.agent_runtime.standing_goals import GoalManager
+
+    return GoalManager(
+        user_id=getattr(runtime, "user_id", "default"),
+        tenant_id=getattr(runtime, "tenant_id", ""),
+    )
+
+
+def _invalidate_goals(runtime: Any) -> None:
+    """Drop the runtime's cached goal preamble so the next turn re-reads the DB.
+
+    Called after every mutation. Without this a ``/goal create`` would not reach
+    the model until the session was restarted — the goal would exist and be
+    invisible, which is the failure this command set is meant to remove.
+    """
+    invalidate = getattr(runtime, "invalidate_goals", None)
+    if callable(invalidate):
+        invalidate()
+    elif hasattr(runtime, "_goals_preamble"):
+        runtime._goals_preamble = None
+
+
+def _goal_line(index: int, goal: Any) -> str:
+    bits = [f"  {index}. [{goal.status.value}]"]
+    if goal.progress:
+        bits.append(f"{goal.progress}%")
+    bits.append(goal.title)
+    line = " ".join(bits) + f"  ({goal.goal_id})"
+    if goal.blocked_reason:
+        line += f"\n       blocked: {goal.blocked_reason}"
+    return line
+
+
+def _resolve_goal(mgr: Any, ref: str, live: "list[Any]") -> Any:
+    """Resolve ``ref`` to a goal: a 1-based index into ``live``, or an id/prefix.
+
+    Indexes are offered because the ids are opaque (``goal-9f2c1a…``); prefixes
+    because pasting a full one is worse. A prefix that matches more than one goal
+    is rejected rather than guessed at — silently acting on the wrong goal is the
+    one outcome this cannot risk.
+    """
+    ref = (ref or "").strip()
+    if not ref:
+        return None
+    if ref.isdigit():
+        idx = int(ref) - 1
+        return live[idx] if 0 <= idx < len(live) else None
+    exact = mgr.get(ref)
+    if exact is not None:
+        return exact
+    matches = [g for g in mgr.list_goals() if g.goal_id.startswith(ref)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _parse_create(arg: str) -> "tuple[str, str, int]":
+    """Split ``create`` args into ``(title, detail, priority)``.
+
+    ``|`` separates an optional detail; ``--priority=N`` may appear anywhere and
+    is removed from the title. Priority matters because the injected block is
+    capped — it is how an operator says which goals win the five slots.
+    """
+    priority = 50
+    kept: list[str] = []
+    for token in arg.split():
+        if token.startswith("--priority="):
+            try:
+                priority = max(0, min(100, int(token.split("=", 1)[1])))
+            except (IndexError, ValueError):
+                pass
+            continue
+        kept.append(token)
+    title, _sep, detail = " ".join(kept).partition("|")
+    return title.strip(), detail.strip(), priority
+
+
+def _cmd_goal(runtime: Any, arg: str) -> "tuple[str, bool]":
+    """Manage standing goals — durable objectives injected into the prompt.
+
+    Usage:
+      /goal create <title> [| detail] [--priority=N]   Create and start pursuing
+      /goal list [status|all]                          List goals (default: live)
+      /goal status [N|id]                              What is injected, or one goal
+      /goal pause|resume|complete|cancel <N|id>        Lifecycle moves
+      /goal block <N|id> [reason]                      Mark blocked, recording why
+      /goal clear [--yes]                              Cancel every live goal
+    """
+    from tools.agent_runtime.standing_goals import (
+        GoalStatus,
+        InvalidGoalTransition,
+    )
+
+    parts = arg.split(maxsplit=1)
+    sub = (parts[0].lower() if parts else "list")
+    rest = parts[1].strip() if len(parts) > 1 else ""
+
+    mgr = _goal_manager(runtime)
+    # Resolved once so an index shown by /goal list means the same thing here.
+    live = mgr.list_goals(statuses=_LIVE_FILTER)
+
+    if sub in ("create", "add", "new"):
+        title, detail, priority = _parse_create(rest)
+        if not title:
+            return "Usage: /goal create <title> [| detail] [--priority=N]", False
+        # Created ACTIVE: an operator who types the goal out has decided to
+        # pursue it. A 'pending' default would make every create a two-step.
+        goal = mgr.create(
+            title,
+            detail=detail,
+            status=GoalStatus.ACTIVE,
+            priority=priority,
+            session_id=str(getattr(getattr(runtime, "session", None), "context_id", "")),
+        )
+        if goal is None:
+            return "Could not create the goal (goal store unavailable).", False
+        _invalidate_goals(runtime)
+        return (
+            f"Goal created and active: {goal.title} ({goal.goal_id}). "
+            "It will be injected into the system prompt from the next turn.",
+            False,
+        )
+
+    if sub in ("list", "ls"):
+        wanted = None if rest.lower() in ("all", "*") else (
+            (rest.lower(),) if rest else _LIVE_FILTER
+        )
+        goals = live if wanted == _LIVE_FILTER else mgr.list_goals(statuses=wanted)
+        if not goals:
+            scope = rest or "live"
+            return f"No {scope} goals. Create one with '/goal create <title>'.", False
+        lines = [f"{len(goals)} goal(s):"]
+        lines.extend(_goal_line(i, g) for i, g in enumerate(goals, start=1))
+        lines.append("Refer to a goal by its number or id, e.g. '/goal pause 1'.")
+        return "\n".join(lines), False
+
+    if sub == "status":
+        if rest:
+            goal = _resolve_goal(mgr, rest, live)
+            if goal is None:
+                return f"No goal matches {rest!r}. Try /goal list.", False
+            out = [
+                f"{goal.title}  ({goal.goal_id})",
+                f"  status: {goal.status.value}   progress: {goal.progress}%   "
+                f"priority: {goal.priority}",
+            ]
+            if goal.detail:
+                out.append(f"  detail: {goal.detail}")
+            if goal.blocked_reason:
+                out.append(f"  blocked: {goal.blocked_reason}")
+            out.append(f"  created: {goal.created_at or '?'}")
+            return "\n".join(out), False
+        return _goal_injection_status(runtime, mgr), False
+
+    if sub == "clear":
+        if not live:
+            return "No live goals to clear.", False
+        if "--yes" not in rest.split() and "-y" not in rest.split():
+            preview = "\n".join(f"  - {g.title}" for g in live)
+            return (
+                f"/goal clear would cancel {len(live)} goal(s):\n{preview}\n\n"
+                "Cancelling is terminal — re-run '/goal clear --yes' to apply.",
+                False,
+            )
+        cancelled = 0
+        for goal in live:
+            try:
+                if mgr.cancel(goal.goal_id) is not None:
+                    cancelled += 1
+            except InvalidGoalTransition:  # raced to terminal by another session
+                continue
+        _invalidate_goals(runtime)
+        return f"Cancelled {cancelled} of {len(live)} goal(s).", False
+
+    # Local (not module-level) so importing this module never needs the goal
+    # subsystem — every other goal import here is lazy for the same reason.
+    moves = {
+        "pause": GoalStatus.PAUSED,
+        "resume": GoalStatus.ACTIVE,
+        "activate": GoalStatus.ACTIVE,
+        "complete": GoalStatus.COMPLETED,
+        "done": GoalStatus.COMPLETED,
+        "cancel": GoalStatus.CANCELLED,
+        "block": GoalStatus.BLOCKED,
+    }
+    target = moves.get(sub)
+    if target is None:
+        return _GOAL_USAGE, False
+
+    ref, _sep, reason = rest.partition(" ")
+    if not ref:
+        return f"Usage: /goal {sub} <N|id>" + (" [reason]" if sub == "block" else ""), False
+    goal = _resolve_goal(mgr, ref, live)
+    if goal is None:
+        return f"No goal matches {ref!r}. Try /goal list.", False
+    try:
+        updated = mgr.transition(
+            goal.goal_id, target, blocked_reason=reason.strip()
+        )
+    except InvalidGoalTransition as exc:
+        # A caller error, not a missing subsystem — report it, do not swallow it.
+        return f"Cannot {sub} that goal: {exc}", False
+    if updated is None:
+        return f"Could not update {goal.goal_id} (goal store unavailable).", False
+    _invalidate_goals(runtime)
+    note = f" ({updated.blocked_reason})" if updated.blocked_reason else ""
+    return f"Goal '{updated.title}' is now {updated.status.value}{note}.", False
+
+
+def _goal_injection_status(runtime: Any, mgr: Any) -> str:
+    """Summarise the board plus what is actually reaching the model.
+
+    Reporting the *injected* count separately from the active count is the
+    point: with more active goals than the cap, "you have 8 goals" and "the
+    agent can see 5 of them" are different facts and the operator needs both.
+    """
+    from tools.agent_runtime import goal_context
+
+    counts: dict[str, int] = {}
+    for goal in mgr.list_goals():
+        counts[goal.status.value] = counts.get(goal.status.value, 0) + 1
+    summary = ", ".join(f"{v} {k}" for k, v in sorted(counts.items())) or "no goals yet"
+
+    report = goal_context.describe(
+        llm_function=getattr(runtime, "llm_function", "code_generation"),
+        system_prompt=getattr(runtime, "system_prompt", ""),
+        user_id=getattr(runtime, "user_id", "default"),
+        tenant_id=getattr(runtime, "tenant_id", ""),
+        context_id=str(getattr(getattr(runtime, "session", None), "context_id", "")),
+        manager=mgr,
+    )
+    lines = [f"Goals: {summary}."]
+    lines.append(
+        f"Injected into the system prompt: {report['shown']} of "
+        f"{report['total_active']} active (cap {report['limit']}, "
+        f"{report['tokens']}/{report['budget']} tokens)."
+    )
+    if report["withheld"]:
+        lines.append(
+            f"  {report['withheld']} active goal(s) withheld — raise the cap with "
+            f"{goal_context.ENV_LIMIT}, or re-prioritise with --priority=N."
+        )
+    return "\n".join(lines)
+
+
 def _cmd_exit(_runtime: Any, _arg: str) -> "tuple[str, bool]":
     return "Session saved. Goodbye.", True
 
@@ -330,6 +600,7 @@ REGISTRY: dict[str, Command] = {
     "/skills": Command(_cmd_skills, "List available icdev-* skills."),
     "/skill": Command(_cmd_skill, "Propose/review/promote auto-skills (HITL). Usage: /skill propose|list|approve|reject ..."),
     "/memory": Command(_cmd_memory, "Show/remember/forget durable facts. Usage: /memory [forget <N>|remember <fact>]"),
+    "/goal": Command(_cmd_goal, "Manage standing goals injected into the prompt. Usage: /goal create|list|status|pause|resume|complete|block|cancel|clear ..."),
     "/usage": Command(_cmd_usage, "Show token/cost stats for this session."),
     "/search": Command(_cmd_search, "Search past session turns. Usage: /search <query>"),
     "/snapshot": Command(_cmd_snapshot, "Checkpoint paths now. Usage: /snapshot <path> [more...]"),

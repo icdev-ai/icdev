@@ -82,9 +82,19 @@ def test_create_rejects_unknown_scope(keys_db):
         _create(scopes=["cortex:search", "cortex:frobnicate"])
 
 
-def test_agent_scope_not_in_vocabulary():
-    # REST surface has no agent endpoint — team launches are MCP-only.
-    assert "cortex:agent" not in service_keys.ALL_SCOPES
+def test_agent_scope_exists_but_is_never_granted_by_default():
+    """hgx-cx-02 put ``agent`` on the REST surface — it did not make it a default.
+
+    This test used to assert ``cortex:agent`` was absent from the vocabulary
+    entirely, because team launches were same-machine MCP only. The endpoint now
+    exists, so the invariant moves rather than disappears: agent is the one
+    Cortex operation that makes the platform ACT, and a key that can search must
+    never silently also be able to spend an hour of the platform's tokens or
+    start a Studio run whose nodes hold their own tool authorizations.
+    """
+    assert "cortex:agent" in service_keys.ALL_SCOPES
+    assert "cortex:agent" not in service_keys.DEFAULT_SCOPES
+    assert "agent" not in service_keys.REST_OPERATIONS
     assert all(s.startswith(("cortex:", "databridge:")) for s in service_keys.ALL_SCOPES)
 
 

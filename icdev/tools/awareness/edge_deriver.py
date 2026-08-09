@@ -64,13 +64,14 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from tools.logging.icdev_logger import get_logger
 
-LOG = get_logger("edge_deriver")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+LOG = get_logger("edge_deriver")
 
 from tools.awareness.component_indexer import (  # noqa: E402
     GRAPH_ID,

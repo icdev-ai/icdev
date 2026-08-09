@@ -30,6 +30,17 @@ import argparse
 import json
 import re
 import uuid
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -442,19 +453,19 @@ def init_spec_dir(
     if spec_content:
         # Write the full spec
         spec_path = target_dir / "spec.md"
-        spec_path.write_text(spec_content, encoding="utf-8")
+        spec_path.write_text(spec_content, encoding="utf-8", newline="")
         files_created.append("spec.md")
 
         # Extract and write plan
         plan_text = extract_plan(spec_content)
         plan_path = target_dir / "plan.md"
-        plan_path.write_text(plan_text, encoding="utf-8")
+        plan_path.write_text(plan_text, encoding="utf-8", newline="")
         files_created.append("plan.md")
 
         # Extract and write tasks
         tasks_text = extract_tasks(spec_content)
         tasks_path = target_dir / "tasks.md"
-        tasks_path.write_text(tasks_text, encoding="utf-8")
+        tasks_path.write_text(tasks_text, encoding="utf-8", newline="")
         files_created.append("tasks.md")
     else:
         # Write template files
@@ -515,13 +526,13 @@ def init_spec_dir(
             "\n"
             f"{_CUI_HEADER}\n"
         )
-        (target_dir / "spec.md").write_text(spec_template, encoding="utf-8")
+        (target_dir / "spec.md").write_text(spec_template, encoding="utf-8", newline="")
         files_created.append("spec.md")
 
         plan_template = (
             f"{_CUI_HEADER}\n# Plan: {title}\n\n## Phases\n### Phase 1: Foundation\n- TODO\n\n{_CUI_HEADER}\n"
         )
-        (target_dir / "plan.md").write_text(plan_template, encoding="utf-8")
+        (target_dir / "plan.md").write_text(plan_template, encoding="utf-8", newline="")
         files_created.append("plan.md")
 
         tasks_template = (
@@ -537,7 +548,7 @@ def init_spec_dir(
             "\n"
             f"{_CUI_HEADER}\n"
         )
-        (target_dir / "tasks.md").write_text(tasks_template, encoding="utf-8")
+        (target_dir / "tasks.md").write_text(tasks_template, encoding="utf-8", newline="")
         files_created.append("tasks.md")
 
     if _HAS_AUDIT:
@@ -819,7 +830,7 @@ def update_checklist(spec_dir: Path, check_results: dict) -> Path:
     lines.append(_CUI_HEADER)
 
     out_path = spec_dir / "checklist.md"
-    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
     return out_path
 
 
@@ -870,7 +881,7 @@ def update_constitution_check(spec_dir: Path, validation_results: dict) -> Path:
     lines.append(_CUI_HEADER)
 
     out_path = spec_dir / "constitution_check.md"
-    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
     return out_path
 
 

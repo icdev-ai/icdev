@@ -1,5 +1,4 @@
 
-from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Automated runbook execution for ICDEV™ SRE module.
 
@@ -21,6 +20,8 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 import yaml  # noqa: E402
 

@@ -22,12 +22,9 @@ import argparse
 import json
 import os
 import sys
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.govcon.question_exporter")
 
 # =========================================================================
 # PATH SETUP
@@ -35,6 +32,10 @@ logger = get_logger("icdev.govcon.question_exporter")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.govcon.question_exporter")
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
@@ -369,7 +370,7 @@ def export_questions(opp_id, status_filter=None, output_path=None, company_name=
             if not str(out).startswith(str(safe_base.resolve())):
                 return {"status": "error", "message": "Invalid output path"}
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(html, encoding="utf-8")
+            out.write_text(html, encoding="utf-8", newline="")
             _audit(conn, "questions_exported", f"opp={opp_id}, count={len(questions)}, path={output_path}")
             conn.commit()
             return {

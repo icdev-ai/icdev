@@ -125,28 +125,19 @@ def main():
     LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     def _lock_owner_alive() -> int:
-        """Return the PID of a live owner, or 0 if lockfile is stale/missing/us."""
-        import os
-        try:
-            owner_pid = int(LOCK_PATH.read_text(encoding="utf-8").strip())
-        except Exception:
-            return 0
-        if owner_pid == os.getpid():
-            return 0
-        try:
-            import psutil as _ps
-            if _ps.pid_exists(owner_pid):
-                p = _ps.Process(owner_pid)
-                if "kanban_scheduler" in " ".join(p.cmdline()):
-                    return owner_pid
-        except Exception:
-            pass
-        return 0
+        """Return the PID of a live owner, or 0 if lockfile is stale/missing/us.
+
+        Delegates to ``scheduler_control.scheduler_lock_owner_pid`` — the startup
+        recovery sweep asks the same question, and two copies of "who owns the
+        runner" is exactly the kind of drift that lets one of them say nobody.
+        """
+        from tools.kanban.scheduler_control import scheduler_lock_owner_pid
+        return scheduler_lock_owner_pid()
 
     def _take_lock() -> bool:
         import os
         try:
-            LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+            LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8", newline="")
             return True
         except Exception:
             return False
@@ -236,70 +227,33 @@ def main():
     dummy_trust = None
 
     # -- STARTUP RECOVERY: reset orphaned in_progress tasks ----------
-    # Power outage or daemon restart leaves tasks stuck in in_progress.
-    # Reset them to backlog WITHOUT incrementing failure_count -- an
-    # interruption is not a task failure and must not trigger decomposition.
-    # Git commits on kanban/{task_id} branches are preserved on disk;
-    # _write_prompt_file will include a "Resume Context" section so Claude
-    # picks up exactly where it left off.
+    # Power outage or daemon restart leaves tasks stuck in in_progress, and an
+    # orphaned row is invisible to every promotion path -- so the reset stays.
+    #
+    # What it no longer does is reset a task something is STILL WORKING. This
+    # block used to reset every non-gate in_progress row unconditionally, which
+    # made restarting the daemon a decision with a cost: a task that had not yet
+    # committed lost whatever its session had done. On 2026-08-08 a needed
+    # restart was deferred for exactly that reason and ~30 commits of reflex
+    # fixes sat undeployed. tools/kanban/startup_recovery.py holds the reset for
+    # any task with provable liveness and reports, per reset task, whether its
+    # commits survive on kanban/<id> or its work is being discarded.
+    #
+    # --once runs it too, but respect_foreign_owner is what keeps a one-shot or
+    # Task Scheduler invocation from wiping the live daemon's board: the lock
+    # check above is skipped for --once, this one is not.
     try:
-        from tools.db.storage import get_connection
-        from datetime import datetime, timezone
+        from tools.kanban.startup_recovery import recover_interrupted_tasks
 
-        conn = get_connection()
-        stuck_ids: list[tuple[str, str | None]] = []
-        try:
-            stuck = conn.execute(
-                "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
-            ).fetchall()
-            if stuck:
-                now_iso = datetime.now(timezone.utc).isoformat()
-                # A MANUAL-MODE GATE (prem-gate-00 et al.) is held in_progress
-                # FOREVER by design — it is not an "interrupted task", it is the
-                # thing stopping its dependents from auto-dispatching. Resetting it
-                # to backlog on every scheduler restart released the work it was
-                # holding. The reflex's own startup recovery already exempts gates
-                # (PR #241); this SECOND, independent recovery in the scheduler
-                # entrypoint did not, so the gate died on every restart anyway.
-                stuck_ids = [
-                    (dict(r)["id"], dict(r).get("title")) for r in stuck
-                    if not _is_manual_gate(dict(r)["id"], dict(r).get("title"))
-                ]
-                # Individual UPDATE per interrupted task -- no failure penalty.
-                # One query per ID avoids dynamic IN-clause string construction.
-                for tid, _ in stuck_ids:
-                    conn.execute(
-                        "UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "
-                        "WHERE id = %s AND status = 'in_progress'",
-                        [now_iso, tid],
-                    )
-                conn.commit()
-                logger.info(
-                    "Startup recovery: reset %d interrupted task(s) to backlog "
-                    "(failure_count unchanged -- interruption is not a failure): %s",
-                    len(stuck_ids),
-                    ", ".join(tid for tid, _ in stuck_ids),
-                )
-        finally:
-            conn.close()
-
-        # Fire Telegram for each interrupted task (best-effort, outside DB conn).
-        for tid, title in stuck_ids:
-            display = (title or tid)[:60]
-            try:
-                from tools.notifications.adapters.telegram import send as tg_send
-                tg_send(
-                    f"RESTARTED: {display}",
-                    (
-                        f"Task '{display}' ({tid}) was interrupted (power outage or "
-                        "daemon restart). Reset to backlog for re-dispatch. "
-                        "failure_count was NOT changed. Any git commits on the task "
-                        "branch are preserved -- Claude will resume from them."
-                    ),
-                    severity="info",
-                )
-            except Exception as _tg_exc:
-                logger.debug("startup-recovery Telegram send failed: %s", _tg_exc)
+        _recovery = recover_interrupted_tasks()
+        if _recovery["sweep_skipped"]:
+            logger.info("Startup recovery: skipped -- %s", _recovery["reason"])
+        else:
+            logger.info(
+                "Startup recovery: %d in_progress, %d reset, %d held "
+                "(failure_count unchanged -- interruption is not a failure)",
+                _recovery["swept"], len(_recovery["reset"]), len(_recovery["held"]),
+            )
     except Exception as exc:
         logger.warning("Startup recovery failed: %s", str(exc).encode("ascii", errors="replace").decode("ascii"))
 
@@ -395,7 +349,7 @@ def main():
         try:
             heartbeat_path.write_text(
                 f"{cycle}\n{time.time()}\n",
-                encoding="utf-8",
+                encoding="utf-8", newline="",
             )
         except Exception as exc:
             logger.debug("heartbeat write failed: %s", exc)

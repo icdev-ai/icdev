@@ -12,7 +12,6 @@ Implements the contract documented in
 clean-room rewrite).
 """
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import json
 import os
@@ -23,16 +22,18 @@ from typing import Optional
 
 import yaml
 
-from tools.testing.data_types import (
-    AgentPromptRequest,
-    AgentPromptResponse,
-    AgentTemplateRequest,
-)
 
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.testing.data_types import (
+    AgentPromptRequest,
+    AgentPromptResponse,
+    AgentTemplateRequest,
+)  # noqa: E402
 
 _module_logger = get_logger(__name__)
 
@@ -306,7 +307,7 @@ def execute_template(request: AgentTemplateRequest) -> AgentPromptResponse:
     agent_dir = _ensure_agent_dir(request.run_id, request.agent_name)
     prompt_file = agent_dir / "prompts" / f"{_safe_filename(request.slash_command)}.txt"
     try:
-        prompt_file.write_text(prompt, encoding="utf-8")
+        prompt_file.write_text(prompt, encoding="utf-8", newline="")
     except OSError as exc:
         _module_logger.warning(
             "agent: could not persist prompt file %s: %s", prompt_file, exc

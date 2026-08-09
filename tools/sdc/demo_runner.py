@@ -22,13 +22,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.sdc.demo_runner")
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.sdc.demo_runner")
 
 _CANVAS_DB = _ROOT / "data" / "security_canvas.db"
 
@@ -545,7 +546,7 @@ def main() -> None:
 
     body = json.dumps(result, indent=2, default=str)
     if args.output:
-        Path(args.output).write_text(body, encoding="utf-8")
+        Path(args.output).write_text(body, encoding="utf-8", newline="")
         print(f"Written to {args.output}")
     else:
         print(body)

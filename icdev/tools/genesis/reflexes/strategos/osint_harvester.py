@@ -12,7 +12,6 @@ Config: args/strategos_config.yaml (osint section).
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import io
@@ -32,6 +31,8 @@ from typing import Any, Dict, List, Optional, Tuple
 BASE_DIR = Path(__file__).resolve().parents[4]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection, is_pg  # noqa: E402
 from tools.strategos.tier_resolver import (  # noqa: E402
