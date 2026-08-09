@@ -18,8 +18,15 @@
 # offers the WORKTREE toolset (tools/genesis/rubric_build_tools.py) rather than
 # the discovery registry — so the `worktree_*` bundles below are the ones an
 # agent node can actually be handed. Naming a registry bundle in an agent step
-# is not an error; those tools are reported as unavailable until hgx-agent-02
-# lands the `agent_workflow_tools` gate that authorizes them.
+# is not an error; those tools are reported as unavailable.
+#
+# A bundle is not an authorization. What a step DECLARES here is intersected with
+# what the caller MAY USE, which is decided by the `agent_workflow_tools` section
+# of args/security_gates.yaml (gate AGENT-WF-001, hgx-agent-02): default-deny,
+# per-tool `min_il` / `required_roles`, and an approved human gate in the same run
+# before anything mutating. So adding a tool to a bundle here grants the
+# CAPABILITY, never the ACCESS — `run_command` is in the `terminal` bundle below
+# and is still refused to an IL4 caller.
 #
 # This is DATA, not code — add or retune a bundle here without touching Python.
 

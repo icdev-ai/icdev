@@ -153,12 +153,34 @@ A step with `node_type: agent` and no `prompt` is skipped rather than run.
 `args/agent_toolsets.yaml`, and the offered toolset is the worktree toolset
 (`tools/genesis/rubric_build_tools.py` — every path resolved and
 traversal-guarded inside `work_dir`) **intersected** with what those bundles
-name.  A step that declares no bundle is refused, not handed every tool.  Every
-call then passes the reversibility gate in
+name.  A step that declares no bundle is refused, not handed every tool.
+
+**A bundle is not an authorization.**  What the step *declares* is then narrowed
+by gate `AGENT-WF-001` (`tools/studio/executors/agent_tool_gate.py`), whose
+policy is the `agent_workflow_tools` section of `args/security_gates.yaml`:
+`default: deny`, six read-only tools callable unattended, `write_file` /
+`patch_file` / `run_command` callable only behind an **approved human gate in the
+same run**, and a per-tool `min_il` / `required_roles` the caller must meet
+(`run_command` is held at IL5, so an IL4 run is never handed it).  It is enforced
+twice — an unauthorized tool is withheld before the model is told about it, and
+every call is re-checked before its handler runs.  Withheld tools are named in
+the step's `tools_refused`; a step whose every tool is withheld fails rather than
+running with an empty toolbox.  Every decision is audited append-only to
+`studio_mcp_dispatch_audit`, the same table `node_type: mcp` steps write to.
+
+A template **cannot** declare its own `caller_il` / `caller_roles`.  A template is
+authored content, so letting a step name its own impact level would let it raise
+itself past those limits; the caller comes from the run's context instead (run
+memory's `caller` key, then `$ICDEV_MCP_CALLER_IL` / `$ICDEV_IMPACT_LEVEL` /
+`$ICDEV_MCP_CALLER_ROLES`, then the IL4 baseline).
+
+Every authorized call then passes the reversibility gate in
 `tools/agent_runtime/approval_gate.py`, whose tiers live in
 `args/agent_approval_policy.yaml` and whose decisions are audited append-only —
 the default approver denies on EOF, so an unattended run fails closed on
-anything the policy calls irreversible or unknown.
+anything the policy calls irreversible or unknown.  The two gates answer
+different questions (*may this caller use this tool* versus *is this call
+recoverable*) and a call must clear both.
 
 **A provider that cannot do native tool use degrades the step, it does not fail
 the run.**  The CLI-bridge provider flattens tools to text, and some local models

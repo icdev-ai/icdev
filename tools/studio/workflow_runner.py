@@ -139,6 +139,10 @@ _AGENT_STEP_FLAGS = (
     ("effort", "--effort"),
     ("approval_mode", "--approval-mode"),
 )
+# Deliberately NOT here: the executor's --caller-il / --caller-roles. A template
+# is authored content, so letting a step declare its own impact level would let
+# it raise itself past AGENT-WF-001's per-tool limits. The caller comes from the
+# run's context (run memory's `caller` key, then the environment) instead.
 
 
 # ── DAG helpers ────────────────────────────────────────────

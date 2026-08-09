@@ -345,6 +345,37 @@ recommend whether to enable reasoned codegen.
   - All routes are behind `pc_login_required` / `pc_role_required`; collab identity is server-derived, never body-supplied.
 - **Revisit if:** any pipeline content is ever passed to a shell command, compiled/executed, or rendered outside Jinja2 auto-escape → re-decide as **sandboxed**.
 
+### Gap 18 — SBOM dependency resolution (`tools/compliance/dependency_resolver.py`)
+
+**Modules:** `tools/compliance/dependency_resolver.py` (mirrored at `icdev/tools/compliance/dependency_resolver.py`), consumed by `tools/compliance/sbom_generator.py`
+
+**Ingress path:** To satisfy the SBOM 2026 **Coverage** element (all transitive dependencies, no minimum depth — sbx-cov-01), the resolver reads a target project's **lockfiles and installed package metadata** from `projects.directory_path`: `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `*.dist-info/METADATA`, `package-lock.json`, `yarn.lock` (v1 text and Berry YAML), `go.mod`, `go.sum`, `Cargo.lock`, `mvn dependency:list` output, `gradle.lockfile`, `obj/project.assets.json`, `packages.lock.json`. These files originate with whoever authored the target project, so they are **not** first-party content.
+
+- **Decision:** **bypass-documented** (parse-only; no execution path exists)
+- **Rationale:** The module parses and never evaluates. Its entire toolkit is `json.loads`, `tomllib`/`tomli` (a non-executing parser), `yaml.safe_load`, `re`, and `importlib.metadata.PathDistribution`. It contains **no** `subprocess`, `os.system`, `exec`, `eval`, `__import__`, or `pickle` — this is a deliberate design constraint, not an accident: resolution is **offline-first** precisely so it never shells out to `npm`, `mvn`, `gradle`, `go` or `dotnet`, which is what makes it usable in an air-gapped enclave and simultaneously removes the arbitrary-execution surface that invoking a package manager would create. `PathDistribution` reads `*.dist-info/METADATA` as text with `email.parser`; it does **not** import the distribution, so no third-party code in the target environment runs. Every parser is wrapped so a malformed or hostile lockfile degrades that ecosystem to `declared-only` with a stated reason rather than raising — a crafted file can suppress its own resolution, but suppression is *reported in the SBOM's coverage statement*, not silent.
+- **Guardrails:**
+  - `yaml.safe_load` only. `yaml.load` instantiates arbitrary Python objects and is banned here.
+  - Per-ecosystem resolution runs inside a `try/except` in `resolve_project`; an exception becomes an `incomplete` coverage entry naming the exception type, so a bad lockfile cannot abort SBOM generation or be mistaken for "this ecosystem has no dependencies".
+  - `tests/test_sbom_coverage_resolution.py::test_resolver_never_executes_what_it_parses` asserts the absence of every execution primitive in **both** the root copy and the `icdev/` mirror, so the bypass cannot silently lapse.
+  - `tests/test_sbom_coverage_resolution.py::test_a_corrupt_lockfile_degrades_rather_than_aborting_the_sbom` pins the fail-open-but-loud behaviour.
+- **Revisit if:** the resolver ever shells out to a package manager to obtain a resolved set (`mvn dependency:list`, `gradle dependencies`, `go list -m all`, `npm ls`, `dotnet restore`) — that would be a real execution path over attacker-influenced project content and must be re-decided as **sandboxed**; or if it gains a plugin/entry-point mechanism that imports code from the target environment rather than reading its metadata.
+
+### Gap 19 — SBOM author signature verification (`tools/compliance/sbom_signer.py`)
+
+**Modules:** `tools/compliance/sbom_signer.py` (mirrored at `icdev/tools/compliance/sbom_signer.py`), consumed by `tools/compliance/sbom_generator.py`
+
+**Ingress path:** Signing only ever reads an SBOM this tree just produced, so it is first-party. **Verification is not.** `verify_sbom` is the consumer-side entry point: it reads an SBOM document and a detached `<sbom>.sig.json` that arrive from whoever is claiming to have signed them, and the signature file contains a **PEM public key supplied by that same party**. The attacker-controlled surface is therefore two JSON documents plus a PEM blob handed to `cryptography`'s `load_pem_public_key`.
+
+- **Decision:** **bypass-documented** (parse-and-verify only; no execution path exists)
+- **Rationale:** The module parses and verifies; it never evaluates. Its whole toolkit is `json.loads`, `hashlib`, `pathlib`, and the `cryptography` library's PEM loader and signature verifier. It contains no `subprocess`, `os.system`, `exec`, `eval`, `__import__`, `pickle` or `yaml.load`, and — unlike every other signing path in the industry — **no network client at all**: no sigstore, no Fulcio, no Rekor, no OCSP, no CRL fetch. That absence is a requirement, not an accident, because air-gapped verification is one of the card's acceptance criteria; it also removes the entire SSRF / hostile-response surface that a transparency-log lookup would introduce. `load_pem_public_key` on hostile bytes is a parse in a memory-safe Rust/OpenSSL boundary that returns a key object or raises; it does not deserialize Python objects the way `pickle` or `yaml.load` would.
+- **Guardrails:**
+  - Every load is wrapped: a malformed SBOM, a malformed signature file, a corrupt PEM, or a bad base64 blob returns `verified: False` with a stated reason. `verify_sbom` is documented never to raise on bad input, so a hostile artifact cannot abort a gate by throwing.
+  - The algorithm is checked against a closed `APPROVED_ALGORITHMS` allowlist **before** any signature maths runs, so an attacker cannot select an algorithm the verifier merely happens to accept. HMAC-SHA256 is refused by name: it is a symmetric MAC, so anyone who can verify it can forge it.
+  - Verification is **fail-closed by omission** — an SBOM with no signature file reports `verified: False`, never "nothing to check, so fine".
+  - Integrity and authenticity are reported as two fields (`verified`, `trusted`), never one. The embedded public key can only establish that the document matches *some* signature; `trusted` is `True` only when the caller pinned a fingerprint obtained out of band. `tests/test_sbom_author_signature.py::test_a_tampered_sbom_resigned_by_another_key_fails_a_pinned_fingerprint` pins that distinction so it cannot be "simplified" away.
+  - `tests/test_sbom_author_signature.py::test_the_signer_has_no_network_import` asserts the absence of every network and subprocess import in **both** the root copy and the `icdev/` mirror, so the offline property cannot silently lapse.
+- **Revisit if:** the signer gains a transparency-log, OCSP, CRL, KMS or HSM-over-network lookup — that is a real network path over attacker-influenced material and must be re-decided; or if it ever accepts a key *path*, key *identifier* or algorithm name from the signature file and resolves it (rather than only PEM bytes it validates), which would turn parsed content into a resource reference.
+
 ### Bypass — non-LLM code generators (template/scaffold emitters)
 
 These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM
@@ -482,6 +513,12 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 
 ### Gap 18 — Kanban Adversarial Verifier (`tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify`)
 - **File:** `tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify()`
+- **Where the subprocess actually starts:** since hgx-exec-03 both this verifier and the
+  primary build dispatch call `tools/agents/adapters/claude_cli.py`
+  (`ClaudeCliAdapter.invoke` / `.spawn`) rather than each building their own command
+  line. That module is the single review point for every property below — argv,
+  `shell=False`, the `.tmp/` prompt file and its deletion, and the environment handed to
+  the child.
 - **Risk:** Spawns a second Claude CLI subprocess (`claude --dangerously-skip-permissions
   --max-turns 10`) in the task worktree directory to adversarially review completed work.
   The subprocess receives a reviewer prompt via stdin piped from a `.tmp/` temp file and
@@ -794,7 +831,9 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 
 **Module:** `apps/forge_academy/code_runner.py` (`run_code()`)
 
-**Ingress path:** An authenticated FORGE Academy learner submits arbitrary Python source (their lesson solution, plus an optional test harness) via `POST /api/academy/code/run` (`apps/forge_academy/blueprint.py`). The strings are written to a script in a fresh `TemporaryDirectory` and executed with `subprocess.run([sys.executable, ...])`. This is by design a **code-execution ingress** — the whole point of the feature is to run learner-authored Python.
+**Ingress path:** An authenticated FORGE Academy learner submits arbitrary Python source (their lesson solution) via `POST /api/academy/code/run` or `POST /api/academy/step/submit` (`apps/forge_academy/blueprint.py`). It is concatenated with the step's test harness, written to a script in a fresh `TemporaryDirectory` and executed with `subprocess.run([sys.executable, ...])`. This is by design a **code-execution ingress** — the whole point of the feature is to run learner-authored Python.
+
+**Narrowed by aca-int-02 (2026-07-30).** The request used to carry `test_code` as well, which `mission.html` helpfully posted back from the step payload — so the party being graded supplied half the executed program. Both routes now take a **`step_id`** and load the harness server-side from `fa_mission_steps.test_code_path` via `grading.run_step_code()` / `grading.grade_step()`; `grade_step` has no `test_code` parameter for a caller to pass, and `grading.client_safe_steps()` strips `test_code`/`test_code_path` from the page payload. The learner-controlled share of the executed script is therefore now **only their own solution body**, and the harness is a first-party authored asset under `apps/forge_academy/content/`. That is a strict reduction in attacker-controlled input to the sandbox; the decision and every guardrail below are unchanged.
 
 - **Decision:** **sandboxed** (in-process hardening — AST allowlist gate + scrubbed env + isolated cwd + interpreter isolation + timeout + POSIX resource caps)
 - **Rationale:** The platform `SandboxExecutor` (`tools/security/sandbox_executor.py`, D-SEC-10) requires a Docker/K8s/Podman runtime and adds ~5–15× latency; it is not present on Windows dev hosts and is a poor fit for this **interactive, per-keystroke-grade** hot path where fast feedback is essential. In-process hardening is therefore the pragmatic route (the doc's `sandboxed-on-demand` convention still applies — an operator running `ICDEV_STRICT_SANDBOX=1` at IL5 should route this path through `SandboxExecutor`; wiring that is deferred). The prior gate was a **bypassable denylist substring check** (`_BLOCKED_PATTERNS`) with an unused `_ALLOWED_IMPORTS` set. penta-aca-02 replaced it with a real allowlist and neutralised the three known escapes:
@@ -802,7 +841,7 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   2. `urllib.request` (and `socket`/`requests`/`httpx`/`aiohttp`) egress — rejected by the AST import allowlist. `urllib.parse` is the only permitted `urllib` submodule; bare `urllib` / `urllib.request` are refused.
   3. `open('/etc/passwd')` — the AST gate rejects `open`/`os.open`/`io.open`/`os.fdopen` calls whose first **literal** argument is an absolute path, a Windows drive/UNC path, or a `..` traversal path. Relative opens inside the isolated cwd remain allowed for legitimate lesson file I/O.
 - **Guardrails:**
-  - **AST allowlist gate** (`_check_code_safety`) parses the *combined* learner code **and** any supplied `test_code`; rejects imports whose top-level module (or specific `urllib.parse`) is not in `_ALLOWED_IMPORTS`, dynamic-import/eval escapes (`__import__`, `importlib`, `eval`, `exec`, `compile`), process escapes (`os.system`/`os.popen`/`os.exec*`/`os.spawn*`/`os.startfile`/`os.fork`/`os.putenv`, `subprocess`), and absolute/traversal file opens. Unparseable code is allowed through the gate only because Python compiles the whole module before executing — a `SyntaxError` runs nothing.
+  - **AST allowlist gate** (`_check_code_safety`) parses the *combined* learner code **and** the server-loaded `test_code` — note the consequence: a stored harness must itself satisfy the allowlist, and six that did not were permanently uncompletable until aca-vv-01 rewrote them; rejects imports whose top-level module (or specific `urllib.parse`) is not in `_ALLOWED_IMPORTS`, dynamic-import/eval escapes (`__import__`, `importlib`, `eval`, `exec`, `compile`), process escapes (`os.system`/`os.popen`/`os.exec*`/`os.spawn*`/`os.startfile`/`os.fork`/`os.putenv`, `subprocess`), and absolute/traversal file opens. Unparseable code is allowed through the gate only because Python compiles the whole module before executing — a `SyntaxError` runs nothing.
   - **Scrubbed environment** — `_build_scrubbed_env()` passes only a fixed non-secret allowlist of OS vars; secrets are never inherited.
   - **Isolated cwd** — execution happens in a per-call `TemporaryDirectory` removed after the run.
   - **Interpreter isolation** — `python -I -X utf8` ignores ambient `PYTHONPATH` / user site / cwd modules and forces UTF-8 I/O.
@@ -984,3 +1023,474 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - **Loud degradation** — when no browser is present or policy forbids debugging, the transport refuses with an actionable error (naming the searched families / the tier), rather than binding something or stalling on a timeout.
 - **Residual risk (accepted, stated plainly):** on a multi-user host, a co-resident local process could, within the session's short lifetime, connect to the ephemeral loopback port and drive the throwaway profile. The mitigation is that the profile holds nothing worth stealing and the port is short-lived and unpredictable; `--remote-debugging-pipe` (fd-based, no TCP listener at all) is the documented future hardening that removes the port entirely.
 - **Revisit if:** the listener is ever bound to a routable address, the debug port is made fixed/predictable or long-lived, a persistent (non-temp) profile is used for a debugging session, or CDP is exposed to a caller as anything other than an internal transport beneath `GuardedDriver`.
+
+### Gap 41 — Generic MCP tool executor for workflow steps (`tools/studio/executors/mcp_executor.py`)
+
+**Module:** `tools/studio/executors/mcp_executor.py` (+ `icdev/` mirror) — dispatches any entry of `tools/mcp/tool_registry.py::TOOL_REGISTRY` as a Studio workflow step, so 455 registered tools become reachable without a hand-written executor each (card `dwo-`, task dwo-mcp-01).
+
+**Ingress path:** A workflow step supplies two strings — `--tool <name>` and `--params '<json>'` — that originate from a Studio workflow template or the DAG editor, i.e. from an **authenticated Studio author**, not from an anonymous request or an ingested document. The executor then `importlib.import_module()`s a module path and `getattr()`s a handler, and calls it with the parsed params.
+
+- **Decision:** **trusted-first-party** (import target). Authorization of *which* tools a step may call is the default-deny allowlist landed by dwo-mcp-02-d1/d2; *which caller* may call them is the IL/RBAC check landed by dwo-mcp-02-d3.
+- **Rationale:** The security-relevant property is that **no user-supplied string ever reaches `importlib`**. `--tool` is used only as a dictionary key into `TOOL_REGISTRY`; a miss raises `LookupError` and exits 1. The `module`/`handler` strings actually passed to `importlib.import_module()`/`getattr()` come exclusively from that repo-authored registry, so the reachable import set is a fixed, committed allowlist of 455 entries — not an open namespace. This is the identical resolution path `tools/mcp/unified_server.py::_resolve_handler` already uses for the same registry; this executor adds no import capability that the MCP gateway did not already expose. Params are `json.loads`-parsed only (never `eval`), and are schema-checked before dispatch. There is no `exec`, no `subprocess`, and no shell.
+- **Guardrails:**
+  - **Registry-keyed dispatch** — `resolve_entry()` refuses anything not in `TOOL_REGISTRY`; MCP *resources* are refused explicitly rather than silently dispatched.
+  - **Schema gate before dispatch** — params are validated against the entry's own `input_schema` (`jsonschema.Draft7Validator`) and the handler is **not called** if validation fails; `test_run_rejects_invalid_params_before_dispatch` asserts non-invocation.
+  - **Object-only params** — `parse_params()` refuses non-JSON and refuses any JSON that is not an object, so a handler always receives a `dict`.
+  - **Fails the step, never launders the error** — an unknown tool, invalid params, an unimportable handler, or a raising handler all exit 1, so `workflow_runner` marks the step failed. This deliberately diverges from the MCP protocol layer, which returns a handler exception as a *successful* call with `{"error": ...}` in the payload.
+  - **Default-deny allowlist before lookup** — `check_tool_allowed()` refuses any tool absent from `mcp_workflow_tools.allowed` (gate MCP-WF-001) *before* the registry is touched, so a refused tool is never imported. A missing or non-default-deny policy refuses everything.
+  - **Caller IL/RBAC before dispatch** — `check_caller_authorized()` refuses a caller below the tool's `min_il` or missing a required role, reading both from `args/component_registry.yaml` via the component that owns the handler's module. Runs after lookup (it needs the module) but before params and dispatch; `test_run_refuses_before_the_handler_is_called` asserts non-invocation.
+  - **Regression test** — `tests/studio/test_mcp_executor.py` (39 tests) covers registry lookup, resource rejection, each validation failure mode, handler-exception propagation, the allowlist gate, and the CLI exit-code contract; `tests/studio/test_mcp_executor_rbac.py` (34 tests) covers caller resolution and the IL/role refusals.
+- **Revisit if:** the tool name or module path ever becomes derivable from tenant/end-user content rather than an authenticated template author; the registry lookup is relaxed to accept an arbitrary dotted module path; or the `mcp_workflow_tools` allowlist is removed or made default-allow → re-decide as **sandboxed** (`tools/security/sandbox_executor.py`).
+
+### Gap 42 — SAML ACS response parsing (`tools/auth/saml.py`)
+
+**Module:** `tools/auth/saml.py` (`process_acs_response()`, + `icdev/` mirror); ingress at `tools/auth/blueprint.py` route `POST /auth/saml/<provider_id>/acs` (task aca-hyg-06-d2).
+
+**Ingress path:** An identity provider (or anyone who can reach the ACS route) POSTs a base64-encoded `SAMLResponse` form field. `process_acs_response()` base64-decodes it and parses the resulting XML to extract `NameID` and `Attribute` values, which are then persisted to `sso_sessions`. This is **unauthenticated, remote-attacker-reachable XML** — the ACS endpoint must accept the POST before any session exists.
+
+- **Decision:** **bypass-documented** (hardened parser, no code-execution surface)
+- **Rationale:** Parsing goes through `defusedxml.ElementTree.fromstring` (already a project dependency, `defusedxml>=0.7` in both `requirements.txt` and `pyproject.toml`), which forbids internal entity expansion (billion-laughs DoS), external entity resolution (XXE / local file disclosure), and external DTD retrieval (SSRF). Previously this call site used stdlib `xml.etree.ElementTree.fromstring`, which permits internal entity expansion — Bandit B314. The stdlib `ET` import is retained *only* to BUILD the XML this module emits (`register_namespace`, `Element`, `SubElement`, `tostring` in `generate_sp_metadata`/`initiate_saml_login`) and is marked `# nosec B405` accordingly; no untrusted bytes reach it. Extraction is read-only tree traversal (`find`/`findall`) into parameterized SQL — no `eval()`, `exec()`, `subprocess`, or filesystem writes.
+- **Guardrails:**
+  - `defusedxml.ElementTree.fromstring` for all untrusted parsing; stdlib `ET` is construction-only.
+  - Both `ET.ParseError` (malformed XML) and `ValueError` (defusedxml's `EntitiesForbidden` / `DTDForbidden` / `ExternalReferenceForbidden`, which subclass `ValueError`) are caught and re-raised as a uniform `ValueError("Invalid SAMLResponse XML")`, so the parser's internals are never echoed to the caller.
+  - `tools/auth/blueprint.py::acs` catches that `ValueError` and returns HTTP 400 — a hostile payload is rejected without creating a session.
+  - Invalid base64 is rejected before the parser runs.
+  - `tests/test_ecr_sso.py` covers metadata parsing and benign ACS round-trips (16 tests).
+- **Revisit if:** parsing moves back to stdlib `xml.etree`/`minidom`/`lxml` without `resolve_entities=False`, the module starts resolving external references from assertion content, or a signature-verification path is added that shells out to an external XMLSec binary.
+- **Scope of this entry:** this decision covers the **parser's** attack surface only (entity expansion, external references, malformed input). SAML *protocol trust* — assertion signature verification and condition/audience validation — is a separate concern reviewed and tracked outside this document.
+
+### Gap 43 — Reproduce-or-drop finding replay (`tools/security/reproduction_validator.py`)
+
+**Module:** `tools/security/reproduction_validator.py` (oss-poc-01).
+
+**Ingress path:** Two, both untrusted by construction. (1) A *reproduction* — a JSON object carrying `steps[]` (method/path/headers/body) and a `predicate` — which may be authored by an LLM agent claiming a dynamic finding, not by a maintainer. (2) The *response* from the replayed target, which is by definition attacker-influenceable if the target is compromised. This module is unusual among ICDEV ingress points in that it deliberately issues outbound HTTP as its core function.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither ingress reaches an execution path. A reproduction is interpreted, never executed: `validate_reproduction()` rejects unknown `kind` values, and steps are consumed only as arguments to `session.request()` — there is no `exec`/`eval`/`subprocess`/`os.system`/deserialization-of-code anywhere in the module. Predicates are evaluated by `evaluate_predicate()`, a closed dispatch over six literal types (`PREDICATE_TYPES`); an unknown type returns `False` rather than falling through, so an unevaluable predicate can never confirm a finding. Response bodies are truncated to `replay.max_body_bytes`, matched with `re.search`/`in`, and stripped by `_redact()` before they leave the replay — only status, length and sha256 persist.
+- **Guardrails:**
+  - **Scope lock (the load-bearing control):** `is_target_allowed()` is default-deny against `target_allowlist` in `args/reproduction_policy.yaml` — loopback only out of the box. A non-allowlisted host returns `refused` with zero observations; **nothing is sent**. Widening is an explicit operator act (`ICDEV_REPRO_TARGET_ALLOWLIST`), and the intent is own-targets-only, never a third-party host. `tests/test_reproduction_validator.py::TestScopeLock` asserts the refusal and that an unparseable URL is not allowlisted.
+  - Retries are disabled per replay (`HTTPAdapter(max_retries=0)`) so a reproduction is exactly-once; redirects are not followed unless a step opts in (a 302 to a login page *is* the authz signal).
+  - Proxies are cleared and `trust_env` disabled for loopback targets, so an operator-configured egress proxy cannot answer in place of the target.
+  - `replay.max_steps` (8) bounds a reproduction to session-setup-then-access; it is not a crawler.
+  - `TestEvidenceHygiene` asserts no response body — and specifically no seeded secret marker — survives into an observation, which matters because ICDEV is a public repo and these rows are read by dashboards.
+- **Revisit if:** a non-loopback host is added to the shipped allowlist; a reproduction `kind` is added whose replay executes rather than interprets its steps (a registered `_TRACE_REPLAYER` driving a real browser is the likely candidate — that engine must land its own decision); or `_redact()` is relaxed to retain bodies.
+
+### Gap 44 — Swallowed-persistence detector and codemod (`tools/refactor/swallowed_persistence.py`, `fix_swallowed_persistence.py`)
+
+**Modules:** `tools/refactor/swallowed_persistence.py`, `tools/refactor/fix_swallowed_persistence.py` (swp-swallow-01).
+
+**Ingress path:** Repository Python source. The detector reads every `*.py` under the paths it is given, decodes it, and parses it with `ast.parse`. The fixer additionally **writes** rewritten source back to those same files. The content is first-party — it is the checkout the tool is running inside — but the fixer is a maintainer-invoked codemod with write access to the tree, so it is listed here rather than left implicit.
+
+- **Decision:** **trusted-first-party**
+- **Rationale:** Source is parsed, never executed. Neither module contains `exec`, `eval`, `compile`, `subprocess`, `os.system`, `importlib`, or any deserialization of the files it reads — `ast.parse` builds a tree and the tools walk it. Nothing read from a scanned file is interpolated into SQL, a shell command, or a path: the only value taken from file *content* is the table name in the log message, and that comes from a `[A-Za-z_][\w.]*` capture group written into a Python string literal. Output paths are always the input path — the fixer rewrites in place and never derives a destination from file content.
+- **Guardrails:**
+  - The fixer re-parses its own output (`ast.parse(new_src)`) before writing and raises rather than emitting a file it just broke; a file whose module logger did not land at module level is refused.
+  - Write is opt-in: `--dry-run` is the default posture and `--write` must be passed explicitly; `run(paths, write=False)` produces the same report with no filesystem effect.
+  - A per-file exception is caught, recorded in `errors[]`, and the sweep continues — one malformed file cannot abort or half-apply the run. The process exits non-zero when `errors` is non-empty.
+  - Scanning excludes `migrations/`, `tests/`, `.tmp/`, `node_modules/`, `__pycache__/`, and the three self-referential modules, so the tool cannot rewrite its own detector or the gate that consumes it.
+  - Line endings and file encoding are preserved (`read_source` normalises to LF for parsing and restores the original newline on write).
+  - `tests/test_coherence_swallowed_persistence.py` pins the detector in both directions and asserts the real tree is clean.
+- **Revisit if:** the fixer gains an LLM-authored rewrite path (source text becoming model output rather than a deterministic transform), starts writing to a path derived from file content, or is wired into an unattended reflex that runs `--write` without review.
+
+### Gap 45 — Observable dispatch fan-out (`tools/analyzers/dispatch.py`)
+
+**Module:** `tools/analyzers/dispatch.py` (anz-disp-01), exposed over MCP as `analyzer_dispatch` / `analyzer_capabilities`.
+
+**Ingress path:** Two. (1) The **observable value** — an IP, domain, URL, file hash, CVE id, vendor name, file path or free text supplied by a caller (a chat turn, an MCP client, an agent) and passed as an argument into first-party analyzer functions. (2) The **analyzer's return payload**, from which `extract_taxonomy()` reads `{predicate, level, value}` tags. Both are listed because dispatch is deliberately a *convergence point*: one entry point now carries caller-controlled content into ~79 analyzer-shaped modules.
+
+- **Decision:** **trusted-first-party** (the dispatcher itself); each analyzer keeps its own declared posture.
+- **Rationale:** The dispatcher interprets, never executes. It contains no `exec`/`eval`/`compile`/`subprocess`/`os.system` and no deserialization; the observable value is only ever bound to a keyword argument of a declared callable. Critically, **the caller cannot steer the import**: `resolve_entrypoint()` takes its dotted `module`/`entrypoint` from `args/analyzer_contract.yaml` — first-party and code-reviewed — and `dispatch()` accepts an *observable type* from a closed vocabulary, never a module path. An unknown type raises `UnknownObservableType` rather than resolving anything. Taxonomy tags are validated against the declaration, and the namespace is stamped from the declaration rather than read from the payload, so an analyzer cannot label its output as another subsystem's.
+- **Guardrails:**
+  - `sandbox:` is declared per analyzer in the contract and defaults to the strictest posture (`sandboxed`) for anything that declares nothing. Dispatch surfaces that posture through `analyzer_capabilities`; **enforcement lands in `anz-rate-01`** via the existing `sandbox_execute` path, not a second isolation mechanism.
+  - Responders (`kind: responder`) — which take real-world action, e.g. RTBH blackholing a prefix — are excluded from the default fan-out and require an explicit `include_responders`. Submitting an IP for analysis cannot trigger one.
+  - Every analyzer runs under its declared `timeout_seconds` on a bounded process-wide pool (`ICDEV_ANALYZER_MAX_WORKERS`, default 8), so a hostile or hanging input cannot exhaust threads or stall the caller; a timed-out future is abandoned, not joined.
+  - An analyzer that raises is contained: `_run_one()` catches per analyzer and returns an `error` report, so one bad input cannot abort the fan-out or leak a stack trace to the caller as an unhandled exception.
+  - Nothing is dropped silently — `timeout`, `error`, `unavailable`, `misdeclared` and `skipped` are all reported by name and set `partial`, so a caller cannot mistake "the analyzer never answered" for "the analyzer found nothing".
+  - `tests/test_analyzer_dispatch.py` pins the timeout, error-containment, responder-exclusion and taxonomy-validation behaviours.
+- **Revisit if:** an analyzer is declared whose entrypoint shells out or executes the observable (at that point the declaration must be `sandboxed` and `anz-rate-01`'s enforcement is a prerequisite, not a follow-up); or `dispatch()` ever accepts a module path, callable, or contract file from a caller rather than from `args/analyzer_contract.yaml`.
+
+### Gap 46 — Agent approval gate: reversibility classification of tool calls (`tools/agent_runtime/approval_gate.py`)
+
+**Module:** `tools/agent_runtime/approval_gate.py` (ars-appr-01).
+
+**Ingress path:** Two, and the first is genuinely untrusted. (1) The **tool input of every agent tool call** — an arbitrary dict authored by an LLM, flattened to a string and matched against the policy's regexes. This module sees every tool in the platform, so it sees every model-authored argument. (2) `args/agent_approval_policy.yaml`, a first-party config that supplies the regex patterns and the tier lists.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither ingress reaches an execution path. Tool input is *read about*, never run: `flatten_input()` builds a string, `re.search` matches it, and `hashlib.sha256` digests it — there is no `exec`/`eval`/`compile`/`subprocess`/`os.system`/`pickle`/`importlib` anywhere in the module, and the gate never invokes the tool it is classifying. It returns a verdict; the *caller* decides whether to run the handler. The policy file is parsed with `yaml.safe_load` (never `yaml.load`), and its patterns are compiled with `re.compile` inside a `try` that logs and skips a bad pattern rather than raising. Classification is a pure function of (tool name, flattened input, policy).
+- **Guardrails:**
+  - **Fail-closed by construction (the load-bearing control):** `default_tier` is `unknown` and `unknown` is in `require_approval_tiers`, so a tool must be *named* in the policy to run unattended. An unreadable, malformed, or missing policy file falls back to `_FALLBACK_POLICY`, which enumerates **zero** tools — every call then requires a human. A config failure cannot be the reason an irreversible action ran unattended.
+  - Content patterns are **asymmetric**: an `irreversible` pattern escalates any tool, but `recoverable`/`reversible` patterns apply only to the declared `command_tools`. Model-authored argument text therefore cannot *lower* a tool's tier — the reverse would let an LLM auto-approve itself by mentioning `mkdir`.
+  - Hard blocks are consulted first via `run_pre_tool_check` and are never escalated to the approver, so the gate cannot be used to talk past `.claude/hooks/pre_tool_use.py`.
+  - A raising approver is caught and **denies** (`test_a_broken_approver_denies`); `console_approver` denies on EOF, so a non-interactive run cannot silently self-approve.
+  - Argument **values never persist**. `agent_approval_log` stores argument key names and a SHA-256 of the flattened input only — model-authored input may carry CUI, and ICDEV is a public repo.
+  - `tests/test_agent_approval_gate.py` pins all of the above, including the regression that incidental argument text cannot downgrade `git_push`.
+- **Revisit if:** the gate gains a policy source that is not first-party (a tenant-supplied or LLM-authored policy would make the regexes untrusted input), a pattern language more expressive than `re` is adopted, or the module starts *executing* a remediation rather than returning a verdict.
+
+### Gap 47 — Semantic loop detection and transcript replay (`tools/llm/loop_detector.py`, `loop_detector_tune.py`)
+
+**Modules:** `tools/llm/loop_detector.py`, `tools/llm/loop_detector_tune.py` (ars-loop-01).
+
+**Ingress path:** Two. (1) The detector is handed every executed tool call's **arguments and result text** by `run_agent_loop` — result text is model- and environment-influenced, and for a tool that fetches remote content it is attacker-influenceable. (2) The tuner reads recorded agent transcripts (`*.jsonl` / `*.json`) from an operator-supplied path; those files contain the same untrusted tool output, persisted.
+
+- **Decision:** **trusted-first-party** (detector) / **bypass-documented** (tuner)
+- **Rationale:** Neither module interprets what it reads. The detector's entire contact with tool content is string comparison: `str.replace`, `re.sub` over three fixed patterns, `str.split`, `difflib.SequenceMatcher`, and set intersection. There is no `exec`/`eval`/`compile`, no `subprocess`, no `importlib`, no deserialization of content (`json.dumps` is used to *emit* a comparison key, never `json.loads` on tool output), no SQL, and no path derived from content — the only filesystem read is `args/llm_config.yaml` via the canonical `resolve_llm_config_path()`. The tuner adds `json.loads` per transcript line, which builds data, not code, and a per-file `try/except` so a malformed transcript is skipped rather than aborting the sweep.
+- **Guardrails:**
+  - Result text is sampled to `result_sample_chars` (400 head + tail) before comparison, so a multi-megabyte tool result cannot drive an unbounded comparison.
+  - Comparison windows are bounded by `window` (8 calls), making the O(n²) clustering trivially bounded regardless of transcript size.
+  - `load_detector_config()` catches every exception and falls back to `DEFAULT_CONFIG` — a malformed config file can neither crash a running agent nor silently disable the control with attacker-chosen thresholds.
+  - The detector is pure: it returns a verdict, and only `run_agent_loop` acts on it (ending the run). Content it reads never reaches a handler, a prompt, or a write.
+  - The tuner is operator-invoked, read-only, and writes nothing outside stdout.
+- **Revisit if:** the detector gains an LLM-based similarity judge (tool output would then become prompt content and needs the injection posture that applies to `tool_result_sanitizer`), or the tuner grows a `--fix`/`--write` mode that edits config from what it read.
+
+### Gap 48 — Ported analyzer declarations and posture enforcement (`args/analyzer_contract.yaml`)
+
+**Modules:** the six analyzer/responder declarations seeded into
+`args/analyzer_contract.yaml` (anz-con-01), dispatched through
+`tools/analyzers/dispatch.py` (anz-disp-01) and gated by
+`tools/analyzers/rate_limit.py` + `tools/analyzers/sandbox.py` (anz-rate-01).
+
+**Ingress path:** Gap 45 records the decision for the *dispatcher*. This gap
+records one decision per *ported analyzer*, as OPT-58 requires: dispatch is a
+convergence point that carries a caller-supplied observable (IP, domain, URL,
+file hash, CVE id, vendor name, file path, STIX bundle) into each declared
+entrypoint, so each entrypoint is its own ingress point and needs its own
+recorded trust decision rather than inheriting the dispatcher's.
+
+**Enforcement (new in anz-rate-01).** The `sandbox:` posture below is no longer
+advisory. `tools/analyzers/sandbox.py::resolve_execution_mode` turns it into an
+execution mode on every dispatch, and `_run_one` routes the call accordingly:
+
+- `sandboxed` → always executed through `SandboxExecutor`
+  (`tools/security/sandbox_executor.py`, D-SEC-10) — the same object behind the
+  `sandbox_execute` MCP tool. **No second isolation path was built.**
+- `sandboxed_on_demand` → in-process, promoted to `SandboxExecutor` when
+  `ICDEV_STRICT_SANDBOX=1` (IL5 / air-gap), matching this document's convention.
+- `trusted_first_party` / `bypass_documented` → in-process.
+- anything else → **sandboxed** (fail closed).
+
+If a posture requires the sandbox and the sandbox is disabled or has no
+container runtime, the analyzer is reported `sandbox_unavailable` and **is not
+run in-process**. Failing closed is the point: a silent downgrade would give
+the strictest declaration the weakest behaviour on exactly the hosts that
+cannot isolate it.
+
+| Analyzer (contract key) | Entrypoint | Decision | Rationale |
+|---|---|---|---|
+| `cve_triage` | `tools/supply_chain/cve_triager.py::triage_cve` | **trusted-first-party** | Scores a CVE id against the first-party dependency graph in `data/icdev.db`. No `exec`/`eval`/`subprocess`/`importlib`, no deserialization of the observable, no network egress — the CVE id is bound to a parameter and used in parameterised SQL. Blast radius is computed from first-party rows. |
+| `section_889_screen` | `tools/supply_chain/ndaa_889_screener.py::screen_item` | **trusted-first-party** | String-matches a vendor name against the repo-resident Section 889 Part A/B covered-entity lists. No execution primitives; the observable is compared, never interpreted. |
+| `threat_intel_match` | `tools/security_canvas/threat_intel_engine.py::match_observable` | **trusted-first-party** | Looks an observable up among already-ingested indicator rows. The untrusted step is *feed ingestion*, which is upstream of this analyzer and carries its own posture; matching is a parameterised read with no execution primitives. |
+| `secret_scan` | `tools/security/secret_detector.py::scan` | **sandboxed-on-demand** | The one seed analyzer that **executes an external process over caller-supplied input**: it shells out to `detect-secrets` via `subprocess.run` against a caller-supplied `file_path` / `repository`. Argument-list form (never `shell=True`) with a timeout, and the scanner only reads. Permissive in dev because the target is normally a local first-party checkout; under `ICDEV_STRICT_SANDBOX=1` dispatch routes it through `SandboxExecutor` so an attacker-supplied checkout is parsed inside the container boundary. |
+| `stix_ingest` | `tools/strategos/stix_importer.py::parse_bundle` | **sandboxed** | Parses a **wholly attacker-controllable** STIX 2.x bundle — the largest untrusted-content surface in the seed set. Declared `sandboxed`, and now enforced: dispatch will not call it in-process. Note the deployment prerequisite below. |
+| `rtbh_blackhole` | `tools/dsoc_canvas/rtbh_manager.py::trigger_rtbh` | **trusted-first-party** | A **responder**, excluded from the default fan-out (`kinds=("analyzer",)`) because blackholing a prefix must never be triggered by submitting an IP for analysis. Its first parameter is a live DB connection; since anz-mig-01 the dispatcher *can* supply one via `binding.connection`, but this declaration deliberately does not — a responder that mutates routing should stay unreachable by dispatch. No execution primitives. |
+| `bgp_prefix_hijack` | `tools/dsoc_canvas/bgp_hijack_detector.py::detect_prefix_hijack` | **trusted-first-party** | Compares an observed prefix/origin-AS pair against first-party ownership rows and writes a detection. The observable is bound to a parameter and used in parameterised SQL — no execution primitives, no deserialization, no egress. Takes a DB handle supplied by `binding.connection` (anz-mig-01), which is why it cannot be `sandboxed`: a live connection cannot cross the sandbox boundary, and dispatch reports that combination `misdeclared` rather than silently passing `conn=None`. |
+| `bgp_route_leak` | `tools/dsoc_canvas/bgp_hijack_detector.py::detect_route_leak` | **trusted-first-party** | Same module, same posture and same connection reasoning as `bgp_prefix_hijack`: a parameterised comparison of announcement scope against first-party peering rows, writing its finding through the dispatcher-owned handle. |
+| `pvm_risk_prediction` | `tools/network/vuln_predictor.py::predict_advisory_risk` | **trusted-first-party** | Reads one already-ingested `nc_advisories` row by id and computes scores arithmetically. The observable is an integer row id, never interpreted; ingestion of the advisory is the untrusted step and is upstream of this analyzer. |
+| `pvm_triage_scoring` | `tools/network/vuln_triage_engine.py::score_advisories` | **trusted-first-party** | Batch-shaped read over the same first-party advisory rows (`observable_form: list`). Arithmetic scoring only — no execution primitives and no content parsing. |
+| `pvm_attack_surface` | `tools/network/attack_surface_mapper.py::map_attack_surface` | **trusted-first-party** | Scopes NQE device-inventory queries by a first-party network id and aggregates exposure counts. The observable selects rows; it is never executed or parsed as content. |
+
+**Deployment prerequisite for `sandboxed` analyzers.** The sandbox driver runs
+`importlib.import_module(<declared module>)` inside the container, so the image
+must have the platform importable. The stock `python:3.12-slim` in
+`args/sandbox_config.yaml` does not, and `stix_ingest` will report `error`
+naming `ModuleNotFoundError` against it. An operator declaring an analyzer
+`sandboxed` must point `sandbox.images.python` at an image carrying ICDEV. This
+is a configuration step and it fails **loudly**; that is the intended trade
+against silently running untrusted-bundle parsing in-process.
+
+**Guardrails:**
+- Postures are declared as data in `args/analyzer_contract.yaml` and validated
+  against the contract's closed `sandbox_postures` vocabulary at load time; an
+  unknown posture raises rather than defaulting to permissive.
+- An analyzer that declares nothing inherits `defaults.sandbox: sandboxed` —
+  the strictest posture, not the cheapest.
+- Arguments crossing the sandbox boundary must be JSON-serializable; a bound
+  DB connection or file handle is rejected as `misdeclared`, by name, instead
+  of producing a container-side stack trace.
+- Rate limits are enforced per analyzer *after* binding and posture resolution,
+  so an analyzer that never ran spends no quota against a metered external API
+  (SAM.gov, CISA KEV, NVD, ACLED, the OSINT feeds).
+- Exceeding a rate limit **queues or reports — it never drops**: the analyzer
+  still produces a `rate_limited` report carrying `retry_after_seconds`, and
+  `DispatchResult.partial` names it. An omitted report would be
+  indistinguishable from "the analyzer ran and found nothing".
+- `tests/test_analyzer_rate_limit.py` pins the fail-closed sandbox gate, the
+  never-dropped rate-limit reporting, and the requirement that **every**
+  declared analyzer has a decision in this table whose wording matches its
+  declared posture — so a newly ported analyzer cannot merge without landing
+  here.
+- **Revisit if:** an analyzer is ported whose entrypoint executes, deserializes
+  (`pickle`, `yaml.load`), or shells out over the observable — it must be
+  declared `sandboxed` and this table updated; or if `dispatch()` ever accepts
+  a module path or callable from a caller rather than from the contract file.
+
+### Gap 49 — SBOM Component Producer resolution (`tools/compliance/component_producer.py`)
+
+**Module:** `tools/compliance/component_producer.py` (sbx-fld-02), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Third-party package metadata, read straight off the target
+project's disk — `*.dist-info/METADATA` under a virtualenv's `site-packages`,
+`node_modules/**/package.json`, `.pom` files in a Maven local repository,
+`Cargo.toml` in a vendor directory or the Cargo registry source cache, and
+`.nuspec` files in a NuGet packages folder. Every one of those files is written
+by whoever published the dependency, so all of it is untrusted by construction —
+that is the point of inventorying it. `--validate` additionally reads a
+CycloneDX JSON SBOM from an operator-supplied path, which may have come from
+another vendor's tool.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module reads and never runs. Its total contact with
+  untrusted content is `Path.read_text`, `json.loads`, `tomllib.loads`,
+  `importlib.metadata.PathDistribution` (which parses `METADATA` as text —
+  nothing from the target environment is imported), a handful of anchored
+  regexes, and string normalization. There is no `exec`/`eval`/`compile`, no
+  `subprocess`, no `pickle`, no `yaml.load`, no SQL, and no network call of any
+  kind: resolution is offline-first for the same reason `dependency_resolver`
+  is, so it behaves identically in an air-gapped enclave. A hostile author
+  string is normalized into a name or rejected as a placeholder; it is never
+  interpreted.
+- **Guardrails:**
+  - POM and `.nuspec` are read with regexes rather than an XML parser
+    *deliberately*. Every stdlib XML parser is exposed to entity-expansion and
+    external-entity attacks against exactly this kind of third-party packaging
+    metadata; a regex is not. `_parse_pom_xml` in `sbom_generator.py` made the
+    same call for the same reason.
+  - Every file path is composed from the component's own coordinates under a
+    caller-supplied root. The npm install path taken from a lockfile key is
+    rejected if it contains a `..` segment, so a malicious `package-lock.json`
+    cannot walk out of `node_modules`.
+  - `_resolve_uncached` wraps each ecosystem resolver: a malformed manifest
+    becomes unknown provenance with the exception type as its reason, never an
+    aborted SBOM and never a silently absent element.
+  - `yaml.safe_load` is used once, on ICDEV's own
+    `args/sbom_producer_registry.yaml`, and a missing or corrupt registry
+    degrades to an empty one — which marks components unknown rather than
+    naming an organization that was never established.
+  - The producer is only ever *emitted*, never dispatched on. It reaches SQL
+    solely through `producer_db_value()` as a bound parameter.
+  - `tests/test_sbom_component_producer.py` pins the no-execution posture over
+    both the root and the `icdev/` mirror, and exercises the placeholder,
+    namespace-echo and missing-metadata paths directly.
+- **Revisit if:** the module gains registry lookups over the network (a real
+  crates.io owner query or a PyPI JSON API call) — that is a different posture
+  and a different threat model — or if it starts reading *artifacts* rather than
+  metadata, which is sbx-fld-03's territory.
+
+### Gap 50 — SBOM correction ingress (`tools/compliance/sbom_revision.py`)
+
+**Modules:** `tools/compliance/sbom_revision.py` (mirrored at
+`icdev/tools/compliance/sbom_revision.py`), consumed by
+`tools/compliance/sbom_generator.py` and `tools/compliance/sbd_assessor.py`
+
+**Ingress path:** Two surfaces, and only one of them is first-party.
+`plan_revision` / `content_digest` on the generation path only ever see a
+document this tree just built, so that half is trusted-first-party. `--correct
+--sbom <path>` is not: the corrected SBOM is an operator-supplied JSON document
+that may well have originated with an upstream producer, and it is the document
+that becomes the project's SBOM of record. `source_revision` additionally shells
+out to `git` in a caller-supplied directory.
+
+- **Decision:** **trusted-first-party** for the generation path; **bypass-documented**
+  for the correction path (parse-and-record only; no execution path exists)
+- **Rationale:** The module's whole toolkit is `json`, `hashlib`, `pathlib` and
+  one fixed-argv `git rev-parse`. It contains no `exec`, `eval`, `__import__`,
+  `pickle`, `yaml.load` or `os.system`, and no network client. A corrected SBOM
+  is round-tripped through `json.load`/`json.dump` and digested; **nothing in it
+  is ever dispatched on, resolved as a path, or used to build SQL**. The only
+  values from the document that reach the database are the component count, the
+  `serialNumber` string and the digest, each as a bound parameter. `git rev-parse`
+  is not a shell: fixed argv, `shell=False`, a 15-second timeout, and a
+  non-zero exit or any `OSError` yields `None` — which is reported as
+  `sbom_build_identity_unknown` rather than being smoothed into a pass.
+- **Guardrails:**
+  - The output path for a correction is derived from the **predecessor's own
+    recorded `file_path`**, never from anything inside the supplied document, so
+    a hostile SBOM cannot choose where bytes land.
+  - A correction is append-only by construction: it can only INSERT a successor
+    row. There is no code path by which a supplied document rewrites, blanks or
+    deletes the record it corrects, which is what stops a bad artifact from
+    *destroying* prior evidence rather than merely adding wrong evidence.
+  - `revision_reason` is validated against the closed `REVISION_REASONS`
+    vocabulary and `apply_correction` refuses a non-corrective code, so the
+    caller cannot mislabel a correction as a routine build.
+  - A correction must state a reason; an empty one raises rather than recording
+    an unexplained change to a compliance artifact.
+  - The head is re-resolved inside `apply_correction` and compared to the row it
+    was prepared against, so a concurrent writer cannot make a correction
+    supersede the wrong document.
+  - `gate_threshold` reads only ICDEV's own `args/security_gates.yaml`, via
+    `yaml.safe_load`, and a missing or corrupt file degrades to the documented
+    default.
+  - `tests/test_sbom_revision_2026.py` records every statement a correction
+    issues and fails on an `UPDATE` or `DELETE`, and compares the predecessor row
+    field-by-field before and after — so the append-only property is pinned, not
+    merely intended.
+- **Revisit if:** the correction path ever resolves anything *out of* the supplied
+  document — a file path, a URL, a tool name, a signing key reference — which
+  would turn parsed content into a resource reference; or if `source_revision`
+  gains a remote lookup (a CI API call to name the build), which is a network
+  path over attacker-influenceable material and a different threat model.
+### Gap 50 — SBOM disclosure convention and policy (`tools/compliance/unknown_information.py`)
+
+**Module:** `tools/compliance/unknown_information.py` (sbx-prc-01), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two inputs. `load_disclosure_policy` reads ICDEV's own
+`args/sbom_disclosure_policy.yaml`, which is first-party configuration but is
+edited by an operator to declare redactions. `validate_sbom_disclosure`, reached
+through `--validate`, reads a **CycloneDX JSON SBOM from an operator-supplied
+path** — which may be another vendor's output, since the point of a conformance
+validator is to be pointed at documents ICDEV did not produce.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module compares strings against closed vocabularies and
+  emits property dicts. Its total contact with untrusted content is
+  `json.loads`, `yaml.safe_load`, `str()`, `.strip()`, `.lower()` and set
+  membership. There is no `exec`/`eval`/`compile`, no `subprocess`, no
+  `pickle`, no SQL, no regex over attacker input, and no network call. Nothing
+  read from a foreign SBOM is dispatched on: a reason code either *is* a member
+  of `UNKNOWN_REASONS`/`WITHHELD_REASONS` or becomes a validation error, and a
+  field name either *is* one of the 17 minimum elements or becomes one.
+- **Guardrails:**
+  - `_clean_rules` drops a policy rule whose field or reason is unrecognised
+    rather than defaulting it, so a typo cannot silently widen or narrow a
+    redaction. `policy_defects()` reports every dropped rule, and the CLI exits
+    non-zero when there are any, so a mistyped redaction is loud rather than
+    absent.
+  - `_rule_matches` treats an unmatched key as a **non**-match. A redaction that
+    accidentally applied to every component would be far worse than one that
+    applied to nothing, because only the second is visible on inspection.
+  - A withheld field carries no free-text detail — :meth:`Disclosure.withheld`
+    evicts any detail the field had. Explaining a redaction inside the document
+    the redaction protects would undo it, and the validator fails a document
+    that does so.
+  - `yaml.safe_load` (never `yaml.load`) on the policy; a missing or corrupt
+    policy degrades to a default that withholds nothing and still names an
+    enquiry route, because an SBOM that withholds without one is what the
+    standard forbids.
+  - `Disclosure.from_db_values` treats unreadable JSON as empty, so a corrupt
+    `unknown_fields_json` column cannot raise inside SBOM rendering.
+  - `tests/test_sbom_unknown_information.py` exercises the rejection paths
+    directly: a withheld reason under the unknown prefix, an unknown reason
+    under the withheld prefix, a field in both states, an unrecognised field
+    name, and the pre-2026 conflating literals.
+- **Revisit if:** the enquiry process gains an actual transport (an API endpoint
+  that accepts recipient requests, rather than a property naming a route) — that
+  turns a document property into an attack surface with its own authorization
+  model, and belongs with sbx-gov-02.
+
+### Gap 51 — SPDX writer and validator (`tools/compliance/spdx_writer.py`)
+
+**Module:** `tools/compliance/spdx_writer.py` (sbx-fmt-01, mirrored at
+`icdev/tools/compliance/spdx_writer.py`), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** In its library role the module only ever sees the CycloneDX
+document ICDEV itself just built, which is first-party. Its CLI is the
+untrusted surface: `--validate` and `--compare` read an SBOM JSON document from
+an operator-supplied path, and that document may have been produced by another
+vendor's tool or handed over by a supplier. The vendored SPDX 2.3 schema at
+`context/compliance/schemas/spdx-2.3.schema.json` is first-party content
+committed to the repo.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module translates and validates; it never executes. Its
+  total contact with untrusted content is `json.load`, dict/list traversal, one
+  anchored character-class regex used to sanitize SPDX identifiers, and
+  `jsonschema.Draft7Validator` over a schema that is read from disk rather than
+  fetched. There is no `exec`/`eval`/`compile`, no `subprocess`, no `pickle`, no
+  `yaml.load`, no SQL and no network call — validation is deliberately offline
+  so it behaves identically in an air-gapped enclave, which is why the official
+  schema is vendored rather than resolved from `spdx.org` at runtime.
+- **Guardrails:**
+  - `jsonschema` is never given a `$ref`-resolvable remote schema: `load_schema`
+    reads one local file and the validator is constructed directly from it, so a
+    hostile document cannot steer schema resolution anywhere.
+  - Every value copied out of the source document is coerced with `str()` before
+    it reaches an SPDX field, and identifiers pass through `_sanitize_id`, which
+    admits only `[A-Za-z0-9.-]`. A component name cannot forge an `SPDXRef-`
+    collision: `_spdx_id` de-duplicates against the identifiers already issued.
+  - Malformed input degrades rather than aborting. A non-dict component, a
+    non-dict property entry, or an annotation whose comment is not JSON is
+    skipped; a dependency edge naming a `bom-ref` that is not in the document is
+    dropped rather than emitted as a dangling relationship.
+  - A missing `jsonschema` is reported as a validation **error**, not as a pass.
+    A validator that silently approves everything is worse than none.
+  - Nothing the module reads reaches SQL, a filesystem path, or a shell. The
+    only path it writes is the one the caller passes to `write_spdx`.
+  - `tests/test_sbom_spdx_format.py` pins the deliberate failure modes: a
+    document with a field removed fails validation, a broken parity check fails,
+    and edges to absent components produce no relationships.
+- **Revisit if:** the module gains an SPDX *parser* that maps a third-party
+  document back into ICDEV's component model — that is sbx-fmt-02's ingest
+  parity work and a materially different posture, because the values would then
+  reach the database rather than only a report.
+
+### Gap 52 — Agent-node tool authorization gate (`tools/studio/executors/agent_tool_gate.py`)
+
+**Module:** `tools/studio/executors/agent_tool_gate.py` (+ `icdev/` mirror) —
+decides which tools a Studio `node_type: agent` step may offer a model and which
+calls that model may actually make (task hgx-agent-02, gate `AGENT-WF-001`).
+
+**Ingress path:** Two inputs, from two different trust levels. The **policy** is
+the `agent_workflow_tools` section of `args/security_gates.yaml` — repo-authored,
+first-party, read with `yaml.safe_load`. The **tool name and arguments** come
+from an LLM mid-loop: `hook(tool_name, tool_input)` is called by
+`run_agent_loop` with whatever the model emitted. That is
+**model-generated content**, and the whole point of this module is that it is
+treated as such.
+
+- **Decision:** **trusted-first-party** (policy) + **bypass-documented**
+  (model-supplied names/arguments — used as dictionary keys and hashed, never
+  resolved, executed, or interpolated).
+- **Rationale:** No model-supplied string reaches an interpreter, an import, a
+  path, a shell, or SQL from this module. `tool_name` is used only as a set
+  membership test against the two committed allowlists and as a key into
+  `tool_limits`; a miss is a refusal, so the reachable set is a fixed nine-name
+  list, not an open namespace. `tool_input` is never inspected for meaning at
+  all — it is passed to `params_digest()`, which canonicalises it with
+  `json.dumps(..., default=repr)` and returns a SHA-256 hex digest. The digest,
+  not the arguments, is what reaches the parameterised audit INSERT, so an
+  agent's `write_file` content cannot appear in the audit trail or steer the
+  query. There is no `exec`/`eval`/`compile`, no `subprocess`, no `importlib`
+  driven by model output, no filesystem path built from model output, and no
+  network call. The handlers the authorized call eventually reaches are the
+  worktree toolset's (`tools/genesis/rubric_build_tools.py`), which resolve and
+  traversal-guard every path inside the step's `work_dir` — that confinement is
+  theirs, not this module's, and is unchanged by it.
+- **Guardrails:**
+  - **Default-deny, fail-closed policy** — `load_policy()` refuses a section
+    whose `default` is not `deny`, and refuses when no section is readable at
+    all (`agent_gate_policy_unavailable`). `agent_executor.apply_tool_gate`
+    turns that into `agent_step_gate_unavailable`: no policy means **no
+    toolset**, never an unbounded one.
+  - **Enforced twice** — `authorize_toolset()` withholds an unauthorized tool
+    before it is described to the model; `build_gate_hook()` re-checks every
+    call before the handler runs. The second layer is the one that decides, so a
+    model naming a tool it was never offered is refused rather than dispatched.
+  - **Human gate on anything mutating** — `write_file` / `patch_file` /
+    `run_command` are `requires_approval`, so the first call parks an
+    `awaiting_approval` step row and blocks. No run to park a gate on is a
+    refusal, not a pass.
+  - **Caller IL / RBAC** — `check_caller_authorized()` refuses a caller below
+    the tool's declared `min_il` (or holding an unrecognised level — the gate
+    does not guess) or missing a required role. `run_command` is held at IL5.
+  - **Composed with, not substituted for, the reversibility gate** — the hook
+    chains to `tools/agent_runtime/approval_gate.py`; a call must clear both.
+  - **Append-only audit with digested arguments** — every decision (allowed,
+    refused, pending_approval) writes one `studio_mcp_dispatch_audit` row via
+    the existing `record_dispatch_audit`, classification-marked from the
+    caller's IL. The write is best-effort and never changes the decision.
+  - **Regression tests** — `tests/studio/test_agent_tool_gate.py` (28 tests)
+    covers the allowlist refusal, the parked/approved/rejected/undecided human
+    gate, the IL and role refusals, gate-ordering, the fail-closed policy paths
+    and the executor wiring; `tests/test_dwo_agent_allowlist.py` (17) pins the
+    policy data, the mirrors, and that every `block_on` condition is actually
+    raised somewhere in the module.
+- **Revisit if:** the policy becomes tenant-editable or derivable from anything
+  other than a committed repo file; `tool_input` starts being inspected,
+  interpolated into a path/command, or stored verbatim; registry-backed bundles
+  become dispatchable from an agent node (the dispatch path then needs its own
+  entry — this one covers authorization only); or the allowlist is made
+  default-allow → re-decide as **sandboxed**
+  (`tools/security/sandbox_executor.py`).
