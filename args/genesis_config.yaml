@@ -1210,6 +1210,22 @@ reflexes:
       threshold: 0
       operator: lte          # 0 failing checks on main is healthy; >0 means main has regressed
 
+  # ── Kanban policy drift (kax-merge-02) ───────────────────────────────────────
+
+  kanban_policy_drift:
+    timeout_seconds: 300     # one SELECT over kanban_tasks + N small UPDATEs
+    enabled: true
+    risk_tier: amber         # writes kanban_tasks.description for backlog/scheduled rows only
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — matches CADENCE_HOURS = 6 in the reflex module
+    cooldown_minutes: 60
+    description: "Operating policy is copied into every task description at seed time, so correcting the card does not correct the tasks that already exist (35 hgx rows kept telling sessions to open --draft for a day, and three batches of finished green work needed a human). Re-syncs descriptions against `policy:` on the project entry in args/projects.yaml. Rewrites only backlog/scheduled rows — done and in_progress are reported, never touched. Projects listed in args/kanban_policy_drift.yaml exempt_projects (agov, whose --draft is deliberate) are skipped entirely. Delegates to tools.kanban.policy_drift."
+    dry_run: false           # when true, reports drifted rows without rewriting any
+    success_metric:
+      name: unresolved_dispatchable
+      threshold: 0
+      operator: lte          # 0 dispatchable rows out of sync is healthy; >0 means a session will read stale policy
+
   # ── cATO Twin Continuous Monitoring (bdr-ops-1 — enabled after query soak) ───
 
   cato_twin:
