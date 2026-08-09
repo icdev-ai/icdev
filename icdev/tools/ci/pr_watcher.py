@@ -545,6 +545,12 @@ def _is_additive_path(path: str) -> bool:
 #: SEE that — so it re-attempted the same refused merge every cycle, forever.
 #: Five of ten open PRs on 2026-08-09 were green drafts sitting untouched for
 #: exactly that reason, each waiting on a human to click "Ready for review".
+#: Any of these on a PR stops the unlinked sweep. A human may open a PR to
+#: discuss rather than to land, and the cost of guessing wrong is a merge nobody
+#: asked for — so the escape hatch is cheap, obvious, and checked first.
+_NO_AUTOMERGE_LABELS = frozenset({"hold", "do-not-merge", "do not merge", "wip",
+                                  "no-automerge", "blocked"})
+
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,isDraft,"
     "headRefName,baseRefName,updatedAt,createdAt,number,url"
@@ -1611,10 +1617,106 @@ class PRWatcher:
             report.actions.append(action)
             self._audit(action)
 
+        # PRs no kanban task points at — the CLI/human half of the pipeline.
+        try:
+            self._sweep_unlinked_prs(report)
+        except Exception as exc:  # noqa: BLE001 — never fail the poll for a sweep
+            logger.warning("pr_watcher: unlinked sweep failed: %s", exc)
+
         report.finished_at = datetime.now(timezone.utc).isoformat()
         # Liveness proof, written only once the poll has actually completed.
         self._record_heartbeat(report)
         return report
+
+    def _sweep_unlinked_prs(self, report: "WatcherReport") -> None:
+        """Auto-merge green PRs that no kanban task points at.
+
+        THE GAP THIS CLOSES. Every repair path here starts from list_pr_tasks,
+        which selects kanban_tasks — so a PR with no task row is invisible to the
+        entire pipeline: no auto-ready, no auto-merge, no rebase, no escalation.
+        On 2026-08-09 roughly a dozen PRs opened from CLI sessions (fix/*, feat/*)
+        were each merged BY HAND for exactly that reason, while kanban's own PRs
+        merged themselves. Auto-merge should not depend on which door the work
+        came through.
+
+        DELIBERATELY THE NARROW SUBSET. A task-linked PR gets resumes, rebases and
+        status transitions because there is a task to carry that state. Here there
+        is none, so this does one thing: merge a PR that is already finished and
+        already passing. It never pushes, never closes, never edits a branch.
+
+        THE OPT-OUT IS A LABEL, because a human may open a PR to discuss rather
+        than to land. Any of hold/do-not-merge/wip/no-automerge stops it, and a
+        draft stops it too — an unlinked PR is NOT un-drafted, since for a human
+        the draft IS the "not ready" signal (a kanban task has a gate and a
+        dependency to say that instead).
+        """
+        if not self.config.get("merge_unlinked_prs", True):
+            return
+        if self.dry_run:
+            return
+        try:
+            proc = self._pr_list_runner(
+                ["gh", "pr", "list", "--state", "open", "--limit", "100", "--json",
+                 "number,url,headRefName,baseRefName,isDraft,mergeable,labels,"
+                 "statusCheckRollup,reviews,state"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+            if getattr(proc, "returncode", 1) != 0:
+                return
+            prs = json.loads(proc.stdout or "[]")
+        except Exception as exc:  # noqa: BLE001 — a sweep must never stop the poll
+            logger.debug("pr_watcher: unlinked sweep listing failed: %s", exc)
+            return
+
+        try:
+            linked = {
+                (t.get("pr_url") or "").strip()
+                for t in list_pr_tasks(self._connection())
+            }
+        except Exception as exc:  # noqa: BLE001
+            # Without the linked set every task-linked PR would be treated as
+            # unlinked and merged without its task ever being updated. Refuse.
+            logger.warning("pr_watcher: cannot list linked PRs, skipping sweep: %s", exc)
+            return
+
+        default_branch = self._default_branch()
+        for pr in prs:
+            url = (pr.get("url") or "").strip()
+            if not url or url in linked:
+                continue
+            if pr.get("isDraft"):
+                continue
+            labels = {
+                (lbl.get("name") or "").strip().lower()
+                for lbl in (pr.get("labels") or [])
+            }
+            if labels & _NO_AUTOMERGE_LABELS:
+                logger.info("pr_watcher: %s carries a hold label — leaving it", url)
+                continue
+            if (pr.get("baseRefName") or "") != default_branch:
+                continue
+            if (pr.get("mergeable") or "").upper() != "MERGEABLE":
+                continue
+            state = dict(pr)
+            if not ec.is_passing(state):
+                continue
+            if ec.is_changes_requested(state):
+                # A reviewer asked for changes. Merging over that is the one
+                # thing an automation must never do.
+                continue
+            if self._auto_merge(url):
+                logger.info("pr_watcher: auto-merged unlinked PR %s (%s)",
+                            url, pr.get("headRefName"))
+                action = WatcherAction(
+                    task_id="", pr_url=url, classification="done",
+                    action="merge", reason="unlinked PR, green and mergeable",
+                    resume_cycle=0,
+                )
+                report.actions.append(action)
+                self._audit(action)
+
+        report.finished_at = datetime.now(timezone.utc).isoformat()
 
     def run_daemon(
         self, interval: int = 30, max_iterations: int = 0
