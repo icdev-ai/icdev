@@ -143,16 +143,32 @@ class TestSchedulerEntrypointStartupRecovery:
         assert sched._is_manual_gate("prem-bid-01", "Ordinary task") is False
 
     def test_startup_recovery_filters_gates_before_the_update(self):
-        import inspect
+        """Asserted on the classifier, not on the entrypoint's source text.
+
+        kax-recover-04 moved this sweep into ``tools/kanban/startup_recovery.py``
+        so the entrypoint and the reflex share one policy; a grep for the old
+        inline ``if not _is_manual_gate(...)`` line would now fail while the gate
+        is in fact safe. Both call ``classify_task``, so that is where the
+        exemption has to hold.
+        """
         import importlib
+        import inspect
+
+        from tools.kanban.startup_recovery import classify_task
+
+        decision = classify_task(
+            {"id": GATE_ID, "title": "MANUAL-MODE GATE - do not dispatch",
+             "executor_type": "claude_cli"},
+        )
+        assert decision["action"] == "hold", (
+            "the scheduler's startup recovery would reset the manual gate to "
+            "backlog — it is held in_progress BY DESIGN"
+        )
 
         sched = importlib.import_module("tools.genesis.kanban_scheduler")
-        src = inspect.getsource(sched.main)
-
-        # The gate must be filtered OUT of stuck_ids, before any UPDATE runs.
-        assert "if not _is_manual_gate(dict(r)[\"id\"], dict(r).get(\"title\"))" in src, (
-            "the scheduler's startup recovery resets every in_progress task to backlog "
-            "— including the manual gate, which is held in_progress BY DESIGN"
+        assert "recover_interrupted_tasks" in inspect.getsource(sched.main), (
+            "the entrypoint no longer routes startup recovery through the shared "
+            "policy, so the gate exemption above proves nothing about it"
         )
 
     def test_startup_recovery_does_not_return_early(self):

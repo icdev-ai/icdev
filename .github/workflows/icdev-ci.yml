@@ -226,6 +226,8 @@ jobs:
             tests/test_memory_tier_measure.py \
             tests/test_notification_worthiness.py \
             tests/test_kanban_throughput_stall.py \
+            tests/test_kanban_startup_recovery.py \
+            tests/test_failure_triage_recency.py \
             tests/test_localai_provider.py \
             tests/studio/test_workflow_parallel.py \
             tests/studio/test_workflow_conditional.py \

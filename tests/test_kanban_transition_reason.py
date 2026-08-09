@@ -33,6 +33,7 @@ WRITERS = [
     "tools/dashboard/api/kanban.py",
     "tools/kanban/cli.py",
     "tools/kanban/state_machine.py",
+    "tools/kanban/startup_recovery.py",
     "tools/ci/pr_watcher.py",
     "tools/mcp/kanban_server.py",
     # kax-recover-02: re-queueing a task for a clean rebuild is a status change
