@@ -89,7 +89,10 @@ class ToolSpec:
         source: Where it came from — ``"mcp"``, ``"builtin"``, ``"decorated"``,
             or ``"external"`` (a tool on a third-party MCP server).
         read_only: True if the tool performs no state mutation (enables the agent
-            loop's parallel read-only dispatch and skips the safety gate).
+            loop's parallel read-only dispatch and skips the safety gate). For
+            MCP tools this is DECLARED in
+            ``tools.mcp.tool_registry.READ_ONLY_DECLARATIONS``, not inferred
+            from the name — see :func:`_resolve_read_only`.
         module: Import path of the module holding the handler (for lazy dispatch).
         handler: Attribute name of the handler within ``module``.
         check: Optional availability probe; when it returns falsey the tool is
@@ -382,9 +385,20 @@ def discover_decorated(module_names: list[str]) -> list[ToolSpec]:
 # ---------------------------------------------------------------------------
 # MCP-registry derivation
 # ---------------------------------------------------------------------------
-# Heuristic: MCP tools whose names clearly only read state. The agent loop only
-# uses this to enable parallel dispatch; the safety layer (sag-safe-01) is the
-# real mutation gate, so a conservative guess here is safe.
+# LAST-RESORT heuristic: MCP tools whose names look like they only read state.
+#
+# This is NOT how a registered tool's read-only flag is decided any more. The
+# flag drives the agent loop's PARALLEL dispatch partition, and that partition
+# is chosen before the safety layer (sag-safe-01) gets a vote — so a mutating
+# tool whose name happens to start with ``scan_`` or ``check_`` was being handed
+# to a worker thread concurrently with everything else in the turn. Deferring to
+# the safety layer does not help when the safety layer runs afterwards.
+#
+# The flag is now DECLARED per tool in ``tools/mcp/tool_registry.py``
+# (``READ_ONLY_DECLARATIONS``). This heuristic is reached only for a tool with
+# no declaration at all, and every such tool is logged once by
+# :func:`_resolve_read_only` so the residual gap is measurable rather than
+# invisible.
 _READ_ONLY_PREFIXES = (
     "get_", "list_", "search_", "query_", "check_", "status", "health",
     "lookup", "read_", "show_", "detect_", "scan_", "summary", "validate_",
@@ -396,10 +410,65 @@ def _guess_read_only(name: str) -> bool:
     return low.startswith(_READ_ONLY_PREFIXES) or low.endswith(("_status", "_summary"))
 
 
+#: Names already reported as undeclared, so the warning fires once per process
+#: per tool rather than once per schema build.
+_UNDECLARED_READ_ONLY: set[str] = set()
+
+
+def _load_read_only_declarations() -> "dict[str, bool]":
+    """Return ``tool_registry.READ_ONLY_DECLARATIONS`` (empty if unimportable)."""
+    try:
+        from tools.mcp.tool_registry import READ_ONLY_DECLARATIONS
+
+        return READ_ONLY_DECLARATIONS
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("discovery: read_only declarations unavailable: %s", exc)
+        return {}
+
+
+def _resolve_read_only(name: str, entry: Optional[dict[str, Any]] = None) -> bool:
+    """Return the read-only flag for an MCP tool, preferring its declaration.
+
+    Resolution order: an explicit ``read_only`` boolean on the entry itself
+    (which lets a caller synthesising an entry classify it inline), then the
+    hand-authored ``tool_registry.READ_ONLY_DECLARATIONS`` table. Only a tool
+    that appears in neither falls through to :func:`_guess_read_only`, and that
+    fallback is logged at WARNING — once per tool per process — so the set of
+    unclassified tools can be counted instead of guessed at.
+    """
+    declared = entry.get("read_only") if isinstance(entry, dict) else None
+    if not isinstance(declared, bool):
+        declared = _load_read_only_declarations().get(name)
+    if isinstance(declared, bool):
+        return declared
+    guessed = _guess_read_only(name)
+    if name not in _UNDECLARED_READ_ONLY:
+        _UNDECLARED_READ_ONLY.add(name)
+        logger.warning(
+            "discovery: tool %r has no read_only declaration in "
+            "tools/mcp/tool_registry.py::READ_ONLY_DECLARATIONS; falling back to "
+            "the name heuristic (guessed read_only=%s). Declare it — the agent "
+            "loop dispatches read-only tools in PARALLEL.",
+            name,
+            guessed,
+        )
+    return guessed
+
+
+def undeclared_read_only_tools() -> list[str]:
+    """Return the MCP tools that fell back to the name heuristic, sorted.
+
+    Populated as schemas are built; empty until :func:`discover_mcp_tools` (or
+    :func:`schema_from_mcp_entry`) has run. This is the measurable half of the
+    fallback — a non-empty list is a gap in ``READ_ONLY_DECLARATIONS``.
+    """
+    return sorted(_UNDECLARED_READ_ONLY)
+
+
 def schema_from_mcp_entry(name: str, entry: dict[str, Any]) -> dict[str, Any]:
     """Wrap an MCP ``TOOL_REGISTRY`` entry in the OpenAI function envelope."""
     input_schema = entry.get("input_schema") or {"type": "object", "properties": {}}
-    read_only = _guess_read_only(name)
+    read_only = _resolve_read_only(name, entry)
     return {
         "type": "function",
         "is_read_only": read_only,
@@ -438,12 +507,17 @@ def discover_mcp_tools(names: Optional[set[str]] = None) -> list[ToolSpec]:
             continue
         if not isinstance(entry, dict):
             continue
+        schema = schema_from_mcp_entry(tname, entry)
         specs.append(
             ToolSpec(
                 name=tname,
-                schema=schema_from_mcp_entry(tname, entry),
+                schema=schema,
+                # Read back off the schema rather than re-deriving: one
+                # resolution per tool, so the spec and the schema the model is
+                # shown can never disagree about which half of the dispatch
+                # partition the tool belongs to.
+                read_only=bool(schema["function"]["is_read_only"]),
                 source="mcp",
-                read_only=_guess_read_only(tname),
                 module=entry.get("module"),
                 handler=entry.get("handler"),
             )

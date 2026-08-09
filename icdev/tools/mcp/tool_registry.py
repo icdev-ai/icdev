@@ -46,9 +46,12 @@ Categories:
     nova (9)
     pulse (1)
     cortex (8)
+    analyzers (2)
 
-Total: 444 tools, 6 resources
+Total: 463 tools, 6 resources
 """
+
+from types import MappingProxyType
 
 TOOL_REGISTRY = {
     # ============================================================
@@ -1203,7 +1206,11 @@ TOOL_REGISTRY = {
         "category": "knowledge",
         "module": "tools.mcp.knowledge_server",
         "handler": "handle_search_knowledge",
-        "description": "Search the ICDEV™ knowledge base for patterns, solutions, and best practices. Supports keyword search with optional pattern type filtering.",
+        "description": (
+            "Search the ICDEV™ knowledge base for patterns, solutions, and best practices. "
+            "Supports keyword search with optional pattern type filtering. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -4201,6 +4208,104 @@ TOOL_REGISTRY = {
             "required": ["result_set"],
         },
     },
+    # Reproduce-or-drop for dynamic findings (oss-poc-01)
+    "finding_replay": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finding_replay",
+        "description": (
+            "Replay one stored reproduction for a DYNAMIC security finding and report whether the "
+            "vulnerability predicate fired. Outcomes: reproduced | not_reproduced | unavailable | "
+            "error | refused. Targets are default-deny allowlisted in args/reproduction_policy.yaml "
+            "(loopback only out of the box) — a non-allowlisted host is refused without a request. "
+            "Response bodies are never returned; observations carry status, length and sha256."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reproduction": {
+                    "type": "object",
+                    "description": (
+                        "Reproduction object: {kind: 'http'|'agent_trace', target, steps[], "
+                        "predicate, description}. The predicate asserts the VULNERABLE behaviour — "
+                        "it must be false once the defect is fixed."
+                    ),
+                },
+                "target": {
+                    "type": "string",
+                    "description": "Optional base-URL override for the reproduction's target",
+                },
+            },
+            "required": ["reproduction"],
+        },
+    },
+    "finding_enforce_reproduction": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finding_enforce_reproduction",
+        "description": (
+            "Apply the reproduce-or-drop rule across a batch of findings (oss-poc-01). A DYNAMIC "
+            "finding is 'confirmed' and may block a gate only when its stored reproduction replays "
+            "and the vulnerability predicate fires; otherwise it is 'unconfirmed' and is "
+            "structurally incapable of blocking. STATIC findings (bandit/CVSS/STIG) pass through "
+            "untouched. Evidence lands in dynamic_findings + append-only finding_replay_attempts."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "findings": {
+                    "type": "array",
+                    "description": (
+                        "Findings to classify, each {finding_key, severity, analysis_kind, "
+                        "reproduction?, status?}"
+                    ),
+                    "items": {"type": "object"},
+                },
+                "persist": {
+                    "type": "boolean",
+                    "description": "Write verdicts and replay attempts to the database",
+                    "default": True,
+                },
+                "gate": {
+                    "type": "boolean",
+                    "description": "Return an error when any CONFIRMED finding blocks",
+                    "default": False,
+                },
+            },
+            "required": ["findings"],
+        },
+    },
+    "finding_verify_discrimination": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finding_verify_discrimination",
+        "description": (
+            "Prove a reproduction DISCRIMINATES rather than merely runs (oss-poc-01): replay the "
+            "same reproduction against a target that still has the defect and one where the fix is "
+            "applied. It discriminates only if it fires on the first and stops firing on the "
+            "second. Fires on both = tautology; fires on neither = the finding was never "
+            "established. Both targets must be allowlisted."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reproduction": {"type": "object", "description": "The reproduction to prove"},
+                "vulnerable_target": {
+                    "type": "string",
+                    "description": "Base URL of the build that still has the defect",
+                },
+                "fixed_target": {
+                    "type": "string",
+                    "description": "Base URL of the build with the fix applied",
+                },
+                "finding_key": {
+                    "type": "string",
+                    "description": "When supplied and the proof holds, sets discriminating=1 on the finding",
+                },
+            },
+            "required": ["reproduction", "vulnerable_target", "fixed_target"],
+        },
+    },
     # ============================================================
     # TESTING (6 tools)
     # ============================================================
@@ -4920,7 +5025,11 @@ TOOL_REGISTRY = {
         "category": "rag",
         "module": "tools.mcp.rag_server",
         "handler": "handle_rag_search",
-        "description": "Search ICDEV™ RAG knowledge base with natural language query. Returns ranked results from all indexed sources (innovation signals, compliance artifacts, research dossiers, etc.).",
+        "description": (
+            "Search ICDEV™ RAG knowledge base with natural language query. Returns ranked results "
+            "from all indexed sources (innovation signals, compliance artifacts, research dossiers, etc.). "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5062,7 +5171,12 @@ TOOL_REGISTRY = {
         "category": "rag",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_query_classify",
-        "description": "Classify a RAG query into 4-label taxonomy: fact_single, summary, reasoning, unanswerable (D-RAG-24).",
+        "description": (
+            "Classify a RAG query into 4-label taxonomy: fact_single, summary, reasoning, "
+            "unanswerable (D-RAG-24). Deterministic — subprocesses tools/rag/query_classifier.py "
+            "and never calls a provider, which is also what cortex.classify degrades to. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -5180,7 +5294,11 @@ TOOL_REGISTRY = {
         "category": "knowledge_graph",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_kg_search",
-        "description": "Search the ICDEV™ Knowledge Graph using GraphRAG with scoring profiles (compliance, exploratory, provenance, security).",
+        "description": (
+            "Search the ICDEV™ Knowledge Graph using GraphRAG with scoring profiles "
+            "(compliance, exploratory, provenance, security). "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -6789,7 +6907,8 @@ TOOL_REGISTRY = {
         "handler": "handle_dic_search",
         "description": (
             "BM25+KG full-text search over a DIC collection. Returns ranked chunks with "
-            "source citations, entity co-occurrences, and relevance scores."
+            "source citations, entity co-occurrences, and relevance scores. "
+            "Single-backend; prefer cortex_search for cross-backend retrieval with citations."
         ),
         "input_schema": {
             "type": "object",
@@ -8383,6 +8502,669 @@ RESOURCE_REGISTRY = {
         },
     },
 }
+
+
+
+# ============================================================================
+# READ-ONLY DECLARATIONS (hgx-guard-03)
+# ============================================================================
+# ``read_only`` is a SAFETY declaration, not a documentation nicety. The agent
+# loop partitions a turn's tool calls on it: everything flagged read-only is
+# dispatched CONCURRENTLY on a thread pool, everything else runs sequentially
+# (``icdev/tools/llm/agent_loop.py`` -> ``_build_read_only_set``). That
+# partition is chosen BEFORE the safety layer runs, so a mutating tool that
+# lands in the parallel half has already been handed to a worker thread by the
+# time any gate could object.
+#
+# It used to be inferred from the tool NAME
+# (``tools/agent_runtime/discovery.py::_guess_read_only``), which is wrong for
+# every tool whose name reads like a query but whose handler writes — e.g.
+# ``scan_web`` ingests signals, ``check_vulnerabilities`` persists findings,
+# ``detect_trends`` writes trend rows. Those are declared here instead; the
+# name heuristic survives only as a logged fallback for tools that are not
+# declared at all.
+#
+# DEFINITION. ``True`` means the handler mutates no domain state: no INSERT /
+# UPDATE / DELETE outside append-only audit + telemetry rows, no file writes
+# outside the OS temp dir, no outbound call that changes remote state. Writing
+# an audit row is explicitly NOT a mutation for this purpose — audit tables are
+# append-only, so concurrent appends cannot race a reader. When in doubt the
+# answer is ``False``: a mutating tool wrongly marked read-only is a
+# concurrency bug, a read-only tool wrongly marked mutating only costs
+# parallelism.
+#
+# ADDING A TOOL. Every entry in ``TOOL_REGISTRY`` and every ``input_schema``
+# entry in ``RESOURCE_REGISTRY`` must appear here;
+# ``tests/test_tool_read_only_declarations.py`` fails the build otherwise.
+#
+# WHY A SIDE TABLE rather than a ``"read_only"`` key inside each entry: the
+# registry entries above are the generator's output (``generate_registry.py``
+# rewrites them, and ``test_cxo_adopt_04_mcp_cortex_adapters`` asserts the two
+# stay byte-identical). A hand-maintained safety flag injected into generated
+# entries is a flag the next regeneration silently drops. It is also a read-only
+# mapping so a caller cannot flip a tool into the parallel partition at runtime.
+READ_ONLY_DECLARATIONS = MappingProxyType({
+    # -- core --------------------------------------------------------------
+    "project_create":                           False,
+    "project_list":                             True,
+    "project_status":                           True,
+    "task_dispatch":                            False,
+    "agent_status":                             True,
+    # -- compliance --------------------------------------------------------
+    "nist_lookup":                              True,
+    "ssp_generate":                             False,
+    "poam_generate":                            False,
+    "stig_check":                               False,
+    "sbom_generate":                            False,
+    "cui_mark":                                 False,
+    "control_map":                              False,
+    "cssp_assess":                              False,
+    "cssp_report":                              False,
+    "cssp_ir_plan":                             False,
+    "cssp_evidence":                            False,
+    "xacta_sync":                               False,
+    "xacta_export":                             False,
+    "sbd_assess":                               False,
+    "sbd_report":                               False,
+    "ivv_assess":                               False,
+    "ivv_report":                               False,
+    "rtm_generate":                             False,
+    "crosswalk_query":                          True,
+    "fedramp_assess":                           False,
+    "fedramp_report":                           False,
+    "cmmc_assess":                              False,
+    "cmmc_report":                              False,
+    "oscal_generate":                           False,
+    "emass_sync":                               False,
+    "cato_monitor":                             False,
+    "pi_compliance":                            False,
+    "classification_check":                     True,
+    "fips199_categorize":                       False,
+    "fips200_validate":                         False,
+    "security_categorize":                      False,
+    "oscal_validate_deep":                      True,
+    "oscal_convert":                            False,
+    "oscal_resolve_profile":                    False,
+    "oscal_catalog_lookup":                     True,
+    "oscal_detect_tools":                       True,
+    # -- builder -----------------------------------------------------------
+    "scaffold":                                 False,
+    "write_tests":                              False,
+    "generate_code":                            False,
+    "run_tests":                                False,
+    "lint":                                     False,
+    "format":                                   False,
+    "agentic_fitness":                          False,
+    "generate_blueprint":                       False,
+    "generate_child_app":                       False,
+    "dev_profile_create":                       False,
+    "dev_profile_get":                          True,
+    "dev_profile_resolve":                      True,
+    "dev_profile_detect":                       True,
+    # -- infra -------------------------------------------------------------
+    "terraform_plan":                           False,
+    "terraform_apply":                          False,
+    "ansible_run":                              False,
+    "k8s_deploy":                               False,
+    "pipeline_generate":                        False,
+    "rollback":                                 False,
+    # -- knowledge ---------------------------------------------------------
+    "search_knowledge":                         True,
+    "add_pattern":                              False,
+    "get_recommendations":                      True,
+    "analyze_failure":                          False,
+    "self_heal":                                False,
+    # -- maintenance -------------------------------------------------------
+    "scan_dependencies":                        False,
+    "check_vulnerabilities":                    False,
+    "run_maintenance_audit":                    False,
+    "remediate":                                False,
+    # -- mbse --------------------------------------------------------------
+    "import_xmi":                               False,
+    "import_reqif":                             False,
+    "trace_forward":                            True,
+    "trace_backward":                           True,
+    "mbse_generate_code":                       False,
+    "detect_drift":                             False,
+    "sync_model":                               False,
+    "des_assess":                               False,
+    "thread_coverage":                          True,
+    "model_snapshot":                           False,
+    # -- modernization -----------------------------------------------------
+    "register_legacy_app":                      False,
+    "analyze_legacy":                           False,
+    "extract_architecture":                     False,
+    "generate_docs":                            False,
+    "assess_seven_r":                           False,
+    "create_migration_plan":                    False,
+    "track_migration":                          False,
+    "generate_migration_code":                  False,
+    "check_compliance_bridge":                  False,
+    "migrate_version":                          False,
+    # -- requirements ------------------------------------------------------
+    "create_intake_session":                    False,
+    "resume_intake_session":                    False,
+    "get_session_status":                       True,
+    "process_intake_turn":                      False,
+    "upload_document":                          False,
+    "extract_document":                         False,
+    "detect_gaps":                              False,
+    "score_readiness":                          False,
+    "decompose_requirements":                   False,
+    "generate_bdd":                             False,
+    # -- supply_chain ------------------------------------------------------
+    "register_ato_system":                      False,
+    "assess_boundary_impact":                   False,
+    "generate_red_alternative":                 False,
+    "add_vendor":                               False,
+    "build_dependency_graph":                   False,
+    "propagate_impact":                         False,
+    "manage_isa":                               False,
+    "assess_scrm":                              False,
+    "triage_cve":                               False,
+    "watch_passive_cve":                        True,
+    # -- simulation --------------------------------------------------------
+    "create_scenario":                          False,
+    "run_simulation":                           False,
+    "run_monte_carlo":                          False,
+    "generate_coas":                            False,
+    "generate_alternative_coa":                 False,
+    "compare_coas":                             True,
+    "select_coa":                               False,
+    "manage_scenarios":                         False,
+    # -- integration -------------------------------------------------------
+    "configure_jira":                           False,
+    "sync_jira":                                False,
+    "configure_servicenow":                     False,
+    "sync_servicenow":                          False,
+    "configure_gitlab":                         False,
+    "sync_gitlab":                              False,
+    "export_reqif":                             False,
+    "submit_approval":                          False,
+    "review_approval":                          False,
+    "build_traceability":                       False,
+    # -- marketplace -------------------------------------------------------
+    "publish_asset":                            False,
+    "install_asset":                            False,
+    "uninstall_asset":                          False,
+    "search_assets":                            True,
+    "list_assets":                              True,
+    "get_asset":                                True,
+    "review_asset":                             False,
+    "list_pending":                             True,
+    "check_compat":                             True,
+    "sync_status":                              True,
+    "asset_scan":                               False,
+    "openclaw_import":                          False,
+    "openclaw_promote":                         False,
+    "openclaw_reject":                          False,
+    "openclaw_export":                          False,
+    "openclaw_list_quarantine":                 True,
+    "openclaw_list_exports":                    True,
+    # -- devsecops ---------------------------------------------------------
+    "devsecops_profile_create":                 False,
+    "devsecops_profile_get":                    True,
+    "devsecops_maturity_assess":                False,
+    "zta_maturity_score":                       False,
+    "zta_assess":                               False,
+    "pipeline_security_generate":               False,
+    "policy_generate":                          False,
+    "service_mesh_generate":                    False,
+    "network_segmentation_generate":            False,
+    "attestation_verify":                       True,
+    "zta_posture_check":                        True,
+    "pdp_config_generate":                      False,
+    # -- gateway -----------------------------------------------------------
+    "bind_user":                                False,
+    "list_bindings":                            True,
+    "revoke_binding":                           False,
+    "send_command":                             False,
+    "gateway_status":                           True,
+    # -- context -----------------------------------------------------------
+    "fetch_docs":                               True,
+    "list_sections":                            True,
+    "get_icdev_metadata":                       True,
+    "get_project_context":                      True,
+    "get_agent_context":                        True,
+    # -- innovation --------------------------------------------------------
+    "scan_web":                                 False,
+    "score_signals":                            False,
+    "triage_signals":                           False,
+    "detect_trends":                            False,
+    "generate_solution":                        False,
+    "run_pipeline":                             False,
+    "get_status":                               True,
+    "introspect":                               False,
+    "competitive_scan":                         False,
+    "standards_check":                          False,
+    # -- research ----------------------------------------------------------
+    "research_create_session":                  False,
+    "research_run_stage":                       False,
+    "research_run_pipeline":                    False,
+    "research_get_status":                      True,
+    "research_list_sessions":                   True,
+    "research_get_dossier":                     True,
+    "research_review_dossier":                  False,
+    "research_list_verticals":                  True,
+    "research_get_challenges":                  True,
+    "research_get_forecasts":                   True,
+    "research_trigger_fitness":                 False,
+    "last30days__parallel_multi_source_social": False,
+    # -- observability -----------------------------------------------------
+    "trace_query":                              True,
+    "trace_summary":                            True,
+    "prov_lineage":                             True,
+    "prov_export":                              False,
+    "shap_analyze":                             False,
+    "xai_assess":                               False,
+    # -- translation -------------------------------------------------------
+    "translate_code":                           False,
+    "extract_source_ir":                        False,
+    "translate_unit":                           False,
+    "map_dependencies":                         False,
+    "check_types":                              True,
+    "assemble_project":                         False,
+    "validate_translation":                     True,
+    "translate_tests":                          False,
+    "map_features":                             True,
+    # -- dx ----------------------------------------------------------------
+    "companion_setup":                          False,
+    "detect_ai_tools":                          True,
+    "generate_instructions":                    False,
+    "generate_mcp_configs":                     False,
+    "translate_skills":                         False,
+    # -- govcon ------------------------------------------------------------
+    "rfi_demand_scan":                          False,
+    # -- cloud -------------------------------------------------------------
+    "csp_monitor_scan":                         False,
+    "csp_changelog":                            False,
+    "validate_region":                          True,
+    "cloud_mode_status":                        True,
+    "csp_health_check":                         True,
+    # -- registry ----------------------------------------------------------
+    "register_child":                           False,
+    "list_children":                            True,
+    "get_genome":                               True,
+    "evaluate_capability":                      False,
+    "list_staging":                             True,
+    "list_propagations":                        True,
+    "absorption_candidates":                    True,
+    "unevaluated_behaviors":                    True,
+    "cross_pollination_candidates":             True,
+    "evolution_daemon_status":                  True,
+    "egress_monitor_evaluate":                  False,
+    "propagation_verify":                       False,
+    "sandbox_score":                            False,
+    # -- intelligence ------------------------------------------------------
+    "bayesian_score_pairs":                     False,
+    "bayesian_optimal_order":                   True,
+    "bayesian_teaching_dim":                    True,
+    "bayesian_smart_encode":                    False,
+    # -- workflow ----------------------------------------------------------
+    "workflow_loop_create":                     False,
+    "workflow_loop_status":                     True,
+    "workflow_next_action":                     True,
+    "workflow_reconcile":                       False,
+    # -- security_agentic --------------------------------------------------
+    "scan_code_patterns":                       False,
+    "validate_tool_chain":                      False,
+    "validate_agent_output":                    False,
+    "score_agent_trust":                        False,
+    "check_mcp_authorization":                  True,
+    "ai_telemetry_summary":                     True,
+    "generate_ai_bom":                          False,
+    "run_atlas_red_team":                       False,
+    "detect_behavioral_drift":                  False,
+    "credential_broker_request":                False,
+    "credential_broker_status":                 True,
+    "blueprint_verify":                         True,
+    "egress_policy_resolve":                    True,
+    "guard_result":                             True,
+    "evaluate_aggregation_rules":               True,
+    "finding_replay":                           False,
+    "finding_enforce_reproduction":             False,
+    "finding_verify_discrimination":            False,
+    # -- testing -----------------------------------------------------------
+    "production_audit":                         False,
+    "production_remediate":                     False,
+    "validate_claude_dir":                      True,
+    "health_check":                             True,
+    "validate_screenshot":                      True,
+    "run_e2e_tests":                            False,
+    # -- installer ---------------------------------------------------------
+    "install_modules":                          False,
+    "validate_module_registry":                 True,
+    "list_compliance_postures":                 True,
+    "generate_platform_artifacts":              False,
+    # -- misc --------------------------------------------------------------
+    "register_external_patterns":               False,
+    "analyze_legacy_ui":                        False,
+    "generate_profile_md":                      False,
+    "generate_claude_md":                       False,
+    "version_migrate":                          False,
+    "framework_migrate":                        False,
+    "worktree_manage":                          False,
+    "nlq_query":                                True,
+    # -- compliance --------------------------------------------------------
+    "omb_m25_21_assess":                        False,
+    "omb_m26_04_assess":                        False,
+    "nist_ai_600_1_assess":                     False,
+    "gao_ai_assess":                            False,
+    "fedramp_ksi_generate":                     False,
+    "fedramp_authorization_package":            False,
+    "owasp_asi_assess":                         False,
+    "slsa_generate":                            False,
+    "slsa_verify":                              True,
+    "swft_bundle":                              False,
+    "vex_generate":                             False,
+    "model_card_generate":                      False,
+    "system_card_generate":                     False,
+    "ai_transparency_audit":                    False,
+    # -- security ----------------------------------------------------------
+    "confabulation_check":                      True,
+    # -- compliance --------------------------------------------------------
+    "ai_inventory_register":                    False,
+    "fairness_assess":                          False,
+    "ai_oversight_plan_create":                 False,
+    "ai_caio_designate":                        False,
+    "ai_appeal_file":                           False,
+    "ai_appeal_resolve":                        False,
+    "ai_ethics_review_submit":                  False,
+    "ai_incident_log":                          False,
+    "ai_reassessment_schedule":                 False,
+    "ai_accountability_audit":                  False,
+    # -- builder -----------------------------------------------------------
+    "code_analyze":                             False,
+    "code_quality_report":                      True,
+    # -- compliance --------------------------------------------------------
+    "ironbank_generate":                        False,
+    "ironbank_validate":                        True,
+    "eu_ai_act_classify":                       False,
+    # -- builder -----------------------------------------------------------
+    "runtime_feedback_collect":                 False,
+    # -- rag ---------------------------------------------------------------
+    "rag_search":                               True,
+    "rag_ingest":                               False,
+    "rag_status":                               True,
+    "rag_chunk_info":                           True,
+    "rag_delete_source":                        False,
+    "rag_retention_migrate":                    False,
+    "rag_reindex":                              False,
+    "rag_retrieval_history":                    True,
+    "rag_providers":                            True,
+    "crag_benchmark_run":                       False,
+    "query_classify":                           True,
+    # -- browser -----------------------------------------------------------
+    "browser_navigate":                         False,
+    "browser_read_state":                       True,
+    "browser_click":                            False,
+    "browser_type":                             False,
+    "browser_screenshot":                       False,
+    # -- security ----------------------------------------------------------
+    "sandbox_execute":                          False,
+    # -- rag ---------------------------------------------------------------
+    "quality_feedback_run":                     False,
+    # -- knowledge_graph ---------------------------------------------------
+    "kg_search":                                True,
+    "kg_enrich":                                False,
+    "kg_generate_ft_pairs":                     False,
+    "kg_compliance_build":                      False,
+    "kg_compliance_crosswalk":                  True,
+    "kg_compliance_coverage":                   True,
+    "kg_find_duplicates":                       True,
+    "kg_merge_entities":                        False,
+    "kg_add_alias":                             False,
+    "kg_resolve_ambiguous":                     True,
+    "kg_federated_search":                      True,
+    "kg_shared_entities":                       True,
+    "kg_create_view":                           False,
+    "kg_cross_project_coverage":                True,
+    "kg_time_range":                            True,
+    "kg_graph_evolution":                       True,
+    "kg_recent_changes":                        True,
+    "kg_stale_entities":                        True,
+    "kg_temporal_diff":                         True,
+    # -- finetune ----------------------------------------------------------
+    "ft_pipeline_run":                          False,
+    "ft_quality_check":                         True,
+    "ft_hp_create":                             False,
+    "ft_hp_run_next":                           False,
+    "ft_hp_record":                             False,
+    "ft_hp_status":                             True,
+    "ft_hp_list":                               True,
+    # -- autoresearch ------------------------------------------------------
+    "autoresearch_create":                      False,
+    "autoresearch_loop":                        False,
+    "autoresearch_status":                      True,
+    "autoresearch_select":                      False,
+    "autoresearch_evaluate":                    False,
+    "autoresearch_health":                      True,
+    # -- llmops ------------------------------------------------------------
+    "llm_gateway_stats":                        True,
+    "llm_gateway_check":                        True,
+    "prompt_registry_list":                     True,
+    "prompt_registry_register":                 False,
+    "prompt_registry_activate":                 False,
+    "cost_intelligence_dashboard":              True,
+    "cost_intelligence_anomalies":              True,
+    "cost_intelligence_recommend":              True,
+    "model_monitor_health":                     True,
+    "model_monitor_drift":                      False,
+    "proxy_key_issue":                          False,
+    "proxy_key_list":                           True,
+    "proxy_key_show":                           True,
+    # -- agent_topology ----------------------------------------------------
+    "topology_build":                           False,
+    "topology_spof":                            True,
+    "topology_airgap":                          True,
+    # -- sre ---------------------------------------------------------------
+    "slo_define":                               False,
+    "slo_measure":                              False,
+    "slo_dashboard":                            True,
+    "runbook_register":                         False,
+    "runbook_execute":                          False,
+    "incident_create":                          False,
+    "incident_update":                          False,
+    "incident_dashboard":                       True,
+    # -- databridge --------------------------------------------------------
+    "databridge_fetch":                         True,
+    "databridge_sources":                       True,
+    # -- redaction ---------------------------------------------------------
+    "redaction_detect":                         True,
+    "redaction_anonymize":                      True,
+    "redaction_sanitize_proposal":              True,
+    "redaction_scan_db":                        True,
+    # -- studio ------------------------------------------------------------
+    "studio_list_workflows":                    True,
+    "studio_tool_catalog":                      True,
+    "studio_list_templates":                    True,
+    "studio_init_db":                           False,
+    # -- kanban ------------------------------------------------------------
+    "kanban_list_tasks":                        True,
+    "kanban_get_task":                          True,
+    "kanban_create_task":                       False,
+    "kanban_update_task":                       False,
+    "kanban_move_task":                         False,
+    "kanban_delete_task":                       False,
+    "kanban_board_summary":                     True,
+    "kanban_queue_plan":                        False,
+    # -- oracle ------------------------------------------------------------
+    "oracle_predictions_list":                  True,
+    "oracle_lens_status":                       True,
+    "oracle_kanban_bridge_sync":                False,
+    "oracle_kanban_bridge_gate":                True,
+    "sio_run":                                  False,
+    # -- canvas ------------------------------------------------------------
+    "canvas_create_project":                    False,
+    "canvas_list_projects":                     True,
+    "canvas_link_design":                       False,
+    "canvas_unlink_design":                     False,
+    "canvas_compliance_summary":                True,
+    "canvas_compute_readiness":                 False,
+    "canvas_kg_rebuild":                        False,
+    "canvas_compliance_gate":                   True,
+    # -- fathomdesk_news ---------------------------------------------------
+    "news_ingest_once":                         False,
+    "news_classify":                            False,
+    "news_scenario_match":                      False,
+    "news_aggregate":                           False,
+    "news_reason":                              False,
+    "news_db_migrate":                          False,
+    # -- migration ---------------------------------------------------------
+    "mc_net_get_inventory":                     True,
+    "mc_net_recommend_hardware":                True,
+    "mc_net_ai_assist":                         False,
+    "mc_net_plan_protocol_migration":           False,
+    "mc_net_build_parallel_timeline":           False,
+    "mc_net_ingest_csv":                        False,
+    "mc_net_ingest_netbox":                     False,
+    "mc_net_ingest_topology":                   False,
+    # -- integrity ---------------------------------------------------------
+    "integrity_assess":                         False,
+    "integrity_list_assessments":               True,
+    # -- foundry -----------------------------------------------------------
+    "foundry_run":                              False,
+    "foundry_status":                           True,
+    # -- ace ---------------------------------------------------------------
+    "ace_launch":                               False,
+    "ace_status":                               True,
+    "ace_abort":                                False,
+    # -- llmops ------------------------------------------------------------
+    "compress_context":                         False,
+    # -- dic ---------------------------------------------------------------
+    "dic_ingest":                               False,
+    "dic_search":                               True,
+    "dic_generate":                             False,
+    "dic_chat":                                 False,
+    # -- docmod ------------------------------------------------------------
+    "docmod_scan":                              False,
+    "docmod_findings":                          True,
+    "docmod_redline":                           False,
+    # -- nova --------------------------------------------------------------
+    "nova_get_trust_score":                     True,
+    "nova_record_trust_event":                  False,
+    "nova_get_dispatch_config":                 True,
+    "nova_evolve_skill":                        False,
+    "nova_trust_summary":                       True,
+    "nova_analyze_patterns":                    True,
+    "nova_generate_skill":                      False,
+    "nova_list_skill_queue":                    True,
+    "ace_ensure_sme":                           False,
+    "ace_persona_query":                        True,
+    "council_query":                            False,
+    # -- compass -----------------------------------------------------------
+    "compass_lcat_lookup":                      True,
+    "compass_staffing_summary":                 True,
+    # -- pulse -------------------------------------------------------------
+    "writeguard_analyze":                       False,
+    # -- cortex ------------------------------------------------------------
+    "cortex_search":                            True,
+    "cortex_ask":                               True,
+    "cortex_complete":                          False,
+    "cortex_reason":                            False,
+    "cortex_classify":                          False,
+    "cortex_extract":                           False,
+    "cortex_govern":                            False,
+    "cortex_agent_launch":                      False,
+    # -- infra -------------------------------------------------------------
+    "pdc_analyze":                              False,
+    "pdc_validate":                             False,
+    "pdc_export":                               False,
+    # -- analyzers ---------------------------------------------------------
+    "analyzer_dispatch":                        False,
+    "analyzer_capabilities":                    True,
+    # -- system_graph ------------------------------------------------------
+    "system_graph_get":                         True,
+    "system_graph_node_detail":                 True,
+    "system_graph_stats":                       True,
+    # -- ohc ---------------------------------------------------------------
+    "ohc_overview":                             True,
+    "ohc_llmops_summary":                       True,
+    "ohc_mlops_experiments":                    True,
+    "ohc_model_registry":                       True,
+    "ohc_slos":                                 True,
+    "ohc_incidents":                            True,
+    "ohc_topology":                             True,
+    "ohc_adapter_health":                       False,
+    "ohc_run_experiment":                       False,
+    "ohc_promote_model":                        False,
+    # -- ontology ----------------------------------------------------------
+    "ontology_build":                           False,
+    "ontology_query":                           True,
+    "ontology_list_domains":                    True,
+    "ontology_export_mappings":                 False,
+    # -- ai_trace ----------------------------------------------------------
+    "record_canvas_decision":                   False,
+    # -- llmops ------------------------------------------------------------
+    "cot_invoke":                               False,
+    "cod_invoke":                               False,
+    "divergence_invoke":                        False,
+    "reasoned_codegen_advise":                  True,
+    "cot_stats":                                True,
+    # -- intelligence ------------------------------------------------------
+    "jise_get_portal_data":                     True,
+    # -- conflict_mesh -----------------------------------------------------
+    "conflict_mesh_etl":                        False,
+    # -- intelligence ------------------------------------------------------
+    "jise_get_requirements":                    True,
+    "jise_get_compliance":                      True,
+    # -- nocc --------------------------------------------------------------
+    "noc_alarm_ingest":                         False,
+    "noc_incident_create":                      False,
+    # -- pmc ---------------------------------------------------------------
+    "pmc_peer_evaluate":                        True,
+    "pmc_rpki_validate":                        True,
+    # -- ccc ---------------------------------------------------------------
+    "ccc_circuit_ingest":                       False,
+    "ccc_capacity_analyze":                     False,
+    "ccc_loa_create":                           False,
+    # -- dsoc --------------------------------------------------------------
+    "dsoc_rtbh_trigger":                        False,
+    "dsoc_flowspec_activate":                   False,
+    "dsoc_threat_ingest":                       True,
+    "dsoc_hijack_report":                       True,
+    # -- nocc --------------------------------------------------------------
+    "pmacct_ingest":                            True,
+    # -- pmc ---------------------------------------------------------------
+    "routinator_validate":                      True,
+    # -- intelligence ------------------------------------------------------
+    "platform_connector_fetch":                 False,
+    "platform_connector_fetch_all":             False,
+    "platform_connector_doctor":                True,
+    # -- conflict_mesh -----------------------------------------------------
+    "conflict_mesh_predict":                    False,
+    "conflict_mesh_high_risk":                  True,
+    # -- network -----------------------------------------------------------
+    "pvm_predict_risk":                         False,
+    "pvm_predict_all":                          False,
+    "pvm_top_risks":                            True,
+    "pvm_map_attack_surface":                   False,
+    "pvm_score_triage":                         False,
+    "pvm_create_patch_plan":                    False,
+})
+
+
+def is_read_only(name: str):
+    """Return the declared read-only flag for ``name``, or ``None`` if undeclared.
+
+    ``None`` is deliberately distinct from ``False``: it means "nobody has
+    classified this tool", which callers must not silently read as "safe to run
+    in parallel". :func:`tools.agent_runtime.discovery._resolve_read_only` logs
+    every such tool so the remaining gap stays measurable.
+    """
+    return READ_ONLY_DECLARATIONS.get(name)
+
+
+def undeclared_tools() -> list:
+    """Return every registered tool name with no ``read_only`` declaration."""
+    undeclared = []
+    for registry in (TOOL_REGISTRY, RESOURCE_REGISTRY):
+        for name, entry in registry.items():
+            if not isinstance(entry, dict) or "input_schema" not in entry:
+                continue
+            if name not in READ_ONLY_DECLARATIONS:
+                undeclared.append(name)
+    return undeclared
 
 
 def list_tools() -> list:

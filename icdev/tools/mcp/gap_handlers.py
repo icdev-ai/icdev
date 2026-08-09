@@ -1501,6 +1501,64 @@ def handle_guard_result(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_finding_replay(args: dict) -> dict:
+    """Replay one stored reproduction for a dynamic finding (oss-poc-01)."""
+    try:
+        from tools.security.reproduction_validator import Reproduction, replay
+
+        repro = Reproduction.from_dict(dict(args.get("reproduction") or {}))
+        result = replay(repro, target=args.get("target") or None)
+        return {**result.to_dict(), "decisive": result.decisive}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def handle_finding_enforce_reproduction(args: dict) -> dict:
+    """Apply the reproduce-or-drop rule to a batch of findings (oss-poc-01)."""
+    try:
+        from tools.security.reproduction_validator import enforce
+
+        report = enforce(
+            list(args.get("findings") or []),
+            persist=bool(args.get("persist", True)),
+        )
+        payload = report.to_dict()
+        if args.get("gate") and report.blocking:
+            return {
+                "error": (
+                    f"reproduce-or-drop: {len(report.blocking)} confirmed finding(s) block the gate"
+                ),
+                **payload,
+            }
+        return payload
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def handle_finding_verify_discrimination(args: dict) -> dict:
+    """Prove a reproduction distinguishes vulnerable from fixed (oss-poc-01)."""
+    try:
+        from tools.security.reproduction_validator import (
+            Reproduction,
+            mark_discriminating,
+            verify_discrimination,
+        )
+
+        repro = Reproduction.from_dict(dict(args.get("reproduction") or {}))
+        proof = verify_discrimination(
+            repro,
+            vulnerable_target=str(args.get("vulnerable_target", "")),
+            fixed_target=str(args.get("fixed_target", "")),
+        )
+        payload = proof.to_dict()
+        finding_key = str(args.get("finding_key") or "")
+        if finding_key:
+            payload["marked"] = mark_discriminating(finding_key, proof)
+        return payload
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
 def handle_evaluate_aggregation_rules(args: dict) -> dict:
     """Evaluate SCG aggregation rules and return fired rules + derived classification (prop-sec-03)."""
     try:
