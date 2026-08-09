@@ -828,6 +828,35 @@ def test_a_chain_matches_across_two_separate_tool_calls(packs, findings_db):
     assert json.loads(rows[0][3]) == list(second.matches[0]["event_ids"])
 
 
+def test_enforce_true_on_a_CHAIN_in_the_shipped_pack_cannot_block_either(packs, findings_db):
+    """Directory authority has to hold on the chain path too.
+
+    Worth its own test because the two paths reach the decision differently:
+    `SequenceFinding.to_dict()` carries its own `enforced` and `decision` fields
+    derived straight from the rule's `enforce`, so a gate that trusted the
+    finding rather than overriding it would block here while passing the
+    single-event test.
+    """
+    detect, _operator = packs
+    (detect / "chain.yaml").write_text(CHAIN_RULE, encoding="utf-8")  # enforce: true
+
+    gate.evaluate_tool_call("Read", {"file_path": "/repo/secret.txt"}, session_id="sess-cf")
+    decision = gate.evaluate_tool_call(
+        "Bash", {"command": "evil --exfiltrate"}, session_id="sess-cf"
+    )
+
+    assert decision.allowed is True, (
+        "a chain rule outside the operator directory blocked a call"
+    )
+    assert [m["rule_id"] for m in decision.matches] == ["chains.canary"]
+    assert decision.matches[0]["enforce"] is False
+
+    rows = _rows(findings_db)
+    assert [r[0] for r in rows] == ["chains.canary"]
+    assert not rows[0][4], "recorded as enforced despite living outside the operator directory"
+    assert rows[0][5] == "observed"
+
+
 def test_a_chain_does_not_span_two_sessions(packs):
     """ICDEV runs many concurrent sessions against one database. A chain that
     crossed sessions would report session A's read plus session B's command,
