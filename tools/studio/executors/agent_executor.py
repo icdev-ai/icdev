@@ -91,6 +91,22 @@ step is not a failure, so its dependents still run and can branch on it with
 the run — would make a whole workflow undeployable on an air-gapped box whose
 local model cannot do tool use, which is precisely the deployment ICDEV targets.
 
+Governance profile (hgx-gov-01)
+------------------------------
+A step may name a ``governance_profile:`` — a gate subset declared under
+``governance.profiles`` in ``args/cortex_config.yaml``. When it does, the step's
+prompt and the loop's final content are run through
+``tools/cortex/governance.py::GovernancePipeline`` under that profile, so a node
+doing internal diligence need not pay the same seven gates as one emitting a
+customer-facing artifact. ``output_redaction`` and ``provenance`` are in the
+pipeline's MANDATORY_GATES and no profile can drop them, so naming a cheap
+profile never costs the egress mask or the NIST-AU audit row.
+
+A step that names NO profile runs exactly as agent nodes always have: no Cortex
+pipeline, no governance report. Naming one is opting in, and the opt-in is
+fail-closed — a blocked prompt, an unknown profile name, or an unreadable
+governance config fails the step rather than running it ungoverned.
+
 Run memory (dwo-mem-01 / dwo-mem-02)
 ------------------------------------
 The step's payload is written to ``step:<step_id>``, and every file the agent
@@ -138,6 +154,10 @@ DEFAULT_SYSTEM_PROMPT = (
 
 #: Tools whose successful calls declare an artifact. Both take a ``path``.
 _ARTIFACT_TOOLS = ("write_file", "patch_file")
+
+#: ``operation`` recorded on this step's cortex_audit row when it names a
+#: governance profile. One vocabulary for "an agent node ran governed".
+GOVERNANCE_OPERATION = "studio.agent_step"
 
 
 class AgentStepError(RuntimeError):
@@ -341,6 +361,54 @@ def write_run_memory(run_id: str, step_id: str, value: dict) -> tuple[bool, str]
         return False, str(exc)
 
 
+# ── Governance profile (hgx-gov-01) ────────────────────────────────────────
+
+def build_governance(profile: str, *, run_id: str = "", step_id: str = ""):
+    """``(pipeline, ctx)`` for a step naming ``profile``; ``(None, None)`` for none.
+
+    Resolving the profile HERE — before the router is built or a tool is offered
+    — means a typo'd or non-conforming profile name fails the step at setup
+    rather than after an agent has already spent turns editing a worktree.
+
+    Raises:
+        AgentStepError: the profile is not declared, the ``governance.profiles``
+            block cannot load, or the Cortex governance package is not importable
+            in this deployment. All three are fail-closed: a step that ASKED to be
+            governed must not quietly run ungoverned.
+    """
+    profile = (profile or "").strip()
+    if not profile:
+        return None, None
+    try:
+        from tools.cortex.governance import (  # noqa: PLC0415
+            GovernancePipeline,
+            GovernanceProfileError,
+            resolve_profile,
+        )
+        from tools.cortex.schemas import CortexContext  # noqa: PLC0415
+    except ImportError as exc:
+        raise AgentStepError(
+            f"Step names governance_profile '{profile}' but the Cortex "
+            f"governance package is not importable here ({exc}). Remove the "
+            f"profile to run the step ungoverned, or install the package.",
+            reason="agent_step_governance_unavailable",
+        ) from exc
+
+    try:
+        resolve_profile(profile)
+    except GovernanceProfileError as exc:
+        raise AgentStepError(
+            str(exc), reason="agent_step_unknown_governance_profile"
+        ) from exc
+
+    pipeline = GovernancePipeline(
+        operation=GOVERNANCE_OPERATION,
+        agent_id=step_id or "agent",
+        profile=profile,
+    )
+    return pipeline, CortexContext(session_id=run_id or "")
+
+
 # ── The loop ───────────────────────────────────────────────────────────────
 
 def _build_router():
@@ -379,6 +447,7 @@ def run(
     router=None,
     caller: dict | None = None,
     approval_wait: float | None = None,
+    governance_profile: str = "",
 ) -> dict:
     """Run one agent step and return its payload.
 
@@ -397,6 +466,10 @@ def run(
             ``mcp_executor.resolve_caller``).
         approval_wait: Seconds to wait on a mutating tool's human gate. ``0``
             parks the gate without blocking.
+        governance_profile: Gate subset from ``governance.profiles`` in
+            ``args/cortex_config.yaml`` to run the prompt and final content
+            through. Empty (the default) = no Cortex pipeline, exactly as agent
+            nodes have always run.
 
     Returns the step payload. ``degraded`` is True when the resolved provider
     cannot serve native tool use; the loop did not run and ``degrade_reason``
@@ -405,8 +478,9 @@ def run(
 
     Raises:
         AgentStepError: the step is unrunnable as authored (no prompt, no
-            declared bundle, an unknown bundle) or AGENT-WF-001 withheld every
-            tool it declared.
+            declared bundle, an unknown bundle), AGENT-WF-001 withheld every
+            tool it declared, or a named governance profile could not be
+            resolved / blocked the prompt.
     """
     from icdev.tools.llm.agent_loop import (  # noqa: PLC0415
         AgentLoopUnsupported,
@@ -423,6 +497,12 @@ def run(
 
     work_dir = str(Path(work_dir).resolve()) if work_dir else str(_ROOT)
     step_id = step_id or "agent"
+    # Before the toolset, the router or a single turn: an unresolvable profile is
+    # an authoring error and should cost nothing to discover.
+    governance_profile = (governance_profile or "").strip()
+    pipeline, gov_ctx = build_governance(
+        governance_profile, run_id=run_id, step_id=step_id
+    )
     tools, handlers, unavailable = build_step_toolset(bundles, work_dir)
 
     # AGENT-WF-001 before anything is described to the model: the bundles said
@@ -443,6 +523,8 @@ def run(
         "work_dir": work_dir,
         "memory_key": f"{MEMORY_KEY_PREFIX}{step_id}",
     }
+    if governance_profile:
+        payload["governance_profile"] = governance_profile
     if unavailable:
         payload["unavailable_tools"] = unavailable
     if refusals:
@@ -452,24 +534,34 @@ def run(
             {"tool": r["tool"], "reason": r["reason"]} for r in refusals
         ]
 
+    governance_report = None
     try:
         router = router if router is not None else _build_router()
         gate = _build_approval_hook(
             run_id, approval_mode,
             caller=caller, step_id=step_id, approval_wait=approval_wait,
         )
-        result = run_agent_loop(
-            router,
-            system_prompt=system_prompt or DEFAULT_SYSTEM_PROMPT,
-            user_prompt=prompt,
-            tools=tools,
-            tool_handlers=handlers,
-            llm_function=llm_function,
-            max_iterations=max_iterations,
-            max_tokens=max_tokens,
-            effort=effort,
-            approval_gate=gate,
-        )
+
+        def _loop(loop_prompt: str):
+            return run_agent_loop(
+                router,
+                system_prompt=system_prompt or DEFAULT_SYSTEM_PROMPT,
+                user_prompt=loop_prompt,
+                tools=tools,
+                tool_handlers=handlers,
+                llm_function=llm_function,
+                max_iterations=max_iterations,
+                max_tokens=max_tokens,
+                effort=effort,
+                approval_gate=gate,
+            )
+
+        if pipeline is None:
+            result = _loop(prompt)
+        else:
+            result, governance_report, final_content = _run_governed(
+                _loop, pipeline, gov_ctx, prompt
+            )
     except AgentLoopUnsupported as exc:
         # The one condition that degrades rather than fails: this deployment's
         # provider for `llm_function` cannot do native tool use.
@@ -497,19 +589,68 @@ def run(
         "result_subtype": result.result_subtype,
         "truncation_reason": result.truncation_reason,
         "session_id": result.session_id,
-        "final_content": result.final_content,
+        # The governed (egress-masked) text when a profile ran — the pipeline's
+        # output_redaction is not skippable, so publishing the raw final_content
+        # here would leak past a gate that just did its job.
+        "final_content": (
+            result.final_content if governance_report is None else final_content
+        ),
         "tool_calls": len(result.tool_call_log or []),
         "total_input_tokens": result.total_input_tokens,
         "total_output_tokens": result.total_output_tokens,
         "total_cost_usd": result.total_cost_usd,
         "artifacts": artifacts,
     })
+    if governance_report is not None:
+        payload["governance"] = governance_report.to_dict()
 
     written, why = write_run_memory(run_id, step_id, payload)
     payload["memory_written"] = written
     if not written:
         payload["memory_skipped"] = why
     return payload
+
+
+def _run_governed(loop, pipeline, ctx, prompt: str):
+    """Run ``loop`` inside ``pipeline`` and return ``(result, report, text)``.
+
+    The loop is the pipeline's ``operation`` gate, so the prompt is screened and
+    input-redacted BEFORE the provider sees it and the loop's final content is
+    egress-redacted and provenance-recorded after. ``loop`` is handed the
+    governed prompt and its :class:`AgentLoopResult` is carried out through a
+    closure, because the pipeline governs *text* — handing it the result object
+    would hash and redact a repr instead of the answer.
+
+    ``retrieval=False``: an agent step is free-form work with no injected
+    evidence set, so the grounding gates have nothing to attest against and skip
+    themselves regardless of profile. ``attach=False``: an AgentLoopResult is not
+    a CortexResult and the report belongs on the step payload.
+
+    Raises:
+        AgentStepError: a gate blocked the call. A step that named a profile
+            asked to be governed, so a block fails the step rather than
+            degrading it — unlike an unsupported provider, this is a refusal,
+            not an unavailability.
+    """
+    from tools.cortex.governance import GovernanceBlockedError  # noqa: PLC0415
+
+    carried: dict = {}
+
+    def _operation(governed_prompt: str) -> str:
+        carried["result"] = loop(governed_prompt)
+        return carried["result"].final_content or ""
+
+    try:
+        text, report = pipeline.wrap(
+            _operation, ctx, prompt=prompt, retrieval=False, attach=False
+        )
+    except GovernanceBlockedError as exc:
+        raise AgentStepError(
+            f"Governance profile '{pipeline.profile}' blocked this step at gate "
+            f"'{exc.gate}': {exc.reason}",
+            reason="agent_step_governance_blocked",
+        ) from exc
+    return carried["result"], report, text
 
 
 def _resolve_caller(run_id: str) -> dict:
@@ -600,6 +741,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--effort", default=DEFAULT_EFFORT)
     parser.add_argument("--approval-mode", default="",
                         help="enforce (default) | dry_run | off")
+    parser.add_argument("--governance-profile", default="",
+                        help="Gate subset from governance.profiles in "
+                             "args/cortex_config.yaml; empty = ungoverned, as "
+                             "agent nodes have always run")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--step-id", default="", help="Run-memory key suffix")
     parser.add_argument("--project-id", default="default")
@@ -641,6 +786,7 @@ def main(argv: list[str] | None = None) -> int:
             max_tokens=_positive_int(args.max_tokens, DEFAULT_MAX_TOKENS),
             effort=args.effort,
             approval_mode=args.approval_mode,
+            governance_profile=args.governance_profile,
             caller=caller,
             approval_wait=(
                 float(args.approval_wait)

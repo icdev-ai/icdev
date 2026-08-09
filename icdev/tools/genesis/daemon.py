@@ -143,6 +143,9 @@ REFLEX_NAMES = [
     "dic_inbox_sweep",     # dic-inbox-02: 5-min sweep of the DIC drop folder (data/dic_inbox)
     "reflexion_loop",      # nova-echo: weekly batch Reflexion pass → improvement artifacts
     "evolution",           # nova-sela: weekly GEPA-style skill text mutation + promotion
+    "gepa_optimizer",      # hgx-obs-02: 24h GEPA pass — closes the reflexion→evolution→GEPA flywheel;
+                           # its own docstring claimed "runs every 24 hours via the genesis daemon"
+                           # while it was in neither REFLEX_NAMES nor args/genesis_config.yaml.
     "wiki_lint",           # karpathy-wiki: nightly health checks on memory wiki (orphans/stale/overflow)
     "usage_rollup",        # ecr-bill-01: daily billing rollup from usage_events (00:05 UTC)
     "episodic_distiller",  # phase-a: distill episodic events → semantic facts every 6h
@@ -537,13 +540,122 @@ class GenesisDaemon(DaemonBase):
             self._record_a2a_task(name, agent_url, "", session_ctx, status="error", error=str(exc))
             return False, 0.0, {"error": str(exc), "stage": "a2a_dispatch"}
 
+    # ------------------------------------------------------------------
+    # ORANGE tier — proposal staging (hgx-obs-02)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _orange_proposal_config(config: Dict[str, Any]) -> Dict[str, Any]:
+        """Overlay proposal-mode keys onto an ORANGE reflex's config.
+
+        Defensive: the two ORANGE reflexes shipped today (``evolve``,
+        ``experiment``) are propose-only by construction, but a future one must
+        not be able to apply a change just because the daemon now runs it.
+        """
+        proposal = dict(config)
+        proposal["proposal_only"] = True
+        proposal["require_human_merge"] = True
+        proposal["auto_apply"] = False
+        proposal.setdefault("dry_run", True)
+        return proposal
+
+    def _run_orange_proposal(
+        self, name: str, config: Dict[str, Any], trust: TrustKernelBase, risk_tier: str
+    ) -> Tuple[bool, float, Dict]:
+        """Execute an ORANGE-tier reflex in proposal mode and stage the result.
+
+        hgx-obs-02: this used to ``return`` before the module was ever imported,
+        so ``evolve`` and ``experiment`` never executed their mutation code at
+        all.  They produced nothing, which on the dashboard reads identically to
+        "ran and found nothing".  Both already end by exporting a GKP for human
+        review and never merge on their own, so the early return was blocking
+        exactly the artifact the ORANGE tier exists to produce.
+
+        The decision implemented here: an ORANGE reflex RUNS, behind a
+        proposal-mode config overlay, and its outcome is persisted as an
+        ``orange_proposal`` GKP at ``pending_review`` — the existing Genesis
+        staging surface (``genesis_gkp`` + ``tools/genesis/promoter.py``), not a
+        new one.  ``orange_proposal`` is absent from ``promoter.auto_promote`` in
+        ``args/genesis_config.yaml`` and listed under ``human_approve``, so
+        ``auto_promote_eligible()`` never matches it — a human must act on it.
+
+        Set ``ICDEV_GENESIS_ORANGE_PROPOSALS=0`` to restore the old early return.
+        """
+        if os.getenv("ICDEV_GENESIS_ORANGE_PROPOSALS", "1").strip().lower() in ("0", "false", "no"):
+            return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
+
+        try:
+            module = importlib.import_module(f"tools.genesis.reflexes.{name}")
+        except ImportError:
+            # No module to propose from — preserve the historical signal.
+            return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
+
+        # A reflex may expose an explicit propose() entry point; otherwise run()
+        # under the proposal-mode overlay.
+        run_fn = getattr(module, "propose", None) or getattr(module, "run", None)
+        if run_fn is None:
+            return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
+
+        with reflex_connection_scope():
+            result = self._observe(name, run_fn, self._orange_proposal_config(config), trust)
+
+        success = bool(result.get("success", False))
+        metric_value = float(result.get("metric_value", 0.0) or 0.0)
+        details = result.get("details", {})
+
+        gkp_id = self._stage_orange_gkp(name, risk_tier, success, metric_value, details)
+
+        return (
+            success,
+            metric_value,
+            {
+                "status": "proposal_staged" if gkp_id else "proposal_run",
+                "risk_tier": risk_tier,
+                "gkp_id": gkp_id,
+                "awaiting_human_approval": True,
+                "reflex_result": details,
+            },
+        )
+
+    def _stage_orange_gkp(
+        self, name: str, risk_tier: str, success: bool, metric_value: float, details: Dict[str, Any]
+    ) -> str:
+        """Persist the proposal as a pending_review GKP. Returns the GKP id or ''."""
+        try:
+            from tools.genesis.promoter import export_gkp
+
+            gkp = export_gkp(
+                reflex=name,
+                artifact_type="orange_proposal",
+                payload={
+                    "reflex": name,
+                    "risk_tier": risk_tier,
+                    "proposal_mode": True,
+                    "reflex_success": success,
+                    "metric_value": metric_value,
+                    "details": details,
+                },
+                confidence=metric_value,
+                evidence={"daemon_version": self.daemon_version, "staged_at": utcnow_iso()},
+            )
+            gkp_id = gkp.get("id") or gkp.get("gkp_id") or ""
+            logger.info(
+                "[GENESIS] ORANGE reflex '%s' staged proposal gkp=%s (success=%s)",
+                name, gkp_id, success,
+            )
+            return gkp_id
+        except Exception as exc:
+            # Staging is best-effort: the reflex already ran and its result is
+            # returned to the caller either way.
+            logger.error("[GENESIS] Failed to stage ORANGE proposal for '%s': %s", name, exc)
+            return ""
+
     def _run_reflex_impl_inner(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Actual reflex dispatch (wrapped by the watchdog in run_reflex_impl)."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
 
-        # ORANGE tier — log that human review is needed
+        # ORANGE tier — run in proposal mode and stage a reviewable artifact
         if trust.requires_human_approval(risk_tier):
-            return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
+            return self._run_orange_proposal(name, config, trust, risk_tier)
 
         # A2A fan-out: dispatch to agent network when reflex is eligible
         a2a_cfg = self.config.get("a2a", {})
@@ -817,7 +929,10 @@ def _run_reflex(name: str, config: Dict[str, Any], trust) -> Tuple[bool, float, 
     """Execute a single reflex (backward-compat wrapper)."""
     risk_tier = config.get("risk_tier", RISK_GREEN)
     if trust.requires_human_approval(risk_tier):
-        return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
+        # hgx-obs-02: keep this wrapper in step with _run_reflex_impl_inner —
+        # an ORANGE reflex runs in proposal mode instead of returning before
+        # the module is imported. GenesisDaemon owns the staging logic.
+        return GenesisDaemon({})._run_orange_proposal(name, config, trust, risk_tier)
     try:
         module = importlib.import_module(f"tools.genesis.reflexes.{name}")
         if hasattr(module, "run"):

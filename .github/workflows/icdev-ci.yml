@@ -203,6 +203,8 @@ jobs:
             tests/kanban/test_reverify_roundtrip.py \
             tests/kanban/test_one_task_one_pr.py \
             tests/kanban/test_cli_reverify.py \
+            tests/kanban/test_cli_done_gate.py \
+            tests/kanban/test_cli_merge_landing.py \
             tests/test_verifier_contract.py \
             tests/test_dic_chat_memory_schema.py \
             tests/test_dic_chat_surfaces_send_session_id.py \
@@ -226,6 +228,8 @@ jobs:
             tests/test_memory_tier_measure.py \
             tests/test_notification_worthiness.py \
             tests/test_kanban_throughput_stall.py \
+            tests/test_kanban_startup_recovery.py \
+            tests/test_failure_triage_recency.py \
             tests/test_localai_provider.py \
             tests/studio/test_workflow_parallel.py \
             tests/studio/test_workflow_conditional.py \

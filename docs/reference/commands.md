@@ -290,6 +290,11 @@ python tools/security/dependency_auditor.py --project-dir "/path"
 python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "sparkpilot:latest"
 
+# ATO boundary tier tagging of scan findings (GREEN/YELLOW/ORANGE/RED)
+python tools/security/boundary_tagger.py --report .tmp/security-reports/scan.json --json
+python tools/security/boundary_tagger.py --report scan.json --project-id <id> --system-id <sys-id> --create-assessments --json
+python tools/security/boundary_tagger.py --report scan.json --gate --json   # exit 1 on any RED finding
+
 # Security Framework (Phase 74 — sec-fnd)
 python tools/security/security_context.py --whoami --json
 python tools/security/abac_engine.py --review --json
@@ -1062,6 +1067,20 @@ python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh v
 # depend on the dispatching process still being alive) and appends it. It does not weaken the
 # gate: a branch with no work still fails.
 
+# Kanban — LAND a task's PR instead of being refused by the done-gate (kax-merge-01)
+python tools/kanban/cli.py --set-status <task-id> done --merge --dry-run   # Preflight only, merges nothing
+python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Merge, confirm, then mark done
+# `--set-status done` only ever GATED on merge: it refuses while a branch carrying the task id
+# has commits not on origin/<default>, and offered --force-done as the audited bypass. Neither
+# lands the work. --merge is the way to SATISFY the gate, and it is strictly HARDER than the
+# refusal: an OPEN PR based on the default branch, not CONFLICTING, no requested changes, green
+# CI (an empty check rollup is unknown, not green), the enforced done-gate
+# (pr_watcher._enforced_done_ok — reused, not re-derived), the sibling-file-conflict guard when
+# hold_on_sibling_conflict is set, and finally `state == MERGED` read back from GitHub before
+# 'done' is written (gh pr merge --auto exits 0 while the merge is still queued). Fail-closed on
+# every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
+# local git heuristic, not a landing check. One task id per invocation; not combinable with
+# --force-done. Marking done records the same actor='manual' audit transition --force-done does.
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
 python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
@@ -1073,6 +1092,19 @@ python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --js
 # PRESERVES failure_count (the recovery guard's budget). It also works on a task parked in
 # a pipeline-owned status like pr_opened, which --set-status cannot write. Exit 1 if any
 # task was refused; a manual-mode gate sentinel needs --force.
+
+# Kanban — is restarting the scheduler safe right now? (kax-recover-04)
+python -m tools.kanban.startup_recovery --dry-run --json      # Classify only; changes nothing
+python -m tools.kanban.startup_recovery --dry-run --force     # Same, even while the daemon owns the runner
+python -m tools.kanban.startup_recovery --json                # Perform the sweep (what a restart does)
+# Ask BEFORE restarting. Both restart sweeps (the kanban_scheduler.py entrypoint and the
+# reflex's cycle-1 sweep) route through recover_interrupted_tasks, which HOLDS any in_progress
+# task with provable liveness — an in-process handle, a fresh agent_sessions heartbeat in the
+# task worktree, a live kanban:task:<id> lease holder, or an OS process naming the task — and
+# resets only genuinely orphaned rows. --dry-run reports, per task, whether its commits survive
+# on kanban/<id> or whether a reset discards its work, so a restart is no longer a guess.
+# Without --force it no-ops while another live scheduler owns the runner; --once bypasses the
+# entrypoint lockfile check, so that guard is what keeps a one-shot run off the live board.
 
 # Kanban — rebase a DIRTY PR branch before it burns its resume budget (kax-conflict-01)
 python tools/kanban/rebase_recovery.py --task <task-id> --dry-run --json  # Probe locally, never push
@@ -1950,6 +1982,15 @@ python tools/ci/modules/worktree.py --create --task-id test-123 --target-dir src
 python tools/ci/modules/worktree.py --list --json                                            # List worktrees
 python tools/ci/modules/worktree.py --cleanup --worktree-name icdev-test-123                # Cleanup worktree
 python tools/ci/modules/worktree.py --status --worktree-name icdev-test-123                 # Worktree status
+
+# Manifest merge rehearsal (kax-conflict-03) — measures which tools/manifest/ layout survives
+# two unrelated tasks each registering a new tool under the same topic
+python tools/git/manifest_merge_rehearsal.py                              # all layouts, both merge paths
+python tools/git/manifest_merge_rehearsal.py --json                       # machine-readable
+python tools/git/manifest_merge_rehearsal.py --layout union --branches 5  # one layout, 5 concurrent branches
+python tools/git/manifest_merge_rehearsal.py --mode merge-tree            # bare, forge-style server-side merge only
+python tools/git/manifest_merge_rehearsal.py --repo .                     # rehearse against a CLONE of this repo + the real shard
+python tools/git/manifest_merge_rehearsal.py --repo . --shard tools/manifest/browser.md
 
 # GitLab Task Board Monitor (Phase 41)
 python tools/ci/triggers/gitlab_task_monitor.py                    # Start monitor (polls every 20s)
