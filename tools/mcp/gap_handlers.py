@@ -4034,3 +4034,110 @@ def handle_analyzer_capabilities(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_analyzer_capabilities: %s", exc)
         return {"error": str(exc)}
+
+
+# ── ICDEV™ Studio — headless run control (hgx-cx-03) ────────────────────────
+#
+# The four pre-existing studio_* tools are all reads: a workflow can be listed
+# and its palette inspected over MCP, but not STARTED. These three close that
+# gap, so an agent can drive a durable graph run the same way the dashboard
+# does — through the same workflow_runner public API, not a second engine.
+
+#: Ceiling on ``wait_seconds``. A run parked on a human approval gate would
+#: otherwise hold an MCP call open for the gate's full 24h window and starve the
+#: server; past this the caller polls with studio_run_status instead.
+_STUDIO_RUN_MAX_WAIT = 900.0
+
+
+def _studio_wait_seconds(args: dict) -> float:
+    """Clamp the caller's requested wait into [0, _STUDIO_RUN_MAX_WAIT]."""
+    try:
+        requested = float(args.get("wait_seconds") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(requested, _STUDIO_RUN_MAX_WAIT))
+
+
+def handle_studio_run_start(args: dict) -> dict:
+    """MCP: start a Studio workflow run and report it.
+
+    Returns as soon as the run row exists unless ``wait_seconds`` is given. The
+    worker is a daemon thread in the MCP server process, so an unwaited run
+    keeps executing after this call returns — and if the server dies mid-run,
+    studio_run_resume picks the run back up.
+    """
+    try:
+        from tools.studio import workflow_runner
+
+        workflow_id = str(args.get("workflow_id") or "").strip()
+        if not workflow_id:
+            return {"error": "workflow_id is required"}
+
+        inputs = args.get("inputs")
+        if inputs is not None and not isinstance(inputs, dict):
+            return {"error": f"inputs must be a JSON object, not {type(inputs).__name__}"}
+
+        run_id = workflow_runner.start_run(
+            workflow_id,
+            project_id=str(args.get("project_id") or "default"),
+            inputs=inputs,
+        )
+        wait = _studio_wait_seconds(args)
+        if wait:
+            workflow_runner.wait_for_run(run_id, wait)
+        return workflow_runner.run_report(run_id)
+    except ValueError as exc:
+        # Unknown workflow id — a caller error, not a server fault.
+        return {"error": str(exc)}
+    except Exception as exc:
+        logger.warning("handle_studio_run_start: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_studio_run_status(args: dict) -> dict:
+    """MCP: report a Studio run and its steps.
+
+    Each step carries its ``step_run_id`` — the handle an approver needs to
+    clear a gate parked at ``awaiting_approval``.
+    """
+    try:
+        from tools.studio import workflow_runner
+
+        run_id = str(args.get("run_id") or "").strip()
+        if not run_id:
+            return {"error": "run_id is required"}
+        return workflow_runner.run_report(run_id)
+    except Exception as exc:
+        logger.warning("handle_studio_run_status: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_studio_run_resume(args: dict) -> dict:
+    """MCP: re-attach a worker to a run left mid-flight and continue it.
+
+    Steps already recorded success/approved/skipped are replayed rather than
+    re-executed, and a gate parked before the interruption keeps its
+    step_run_id — so an approval issued earlier still resolves it.
+    """
+    try:
+        from tools.studio import workflow_runner
+
+        run_id = str(args.get("run_id") or "").strip()
+        if not run_id:
+            return {"error": "run_id is required"}
+        if not workflow_runner.resume_run(run_id):
+            return {
+                "error": (
+                    "Run is unknown, already finished, or a live worker already "
+                    "owns it"
+                ),
+                "run_id": run_id,
+                "resumable_statuses": list(workflow_runner.RESUMABLE_RUN_STATUSES),
+            }
+        wait = _studio_wait_seconds(args)
+        if wait:
+            workflow_runner.wait_for_run(run_id, wait)
+        return workflow_runner.run_report(run_id)
+    except Exception as exc:
+        logger.warning("handle_studio_run_resume: %s", exc)
+        return {"error": str(exc)}

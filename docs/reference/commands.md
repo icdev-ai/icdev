@@ -1402,6 +1402,43 @@ python -c "from tools.studio.executors.mcp_executor import query_dispatch_audit 
 
 ---
 
+## Studio Headless Run Control
+```bash
+# Start / inspect / resume a durable graph run WITHOUT the dashboard (hgx-cx-03).
+# Same engine the Studio UI drives — workflow_runner's public API, not a second runtime.
+python tools/studio/workflow_runner.py --start "wf-xxx" --json            # prints run_id
+python tools/studio/workflow_runner.py --start "wf-xxx" --project-id "proj-123" \
+  --inputs '{"target":"tools/foo.py"}' --json
+python tools/studio/workflow_runner.py --status "run-xxx" --json          # run + steps + step_run_ids
+python tools/studio/workflow_runner.py --resume "run-xxx" --json          # re-attach to a run left mid-flight
+
+# WAITING IS THE DEFAULT: the worker is a daemon thread in THIS process, so returning
+# immediately would kill it mid-step and strand the run at `running`. --timeout bounds
+# the wait (default 600s); --no-wait is fire-and-forget and only correct when something
+# else will --resume the run.
+python tools/studio/workflow_runner.py --start "wf-xxx" --timeout 1800 --json
+python tools/studio/workflow_runner.py --start "wf-xxx" --no-wait --json
+
+# Exit codes — a cron caller has to tell "parked on a human gate" from "broken":
+#   0 = run finished successfully (or --status read OK)
+#   1 = the run failed, or the command errored (unknown workflow/run, bad --inputs,
+#       run not resumable)
+#   2 = the run did not finish — parked at awaiting_approval, or still running at
+#       --timeout. Clear a gate with workflow_runner.approve_step(step_run_id) — the
+#       --status report carries every step_run_id — then --resume.
+
+# Same three operations over MCP (gate MCP-WF-001 authorizes them: studio_run_status is
+# allowlisted read-only; studio_run_start/_resume are `requires_approval` because a step
+# that spawns another run executes it under this run's authority and can recurse).
+python tools/studio/executors/mcp_executor.py --tool studio_run_status --params '{"run_id":"run-xxx"}'
+python tools/studio/executors/mcp_executor.py --tool studio_run_start \
+  --params '{"workflow_id":"wf-xxx","wait_seconds":60}' --run-id "run-xxx" --approval-wait 3600
+# wait_seconds (0 = return as soon as the run row exists) is clamped to 900s so a gate's
+# 24h window can never hold an MCP call open.
+```
+
+---
+
 ## Workflow Discipline Engine Commands
 ```bash
 # PLAN-APPLY-UNIFY Lifecycle (Phase 66, D-WF-1 through D-WF-7)

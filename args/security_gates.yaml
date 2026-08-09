@@ -1758,6 +1758,7 @@ mcp_workflow_tools:
     - kanban_list_tasks     # board read
     - kanban_get_task       # board read
     - studio_list_workflows # workflow catalog read
+    - studio_run_status     # run/step state read
 
   # State-changing, destructive, or egress-bearing: a human gate must be
   # approved in the same run before the executor dispatches these.
@@ -1775,6 +1776,12 @@ mcp_workflow_tools:
     - publish_asset         # publishes outward to the marketplace
     - emass_sync            # egress of compliance data to eMASS
     - xacta_sync            # egress of compliance data to Xacta
+    # A workflow step that starts or resumes ANOTHER workflow run executes every
+    # step of that run under this run's authority, and can recurse. The gate is
+    # what bounds it: a human approves the outer step before any inner step
+    # dispatches. Reading a run (studio_run_status) is allowlisted above.
+    - studio_run_start      # spawns a new graph run
+    - studio_run_resume     # continues a parked graph run
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent tool allowlist for Studio workflow steps (hgx-agent-02)
