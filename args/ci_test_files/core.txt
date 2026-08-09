@@ -337,3 +337,18 @@ tests/test_agov_events.py
 # no position to claim. ~1s, pure Python, DB read monkeypatched, no DB
 # service/LLM/network (agov-det-07).
 tests/test_agov_cli.py
+# test_agent_wake_store.py earns a slot because the invariant it pins is a
+# CONCURRENCY invariant, which no other gate in this repo can catch. ICDEV runs
+# many sessions against one database and the wake tick (agov-wake-03) can overlap
+# with itself, so a read-then-write mark_fired lets two ticks both observe `due`
+# and both resume the same agent from one suspension -- and a double resume does
+# not raise, it just does the work twice. The file asserts exactly one transition
+# under two hand-interleaved connections AND under two real threads through a
+# barrier, plus the three quieter failure modes: due() must never return a wake
+# whose condition is unmet (an agent resumed early does the wrong work silently),
+# nothing may take a wake from fired back to due, and a cancelled timer must stay
+# cancelled once its fire_at elapses. The table is built from the migration's own
+# up.sql and compared against wake._ensure_schema's DDL, so the un-migrated and
+# migrated checkouts cannot disagree about what columns exist. ~1.5s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-01).
+tests/test_agent_wake_store.py
