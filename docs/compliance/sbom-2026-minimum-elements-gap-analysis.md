@@ -657,8 +657,8 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Component Hash Algorithm | **MET (sbx-fld-03)** | Every algorithm ICDEV emits is an IANA Hash Function Textual Name from the vendored registry AND one an authority still approves. `md5`/`sha-1` parse so that a digest under them is refused with its reason rather than published; `shake128`/`shake256` validate as names but are never emitted. See §3.2.2. |
 | Component Identifiers | **MET (sbx-fld-05)** | Was `purl` only. `tools/compliance/sbom_identifiers.py` now derives every identifier the coordinates support and emits ALL of them, as the standard requires when multiple exist: purl, a CPE 2.3 match string (the NVD join key), a deterministic RFC 9562 UUIDv5, an organization-specific identifier that is always derivable, and — only where the underlying content is actually supplied — a commit hash, SWHID and OmniBOR. Round-trips through `sbom_components.identifiers_json`. See §3.2.3. |
 | Component License | **MET (sbx-fld-04)** | `tools/compliance/component_licenser.py` emits the element for every component and for the target component, in one of the four shapes the standard allows — a validated SPDX expression, a URL to full terms, a license name, or an explicit unknown/withheld marker — plus a tri-state proprietary-conditions flag. Never omitted. `sbom_components.license` is populated by the same resolution. See §3.2.1. |
-| Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
-| Component Version | **PARTIAL** | The conflating literals are **gone (sbx-prc-01)**: an unresolved version is now the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. What remains for the element itself is stating the version the *producer* assigned where ICDEV currently reports a resolver's normalization. |
+| Component Name | **MET (sbx-fld-06)** | Was a single name. `tools/compliance/component_names.py` now derives every name a component is known by from coordinates the manifest already supplied — the producer's own spelling before normalization, the PEP 503 canonical form, the fully-qualified coordinate ICDEV's `name`/`group` split destroys (`@babel/core`, `org.apache.logging.log4j:log4j-core`), the short form of a path-shaped Go module, and the decoded purl name — and emits all of them. The carrier is a repeatable CycloneDX property, so the format genuinely allows MULTIPLE entries. See §3.2.4. |
+| Component Version | **MET (sbx-fld-06)** | The conflating literals are gone (sbx-prc-01 established the convention; sbx-fld-06 removed the last emitters): an unresolved version is the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. `"unspecified"` and `"managed"` are emitted by nothing — including `ai_bom_generator`, the last holdout — and a `PackageReference` under Central Package Management is now listed with its version stated unknown rather than dropped. See §3.2.4. |
 
 #### 3.2.1 Component License — what sbx-fld-04 landed
 
@@ -893,6 +893,85 @@ CPE gets diagnosed.
 2. `_parse_go_mod`'s single-line `^require\s+(\S+)\s+(\S+)` matched across the newline after
    `require (`, emitting a phantom component named `(` whose version was the first module path.
    The separator is now horizontal whitespace only.
+
+#### 3.2.4 Component Name and Component Version — what sbx-fld-06 landed
+
+Two field fixes, landed together because they are the same failure seen twice: ICDEV was
+writing a value that looked like an answer and was not one.
+
+**Component Name (minor update).** The 2026 change is on the *format*: it must allow
+MULTIPLE entries so a component known by more than one name is listed under all of them.
+That obligation exists because a recipient matching an SBOM against an advisory, a
+registry or another SBOM matches on whichever name that source happened to use, and
+ICDEV's single `name` is a *derived* one — PEP 503 normalized for Python, with the npm
+scope and the Maven `groupId` split off into `group`. The names it dropped were the ones
+a human or an advisory actually quotes.
+
+`tools/compliance/component_names.py` (mirrored to `icdev/tools/compliance/`) derives five
+kinds, each a rewriting of a string the component already carries. Nothing is guessed, no
+registry is consulted and no network call is made:
+
+| Kind | Derivation |
+|---|---|
+| `declared` | The spelling as the manifest wrote it, before normalization — `Flask_Login` for the component `flask-login`. `dependency_resolver` now carries it from `*.dist-info/METADATA`'s `Name:` field, a Python lock and `Pipfile.lock`, where it was read and then discarded. |
+| `normalized` | The ecosystem's canonical form where one is defined — PEP 503 for Python. Only meaningful against a declared spelling. |
+| `qualified` | Namespace and name rejoined the way the ecosystem writes a coordinate: `@babel/core` for a scoped npm package, `com.example:alpha` for Maven and Gradle. |
+| `short` | The last segment of a path-shaped name — `cobra` for `github.com/spf13/cobra`. |
+| `purl` | The decoded name segment of the purl. Normally identical to the primary and dropped; emitted when the purl encoding round-trips to something different, which is exactly the case worth stating. |
+
+Three decisions worth recording:
+
+- **The primary name does not move.** `name` feeds `component_id`, which is the `bom-ref`,
+  the `sbom_components` primary key and the organization-specific identifier all at once
+  (sbx-fld-05). Changing which spelling wins would renumber every component in every
+  historical document to say nothing new. The element asks for the alternates to be
+  *available*, not for a different one to be *preferred*.
+- **Deduplication is where a name gets lost, so it is where the spellings are collected.**
+  Two instances differing only in the spelling the producer used collapse into one under
+  `_component_identity`, and the loser's spelling would simply vanish — the exact failure
+  this element exists to prevent. The generator now gathers spellings against the identity
+  that survives and re-attaches them as `declared` alternates.
+- **A withheld name has no alternates.** Publishing four other names for the component
+  whose name was redacted would undo the redaction, so the alternates are suppressed
+  entirely — the same rule `component_licenser` applies to its evidence and URL. The same
+  holds for an *unknown* name: there is no established spelling to have alternates of.
+
+The carrier is `icdev:component-name-alternate:<kind>`. CycloneDX has no native
+alternate-name array in any spec version ICDEV emits, and `properties` is an array that
+does not require unique names — so it genuinely allows multiple entries, which is the
+obligation. `spdx_writer` carries the whole `properties` array through as an annotation,
+so one emission gives both serializations the element.
+
+**Component Version (major update).** Where the producer supplies no version, the author
+must indicate the version is UNKNOWN. ICDEV wrote the literal `"unspecified"`, and
+`_parse_pom_xml` wrote `"managed"`. Neither is machine-interpretable, both collide with
+the Explicitly Identifying Unknown Information element — which separates "we could not
+establish it" from "we are withholding it" — and `"managed"` was not even an unknown: it
+means the version is resolvable from the parent POM's `dependencyManagement`, which is a
+different fact, and the one an operator can act on.
+
+Both are now the `unknown` sentinel of sbx-prc-01 plus an `icdev:unknown:version` property
+naming why. `version-managed-by-parent` is its own reason precisely so the Maven case does
+not flatten into "nobody pinned one". Three things had to change for that to hold
+end to end:
+
+- `_adopt_declared` in `dependency_resolver` rebuilt each component from a fixed field
+  list, silently dropping `version_unknown_reason`. A declared manifest is the *only* path
+  those parsers take to a real SBOM, so every declared unknown was arriving flattened.
+- A `<PackageReference>` with no `Version` — Central Package Management puts it in
+  `Directory.Packages.props` — matched none of `_parse_csproj`'s patterns and the component
+  was **dropped from the SBOM entirely**. Under the Coverage element a component ICDEV
+  knows about is listed; its version is now stated as unknown instead.
+- `tools/security/ai_bom_generator.py` was the last writer of the bare literal. It now
+  writes the sentinel and still *reads* the legacy one, because rows persisted before this
+  change still say `"unspecified"` and must keep scoring as unversioned.
+
+Pinned by `tests/test_sbom_component_names.py` (44 tests), which has one test per parser
+that used to emit a placeholder — `requirements.txt`, `pyproject.toml`, `package.json`,
+`Cargo.toml`, `.csproj`, `pom.xml`, plus the AI-BOM scanner — and an end-to-end
+`generate_sbom()` run over a real database asserting that no legacy literal survives
+anywhere in the document, that every unresolved version states a reason, and that the
+alternates round-trip back out of the finished document.
 
 ### 3.3 Practices and Processes
 

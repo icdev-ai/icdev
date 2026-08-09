@@ -44,6 +44,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from tools.compliance.unknown_information import UNKNOWN, is_legacy_sentinel
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -270,7 +271,12 @@ class AIBOMGenerator:
                         continue
 
                     name = match.group(1).lower().replace("_", "-")
-                    version = match.group(3) or "unspecified"
+                    # An unpinned requirement has no version, and the 2026
+                    # Component Version element says the author must state that
+                    # it is UNKNOWN. The old literal "unspecified" said neither
+                    # "we could not establish it" nor "we are withholding it"
+                    # (sbx-fld-06).
+                    version = match.group(3) or UNKNOWN
 
                     if name not in AI_FRAMEWORK_PACKAGES:
                         continue
@@ -351,7 +357,7 @@ class AIBOMGenerator:
         """
         comp_type = component.get("component_type", "")
         provider = component.get("provider", "").lower()
-        version = component.get("version", "unspecified")
+        version = component.get("version", UNKNOWN)
         name = component.get("component_name", "").lower()
 
         # Cloud-hosted LLM models are medium-high risk (data leaves boundary)
@@ -362,8 +368,10 @@ class AIBOMGenerator:
                 return "low"
             return "medium"
 
-        # Unversioned libraries are higher risk
-        if comp_type == "library" and version in ("unspecified", "unknown"):
+        # Unversioned libraries are higher risk. A pre-2026 BOM already stored in
+        # the database still says "unspecified", so both readings are accepted —
+        # what changed is only what this generator now WRITES.
+        if comp_type == "library" and (version == UNKNOWN or is_legacy_sentinel(version)):
             return "high"
 
         # Known ML frameworks with large attack surfaces
