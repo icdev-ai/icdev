@@ -4939,3 +4939,14 @@ python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci
 python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
+
+# AGOV CASE — case-bundle verification (agov-case-03)
+python tools/agent_case/bundle_verifier.py --bundle <dir>                 # all three layers, human-readable
+python tools/agent_case/bundle_verifier.py --bundle <dir> --json          # per-record findings, machine-readable
+python tools/agent_case/bundle_verifier.py --bundle <dir> --layer hmac    # one layer (repeatable)
+python tools/agent_case/bundle_verifier.py --bundle <dir> --secret <key>  # key instead of $ICDEV_HOOK_HMAC_SECRET
+
+# Exit codes: 0 all layers passed / 1 a layer FAILED / 2 nothing failed but
+# something could not be verified / 3 the bundle could not be read.
+# tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
+# compute_event_hmac, compute_audit_row_hash.
