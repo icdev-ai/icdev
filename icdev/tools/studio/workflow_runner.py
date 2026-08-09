@@ -11,6 +11,7 @@ multi-user and multi-tab runs isolated.
 
 from __future__ import annotations
 
+import argparse
 import itertools
 import json
 import os
@@ -1830,3 +1831,208 @@ def generate_python_script(workflow_id: str) -> str:
     ]
 
     return "\n".join(lines)
+
+
+# ── CLI ────────────────────────────────────────────────────
+#
+# hgx-cx-03: a graph run must be startable without the dashboard — by an agent,
+# or by a cron job on an air-gapped box. This is a thin front end over the
+# public API above; it adds no execution path of its own.
+#
+# WHY WAITING IS THE DEFAULT. `start_run` spawns the worker as a DAEMON thread
+# in the calling process. A CLI that returned immediately would exit, take the
+# interpreter down with it, and leave a run row stuck at `running` — technically
+# resumable, but nothing would ever resume it. `--no-wait` is the deliberate
+# fire-and-forget form and is only correct when a supervisor will `--resume`.
+
+_CLI_POLL_SECONDS = 0.5
+_CLI_DEFAULT_TIMEOUT = 600.0
+
+#: Statuses the CLI stops waiting on. `awaiting_approval` counts as settled:
+#: the gate is a human decision, and no amount of further waiting resolves it.
+_CLI_SETTLED_STATUSES = ("success", "failed", "awaiting_approval")
+
+#: Exit codes. Distinguishing "did not finish" from "failed" is the whole point
+#: for a cron caller: a run parked on a human gate is not a broken run.
+EXIT_OK = 0          # finished successfully, or a read completed
+EXIT_FAILED = 1      # the run failed, or the command itself errored
+EXIT_UNFINISHED = 2  # parked on a gate, or still running at --timeout
+
+
+def wait_for_run(run_id: str, timeout: float) -> dict | None:
+    """Poll the run row until it settles or ``timeout`` elapses.
+
+    "Settled" is ``_CLI_SETTLED_STATUSES``: finished, or parked on a human gate
+    that no further waiting resolves. Returns the last row read — which is
+    ``None`` for an unknown run, and a still-``running`` row on timeout.
+
+    Polls the DB rather than draining the SSE queue: the queue is bounded at 500
+    events and is shared with any live stream_run consumer, so a headless reader
+    would compete with the dashboard for the same events.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        run = get_run(run_id)
+        if run is None or run.get("status") in _CLI_SETTLED_STATUSES:
+            return run
+        if time.monotonic() >= deadline:
+            return run
+        time.sleep(_CLI_POLL_SECONDS)
+
+
+def _cli_exit_code(run_status: str | None) -> int:
+    if run_status == "success":
+        return EXIT_OK
+    if run_status == "failed":
+        return EXIT_FAILED
+    return EXIT_UNFINISHED
+
+
+def _jsonable(value):
+    """Coerce a DB row value to something ``json.dumps`` accepts.
+
+    PostgreSQL hands back ``datetime`` for timestamp columns where SQLite hands
+    back ``str``; without this the same command would print on one backend and
+    raise on the other.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def run_report(run_id: str) -> dict:
+    """JSON-safe envelope describing a run and its steps, or a not-found refusal.
+
+    Shared by the CLI below and by the ``studio_run_*`` MCP handlers so both
+    surfaces answer "what is this run doing" with the identical shape.
+    """
+    run = get_run(run_id)
+    if not run:
+        return {
+            "status": "failed",
+            "error_type": "run_not_found",
+            "run_id": run_id,
+            "error": f"No such run: {run_id}",
+        }
+    summary = run.get("summary_json")
+    if isinstance(summary, str) and summary:
+        try:
+            summary = json.loads(summary)
+        except ValueError:
+            pass  # keep the raw text rather than dropping the only diagnostic
+    return {
+        "status": "success",
+        "run_id": run_id,
+        "workflow_id": _jsonable(run.get("workflow_id")),
+        "workflow_name": _jsonable(run.get("workflow_name")),
+        "project_id": _jsonable(run.get("project_id")),
+        "run_status": _jsonable(run.get("status")),
+        "started_at": _jsonable(run.get("started_at")),
+        "completed_at": _jsonable(run.get("completed_at")),
+        "summary": summary if isinstance(summary, dict) else _jsonable(summary),
+        # step_run_id is carried because it is the handle approve_step/reject_step
+        # take — without it a headless caller cannot clear its own gate.
+        "steps": [
+            {
+                "step_run_id": _jsonable(s.get("step_run_id")),
+                "step_id": _jsonable(s.get("step_id")),
+                "step_name": _jsonable(s.get("step_name")),
+                "tool": _jsonable(s.get("tool")),
+                "status": _jsonable(s.get("status")),
+                "exit_code": _jsonable(s.get("exit_code")),
+                "duration_ms": _jsonable(s.get("duration_ms")),
+            }
+            for s in get_run_steps(run_id)
+        ],
+    }
+
+
+def _cli_print(payload: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload))
+        return
+    if payload.get("status") != "success":
+        print(f"ERROR [{payload.get('error_type', 'error')}] {payload.get('error', '')}")
+        return
+    print(f"run_id:     {payload['run_id']}")
+    print(f"workflow:   {payload.get('workflow_id')}")
+    print(f"status:     {payload.get('run_status')}")
+    for step in payload.get("steps", []):
+        print(f"  [{step['status']:>18}] {step['step_id']} — {step['step_name']}")
+
+
+def _cli_parse_inputs(raw: str) -> dict | None:
+    """Parse ``--inputs``. Absent stays None (SQL NULL), not ``{}``."""
+    if not raw.strip():
+        return None
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"--inputs must be a JSON object, not {type(parsed).__name__}")
+    return parsed
+
+
+def main(argv: list | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="ICDEV™ Studio — headless workflow run control",
+    )
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--start", metavar="WORKFLOW_ID", help="Start a new run")
+    action.add_argument("--resume", metavar="RUN_ID", help="Re-attach and continue a run")
+    action.add_argument("--status", metavar="RUN_ID", help="Report a run and its steps")
+    parser.add_argument("--project-id", default="default")
+    parser.add_argument("--inputs", default="",
+                        help="Run inputs as a JSON object; omitted records SQL NULL")
+    parser.add_argument("--no-wait", action="store_true",
+                        help="Return as soon as the run is created — the worker "
+                             "dies with this process, so something must --resume it")
+    parser.add_argument("--timeout", type=float, default=_CLI_DEFAULT_TIMEOUT,
+                        help=f"Seconds to wait for the run to settle (default {_CLI_DEFAULT_TIMEOUT:.0f})")
+    parser.add_argument("--json", action="store_true", help="Emit a JSON envelope")
+    args = parser.parse_args(argv)
+
+    try:
+        if args.status:
+            payload = run_report(args.status)
+            _cli_print(payload, args.json)
+            return EXIT_OK if payload.get("status") == "success" else EXIT_FAILED
+
+        if args.resume:
+            if not resume_run(args.resume):
+                payload = {
+                    "status": "failed",
+                    "error_type": "run_not_resumable",
+                    "run_id": args.resume,
+                    "error": ("Run is unknown, already finished, or a live worker "
+                              "in this process already owns it"),
+                }
+                _cli_print(payload, args.json)
+                return EXIT_FAILED
+            run_id = args.resume
+        else:
+            run_id = start_run(
+                args.start,
+                project_id=args.project_id,
+                inputs=_cli_parse_inputs(args.inputs),
+            )
+
+        if not args.no_wait:
+            wait_for_run(run_id, args.timeout)
+        payload = run_report(run_id)
+        payload["waited"] = not args.no_wait
+        _cli_print(payload, args.json)
+        return _cli_exit_code(payload.get("run_status"))
+
+    except ValueError as exc:
+        # start_run raises ValueError for an unknown workflow and for a
+        # non-object inputs payload; _cli_parse_inputs for malformed JSON.
+        _cli_print({"status": "failed", "error_type": "invalid_request",
+                    "error": str(exc)}, args.json)
+        return EXIT_FAILED
+    except Exception as exc:  # noqa: BLE001
+        _cli_print({"status": "failed", "error_type": "runner_error",
+                    "error": f"{type(exc).__name__}: {exc}"}, args.json)
+        return EXIT_FAILED
+
+
+if __name__ == "__main__":
+    sys.exit(main())

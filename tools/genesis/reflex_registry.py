@@ -130,6 +130,9 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("coherence_sweep",    SUPPORT, 6.0,
                 "Full-tier coherence sweep on main — runs the whole-app checks the "
                 "per-task fast-tier gate defers, and refreshes its baseline"),
+    ReflexEntry("kanban_policy_drift", SUPPORT, 6.0,
+                "Task descriptions carry a copy of the card's operating policy; "
+                "re-syncs dispatchable rows against `policy:` in args/projects.yaml"),
     ReflexEntry("freshness_guardian", SUPPORT, 1.0,  "DDC freshness quality sweep → dd_freshness_alerts/dd_quality_runs"),
     ReflexEntry("cato_monitor",       SUPPORT, 6.0,  "cATO compliance monitoring"),
     ReflexEntry("sdc_control_expiry", SUPPORT, 4.0,  "SDC security control-expiry sweep — IQR anomaly-thresholded review-date alerts"),
