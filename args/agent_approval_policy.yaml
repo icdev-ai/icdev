@@ -65,6 +65,28 @@ tools:
     - browser_read_state
     - classify
     - summarize
+    # Self-suspension (agov-wake-02, tools/agent_runtime/wake_tools.py). Each
+    # writes ONE row to agent_wakes recording an intention to resume, and has no
+    # other effect: the only free-text argument is `note`, which is stored and
+    # shown to an operator and never parsed, executed or dispatched on. That is
+    # the literal sense of the claim this tier makes — "this cannot act" — even
+    # though the row itself is a write, and the row is mutable, cancellable
+    # state rather than evidence.
+    #
+    # The ESCALATION EXEMPTION is why they are here rather than merely
+    # auto-allowed. The most natural note an agent will ever write is the one
+    # naming what it is waiting for — sleep_for(600, note="waiting for the git
+    # push to finish") — which matches the `git\s+push` pattern below and would
+    # halt for human approval, on a tool whose whole purpose is to suspend when
+    # no human is watching. Same category error as read_file, same fix.
+    #
+    # They are NOT in `command_tools` and must never be added: nothing here is a
+    # shell, so listing them there would both re-enable escalation against the
+    # note and let a DOWNGRADE pattern lower some other call's tier.
+    - sleep_for
+    - sleep_until
+    - wake_on
+    - wake_on_event
 
   # ---------------------------------------------------------------------------
   # Recoverable — local mutation a checkpoint or git can restore.

@@ -269,3 +269,23 @@ tests/test_agent_wake_store.py
 # through classification_manager rather than written down. ~1.4s, pure Python
 # plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-case-02).
 tests/test_agov_case_bundle.py
+# test_agent_wake_tools.py earns a slot because the failure it pins is silent and
+# unrecoverable: a wake tool that returns "suspended: wake-abc" while persisting
+# nothing leaves an agent that has stopped working and will never be resumed, and
+# the string it returned says the opposite. It also pins the two bounds refusing
+# BEFORE the INSERT (a past `when`, a sleep past the cap) and the `reversible`
+# tier that exempts a note naming `git push` from halting an unattended session
+# for approval. ~1.5s, pure Python plus an in-tmpdir SQLite file built from the
+# migration's own up.sql, no DB service/LLM/network (agov-wake-02).
+tests/test_agent_wake_tools.py
+
+# AGOV CASE — the timeline/bundler/CLI operator surface (agov-case-04). The
+# load-bearing case is the ROUND TRIP: a bundle written by case_bundler must
+# verify clean under bundle_verifier, which is a separate module with its own
+# digest code path. A per-module test would pass while the two disagreed about
+# member paths, JSON canonicalization or line endings — the exact drift that
+# makes a bundle worthless on the machine it is carried to. Also pins the
+# unjoinable-table disclosure and that no dashboard template ships here.
+# ~1.1s, pure Python plus a three-table in-tmpdir SQLite file, no DB
+# service/LLM/network (agov-case-04).
+tests/test_agov_case_cli.py
