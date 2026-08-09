@@ -280,3 +280,20 @@ tests/test_agent_wake_tools.py
 # ~1.1s, pure Python plus a three-table in-tmpdir SQLite file, no DB
 # service/LLM/network (agov-case-04).
 tests/test_agov_case_cli.py
+# test_inbox_adapters.py earns a slot because the failure it pins is silent and
+# strictly worse than not having the feature: a mirrored ask that collects an
+# answer nobody acts on leaves the operator believing the agent was unblocked
+# while the CoWorkerThread is still parked. It parks a REAL thread in the real
+# _wait_for_hitl_resolution and asserts the release actually wakes it, rather
+# than asserting a row was written. Three more invariants, each failing quietly:
+# resolving through the existing POST /api/ace/<id>/hitl must settle the mirror
+# (or the queue shows an ask that is already decided); ace_audit_log must stay
+# append-only, asserted over every statement the flow issues and not just the
+# end state, because an UPDATE that leaves the same values is invisible in the
+# rows; and an unmigrated inbox must leave the ACE gate behaving exactly as it
+# does today -- failing it closed makes an optional delivery channel
+# load-bearing, failing it open turns a missing table into an approval. Tables
+# are built from the DDL the runtime ships (the migration's own up.sql,
+# tools/ace/db/init_db.py). ~1.5s, pure Python plus two in-tmpdir SQLite files,
+# no DB service/LLM/network (agov-inbox-05).
+tests/test_inbox_adapters.py
