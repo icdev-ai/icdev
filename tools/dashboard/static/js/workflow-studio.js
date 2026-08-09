@@ -186,6 +186,8 @@ const StudioWF = (() => {
       doc_template: toolData.doc_template || null,
       mcp_tool: toolData.mcp_tool || null,
       mcp_params: toolData.mcp_params || {},
+      prompt: toolData.prompt || null,
+      agent_tools: toolData.agent_tools || [],
       sub_steps: toolData.sub_steps || [],
     };
     nodes.push(node);
@@ -215,6 +217,8 @@ const StudioWF = (() => {
       badgeHtml = `<div class="wf-node__badge">Approval | ${node.approval_policy}</div>`;
     } else if (node.node_type === 'mcp' && node.mcp_tool) {
       badgeHtml = `<div class="wf-node__badge">MCP | ${node.mcp_tool}</div>`;
+    } else if (node.node_type === 'agent') {
+      badgeHtml = `<div class="wf-node__badge">Agent | ${(node.agent_tools || []).join(', ') || 'no tools'}</div>`;
     }
 
     el.innerHTML = `
@@ -316,6 +320,8 @@ const StudioWF = (() => {
           doc_template: sub.doc_template || null,
           mcp_tool: sub.mcp_tool || null,
           mcp_params: sub.mcp_params || {},
+          prompt: sub.prompt || null,
+          agent_tools: sub.agent_tools || [],
           sub_steps: sub.sub_steps || [],
         }, pos.x, pos.y);
         idMap[sub.id] = n.id;
@@ -364,6 +370,8 @@ const StudioWF = (() => {
           doc_template: n.doc_template,
           mcp_tool: n.mcp_tool,
           mcp_params: n.mcp_params,
+          prompt: n.prompt,
+          agent_tools: n.agent_tools,
           args: n.args,
           timeout: n.timeout,
           required: n.required,
@@ -620,11 +628,13 @@ const StudioWF = (() => {
     const humanSec = $('cfg-human-section');
     const approvalSec = $('cfg-approval-section');
     const mcpSec = $('cfg-mcp-section');
-    if (!toolSec || !humanSec || !approvalSec || !mcpSec) return;
+    const agentSec = $('cfg-agent-section');
+    if (!toolSec || !humanSec || !approvalSec || !mcpSec || !agentSec) return;
     toolSec.style.display     = value === 'tool'     ? '' : 'none';
     humanSec.style.display    = value === 'human'    ? '' : 'none';
     approvalSec.style.display = value === 'approval' ? '' : 'none';
     mcpSec.style.display      = value === 'mcp'      ? '' : 'none';
+    agentSec.style.display    = value === 'agent'    ? '' : 'none';
   }
 
   // ── Node Config Modal ──
@@ -651,6 +661,7 @@ const StudioWF = (() => {
           <option value="human"${nodeType === 'human' ? ' selected' : ''}>Human Gate</option>
           <option value="approval"${nodeType === 'approval' ? ' selected' : ''}>Approval Gate</option>
           <option value="mcp"${nodeType === 'mcp' ? ' selected' : ''}>MCP Tool</option>
+          <option value="agent"${nodeType === 'agent' ? ' selected' : ''}>Agent Loop</option>
         </select>
       </div>
       <div class="studio-form-group">
@@ -740,6 +751,23 @@ const StudioWF = (() => {
                     placeholder='{"path": "tools/"}'>${esc(JSON.stringify(node.mcp_params || {}, null, 2))}</textarea>
         </div>
       </div>
+      <div id="cfg-agent-section">
+        <div class="studio-form-group">
+          <label class="studio-label">Agent Prompt</label>
+          <textarea class="studio-input studio-textarea" id="cfg-agent-prompt" rows="4"
+                    placeholder="Read tools/foo.py and add a module docstring.">${esc(node.prompt || '')}</textarea>
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label">Toolset Bundles (comma-separated)</label>
+          <input type="text" class="studio-input" id="cfg-agent-tools"
+                 value="${esc((node.agent_tools || []).join(', '))}"
+                 placeholder="worktree_build">
+          <div class="studio-hint" style="font-size:0.75rem;opacity:0.7;margin-top:4px;">
+            Bundle names from args/agent_toolsets.yaml. Default-deny — a step with
+            no bundle is refused rather than handed every tool.
+          </div>
+        </div>
+      </div>
       <div style="margin-top:12px;">
         <button class="studio-btn studio-btn--danger studio-btn--sm"
                 onclick="StudioWF.deleteNode('${nodeId}')">
@@ -781,6 +809,8 @@ const StudioWF = (() => {
       node.approval_policy = null;
       node.mcp_tool        = null;
       node.mcp_params      = {};
+      node.prompt          = null;
+      node.agent_tools     = [];
     } else if (nodeType === 'human') {
       node.role            = $('cfg-role').value || null;
       node.human_required  = $('cfg-human-required').checked;
@@ -788,6 +818,8 @@ const StudioWF = (() => {
       node.approval_policy = null;
       node.mcp_tool        = null;
       node.mcp_params      = {};
+      node.prompt          = null;
+      node.agent_tools     = [];
     } else if (nodeType === 'approval') {
       node.approval_policy = $('cfg-approval-policy').value || null;
       node.role            = $('cfg-approver-role').value || null;
@@ -795,6 +827,8 @@ const StudioWF = (() => {
       node.doc_template    = null;
       node.mcp_tool        = null;
       node.mcp_params      = {};
+      node.prompt          = null;
+      node.agent_tools     = [];
     } else if (nodeType === 'mcp') {
       const mcpTool = $('cfg-mcp-tool').value.trim();
       if (!mcpTool) {
@@ -812,6 +846,30 @@ const StudioWF = (() => {
       node.human_required  = false;
       node.doc_template    = null;
       node.approval_policy = null;
+      node.prompt          = null;
+      node.agent_tools     = [];
+    } else if (nodeType === 'agent') {
+      const prompt = $('cfg-agent-prompt').value.trim();
+      if (!prompt) {
+        toast('Agent nodes require a prompt', 'error');
+        return;
+      }
+      const bundles = $('cfg-agent-tools').value
+        .split(',').map(s => s.trim()).filter(Boolean);
+      if (!bundles.length) {
+        // Default-deny: the executor refuses a step with no declared bundle, so
+        // saving one here would only move the refusal to run time.
+        toast('Agent nodes require at least one toolset bundle', 'error');
+        return;
+      }
+      node.prompt          = prompt;
+      node.agent_tools     = bundles;
+      node.role            = null;
+      node.human_required  = false;
+      node.doc_template    = null;
+      node.approval_policy = null;
+      node.mcp_tool        = null;
+      node.mcp_params      = {};
     }
 
     const el = $(nodeId);
@@ -828,6 +886,8 @@ const StudioWF = (() => {
         badge = `<div class="wf-node__badge">Approval | ${esc(node.approval_policy)}</div>`;
       } else if (nodeType === 'mcp' && node.mcp_tool) {
         badge = `<div class="wf-node__badge">MCP | ${esc(node.mcp_tool)}</div>`;
+      } else if (nodeType === 'agent') {
+        badge = `<div class="wf-node__badge">Agent | ${esc((node.agent_tools || []).join(', '))}</div>`;
       }
       if (badge) {
         const statusEl = el.querySelector('.wf-node__status');
@@ -948,6 +1008,12 @@ const StudioWF = (() => {
     if (s.mcp_params && Object.keys(s.mcp_params).length) {
       out += `${pp}mcp_params: ${JSON.stringify(s.mcp_params)}\n`;
     }
+    // JSON.stringify for the prompt: it is free text and may contain quotes or
+    // newlines, and a JSON string is a valid YAML double-quoted scalar.
+    if (s.prompt) out += `${pp}prompt: ${JSON.stringify(s.prompt)}\n`;
+    if (s.agent_tools && s.agent_tools.length) {
+      out += `${pp}agent_tools: [${s.agent_tools.map(t => `"${t}"`).join(', ')}]\n`;
+    }
     if (s.sub_steps && s.sub_steps.length) {
       out += `${pp}sub_steps:\n`;
       for (const sub of s.sub_steps) out += serializeStepYAML(sub, stepIndent + 4);
@@ -975,6 +1041,8 @@ const StudioWF = (() => {
       if (n.doc_template) step.doc_template = n.doc_template;
       if (n.mcp_tool) step.mcp_tool = n.mcp_tool;
       if (n.mcp_params && Object.keys(n.mcp_params).length) step.mcp_params = n.mcp_params;
+      if (n.prompt) step.prompt = n.prompt;
+      if (n.agent_tools && n.agent_tools.length) step.agent_tools = n.agent_tools;
       if (n.sub_steps && n.sub_steps.length) step.sub_steps = n.sub_steps;
       return step;
     });
@@ -1096,6 +1164,8 @@ const StudioWF = (() => {
           doc_template: s.doc_template || null,
           mcp_tool: s.mcp_tool || null,
           mcp_params: s.mcp_params || {},
+          prompt: s.prompt || null,
+          agent_tools: s.agent_tools || [],
           sub_steps: s.sub_steps || [],
         }, 120, y);
         y += 100;
@@ -1551,6 +1621,8 @@ const StudioWF = (() => {
           doc_template: s.doc_template || null,
           mcp_tool: s.mcp_tool || null,
           mcp_params: s.mcp_params || {},
+          prompt: s.prompt || null,
+          agent_tools: s.agent_tools || [],
           sub_steps: s.sub_steps || [],
         }, pos.x, pos.y);
         idMap[s.id] = node.id;
@@ -1619,6 +1691,8 @@ const StudioWF = (() => {
           doc_template: s.doc_template || null,
           mcp_tool: s.mcp_tool || null,
           mcp_params: s.mcp_params || {},
+          prompt: s.prompt || null,
+          agent_tools: s.agent_tools || [],
           sub_steps: s.sub_steps || [],
         }, pos.x, pos.y);
         idMap[s.id] = node.id;
