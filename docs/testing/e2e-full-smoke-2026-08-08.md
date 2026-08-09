@@ -104,8 +104,9 @@ not be a defect at all.
 - Screenshots: `.tmp/test_runs/screenshots/`
 - Failure screenshots + video: `.tmp/test_runs/playwright-artifacts-e2e9dd4/`
 - Captured to the structured build log via `capture_playwright()`.
-- No `playwright-results-e2e9dd4.json` / HTML report was written — the JSON and
-  HTML reporters do not flush when the run ends with tests in "did not run".
-  Use the line output (`.tmp/pw_out.txt`) for this run.
+- No `playwright-results-e2e9dd4.json` and no tagged HTML report were written,
+  despite both reporters being configured and the run reaching its summary.
+  Cause not established — flagged here because `npx playwright show-report` has
+  nothing to show for this run. Use the line output (`.tmp/pw_out.txt`) instead.
 
 # CUI // SP-CTI
