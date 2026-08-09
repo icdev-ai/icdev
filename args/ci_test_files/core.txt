@@ -235,3 +235,27 @@ tests/test_pytest_timeout_declared.py
 # re-inlined list in the YAML. ~1s, pure Python, no DB/LLM/network
 # (kax-conflict-07).
 tests/ci/test_gated_test_list.py
+
+# test_agov_rule_pack.py earns a slot because the invariant it pins is one
+# boolean wide and catastrophic in exactly one direction. Every rule shipped
+# under args/agent_rules/ must set `enforce: false`; a rule that flips to true
+# starts BLOCKING live tool calls for every session on the next pull, and the
+# first thing it blocks is whatever it is wrong about. Nothing else notices —
+# a detection pack is silent when it is behaving and silent when it is not, so
+# the failure surfaces as sessions mysteriously refusing work. It also compiles
+# every regex and rejects a matcher key outside the loader's vocabulary, which
+# is the other silent half: the loader SKIPS an unknown key rather than failing
+# open, so a typo is a rule that never fires and looks like a clean environment.
+# ~1s, pure Python, no DB service/LLM/network (agov-det-05).
+tests/test_agov_rule_pack.py
+
+# test_agov_agent_findings.py earns a slot for the append-only registration.
+# Adding a table to APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py is a
+# one-line edit that nothing else verifies, and an unregistered audit table is
+# indistinguishable from a registered one until someone edits a row that was
+# supposed to be evidence. It also pins the INSERT column list against the
+# migration DDL and the conftest fixture — the drift that made module_budget_usage
+# report success while persisting nothing, because CREATE TABLE IF NOT EXISTS
+# never alters an existing table and the failed INSERT was swallowed. ~1s, pure
+# Python plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-det-05).
+tests/test_agov_agent_findings.py
