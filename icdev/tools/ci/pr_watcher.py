@@ -1441,6 +1441,24 @@ class PRWatcher:
                         report.actions.append(action)
                         self._audit(action)
                         continue
+                    # UN-DRAFT FIRST, before any hold can `continue` past this.
+                    #
+                    # Auto-merge must work regardless of who opened the PR — a
+                    # kanban session, a CLI session, or a person. It did not: the
+                    # sibling-conflict hold below returns early, so a green PR
+                    # held behind a sibling was never taken out of draft, and
+                    # when the sibling finally merged the PR sat there STILL a
+                    # draft with nothing left to trigger it. Three AGOV PRs were
+                    # in exactly that state — CLEAN, green, and invisible to
+                    # auto-merge.
+                    #
+                    # Safe to do early because un-drafting merges nothing. It
+                    # only removes the one blocker GitHub will not let the
+                    # watcher clear later, and _mark_ready still refuses for a
+                    # manual gate or an unsatisfied dependency.
+                    if state.get("isDraft"):
+                        self._mark_ready(pr_url, task["id"], self._connection())
+
                     # Sibling-file-conflict guard (kph): another open PR edits the
                     # same source file(s) — merging both races on one path (the
                     # "two different blueprint.py" collision that stranded Cortex).

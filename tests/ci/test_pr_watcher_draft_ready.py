@@ -130,3 +130,28 @@ def test_dry_run_never_touches_the_forge():
     w.dry_run = True
     assert w._mark_ready("https://x/pull/1", "hgx-cx-01", lambda: conn) is True
     assert runner.calls == []
+
+
+# ── ordering: auto-merge must not depend on who opened the PR ───────────────
+def test_undraft_happens_before_the_sibling_hold_can_return():
+    """A green PR held by a sibling was never taken out of draft.
+
+    The sibling-conflict guard `continue`s, so the un-draft that used to sit
+    below it never ran — and when the sibling finally merged, the PR sat there
+    STILL a draft with nothing left to trigger it. Three AGOV PRs were in that
+    state at once: CLEAN, green, invisible to auto-merge.
+
+    Asserted on source order rather than behaviour because the failure IS the
+    order: both calls exist either way, and a behavioural test that happened to
+    take the non-holding path would pass while the bug remained.
+    """
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[2] / "tools" / "ci" / "pr_watcher.py"
+    text = src.read_text(encoding="utf-8")
+    undraft = text.index('if state.get("isDraft"):')
+    sibling_hold = text.index('if self.config.get("hold_on_sibling_conflict", False):')
+    assert undraft < sibling_hold, (
+        "the un-draft must precede the sibling-conflict hold; below it, a held "
+        "PR is never taken out of draft and auto-merge can never reach it"
+    )
