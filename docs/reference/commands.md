@@ -592,6 +592,40 @@ arguments can carry CUI. `dry_run` and `off` still write the audit row.
 
 ---
 
+## Approval Inbox — Pending-Approval Store (agov-inbox-01)
+
+`console_approver` denies on EOF, so a headless overnight run refuses every
+irreversible action. The inbox is the durable destination for the ask instead —
+it changes **where** the question is delivered, never **what** the agent may do.
+
+```bash
+python tools/agent_runtime/approval_inbox.py --list --json
+python tools/agent_runtime/approval_inbox.py --list --state pending --inbox ops
+python tools/agent_runtime/approval_inbox.py --show <item_id> --json
+python tools/agent_runtime/approval_inbox.py --resolve <item_id> --approve \
+    --reason "authorised" --json
+python tools/agent_runtime/approval_inbox.py --resolve <item_id> --deny --json
+python tools/agent_runtime/approval_inbox.py --expire-due --json
+```
+
+Backed by `approval_items` (migration `20260809203855`), which is **mutable and
+deliberately NOT append-only**: an item is created `pending` and then moves
+exactly once to `resolved` / `expired` / `cancelled`, and that transition is an
+UPDATE. The permanent record stays `agent_approval_log` — every transition to a
+terminal state writes one row through the gate's existing `record_decision()`,
+so there is no second decision log.
+
+**Expiry and cancellation record `denied`.** A timeout is never an approval; a
+store that treated one as approval would silently become an auto-approver.
+
+Argument **values are never stored or delivered**. Rows are mirrored out to
+Slack/Teams/Telegram/email, so `render_summary()` — tier, rule, policy prose and
+argument key **names** — is the only sanctioned way to build a deliverable body.
+`ApprovalRequest.summary()` is **not** safe for this: it previews the
+`command` / `path` / `file_path` value.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
