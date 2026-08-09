@@ -1706,3 +1706,55 @@ tool rather than by ICDEV.
   break the signature guarantee at the same time), or if retrieval grows a
   fetch-by-URL mode that pulls an SBOM from a remote registry — that is an SSRF
   surface this module does not currently have.
+
+### Gap 57 — SBOM Component Name derivation and validation (`tools/compliance/component_names.py`)
+
+**Module:** `tools/compliance/component_names.py` (sbx-fld-06), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** Two, and they are the same two as Gap 55's. (1) As a library it
+receives component dicts built by the generator's manifest parsers from a target
+project's `requirements.txt`, `pyproject.toml`, `package.json`, `pom.xml`,
+`go.mod`, `Cargo.toml` and `*.csproj` — third-party content by definition, since
+the point is to inventory someone else's dependency tree. A package name is
+attacker-influenced in exactly the way a typosquat is. (2) `--validate` reads a
+CycloneDX JSON SBOM from an operator-supplied path, which may have been produced
+by another vendor's tool.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Every input is treated as an opaque string and every output is a
+  rewriting of one. The module's total contact with untrusted content is
+  `str.strip`/`lower`/`split`/`rsplit`, three anchored `re` patterns,
+  `urllib.parse.unquote`, `json.loads` (building data, never code) and
+  `json.dumps`. There is no `exec`/`eval`/`compile`, no `subprocess`, no
+  `importlib`, no `pickle` or `yaml.load`, no SQL, no network call, and no
+  filesystem path derived from content — the CLI opens exactly the one path the
+  operator named and writes nothing. A hostile package name becomes a string in a
+  property value; it is never interpreted, never dispatched on, and never used to
+  select a code path.
+- **Guardrails:**
+  - Derivation is closed: five kinds, fixed in `NAME_KINDS`, each a mechanical
+    transform of a field the component already carries. There is no lookup table
+    of "also known as", no fuzzy matching and no registry consult, so a name
+    cannot be introduced from outside the component record.
+  - `validate_names` rejects an alternate whose kind is outside `NAME_KINDS`, so
+    a third-party SBOM cannot smuggle in a property that a downstream reader
+    would treat as an ICDEV-derived name.
+  - `_PURL_HEAD`, `_PEP503_SEPARATORS` and the qualified-name join are anchored
+    with bounded quantifiers; there is no nested quantifier for a hostile name to
+    drive into catastrophic backtracking.
+  - `names_from_json` catches `TypeError`/`ValueError` and degrades to "no
+    alternates" rather than raising, so a corrupt stored value cannot take down a
+    generation run.
+  - The generator passes the `Disclosure`, so a withheld or unknown name emits no
+    alternates at all — the redaction cannot be undone by a derived spelling.
+  - `_persist_components` binds every value as a parameter; no name is ever
+    interpolated into SQL.
+  - `tests/test_sbom_component_names.py` exercises the malformed paths directly —
+    an unrecognised kind, a repeated alternate, an alternate that repeats the
+    primary, unreadable JSON, and a purl whose namespace contains an `@`.
+- **Revisit if:** alternates begin arriving from a registry, an advisory feed or
+  another vendor's SBOM rather than being derived from the component's own
+  coordinates — accepting a name from outside the record is a different posture
+  from rewriting one inside it — or if `--validate` grows a mode that writes back
+  into an SBOM it parsed.
