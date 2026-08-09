@@ -1067,6 +1067,20 @@ python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh v
 # depend on the dispatching process still being alive) and appends it. It does not weaken the
 # gate: a branch with no work still fails.
 
+# Kanban — LAND a task's PR instead of being refused by the done-gate (kax-merge-01)
+python tools/kanban/cli.py --set-status <task-id> done --merge --dry-run   # Preflight only, merges nothing
+python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Merge, confirm, then mark done
+# `--set-status done` only ever GATED on merge: it refuses while a branch carrying the task id
+# has commits not on origin/<default>, and offered --force-done as the audited bypass. Neither
+# lands the work. --merge is the way to SATISFY the gate, and it is strictly HARDER than the
+# refusal: an OPEN PR based on the default branch, not CONFLICTING, no requested changes, green
+# CI (an empty check rollup is unknown, not green), the enforced done-gate
+# (pr_watcher._enforced_done_ok — reused, not re-derived), the sibling-file-conflict guard when
+# hold_on_sibling_conflict is set, and finally `state == MERGED` read back from GitHub before
+# 'done' is written (gh pr merge --auto exits 0 while the merge is still queued). Fail-closed on
+# every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
+# local git heuristic, not a landing check. One task id per invocation; not combinable with
+# --force-done. Marking done records the same actor='manual' audit transition --force-done does.
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
 python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
