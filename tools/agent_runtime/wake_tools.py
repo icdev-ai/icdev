@@ -39,6 +39,16 @@ That matches the ``git\\s+push`` irreversible pattern and would halt for human
 approval — on a tool whose entire purpose is to suspend when no human is
 watching. It is the same category error ``read_file`` hit, and the same fix.
 
+The tier is not the whole story for the BUNDLE path, and the difference is worth
+knowing before wiring these anywhere. Through ``args/agent_toolsets.yaml``'s
+``wake`` bundle the sag-safe-01 gate in :mod:`tools.agent_runtime.safety` runs
+first, and its default ``manual`` mode asks about every non-read-only tool
+whatever its tier — so a headless run gets ``blocked: operator denied`` on EOF.
+The path that works unattended is the BUILT-IN starter toolset, where these are
+also folded in and which is what :class:`~tools.agent_runtime.runtime.AgentRuntime`
+loads by default; it dispatches handlers directly. Delivering that prompt
+somewhere a human will actually see it is the INBOX epic (agov-inbox-*).
+
 They are deliberately NOT in ``command_tools``. That list is for generic
 executors, where the input IS the command; listing a non-executor there would
 both re-enable escalation against ``note`` and, worse, let a *downgrade* pattern

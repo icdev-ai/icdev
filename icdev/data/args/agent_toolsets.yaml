@@ -83,6 +83,15 @@ bundles:
     # separate claim that they cannot ACT is the `reversible` tier in
     # args/agent_approval_policy.yaml, which is what exempts a `note` naming
     # `git push` from being escalated into an approval prompt.
+    #
+    # CONSEQUENCE, MEASURED: through THIS bundle the sag-safe-01 gate applies, and
+    # in the default `manual` approval mode it asks about every non-read-only tool
+    # regardless of tier — so a headless run gets `blocked: operator denied` on EOF.
+    # The ungated path is the BUILT-IN starter toolset, where these four are also
+    # folded in and where the default runtime gets them; that is the path an
+    # unattended agent actually suspends through. Routing this bundle's prompt
+    # somewhere a human will see it is the INBOX epic's job (agov-inbox-*), not a
+    # reason to weaken the gate here.
     mutating: true
 
   worktree_read:
