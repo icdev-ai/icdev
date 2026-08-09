@@ -88,6 +88,13 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # who is answerable for a force-push that already happened, so a
         # correction is a new row.
         "agent_approval_log",
+        # Detection findings from the agent rule engine (agov-det-05, migration
+        # 20260809201320). A finding is an OBSERVATION — at this time, this rule
+        # matched these events — and an observation has no lifecycle. Editing
+        # one rewrites what the platform saw, after a reviewer may already have
+        # acted on it, so a re-evaluation appends instead. Mutable triage state,
+        # if it is ever wanted, belongs in a separate table keyed on finding_id.
+        "agent_findings",
         # Cortex canvas governance/facade audit (ctx-canvas-01)
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)
