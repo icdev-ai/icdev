@@ -90,9 +90,18 @@ import base64
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 
-from tools.compliance.dependency_resolver import RESOLUTION_DECLARED
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.compliance.dependency_resolver import RESOLUTION_DECLARED  # noqa: E402
 from tools.compliance.unknown_information import (
     FIELD_HASH_ALGORITHM,
     FIELD_HASH_VALUE,
@@ -765,7 +774,6 @@ def validate_sbom_hashes(sbom):
 
 def main():
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(
         description="Component Hash Value / Algorithm — 2026 SBOM Minimum Elements (sbx-fld-03)"
@@ -826,6 +834,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import sys
-
     sys.exit(main())
