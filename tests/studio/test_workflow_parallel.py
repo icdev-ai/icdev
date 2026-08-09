@@ -149,8 +149,23 @@ def test_max_parallel_parsing(declared, expected):
     assert runner._max_parallel(declared) == expected
 
 
-def test_no_shipped_template_declares_max_parallel():
-    """Every shipped template must stay sequential until one opts in."""
+#: Templates that opt INTO parallel dispatch, and are the reason they do.
+#: Parallelism is opt-in per template so that adding it to the runner did not
+#: reorder anything already shipped; this list is what keeps the opt-in
+#: deliberate rather than something a template picks up by copy-paste.
+PARALLEL_BY_DESIGN: dict[str, str] = {
+    # hgx-tmpl-01: a diamond whose whole point is four review lenses running in
+    # one wave. At the default of 1 it would execute them one at a time.
+    "multi_angle_review.yaml": "four review lenses fan out in a single wave",
+}
+
+
+def test_only_deliberate_templates_declare_max_parallel():
+    """A shipped template stays sequential unless it is on the opt-in list.
+
+    The default is 1, so a template that never mentions `max_parallel` runs in
+    exactly the order it did before wave-parallel dispatch existed (hgx-par-01).
+    """
     declaring = []
     for directory in _TEMPLATE_DIRS:
         for path in sorted(directory.glob("*.yaml")):
@@ -158,7 +173,7 @@ def test_no_shipped_template_declares_max_parallel():
                 data = yaml.safe_load(fh) or {}
             if isinstance(data, dict) and "max_parallel" in data:
                 declaring.append(path.name)
-    assert declaring == []
+    assert sorted(declaring) == sorted(PARALLEL_BY_DESIGN)
 
 
 # ── The before/after order diff ────────────────────────────
