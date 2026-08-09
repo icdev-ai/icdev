@@ -594,6 +594,46 @@ arguments can carry CUI. `dry_run` and `off` still write the audit row.
 
 ---
 
+## Agent Wake Store — Agent-Scheduled Resumption (agov-wake-01)
+
+Lets an agent suspend itself and be resumed when a condition it named is met.
+Every other scheduler in ICDEV is external to the agent — Genesis reflexes,
+`agent_cron_jobs` (operator-declared and recurring), the kanban scheduler — and
+none of them can say "stop here, resume me when PR #1342 goes CI-green".
+
+**Library, no CLI.** Table `agent_wakes`, migration `20260809221051`.
+
+```python
+from tools.agent_runtime.wake import (
+    add_timer, add_timer_in, add_completion, add_event,   # suspend
+    due, complete_job, fire_event,                        # signal + collect
+    mark_fired, cancel, pending, get,                     # resolve + inspect
+)
+
+add_timer_in("sess-1", 900, note="retry the flaky check")     # sleep_for
+add_timer("sess-1", "2026-08-10T09:00:00+00:00")              # sleep_until
+add_completion("sess-1", "job-42")                            # wake_on(job)
+add_event("sess-1", "pr:1342:ci_green")                       # wake_on_event(key)
+
+fire_event("pr:1342:ci_green")        # -> ids promoted pending -> due
+for wake in due():                    # promotes elapsed timers, then returns due
+    if mark_fired(wake.wake_id):      # True only for the caller that won
+        resume(wake.session_id)
+```
+
+The state machine is one-directional — `pending -> due -> fired`, or
+`-> cancelled` from either live state. Every transition is a conditional
+`UPDATE` on the current state, so `mark_fired` is idempotent **and**
+exactly-once: two overlapping ticks cannot both resume one suspension. A
+`pending` wake cannot be fired directly, because promotion is what evaluates the
+condition. Writes raise `WakeStoreUnavailable` rather than drop a wake silently;
+reads degrade to empty so a failure cannot wedge the reflex tick.
+
+Agent tools (`sleep_for` / `sleep_until` / `wake_on` / `wake_on_event`) land in
+agov-wake-02; the tick and the event emitters in agov-wake-03.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
