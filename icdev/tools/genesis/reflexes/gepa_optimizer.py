@@ -20,16 +20,25 @@ IMPLEMENTATION_STATUS = "full"
 
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
-    """Execute one GEPA optimization cycle."""
+    """Execute one GEPA optimization cycle.
+
+    Returns the standard daemon envelope ``{success, metric_value, details}``.
+    hgx-obs-02: this previously returned ``{"status": "ok", ...}`` with no
+    ``success`` key, so ``result.get("success", False)`` in the daemon would
+    have recorded every run as a failure and tripped the circuit breaker — it
+    just never showed, because the reflex was in neither REFLEX_NAMES nor
+    args/genesis_config.yaml and so never dispatched at all.
+    """
     try:
         from tools.skills.gepa_optimizer import run as gepa_run
-        summary = gepa_run(dry_run=False)
+        dry_run = bool(config.get("dry_run", False))
+        summary = gepa_run(dry_run=dry_run)
         applied = len(summary.get("applied", []))
         skipped = len(summary.get("skipped", []))
         errors = len(summary.get("errors", []))
         logger.info(
-            "gepa_optimizer reflex: applied=%d skipped=%d errors=%d",
-            applied, skipped, errors,
+            "gepa_optimizer reflex: applied=%d skipped=%d errors=%d dry_run=%s",
+            applied, skipped, errors, dry_run,
         )
         if applied:
             print(
@@ -37,12 +46,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 f"(skipped={skipped}, errors={errors})"
             )
         return {
-            "status": "ok" if not errors else "partial",
-            "applied": applied,
-            "skipped": skipped,
-            "errors": errors,
-            "details": summary,
+            "success": not errors,
+            "metric_value": float(applied),
+            "details": {
+                "status": "ok" if not errors else "partial",
+                "applied": applied,
+                "skipped": skipped,
+                "errors": errors,
+                "dry_run": dry_run,
+                "summary": summary,
+            },
         }
     except Exception as exc:
         logger.error("gepa_optimizer reflex: unhandled error: %s", exc)
-        return {"status": "error", "error": str(exc)}
+        return {
+            "success": False,
+            "metric_value": 0.0,
+            "details": {"status": "error", "error": str(exc)},
+        }
