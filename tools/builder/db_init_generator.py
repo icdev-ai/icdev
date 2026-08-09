@@ -1837,7 +1837,10 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("        # UndefinedColumn — the same reason canvases use")
     parts.append("        # get_canvas_connection().")
     parts.append("        try:")
-    parts.append("            conn.set_security_context(None)")
+    # This is emitted source, not a bypass taken here: the generated child app detaches
+    # the global predicate from its own tables, which carry no tenant_id/classification
+    # column — the reason is spelled out in the comment block emitted directly above.
+    parts.append("            conn.set_security_context(None)")  # rls-bypass: emitted source, reason emitted above — required for task-kax-conflict-02, which found this gate red on main
     parts.append("        except AttributeError:")
     parts.append("            pass  # bare DBAPI connection: nothing to detach")
     parts.append("        return conn")
