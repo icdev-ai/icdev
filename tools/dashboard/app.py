@@ -3044,6 +3044,37 @@ def create_app(testing: bool = False) -> Flask:
         finally:
             conn.close()
 
+    @app.route("/api/hitl/pending", methods=["GET"])
+    def api_hitl_pending():
+        """Tasks the pipeline has given up on and cannot retry — the HITL queue.
+
+        Deliberately NARROWER than /api/notifications, which counts every firing
+        alert. This returns only `pr_watcher:hitl:` rows: work where 2 rebases
+        and 5 resume cycles are spent, so no further automation will run. Mixing
+        those into a generic count is how a real "the pipeline stopped" signal
+        gets lost among informational alerts and stops being read.
+        """
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                "SELECT id, source, title, description, created_at FROM alerts "
+                "WHERE status = 'firing' AND source LIKE 'pr_watcher:hitl:%' "
+                "ORDER BY created_at ASC"
+            ).fetchall()
+            items = []
+            for r in rows:
+                d = dict(r)
+                items.append({
+                    "id": d.get("id"),
+                    "task_id": (d.get("source") or "").rsplit(":", 1)[-1],
+                    "title": d.get("title"),
+                    "description": d.get("description"),
+                    "created_at": str(d.get("created_at") or ""),
+                })
+            return jsonify({"pending": items, "count": len(items)})
+        finally:
+            conn.close()
+
     @app.route("/api/notifications", methods=["GET"])
     def api_notifications():
         """Return current notification-worthy items (firing alerts, overdue POAMs)."""
@@ -9857,13 +9888,51 @@ def create_app(testing: bool = False) -> Flask:
         # 4. Global triage summary
         triage = _compute_triage_summary()
 
-        visible = bool(triage_recent) or bool(autofix_branches) or bool(unresolved_failures)
+        # 5. What pr_watcher recovered WITHOUT a human (last 24h).
+        #
+        # This panel is where auto-resolved work belongs, and pr_watcher's
+        # recoveries were missing from it entirely: it rebases stale branches and
+        # feeds CI failures back as resumes, all of it recorded in audit_trail
+        # and none of it visible here. The result read as "nothing is happening"
+        # during the exact periods the pipeline was busiest recovering — and it
+        # made the HITL alerts look like the only thing the system ever does,
+        # when they are the rare exception.
+        pr_recovery: list = []
+        try:
+            _c = _gc()
+            _pg = getattr(_c, "_backend", "sqlite") == "postgresql"
+            _details = "details::text" if _pg else "details"
+            _cut = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            for _r in _c.execute(
+                f"SELECT action, {_details} AS d, created_at FROM audit_trail "  # nosec B608
+                "WHERE action IN ('pr_watcher.rebase', 'pr_watcher.resume') "
+                "AND created_at >= %s ORDER BY created_at DESC LIMIT 20",
+                (_cut,),
+            ).fetchall():
+                _d = dict(_r)
+                try:
+                    _payload = json.loads(_d.get("d") or "{}")
+                except (ValueError, TypeError):
+                    _payload = {}
+                pr_recovery.append({
+                    "task_id": _payload.get("task_id"),
+                    "kind": (_d.get("action") or "").split(".")[-1],
+                    "reason": (_payload.get("reason") or "")[:160],
+                    "at": _d.get("created_at"),
+                })
+            _c.close()
+        except Exception as _rec_exc:  # noqa: BLE001 — a panel must not 500
+            app.logger.debug("autonomy: pr recovery lookup failed: %s", _rec_exc)
+
+        visible = (bool(triage_recent) or bool(autofix_branches)
+                   or bool(unresolved_failures) or bool(pr_recovery))
         return jsonify({
             "visible": visible,
             "triage_recent": triage_recent,
             "autofix_branches": autofix_branches,
             "unresolved_failures": unresolved_failures,
             "triage_summary": triage.get("summary", {}),
+            "pr_recovery": pr_recovery,
         })
 
     @app.route("/digital-twin")

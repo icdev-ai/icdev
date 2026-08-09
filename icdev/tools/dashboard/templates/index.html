@@ -138,6 +138,10 @@
    branches, no unresolved failures in the last hour). #}
 {% include "_autonomy_status.html" %}
 
+{# HITL popup — the one class Autonomous Recovery cannot absorb. Fixed to
+   the viewport, so it is seen from Home without visiting /monitoring. #}
+{% include "_hitl_popup.html" %}
+
 {# Projects in Flight — reusable partial (config at args/projects.yaml).
    Auto-hides each project when done; Task Board auto-hides when all active
    columns are empty. Init hooks wired below in the DOMContentLoaded block. #}
