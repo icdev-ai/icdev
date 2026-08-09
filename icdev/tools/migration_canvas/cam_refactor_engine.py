@@ -487,7 +487,7 @@ def _run_ai_integration(job, params, output_dir) -> tuple[list[dict], str]:
 # ── Scaffold generators ──────────────────────────────────────────────────────
 
 def _write(path: Path, content: str) -> dict:
-    path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
+    path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8", newline="")
     return {"type": "file", "path": str(path), "name": path.name,
             "size_bytes": path.stat().st_size, "description": path.stem.replace("_", " ")}
 

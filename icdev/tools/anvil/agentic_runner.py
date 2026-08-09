@@ -47,7 +47,7 @@ def _write_file(path: str, content: str) -> str:
     try:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        p.write_text(content, encoding="utf-8", newline="")
         return f"[wrote {len(content)} chars to {path}]"
     except Exception as e:
         return f"[write error: {e}]"

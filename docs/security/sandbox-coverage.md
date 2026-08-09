@@ -513,6 +513,12 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 
 ### Gap 18 — Kanban Adversarial Verifier (`tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify`)
 - **File:** `tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify()`
+- **Where the subprocess actually starts:** since hgx-exec-03 both this verifier and the
+  primary build dispatch call `tools/agents/adapters/claude_cli.py`
+  (`ClaudeCliAdapter.invoke` / `.spawn`) rather than each building their own command
+  line. That module is the single review point for every property below — argv,
+  `shell=False`, the `.tmp/` prompt file and its deletion, and the environment handed to
+  the child.
 - **Risk:** Spawns a second Claude CLI subprocess (`claude --dangerously-skip-permissions
   --max-turns 10`) in the task worktree directory to adversarially review completed work.
   The subprocess receives a reviewer prompt via stdin piped from a `.tmp/` temp file and

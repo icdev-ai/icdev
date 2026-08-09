@@ -362,7 +362,7 @@ def translate_skills(directory=None, platforms=None, skills=None, write=False, d
             written = False
             if write and not dry_run:
                 full_path.parent.mkdir(parents=True, exist_ok=True)
-                full_path.write_text(content, encoding="utf-8")
+                full_path.write_text(content, encoding="utf-8", newline="")
                 written = True
 
             platform_results[skill_name] = {

@@ -20,6 +20,23 @@ function-calling tool schema plus a ``{tool_name: handler}`` map. Handlers recei
 ``(input_dict, stop_event)`` and return a string result. A handler may return the
 :data:`DONE` sentinel to terminate the loop (the ``done`` tool pattern).
 
+**Handler cancellation contract.** ``stop_event`` is the run's cancellation
+token, and a handler is *expected to poll it*::
+
+    def handler(inp, stop):
+        for chunk in big_job():
+            if stop is not None and stop.is_set():
+                return "cancelled"
+            ...
+
+The loop stops waiting on a handler as soon as the token is set, so a run always
+returns promptly — but Python cannot kill a thread, so a handler that ignores the
+token keeps running in the background until it finishes on its own. Poll it in
+any loop, before each subprocess launch, and between phases of a long job.
+``tools/agent_runtime/dispatch.py`` injects the token into any handler whose
+signature declares ``stop_event``; ``builtin_tools._handle_search_files`` is the
+reference implementation.
+
 Improvements over v1:
   - **Parallel read-only tool execution**: tools with ``"is_read_only": true`` in
     their schema run concurrently via a ``ThreadPoolExecutor``; state-modifying
@@ -98,6 +115,27 @@ class AgentLoopTimeout(RuntimeError):
     """Raised when ``max_iterations`` is reached without the LLM ending the turn."""
 
 
+class AgentLoopStopped(RuntimeError):
+    """Raised internally when the caller's ``stop_event`` fires mid-wait.
+
+    :func:`run_agent_loop` catches this at every wait site and converts it into
+    a clean ``truncation_reason="stop_event"`` exit — it is never propagated to
+    the caller. It exists so a wait on an abandoned tool (or LLM call) can be
+    abandoned without conflating it with a per-call timeout.
+    """
+
+
+class AgentLoopCompactionError(RuntimeError):
+    """Raised when history exceeded the context window and compaction failed.
+
+    Only raised when compaction was LOAD-BEARING — the transcript is already
+    over ``context_window_tokens`` and the compressor could not shrink it. The
+    loop converts this into :attr:`ResultSubtype.error_context_compaction`
+    rather than dispatching the oversized transcript to the provider and
+    reporting the provider's rejection as a generic execution fault.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Result subtypes — mirrors Claude Agent SDK result subtypes
 # ---------------------------------------------------------------------------
@@ -158,6 +196,29 @@ class ResultSubtype:
     :mod:`icdev.tools.llm.loop_detector`.
     """
 
+    error_context_compaction = "error_context_compaction"
+    """History outgrew the context window and the compressor failed to shrink it.
+
+    Distinct from :attr:`error_during_execution` on purpose. Compaction used to
+    be swallowed with a WARNING and the UNCHANGED (oversized) transcript was
+    handed to the provider, which rejected it — so a compressor bug, a missing
+    ``context_compressor`` dependency and a network fault all surfaced as the
+    same generic execution error and none of them was diagnosable from a
+    transcript. See :class:`AgentLoopCompactionError`.
+    """
+
+    error_budget_blocked = "error_budget_blocked"
+    """A pre-invoke budget gate REFUSED the call — the loop never reached a model.
+
+    Raised by the router's per-agent (``tools.agent.token_tracker``) and
+    per-module (``tools.budget.module_budget_tracker``) hard-stops. Distinct
+    from :attr:`error_max_budget_tokens` / :attr:`error_max_budget_cost`, which
+    are this loop's OWN per-run ceilings: those mean "this run spent its
+    allowance", while this one means "the account/module allowance was already
+    gone before this run started". Also distinct from
+    :attr:`error_during_execution` — a governed refusal is not a crash.
+    """
+
 
 # ---------------------------------------------------------------------------
 # Result
@@ -183,7 +244,7 @@ class AgentLoopResult:
         compression_events:  List of context-compression events applied to messages.
         truncation_reason:   Why the loop stopped: ``completed``, ``max_iterations``,
             ``max_total_tokens``, ``max_cost_usd``, ``max_wall_clock_seconds``,
-            or ``stop_event``.
+            ``context_compaction_failed``, ``budget_blocked``, or ``stop_event``.
             Kept for backward compat — prefer ``result_subtype``.
         session_id:  UUID generated at loop start. Pass as ``resume_session_id`` to
             a subsequent :func:`run_agent_loop` call to restore this conversation.
@@ -424,6 +485,79 @@ def _stop_for_wall_clock(
     )
 
 
+# Exception class names that mean "a budget gate refused this call", not "the
+# call crashed". Matched by NAME across the whole MRO rather than by isinstance
+# because ``tools.budget.module_budget_tracker`` and
+# ``icdev.tools.budget.module_budget_tracker`` are physically separate modules in
+# a checkout, so their error classes are distinct objects — an isinstance check
+# against one of them silently misses the other. Name-matching also keeps this
+# module from importing the trackers (and their DB layer) just to classify.
+_BUDGET_BLOCK_EXCEPTIONS = frozenset(
+    {
+        "BudgetExceededError",        # tools.agent.token_tracker (per-agent)
+        "ModuleBudgetExceededError",  # tools.budget.module_budget_tracker (per-module)
+    }
+)
+
+
+def _is_budget_block(exc: BaseException) -> bool:
+    """True when *exc* is a pre-invoke budget refusal rather than an execution fault."""
+    return any(klass.__name__ in _BUDGET_BLOCK_EXCEPTIONS for klass in type(exc).__mro__)
+
+
+def _stop_for_hard_budget(
+    result: "AgentLoopResult",
+    messages: list[dict[str, Any]],
+    *,
+    max_total_tokens: int | None,
+    max_cost_usd: float | None,
+) -> bool:
+    """Mark *result* stopped if a cumulative token/cost ceiling is already blown.
+
+    Returns True when a ceiling fired (caller must ``break``), False otherwise.
+
+    Evaluated at TWO points per turn — before dispatching the turn's tools and
+    again after the tool sweep. Only the post-sweep check existed, which meant a
+    turn whose LLM response already blew the ceiling still ran every tool it
+    asked for, so the overshoot was one whole turn plus all of its tool output
+    rather than the one LLM call that crossed the line.
+    """
+    if max_total_tokens is not None and (
+        result.total_input_tokens + result.total_output_tokens
+    ) > max_total_tokens:
+        result.truncated = True
+        result.result_subtype = ResultSubtype.error_max_budget_tokens
+        result.truncation_reason = "max_total_tokens"
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"Agent loop stopped: exceeded max_total_tokens="
+                    f"{max_total_tokens} (input={result.total_input_tokens}, "
+                    f"output={result.total_output_tokens})."
+                ),
+            }
+        )
+        return True
+
+    if max_cost_usd is not None and result.total_cost_usd > max_cost_usd:
+        result.truncated = True
+        result.result_subtype = ResultSubtype.error_max_budget_cost
+        result.truncation_reason = "max_cost_usd"
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"Agent loop stopped: exceeded max_cost_usd={max_cost_usd:.4f} "
+                    f"(current={result.total_cost_usd:.4f})."
+                ),
+            }
+        )
+        return True
+
+    return False
+
+
 def _retrieve_memory_context(user_prompt: str, top_k: int, tier: str) -> str:
     """Retrieve relevant memory and format as a context block for the system prompt.
 
@@ -461,8 +595,17 @@ def _maybe_compress_messages(
     """Compress message history when it exceeds the context-window threshold.
 
     Uses :func:`icdev.tools.llm.context_compressor.compress_messages` so tool-use
-    blocks are preserved. A failed compression is logged and leaves messages
-    unchanged.
+    blocks are preserved.
+
+    Raises:
+        AgentLoopCompactionError: If compaction was needed (history is already
+            over ``context_window_tokens``) and the compressor raised. This used
+            to be a WARNING that returned the messages UNCHANGED, so the loop
+            went on to hand an oversized transcript to the provider and reported
+            the provider's rejection as ``error_during_execution`` — the actual
+            cause was invisible in the transcript. The failure is recorded in
+            ``compression_events`` before raising so the event list still shows
+            the attempt.
     """
     if not context_window_tokens:
         return messages
@@ -484,8 +627,26 @@ def _maybe_compress_messages(
         )
         return result.messages
     except Exception as exc:
-        logger.warning("agent_loop: context compression failed: %s", exc)
-        return messages
+        logger.error(
+            "agent_loop: context compaction failed at %d tokens (window=%d): %s",
+            current,
+            context_window_tokens,
+            exc,
+        )
+        compression_events.append(
+            {
+                "method": "failed",
+                "original_tokens": current,
+                "compressed_tokens": current,
+                "compression_ratio": 1.0,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        raise AgentLoopCompactionError(
+            f"Context compaction failed at {current} estimated tokens "
+            f"(context_window_tokens={context_window_tokens}): "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -845,6 +1006,82 @@ def _submit_traced(executor: Any, fn: Any, *args: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Cancellation (hgx-ctxw-03)
+# ---------------------------------------------------------------------------
+
+#: How often a blocking wait re-checks ``stop_event``. Small enough that Ctrl-C
+#: feels immediate, large enough that the poll is free next to any real tool.
+_STOP_POLL_SECONDS = 0.2
+
+#: ``tool_result`` recorded for a call abandoned or skipped by a cancellation.
+#: A real string (not an empty one) because the provider protocol requires every
+#: ``tool_use`` block to be answered — and because a resumed session should read
+#: as "the operator stopped this", not "the tool failed".
+_STOPPED_TOOL_RESULT = "Tool call abandoned: the run was stopped by the operator."
+
+
+def _await_future(
+    fut: Any,
+    timeout: float | None,
+    stop_event: "threading.Event | None",
+) -> Any:
+    """Wait for ``fut`` while staying responsive to ``stop_event``.
+
+    ``Future.result(timeout=...)`` is a single uninterruptible sleep, so a run
+    that is cancelled while a 600s tool is in flight would not notice for 600s.
+    This waits in :data:`_STOP_POLL_SECONDS` slices instead and gives up as soon
+    as the token is set. The worker thread is *not* killed (Python cannot) — it
+    is abandoned, which is why handlers are expected to poll the token too.
+
+    Raises:
+        AgentLoopStopped: ``stop_event`` was set while waiting.
+        concurrent.futures.TimeoutError: ``timeout`` elapsed first.
+    """
+    if stop_event is None:
+        return fut.result(timeout=timeout)
+    deadline = None if timeout is None else time.monotonic() + float(timeout)
+    while True:
+        if stop_event.is_set():
+            fut.cancel()  # only bites if it never started; harmless otherwise
+            raise AgentLoopStopped("cancelled by stop_event")
+        slice_seconds = _STOP_POLL_SECONDS
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _futures.TimeoutError()
+            slice_seconds = min(slice_seconds, remaining)
+        try:
+            return fut.result(timeout=slice_seconds)
+        except _futures.TimeoutError:
+            continue  # slice expired, not the caller's timeout — re-check + wait
+
+
+@_contextlib.contextmanager
+def _tool_executor(max_workers: int, stop_event: "threading.Event | None") -> Any:
+    """A ``ThreadPoolExecutor`` whose teardown does not block a cancelled run.
+
+    ``with ThreadPoolExecutor(...)`` calls ``shutdown(wait=True)``, so leaving
+    the loop after a cancellation would block until every abandoned tool thread
+    finished — exactly the wait the cancellation was meant to skip. When the
+    token is set we drop the queue and return immediately instead.
+
+    Threads already running still run to completion in the background (and are
+    joined by the interpreter's own atexit hook at process exit), so a handler
+    that ignores ``stop_event`` can still delay a *process* exit. It no longer
+    delays the *turn*.
+    """
+    executor = _futures.ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        yield executor
+    finally:
+        abandon = stop_event is not None and stop_event.is_set()
+        try:
+            executor.shutdown(wait=not abandon, cancel_futures=abandon)
+        except TypeError:  # pragma: no cover — cancel_futures is 3.9+
+            executor.shutdown(wait=not abandon)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -891,6 +1128,7 @@ def run_agent_loop(
     initial_messages: list[dict[str, Any]] | None = None,
     harness_task_id: str | None = None,
     correlation_id: str = "",
+    agent_id: str = "",
     _record_harness_decision: bool = True,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
@@ -923,7 +1161,16 @@ def run_agent_loop(
         max_tokens:    Per-turn max output tokens.
         temperature:   Sampling temperature.
         effort:        Router effort tier (low/medium/high/xhigh/max).
-        stop_event:    When set, the loop exits at the next turn boundary.
+        stop_event:    Cancellation token (hgx-ctxw-03). When set, the loop
+                       stops at its next boundary — between turns, between
+                       sequential tools, and mid-wait on an in-flight tool or
+                       LLM call (waits poll the token every
+                       :data:`_STOP_POLL_SECONDS`). The run ends with
+                       ``truncated=False`` and
+                       ``truncation_reason="stop_event"``. Abandoned tool
+                       threads are NOT killed — Python cannot — so handlers
+                       should poll the token they are handed (see the module
+                       docstring's handler contract).
         on_turn:       Optional ``callback(turn, response, messages)`` after each
                        turn (for audit/persist/observability). Kept for backward compat.
         on_pre_tool_use: Optional ``hook(name, input) -> str | None`` called before
@@ -1035,6 +1282,18 @@ def run_agent_loop(
             ``runtime_invocations``. Pass a caller-owned id (a task id, a request
             id) to join an agent run to whatever dispatched it; the default mints
             a fresh uuid4 per run, which is what the loop always did.
+        agent_id: Budget/attribution identity carried on every ``LLMRequest``
+            this loop issues. The router's per-agent hard-stop
+            (``tools.agent.token_tracker.check_budget``, keyed off
+            ``args/llm_config.yaml`` ``token_budgets.per_agent``) is guarded by
+            ``if request.agent_id:`` — the loop never set the field, so that
+            gate was unreachable for every agent-loop call regardless of how the
+            budget was configured. Pass the caller's real agent identity (e.g.
+            ``"builder-agent"``) to place a run under that agent's cap. The
+            default derives ``agent-loop:<llm_function>`` so requests always
+            carry an id and the gate is live; that synthetic id has no
+            ``per_agent`` entry, so it inherits ``default_monthly_usd`` and
+            evaluates to ``allow`` until spend is recorded against it.
         _record_harness_decision: Private flag. When ``True`` (default), a single
             ``reflex="codegen"`` decision is recorded at loop completion.
             :func:`run_agent_loop_with_rubric` sets it ``False`` for its inner
@@ -1050,6 +1309,12 @@ def run_agent_loop(
     from icdev.tools.llm.provider import LLMRequest
 
     _check_tool_support(router, llm_function)
+
+    # Budget/attribution identity for every request this loop issues. The
+    # router's per-agent gate is behind ``if request.agent_id:``, so an empty
+    # field means the gate never runs — resolve a stable fallback rather than
+    # leaving it blank.
+    effective_agent_id = agent_id or f"agent-loop:{llm_function}"
 
     # Resolve optional budget defaults from args/llm_config.yaml.
     budget_defaults = _load_budget_defaults()
@@ -1215,7 +1480,7 @@ def run_agent_loop(
     # to `runtime_invocations` and reads the id from the ambient context rather
     # than being handed it through the fixed `handler(input, stop)` contract.
     _turn_trace, _correlation = _open_run_observability(trace_id, session_id)
-    with _correlation, _futures.ThreadPoolExecutor(max_workers=16) as executor:
+    with _correlation, _tool_executor(16, stop_event) as executor:
         for turn in range(max_iterations):
             # Opening turn N closes turn N-1's span. The turn body has a dozen
             # `break` paths; `finish()` after the loop catches whichever one ran.
@@ -1287,12 +1552,30 @@ def run_agent_loop(
 
             # Control 4: Compress message history; notify model when compression occurred.
             _pre_compress_len = len(messages)
-            messages = _maybe_compress_messages(
-                messages,
-                context_window_tokens=context_window_tokens,
-                compression_budget_tokens=compression_budget_tokens,
-                compression_events=result.compression_events,
-            )
+            try:
+                messages = _maybe_compress_messages(
+                    messages,
+                    context_window_tokens=context_window_tokens,
+                    compression_budget_tokens=compression_budget_tokens,
+                    compression_events=result.compression_events,
+                )
+            except AgentLoopCompactionError as exc:
+                # The transcript is over the window and could not be shrunk.
+                # Calling the provider anyway guarantees a rejection that reads
+                # as a generic execution error, so stop here with the real cause.
+                result.truncated = True
+                result.result_subtype = ResultSubtype.error_context_compaction
+                result.truncation_reason = "context_compaction_failed"
+                logger.error("agent_loop: turn %d aborted — %s", turn, exc)
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": f"Agent loop stopped: context compaction failed — {exc}",
+                    }
+                )
+                result.messages = messages
+                _turn_trace.error(f"context compaction failed: {exc}")
+                break
             if len(messages) < _pre_compress_len:
                 messages.append({
                     "role": "user",
@@ -1312,13 +1595,22 @@ def run_agent_loop(
                 temperature=temperature,
                 effort=effort,
                 correlation_id=trace_id,
+                agent_id=effective_agent_id,
             )
             try:
                 # Control 1: LLM call timeout — wraps the blocking invoke call.
                 if llm_call_timeout_seconds:
                     _llm_fut = _submit_traced(executor, router.invoke, llm_function, request)
                     try:
-                        response = _llm_fut.result(timeout=llm_call_timeout_seconds)
+                        response = _await_future(
+                            _llm_fut, llm_call_timeout_seconds, stop_event
+                        )
+                    except AgentLoopStopped:
+                        # Cancelled while the provider was thinking. Leave the
+                        # loop on the clean stop path — not truncated, not an
+                        # error — so the caller sees truncation_reason=stop_event.
+                        logger.info("agent_loop: stopped during LLM call on turn %d", turn)
+                        break
                     except _futures.TimeoutError:
                         logger.error(
                             "agent_loop: LLM call timed out after %.0fs (turn %d/%d)",
@@ -1334,6 +1626,24 @@ def run_agent_loop(
                 else:
                     response = router.invoke(llm_function, request)
             except Exception as exc:
+                if _is_budget_block(exc):
+                    # A budget gate refused the call before any model saw it.
+                    # Reporting that as error_during_execution made a governed
+                    # refusal indistinguishable from a crash or a network fault.
+                    logger.warning(
+                        "agent_loop: budget gate blocked the LLM call on turn %d: %s", turn, exc
+                    )
+                    result.truncated = True
+                    result.result_subtype = ResultSubtype.error_budget_blocked
+                    result.truncation_reason = "budget_blocked"
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": f"Agent loop stopped: budget gate blocked the LLM call — {exc}",
+                        }
+                    )
+                    _turn_trace.error(f"budget blocked: {type(exc).__name__}: {exc}")
+                    break
                 logger.error("agent_loop: LLM invocation failed on turn %d: %s", turn, exc)
                 result.truncated = True
                 result.result_subtype = ResultSubtype.error_during_execution
@@ -1369,6 +1679,21 @@ def run_agent_loop(
                 result.result_subtype = ResultSubtype.success
                 if on_turn is not None:
                     on_turn(turn, response, messages)
+                break
+
+            # Hard budget check BEFORE dispatching this turn's tools. The
+            # response that just landed is already accounted for, so if it blew
+            # a ceiling there is nothing to gain from running the tools it asked
+            # for — and running them costs a full tool sweep plus its output on
+            # the next turn's input. Checked before the assistant's tool_use
+            # message is appended so the transcript does not end on a tool_use
+            # with no matching tool_result, which providers reject on resume.
+            if _stop_for_hard_budget(
+                result,
+                messages,
+                max_total_tokens=max_total_tokens,
+                max_cost_usd=max_cost_usd,
+            ):
                 break
 
             # Append the assistant's tool_use message.
@@ -1413,11 +1738,14 @@ def run_agent_loop(
                 tc_name = tc.get("name") or ""
                 tc_input = tc.get("input") or {}
                 try:
-                    out = fut.result(timeout=tool_timeout_seconds)
+                    out = _await_future(fut, tool_timeout_seconds, stop_event)
                     if out is DONE or out == DONE:
                         tc_results[i] = (DONE, False, None)
                     else:
                         tc_results[i] = (str(out), False, None)
+                except AgentLoopStopped:
+                    tc_results[i] = (_STOPPED_TOOL_RESULT, True, "stopped")
+                    logger.info("agent_loop: abandoned handler %s — run stopped", tc_name)
                 except _futures.TimeoutError:
                     msg = f"Tool {tc_name!r} timed out after {tool_timeout_seconds}s."
                     tc_results[i] = (msg, True, msg)
@@ -1429,6 +1757,11 @@ def run_agent_loop(
 
             # -- Sequential tools: one at a time --
             for i in seq_indices:
+                # A cancellation lands between two sequential tools far more
+                # often than inside one — never start the next after a stop.
+                if stop_event is not None and stop_event.is_set():
+                    tc_results[i] = (_STOPPED_TOOL_RESULT, True, "stopped")
+                    continue
                 tc = tool_calls[i]
                 tc_name = tc.get("name") or ""
                 tc_input = tc.get("input") or {}
@@ -1444,13 +1777,16 @@ def run_agent_loop(
                 try:
                     if tool_timeout_seconds is not None:
                         fut = _submit_traced(executor, handler, tc_input, stop_event)
-                        out = fut.result(timeout=tool_timeout_seconds)
+                        out = _await_future(fut, tool_timeout_seconds, stop_event)
                     else:
                         out = handler(tc_input, stop_event)
                     if out is DONE or out == DONE:
                         tc_results[i] = (DONE, False, None)
                     else:
                         tc_results[i] = (str(out), False, None)
+                except AgentLoopStopped:
+                    tc_results[i] = (_STOPPED_TOOL_RESULT, True, "stopped")
+                    logger.info("agent_loop: abandoned handler %s — run stopped", tc_name)
                 except _futures.TimeoutError:
                     msg = f"Tool {tc_name!r} timed out after {tool_timeout_seconds}s."
                     tc_results[i] = (msg, True, msg)
@@ -1591,38 +1927,24 @@ def run_agent_loop(
             except Exception:
                 pass  # non-fatal
 
-            # Hard budget check after executing all tools this turn.
-            if max_total_tokens is not None and (
-                result.total_input_tokens + result.total_output_tokens
-            ) > max_total_tokens:
-                result.truncated = True
-                result.result_subtype = ResultSubtype.error_max_budget_tokens
-                result.truncation_reason = "max_total_tokens"
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            f"Agent loop stopped: exceeded max_total_tokens="
-                            f"{max_total_tokens} (input={result.total_input_tokens}, "
-                            f"output={result.total_output_tokens})."
-                        ),
-                    }
-                )
+            # Cancellation boundary (hgx-ctxw-03). Placed after the checkpoint
+            # so a stopped turn is still resumable, but BEFORE the budget and
+            # circuit-breaker checks below: a stop that abandoned this turn's
+            # tools would otherwise be reported as
+            # error_consecutive_tool_failures rather than as a stop.
+            if stop_event is not None and stop_event.is_set():
                 break
 
-            if max_cost_usd is not None and result.total_cost_usd > max_cost_usd:
-                result.truncated = True
-                result.result_subtype = ResultSubtype.error_max_budget_cost
-                result.truncation_reason = "max_cost_usd"
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": (
-                            f"Agent loop stopped: exceeded max_cost_usd={max_cost_usd:.4f} "
-                            f"(current={result.total_cost_usd:.4f})."
-                        ),
-                    }
-                )
+            # Hard budget check after executing all tools this turn. Kept
+            # alongside the pre-dispatch check: a tool handler may itself run an
+            # agent loop or otherwise move the counters, and the checkpoint
+            # above must be written before the run stops.
+            if _stop_for_hard_budget(
+                result,
+                messages,
+                max_total_tokens=max_total_tokens,
+                max_cost_usd=max_cost_usd,
+            ):
                 break
 
             if _wall_deadline is not None and time.monotonic() >= _wall_deadline:

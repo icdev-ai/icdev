@@ -144,7 +144,7 @@ class FileAccessBroker:
         """
         target = self._resolve(path, need_write=True)
         target.parent.mkdir(parents=True, exist_ok=True)
-        bytes_written = target.write_text(content, encoding="utf-8")
+        bytes_written = target.write_text(content, encoding="utf-8", newline="")
         self._audit("file_write", path, coworker_id, instance_id, bytes_written)
         return bytes_written
 

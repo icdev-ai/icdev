@@ -186,7 +186,7 @@ def _promote(
     """Write YAML to roles/candidates/ and update status = 'promoted'."""
     _ROLES_CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
     out_path = _ROLES_CANDIDATES_DIR / f"{role_id}.yaml"
-    out_path.write_text(candidate_yaml, encoding="utf-8")
+    out_path.write_text(candidate_yaml, encoding="utf-8", newline="")
 
     _update_status(candidate_id, "promoted", sipa_verdict=verdict, sipa_score=score)
 

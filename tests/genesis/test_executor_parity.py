@@ -154,10 +154,29 @@ def test_corpus_prompt_never_leaks_the_reference_diff():
 
 
 def test_corpus_base_commits_resolve_in_this_clone():
+    """Every corpus entry must name a commit this clone can actually check out.
+
+    Skipped on a SHALLOW clone, which is what CI has: actions/checkout@v4
+    defaults to ``fetch-depth: 1``, so the runner holds exactly one commit and
+    none of the corpus SHAs resolve. The original form of this test asserted
+    unconditionally and therefore reported all ten as "absent from this clone" —
+    a true statement about the runner and a meaningless one about the corpus,
+    which is the failure it produced on every CI run.
+
+    Raising the checkout depth to fetch full history for one assertion would
+    slow every job in the tier, and fetching the SHAs at test time would put
+    this file on the network — it is deliberately offline. So the guard runs
+    where the question is answerable (any developer clone, and the benchmark
+    itself, which needs the commits present to run at all) and says so out loud
+    where it is not.
+    """
     if shutil.which("git") is None:  # pragma: no cover — git is present in CI
         pytest.skip("git unavailable")
     if _git(["rev-parse", "--is-inside-work-tree"], REPO_ROOT, check=False).returncode != 0:
         pytest.skip("not a git checkout")
+    shallow = _git(["rev-parse", "--is-shallow-repository"], REPO_ROOT, check=False)
+    if shallow.returncode == 0 and shallow.stdout.strip() == "true":
+        pytest.skip("shallow clone (CI checkout depth 1) — corpus SHAs cannot resolve here")
     missing = [
         t.task_id for t in ep.load_corpus()
         if not ep.commit_exists(t.base_commit, REPO_ROOT)

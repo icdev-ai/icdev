@@ -59,7 +59,17 @@ def _make_db(tmp_path):
         ("proj-1", "TestApp", "webapp", str(tmp_path)),
     )
     conn.commit()
-    return db_path, conn
+    # Hand back a StorageConnection, NOT the bare sqlite3 connection.
+    #
+    # PostgreSQL is the primary backend, so production code writes `%s`
+    # placeholders and relies on StorageConnection.execute to translate them to
+    # `?` for SQLite. A raw sqlite3.Connection skips that translation, so
+    # `SELECT ... WHERE id = %s` reached SQLite verbatim and raised
+    # `OperationalError: near "%": syntax error`. The module under test was
+    # correct; the fixture was lying about what a connection is.
+    from tools.db.storage import StorageConnection
+
+    return db_path, StorageConnection(conn, "sqlite")
 
 
 def _sample_spec():

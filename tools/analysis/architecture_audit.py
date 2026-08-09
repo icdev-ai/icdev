@@ -370,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.out:
         out_path = Path(args.out).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(rendered, encoding="utf-8")
+        out_path.write_text(rendered, encoding="utf-8", newline="")
         print(f"wrote {out_path} ({len(rendered)} bytes)")
     else:
         print(rendered)

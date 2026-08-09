@@ -34,6 +34,8 @@ if str(_ROOT) not in sys.path:
 from tools.db.storage import get_connection  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.studio import run_memory  # noqa: E402
+# hgx-cond-01: the one condition DSL — see the "Conditional edges" section.
+from tools.studio.automation_builder import evaluate_conditions  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -117,6 +119,28 @@ def _gate_deadline(step: dict, started_at: str | None) -> float:
 MCP_EXECUTOR = "tools/studio/executors/mcp_executor.py"
 
 
+# ── Agent steps (hgx-agent-01) ─────────────────────────────
+
+# A `node_type: agent` step runs an agent loop instead of a script: it names the
+# task in `prompt` and bounds its tools with `agent_tools` (bundle names from
+# args/agent_toolsets.yaml). Every such step runs through this one executor,
+# the same way every mcp step runs through mcp_executor.
+AGENT_EXECUTOR = "tools/studio/executors/agent_executor.py"
+
+# Step keys forwarded to the executor as `--<flag> <value>`, in the order the
+# executor documents them. Absent keys are simply not passed, so the executor's
+# own defaults apply and this list never has to restate them.
+_AGENT_STEP_FLAGS = (
+    ("system_prompt", "--system-prompt"),
+    ("llm_function", "--llm-function"),
+    ("work_dir", "--work-dir"),
+    ("max_iterations", "--max-iterations"),
+    ("max_tokens", "--max-tokens"),
+    ("effort", "--effort"),
+    ("approval_mode", "--approval-mode"),
+)
+
+
 # ── DAG helpers ────────────────────────────────────────────
 
 def _dag_graph(steps: list) -> dict:
@@ -135,6 +159,48 @@ def _resolve_dag(steps: list) -> list:
     payload and the generated-script path, both of which need a single list.
     """
     return list(TopologicalSorter(_dag_graph(steps)).static_order())
+
+
+def _dependents(steps: list) -> dict:
+    """{step_id: {ids of steps declaring it in depends_on}} — reverse of `_dag_graph`."""
+    children: dict[str, set] = {step["id"]: set() for step in steps}
+    for step in steps:
+        for dep in step.get("depends_on", []) or []:
+            if dep in children:
+                children[dep].add(step["id"])
+    return children
+
+
+def _block_downstream(children: dict, failed_id: str, conditional: set | None = None) -> list:
+    """Every step that transitively depends on `failed_id`, breadth-first.
+
+    Ported from `tools/agent/team_orchestrator.py::_block_downstream`, which
+    cascades through the whole graph rather than one level: if A fails, B
+    depends on A and C on B, then both B and C are blocked. Iterative rather
+    than recursive — a chain long enough to matter is a template typo, not a
+    reason to raise RecursionError inside a pool thread.
+
+    ONE addition the Studio runner needs that the orchestrator does not: the
+    cascade stops at a step listed in `conditional` — a step declaring `when:`.
+    That step IS the remediation branch. It asked to be routed on its
+    predecessor's recorded outcome, so cancelling it for having a failed
+    predecessor would make `fail -> remediate` unreachable and leave `when` able
+    to express only conditions that never fire after a failure. Such a step is
+    neither blocked nor walked through: it evaluates its own condition, and what
+    it produces then governs its own descendants.
+    """
+    conditional = conditional or set()
+    pending = [sid for sid in children.get(failed_id, ()) if sid not in conditional]
+    seen = set(pending)
+    blocked: list[str] = []
+    while pending:
+        step_id = pending.pop(0)
+        blocked.append(step_id)
+        for nxt in children.get(step_id, ()):
+            if nxt not in seen and nxt not in conditional:
+                seen.add(nxt)
+                pending.append(nxt)
+    return blocked
 
 
 def _prepare_dag(steps: list) -> TopologicalSorter:
@@ -177,10 +243,14 @@ def _step_tool_path(step: dict) -> str:
     """Repo-relative script this step runs ('' when it declares none).
 
     An `mcp` node names a registry tool, not a script — every one of them runs
-    through the shared executor, so the path is fixed rather than authored.
+    through the shared executor, so the path is fixed rather than authored. An
+    `agent` node names a prompt and a toolset, and is fixed the same way.
     """
-    if step.get("node_type") == "mcp":
+    node_type = step.get("node_type")
+    if node_type == "mcp":
         return MCP_EXECUTOR
+    if node_type == "agent":
+        return AGENT_EXECUTOR
     return step.get("tool", "") or ""
 
 
@@ -220,6 +290,48 @@ def _build_mcp_command(step: dict, project_id: str, run_id: str = "") -> list:
     return cmd
 
 
+def _agent_tools_arg(step: dict) -> str:
+    """A step's `agent_tools` as the executor's comma-separated --agent-tools.
+
+    A list is how a template authors it; a string is accepted so a hand-edited
+    template that wrote `agent_tools: "worktree_build, terminal"` still runs.
+    The executor re-parses and de-duplicates either form.
+    """
+    raw = step.get("agent_tools")
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    return ",".join(str(name).strip() for name in raw if str(name).strip())
+
+
+def _build_agent_command(step: dict, project_id: str, run_id: str = "") -> list:
+    """Command for a `node_type: agent` step — run the loop via agent_executor.py."""
+    prompt = str(step.get("prompt", "") or "").strip()
+    if not prompt:
+        return []
+    cmd = [
+        sys.executable, str(_ROOT / AGENT_EXECUTOR),
+        "--prompt", prompt,
+        "--agent-tools", _agent_tools_arg(step),
+    ]
+    for key, flag in _AGENT_STEP_FLAGS:
+        value = step.get(key)
+        if value is None or str(value).strip() == "":
+            continue
+        cmd.extend([flag, str(value)])
+    step_id = str(step.get("id", "") or "")
+    if step_id:
+        cmd.extend(["--step-id", step_id])
+    if step.get("inject_project_id", True):
+        cmd.extend(["--project-id", project_id])
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
+    if step.get("json_output", True):
+        cmd.append("--json")
+    return cmd
+
+
 def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
     # argv only. The run's inputs reach the step through the environment
     # instead — see RUN_INPUTS_ENV_VAR / _build_step_env — because an inputs
@@ -227,6 +339,8 @@ def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
     # line at ~32k characters.
     if step.get("node_type") == "mcp":
         return _build_mcp_command(step, project_id, run_id)
+    if step.get("node_type") == "agent":
+        return _build_agent_command(step, project_id, run_id)
     tool_path = step.get("tool", "")
     if not tool_path:
         return []
@@ -306,6 +420,106 @@ def _build_step_env(run_id: str = "") -> dict:
     return env
 
 
+# ── Conditional edges (hgx-cond-01) ────────────────────────
+#
+# A step may declare `when:` — the SAME {field, operator, value} DSL that
+# `studio_workflow_triggers.filter_json` and the automation surface already
+# filter events with. `tools/studio/automation_builder.py` holds the one
+# implementation of CONDITION_OPERATORS; this imports `evaluate_conditions`
+# from it rather than growing a second rules DSL that would drift from the
+# operator list the builder UI renders.
+#
+# Conditions are evaluated against the PREDECESSOR's recorded result:
+#
+#   * a flat name (`status`, `exit_code`, `stderr`, `duration_ms`) reads the
+#     FIRST entry in this step's `depends_on` — "the predecessor" for a step
+#     with one incoming edge, and a defined choice for a join;
+#   * `steps.<step_id>.<field>` reaches any predecessor already recorded, which
+#     is how a join addresses one branch in particular;
+#   * `output.<path>` walks the predecessor's stdout parsed as JSON, so a step
+#     can branch on what the tool actually reported rather than on its exit code.
+#
+# EVERY condition must be met (AND), matching how the automation surface reads
+# the same list. A step with no `when` key is unconditional — byte-for-byte the
+# behaviour that predates this.
+
+
+def _when_conditions(step: dict) -> list:
+    """A step's `when:` block normalised to a list of condition dicts.
+
+    A single mapping is accepted as well as a list, and `value` is coerced to
+    str: YAML types a bare `value: 0` as an int while the DSL compares strings.
+    A malformed entry is dropped rather than raising mid-run — the linter is
+    where an authoring mistake is meant to surface.
+    """
+    raw = step.get("when")
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    conditions = []
+    for cond in raw:
+        if not isinstance(cond, dict):
+            continue
+        value = cond.get("value")
+        conditions.append({
+            "field": str(cond.get("field", "") or ""),
+            "operator": str(cond.get("operator", "equals") or "equals"),
+            "value": "" if value is None else str(value),
+        })
+    return conditions
+
+
+def _step_view(result: dict) -> dict:
+    """One recorded step result as the condition DSL sees it."""
+    view = {
+        "step_id": result.get("step_id", ""),
+        "step_name": result.get("step_name", ""),
+        "status": result.get("status", ""),
+        "exit_code": result.get("exit_code"),
+        "stdout": result.get("stdout") or "",
+        "stderr": result.get("stderr") or "",
+        "duration_ms": result.get("duration_ms", 0),
+    }
+    try:
+        parsed = json.loads(result.get("stdout") or "")
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+    view["output"] = parsed if isinstance(parsed, dict) else {}
+    return view
+
+
+def _condition_context(step: dict, recorded: dict) -> dict:
+    """Evaluation context for a step's `when:` — see the section comment."""
+    context: dict = {}
+    for dep in step.get("depends_on", []) or []:
+        if dep in recorded:
+            context.update(_step_view(recorded[dep]))
+            break
+    # Set last: `steps` is the addressing map, never a predecessor field.
+    context["steps"] = {sid: _step_view(res) for sid, res in recorded.items()}
+    return context
+
+
+def _evaluate_when(step: dict, recorded: dict) -> tuple[bool, str]:
+    """(met, reason) for a step's `when:`. Met is True when it declares none."""
+    conditions = _when_conditions(step)
+    if not conditions:
+        return True, ""
+
+    results = evaluate_conditions(conditions, _condition_context(step, recorded))
+    unmet = [r for r in results if not r["met"]]
+    if not unmet:
+        return True, ""
+    detail = "; ".join(
+        f"{r['field']} {r['operator']} {r['expected']!r} (actual: {r['actual']!r})"
+        for r in unmet
+    )
+    return False, f"Condition not met: {detail}"
+
+
 # ── Step execution ─────────────────────────────────────────
 
 # A single backoff sleep is capped here so a typo in a template
@@ -355,6 +569,32 @@ def _exec_step_with_retries(step: dict, project_id: str, run_id: str = "") -> di
     return result
 
 
+# What a node type is missing when it builds no command. A `tool` node has no
+# script path; the two executor-backed node types are each missing the one key
+# that names their work.
+_MISSING_STEP_KEY = {
+    "mcp": "node_type: mcp step declares no 'mcp_tool'",
+    "agent": "node_type: agent step declares no 'prompt'",
+}
+
+
+def _agent_degradation(result: dict) -> str:
+    """Why an agent step degraded, or '' when it did not (hgx-agent-01).
+
+    An unsupported provider is not a failed step: `agent_executor.py` exits 0
+    with `degraded: true` so the run continues, and this lifts the reason out of
+    its stdout so the step is recorded as `skipped` with that reason rather than
+    as a `success` that never ran a loop.
+    """
+    try:
+        payload = json.loads(result.get("stdout") or "")
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(payload, dict) or not payload.get("degraded"):
+        return ""
+    return str(payload.get("degrade_reason") or "Agent step degraded")
+
+
 def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     result: dict = {
         "step_id": step["id"],
@@ -376,10 +616,8 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     cmd = _build_command(step, project_id, run_id)
     if not cmd:
         result["status"] = "skipped"
-        result["stderr"] = (
-            "node_type: mcp step declares no 'mcp_tool'"
-            if node_type == "mcp"
-            else "No tool path configured"
+        result["stderr"] = _MISSING_STEP_KEY.get(
+            node_type, "No tool path configured"
         )
         return result
 
@@ -407,6 +645,11 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
         result["stdout"] = proc.stdout.strip()[:32000] if proc.stdout else None
         result["stderr"] = proc.stderr.strip()[:4000] if proc.stderr else None
         result["status"] = "success" if proc.returncode == 0 else "failed"
+        if node_type == "agent" and result["status"] == "success":
+            degraded = _agent_degradation(result)
+            if degraded:
+                result["status"] = "skipped"
+                result["stderr"] = degraded[:4000]
     except subprocess.TimeoutExpired:
         result["status"] = "timeout"
         result["stderr"] = f"Timed out after {timeout}s"
@@ -830,6 +1073,17 @@ def _worker(
         # walk that was a `break`; the equivalent here has to be a flag, because
         # a sibling of the gate may already be sitting in the pool's queue.
         abort = threading.Event()
+        # hgx-cond-01: step_id -> why it was cancelled. A required step that
+        # fails writes every transitive dependent here, so a descendant is never
+        # run against a precondition that is known to be broken. Safe without a
+        # barrier: `sorter.done()` is called only after a node's future resolves,
+        # so no dependent can have been dispatched yet when this is written.
+        dependents = _dependents(steps)
+        # A step declaring `when:` is exempt from the cascade — it is the
+        # remediation branch, and routing on a failed predecessor is what it
+        # asked for. See `_block_downstream`.
+        conditional = {s["id"] for s in steps if _when_conditions(s)}
+        blocked: dict[str, str] = {}
         # Emission is no longer ordered, so an event carries a monotonic sequence
         # number rather than its position in `ordered_steps`.
         _seq = itertools.count()
@@ -837,6 +1091,46 @@ def _worker(
         def _next_seq() -> int:
             with state_lock:
                 return next(_seq)
+
+        def _skip_step(step: dict, reason: str) -> None:
+            """Record a step that will not run, with why, and announce it.
+
+            Uses the EXISTING `skipped` status and its existing reason field
+            (`stderr`, where "Tool not found: …" already lands), so nothing
+            downstream — the CHECK constraint, the run summary, the details
+            modal — needs to learn a new value.
+            """
+            step_id = step["id"]
+            step_name = step.get("name", step_id)
+            result = {
+                "step_id": step_id,
+                "step_name": step_name,
+                "tool": _step_tool_path(step),
+                "status": "skipped",
+                "stdout": None,
+                "stderr": reason,
+                "exit_code": None,
+                "duration_ms": 0,
+            }
+            step_run_id = _create_step_record(
+                run_id, step_id, step_name, _step_tool_path(step)
+            )
+            _update_step_record(step_run_id, result)
+            with state_lock:
+                results.append(result)
+            _push(run_queue, {
+                "type": "step_done",
+                "run_id": run_id,
+                "step_id": step_id,
+                "step_name": step_name,
+                "status": "skipped",
+                "duration_ms": 0,
+                "error": reason,
+                "reason": reason,
+                "artifacts": [],
+                "seq": _next_seq(),
+                "total": total,
+            })
 
         def _run_node(step: dict) -> None:
             """Execute one DAG node. Runs on a pool thread; may block on a gate."""
@@ -882,6 +1176,23 @@ def _worker(
                 result = _exec_step(step, project_id, run_id)
                 result["status"] = "awaiting_approval"
             else:
+                # hgx-cond-01. Both checks sit on the about-to-execute path
+                # only: a step already replayed or re-attached to its gate above
+                # keeps the resume semantics it had.
+                with state_lock:
+                    cancel_reason = blocked.get(step_id)
+                    recorded = {r["step_id"]: r for r in results}
+                if cancel_reason:
+                    _skip_step(step, cancel_reason)
+                    return
+                met, unmet_reason = _evaluate_when(step, recorded)
+                if not met:
+                    # A condition that did not hold is not a failure: this step's
+                    # own dependents go on to evaluate their `when` against the
+                    # `skipped` result recorded here.
+                    _skip_step(step, unmet_reason)
+                    return
+
                 step_run_id = _create_step_record(
                     run_id, step_id, step_name, _step_tool_path(step)
                 )
@@ -951,6 +1262,18 @@ def _worker(
                 results.append(result)
                 if result["status"] in ("failed", "timeout", "rejected") and step.get("required", True):
                     overall_ok = False
+                    # hgx-cond-01: a failed required step cancels its descendants
+                    # instead of letting them run against a broken precondition.
+                    # `setdefault` so the FIRST failure that reached a step is the
+                    # reason it reports, not the last one to be recorded.
+                    cancel_reason = (
+                        f"Cancelled: required step '{step_name}' "
+                        f"{result['status']}"
+                    )
+                    for dependent_id in _block_downstream(
+                        dependents, step_id, conditional
+                    ):
+                        blocked.setdefault(dependent_id, cancel_reason)
 
             if result["status"] in ("rejected", "timeout") and step.get("node_type") in ("human", "approval"):
                 # Stop the run after a rejected/timed-out approval. Steps already

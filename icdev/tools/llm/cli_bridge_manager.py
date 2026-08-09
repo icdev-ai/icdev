@@ -92,7 +92,7 @@ def _write_env(key: str, value: str) -> None:
         if not inserted:
             lines.append(f"{key}={value}")
 
-    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
 
 
 def _delete_env(key: str) -> None:
@@ -108,7 +108,7 @@ def _delete_env(key: str) -> None:
         if k.strip() == key:
             lines[i] = f"# {line}  # disabled by cli_bridge_manager"
             break
-    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
 
 # ---------------------------------------------------------------------------
 # Detection logic

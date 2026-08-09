@@ -164,7 +164,7 @@ def _build_in_worktree(finding: dict, worktree_path: str, config: dict) -> dict:
 
     # Write build spec to worktree
     spec_path = Path(worktree_path) / ".scout_build_spec.md"
-    spec_path.write_text(spec, encoding="utf-8")
+    spec_path.write_text(spec, encoding="utf-8", newline="")
 
     # Try to use solution_generator if available (generates from innovation_signals DB)
     try:

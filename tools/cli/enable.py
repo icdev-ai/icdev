@@ -98,7 +98,7 @@ def _load_env_file(path: Path) -> str:
 
 def _save_env_file(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="")
 
 
 def _resolve_toggle(name: str) -> list[str] | None:

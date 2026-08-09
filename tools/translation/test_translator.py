@@ -243,7 +243,7 @@ def translate_tests(
                 else:
                     dest = out_dir / dest_name
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_text(translated.strip(), encoding="utf-8")
+                dest.write_text(translated.strip(), encoding="utf-8", newline="")
 
                 translated_tests.append(
                     {

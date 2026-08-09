@@ -97,13 +97,13 @@ CUI_HEADER_RUST = CUI_HEADER_C_STYLE
 def _write_file(path: Path, content: str) -> None:
     """Write content to a file, creating parent dirs as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
 
 
 def _create_gitkeep(directory: Path) -> None:
     """Create a .gitkeep in an empty directory."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / ".gitkeep").write_text("", encoding="utf-8")
+    (directory / ".gitkeep").write_text("", encoding="utf-8", newline="")
 
 
 def _create_compliance_dirs(root: Path, files: List[str]) -> None:

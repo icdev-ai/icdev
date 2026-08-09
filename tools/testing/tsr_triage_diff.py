@@ -184,7 +184,7 @@ def main() -> int:
     for k in ("real", "ambient", "shared", "unknown", "clean"):
         out.append(f"| {k} | {tally.get(k, 0)} |")
 
-    args.out.write_text("\n".join(out) + "\n", encoding="utf-8")
+    args.out.write_text("\n".join(out) + "\n", encoding="utf-8", newline="")
     print("\n".join(out))
     return 0
 

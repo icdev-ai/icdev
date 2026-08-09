@@ -515,7 +515,7 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
             )
             code_path = Path(row["code_path"])
             code_path.parent.mkdir(parents=True, exist_ok=True)
-            code_path.write_text(code_content, encoding="utf-8")
+            code_path.write_text(code_content, encoding="utf-8", newline="")
 
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(
@@ -561,7 +561,7 @@ def sync_model_to_code(project_id: str, language: str = "python", db_path: Optio
                 language=language,
             )
             code_path.parent.mkdir(parents=True, exist_ok=True)
-            code_path.write_text(code_content, encoding="utf-8")
+            code_path.write_text(code_content, encoding="utf-8", newline="")
 
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(
@@ -891,7 +891,7 @@ def sync_code_to_model(project_id: str, output_path: str, db_path: Optional[Path
 
     out_path = Path(output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(xmi_content, encoding="utf-8")
+    out_path.write_text(xmi_content, encoding="utf-8", newline="")
 
     # Step 5: Audit trail
     if _HAS_AUDIT:
@@ -984,7 +984,7 @@ def resolve_conflict(project_id: str, mapping_id: int, resolution: str, db_path:
             )
             code_path = Path(row["code_path"])
             code_path.parent.mkdir(parents=True, exist_ok=True)
-            code_path.write_text(code_content, encoding="utf-8")
+            code_path.write_text(code_content, encoding="utf-8", newline="")
 
             new_code_hash = _compute_file_hash(str(code_path))
             cursor.execute(

@@ -323,7 +323,7 @@ def write_report(
     output_path: pathlib.Path,
 ) -> pathlib.Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_markdown(report), encoding="utf-8")
+    output_path.write_text(render_markdown(report), encoding="utf-8", newline="")
     return output_path
 
 

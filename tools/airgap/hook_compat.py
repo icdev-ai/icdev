@@ -29,12 +29,12 @@ import hashlib
 import hmac
 import json
 import os
-import sqlite3
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from tools.db.storage import get_connection
+from tools.hooks import shared_checks
 
 logger = get_logger("icdev.airgap.hook_compat")
 
@@ -108,8 +108,26 @@ def store_event(
     secret = os.environ.get("ICDEV_HOOK_HMAC_SECRET", "icdev-default-hmac-key")
     signature = compute_hmac(payload_str or "", secret)
 
+    # NEVER let an audit failure escape.
+    #
+    # This used to catch only sqlite3.OperationalError. On PostgreSQL the
+    # `hook_events_id_seq` sequence was left at 1 by a bulk import that inserted
+    # explicit ids up to 900004, so EVERY insert raised psycopg2 UniqueViolation
+    # — which that clause did not catch. The exception propagated out of
+    # run_pre_tool_check, so the act of AUDITING a block took the guard down with
+    # it. A safety check must always return a decision.
+    #
+    # The audit row still matters (NIST AU), so a failure is logged at WARNING
+    # rather than swallowed silently. The sequence itself is repaired by the
+    # accompanying migration.
     try:
-        if not DB_PATH.exists():
+        # The DB_PATH existence gate is a SQLITE-ONLY precondition. It used to
+        # run unconditionally, so on a PostgreSQL deployment — or from any git
+        # worktree, where the local data/icdev.db does not exist — this returned
+        # -1 and the audit row was NEVER written, even though get_connection()
+        # would have worked. Combined with the desynced sequence, the headless
+        # hook's NIST AU trail had been silently empty.
+        if _sqlite_backend() and not DB_PATH.exists():
             return -1
         conn = get_connection()
         c = conn.cursor()
@@ -123,7 +141,12 @@ def store_event(
         event_id = c.lastrowid
         conn.close()
         return event_id
-    except sqlite3.OperationalError:
+    except Exception as exc:  # noqa: BLE001 — a guard must not die auditing itself
+        logger.warning(
+            "hook_compat: hook_events audit write FAILED (%s: %s). The safety "
+            "decision still stands; the audit row is lost.",
+            type(exc).__name__, exc,
+        )
         return -1
 
 
@@ -146,7 +169,14 @@ def forward_to_dashboard(event_data: dict) -> None:
 
 # ── Pre-Tool-Use Guard ─────────────────────────────────────────────────
 
-# Append-only tables that must never be UPDATE/DELETE'd (NIST AU)
+# Append-only tables that must never be UPDATE/DELETE'd (NIST AU).
+#
+# NOT the canonical list. That one lives in APPEND_ONLY_TABLES in
+# .claude/hooks/pre_tool_use.py and carries 361 tables; this one carries 22, of
+# which 17 are absent from the canonical list — so 356 audit tables the Claude
+# Code path protects are unprotected here, and neither list is a superset.
+# That drift is exactly what hgx-guard-02 reconciles; left verbatim for now so
+# this task changes no verdict on either side.
 APPEND_ONLY_TABLES = [
     "audit_trail",
     "hook_events",
@@ -179,118 +209,120 @@ APPEND_ONLY_TABLES = [
 #
 # These commands can silently destroy work in a non-recoverable way.
 # Hooked through run_pre_tool_check so any orchestrator (Claude Code,
-# LLMRouter, MCP gateway) gets the same protection that .claude/hooks/
-# pre_tool_use.py already gives the Claude-only path.
-_GIT_DANGER_PATTERNS = [
-    # Force push — direct or via shorthand
-    (r"\bgit\s+push\s+(?:[^\n]*\s)?(?:--force\b|--force-with-lease\b|-f\b)",
-     "git push --force is destructive — rewrites remote history"),
-    # Hard reset anything
-    (r"\bgit\s+reset\s+(?:[^\n]*\s)?--hard\b",
-     "git reset --hard discards uncommitted changes"),
-    # Force delete branches. -D is case-sensitive (distinct from safe -d).
-    (r"\bgit\s+branch\s+(?:[^\n]*\s)?(?-i:-D)\b",
-     "git branch -D force-deletes branches (use -d for safe delete)"),
-    (r"\bgit\s+branch\s+(?:[^\n]*\s)?--delete\s+--force\b",
-     "git branch --delete --force force-deletes branches"),
-    # Dangerous clean
-    (r"\bgit\s+clean\s+(?:[^\n]*\s)?-[a-zA-Z]*f[a-zA-Z]*\b",
-     "git clean -f permanently deletes untracked files"),
-    # Checkout/restore of working tree — can wipe uncommitted edits
-    (r"\bgit\s+checkout\s+(?:--\s*\.|\.\s*$|\.\s)",
-     "git checkout . discards uncommitted working-tree changes"),
-    (r"\bgit\s+restore\s+(?:[^\n]*\s)?(?:--\s*\.|\.\s*$|\.\s)",
-     "git restore . discards uncommitted working-tree changes"),
-    # Commit amend on already-pushed commits is risky (heuristic — block
-    # only when combined with no-edit or with --force elsewhere)
-    (r"\bgit\s+rebase\s+(?:[^\n]*\s)?-i\b",
-     "interactive git rebase requires manual approval (no automation)"),
-]
+# LLMRouter, MCP gateway) gets the same protection.
+#
+# hgx-guard-01: the patterns and the matcher now live in
+# tools/hooks/shared_checks.py, which .claude/hooks/pre_tool_use.py also
+# imports — the two guard paths cannot drift apart again. Re-exported here
+# under their historical names so existing importers keep working.
+_GIT_DANGER_PATTERNS = list(shared_checks.GIT_DANGER_PATTERNS)
+_check_git_danger = shared_checks.git_danger_reason
 
 
-def _check_git_danger(command: str) -> Optional[str]:
-    """Return a block reason if the command matches a destructive git
-    pattern, else None. Case-insensitive match on the raw command text."""
-    import re
+def _sqlite_backend() -> bool:
+    """True when the storage backend is SQLite (so DB_PATH is meaningful)."""
+    return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").strip().lower() != "postgresql"
 
-    text = command
-    for pattern, reason in _GIT_DANGER_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            return reason
-    return None
+
+#: Every blocking check the headless path runs, in evaluation order. Cheap,
+#: high-certainty checks first so an obvious block short-circuits the rest.
+#:
+#: A test asserts this covers every ``check_*`` in shared_checks — the failure
+#: mode this slice exists to fix was a check that existed but was never called.
+HEADLESS_CHECKS = (
+    "check_env_file_access",
+    "check_dangerous_rm",
+    "check_git_danger",
+    "check_append_only_write",
+    "check_direct_sqlite_usage",
+    "check_file_access_tiers",
+    "check_branch_deletion",
+    "check_worktree_path",
+    "check_review_loop_precommit",
+)
+
+#: Extra arguments for the checks that need more than (tool_name, tool_input).
+#: Kept as data next to the list above so adding a check is one edit, and a
+#: missing argument is a KeyError here rather than a silently skipped check.
+_CHECK_EXTRA_ARGS = {
+    "check_append_only_write": lambda: (APPEND_ONLY_TABLES,),
+}
 
 
 def run_pre_tool_check(
     tool_name: str,
     tool_input: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Run pre-tool-use safety checks (append-only table protection +
-    git destructive-command blocklist).
+    """Run the pre-tool-use safety checks — the SAME ones the Claude Code hook
+    runs, from the same implementation in tools/hooks/shared_checks.py.
 
-    Equivalent to .claude/hooks/pre_tool_use.py but callable from any
-    orchestrator (not just Claude Code).
+    Callable from any orchestrator, so an agent running outside Claude Code is
+    guarded identically to one inside it. Before hgx-guard-02 this ran two of the
+    eight checks and waved through any tool whose name was not in a six-name
+    list, which made the headless path — the one used unattended — the WEAKER of
+    the two.
 
     Returns:
         {"allowed": True/False, "reason": str}
     """
-    import re
-
-    if tool_name not in ("Bash", "bash", "shell", "sql", "Write", "Edit"):
-        return {"allowed": True, "reason": "non-destructive tool"}
-
     if not tool_input:
         return {"allowed": True, "reason": "no input to check"}
 
-    # Extract command text from tool input
-    command = ""
-    if isinstance(tool_input, dict):
-        command = tool_input.get("command", "")
-        if not command:
-            command = tool_input.get("content", "")
-        if not command:
-            command = tool_input.get("query", "")
-
-    if not command or not isinstance(command, str):
-        return {"allowed": True, "reason": "no command to check"}
-
-    command_lower = command.lower()
-
-    # OPT-51: destructive git command blocklist
-    git_reason = _check_git_danger(command)
-    if git_reason:
-        reason = f"BLOCKED: {git_reason}"
-        logger.warning(reason)
-        store_event(
-            get_session_id(),
-            "pre_tool_use",
-            tool_name,
-            {
-                "blocked": True,
-                "reason": reason,
-                "command_snippet": command[:200],
-                "rule": "git_danger_blocklist",
-            },
-        )
-        return {"allowed": False, "reason": reason}
-
-    # Check for destructive operations on append-only tables
-    for table in APPEND_ONLY_TABLES:
-        if re.search(
-            rf"(update|delete)\s+(from\s+)?{re.escape(table)}",
-            command_lower,
-        ):
-            reason = (
-                f"BLOCKED: destructive operation on append-only table '{table}'. "
-                f"NIST AU compliance requires append-only audit trail."
+    # NO TOOL-NAME SHORT-CIRCUIT.
+    #
+    # There used to be one: anything outside ("Bash","bash","shell","sql",
+    # "Write","Edit") returned allowed without looking at the payload, so a new
+    # or renamed mutating tool bypassed every check by virtue of its name. Each
+    # check decides for itself which tools it applies to — that judgement belongs
+    # with the check, not with a list here that nobody updates.
+    for check in HEADLESS_CHECKS:
+        try:
+            extra = _CHECK_EXTRA_ARGS.get(check)
+            reason = getattr(shared_checks, check)(
+                tool_name, tool_input, *(extra() if extra else ())
             )
-            logger.warning(reason)
+        except Exception as exc:  # noqa: BLE001
+            # A broken check must not wave the call through, but neither should
+            # it stall every orchestrator. Report loudly and keep checking.
+            logger.warning(
+                "hook_compat: safety check %s errored (%s: %s); continuing with "
+                "the remaining checks", check, type(exc).__name__, exc,
+            )
+            continue
+        if not reason:
+            continue
+
+        message = reason if reason.startswith("BLOCKED") else f"BLOCKED: {reason}"
+        logger.warning("hook_compat: %s", message)
+        snippet = ""
+        if isinstance(tool_input, dict):
+            for key in ("command", "content", "query", "file_path"):
+                value = tool_input.get(key)
+                if isinstance(value, str) and value:
+                    snippet = value[:200]
+                    break
+        # Belt and braces: store_event already swallows backend errors, but the
+        # DECISION must not depend on the audit succeeding under any
+        # circumstance — that coupling is precisely what let a UniqueViolation
+        # on hook_events take the whole guard down.
+        try:
             store_event(
                 get_session_id(),
                 "pre_tool_use",
                 tool_name,
-                {"blocked": True, "reason": reason, "command_snippet": command[:200]},
+                {
+                    "blocked": True,
+                    "reason": message,
+                    "command_snippet": snippet,
+                    "rule": check,
+                },
             )
-            return {"allowed": False, "reason": reason}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "hook_compat: audit of a BLOCK failed (%s: %s); the block still "
+                "stands", type(exc).__name__, exc,
+            )
+        return {"allowed": False, "reason": message}
 
     return {"allowed": True, "reason": "passed safety checks"}
 

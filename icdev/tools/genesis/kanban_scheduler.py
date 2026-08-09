@@ -146,7 +146,7 @@ def main():
     def _take_lock() -> bool:
         import os
         try:
-            LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+            LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8", newline="")
             return True
         except Exception:
             return False
@@ -395,7 +395,7 @@ def main():
         try:
             heartbeat_path.write_text(
                 f"{cycle}\n{time.time()}\n",
-                encoding="utf-8",
+                encoding="utf-8", newline="",
             )
         except Exception as exc:
             logger.debug("heartbeat write failed: %s", exc)

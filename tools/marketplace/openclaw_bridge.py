@@ -766,7 +766,7 @@ def import_skill(source_path, tenant_id, imported_by, skillhub_url=None):
         pre_enrichment_path = quarantine_path / "_pre_enrichment.md"
         pre_enrichment_path.write_text(
             skill_md_for_diff.read_text(encoding="utf-8", errors="replace"),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
 
     # Enrichment — Innovation + Creative + Research engines (scanner-tier, graceful skip)
@@ -1264,7 +1264,7 @@ CUI // SP-CTI
         icdev_content = f"---\n{fm_yaml}---\n{icdev_body}"
 
         icdev_skill_path = quarantine_path / "SKILL.md"
-        icdev_skill_path.write_text(icdev_content, encoding="utf-8")
+        icdev_skill_path.write_text(icdev_content, encoding="utf-8", newline="")
 
         # Register in marketplace (if catalog available)
         asset_id = None
@@ -1478,7 +1478,7 @@ def fetch_and_import(slug, tenant_id, imported_by):
                 existing_meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
                 existing_meta["author_handle"] = detail["owner"].get("handle", "")
                 existing_meta["author_name"] = detail["owner"].get("displayName", "")
-                meta_path.write_text(json.dumps(existing_meta, indent=2), encoding="utf-8")
+                meta_path.write_text(json.dumps(existing_meta, indent=2), encoding="utf-8", newline="")
             except Exception:
                 pass
 

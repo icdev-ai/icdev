@@ -304,7 +304,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
             # If Pulse pipeline fails, store article as markdown file
             article_path = Path(challenge.get("app_path", ".")) / "ARTICLE.md"
             article_path.parent.mkdir(parents=True, exist_ok=True)
-            article_path.write_text(article, encoding="utf-8")
+            article_path.write_text(article, encoding="utf-8", newline="")
             post_id = f"file:{article_path}"
 
         # Quality gate: only auto-publish if WriteGuard >= 90 AND screenshots present

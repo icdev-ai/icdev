@@ -53,7 +53,7 @@ def _send_dev(*, to: str, subject: str, text_body: str,
         f"X-FathomDesk-Backend: dev\n\n"
         f"{text_body}\n"
     )
-    fpath.write_text(eml, encoding="utf-8")
+    fpath.write_text(eml, encoding="utf-8", newline="")
     preview = (text_body or "")[:80].replace("\n", " ").strip()
     print(f"[mail/dev] → {to} | {subject} | {preview} | saved={fpath.name}",
             file=sys.stderr)

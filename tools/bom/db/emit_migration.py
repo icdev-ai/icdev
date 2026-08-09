@@ -74,7 +74,7 @@ def main() -> int:
         print(f"OK: {MIGRATION.name} matches SCHEMA_PG")
         return 0
 
-    MIGRATION.write_text(rendered, encoding="utf-8")
+    MIGRATION.write_text(rendered, encoding="utf-8", newline="")
     print(f"wrote {MIGRATION} ({len(SCHEMA_PG)} statements)")
     return 0
 

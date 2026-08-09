@@ -211,7 +211,7 @@ def copy_essential_goals(
         if goal_key == "build_app":
             content = source_file.read_text(encoding="utf-8")
             adapted_content = strip_fitness_step(content)
-            dest_file.write_text(adapted_content, encoding="utf-8")
+            dest_file.write_text(adapted_content, encoding="utf-8", newline="")
             logger.info("Copied and adapted: %s (fitness step stripped)", filename)
         else:
             shutil.copy2(source_file, dest_file)
@@ -475,7 +475,7 @@ def adapt_goals(
     manifest_content = build_goals_manifest(goals_config, app_name)
     manifest_path = child_goals_dir / "manifest.md"
     child_goals_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(manifest_content, encoding="utf-8")
+    manifest_path.write_text(manifest_content, encoding="utf-8", newline="")
     result["manifest_generated"] = True
     result["manifest_path"] = str(manifest_path)
     logger.info("Generated goals manifest: %s", manifest_path)

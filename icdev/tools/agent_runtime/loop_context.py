@@ -108,7 +108,7 @@ def append_feedback(loop_id: str, correction: str, *, source: str = "human") -> 
                 f"Corrections applied to this loop's output. Loaded into the "
                 f"loop's context on every run.\n\n"
                 f"## Corrections\n\n",
-                encoding="utf-8",
+                encoding="utf-8", newline="",
             )
         with path.open("a", encoding="utf-8") as fh:
             fh.write(f"- {stamp} ({source}): {correction}\n")

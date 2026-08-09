@@ -252,7 +252,7 @@ def run_destroy(run_id: str, project_id: str) -> dict:
                 region = env.get("AWS_DEFAULT_REGION", "us-east-1")
                 (tmp_path / "localstack_override.tf").write_text(
                     _LOCALSTACK_OVERRIDE_TPL.format(ep=docker_ep, region=region),
-                    encoding="utf-8",
+                    encoding="utf-8", newline="",
                 )
 
             # Inject tfvars
@@ -262,7 +262,7 @@ def run_destroy(run_id: str, project_id: str) -> dict:
                 'db_password         = "changeme-rotate-immediately"\n'
                 'dw_password         = "changeme-rotate-immediately"\n'
                 'artifacts_bucket    = "icdev-artifacts"\n',
-                encoding="utf-8",
+                encoding="utf-8", newline="",
             )
 
             # Init
@@ -335,7 +335,7 @@ def run_destroy(run_id: str, project_id: str) -> dict:
 
     _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path = _ARTIFACTS_DIR / f"destroy_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return {
         "gate": gate,

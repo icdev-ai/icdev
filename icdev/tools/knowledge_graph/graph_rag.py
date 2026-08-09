@@ -1746,7 +1746,7 @@ def expand_bm25_top_k(
         }
 
         # Persist for restart/timeout recovery
-        cache_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+        cache_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8", newline="")
 
         return result
 
@@ -1764,7 +1764,7 @@ def expand_bm25_top_k(
         }
         try:
             cache_path.write_text(
-                json.dumps(error_result, indent=2, default=str), encoding="utf-8"
+                json.dumps(error_result, indent=2, default=str), encoding="utf-8", newline=""
             )
         except Exception:
             pass

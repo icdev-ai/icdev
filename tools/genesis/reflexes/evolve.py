@@ -686,7 +686,7 @@ def _archive_variant(
 
     # Write variant source
     variant_path = tool_dir / f"{ts}_{status}.py"
-    variant_path.write_text(file_content, encoding="utf-8")
+    variant_path.write_text(file_content, encoding="utf-8", newline="")
 
     # Write metadata
     old_complexity = (metrics or {}).get("cyclomatic_complexity", 0) or 0
@@ -712,7 +712,7 @@ def _archive_variant(
     meta_path = tool_dir / f"{ts}_metadata.json"
     meta_path.write_text(
         json.dumps(metadata, indent=2, default=str),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     # Enforce max_variants_per_tool — prune oldest beyond limit

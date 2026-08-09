@@ -245,8 +245,8 @@ def run(project_id: str = "default") -> dict:
         checklist_path = _ARTIFACTS_DIR / "04_validation_checklist.md"
         script_path = _ARTIFACTS_DIR / "validate.py"
 
-        checklist_path.write_text(_checklist_md(categories, apps, project), encoding="utf-8")
-        script_path.write_text(_validate_script(apps, project), encoding="utf-8")
+        checklist_path.write_text(_checklist_md(categories, apps, project), encoding="utf-8", newline="")
+        script_path.write_text(_validate_script(apps, project), encoding="utf-8", newline="")
 
         # ── Persist to mc_assessments ─────────────────────────────────────────
         design_id = conn.execute("SELECT id FROM migration_designs LIMIT 1").fetchone()

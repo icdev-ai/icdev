@@ -574,7 +574,7 @@ def generate_companion_script(skill_path):
     scripts_dir.mkdir(exist_ok=True)
     script_path = scripts_dir / "companion.py"
     script_content = "\n".join(script_lines)
-    script_path.write_text(script_content, encoding="utf-8")
+    script_path.write_text(script_content, encoding="utf-8", newline="")
 
     # Update SKILL.md with companion script reference
     skill_md = skill_path / "SKILL.md"
@@ -605,7 +605,7 @@ def generate_companion_script(skill_path):
             else:
                 md_content += companion_section
 
-            skill_md.write_text(md_content, encoding="utf-8")
+            skill_md.write_text(md_content, encoding="utf-8", newline="")
 
     return {
         "success": True,

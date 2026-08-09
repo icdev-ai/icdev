@@ -149,6 +149,6 @@ def set_model(name: Optional[str], actor: str = "dashboard") -> Dict[str, Any]:
             {"model": name, "since": datetime.now(timezone.utc).isoformat(), "actor": actor},
             indent=2,
         ),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
     return status()

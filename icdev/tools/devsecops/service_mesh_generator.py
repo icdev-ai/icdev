@@ -1083,7 +1083,7 @@ ADR D124: PDP modeled as external reference; ICDEV™ generates PEP configs only
         out_dir = Path(args.output)
         out_dir.mkdir(parents=True, exist_ok=True)
         out_file = out_dir / f"{args.project_id}-{mesh}-mesh.yaml"
-        out_file.write_text(result["yaml_content"], encoding="utf-8")
+        out_file.write_text(result["yaml_content"], encoding="utf-8", newline="")
         print(f"[service_mesh] Written {result['manifest_count']} manifests to: {out_file}")
         if args.as_json and not args.human:
             # Also emit JSON summary

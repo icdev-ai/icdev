@@ -37,7 +37,7 @@ def load(role_id: str = "software_craftsperson", tenant_id: str = "default") -> 
 
 def save(state: dict, role_id: str = "software_craftsperson", tenant_id: str = "default") -> None:
     _SOULS_DIR.mkdir(parents=True, exist_ok=True)
-    _soul_path(role_id, tenant_id).write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
+    _soul_path(role_id, tenant_id).write_text(json.dumps(state, indent=2, default=str), encoding="utf-8", newline="")
 
 
 def add_adr(project: str, adr: dict, role_id: str = "software_craftsperson", tenant_id: str = "default") -> None:

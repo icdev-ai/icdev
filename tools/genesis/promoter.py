@@ -228,7 +228,7 @@ def export_gkp(
         "promotion_status": STATUS_PENDING,
         "created_at": _utcnow_iso(),
     }
-    gkp_file.write_text(json.dumps(gkp_doc, indent=2), encoding="utf-8")
+    gkp_file.write_text(json.dumps(gkp_doc, indent=2), encoding="utf-8", newline="")
 
     _log_audit(
         "genesis.promoter.exported",

@@ -158,7 +158,7 @@ def main():
         uid = uuid.uuid4().hex[:8]
         fname = f"inventory_scan_{uid}.md"
         fpath = _ARTIFACTS_DIR / fname
-        fpath.write_text(report_md, encoding="utf-8")
+        fpath.write_text(report_md, encoding="utf-8", newline="")
 
         output = {
             "status": "success",

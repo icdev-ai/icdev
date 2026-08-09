@@ -234,8 +234,8 @@ def _duckdb_join(left: list[dict], right: list[dict], key: str) -> list[dict]:
     tmp = Path(tempfile.gettempdir())
     lp = tmp / "_iqe_join_left.json"
     rp = tmp / "_iqe_join_right.json"
-    lp.write_text(json.dumps(left), encoding="utf-8")
-    rp.write_text(json.dumps(right), encoding="utf-8")
+    lp.write_text(json.dumps(left), encoding="utf-8", newline="")
+    rp.write_text(json.dumps(right), encoding="utf-8", newline="")
     try:
         con = duckdb.connect()
         esc = key.replace('"', '""')

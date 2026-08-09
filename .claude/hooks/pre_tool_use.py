@@ -10,102 +10,64 @@ Blocks:
     - Access to .env files containing secrets
     - UPDATE/DELETE/DROP/TRUNCATE on every append-only table (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
-    - Deletion of CUI-marked artifacts without explicit approval
+    - Direct sqlite3.connect() that bypasses the storage layer
+    - Writes/deletes forbidden by the D-ORCH-8 file access tiers
+    - Deletion of a remote branch that still holds unmerged commits
+    - `git worktree add` outside the sanctioned roots
+and self-greens staged changes with review_loop before a `git commit`.
+
+This file is the Claude Code ENTRY POINT, not the implementation. Every check
+lives in ``tools/hooks/shared_checks.py``, which ``tools/airgap/hook_compat.py``
+— the guard every non-Claude-Code orchestrator calls — imports too, so the two
+paths cannot drift apart (hgx-guard-01). What still lives here is DATA: the
+canonical APPEND_ONLY_TABLES list, which CLAUDE.md's guardrail, the child-app
+generator and coherence_checker's autofix all read from this file.
 
 Exit codes:
     0 = allow tool call
     2 = block tool call (shows error to Claude)
 """
 
+import importlib.util
 import json
-import os
-import re
-import subprocess
-import shlex
 import sys
-from fnmatch import fnmatch
 from pathlib import Path
 
-# Cheap pre-guard for the append-only table check. Every protected-table pattern
-# requires one of these verbs, so a command containing none of them cannot match
-# and we can skip the (much larger) alternation entirely. The overwhelming
-# majority of Bash calls are not SQL at all.
-_SQL_MUTATION_VERB_RE = re.compile(r"\b(?:update|delete|drop|truncate)\b")
-
-# Built once per process from APPEND_ONLY_TABLES, then reused. Previously this
-# check compiled three f-string regexes per table per call — 350+ tables, so
-# ~1000 patterns per Bash call. re's internal cache holds 512, so it was blown
-# and flushed on every single invocation and nothing was ever reused.
-_APPEND_ONLY_PATTERNS = None
+# rls-bypass: repo root resolved from __file__, never os.getcwd() — this hook
+# runs from whichever worktree invoked it, so cwd is not the repository root.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SHARED_CHECKS_PATH = REPO_ROOT / "tools" / "hooks" / "shared_checks.py"
 
 
-def _append_only_patterns(tables):
-    """Compile (and memoize) the protected-table patterns.
+def _load_shared_checks():
+    """Load tools/hooks/shared_checks.py by file path.
 
-    One alternation per SQL shape instead of three regexes per table. Matching
-    is equivalent: the original returned True if ANY table matched ANY shape.
+    By path rather than ``from tools.hooks import shared_checks`` because
+    importing the ``tools`` package executes its compatibility shim, which pulls
+    in ``icdev.tools.llm.router`` (~90ms measured). This hook runs before EVERY
+    tool call, so that cost would land on every one of them.
+
+    Deliberately not wrapped in try/except: a guard that cannot load must fail
+    loudly, not silently stop guarding.
     """
-    global _APPEND_ONLY_PATTERNS
-    if _APPEND_ONLY_PATTERNS is None:
-        # De-duplicated (the source list has a few repeats) and longest-first so
-        # the alternation prefers the most specific table name.
-        alt = "|".join(
-            re.escape(t) for t in sorted(set(tables), key=lambda t: (-len(t), t))
-        )
-        _APPEND_ONLY_PATTERNS = (
-            re.compile(rf"(?:update|delete)\s+(?:from\s+)?(?:{alt})"),
-            re.compile(rf"drop\s+table\s+.*(?:{alt})"),
-            re.compile(rf"truncate\s+.*(?:{alt})"),
-        )
-    return _APPEND_ONLY_PATTERNS
+    spec = importlib.util.spec_from_file_location(
+        "icdev_hook_shared_checks", SHARED_CHECKS_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def is_dangerous_rm_command(command: str) -> bool:
-    """Detect dangerous rm commands."""
-    normalized = " ".join(command.lower().split())
+# Every check below is implemented once, in shared_checks, so this hook and
+# tools/airgap/hook_compat.py (the headless path) cannot drift apart again.
+shared_checks = _load_shared_checks()
 
-    patterns = [
-        r"\brm\s+.*-[a-z]*r[a-z]*f",
-        r"\brm\s+.*-[a-z]*f[a-z]*r",
-        r"\brm\s+--recursive\s+--force",
-        r"\brm\s+--force\s+--recursive",
-        r"\brm\s+-r\s+.*-f",
-        r"\brm\s+-f\s+.*-r",
-    ]
-
-    for pattern in patterns:
-        if re.search(pattern, normalized):
-            return True
-
-    # Check for rm with recursive flag targeting dangerous paths
-    dangerous_paths = [r"/", r"/\*", r"~", r"~/", r"\$HOME", r"\.\.", r"\*", r"\."]
-    if re.search(r"\brm\s+.*-[a-z]*r", normalized):
-        for path in dangerous_paths:
-            if re.search(path, normalized):
-                return True
-
-    return False
-
-
-def is_env_file_access(tool_name: str, tool_input: dict) -> bool:
-    """Check if a tool is trying to access .env files."""
-    if tool_name in ("Read", "Edit", "MultiEdit", "Write"):
-        file_path = tool_input.get("file_path", "")
-        if ".env" in file_path and not file_path.endswith(".env.sample"):
-            return True
-
-    elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        env_patterns = [
-            r"\b\.env\b(?!\.sample)",
-            r"cat\s+.*\.env\b(?!\.sample)",
-            r"echo\s+.*>\s*\.env\b(?!\.sample)",
-        ]
-        for pattern in env_patterns:
-            if re.search(pattern, command):
-                return True
-
-    return False
+is_dangerous_rm_command = shared_checks.is_dangerous_rm_command
+is_env_file_access = shared_checks.is_env_file_access
+is_direct_sqlite_usage = shared_checks.is_direct_sqlite_usage
+_matches_tier = shared_checks._matches_tier
+_worktree_add_target = shared_checks.worktree_add_target
+_remote_branch_delete_targets = shared_checks.remote_branch_delete_targets
 
 
 def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
@@ -763,82 +725,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     # and claiming otherwise here would both misdescribe it and block legitimate
     # repair. Audit EVIDENCE belongs above; operational telemetry does not.
 
-    if tool_name == "Bash":
-        command = tool_input.get("command", "").lower()
-        # Every pattern below requires one of these verbs, so a command without
-        # any of them cannot match. Skipping the alternation here is what keeps
-        # this hook off the critical path for ordinary (non-SQL) shell commands.
-        if not _SQL_MUTATION_VERB_RE.search(command):
-            return False
-        # UPDATE/DELETE, DROP TABLE, and TRUNCATE against any protected table.
-        for pattern in _append_only_patterns(APPEND_ONLY_TABLES):
-            if pattern.search(command):
-                return True
-
-    return False
-
-
-_FILE_ACCESS_TIERS_CACHE = None  # sentinel below distinguishes "not loaded" from "None"
-_FILE_ACCESS_TIERS_LOADED = False
-
-
-def _load_file_access_tiers():
-    """Load file access tier config from args/file_access_tiers.yaml.
-
-    Memoized: this is called for every tool call, and re-parsing the YAML from
-    disk each time bought nothing — the hook is a short-lived process, so the
-    config cannot change underneath a single invocation.
-    """
-    global _FILE_ACCESS_TIERS_CACHE, _FILE_ACCESS_TIERS_LOADED
-    if _FILE_ACCESS_TIERS_LOADED:
-        return _FILE_ACCESS_TIERS_CACHE
-    _FILE_ACCESS_TIERS_LOADED = True
-    _FILE_ACCESS_TIERS_CACHE = _read_file_access_tiers()
-    return _FILE_ACCESS_TIERS_CACHE
-
-
-def _read_file_access_tiers():
-    """Uncached read of the tier config. Returns None when absent or disabled."""
-    try:
-        import yaml
-    except ImportError:
-        return None
-    config_path = Path(__file__).resolve().parent.parent.parent / "args" / "file_access_tiers.yaml"
-    if not config_path.exists():
-        return None
-    try:
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
-        tiers = config.get("file_access_tiers", {})
-        if not tiers.get("enabled", False):
-            return None
-        return tiers
-    except Exception:
-        return None
-
-
-def _matches_tier(file_path: str, patterns: list) -> bool:
-    """Check if file_path matches any pattern in the tier (glob-style)."""
-    if not file_path:
-        return False
-    # Normalize to forward slashes and strip leading ./
-    fp = file_path.replace("\\", "/")
-    if fp.startswith("./"):
-        fp = fp[2:]
-    for pattern in patterns:
-        if pattern.startswith("!"):
-            continue  # exclusion patterns handled separately
-        # Check exclusions first
-        excluded = False
-        for exc in patterns:
-            if exc.startswith("!") and fnmatch(fp, exc[1:]):
-                excluded = True
-                break
-        if excluded:
-            continue
-        if fnmatch(fp, pattern) or fnmatch(os.path.basename(fp), pattern):
-            return True
-    return False
+    return shared_checks.is_append_only_table_modification(
+        tool_name, tool_input, APPEND_ONLY_TABLES
+    )
 
 
 def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
@@ -846,350 +735,47 @@ def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
 
     Decision D-ORCH-8: Tiered file access control.
     """
-    tiers = _load_file_access_tiers()
-    if not tiers:
-        return None
-
-    file_path = ""
-    is_write = False
-    is_delete = False
-
-    if tool_name in ("Read",):
-        file_path = tool_input.get("file_path", "")
-        # Read — only blocked by zero_access
-    elif tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
-        file_path = tool_input.get("file_path", tool_input.get("notebook_path", ""))
-        is_write = True
-    elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # Check for rm/delete commands targeting protected files
-        rm_match = re.search(r'\brm\s+(?:-[a-z]*\s+)*([^\s|;&]+)', command)
-        if rm_match:
-            file_path = rm_match.group(1)
-            is_delete = True
-        # Check for write redirections
-        redir_match = re.search(r'>\s*([^\s|;&]+)', command)
-        if redir_match and not is_delete:
-            file_path = redir_match.group(1)
-            is_write = True
-
-    if not file_path:
-        return None
-
-    # Zero access — block everything
-    zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
-    if _matches_tier(file_path, zero_patterns):
-        return f"BLOCKED: File '{file_path}' is in zero_access tier (D-ORCH-8). No access allowed."
-
-    # Read only — block writes and deletes
-    ro_patterns = [p for t in [tiers.get("read_only", {})] for p in t.get("patterns", [])]
-    if (is_write or is_delete) and _matches_tier(file_path, ro_patterns):
-        return f"BLOCKED: File '{file_path}' is in read_only tier (D-ORCH-8). Write/delete prohibited."
-
-    # No delete — block deletes only
-    nd_patterns = [p for t in [tiers.get("no_delete", {})] for p in t.get("patterns", [])]
-    if is_delete and _matches_tier(file_path, nd_patterns):
-        return f"BLOCKED: File '{file_path}' is in no_delete tier (D-ORCH-8). Deletion prohibited."
-
-    return None
-
-
-def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
-    """Block direct sqlite3.connect() usage that bypasses the storage layer.
-
-    Production backend is PostgreSQL. Writing to sqlite3 directly means the
-    data is invisible to the dashboard and API. This has caused repeated
-    confusion — data written to SQLite never appears in the UI.
-
-    ALWAYS use: from tools.db.storage import get_connection
-
-    Exemptions (files that legitimately need raw sqlite3):
-        - tools/db/storage.py — IS the storage layer
-        - tools/db/init_icdev_db.py — DDL/schema initialization
-        - tools/db/migration_runner.py — schema migrations
-        - tools/db/backup_manager.py — backup/restore with sqlite3 API
-        - tools/db/pg_init.py — PG initialization
-        - tools/db/migrate_to_storage.py — one-time migration script
-        - */init_db.py — child app/canvas isolated DB initialization
-        - tools/saas/* — tenant-isolated DBs (separate SQLite per tenant)
-        - tools/compat/db_utils.py — path resolution utilities
-    """
-    EXEMPT_PATTERNS = [
-        "tools/db/storage.py",
-        "tools/db/init_icdev_db.py",
-        "tools/db/migration_runner.py",
-        "tools/db/backup_manager.py",
-        "tools/db/pg_init.py",
-        "tools/db/migrate_to_storage.py",
-        "tools/db/migrate_add_missing_columns.py",
-        "tools/compat/db_utils.py",
-        "tools/saas/",
-    ]
-
-    if tool_name in ("Edit", "Write"):
-        file_path = tool_input.get("file_path", "").replace("\\", "/")
-        new_content = tool_input.get("new_string", "") or tool_input.get("content", "")
-
-        # Only check files under tools/ (handle both absolute and relative paths)
-        if "/tools/" not in file_path and not file_path.startswith("tools/"):
-            return False
-
-        # Check exemptions
-        for exempt in EXEMPT_PATTERNS:
-            if exempt in file_path:
-                return False
-
-        # Allow init_db.py files (canvas/child app isolated DBs)
-        if file_path.endswith("/init_db.py"):
-            return False
-
-        # Block if introducing sqlite3.connect(
-        if "sqlite3.connect(" in new_content:
-            return True
-
-    elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # Block ad-hoc sqlite3.connect to icdev.db in python one-liners
-        if "sqlite3.connect" in command and "icdev.db" in command:
-            # Allow if it's running a migration or init script
-            if any(x in command for x in ["init_icdev_db", "migration_runner", "migrate_to_storage", "backup"]):
-                return False
-            return True
-
-    return False
+    return shared_checks.check_file_access_tiers(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    )
 
 
 def run_review_loop_precommit(tool_name: str, tool_input: dict) -> None:
     """Self-green staged changes with review_loop before a `git commit`.
 
-    Fires only on Bash `git commit` calls. Runs the fast, staged, ruff-only
-    review loop (coherence/SIPA are too slow for a commit gate — they run in the
-    pre-PR preflight + CI), applies deterministic ruff autofixes to the staged
-    `.py` files, and re-stages them so the commit lands lint-clean.
-
     Warn-only by default (the commit proceeds). Set ICDEV_REVIEW_LOOP_BLOCK=1 to
     hard-block a non-green commit, or ICDEV_REVIEW_LOOP_PRECOMMIT=0 to disable.
-    Best-effort: any error is swallowed so it can never break a commit.
     """
-    if tool_name != "Bash":
-        return
-    command = tool_input.get("command", "")
-    if "git commit" not in command:
-        return
-    if os.environ.get("ICDEV_REVIEW_LOOP_PRECOMMIT", "1").strip().lower() in ("0", "false", "no", "off"):
-        return
-
-    try:
-        repo_root = Path(__file__).resolve().parents[2]
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        from tools.quality.review_loop import preflight
-
-        report = preflight(
-            base=None, autofix=True, staged=True,
-            only_gates=["ruff"], coherence_scope="changed",
-            audit=False, max_iterations=1, repo_root=repo_root,
-        )
-        # Re-stage whatever ruff --fix rewrote so the fixes are committed.
-        if report.changed_files:
-            subprocess.run(
-                ["git", "add", *report.changed_files],
-                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
-            )
-        if not report.green:
-            n = len(report.fix_brief)
-            msg = (
-                f"review_loop (pre-commit): {n} unfixable lint finding(s) remain "
-                f"in staged files — {report.reason}"
-            )
-            if os.environ.get("ICDEV_REVIEW_LOOP_BLOCK", "").strip().lower() in ("1", "true", "yes", "on"):
-                print(f"BLOCKED: {msg}", file=sys.stderr)
-                sys.exit(2)
-            print(f"WARNING: {msg} (commit proceeding; set ICDEV_REVIEW_LOOP_BLOCK=1 to block)", file=sys.stderr)
-        elif report.changed_files:
-            print("review_loop (pre-commit): applied ruff autofixes to staged files", file=sys.stderr)
-    except SystemExit:
-        raise
-    except Exception:
-        return  # never break a commit
-
-
-def _worktree_add_target(command: str, posix=None):
-    """Target path of a ``git worktree add`` in *command*, or None.
-
-    Returns None whenever the path cannot be determined with confidence — the
-    caller treats that as "allow". A parser that guesses would block legitimate
-    work, which is strictly worse than failing to catch a stray worktree.
-
-    The shlex mode must follow the OS, because neither mode is correct on both:
-
-        "git worktree add C:\\Users\\u\\wt"   posix=True  -> "C:Usersuwt"     WRONG
-        "git worktree add /tmp/my\\ dir"      posix=False -> ["/tmp/my\\","dir"] WRONG
-
-    On Windows a backslash is a path separator; on POSIX it is an escape. Pick
-    by platform rather than hardcoding either. *posix* is overridable so both
-    branches stay testable on a single host.
-    """
-    if "worktree" not in command or "add" not in command:
-        return None
-    if posix is None:
-        posix = os.name != "nt"
-    try:
-        tokens = shlex.split(command, posix=posix)
-        if not posix:
-            # Non-posix mode leaves quotes attached to the token.
-            tokens = [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t
-                      for t in tokens]
-    except ValueError:
-        return None
-
-    for i in range(len(tokens) - 2):
-        if tokens[i].endswith("git") and tokens[i + 1] == "worktree" and tokens[i + 2] == "add":
-            rest = tokens[i + 3:]
-            break
-    else:
-        return None
-
-    skip_next = False
-    for tok in rest:
-        if skip_next:
-            skip_next = False
-            continue
-        if tok in ("-b", "-B", "--reason", "--lock-reason"):
-            skip_next = True          # these take a value that is NOT the path
-            continue
-        if tok.startswith("-"):
-            continue                  # --detach, --no-checkout, --force, ...
-        return tok                    # first positional is the worktree path
-    return None
+    reason = shared_checks.check_review_loop_precommit(
+        tool_name, tool_input, repo_root=REPO_ROOT,
+        notify=lambda message: print(message, file=sys.stderr),
+    )
+    if reason:
+        print(reason, file=sys.stderr)
+        sys.exit(2)
 
 
 def check_worktree_path(tool_name: str, tool_input: dict) -> str:
     """Refuse a ``git worktree add`` outside the sanctioned roots.
 
-    Measured 2026-08-07: 150 registered worktrees across 22 parent directories,
-    118 of them stray — 33 flat in %TEMP%\\claude, 28 in C:\\AI\\.worktrees, 27
-    nested inside another worktree. Five basenames collided across parents, and
-    two simultaneous ``wt-wake2`` checkouts on different branches are how one
-    session's edits appeared in another session's working tree.
-
-    CLAUDE.md has asked for a worktree convention in prose since the beginning
-    and produced those 150. A check is what makes a convention hold, so this
-    blocks rather than warns. Set ICDEV_WORKTREE_GUARD=0 to disable.
-
-    Fails OPEN: any resolution error allows the command. A guard that cannot
-    parse a path must not be the reason a session cannot work.
+    Blocks rather than warns — a check is what makes a convention hold. Set
+    ICDEV_WORKTREE_GUARD=0 to disable. Fails OPEN on any resolution error.
     """
-    if tool_name != "Bash":
-        return ""
-    if os.environ.get("ICDEV_WORKTREE_GUARD", "1").strip().lower() in ("0", "false", "no", "off"):
-        return ""
-    command = tool_input.get("command", "") or ""
-    target = _worktree_add_target(command)
-    if not target:
-        return ""
-    try:
-        # rls-bypass: repo root resolved from __file__, never os.getcwd() — this
-        # hook runs from whatever worktree invoked it, so cwd is not the repo.
-        repo_root = Path(__file__).resolve().parents[2]
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        from tools.git.worktree_paths import describe_violation, is_sanctioned
-
-        if is_sanctioned(target, repo_root=repo_root):
-            return ""
-        return "BLOCKED: " + describe_violation(target)
-    except Exception:
-        return ""  # fail open — never block on a broken guard
-
-
-def _remote_branch_delete_targets(command: str):
-    """Remote branches a command would DELETE. Empty when it deletes nothing.
-
-    Recognises the three forms that actually reach GitHub:
-        git push <remote> --delete <branch> [<branch>...]
-        git push <remote> :<branch>
-        gh api -X DELETE .../git/refs/heads/<branch>
-
-    ``git branch -D`` is deliberately NOT included: it deletes a LOCAL ref, which
-    cannot close a PR or remove anything from the remote.
-    """
-    if "push" not in command and "DELETE" not in command:
-        return []
-    try:
-        tokens = shlex.split(command, posix=(os.name != "nt"))
-    except ValueError:
-        return []
-
-    out = []
-    for i, tok in enumerate(tokens):
-        if tok == "push":
-            rest = tokens[i + 1:]
-            positional = [t for t in rest if not t.startswith("-")]
-            if any(t in ("--delete", "-d") for t in rest):
-                # everything positional after the remote is a branch
-                out += positional[1:] if len(positional) > 1 else []
-            out += [t[1:] for t in rest if t.startswith(":") and len(t) > 1]
-        elif tok == "DELETE":
-            for t in tokens[i + 1:]:
-                if "git/refs/heads/" in t:
-                    out.append(t.split("git/refs/heads/", 1)[1].strip("/"))
-    return [b for b in out if b]
+    return shared_checks.check_worktree_path(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
 
 
 def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     """Refuse to delete a remote branch that still holds unmerged commits.
 
-    On 2026-08-07 an agent "cleaning up duplicates" deleted four remote branches
-    matching one task id in a six-second burst. One was PR #1332 with every check
-    green: deleting a head branch makes GitHub close the PR as CLOSED-not-merged,
-    so the work vanished with no review and no failure — and `gh pr reopen` then
-    fails because the head ref is gone.
-
-    A task legitimately has several branches — a retry, a rebase, a rival
-    implementation, a human's fix. Sharing a task id is never grounds for
-    deletion. Unmerged commits are grounds for refusal.
-
-    Compared locally with `git cherry` so the check stays fast and works offline,
-    and fails OPEN on any error.
+    Deleting a head branch CLOSES its pull request as closed-not-merged, and
+    `gh pr reopen` cannot undo it once the ref is gone. Set
+    ICDEV_BRANCH_DELETE_GUARD=0 to disable. Fails OPEN on any error.
     """
-    if tool_name != "Bash":
-        return ""
-    if os.environ.get("ICDEV_BRANCH_DELETE_GUARD", "1").strip().lower() in ("0", "false", "no", "off"):
-        return ""
-    branches = _remote_branch_delete_targets(tool_input.get("command", "") or "")
-    if not branches:
-        return ""
-    try:
-        # rls-bypass: repo root resolved from __file__, never os.getcwd() — the
-        # hook runs from whichever worktree invoked it.
-        repo_root = Path(__file__).resolve().parents[2]
-        blocked = []
-        for br in branches:
-            res = subprocess.run(
-                ["git", "cherry", "origin/main", f"origin/{br}"],
-                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
-            )
-            if res.returncode != 0:
-                continue  # cannot compare -> allow (fail open)
-            unique = [ln for ln in res.stdout.splitlines() if ln.startswith("+")]
-            if unique:
-                blocked.append((br, len(unique)))
-        if not blocked:
-            return ""
-        detail = "\n".join(
-            f"    origin/{b}: {n} commit(s) not on origin/main" for b, n in blocked)
-        return (
-            "BLOCKED: refusing to delete a remote branch that still holds "
-            "unmerged work.\n" + detail + "\n"
-            "  Deleting a head branch CLOSES its pull request as closed-not-merged,\n"
-            "  and `gh pr reopen` cannot undo it once the ref is gone.\n"
-            "  Merge or explicitly close the PR first. A shared task id is not a\n"
-            "  reason to delete a branch — a task legitimately has several.\n"
-            "  Deliberate discard: ICDEV_BRANCH_DELETE_GUARD=0"
-        )
-    except Exception:
-        return ""  # fail open — never block on a broken guard
+    return shared_checks.check_branch_deletion(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
 
 
 def main():
@@ -1200,29 +786,24 @@ def main():
 
         # Block .env file access
         if is_env_file_access(tool_name, tool_input):
-            print("BLOCKED: Access to .env files is prohibited. Use AWS Secrets Manager.", file=sys.stderr)
+            print(shared_checks.ENV_FILE_BLOCK_REASON, file=sys.stderr)
             sys.exit(2)
 
         # Block dangerous rm commands
         if tool_name == "Bash":
             command = tool_input.get("command", "")
             if is_dangerous_rm_command(command):
-                print("BLOCKED: Dangerous rm command detected and prevented", file=sys.stderr)
+                print(shared_checks.DANGEROUS_RM_BLOCK_REASON, file=sys.stderr)
                 sys.exit(2)
 
         # Block modification of all append-only tables (NIST 800-53 AU, D6)
         if is_append_only_table_modification(tool_name, tool_input):
-            print("BLOCKED: Append-only table (D6, NIST 800-53 AU). No UPDATE/DELETE/DROP/TRUNCATE allowed.", file=sys.stderr)
+            print(shared_checks.APPEND_ONLY_BLOCK_REASON, file=sys.stderr)
             sys.exit(2)
 
         # Block direct sqlite3.connect() — use get_connection() instead
         if is_direct_sqlite_usage(tool_name, tool_input):
-            print(
-                "BLOCKED: Direct sqlite3.connect() bypasses the storage layer. "
-                "Production backend is PostgreSQL. Use: from tools.db.storage import get_connection; "
-                "conn = get_connection(). See MEMORY: feedback_always_use_get_connection.md",
-                file=sys.stderr,
-            )
+            print(shared_checks.DIRECT_SQLITE_BLOCK_REASON, file=sys.stderr)
             sys.exit(2)
 
         # Check tiered file access control (D-ORCH-8)

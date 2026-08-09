@@ -262,7 +262,7 @@ def main():
 
     if args.output and "content" in result:
         out_path = Path(args.output)
-        out_path.write_text(result["content"], encoding="utf-8")
+        out_path.write_text(result["content"], encoding="utf-8", newline="")
         print(f"\n# Written to {out_path}")
 
 

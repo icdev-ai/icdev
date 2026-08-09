@@ -344,7 +344,7 @@ class ACEController:
                 f"**Roles:** {roles_str}  \n\n"
                 f"**Problem:** {problem_text[:400]}\n"
             )
-            topic_file.write_text(body, encoding="utf-8")
+            topic_file.write_text(body, encoding="utf-8", newline="")
 
             mem_index = auto_dir / "MEMORY.md"
             if mem_index.exists():

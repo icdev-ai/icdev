@@ -104,6 +104,9 @@ search = [
 testing = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    # Required, not nice-to-have: without it the `timeout` ini option below and
+    # every @pytest.mark.timeout marker are silently inert. See requirements.txt.
+    "pytest-timeout>=2.3",
     "behave>=1.2",
     "ruff>=0.12",
     "pydantic>=2.0",
@@ -277,7 +280,23 @@ exclude = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-timeout = 30
+# HANG KILLER, NOT A PERFORMANCE BUDGET. Requires pytest-timeout, which is now a
+# declared dependency — until it was, this line was inert everywhere the plugin
+# happened not to be installed, which included every CI job.
+#
+# It was 30, and 30 is not survivable the moment it binds: the slowest test in
+# the merge-gate selection (test_coherence_swallowed_persistence.py::
+# test_real_tree_is_clean) measures 31s on a warm workstation, two more sit at
+# 21s and 19s, and a hosted runner is slower than a workstation. A value that
+# fails healthy tests teaches people to delete the plugin, not to speed up.
+#
+# 300 is ~10x the slowest measured merge-gate test. What it buys is the `test`
+# job declaring no timeout-minutes: a genuine hang there runs to GitHub's 6h
+# default with no clue which test hung, where pytest-timeout dumps the stack of
+# the offender. Per-test budgets that ARE performance budgets belong on the test
+# as @pytest.mark.timeout — 21 already exist, at 120/180/300/600, and a marker
+# always wins over this default.
+timeout = 300
 markers = [
     "selenium: marks tests that require a running Selenium/ChromeDriver (skip if unavailable)",
     "integration: marks tests that exercise live backends/corpora (opt-in; skipped by default)",

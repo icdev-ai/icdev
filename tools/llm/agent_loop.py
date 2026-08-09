@@ -30,7 +30,9 @@ from icdev.tools.llm.agent_loop import *  # noqa: F401,F403
 # ``from tools.llm.agent_loop import _load_budget_defaults`` etc.
 from icdev.tools.llm.agent_loop import (  # noqa: F401
     DONE,
+    AgentLoopCompactionError,
     AgentLoopResult,
+    AgentLoopStopped,
     AgentLoopTimeout,
     AgentLoopUnsupported,
     LoopStage,
@@ -53,11 +55,13 @@ from icdev.tools.llm.agent_loop import (  # noqa: F401
     _estimate_text_tokens,
     _grade_against_rubric,
     _invoke_pluggable_grader,
+    _is_budget_block,
     _load_budget_defaults,
     _maybe_compress_messages,
     _resolve_context_window_tokens,
     _retrieve_memory_context,
     _serialize_payload,
+    _stop_for_hard_budget,
     _tool_result_message,
     _truncate_tool_result,
     _validate_output_schema,
@@ -70,7 +74,9 @@ from icdev.tools.llm.agent_loop import (  # noqa: F401
 # Explicit public surface for ``from tools.llm.agent_loop import *`` downstream.
 __all__ = [
     "DONE",
+    "AgentLoopCompactionError",
     "AgentLoopResult",
+    "AgentLoopStopped",
     "AgentLoopTimeout",
     "AgentLoopUnsupported",
     "LoopStage",

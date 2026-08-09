@@ -217,7 +217,7 @@ def _set_cache(key: str, value):
     """Store value in cache (serializes once, serves raw bytes on hit)."""
     cache_file = _CACHE_DIR / f"{key}.json"
     try:
-        cache_file.write_text(json.dumps(value, default=str), encoding="utf-8")
+        cache_file.write_text(json.dumps(value, default=str), encoding="utf-8", newline="")
     except Exception:
         pass
 

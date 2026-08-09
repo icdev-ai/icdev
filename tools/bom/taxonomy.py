@@ -373,7 +373,7 @@ def classify_lines(
 
 def save(tax: Taxonomy, path: str | Path) -> None:
     Path(path).write_text(
-        json.dumps(tax.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8",
+        json.dumps(tax.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8", newline="",
     )
 
 

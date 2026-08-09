@@ -1195,7 +1195,7 @@ class DaemonBase(abc.ABC):
         )
 
         self.pid_file.parent.mkdir(parents=True, exist_ok=True)
-        self.pid_file.write_text(str(os.getpid()))
+        self.pid_file.write_text(str(os.getpid()), newline="")
         self._init_states()
 
         try:

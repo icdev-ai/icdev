@@ -686,7 +686,7 @@ def main():
         profile_md = generate_profile_md(result)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(profile_md, encoding="utf-8")
+            args.output.write_text(profile_md, encoding="utf-8", newline="")
             if args.json:
                 print(
                     json.dumps(
@@ -719,7 +719,7 @@ def main():
 
         if args.output and "profile_md" in result:
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(result["profile_md"], encoding="utf-8")
+            args.output.write_text(result["profile_md"], encoding="utf-8", newline="")
             result["output_path"] = str(args.output)
 
         if args.json:
