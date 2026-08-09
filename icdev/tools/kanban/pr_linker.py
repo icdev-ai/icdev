@@ -99,6 +99,23 @@ def fetch_open_prs(
         raise RuntimeError(f"gh pr list returned non-JSON: {exc}") from exc
 
 
+def _stored_pr_is_open(stored_url: str, open_numbers: set) -> bool:
+    """True when the PR named by ``stored_url`` is among the forge's open PRs.
+
+    Derived from the open-PR listing already fetched, so detecting a stale link
+    costs no extra API call. An unparseable url counts as OPEN: the caller only
+    acts on a definite "not open", and being wrong in that direction would
+    redirect a live link.
+    """
+    m = _PR_URL_RE.search(stored_url or "")
+    if not m:
+        return True
+    number = next((g for g in m.groups() if g and g.isdigit()), None)
+    if number is None:
+        number = "".join(ch for ch in m.group(0) if ch.isdigit())
+    return (not number) or (number in open_numbers)
+
+
 def link_open_prs(
     get_connection,
     *,
@@ -117,6 +134,7 @@ def link_open_prs(
     """
     result: Dict[str, list] = {
         "linked": [], "ambiguous": [], "already_linked": [], "unmatched": [],
+        "relinked": [], "stale_ambiguous": [],
     }
     prs = fetch_open_prs(runner=runner, gh_bin=gh_bin, limit=limit)
     if not prs:
@@ -142,10 +160,60 @@ def link_open_prs(
                 continue
             by_task.setdefault(tid, []).append(pr)
 
+        # Every PR number the forge says is OPEN. A stored link whose number is
+        # absent from this set is provably not open — no extra API call needed.
+        open_numbers = {
+            str(p.get("number")) for p in prs if p.get("number") is not None
+        }
+
         for tid, cands in sorted(by_task.items()):
             current = existing.get(tid, "")
-            if _PR_URL_RE.search(current):
-                result["already_linked"].append({"task_id": tid, "url": current})
+            match = _PR_URL_RE.search(current)
+            if match:
+                if _stored_pr_is_open(current, open_numbers):
+                    result["already_linked"].append({"task_id": tid, "url": current})
+                    continue
+                # STALE LINK. The stored PR is closed or merged while an open PR
+                # sits on this task's own branch. Until now this fell in the gap
+                # between two components: the linker declined to overwrite (a
+                # WRONG link would make the watcher merge someone else's branch,
+                # which is the right instinct) and deferred to "the watcher's
+                # problem to resolve" — but the watcher polls the stored url,
+                # sees a closed PR, concludes there is nothing to do, and never
+                # discovers the open one. Nobody owned it.
+                #
+                # Measured 2026-08-09: sbx-fld-05 pointed at #1355 (CLOSED) while
+                # #1463 was open on kanban/sbx-fld-05. It stayed an unmergeable
+                # draft until a human looked.
+                #
+                # Overwriting is safe HERE and only here, because every candidate
+                # reached this point via branch_to_task_id — the PR is on the
+                # task's own branch — and the old link is provably not open, so
+                # nothing in flight is being redirected.
+                if len(cands) > 1:
+                    # Ambiguity plus staleness is a human's call; relinking to a
+                    # guess is how the wrong branch gets merged.
+                    result.setdefault("stale_ambiguous", []).append({
+                        "task_id": tid, "was": current,
+                        "candidates": [c.get("url", "") for c in cands],
+                    })
+                    logger.warning(
+                        "pr_linker: %s has a stale link (%s) and %d open PRs — "
+                        "refusing to guess", tid, current, len(cands),
+                    )
+                    continue
+                fresh = cands[0]
+                result.setdefault("relinked", []).append({
+                    "task_id": tid, "was": current, "url": fresh.get("url", ""),
+                    "branch": fresh.get("headRefName", ""),
+                })
+                logger.info("pr_linker: %s relinked from closed %s to open %s",
+                            tid, current, fresh.get("url", ""))
+                if not dry_run:
+                    conn.execute(
+                        "UPDATE kanban_tasks SET executor_url = %s WHERE id = %s",
+                        (fresh.get("url", ""), tid),
+                    )
                 continue
             # Newest PR wins — a retry's PR supersedes the attempt it replaced.
             cands = sorted(

@@ -140,7 +140,19 @@ VOLATILE_PROPERTIES = (
     "icdev:sbom:version",
     "icdev:sbom:timestamp",
     "icdev:sbom:serial-number",
+    # sbx-gov-02: the version-specific retrieval URL is a FUNCTION of the version,
+    # which is already stripped above. Leaving it in would make every re-issue of an
+    # unchanged tree look like a substantive revision — the exact confusion this
+    # digest exists to prevent — because the URL turns over on every emission for
+    # the same reason the version does.
+    "icdev:retrieval-url",
 )
+
+#: ``externalReferences`` entries dropped before digesting, by ``type``. The
+#: ``bom`` reference is the version-specific retrieval URL (sbx-gov-02), volatile
+#: for the same reason its property is. Other reference types describe the
+#: software rather than this document, so they stay in.
+VOLATILE_EXTERNAL_REF_TYPES = ("bom",)
 
 # Gate condition names, matching args/security_gates.yaml. Returned by
 # evaluate_frequency so a caller reports the same strings the config declares.
@@ -184,6 +196,19 @@ def content_digest(sbom_document):
             metadata["properties"] = [
                 p for p in properties if not (isinstance(p, dict) and p.get("name") in VOLATILE_PROPERTIES)
             ]
+
+    refs = doc.get("externalReferences")
+    if isinstance(refs, list):
+        kept = [
+            r for r in refs
+            if not (isinstance(r, dict) and r.get("type") in VOLATILE_EXTERNAL_REF_TYPES)
+        ]
+        if kept:
+            doc["externalReferences"] = kept
+        else:
+            # Removed entirely rather than left as [], so a document generated
+            # before sbx-gov-02 embedded the URL digests the same as one after it.
+            doc.pop("externalReferences", None)
 
     canonical = json.dumps(doc, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()

@@ -974,11 +974,11 @@ repeats the primary, is listed twice, or carries a kind outside `NAME_KINDS`.
 |---|---|---|
 | Accommodation of Updates | **MET (sbx-prc-02)** | `tools/compliance/sbom_revision.py::apply_correction` records a correction as a **successor** row carrying `supersedes_sbom_id`, plus an `sbom_corrected` audit event. The corrected row is never written to — supersession is derived at read time by `revision_chain`. See §2.9. |
 | Coverage | **MET (sbx-cov-01)** | `tools/compliance/dependency_resolver.py` resolves each ecosystem from its **lockfile**, not its declared manifest, and the generator consumes that instead of parsing manifests itself. See §2.7. |
-| Distribution and Delivery | **PARTIAL** | Writes a file to disk and records a path. No version-specific URL and no retrieval API. |
+| Distribution and Delivery | **MET (sbx-gov-02)** | `tools/compliance/sbom_distribution.py` serves each `sbom_records` row at a version-specific URL, `/api/supply_chain/sbom/<project_id>/<version>` (plus a `/record/<id>` permalink and a `/versions/<project_id>` index), returning the artifact's exact bytes. The URL is embedded in the document it addresses as a CycloneDX top-level `externalReferences` entry of type `bom`, so an SBOM that has travelled away from ICDEV still names its authoritative copy. Access control limits sharing with unauthorized parties — unauthenticated, no supply-chain role, or a classification the caller's clearance does not dominate — and nothing else does: `service` accounts are admitted so trusted security tools can integrate, read-down means a cleared caller is never refused lower-classification data, and there is no per-record share toggle. See §3.3.1. |
 | Explicitly Identifying Unknown Information | **MET (sbx-prc-01)** | `tools/compliance/unknown_information.py` defines one convention for both states across all 17 elements — sentinel plus `icdev:unknown:<field>` / `icdev:withheld:<field>` properties over two **disjoint** reason vocabularies — and the generator emits it. The recipient enquiry route ships in `args/sbom_disclosure_policy.yaml` and is emitted on every document beside the CUI and distribution markings. See §2.10. |
 | Frequency | **MET (sbx-prc-02)** | Every generation appends a linked row; `sbom_records.source_revision` records the build, and `sbom_revision.evaluate_frequency` — which SBD-21 now calls — answers the per-build question first and treats `sbom_max_age_days` as the stale-evidence backstop. CLAUDE.md and `args/security_gates.yaml` now say the same thing. See §2.9. |
 | Machine-Processable Data | **MET for generation (sbx-fmt-01)** | Both named formats are emitted — CycloneDX 1.4-1.7 (default 1.7) and SPDX 2.3 — and the two carry identical elements by construction. No SWID, which the 2026 removal makes correct. **Ingest** still glob-matches filenames rather than parsing (sbx-fmt-02). See §2.6. |
-| Access Control (removed) | **N/A** | ICDEV's CUI classification properties remain appropriate under Distribution and Delivery. |
+| Access Control (removed) | **N/A** | ICDEV's CUI classification and Distribution D properties remain appropriate under Distribution and Delivery, and are now the *only* thing that withholds an artifact — see §3.3.1. |
 
 **Baseline score, as analysed before any `sbx` task landed: 3 of 17 data-field elements fully
 met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — counting strictly, 2
@@ -987,15 +987,57 @@ fully met plus 7 partial), **0 of 7 practices fully met.**
 **Current: 13 of 17 data-field elements.** The whole 9-element SBOM Metadata block, which
 sbx-fld-01 closed out and sbx-sig-01 and sbx-fmt-01 contributed to, plus four in Component
 Data: Component Producer (sbx-fld-02), Component License (sbx-fld-04) and both halves of
-the component hash, Value and Algorithm (sbx-fld-03). **And 5 of 7 practices**: Coverage
+the component hash, Value and Algorithm (sbx-fld-03). **And 6 of 7 practices**: Coverage
 (sbx-cov-01), Frequency plus Accommodation of Updates (sbx-prc-02), Explicitly Identifying
-Unknown Information (sbx-prc-01), and Machine-Processable Data for generation (sbx-fmt-01,
-whose ingest half is sbx-fmt-02).
+Unknown Information (sbx-prc-01), Machine-Processable Data for generation (sbx-fmt-01,
+whose ingest half is sbx-fmt-02), and Distribution and Delivery (sbx-gov-02).
 
 What is left is **1 outright GAP** — Component Dependency Relationship (sbx-cov-02) — and
 **3 PARTIAL rows**, all on the component side: Identifiers, Name and Version. The matrix
 rows above are kept current as each task lands, so they, not this paragraph, are the
 authoritative statement — count from them rather than trusting this sentence.
+
+### 3.3.1 Where the line is drawn on withholding (sbx-gov-02)
+
+The 2026 update removed Access Control as a standalone element and folded it into
+Distribution and Delivery with a rule that cuts both ways. Access controls **may** limit
+sharing with unauthorized parties; they **must not** prevent sharing between authorized
+parties, nor stop an organization integrating SBOM data into trusted security tooling. An
+implementation that reads only the first clause is easy to write and is wrong.
+
+`tools/compliance/sbom_distribution.py::evaluate_access` is the single authority, and exactly
+three things withhold an artifact:
+
+1. the caller is unauthenticated — 401;
+2. the caller's role has no software-supply-chain need — 403. `SBOM_RETRIEVAL_ROLES` covers
+   every engineering, security, compliance and contracting role plus `service`, and excludes
+   only the business-development and proposal-review roles (`bd`, `capture_mgr`,
+   `contract_mgr`, `reviewer`). `service` is in the set deliberately: trusted security tools
+   authenticate as service accounts, and blocking them is the failure the standard names;
+3. the artifact's classification is not dominated by the caller's clearance, or it belongs to
+   another tenant — 403. This is the legitimate withholding case the standard preserves: a
+   CUI // SP-CTI artifact under Distribution D does not become releasable because the
+   requester holds a login. Dominance is Bell-LaPadula **read-down**, so a SECRET holder is
+   served CUI data — an exact-match predicate here would manufacture a denial the standard
+   forbids.
+
+Nothing else withholds. In particular there is no per-project allowlist, no per-record share
+toggle and no "internal only" flag; each of those would be a mechanism for preventing sharing
+between authorized parties. Both legs — release and withholding — are written to the
+append-only audit trail (`sbom.distributed` / `sbom.distribution_denied`, migration
+`20260808071512`), because a denial that leaves no trace is indistinguishable from an outage,
+and a withholding a recipient cannot query is not a documented process. The denial body names
+the reason and who to ask.
+
+The retrieval path returns the artifact's bytes verbatim — a binary read, never a
+parse-and-re-serialize. That is a correctness requirement rather than a preference: sbx-sig-01
+signs those exact bytes, so a round trip through a JSON encoder would hand the recipient a
+document whose author signature no longer verifies.
+
+**Still open under this practice:** the *conformance score* surfaced beside each record on
+`/supply_chain` reads "not assessed" until sbx-sig-02 lands its validator. The API reports
+`conformance.available: false` rather than a zero, because a zero is a claim about the
+artifact and it has not been earned.
 
 ---
 

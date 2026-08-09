@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection, sql_placeholder
@@ -2259,5 +2259,125 @@ def list_lessons():
                 "recommendation": payload.get("recommendation"),
             })
         return jsonify({"lessons": lessons, "total": len(lessons), "days": days})
+    finally:
+        conn.close()
+
+
+# ── HITL alert actions ──────────────────────────────────────────────────────
+#
+# A firing `pr_watcher:hitl:<task>` alert means every automatic recovery is spent
+# (2 rebases, 5 resume cycles) and the task will not move on its own. Seeing that
+# is necessary but not sufficient — an operator who can only READ the alert still
+# has to drop into a shell and remember which of three tools applies. These are
+# the three, wired to the same functions the pipeline itself calls, so the button
+# and the CLI cannot diverge in behaviour.
+
+_HITL_SOURCE_PREFIX = "pr_watcher:hitl:"
+
+#: What each button does, and the one-line rationale shown in the UI.
+HITL_ACTIONS = {
+    "rebase": "Rebase the branch onto main and let CI re-run — the cheap "
+              "recovery, keeps the existing PR and its review history.",
+    "requeue": "Send the task back for a clean rebuild — abandons the stuck "
+               "attempt, so a fresh session starts from current main.",
+    "dismiss": "Clear the alert without acting — for when a human has already "
+               "handled it, or judged it not worth pursuing.",
+}
+
+
+def _hitl_task_id(source: str) -> str:
+    """`pr_watcher:hitl:sbx-gov-02` -> `sbx-gov-02`; "" for anything else."""
+    src = (source or "").strip()
+    if not src.startswith(_HITL_SOURCE_PREFIX):
+        return ""
+    return src[len(_HITL_SOURCE_PREFIX):].strip()
+
+
+def _resolve_alert(conn, alert_id, note: str) -> None:
+    conn.execute(
+        "UPDATE alerts SET status = 'resolved', resolved_at = %s WHERE id = %s",
+        (datetime.now(timezone.utc).isoformat(), alert_id),
+    )
+
+
+@kanban_api.route("/alerts/<alert_id>/action", methods=["POST"])
+def hitl_alert_action(alert_id):
+    """Run one remediation against the task a firing HITL alert names.
+
+    Deliberately NOT a free-text command surface: the action must be one of
+    three known verbs, each mapping to a function the pipeline already uses. A
+    button that can run anything is a remote shell with a nicer icon.
+    """
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip().lower()
+    if action not in HITL_ACTIONS:
+        return jsonify({"error": f"unknown action '{action}'",
+                        "allowed": sorted(HITL_ACTIONS)}), 400
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, source, status FROM alerts WHERE id = %s", (alert_id,)
+        ).fetchone()
+        if row is None:
+            return jsonify({"error": "alert not found"}), 404
+        data = dict(row)
+        if data.get("status") != "firing":
+            # Two operators clicking the same row must not both act.
+            return jsonify({"error": "alert is not firing", "status": data.get("status")}), 409
+
+        task_id = _hitl_task_id(data.get("source") or "")
+        if not task_id:
+            return jsonify({"error": "not a pr_watcher HITL alert",
+                            "source": data.get("source")}), 400
+
+        result = {"alert_id": alert_id, "task_id": task_id, "action": action}
+
+        if action == "dismiss":
+            _resolve_alert(conn, alert_id, "dismissed from dashboard")
+            result["ok"] = True
+
+        elif action == "requeue":
+            from tools.kanban.requeue import requeue_task
+            verdict = requeue_task(
+                task_id, status="scheduled",
+                reason="HITL: requeued from the monitoring dashboard",
+                actor="dashboard",
+            )
+            result["ok"] = bool(verdict.get("requeued"))
+            result["detail"] = verdict
+            if result["ok"]:
+                _resolve_alert(conn, alert_id, "requeued")
+
+        else:  # rebase
+            from tools.kanban.rebase_recovery import rebase_and_push
+            verdict = rebase_and_push(task_id, f"kanban/{task_id}", base="main")
+            result["ok"] = bool(verdict.get("pushed"))
+            result["detail"] = verdict
+            if result["ok"]:
+                # Only clear on a real push: a rebase that hit a true conflict
+                # changed nothing, and clearing would hide a live problem.
+                _resolve_alert(conn, alert_id, "rebased")
+
+        try:
+            conn.execute(
+                "INSERT INTO audit_trail (created_at, event_type, actor, action, details) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (datetime.now(timezone.utc).isoformat(), "hook_event_logged",
+                 "dashboard", f"hitl_alert.{action}", json.dumps(result)),
+            )
+        except Exception as audit_exc:  # noqa: BLE001
+            # The remediation already happened, so failing the request now would
+            # be a lie — but swallowing this silently is how an audit gap goes
+            # unnoticed, which is why the swallowed-INSERT gate rejects `pass`
+            # here. Log it loudly and let the caller keep its result.
+            current_app.logger.warning(
+                "hitl_alert: audit write failed for %s (%s): %s",
+                result.get("task_id"), action, audit_exc)
+        try:
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            pass
+        return jsonify(result), (200 if result.get("ok") else 422)
     finally:
         conn.close()

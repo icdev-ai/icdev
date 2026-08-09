@@ -547,7 +547,7 @@ def _is_additive_path(path: str) -> bool:
 #: exactly that reason, each waiting on a human to click "Ready for review".
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,isDraft,"
-    "headRefName,baseRefName,updatedAt,number,url"
+    "headRefName,baseRefName,updatedAt,createdAt,number,url"
 )
 
 
@@ -892,6 +892,80 @@ class PRWatcher:
         )
         return bool(verdict.get("written"))
 
+    def _ci_retrigger_attempts(self, task_id: str, pr_url: str) -> int:
+        """Prior CI re-trigger attempts for THIS PR (its own ledger)."""
+        return self._count_audit_actions(
+            task_id, ("pr_watcher.ci_retrigger",), pr_url=pr_url)
+
+    def _ci_never_fired(self, state: dict) -> bool:
+        """True when a PR has NO checks at all and is old enough that it should.
+
+        A workflow that never fires leaves a PR that can never go green and can
+        never be recovered: every other repair path assumes there is a CI result
+        to react to. #1462 sat with zero checks in its rollup — not failing, not
+        running, simply absent — and no code in this loop had an opinion about
+        it, so it waited for a person.
+
+        Age is measured from createdAt, not updatedAt: a comment or a label moves
+        updatedAt, so a chatty PR would never look old enough to have missed its
+        run. The grace period exists because a PR opened seconds ago legitimately
+        has an empty rollup while GitHub queues the workflow.
+        """
+        if state.get("statusCheckRollup"):
+            return False
+        created = (state.get("createdAt") or "").strip()
+        if not created:
+            return False  # cannot age it, so do not act on it
+        try:
+            stamp = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        grace = int(self.config.get("ci_missing_grace_minutes", 15))
+        age_min = (datetime.now(timezone.utc) - stamp).total_seconds() / 60.0
+        return age_min >= grace
+
+    def _retrigger_ci(self, task_id: str, pr_url: str) -> Dict[str, Any]:
+        """Close and reopen the PR so `pull_request` workflows fire again.
+
+        Chosen over an empty commit deliberately: a commit changes the branch and
+        lands in history forever to work around an infrastructure hiccup, while a
+        close/reopen leaves the diff, the reviews and the branch untouched. It is
+        also reversible in the only sense that matters — if the reopen fails, the
+        PR is closed and that is loud, so the reopen is NOT conditional on the
+        close succeeding cleanly.
+        """
+        if self.dry_run:
+            return {"attempted": False, "reason": "dry-run: would close/reopen"}
+        cap = int(self.config.get("max_ci_retriggers_per_pr", 1))
+        attempts = self._ci_retrigger_attempts(task_id, pr_url)
+        if attempts >= cap:
+            return {"attempted": False,
+                    "reason": f"ci re-trigger exhausted ({attempts}/{cap})"}
+        try:
+            close = self._auto_merge_runner(
+                ["gh", "pr", "close", pr_url], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=60)
+            reopen = self._auto_merge_runner(
+                ["gh", "pr", "reopen", pr_url], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=60)
+        except Exception as exc:  # noqa: BLE001 — must never stop the poll
+            logger.warning("pr_watcher: ci re-trigger failed for %s: %s", task_id, exc)
+            return {"attempted": True, "ok": False, "reason": str(exc)[:200]}
+        ok = getattr(reopen, "returncode", 1) == 0
+        if not ok:
+            # The PR may now be CLOSED. Say so at ERROR: this is the one outcome
+            # here that is worse than doing nothing.
+            logger.error(
+                "pr_watcher: %s reopen FAILED after close — PR may be left closed: %s",
+                pr_url, (getattr(reopen, "stderr", "") or "")[:200])
+        else:
+            logger.info("pr_watcher: re-triggered CI on %s (close/reopen)", pr_url)
+        return {"attempted": True, "ok": ok,
+                "reason": "closed and reopened to re-fire pull_request workflows",
+                "close_rc": getattr(close, "returncode", None)}
+
     def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
         """Take a green PR out of draft so the merge below can actually run.
 
@@ -994,6 +1068,83 @@ class PRWatcher:
             try:
                 conn.close()
             except Exception:
+                pass
+
+    def _hitl_alert(self, task_id: str, pr_url: str, reason: str) -> None:
+        """Raise a FIRING alert when a task genuinely needs a human.
+
+        The pipeline is meant to run unattended; the honest exception is a task
+        whose automatic recovery is spent. Until now that parked SILENTLY — the
+        watcher logged an escalation and moved on, the scheduler reported a
+        different reason entirely, and the task waited until somebody happened to
+        look. On 2026-08-09 three tasks sat that way at once.
+
+        Writes to `alerts`, which the dashboard already lists and counts, so the
+        notification appears there with no new surface. `tools/kanban/cli.py
+        --needs-human` reads the same rows for the terminal.
+
+        Deduped on source: one firing alert per task, not one per poll (the
+        watcher polls every 30s, which would be 2880 rows a day). Best-effort —
+        a notification failure must never stop the loop.
+        """
+        source = f"pr_watcher:hitl:{task_id}"
+        try:
+            conn = self._connection()()
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            existing = conn.execute(
+                "SELECT id FROM alerts WHERE source = %s AND status = 'firing'",
+                (source,),
+            ).fetchone()
+            if existing:
+                return
+            conn.execute(
+                "INSERT INTO alerts "
+                "(project_id, severity, source, title, description, status, "
+                " auto_healed, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, 'firing', %s, %s)",
+                (None, "warning", source,
+                 f"{task_id} needs a human",
+                 f"{reason} PR: {pr_url}", False,
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            try:
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning("pr_watcher: HITL alert raised for %s — %s", task_id, reason)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: HITL alert failed for %s: %s", task_id, exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _resolve_hitl_alert(self, task_id: str) -> None:
+        """Clear the alert once the task moves — the queue must drain itself."""
+        source = f"pr_watcher:hitl:{task_id}"
+        try:
+            conn = self._connection()()
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            conn.execute(
+                "UPDATE alerts SET status = 'resolved', resolved_at = %s "
+                "WHERE source = %s AND status = 'firing'",
+                (datetime.now(timezone.utc).isoformat(), source),
+            )
+            try:
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: HITL resolve failed for %s: %s", task_id, exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
                 pass
 
     def _audit(self, action: WatcherAction) -> None:
@@ -1144,6 +1295,20 @@ class PRWatcher:
                         "pr_watcher: linked %d task(s) to their open PR: %s",
                         len(linked["linked"]),
                         ", ".join(e["task_id"] for e in linked["linked"]),
+                    )
+                if linked.get("relinked"):
+                    logger.info(
+                        "pr_watcher: repaired %d stale link(s) to a closed PR: %s",
+                        len(linked["relinked"]),
+                        ", ".join(f"{e['task_id']} {e['was']}->{e['url']}"
+                                  for e in linked["relinked"]),
+                    )
+                if linked.get("stale_ambiguous"):
+                    logger.warning(
+                        "pr_watcher: %d task(s) have a stale link AND several open "
+                        "PRs — a human must pick: %s",
+                        len(linked["stale_ambiguous"]),
+                        ", ".join(e["task_id"] for e in linked["stale_ambiguous"]),
                     )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("pr_watcher: PR link reconcile failed: %s", exc)

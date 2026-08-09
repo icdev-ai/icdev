@@ -503,10 +503,15 @@ def test_the_same_project_in_both_formats_scores_identically(icdev_db, tmp_path)
     assert result["parity"], json.dumps(result, indent=2)
 
     # And the separately generated SPDX document differs only by being a later
-    # build: same elements, its own SBOM Version.
+    # build: same elements, its own SBOM Version — and its own retrieval URL,
+    # which is a function of that version (sbx-gov-02), so it turns over for
+    # exactly the same reason and is not a parity defect. Within one build the
+    # two serializations carry both, which is what the `result["parity"]`
+    # assertion above already established.
     across_builds = sw.compare_element_coverage(cyclonedx, spdx)
-    assert [entry.split("=")[0] for entry in across_builds["missing_in_spdx"]] == [
-        "SPDXRef-DOCUMENT::icdev:sbom:version"
+    assert sorted(entry.split("=")[0] for entry in across_builds["missing_in_spdx"]) == [
+        "SPDXRef-DOCUMENT::icdev:retrieval-url",
+        "SPDXRef-DOCUMENT::icdev:sbom:version",
     ]
 
     # Same components, both ways round. The SPDX document adds one package for

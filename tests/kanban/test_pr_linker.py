@@ -102,8 +102,38 @@ def test_links_task_with_empty_executor_url():
     assert conn.committed
 
 
-def test_never_overwrites_an_existing_pr_link():
-    """A wrong link is worse than a missing one — the watcher would merge it."""
+def test_never_overwrites_a_link_that_is_still_OPEN():
+    """The invariant, narrowed: a wrong link would make the watcher merge someone
+    else's branch, so a LIVE link is never redirected.
+
+    This test used to say "never overwrites" full stop. That was too wide, and
+    the gap it left is the bug below: a link to a CLOSED PR was also never
+    corrected, and the watcher — which polls the stored url — saw a closed PR,
+    concluded there was nothing to do, and never found the open one.
+    """
+    conn = FakeConn(_rows(("gdx-aud-01", "https://github.com/o/r/pull/999")))
+    out = pr_linker.link_open_prs(
+        lambda: conn,
+        runner=_runner([
+            # 999 is itself open, so it must be left exactly alone
+            {"number": 999, "url": "https://github.com/o/r/pull/999",
+             "headRefName": "kanban/gdx-aud-01", "createdAt": "2026-07-01T00:00:00Z"},
+            {"number": 1135, "url": "https://github.com/o/r/pull/1135",
+             "headRefName": "kanban/gdx-aud-01", "createdAt": "2026-08-01T00:00:00Z"},
+        ]),
+    )
+    assert out["linked"] == []
+    assert out["relinked"] == []
+    assert conn.updates == [], "a live link must never be redirected"
+
+
+def test_a_link_to_a_CLOSED_pr_is_repaired():
+    """sbx-fld-05 on 2026-08-09: linked to #1355 (CLOSED) while #1463 was open on
+    the same branch. The linker declined to overwrite and deferred to "the
+    watcher's problem"; the watcher polled the closed PR and saw nothing to do.
+    Neither component owned it, so the open PR sat unmergeable until a human
+    looked.
+    """
     conn = FakeConn(_rows(("gdx-aud-01", "https://github.com/o/r/pull/999")))
     out = pr_linker.link_open_prs(
         lambda: conn,
@@ -112,10 +142,43 @@ def test_never_overwrites_an_existing_pr_link():
             "headRefName": "kanban/gdx-aud-01", "createdAt": "2026-08-01T00:00:00Z",
         }]),
     )
-    assert out["linked"] == []
-    assert out["already_linked"] == [
-        {"task_id": "gdx-aud-01", "url": "https://github.com/o/r/pull/999"}
-    ]
+    assert out["relinked"] == [{
+        "task_id": "gdx-aud-01",
+        "was": "https://github.com/o/r/pull/999",
+        "url": "https://github.com/o/r/pull/1135",
+        "branch": "kanban/gdx-aud-01",
+    }]
+    assert conn.updates == [("https://github.com/o/r/pull/1135", "gdx-aud-01")]
+
+
+def test_a_stale_link_with_TWO_open_prs_refuses_to_guess():
+    """Staleness plus ambiguity is a human's call — guessing merges the wrong branch."""
+    conn = FakeConn(_rows(("gdx-aud-01", "https://github.com/o/r/pull/999")))
+    out = pr_linker.link_open_prs(
+        lambda: conn,
+        runner=_runner([
+            {"number": 1135, "url": "https://github.com/o/r/pull/1135",
+             "headRefName": "kanban/gdx-aud-01", "createdAt": "2026-08-01T00:00:00Z"},
+            {"number": 1221, "url": "https://github.com/o/r/pull/1221",
+             "headRefName": "kanban/gdx-aud-01-r2", "createdAt": "2026-08-02T00:00:00Z"},
+        ]),
+    )
+    assert out["relinked"] == []
+    assert conn.updates == []
+    assert out["stale_ambiguous"][0]["task_id"] == "gdx-aud-01"
+
+
+def test_dry_run_reports_a_relink_without_writing():
+    conn = FakeConn(_rows(("gdx-aud-01", "https://github.com/o/r/pull/999")))
+    out = pr_linker.link_open_prs(
+        lambda: conn,
+        runner=_runner([{
+            "number": 1135, "url": "https://github.com/o/r/pull/1135",
+            "headRefName": "kanban/gdx-aud-01", "createdAt": "2026-08-01T00:00:00Z",
+        }]),
+        dry_run=True,
+    )
+    assert len(out["relinked"]) == 1
     assert conn.updates == []
 
 
@@ -186,7 +249,8 @@ def test_unmatched_kanban_branch_is_reported():
 def test_no_open_prs_is_a_noop():
     conn = FakeConn(_rows(("gdx-aud-01", "")))
     out = pr_linker.link_open_prs(lambda: conn, runner=_runner([]))
-    assert out == {"linked": [], "ambiguous": [], "already_linked": [], "unmatched": []}
+    assert out == {"linked": [], "ambiguous": [], "already_linked": [],
+                   "unmatched": [], "relinked": [], "stale_ambiguous": []}
     assert conn.updates == []
 
 

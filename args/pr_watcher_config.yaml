@@ -80,3 +80,20 @@ reverify_max_attempts_per_task: 1
 # review ever saw — the exact thing the enforced gate exists to prevent.
 # A conformance failure (review_passed=0) is NEVER refreshed, regardless.
 reverify_when_missing: false
+
+# CI that never fired: how long to wait before treating an EMPTY check rollup as
+# a missed workflow rather than a queued one.
+#
+# A PR with no checks can never go green and can never be recovered — every other
+# repair path here assumes there is a CI result to react to. #1462 sat that way
+# with zero checks: not failing, not running, simply absent.
+#
+# Age is measured from the PR's createdAt, not updatedAt: a comment or a label
+# moves updatedAt, so a chatty PR would never look old enough to have missed its
+# run.
+ci_missing_grace_minutes: 15
+
+# Re-triggers are capped at ONE per PR. The fix is a close/reopen to re-fire
+# pull_request workflows; if that does not bring CI back, the cause is
+# infrastructure and a second attempt only delays telling a human.
+max_ci_retriggers_per_pr: 1

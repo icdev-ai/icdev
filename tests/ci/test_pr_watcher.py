@@ -314,7 +314,7 @@ def test_watcher_escalates_on_max_resume_cycles():
         config={"max_resume_cycles_per_task": 5},
     )
     # Patch resume_cycle to simulate we've already hit the cap
-    w._resume_cycle = lambda task_id: 5  # noqa: SLF001
+    w._resume_cycle = lambda task_id, pr_url=None: 5  # noqa: SLF001
     report = w.poll_once()
     assert report.actions[0].action == "escalate"
     assert "cap reached" in report.actions[0].reason

@@ -1,0 +1,7 @@
+{
+  "description": "sbom_distribution_audit_event_types",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

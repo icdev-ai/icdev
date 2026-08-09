@@ -106,6 +106,7 @@ from tools.compliance.dependency_resolver import (
     RESOLUTION_DECLARED,
     resolve_project,
 )
+from tools.compliance.sbom_distribution import retrieval_url as sbom_retrieval_url
 from tools.compliance.unknown_information import (
     FIELD_NAME,
     FIELD_PRODUCER,
@@ -1386,6 +1387,7 @@ def _build_cyclonedx_sbom(
     tool_version=None,
     document_version=1,
     sbom_version=None,
+    retrieval_url=None,
 ):
     """Build a CycloneDX JSON SBOM document.
 
@@ -1393,6 +1395,12 @@ def _build_cyclonedx_sbom(
     ``sbom_version`` is the same revision spelled as the standard's SBOM Version
     element. A caller that passes neither gets revision 1 and its matching semver,
     so the two agree by construction rather than by coincidence.
+
+    ``retrieval_url`` is the version-specific URL this document will be served
+    from (sbx-gov-02). It is embedded rather than merely recorded because
+    Distribution and Delivery is about the *recipient*: an SBOM that has
+    travelled away from ICDEV should still say where its authoritative copy —
+    and any later version — can be fetched.
     """
     now = datetime.now(timezone.utc)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
@@ -1668,6 +1676,28 @@ def _build_cyclonedx_sbom(
     sbom["metadata"]["properties"].extend(coverage_properties)
     sbom["compositions"] = compositions
 
+    # Distribution and Delivery (2026 Minimum Elements, sbx-gov-02). A
+    # top-level externalReference of type "bom" is how CycloneDX 1.4+ states
+    # where this document lives; the property repeats it for consumers that do
+    # not walk externalReferences. Emitted only when a URL is known, because a
+    # placeholder address is worse than none — it would tell a recipient to
+    # fetch from somewhere that does not answer.
+    if retrieval_url:
+        sbom["externalReferences"] = [
+            {
+                "type": "bom",
+                "url": retrieval_url,
+                "comment": (
+                    "Version-specific retrieval URL for this SBOM. Access is "
+                    "restricted to authorized parties per the distribution "
+                    "statement above; it is not restricted between them."
+                ),
+            }
+        ]
+        sbom["metadata"]["properties"].append(
+            {"name": "icdev:retrieval-url", "value": retrieval_url}
+        )
+
     for cdx_comp in cdx_components:
         cdx_comp.pop("_declared", None)
 
@@ -1753,8 +1783,12 @@ def generate_sbom(
 
         # SBOM Version. Settled BEFORE the document is built, so the integer the
         # document carries and the row that records it are one number written twice
-        # rather than two counters that happened to be near each other.
+        # rather than two counters that happened to be near each other. It is also
+        # half of the version-specific retrieval URL (sbx-gov-02), and that URL has
+        # to be inside the bytes that get signed — so neither can be assigned after
+        # the file is written.
         revision_number, new_version, new_sbom_version = _plan_sbom_version(conn, project_id)
+        distribution_url = sbom_retrieval_url(project_id, new_version)
 
         # Build CycloneDX SBOM. This is the document every format is derived
         # from, so an element added here reaches both serializations.
@@ -1769,6 +1803,7 @@ def generate_sbom(
             tool_version=active_tool_version,
             document_version=revision_number,
             sbom_version=new_sbom_version,
+            retrieval_url=distribution_url,
         )
 
         document = sbom if sbom_format == FORMAT_CYCLONEDX else to_spdx(sbom)
