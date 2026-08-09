@@ -2684,6 +2684,9 @@ python tools/innovation/benchmark_compare.py --all --verdict gap
 # Offline by default so the checked-in file reproduces byte-for-byte and CI can diff it.
 # It writes BESIDE the hand-written map, never over it: the map is the cited source of
 # every declared reading, and its narrative lives in no config.
+# Exact module counts are NOT committed (kax-conflict-02) — the artifact carries the
+# classification against the floor, so adding a module changes nothing and two branches
+# never conflict on it. Use --json or --live for the integers.
 python tools/innovation/benchmark_report.py --write      # regenerate the checked-in report
 python tools/innovation/benchmark_report.py --check      # CI gate: fails on drift, prints a diff
 python tools/innovation/benchmark_report.py --live       # measure rows; retires findings; prints only
