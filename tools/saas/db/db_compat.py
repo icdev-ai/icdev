@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS - Database Compatibility Layer.
 CUI // SP-CTI
 
@@ -17,6 +16,8 @@ from typing import Any, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("saas.db.compat")
 

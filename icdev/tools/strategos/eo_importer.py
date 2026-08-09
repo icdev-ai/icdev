@@ -18,7 +18,6 @@ Usage:
   python -m tools.strategos.eo_importer --list                # list sg_eo_signals
 """
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -35,6 +34,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402
 

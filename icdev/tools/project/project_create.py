@@ -16,7 +16,6 @@ import json
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +25,8 @@ PROJECTS_DIR = BASE_DIR / "projects"
 
 # Import project scaffolder
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 from tools.project.project_scaffold import scaffold_project, SCAFFOLDERS  # noqa: E402
 from tools.logging.icdev_logger import get_logger
 

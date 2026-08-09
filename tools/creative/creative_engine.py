@@ -56,13 +56,9 @@ import sqlite3
 import sys
 import time
 import uuid
-from tools.db.storage import get_connection
-from tools.common.helpers import now_iso
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from tools.logging.icdev_logger import get_logger
 
-logger = get_logger("icdev.creative.creative_engine")
 
 # =========================================================================
 # PATH SETUP
@@ -70,6 +66,11 @@ logger = get_logger("icdev.creative.creative_engine")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+from tools.common.helpers import now_iso  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.creative.creative_engine")
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Dispatcher-Only Orchestrator Mode (Phase 61, D-DISP-1).
 
@@ -35,14 +34,16 @@ import logging
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
-from tools.common.helpers import now_iso
 from pathlib import Path
 from typing import List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
+from tools.common.helpers import now_iso  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "agent_config.yaml"

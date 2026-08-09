@@ -12,7 +12,6 @@ Cooldown is adaptive: anomaly detection on historical run activity (z-score)
 dynamically adjusts between MIN_COOLDOWN_HOURS and MAX_COOLDOWN_HOURS.
 """
 IMPLEMENTATION_STATUS = "full"
-from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -24,6 +23,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[3]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402
 

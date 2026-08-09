@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ANVIL Critique Phase — Adversarial Plan Review (Phase 61, Feature 3).
 
@@ -27,7 +26,6 @@ import json
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +34,9 @@ from typing import Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 from tools.compat.datetime_utils import utc_now_iso  # noqa: E402
 

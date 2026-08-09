@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Notification Gateway — multi-platform alert delivery (Phase 72).
 
@@ -24,11 +23,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = get_logger("icdev.notification_gateway")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger("icdev.notification_gateway")
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.audit.audit_logger import atomic_log_event

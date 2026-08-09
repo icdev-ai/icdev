@@ -27,7 +27,6 @@ import signal
 import subprocess
 import sys
 import time
-from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
@@ -36,6 +35,8 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 # Tag-to-workflow mapping (Decision D33)
 ICDEV_TAG_MAP = {

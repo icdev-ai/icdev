@@ -1,5 +1,4 @@
 
-from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Agent Mailbox — HMAC-SHA256 signed inter-agent messaging.
 
@@ -19,13 +18,15 @@ import os
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
 from pathlib import Path
 from typing import List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 

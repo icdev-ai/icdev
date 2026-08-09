@@ -48,7 +48,6 @@ import os
 import subprocess
 import sys
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -59,6 +58,8 @@ from typing import Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 STAGING_DIR = BASE_DIR / "trees" / "staging"

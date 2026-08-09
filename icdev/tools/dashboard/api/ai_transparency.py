@@ -5,18 +5,19 @@
 import os
 import sqlite3
 import sys
-from tools.db.storage import get_connection, table_exists
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from tools.dashboard.auth import require_role
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection, table_exists  # noqa: E402
+from tools.dashboard.auth import require_role  # noqa: E402
 
 # Compliance-posture mutations (audits, card generation) are restricted to
 # security/compliance roles, mirroring GOVCON_WRITE_ROLES in api/govcon.py.

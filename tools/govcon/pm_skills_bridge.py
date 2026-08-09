@@ -6,13 +6,14 @@ with GovCon canvas tools (SWOT analysis, ICP profiling, battlecard generation).
 """
 
 import json
-from tools.logging.icdev_logger import get_logger
 import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 

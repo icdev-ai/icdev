@@ -24,7 +24,6 @@ Usage:
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -38,6 +37,8 @@ from pathlib import Path
 
 _BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_BASE))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402
 

@@ -26,7 +26,6 @@ import json
 import sqlite3
 import sys
 import time
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -36,6 +35,8 @@ DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
 
 # Import from production_audit.py
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.db.storage import get_connection  # noqa: E402
 from tools.testing.production_audit import (  # noqa: E402
     AuditCheck,
     CHECK_REGISTRY,

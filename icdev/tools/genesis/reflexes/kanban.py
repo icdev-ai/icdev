@@ -15,7 +15,6 @@ execute without human approval. The daemon monitors subprocess completion.
 
 from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
-from tools.logging.icdev_logger import get_logger
 
 import re
 import subprocess
@@ -26,11 +25,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+logger = get_logger(__name__)
 
 from tools.db.storage import get_connection  # noqa: E402
 from tools.strategos import tier_resolver  # noqa: E402

@@ -22,12 +22,13 @@ import urllib.request
 from pathlib import Path
 from typing import Optional, Set
 
-from tools.logging.icdev_logger import get_logger
-from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = get_logger("saas.auth.cac")
 
