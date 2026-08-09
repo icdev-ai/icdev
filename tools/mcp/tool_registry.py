@@ -7513,8 +7513,9 @@ TOOL_REGISTRY = {
         "description": (
             "Run a goal through the multi-agent stack, governed end to end. mode='team' (or 'auto' "
             "with roles) launches a non-blocking ACE run and returns its instance_id; mode='single' "
-            "(or 'auto' without roles) runs a single agent-loop and returns its final content. "
-            "Returns a CortexResult."
+            "(or 'auto' without roles) runs a single agent-loop and returns its final content; "
+            "mode='graph' starts a Studio workflow run (durable DAG, human gates) and returns its "
+            "run_id. An unknown mode is an error, not a fallback. Returns a CortexResult."
         ),
         "input_schema": {
             "type": "object",
@@ -7525,7 +7526,14 @@ TOOL_REGISTRY = {
                     "items": {"type": "string"},
                     "description": "ACE role IDs for a team launch (implies mode=team under auto)",
                 },
-                "mode": {"type": "string", "description": "auto | team | single", "default": "auto"},
+                "mode": {"type": "string", "description": "auto | team | single | graph", "default": "auto"},
+                "graph": {
+                    "type": "object",
+                    "description": (
+                        "Studio graph spec for mode=graph: {workflow_id (required), project_id, "
+                        "inputs}. The goal is recorded on the run's inputs under 'goal'."
+                    ),
+                },
                 "trigger_source": {"type": "string", "description": "Audit trigger source label"},
                 "trigger_ref": {"type": "string", "description": "Audit trigger reference"},
                 "webhook_url": {"type": "string", "description": "Optional completion webhook (team mode)"},
