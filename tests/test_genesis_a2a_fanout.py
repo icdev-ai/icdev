@@ -165,17 +165,30 @@ class TestRunReflexImplInnerRouting:
 
         mock_a2a.assert_not_called()
 
-    def test_orange_tier_skips_a2a_and_returns_awaiting(self):
+    def test_orange_tier_skips_a2a_and_stages_a_proposal(self):
+        """ORANGE is handled locally, never fanned out to the agent network.
+
+        hgx-obs-02 changed WHAT the ORANGE branch does — it now runs the reflex
+        in proposal mode and stages a reviewable GKP instead of returning before
+        importlib — but not WHERE the branch sits: it still precedes the A2A
+        check, so an orange reflex is never dispatched to a remote agent.
+        """
         d = _make_daemon({"a2a": {"enabled": True, "gateway_url": "https://localhost:8443"}})
         cfg = {"risk_tier": "orange", "a2a_eligible": True}
         trust = _make_trust(d)
 
-        with patch.object(d, "_submit_reflex_a2a", return_value=(True, 0.0, {})) as mock_a2a:
+        with patch.object(d, "_submit_reflex_a2a", return_value=(True, 0.0, {})) as mock_a2a, \
+             patch.object(
+                 d, "_run_orange_proposal",
+                 return_value=(True, 0.0, {"status": "proposal_staged", "gkp_id": "gkp-x"}),
+             ) as mock_orange:
             ok, _, details = d._run_reflex_impl_inner("evolve", cfg, trust)
 
-        # ORANGE tier human-approval gate fires before A2A check
+        # ORANGE tier human-approval gate fires before the A2A check
         mock_a2a.assert_not_called()
-        assert details.get("status") == "awaiting_human_approval"
+        mock_orange.assert_called_once()
+        assert details.get("status") == "proposal_staged"
+        assert details.get("gkp_id") == "gkp-x"
 
 
 # ---------------------------------------------------------------------------
