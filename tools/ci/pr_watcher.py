@@ -438,12 +438,20 @@ def list_pr_tasks(
 # ────────────────────────────────────────────────────────────────────────────
 
 
-# Coordination / union-merged files that MANY task branches legitimately co-edit
-# (manifest shards, append-only-table registry, nav/registry configs, conftest
-# schema). Two PRs touching these is normal, not a collision — exclude them from
-# the sibling-conflict check so it only fires on genuine same-source-file races
-# (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
-# merge-conflict-hotspots prevention notes.
+# Coordination files that MANY task branches legitimately co-edit (manifest
+# shards, append-only-table registry, nav/registry configs, conftest schema).
+# Two PRs touching these is normal, not a collision — exclude them from the
+# sibling-conflict check so it only fires on genuine same-source-file races
+# (e.g. two branches each creating a different tools/cortex/blueprint.py). See
+# the merge-conflict-hotspots prevention notes.
+#
+# "Union-merged" is only literally true for the manifest entries: `.gitattributes`
+# declares `tools/manifest*` `merge=union` (kax-conflict-03), so concurrent
+# appends there really do resolve without a human. The remaining paths are
+# structured config/code, where union would produce duplicate keys or broken
+# syntax — they are excluded from the sibling check as a heuristic about how
+# they are edited, NOT because git resolves them automatically. Adding a path
+# here does not make it auto-mergeable.
 _ADDITIVE_PATH_MARKERS = (
     "tools/manifest/",
     "tools/manifest.md",

@@ -1933,6 +1933,13 @@ python tools/ci/modules/worktree.py --list --json                               
 python tools/ci/modules/worktree.py --cleanup --worktree-name icdev-test-123                # Cleanup worktree
 python tools/ci/modules/worktree.py --status --worktree-name icdev-test-123                 # Worktree status
 
+# Manifest merge rehearsal (kax-conflict-03) — measures which tools/manifest/ layout survives
+# two unrelated tasks each registering a new tool under the same topic
+python tools/git/manifest_merge_rehearsal.py                              # all layouts, both merge paths
+python tools/git/manifest_merge_rehearsal.py --json                       # machine-readable
+python tools/git/manifest_merge_rehearsal.py --layout union --branches 5  # one layout, 5 concurrent branches
+python tools/git/manifest_merge_rehearsal.py --mode merge-tree            # bare, forge-style server-side merge only
+
 # GitLab Task Board Monitor (Phase 41)
 python tools/ci/triggers/gitlab_task_monitor.py                    # Start monitor (polls every 20s)
 python tools/ci/triggers/gitlab_task_monitor.py --dry-run          # Preview without spawning
