@@ -108,6 +108,10 @@ class GovernanceReport:
     # {"score": float, "method": "heuristic"|"llm"|"no_context"|"placeholder",
     #  "ungrounded_claims": [...], "floor": float}. Empty until that gate runs.
     content_grounding: dict = field(default_factory=dict)
+    # Governance profile this call ran under (hgx-gov-01). "default" is the full
+    # gate chain — what every caller that names no profile gets. A narrower
+    # profile shows up as `skip` outcomes whose detail names it.
+    profile: str = "default"
 
     def to_dict(self) -> dict:
         return asdict(self)

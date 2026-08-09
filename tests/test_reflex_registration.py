@@ -110,7 +110,11 @@ EXEMPT: dict[str, str] = {
     "dat_refresh": "reflex_registry STRATEGOS (tier-gated) + invoked by tools/dat/dti_update_runner.py; not daemon-scheduled",
     "migration_intel": "reflex_registry DOMAIN — migration intelligence harvester; outside daemon subset",
     "mcip_dti_scorer": "reflex_registry DOMAIN — MCIP DTI scorer; outside daemon subset",
-    "gepa_optimizer": "reflex_registry SUPPORT; also standalone MCP tool/skill (tools/skills/gepa_optimizer.py) invoked on-demand",
+    # gepa_optimizer was exempted here as "invoked on-demand". hgx-obs-02 measured
+    # that: nothing scheduled it, its own docstring claimed "Runs every 24 hours via
+    # the genesis daemon", and its run() returned no "success" key so registering it
+    # would have tripped its breaker in three cycles. Envelope fixed, config block
+    # written, name registered — it is now dispatched, so it belongs in neither list.
     "fathomdesk_news_patterns": "reflex_registry SUPPORT; FathomDesk domain reflex invoked by scheduler script, not daemon-scheduled",
     "fathomdesk_correlation_monitor": "reflex_registry SUPPORT; FathomDesk domain reflex; outside daemon subset",
     "fathomdesk_openbb_refresh": "reflex_registry DOMAIN; FathomDesk domain reflex; outside daemon subset",

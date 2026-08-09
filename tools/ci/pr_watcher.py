@@ -438,12 +438,20 @@ def list_pr_tasks(
 # ────────────────────────────────────────────────────────────────────────────
 
 
-# Coordination / union-merged files that MANY task branches legitimately co-edit
-# (manifest shards, append-only-table registry, nav/registry configs, conftest
-# schema). Two PRs touching these is normal, not a collision — exclude them from
-# the sibling-conflict check so it only fires on genuine same-source-file races
-# (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
-# merge-conflict-hotspots prevention notes.
+# Coordination files that MANY task branches legitimately co-edit (manifest
+# shards, append-only-table registry, nav/registry configs, conftest schema).
+# Two PRs touching these is normal, not a collision — exclude them from the
+# sibling-conflict check so it only fires on genuine same-source-file races
+# (e.g. two branches each creating a different tools/cortex/blueprint.py). See
+# the merge-conflict-hotspots prevention notes.
+#
+# "Union-merged" is only literally true for the manifest entries: `.gitattributes`
+# declares `tools/manifest*` `merge=union` (kax-conflict-03), so concurrent
+# appends there really do resolve without a human. The remaining paths are
+# structured config/code, where union would produce duplicate keys or broken
+# syntax — they are excluded from the sibling check as a heuristic about how
+# they are edited, NOT because git resolves them automatically. Adding a path
+# here does not make it auto-mergeable.
 _ADDITIVE_PATH_MARKERS = (
     "tools/manifest/",
     "tools/manifest.md",
@@ -457,10 +465,44 @@ _ADDITIVE_PATH_MARKERS = (
     "docs/reference/commands.md",
 )
 
+#: Substrings marking a DERIVED artifact — a file produced by a generator and
+#: checked in, never hand-edited.
+#:
+#: These are excluded for a different reason than the coordination files above.
+#: A coordination file is safe to co-edit because it union-merges. A generated
+#: file is safe because a conflict in it is not a disagreement at all: re-running
+#: the generator over the merged tree produces the correct content, so there is
+#: nothing for a human to arbitrate and nothing for a serialized merge to protect.
+#:
+#: WHY THIS EXISTS. On 2026-08-09 a single generated file —
+#: docs/research/external-benchmark-map.generated.md — deadlocked the entire
+#: board. Every branch that added a module regenerated it, so every open PR
+#: touched it, so hold_on_sibling_conflict made every PR a sibling of every other
+#: and refused all six. The guard was behaving correctly; the input made it
+#: total. The daemons were healthy the whole time, which is what made it read as
+#: "the dispatcher is broken". One shared generated file is enough to stop
+#: everything, so the class is excluded rather than that one path.
+_GENERATED_PATH_MARKERS = (
+    ".generated.",
+    "/generated/",
+)
+
+
+def _is_generated_path(path: str) -> bool:
+    """True when `path` is a generator-produced artifact (regenerate, don't merge)."""
+    p = (path or "").replace("\\", "/")
+    return any(marker in p for marker in _GENERATED_PATH_MARKERS)
+
 
 def _is_additive_path(path: str) -> bool:
-    """True when `path` is a union-merged coordination file (not a collision risk)."""
+    """True when `path` is safe for two PRs to touch at once.
+
+    Either union-merged coordination state, or a derived artifact whose conflicts
+    are resolved by regeneration rather than by arbitration.
+    """
     p = (path or "").replace("\\", "/")
+    if _is_generated_path(p):
+        return True
     return any(marker in p for marker in _ADDITIVE_PATH_MARKERS)
 
 

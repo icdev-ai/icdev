@@ -26,6 +26,35 @@ def test_is_additive_path_excludes_coordination_files():
     assert not pw._is_additive_path("tools/db/migrations/263_x.sql")
 
 
+def test_generated_artifacts_are_not_collisions():
+    """A derived file must never serialize merges — it deadlocked the board once.
+
+    On 2026-08-09 every open PR regenerated
+    docs/research/external-benchmark-map.generated.md, so hold_on_sibling_conflict
+    made each PR a sibling of every other and refused all six while both daemons
+    ran healthily. A conflict in generated output is not a disagreement: rerunning
+    the generator over the merged tree produces the right content, so there is
+    nothing to arbitrate and nothing a serialized merge protects.
+    """
+    assert pw._is_generated_path("docs/research/external-benchmark-map.generated.md")
+    assert pw._is_additive_path("docs/research/external-benchmark-map.generated.md")
+    assert pw._is_generated_path("tools/x/generated/schema.json")
+    # The marker must be specific enough not to swallow hand-written sources.
+    assert not pw._is_generated_path("tools/builder/db_init_generator.py")
+    assert not pw._is_additive_path("tools/builder/db_init_generator.py")
+    assert not pw._is_generated_path("tools/cortex/blueprint.py")
+
+
+def test_a_shared_generated_file_alone_does_not_hold_a_pr():
+    """The end-to-end shape of the deadlock: two PRs, one shared generated file."""
+    w = pw.PRWatcher(config={}, get_connection=lambda: None)
+    file_map = {
+        "https://x/pull/1": {"docs/research/map.generated.md", "tools/a/one.py"},
+        "https://x/pull/2": {"docs/research/map.generated.md", "tools/b/two.py"},
+    }
+    assert w._sibling_conflicts("https://x/pull/1", file_map) == {}
+
+
 def test_sibling_conflicts_flags_shared_source_file():
     w = pw.PRWatcher(config={}, get_connection=lambda: None)
     file_map = {

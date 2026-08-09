@@ -432,3 +432,54 @@ def test_agent_falls_back_when_facade_absent(monkeypatch):
 
 def test_agent_requires_goal():
     assert "error" in cortex_server.handle_cortex_agent_launch({})
+
+
+def test_agent_passes_the_graph_spec_through(monkeypatch):
+    """mode="graph" + the graph spec reach the facade (hgx-cx-01)."""
+    captured = {}
+
+    def fake_agent(goal, roles=None, ctx=None, mode="auto", graph=None, **kw):
+        captured.update(mode=mode, graph=graph)
+        r = CortexResult(text="Started Studio graph run run-1", provider="studio")
+        r.data = {"mode": "graph", "run_id": "run-1", "workflow_id": "wf-1"}
+        return r
+
+    monkeypatch.setattr(cortex_api, "agent", fake_agent, raising=False)
+    result = cortex_server.handle_cortex_agent_launch(
+        {"goal": "run the release pipeline", "mode": "graph",
+         "graph": {"workflow_id": "wf-1", "inputs": {"env": "staging"}}}
+    )
+    assert result["data"]["run_id"] == "run-1"
+    assert captured["mode"] == "graph"
+    assert captured["graph"]["workflow_id"] == "wf-1"
+    json.dumps(result)
+
+
+def test_agent_surfaces_unknown_mode_error(monkeypatch):
+    """The facade raises ValueError on an unknown mode instead of silently
+    running a single agent; the handler maps it to an error (hgx-cx-01)."""
+
+    def fake_agent(goal, roles=None, ctx=None, mode="auto", **kw):
+        raise ValueError(f"unknown agent mode {mode!r}")
+
+    monkeypatch.setattr(cortex_api, "agent", fake_agent, raising=False)
+    result = cortex_server.handle_cortex_agent_launch(
+        {"goal": "fix the bug", "mode": "nonsense"}
+    )
+    assert "unknown agent mode" in result["error"]
+
+
+def test_registry_agent_launch_advertises_graph_mode():
+    """Neither schema may advertise a stale mode list — a caller reading it
+    would never discover graph mode, and would trust 'auto | team | single'.
+
+    The gateway reads ``tools.mcp.tool_registry``; the stdio server carries its
+    own copy of the same schema, so both are asserted (they drift otherwise).
+    """
+    props = tool_registry.TOOL_REGISTRY["cortex_agent_launch"]["input_schema"]["properties"]
+    assert "graph" in props["mode"]["description"]
+    assert props["graph"]["type"] == "object"
+
+    spec = next(t for t in cortex_server.CORTEX_TOOLS if t["name"] == "cortex_agent_launch")
+    assert "graph" in spec["properties"]["mode"]["description"]
+    assert spec["properties"]["graph"]["type"] == "object"

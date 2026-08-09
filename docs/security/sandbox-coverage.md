@@ -1426,7 +1426,76 @@ committed to the repo.
   parity work and a materially different posture, because the values would then
   reach the database rather than only a report.
 
-### Gap 52 — SBOM component licensing (`tools/compliance/component_licenser.py`)
+### Gap 52 — Agent-node tool authorization gate (`tools/studio/executors/agent_tool_gate.py`)
+
+**Module:** `tools/studio/executors/agent_tool_gate.py` (+ `icdev/` mirror) —
+decides which tools a Studio `node_type: agent` step may offer a model and which
+calls that model may actually make (task hgx-agent-02, gate `AGENT-WF-001`).
+
+**Ingress path:** Two inputs, from two different trust levels. The **policy** is
+the `agent_workflow_tools` section of `args/security_gates.yaml` — repo-authored,
+first-party, read with `yaml.safe_load`. The **tool name and arguments** come
+from an LLM mid-loop: `hook(tool_name, tool_input)` is called by
+`run_agent_loop` with whatever the model emitted. That is
+**model-generated content**, and the whole point of this module is that it is
+treated as such.
+
+- **Decision:** **trusted-first-party** (policy) + **bypass-documented**
+  (model-supplied names/arguments — used as dictionary keys and hashed, never
+  resolved, executed, or interpolated).
+- **Rationale:** No model-supplied string reaches an interpreter, an import, a
+  path, a shell, or SQL from this module. `tool_name` is used only as a set
+  membership test against the two committed allowlists and as a key into
+  `tool_limits`; a miss is a refusal, so the reachable set is a fixed nine-name
+  list, not an open namespace. `tool_input` is never inspected for meaning at
+  all — it is passed to `params_digest()`, which canonicalises it with
+  `json.dumps(..., default=repr)` and returns a SHA-256 hex digest. The digest,
+  not the arguments, is what reaches the parameterised audit INSERT, so an
+  agent's `write_file` content cannot appear in the audit trail or steer the
+  query. There is no `exec`/`eval`/`compile`, no `subprocess`, no `importlib`
+  driven by model output, no filesystem path built from model output, and no
+  network call. The handlers the authorized call eventually reaches are the
+  worktree toolset's (`tools/genesis/rubric_build_tools.py`), which resolve and
+  traversal-guard every path inside the step's `work_dir` — that confinement is
+  theirs, not this module's, and is unchanged by it.
+- **Guardrails:**
+  - **Default-deny, fail-closed policy** — `load_policy()` refuses a section
+    whose `default` is not `deny`, and refuses when no section is readable at
+    all (`agent_gate_policy_unavailable`). `agent_executor.apply_tool_gate`
+    turns that into `agent_step_gate_unavailable`: no policy means **no
+    toolset**, never an unbounded one.
+  - **Enforced twice** — `authorize_toolset()` withholds an unauthorized tool
+    before it is described to the model; `build_gate_hook()` re-checks every
+    call before the handler runs. The second layer is the one that decides, so a
+    model naming a tool it was never offered is refused rather than dispatched.
+  - **Human gate on anything mutating** — `write_file` / `patch_file` /
+    `run_command` are `requires_approval`, so the first call parks an
+    `awaiting_approval` step row and blocks. No run to park a gate on is a
+    refusal, not a pass.
+  - **Caller IL / RBAC** — `check_caller_authorized()` refuses a caller below
+    the tool's declared `min_il` (or holding an unrecognised level — the gate
+    does not guess) or missing a required role. `run_command` is held at IL5.
+  - **Composed with, not substituted for, the reversibility gate** — the hook
+    chains to `tools/agent_runtime/approval_gate.py`; a call must clear both.
+  - **Append-only audit with digested arguments** — every decision (allowed,
+    refused, pending_approval) writes one `studio_mcp_dispatch_audit` row via
+    the existing `record_dispatch_audit`, classification-marked from the
+    caller's IL. The write is best-effort and never changes the decision.
+  - **Regression tests** — `tests/studio/test_agent_tool_gate.py` (28 tests)
+    covers the allowlist refusal, the parked/approved/rejected/undecided human
+    gate, the IL and role refusals, gate-ordering, the fail-closed policy paths
+    and the executor wiring; `tests/test_dwo_agent_allowlist.py` (17) pins the
+    policy data, the mirrors, and that every `block_on` condition is actually
+    raised somewhere in the module.
+- **Revisit if:** the policy becomes tenant-editable or derivable from anything
+  other than a committed repo file; `tool_input` starts being inspected,
+  interpolated into a path/command, or stored verbatim; registry-backed bundles
+  become dispatchable from an agent node (the dispatch path then needs its own
+  entry — this one covers authorization only); or the allowlist is made
+  default-allow → re-decide as **sandboxed**
+  (`tools/security/sandbox_executor.py`).
+
+### Gap 53 — SBOM component licensing (`tools/compliance/component_licenser.py`)
 
 *(There are two entries numbered 50 above: `sbom_revision` and `unknown_information`
 landed from sibling `sbx` branches that each allocated the next number concurrently.
