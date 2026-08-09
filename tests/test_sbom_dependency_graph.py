@@ -11,10 +11,12 @@ flat-list shape itself.
 
 import importlib.util
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 import pytest
@@ -675,6 +677,90 @@ def test_the_constraint_and_the_python_constant_cannot_drift():
     for relationship_type in dg.RELATIONSHIP_TYPES:
         assert f"'{relationship_type}'" in clause
     assert clause.startswith("CHECK (relationship_type IN (")
+
+
+def _pg_url():
+    """The live PG DSN, if one is reachable.
+
+    Deliberately keyed on ICDEV_DATABASE_URL rather than ICDEV_STORAGE_BACKEND:
+    `tests/conftest.py` pins the backend to sqlite for the whole session, so a
+    guard that read the backend would make this test unrunnable everywhere —
+    which, for the primary backend, is worse than having no test.
+    """
+    url = os.environ.get("ICDEV_DATABASE_URL", "")
+    if not url.startswith("postgres"):
+        return None
+    try:
+        from tools.db.storage import _get_pg_connection
+
+        _get_pg_connection(url).close()
+        return url
+    except Exception:  # noqa: BLE001 — unreachable PG is a skip, not an error
+        return None
+
+
+@pytest.mark.skipif(not _pg_url(), reason="no reachable PostgreSQL (ICDEV_DATABASE_URL)")
+def test_the_constraint_installs_and_enforces_on_postgresql():
+    """The PG branch is the one that ships — PostgreSQL is the primary backend.
+
+    It shares no code with the SQLite branch: PG takes a plain ADD CONSTRAINT
+    guarded by an information_schema lookup (there is no ADD CONSTRAINT IF NOT
+    EXISTS), while SQLite cannot add a CHECK in place at all and rebuilds the
+    table. So the SQLite cases above exercise none of this. Runs in a throwaway
+    schema, never against live tables.
+    """
+    from tools.db.storage import StorageConnection, _get_pg_connection
+
+    up = _load_migration("up")
+    connection = StorageConnection(_get_pg_connection(_pg_url()), "postgresql")
+    schema = "sbx_cov02_" + uuid.uuid4().hex[:8]
+    connection.execute(f"CREATE SCHEMA {schema}")
+    connection.execute(f"SET search_path TO {schema}")
+    connection.execute(
+        """
+        CREATE TABLE sbom_dependencies (
+            id                  TEXT    PRIMARY KEY,
+            sbom_record_id      INTEGER NOT NULL,
+            parent_component_id TEXT    NOT NULL,
+            child_component_id  TEXT    NOT NULL,
+            relationship_type   TEXT    NOT NULL DEFAULT 'depends_on',
+            scope               TEXT,
+            classification      TEXT    NOT NULL DEFAULT 'CUI',
+            tenant_id           TEXT,
+            created_at          TEXT,
+            UNIQUE (sbom_record_id, parent_component_id, child_component_id, relationship_type)
+        )
+        """
+    )
+    connection.commit()
+    try:
+        assert up.up(connection)["actions"] == ["pg_constraint_added"]
+        # No ADD CONSTRAINT IF NOT EXISTS on PG, so re-running has to be guarded
+        # rather than merely tolerated.
+        assert up.up(connection)["actions"] == ["pg_constraint_already_present"]
+
+        for index, relationship_type in enumerate(dg.RELATIONSHIP_TYPES):
+            connection.execute(
+                "INSERT INTO sbom_dependencies (id, sbom_record_id, parent_component_id, "
+                "child_component_id, relationship_type) VALUES (%s, 1, %s, 'c2', %s)",
+                (f"edge-{index}", f"p{index}", relationship_type),
+            )
+        connection.commit()
+
+        with pytest.raises(Exception):  # noqa: B017 — driver-specific integrity error
+            connection.execute(
+                "INSERT INTO sbom_dependencies (id, sbom_record_id, parent_component_id, "
+                "child_component_id, relationship_type) "
+                "VALUES ('bogus', 1, 'c1', 'c2', 'necessary_for_the_operation_of')"
+            )
+            connection.commit()
+        connection.rollback()
+
+        assert _load_migration("down").down(connection)["actions"] == ["pg_constraint_dropped"]
+    finally:
+        connection.execute(f"DROP SCHEMA {schema} CASCADE")
+        connection.commit()
+        connection.close()
 
 
 def test_the_migration_refuses_when_the_table_is_absent():
