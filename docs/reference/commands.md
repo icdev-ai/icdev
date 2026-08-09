@@ -4835,3 +4835,12 @@ result — measured numbers live in
 Corpus: `args/executor_parity_corpus.yaml`. Treat it as a frozen baseline —
 adding an entry is fine, rewording one changes what is being measured and
 requires re-running both executors.
+
+# CI test allowlist (kax-conflict-07) — the list icdev-ci.yml's `test` job runs
+python tools/ci/gated_test_list.py --check --list core       # validate: empty/short/missing/dup -> exit 1
+python tools/ci/gated_test_list.py --print --list windows    # resolved targets, one per line
+python tools/ci/gated_test_list.py --list core --json        # full report (count, floor, missing, duplicates)
+python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci.yml --job test --min-targets 2
+python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
+python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
+python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list

@@ -475,9 +475,19 @@ def list_pr_tasks(
 # the sibling-conflict check so it only fires on genuine same-source-file races
 # (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
 # merge-conflict-hotspots prevention notes.
+#
+# `args/ci_test_files/` holds the pytest allowlists that used to be a
+# line-continuation chain inside .github/workflows/icdev-ci.yml, and is genuinely
+# `merge=union` in .gitattributes (kax-conflict-07). That inlining is what
+# deadlocked the board on 2026-08-09: five open PRs each appended a test path to
+# the same hand-written workflow, so this guard made each a sibling of every
+# other and refused all five. Note what is NOT listed here — the workflow itself.
+# It carries real job definitions, and two PRs editing a job's `run:` block is a
+# genuine collision worth serializing; only the additive list moved out.
 _ADDITIVE_PATH_MARKERS = (
     "tools/manifest/",
     "tools/manifest.md",
+    "args/ci_test_files/",
     ".claude/hooks/pre_tool_use.py",
     "tools/dashboard/templates/base.html",
     ".claude/commands/start.md",
