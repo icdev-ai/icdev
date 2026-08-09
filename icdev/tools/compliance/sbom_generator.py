@@ -52,7 +52,6 @@ the Timestamp conforms to RFC 9557; and the document's version counter and the
 `sbom_records` row are computed once and used twice, so they cannot disagree."""
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -120,6 +119,13 @@ from tools.compliance.unknown_information import (
     enquiry_properties,
     is_legacy_sentinel,
     load_disclosure_policy,
+)
+from tools.compliance.sbom_identifiers import (
+    apply_identifiers_to_cyclonedx,
+    component_id,
+    derive_identifiers,
+    identifiers_to_json,
+    parse_identifiers_from_cyclonedx,
 )
 from tools.compliance.sbom_revision import (
     SBOM_VERSION_MAJOR,
@@ -432,6 +438,21 @@ def _parse_pyproject_toml(file_path):
     return components
 
 
+def _npm_purl_name(name):
+    """Encode an npm package name for the purl name/namespace fields.
+
+    A scoped package ``@babel/core`` is namespace ``%40babel`` and name
+    ``core``: the ``@`` is percent-encoded because purl reserves it as the
+    version separator, and the ``/`` STAYS a separator because that is what
+    divides namespace from name. The previous encoding did the exact opposite —
+    ``pkg:npm/@babel%2Fcore`` — which ECMA-427 rejects and which the Component
+    Identifiers validator flags (sbx-fld-05).
+    """
+    if name.startswith("@"):
+        return "%40" + name[1:]
+    return name
+
+
 def _parse_package_json(file_path):
     """Parse package.json for dependencies. Returns list of component dicts."""
     components = []
@@ -451,7 +472,7 @@ def _parse_package_json(file_path):
                 version = UNKNOWN
 
             # Handle scoped packages
-            purl_name = name.replace("/", "%2F") if "/" in name else name
+            purl_name = _npm_purl_name(name)
             purl = f"pkg:npm/{purl_name}"
             if version != UNKNOWN:
                 purl += f"@{version}"
@@ -525,10 +546,14 @@ def _parse_go_mod(file_path):
                 )
 
     # Parse single-line require statements: require github.com/foo/bar v1.2.3
-    single_requires = re.findall(r"^require\s+(\S+)\s+(\S+)", content, re.MULTILINE)
+    # The separator is horizontal whitespace only: `\s+` matches newlines, so
+    # `require (\n\tgithub.com/foo/bar v1.2.3` used to capture module="(" and
+    # version="github.com/foo/bar" — a phantom component named "(" alongside
+    # the real one the require-block loop above already found.
+    single_requires = re.findall(r"^require[ \t]+(\S+)[ \t]+(\S+)", content, re.MULTILINE)
     for module, version in single_requires:
         # Skip if this is the start of a parenthesized block
-        if version == "(":
+        if version == "(" or module == "(":
             continue
         version = re.sub(r"\s*//.*$", "", version).strip()
         purl = f"pkg:golang/{module}@{version}"
@@ -955,9 +980,13 @@ def _component_identity(component):
 
 
 def _generate_bom_ref(component):
-    """Generate a unique BOM reference for a component instance."""
-    key = "|".join(_component_identity(component))
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+    """Generate a unique BOM reference for a component.
+
+    Delegates to sbom_identifiers.component_id so the bom-ref, the
+    sbom_components primary key and the organization-specific identifier are
+    all the same value derived by one formula.
+    """
+    return component_id(component)
 
 
 def _property_value(cdx_comp, name, default=None):
@@ -990,6 +1019,12 @@ def _persist_components(conn, cdx_components):
     entry it came from are the same string, and regenerating an SBOM updates the row
     rather than accumulating a duplicate.
 
+    `identifiers_json` (Component Identifiers, sbx-fld-05) is read back off the
+    finished component the same way, via `parse_identifiers_from_cyclonedx`, so the
+    stored set is the set the recipient's document actually carries — including the
+    identifiers that fell back to properties because the active CycloneDX spec version
+    has no native field for them.
+
     Only the dependency components are written. The document's target component lives in
     `metadata.component`, not in `components`, and it is the subject of the inventory
     rather than an entry in it.
@@ -1017,10 +1052,11 @@ def _persist_components(conn, cdx_components):
                 """INSERT INTO sbom_components
                    (id, component_name, version, component_type, purl, license,
                     producer, hash_value, hash_algorithm, unknown_fields_json,
-                    withheld_fields_json, classification)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    withheld_fields_json, identifiers_json, classification)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT(id) DO UPDATE SET
                        license = EXCLUDED.license,
+                       identifiers_json = EXCLUDED.identifiers_json,
                        producer = EXCLUDED.producer,
                        hash_value = EXCLUDED.hash_value,
                        hash_algorithm = EXCLUDED.hash_algorithm,
@@ -1041,6 +1077,7 @@ def _persist_components(conn, cdx_components):
                     _property_value(cdx_comp, PROPERTY_HASH_ALGORITHM),
                     unknown_json,
                     withheld_json,
+                    identifiers_to_json(parse_identifiers_from_cyclonedx(cdx_comp)),
                     "CUI",
                     now,
                 ),
@@ -1375,8 +1412,6 @@ def _build_cyclonedx_sbom(
         }
         if comp.get("group"):
             cdx_comp["group"] = comp["group"]
-        if comp.get("purl"):
-            cdx_comp["purl"] = comp["purl"]
         if comp.get("scope"):
             cdx_comp["scope"] = comp["scope"]
 
@@ -1430,6 +1465,17 @@ def _build_cyclonedx_sbom(
         # Private marker, stripped before serialization — records whether this
         # instance came from a resolved set or from a declared manifest.
         cdx_comp["_declared"] = comp.get("resolution") == RESOLUTION_DECLARED
+
+        # Component Identifiers (2026 element, sbx-fld-05): emit ALL derivable
+        # identifiers, not just the purl. apply_() writes purl/cpe/swhid/
+        # omniborId natively where the active spec version has the field and
+        # falls back to properties, so nothing is dropped on 1.4/1.5. The list
+        # is kept on the component dict for persistence into
+        # sbom_components.identifiers_json.
+        identifiers = derive_identifiers(comp)
+        comp["identifiers"] = identifiers
+        apply_identifiers_to_cyclonedx(cdx_comp, identifiers, spec_version=active_spec_version)
+
         cdx_components.append(cdx_comp)
 
     # The target component is a component too, so the element applies to it —

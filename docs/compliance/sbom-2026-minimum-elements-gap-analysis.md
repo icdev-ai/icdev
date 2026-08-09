@@ -655,7 +655,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
 | Component Hash Value | **MET (sbx-fld-03)** | `tools/compliance/component_hasher.py` states the element for every component and for the target component, as an ASCII hexadecimal digest of the executable artifact — recomputed from a local file where one exists, otherwise adopted from the digest the resolved source declared — or as an explicit unknown marker with a machine-readable reason. Never omitted. `sbom_components.hash_value` is populated by the same resolution. See §3.2.2. |
 | Component Hash Algorithm | **MET (sbx-fld-03)** | Every algorithm ICDEV emits is an IANA Hash Function Textual Name from the vendored registry AND one an authority still approves. `md5`/`sha-1` parse so that a digest under them is refused with its reason rather than published; `shake128`/`shake256` validate as names but are never emitted. See §3.2.2. |
-| Component Identifiers | **PARTIAL** | `purl` only. No CPE (needed for NVD lookup), no UUID / commit hash / SWHID / OmniBOR, and no support for carrying multiple identifiers. |
+| Component Identifiers | **MET (sbx-fld-05)** | Was `purl` only. `tools/compliance/sbom_identifiers.py` now derives every identifier the coordinates support and emits ALL of them, as the standard requires when multiple exist: purl, a CPE 2.3 match string (the NVD join key), a deterministic RFC 9562 UUIDv5, an organization-specific identifier that is always derivable, and — only where the underlying content is actually supplied — a commit hash, SWHID and OmniBOR. Round-trips through `sbom_components.identifiers_json`. See §3.2.3. |
 | Component License | **MET (sbx-fld-04)** | `tools/compliance/component_licenser.py` emits the element for every component and for the target component, in one of the four shapes the standard allows — a validated SPDX expression, a URL to full terms, a license name, or an explicit unknown/withheld marker — plus a tri-state proprietary-conditions flag. Never omitted. `sbom_components.license` is populated by the same resolution. See §3.2.1. |
 | Component Name | **PARTIAL** | Single name only; the standard requires formats to allow alternate names. |
 | Component Version | **PARTIAL** | The conflating literals are **gone (sbx-prc-01)**: an unresolved version is now the `unknown` sentinel plus `icdev:unknown:version` naming why (`declared-without-a-version`, `version-managed-by-parent`, `not-provided-by-producer`), and the purl no longer claims a version segment it does not have. What remains for the element itself is stating the version the *producer* assigned where ICDEV currently reports a resolver's normalization. |
@@ -828,6 +828,71 @@ Pinned by `tests/test_sbom_component_hash.py` (52 tests), which has a dedicated 
 for the artifact-inaccessible path — marker, shared reason, specific detail, absent
 `hashes` array, persisted row — and asserts the columns land from a real generator run
 against a real database.
+
+#### 3.2.3 Component Identifiers — what sbx-fld-05 landed
+
+`tools/compliance/sbom_identifiers.py` (mirrored under `icdev/tools/compliance/`) derives the
+full identifier set from the coordinates a manifest parser already produces, and
+`_build_cyclonedx_sbom` applies it to every component.
+
+| Type | Derivation |
+|---|---|
+| PURL (ECMA-427) | From the parser, as before. |
+| CPE 2.3 | Derived for every component with a name. Vendor comes from the reverse-DNS Maven group (`org.apache.logging.log4j` → `apache`), the npm scope (`@babel` → `babel`), the Go module path (`github.com/spf13/cobra` → `spf13`/`cobra`), or a dotted NuGet id (`Newtonsoft.Json` → `newtonsoft`/`json`). |
+| UUID (RFC 9562) | Deterministic v5 over the coordinates, namespace `uuid5(NAMESPACE_DNS, "sbom.icdev.ai")`. |
+| Organization-specific | `icdev:component:<16 hex>` — the same value as the CycloneDX `bom-ref` and the `sbom_components` primary key, from one formula. Derivable from coordinates alone, so **every** component carries at least one identifier even when purl, version and vendor are all unknown. |
+| Commit hash | Read out of a Go pseudo-version (`v0.0.0-20191109021931-daa7c04131f5`), or taken from a parser-supplied `commit_hash`. |
+| SWHID (ISO/IEC 18670:2025) | `swh:1:rev:<sha1>` — only from a **full** 40-hex revision. An abbreviated Go pseudo-version hash deliberately does not produce one. |
+| OmniBOR | Pass-through only. A gitoid is computed over the artifact's own bytes; sbx-fld-03 resolves an artifact *digest* but does not produce a gitoid, so one is emitted only where a caller supplies it. Nothing is fabricated. |
+
+Two decisions worth recording:
+
+- **What is emitted is a CPE *match string*, not a claim of NVD dictionary membership.**
+  Attributes that cannot be derived with confidence stay as the ANY wildcard `*` rather than a
+  guessed vendor. A guess narrows a CVE join and loses findings; `*` widens it. `target_sw` is
+  left ANY for the same reason. Unresolved versions (`unspecified`, `managed`) become `*` instead
+  of being written through as a literal that would match nothing.
+- **Escaping follows real NVD data, not a maximal reading of NIST IR 7695**: everything outside
+  `[A-Za-z0-9._-]` is backslash-escaped and `.` / `-` are left bare, because that is how NVD
+  writes them (`cpe:2.3:a:node-red:node-red:1.0.0:*:...`). Escaping them would break the string
+  match this element exists to enable.
+
+Emission is spec-version aware: `purl` and `cpe` use the native CycloneDX fields on every
+version, `swhid` and `omniborId` use the arrays CycloneDX added in 1.6, and everything else —
+plus anything that overflows a single-valued native field, such as a second CPE — goes to
+`icdev:identifier:<type>` properties. Nothing is dropped on 1.4 or 1.5.
+
+Round-trip is pinned in both directions by `tests/test_sbom_component_identifiers.py` (64 tests):
+`parse_identifiers_from_cyclonedx()` returns the identical set on all four spec versions, and
+`identifiers_to_json()` / `identifiers_from_json()` round-trip through the real
+`sbom_components.identifiers_json` column — including one end-to-end test that drives
+`generate_sbom()` through `tools.db.storage`, so the `%s` translation and the upsert are
+exercised by the production path rather than by a shim.
+
+`identifiers_json` is written by the same `_persist_components` pass sbx-fld-04 introduced, off
+the FINISHED CycloneDX component via `parse_identifiers_from_cyclonedx` — so the stored set is the
+set the recipient's document carries, including identifiers that fell back to properties because
+the active spec version has no native field for them. The table is a coordinate-keyed catalog (it
+has no per-document key — `sbom_dependencies` is what scopes a component to one SBOM), so
+persistence is an upsert on the deterministic component id, which is the same string as the
+`bom-ref`: a row and the document entry it came from cannot drift apart, and a re-run updates in
+place rather than accumulating a duplicate.
+
+`python tools/compliance/sbom_identifiers.py --validate <sbom.cdx.json>` reports identifier
+totals, how many components are NVD-joinable, and exits non-zero on a conformance failure —
+the foothold sbx-sig-02's full minimum-elements validator composes. `--component <purl>` prints
+the derivation for a single set of coordinates without needing an SBOM, which is how a missing
+CPE gets diagnosed.
+
+**Two pre-existing defects the validator surfaced and this task fixed**, both in
+`sbom_generator.py`'s parsers:
+
+1. Scoped npm packages were encoded `pkg:npm/@babel%2Fcore@7.24.0` — the `/` namespace separator
+   percent-encoded and the reserved `@` left bare, exactly backwards. ECMA-427 rejects it. Now
+   `pkg:npm/%40babel/core@7.24.0`.
+2. `_parse_go_mod`'s single-line `^require\s+(\S+)\s+(\S+)` matched across the newline after
+   `require (`, emitting a phantom component named `(` whose version was the first module path.
+   The separator is now horizontal whitespace only.
 
 ### 3.3 Practices and Processes
 
