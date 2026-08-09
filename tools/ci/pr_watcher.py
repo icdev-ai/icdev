@@ -1282,6 +1282,20 @@ class PRWatcher:
                         len(linked["linked"]),
                         ", ".join(e["task_id"] for e in linked["linked"]),
                     )
+                if linked.get("relinked"):
+                    logger.info(
+                        "pr_watcher: repaired %d stale link(s) to a closed PR: %s",
+                        len(linked["relinked"]),
+                        ", ".join(f"{e['task_id']} {e['was']}->{e['url']}"
+                                  for e in linked["relinked"]),
+                    )
+                if linked.get("stale_ambiguous"):
+                    logger.warning(
+                        "pr_watcher: %d task(s) have a stale link AND several open "
+                        "PRs — a human must pick: %s",
+                        len(linked["stale_ambiguous"]),
+                        ", ".join(e["task_id"] for e in linked["stale_ambiguous"]),
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("pr_watcher: PR link reconcile failed: %s", exc)
 
