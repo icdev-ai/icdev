@@ -1758,3 +1758,51 @@ by another vendor's tool.
   coordinates — accepting a name from outside the record is a different posture
   from rewriting one inside it — or if `--validate` grows a mode that writes back
   into an SBOM it parsed.
+
+### Gap — AGOV CASE bundle export (agov-case-02)
+- **File:** `tools/agent_case/case_bundler.py`
+- **Risk:** The exporter reads rows an agent's own activity produced — hook
+  payloads, audit details, approval-gate `reason`/`detail` free text, and
+  `affected_files` path lists — and writes them to a directory that is then
+  handed to someone else. Two distinct exposures: content the agent influenced
+  reaching a recipient (a leak), and content the agent influenced steering the
+  exporter (an execution surface).
+- **Decision:** **trusted-first-party**, with the leak side handled by contract
+  rather than by sandboxing
+- **Rationale:** Every value read comes from ICDEV's own append-only tables via
+  a fixed column allowlist, and nothing read is ever executed, resolved or
+  dispatched on. There is no `exec`/`eval`, no `subprocess`, no `importlib` on
+  a database value, no `pickle`/`yaml.load`, and no network call. Record content
+  is serialized with `json.dumps` and hashed; it never selects a code path. The
+  one place external input could become behaviour — a filesystem path out of
+  `audit_trail.affected_files` — is deliberately **not** followed: see below.
+- **Guardrails:**
+  - `collect_artifact_paths` records artifact paths as *referenced*, never
+    resolved. The exporter does not call `open`, `stat` or `resolve` on a path
+    that came out of the database, so `../../etc/shadow` in an `affected_files`
+    cell is copied into the bundle as a string and nothing more. This is also
+    the only route by which a transcript could re-enter a bundle that queried no
+    transcript table, which is why `contents_included` is a fixed `false`.
+  - `TRANSCRIPT_SOURCES` names the conversation-bearing tables, verified against
+    the live DDL, and no query in this module touches one. Exclusion is by closed
+    allowlist, not by filtering after the fact. Two of them —
+    `intake_conversation` and `ci_conversation_turns` — carry both a `session_id`
+    and raw turn `content`, so a join one column wider would pull the exported
+    session's own conversation into forensic evidence;
+    `tests/test_agov_case_bundle.py` seeds a canary into all four transcript
+    tables, asserts the two session-keyed rows really are reachable, and then
+    asserts the canary is absent from the bundle's bytes.
+  - Operator-writable free text (`agent_approval_log.reason`, `.detail`) passes
+    through `tools/llm/output_redactor.py::redact` before export, and a row whose
+    text changed is flagged `redacted: true` so a reader can distinguish "nothing
+    sensitive" from "something removed".
+  - Signed and hash-chained values (`hook_events.payload`, `audit_trail.hash`)
+    are exported verbatim on purpose: rewriting one would make an untampered
+    bundle report as tampered. The context header states this explicitly rather
+    than leaving a recipient to infer it.
+  - The endpoint header carries the storage backend NAME, never a DSN — a
+    connection string can carry a password.
+- **Revisit if:** the exporter gains the ability to copy artifact BYTES into the
+  bundle, to resolve or stat a database-supplied path, to accept an
+  externally-authored bundle as input, or to export a table not in the allowlist
+  — any of those turns "read, redact and hash" into a genuine trust boundary.
