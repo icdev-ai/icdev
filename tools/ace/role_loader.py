@@ -11,6 +11,9 @@ from typing import Any
 import yaml
 
 from icdev._paths import get_data_path
+from icdev.tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 _ROLES_DIR = get_data_path("args") / "ace" / "roles"
 _REQUIRED_FIELDS = {"role_id", "steps", "trust_tier", "tool_permissions"}
@@ -76,6 +79,10 @@ def _parse_roles_dir(roles_dir: Path) -> dict[str, "RoleTemplate"]:
             cache[role.role_id] = role
         except Exception as exc:  # noqa: BLE001
             import warnings
+            # A skipped role is always a defect, and a role skipped for a trust
+            # policy violation is a security-relevant one — warnings.warn alone
+            # is invisible in a daemon, so log it too.
+            logger.error("role_loader: skipping %s — %s", path.name, exc)
             warnings.warn(f"Skipping {path.name}: {exc}", stacklevel=2)
 
     with _PARSE_CACHE_LOCK:
@@ -160,6 +167,22 @@ class RoleTemplate:
         missing = _REQUIRED_FIELDS - data.keys()
         if missing:
             raise ValueError(f"Role YAML missing required fields: {sorted(missing)}")
+
+        # A role must not declare a tool its own trust_tier is forbidden to
+        # call. Without this, the contradiction only appeared at run time as a
+        # permission-denied string on every single call — which is how qa_agent
+        # shipped yellow-tier with `run_tool` and could not do its job at all.
+        # Raising here means _parse_roles_dir skips the role with a named
+        # reason: an unusable role never gets staffed onto a team.
+        from icdev.tools.ace.tool_trust_policy import assert_role_tools_valid
+
+        assert_role_tools_valid(
+            data.get("role_id", "?"),
+            data.get("trust_tier"),
+            data.get("agent_tools"),
+            data.get("mode", "steps"),
+        )
+
         return cls(
             role_id=data["role_id"],
             display_name=data.get("display_name", data["role_id"]),
