@@ -1824,3 +1824,44 @@ by another vendor's tool.
   enforcement directory or switched from JSON to `pickle`; or if the gate gains
   an allow/exempt verb, which would make a rule file able to *weaken* the
   hardcoded blocks rather than only add to them.
+### Gap 57 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
+- **File:** `tools/agent_detect/shell_parse.py` (agov-det-02)
+- **Risk:** This module's entire input is hostile by assumption — the command
+  string an agent asked a shell to run, read back out of `hook_events` /
+  `agent_executions`. It is reached from the detection path that agov-det-06
+  wires into `.claude/hooks/pre_tool_use.py`, so it sees every command before
+  the shell does.
+- **Decision:** **bypass-documented**
+- **Rationale:** It classifies a command; it never runs one. The module is
+  stdlib-only (`hashlib`, `posixpath`, `shlex`, `dataclasses`) and imports
+  nothing first-party — deliberately, because the hook is a fresh interpreter on
+  every tool call. There is no `subprocess`, `os.system`, `os.popen`, `eval`,
+  `exec`, `__import__`, `pickle`, `yaml.load`, no file handle and no network
+  client anywhere in it. `shlex` is a pure-Python lexer with no execution path;
+  the only other parsing is a hand-written character scan over the same string.
+  A sandbox would add process isolation around a function whose worst-case
+  output is a wrong string in a dataclass.
+- **Guardrails:**
+  - `parse_command` cannot raise. Every failure path — including an unforeseen
+    lexer fault — returns `parsed=False` with a stable `reason` and NO
+    statements, because a parser fault must be unable to fire *or suppress* a
+    detection rule.
+  - Refusal is total, never partial. A command with command substitution,
+    control flow, `eval`, a sequence operator or an unbalanced quote yields
+    zero statements, and consumers (`tools/agent_detect/rules.py`) are
+    contractually required to decline with it rather than fall back to
+    substring matching on the raw command — that fallback is precisely the
+    fail-open recorded at `args/agent_approval_policy.yaml`:107-126.
+  - Ids are SHA-256 of the command text: deterministic, no clock, no RNG, so
+    nothing here can perturb a workflow replay.
+  - `tests/test_agov_shell_parse.py::test_the_parser_has_no_execution_path`
+    asserts the absence of every execution/IO primitive listed above against
+    the module source, and
+    `::test_the_module_imports_nothing_first_party` pins the stdlib-only
+    property. The claim in this entry is worth exactly what those two tests
+    enforce.
+- **Revisit if:** the module grows a recursive parse of a nested program
+  (`bash -c "..."`), starts resolving a command name against `PATH` on disk, or
+  gains a second dialect implemented by shelling out to a real shell for
+  tokenization — any of those puts execution or filesystem access back in front
+  of hostile input.

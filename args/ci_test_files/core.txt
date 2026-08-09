@@ -305,3 +305,12 @@ tests/test_agov_agent_findings.py
 # tmp_path, SQLite only via the migration's own DDL, no LLM/network
 # (agov-det-06).
 tests/test_agov_gate.py
+# test_agov_shell_parse.py earns a slot because the parsed shell view is the
+# cause-level fix for a documented fail-open (agent_approval_policy.yaml:107-126:
+# a git_push carrying {"note": "mkdir logs"} matched the mkdir DOWNGRADE pattern
+# because patterns ran against a flattened string). Its failure mode is silent
+# in both directions: a parser that gets LOOSER invents a command name nobody
+# ran, and one that gets STRICTER stops firing rules with no error anywhere. The
+# named regression plus the refusal set are the only things pinning either. ~1s,
+# pure Python, stdlib-only module, no DB/LLM/network (agov-det-02).
+tests/test_agov_shell_parse.py

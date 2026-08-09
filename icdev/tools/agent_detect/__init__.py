@@ -16,6 +16,7 @@ here, so a partially-landed package never fails at import time:
 - ``sequence``    multi-step chain evaluator (agov-det-04)
 - ``findings``    append-only findings store (agov-det-05)
 - ``gate``        the pre-tool-use decision seam (agov-det-06)
+- ``cli``         operator CLI: --list/--check/--test/--scan (agov-det-07)
 
 Monitor-only by default: a rule blocks nothing unless an operator opts it in.
 """
