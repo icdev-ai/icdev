@@ -173,15 +173,22 @@ def test_assert_real_board_can_be_overridden_for_tests(monkeypatch):
         conn.close()
 
 
-# ── 4. the benchmark gate tolerates count drift but not content drift ─────────
+# ── 4. the benchmark gate catches content drift, exactly ──────────────────────
+#
+# This started life as "the gate tolerates count drift", implemented by masking
+# tree-derived module counts inside check_report. kax-conflict-02 removed the
+# mask and removed the counts from the artifact instead: git merges text and
+# never saw the mask, so the masked gate fixed the red test and left the merge
+# conflict — which is what actually blocked #1383. What is pinned now is that
+# the gate compares exactly and that content drift still fails it.
 
 
 _REPORT = """# Benchmark map
 
-| # | Area | Tools | Position | Verdict | 48 | 2 |
-| 2 | Delivery | Temporal | Ahead | **No adaptation needed** | 107 | 0 |
+| # | Area | Tools | Position | Verdict | Code | Outstanding |
+| 2 | Delivery | Temporal | Ahead | **No adaptation needed** | `built` | 0 |
 
-Measured: **107 modules** (floor 5) -> `built`. Surface: `tools/kanban/`.
+Measured: **at or above its floor of 5 modules** -> `built`. Surface: `tools/kanban/`.
 
 **Verdict.** No adaptation needed; position **Ahead**.
 """
@@ -195,12 +202,11 @@ def _check(tmp_path, checked_in, regenerated):
     return br.check_report(p, regenerated)
 
 
-def test_count_only_drift_no_longer_fails_the_gate(tmp_path):
-    """Adding a module shifts derived counts. That must not turn main red."""
-    regenerated = _REPORT.replace("107", "108")
-    result = _check(tmp_path, _REPORT, regenerated)
-    assert result["in_sync"], result.get("diff")
-    assert "counts drifted" in (result["reason"] or "")
+def test_the_committed_rendering_carries_no_raw_module_count():
+    """Nothing volatile is left for the gate to have to tolerate."""
+    import re
+
+    assert not re.search(r"\*\*\d+ modules\*\*", _REPORT)
 
 
 def test_a_changed_verdict_still_fails_the_gate(tmp_path):
@@ -215,6 +221,32 @@ def test_a_changed_position_still_fails_the_gate(tmp_path):
     regenerated = _REPORT.replace("position **Ahead**", "position **Behind**")
     result = _check(tmp_path, _REPORT, regenerated)
     assert not result["in_sync"]
+
+
+def test_a_changed_outstanding_count_fails_the_gate(tmp_path):
+    """The old mask swallowed the two trailing numeric columns, this one included."""
+    regenerated = _REPORT.replace("| `built` | 0 |", "| `built` | 3 |")
+    result = _check(tmp_path, _REPORT, regenerated)
+    assert not result["in_sync"]
+
+
+def test_a_crossed_module_floor_fails_the_gate(tmp_path):
+    """Classification is committed precisely so a real state change is still caught."""
+    regenerated = _REPORT.replace(
+        "**at or above its floor of 5 modules** -> `built`",
+        "**below its floor of 5 modules** -> `thin`",
+    )
+    result = _check(tmp_path, _REPORT, regenerated)
+    assert not result["in_sync"]
+
+
+def test_the_failure_reason_names_the_fix(tmp_path):
+    """The person reading it is mid-merge on a branch that did not touch this file."""
+    from tools.innovation import benchmark_report as br
+
+    result = _check(tmp_path, _REPORT, _REPORT.replace("Ahead", "Behind"))
+    assert br.TOOL in result["reason"]
+    assert "--write" in result["reason"]
 
 
 def test_a_removed_row_still_fails_the_gate(tmp_path):
