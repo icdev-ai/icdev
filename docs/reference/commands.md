@@ -1939,6 +1939,8 @@ python tools/git/manifest_merge_rehearsal.py                              # all 
 python tools/git/manifest_merge_rehearsal.py --json                       # machine-readable
 python tools/git/manifest_merge_rehearsal.py --layout union --branches 5  # one layout, 5 concurrent branches
 python tools/git/manifest_merge_rehearsal.py --mode merge-tree            # bare, forge-style server-side merge only
+python tools/git/manifest_merge_rehearsal.py --repo .                     # rehearse against a CLONE of this repo + the real shard
+python tools/git/manifest_merge_rehearsal.py --repo . --shard tools/manifest/browser.md
 
 # GitLab Task Board Monitor (Phase 41)
 python tools/ci/triggers/gitlab_task_monitor.py                    # Start monitor (polls every 20s)

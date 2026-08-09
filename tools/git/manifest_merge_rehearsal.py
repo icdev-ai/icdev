@@ -199,9 +199,11 @@ def _assembled_text(repo: Path, layout: str) -> str:
     return "\n".join(parts)
 
 
-def _merge_worktree(repo: Path, result: ScenarioResult, new_tools: List[str]) -> None:
+def _merge_worktree(
+    repo: Path, result: ScenarioResult, new_tools: List[str], base: str = "main"
+) -> None:
     """Merge each branch with a checked-out worktree — what a developer/agent runs."""
-    _git(repo, "checkout", "-q", "main")
+    _git(repo, "checkout", "-q", base)
     for tool in new_tools:
         proc = _git(repo, "merge", "--no-edit", f"feat/{tool}", check=False)
         if proc.returncode == 0:
@@ -217,15 +219,17 @@ def _merge_worktree(repo: Path, result: ScenarioResult, new_tools: List[str]) ->
         return
 
 
-def _merge_tree(repo: Path, result: ScenarioResult, new_tools: List[str]) -> None:
+def _merge_tree(
+    repo: Path, result: ScenarioResult, new_tools: List[str], base: str = "main"
+) -> None:
     """Merge via `git merge-tree --write-tree` — the bare, index-free plumbing a
     forge (GitHub's mergeability probe, its merge button) runs server-side.
 
     A layout that is clean here needs no local `git merge main` to unblock a PR;
     a layout that is clean only in the worktree mode does.
     """
-    _git(repo, "checkout", "-q", "main")
-    head = "main"
+    _git(repo, "checkout", "-q", base)
+    head = base
     for tool in new_tools:
         proc = _git(
             repo, "merge-tree", "--write-tree", "--messages", head, f"feat/{tool}",
@@ -307,6 +311,86 @@ def run_scenario(
             shutil.rmtree(workdir, ignore_errors=True)
 
 
+def run_real_repo(
+    source: Path, shard: str = "tools/manifest/kanban.md", branches: int = 2,
+    mode: str = "worktree", keep: bool = False,
+) -> ScenarioResult:
+    """Run the rehearsal against a CLONE of a real repository and a real shard.
+
+    The synthetic scenarios prove the property for a hand-built file. This
+    proves it for the shipped `.gitattributes` and an actual manifest shard —
+    long rows, escaped pipes, several tables and all. The clone is disposable;
+    the source repository is never written to.
+    """
+    workdir = Path(tempfile.mkdtemp(prefix="manifest-rehearsal-real-"))
+    repo = workdir / "repo"
+    result = ScenarioResult(
+        layout="repo:" + shard, branches=branches, mode=mode, conflicted=False
+    )
+    try:
+        # Shallow + single-branch: the rehearsal only ever branches off HEAD, and
+        # a full clone of this repo takes minutes — a proof nobody waits for is a
+        # proof nobody runs.
+        proc = subprocess.run(
+            [
+                "git", "clone", "--quiet", "--no-hardlinks", "--depth", "1",
+                "--single-branch", "--no-tags", str(source), str(repo),
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if proc.returncode != 0:
+            raise RehearsalError(f"clone failed: {proc.stderr}")
+        _git(repo, "config", "user.email", "rehearsal@icdev.local")
+        _git(repo, "config", "user.name", "Manifest Rehearsal")
+        _git(repo, "config", "commit.gpgsign", "false")
+
+        base = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        attr = _git(repo, "check-attr", "merge", "--", shard).stdout.strip()
+        result.notes.append(f"git check-attr -> {attr}")
+
+        target = repo / shard
+        if not target.exists():
+            raise RehearsalError(f"{shard} not present in the clone")
+
+        new_tools = [f"rehearsal_tool_{chr(ord('a') + i)}" for i in range(branches)]
+        for tool in new_tools:
+            _git(repo, "checkout", "-q", "-b", f"feat/{tool}", base)
+            text = target.read_text(encoding="utf-8")
+            if not text.endswith("\n"):
+                text += "\n"
+            text += (
+                f"| {tool} | tools/kanban/{tool}.py | Registered by an unrelated "
+                f"task ({tool}). | --json | JSON |\n"
+            )
+            _write(target, text)
+            _git(repo, "commit", "-qam", f"register {tool}")
+
+        _git(repo, "checkout", "-q", base)
+        if mode == "merge-tree":
+            _merge_tree(repo, result, new_tools, base=base)
+        else:
+            _merge_worktree(repo, result, new_tools, base=base)
+
+        if not result.conflicted:
+            merged = target.read_text(encoding="utf-8", errors="replace")
+            missing = [t for t in new_tools if t not in merged]
+            result.all_entries_present = not missing
+            if missing:
+                result.notes.append(f"entries lost in merge: {', '.join(missing)}")
+            if "<<<<<<<" in merged:
+                result.conflicted = True
+                result.notes.append("conflict markers left in the merged file")
+            for tool in new_tools:
+                if merged.count(f"({tool}).") > 1:
+                    result.duplicate_entries.append(tool)
+        return result
+    finally:
+        if keep:
+            result.notes.append(f"clone kept at {repo}")
+        else:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
 def run_all(branches: int = 2, mode: str = "worktree") -> Dict[str, object]:
     modes = MODES if mode == "both" else (mode,)
     results = [
@@ -328,18 +412,19 @@ def run_all(branches: int = 2, mode: str = "worktree") -> Dict[str, object]:
 
 
 def _render(report: Dict[str, object]) -> str:
+    width = max([16, *(len(r["layout"]) for r in report["scenarios"])])  # type: ignore[index]
     lines = [
         f"Manifest merge rehearsal — {report['branches']} branches each registering a new tool",
         "",
-        f"{'layout':<16} {'mode':<12} {'conflict':<10} {'entries kept':<14} notes",
-        f"{'-' * 16} {'-' * 12} {'-' * 10} {'-' * 14} {'-' * 40}",
+        f"{'layout':<{width}} {'mode':<12} {'conflict':<10} {'entries kept':<14} notes",
+        f"{'-' * width} {'-' * 12} {'-' * 10} {'-' * 14} {'-' * 40}",
     ]
     for row in report["scenarios"]:  # type: ignore[index]
         conflict = "CONFLICT" if row["conflicted"] else "clean"
         kept = "yes" if row["all_entries_present"] else "-"
         note = row["notes"][0] if row["notes"] else ""
         lines.append(
-            f"{row['layout']:<16} {row['mode']:<12} {conflict:<10} {kept:<14} {note}"
+            f"{row['layout']:<{width}} {row['mode']:<12} {conflict:<10} {kept:<14} {note}"
         )
     lines.append("")
     lines.append("conflict-free: " + (", ".join(report["conflict_free_layouts"]) or "none"))  # type: ignore[index]
@@ -355,10 +440,40 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument("--branches", type=int, default=2, help="concurrent branches (default 2)")
     parser.add_argument("--keep", action="store_true", help="keep the throwaway repo")
+    parser.add_argument(
+        "--repo", type=Path,
+        help="clone this real repository and rehearse against a real shard",
+    )
+    parser.add_argument(
+        "--shard", default="tools/manifest/kanban.md",
+        help="shard to append to under --repo (default: the hottest one)",
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)
 
-    if args.layout:
+    if args.repo:
+        modes = MODES if args.mode == "both" else (args.mode,)
+        report = {
+            "branches": args.branches,
+            "mode": args.mode,
+            "scenarios": [
+                asdict(run_real_repo(
+                    args.repo, args.shard, args.branches, mode=m, keep=args.keep,
+                ))
+                for m in modes
+            ],
+        }
+        report["conflict_free_layouts"] = sorted(
+            {
+                r["layout"] for r in report["scenarios"]  # type: ignore[index]
+                if not r["conflicted"] and r["all_entries_present"]
+            }
+            - {
+                r["layout"] for r in report["scenarios"]  # type: ignore[index]
+                if r["conflicted"] or not r["all_entries_present"]
+            }
+        )
+    elif args.layout:
         modes = MODES if args.mode == "both" else (args.mode,)
         report = {
             "branches": args.branches,
