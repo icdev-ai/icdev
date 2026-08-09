@@ -511,6 +511,70 @@ def test_missing_source_table_is_skipped_not_fatal(tmp_path, monkeypatch):
     assert fetch_events() == []
 
 
+def test_a_failed_source_query_rolls_back_before_the_next_one(event_db, monkeypatch):
+    """One missing table must not blind the sources read after it.
+
+    PostgreSQL aborts the whole transaction on a failed statement, so without a
+    rollback the FIRST failure makes every LATER source raise "current
+    transaction is aborted" — one gap silently reported as five. This proves
+    the rollback happens between sources rather than relying on SQLite's more
+    forgiving behaviour to hide it.
+    """
+    _insert_hook_event(tool_name="Bash", payload={"tool_input": {"command": "ls"}})
+
+    # hook_events is read first; agent_executions (the 2nd) is the one that
+    # "does not exist", so the three sources AFTER it prove the recovery.
+    failing_query = 2
+    calls = {"execute": 0, "rollback": 0}
+
+    class _FailingSourceConnection:
+        """Wraps a real connection; fails one query, records rollbacks."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def cursor(self):
+            outer = self
+
+            class _Cursor:
+                def __init__(self):
+                    self._cur = outer._inner.cursor()
+
+                def execute(self, sql, params=()):
+                    calls["execute"] += 1
+                    if calls["execute"] == failing_query:
+                        raise RuntimeError('relation "agent_executions" does not exist')
+                    return self._cur.execute(sql, params)
+
+                def fetchall(self):
+                    return self._cur.fetchall()
+
+            return _Cursor()
+
+        def rollback(self):
+            calls["rollback"] += 1
+
+        def close(self):
+            self._inner.close()
+
+    from tools.db import storage
+
+    real = storage.get_connection
+
+    def _wrapped(*a, **kw):
+        return _FailingSourceConnection(real(*a, **kw))
+
+    monkeypatch.setattr(storage, "get_connection", _wrapped)
+
+    events = fetch_events()
+
+    assert calls["rollback"] == 1, "a failed source query must roll back"
+    assert calls["execute"] == len(SOURCES), "every later source must still be tried"
+    assert [e.command for e in events] == ["ls"], (
+        "the sources read after the failure must still return their rows"
+    )
+
+
 def test_session_filter_scopes_the_read(event_db):
     _insert_hook_event(session_id="sess-a", tool_name="Bash",
                        payload={"tool_input": {"command": "ls"}})

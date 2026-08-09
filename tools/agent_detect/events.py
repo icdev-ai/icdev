@@ -780,6 +780,15 @@ def iter_events(
                     "agent_detect: skipping source %s (%s: %s)",
                     source, type(exc).__name__, exc,
                 )
+                # PostgreSQL aborts the whole transaction on any failed
+                # statement, so without this rollback the FIRST missing table
+                # would make every LATER source raise "current transaction is
+                # aborted" and be skipped too — one gap silently reported as
+                # five. Harmless no-op on SQLite.
+                try:
+                    conn.rollback()
+                except Exception:  # noqa: BLE001 — nothing to recover if this fails
+                    pass
                 continue
 
             for row in rows:
