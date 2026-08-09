@@ -19,9 +19,17 @@ max_instances: 2
 # Agent mode: runs icdev.tools.llm.agent_loop instead of a fixed step list.
 # steps is required by schema but ignored in agent mode.
 mode: agent
+# run_test_tool, NOT run_tool: this role's whole job is executing the
+# icdev_tools commands below, but run_tool requires trust_tier green — which
+# would also unlock write_file for a role that must never write outside
+# .tmp/ace/qa/. run_test_tool is the narrow seam yellow may call: same
+# icdev_tools allowlist, restricted to tools/testing modules, with mutating
+# flags (--apply, --fix, …) refused so selector repair still goes through the
+# HITL-gated patch_file below. Enforced by tool_trust_policy.MIN_TRUST_TIER and
+# validated against trust_tier at role load.
 agent_tools:
   - read_file
-  - run_tool
+  - run_test_tool
   - search_files
   - grep_files
   - post_result

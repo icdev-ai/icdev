@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,6 +93,78 @@ _BLOCKED_RE = re.compile(
 
 _TIMEOUT_SECONDS = 120
 
+# ---------------------------------------------------------------------------
+# Execution profiles
+# ---------------------------------------------------------------------------
+#
+# "full" is the historical behaviour behind the `run_tool` agent tool: any
+# command in the role's icdev_tools allowlist, green tier only.
+#
+# "test" is the narrow verification seam behind `run_test_tool`, which a
+# yellow-tier role may call. It is not merely a lower trust bar — it is a
+# strictly smaller command surface: on top of the role allowlist, the command
+# must name a module under tools/testing/ AND carry no flag that asks a tool to
+# change something. A role cannot widen it by adding entries to its own
+# icdev_tools, because the shape check runs against the command itself.
+#
+# This is what makes qa_agent workable: its entire icdev_tools list is
+# `python tools/testing/…` verification commands, so the narrow profile covers
+# every one of them without handing the role write_file as well.
+
+_TEST_EXEC_PREFIXES: tuple[str, ...] = (
+    "python tools/testing/",
+    "python -m tools.testing.",
+    "python icdev/tools/testing/",
+    "python -m icdev.tools.testing.",
+)
+
+# Flags that ask a tool to mutate rather than report. `--fix`, `--apply` and
+# friends turn a reporting tool (coherence_checker, selector_healer) into a
+# writing one, which is exactly the capability the "test" profile withholds.
+# Destructive flags (--force, --delete, …) are separately hard-blocked by
+# _BLOCKED_RE for every profile.
+_MUTATING_FLAG_RE = re.compile(
+    r"""
+    --(fix|write|apply|heal|repair|patch|promote|commit|push
+      |seed|migrate|install|remediate|reset|set-status|move|approve)\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+class ExecutionProfile:
+    """A named bound on what ``ToolRunner.run`` will execute.
+
+    Attributes:
+        name:            Profile identifier used by callers.
+        min_trust_tier:  Lowest tier permitted to execute under this profile.
+        prefixes:        Command prefixes accepted (in addition to the role
+                         allowlist).
+        extra_blocked:   Optional pattern refused on top of ``_BLOCKED_RE``.
+    """
+
+    __slots__ = ("name", "min_trust_tier", "prefixes", "extra_blocked")
+
+    def __init__(
+        self,
+        name: str,
+        min_trust_tier: str,
+        prefixes: tuple[str, ...],
+        extra_blocked: "re.Pattern[str] | None" = None,
+    ) -> None:
+        self.name = name
+        self.min_trust_tier = min_trust_tier
+        self.prefixes = prefixes
+        self.extra_blocked = extra_blocked
+
+
+PROFILES: dict[str, ExecutionProfile] = {
+    "full": ExecutionProfile("full", "green", _ALLOWED_PREFIXES, None),
+    "test": ExecutionProfile("test", "yellow", _TEST_EXEC_PREFIXES, _MUTATING_FLAG_RE),
+}
+
+DEFAULT_PROFILE = "full"
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -107,6 +181,10 @@ class DestructivePatternError(PermissionError):
 
 class InvalidPrefixError(PermissionError):
     """Command does not start with an approved ICDEV tool prefix."""
+
+
+class ProfileViolationError(PermissionError):
+    """Command is outside the execution profile it was submitted under."""
 
 
 class ToolRunnerError(RuntimeError):
@@ -145,6 +223,7 @@ class ToolRunner:
         coworker_id: str,
         instance_id: str,
         trust_tier: str,
+        profile: str = DEFAULT_PROFILE,
     ) -> dict[str, Any]:
         """Execute *command* with all guard checks applied.
 
@@ -152,7 +231,12 @@ class ToolRunner:
             command:     The exact command string (must be in allowlist).
             coworker_id: Audit identity for the requesting co-worker.
             instance_id: ACE instance ID for audit trail.
-            trust_tier:  Co-worker trust band.  Non-green tiers trigger HITL.
+            trust_tier:  Co-worker trust band.  Tiers below the profile's
+                         minimum trigger HITL.
+            profile:     Execution profile name — ``"full"`` (any allowlisted
+                         command, green only) or ``"test"`` (tools/testing
+                         verification commands, yellow and above). See
+                         :data:`PROFILES`.
 
         Returns:
             Dict with keys: command, returncode, stdout, stderr, artifact_id, success.
@@ -161,10 +245,18 @@ class ToolRunner:
             NotAllowlistedError:    Command not in role's icdev_tools.
             DestructivePatternError: Command contains blocked pattern.
             InvalidPrefixError:     Command doesn't start with approved prefix.
-            TrustKernelDeniedError: trust_tier is not 'green' (HITL required).
+            ProfileViolationError:  Command is outside the requested profile.
+            TrustKernelDeniedError: trust_tier below the profile minimum (HITL required).
             ToolRunnerError:        Subprocess timed out.
         """
         cmd = (command or "").strip()
+        prof = PROFILES.get(profile)
+        if prof is None:
+            # An unknown profile must not fall through to the widest one.
+            raise ProfileViolationError(
+                f"Unknown execution profile {profile!r} "
+                f"(known: {', '.join(sorted(PROFILES))})"
+            )
 
         # 1. Allowlist check — must be declared in role YAML icdev_tools
         if cmd not in self._allowlist:
@@ -172,36 +264,57 @@ class ToolRunner:
                 f"Command not in role's icdev_tools allowlist: {cmd!r}"
             )
 
-        # 2. Hard-block destructive patterns (non-negotiable)
+        # 2. Hard-block destructive patterns (non-negotiable, every profile)
         if _BLOCKED_RE.search(cmd):
             raise DestructivePatternError(
                 f"Destructive pattern blocked in command: {cmd!r}"
             )
 
-        # 3. Enforce allowed prefix (belt-and-suspenders beyond allowlist)
-        if not any(cmd.startswith(p) for p in _ALLOWED_PREFIXES):
+        # 3. Enforce allowed prefix (belt-and-suspenders beyond allowlist).
+        #    The profile's prefix set is the narrower of the two for "test".
+        if not any(cmd.startswith(p) for p in prof.prefixes):
             raise InvalidPrefixError(
-                f"Command must start with an approved ICDEV prefix "
-                f"({', '.join(_ALLOWED_PREFIXES)}): {cmd!r}"
+                f"Command must start with an approved ICDEV prefix for the "
+                f"{prof.name!r} profile ({', '.join(prof.prefixes)}): {cmd!r}"
             )
 
-        # 4. Trust tier gate — only green executes autonomously
-        if trust_tier != "green":
+        # 4. Profile-specific refusals — e.g. the "test" profile withholds the
+        #    mutating flags that turn a reporting tool into a writing one.
+        if prof.extra_blocked is not None and prof.extra_blocked.search(cmd):
+            raise ProfileViolationError(
+                f"Command carries a mutating flag, which the {prof.name!r} "
+                f"execution profile does not permit: {cmd!r}"
+            )
+
+        # 5. Trust tier gate — the profile sets the bar. "full" stays green-only.
+        from icdev.tools.ace.tool_trust_policy import tier_rank
+
+        if tier_rank(trust_tier) < tier_rank(prof.min_trust_tier):
             self._audit_hitl(cmd, coworker_id, instance_id)
             # Import here to avoid circular — step_executor defines this exception
             from icdev.tools.ace.step_executor import TrustKernelDeniedError
 
             raise TrustKernelDeniedError(
-                f"RunTool requires green trust tier; co-worker trust_tier='{trust_tier}' "
+                f"RunTool profile {prof.name!r} requires {prof.min_trust_tier} trust tier "
+                f"or higher; co-worker trust_tier='{trust_tier}' "
                 f"— HITL approval requested for: {cmd!r}"
             )
 
-        # 5. Execute
+        # 6. Execute.
+        #
+        # No shell: the guards above reason about `cmd` as a string, and a shell
+        # would then re-interpret it — metacharacters, `$VAR` expansion on POSIX
+        # but not on cmd.exe — so what runs would not be what was checked.
+        # argv also makes the interpreter explicit: bare `python` resolves to
+        # the Windows Store stub (or nothing) on a machine where the venv is
+        # active but not on PATH, while sys.executable is always this process's
+        # interpreter, which is the one with ICDEV importable.
+        argv = self._build_argv(cmd)
         env = {**os.environ, "PYTHONPATH": str(self._root)}
         try:
             proc = subprocess.run(
-                cmd,
-                shell=True,  # nosec B602 — command is allowlisted before reaching here
+                argv,
+                shell=False,  # nosec B603 — allowlisted, prefix-checked, argv form
                 capture_output=True,
                 text=True,
                 cwd=str(self._root),
@@ -223,6 +336,29 @@ class ToolRunner:
             "artifact_id": artifact_id,
             "success": proc.returncode == 0,
         }
+
+    # ------------------------------------------------------------------
+    # Execution helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_argv(cmd: str) -> list[str]:
+        """Split an allowlisted command into argv, pinning the interpreter.
+
+        Every allowed prefix starts with the literal token ``python``; it is
+        replaced with :data:`sys.executable` so the subprocess runs under the
+        same interpreter (and therefore the same venv) as its caller.
+
+        ``shlex.split`` is used in POSIX mode on both platforms: the allowlist
+        only admits ``python tools/…`` / ``python -m …`` forms, which are
+        forward-slashed, so there are no Windows backslash escapes to mangle.
+        """
+        argv = shlex.split(cmd)
+        if not argv:
+            raise ToolRunnerError(f"Command produced no arguments: {cmd!r}")
+        if argv[0] == "python":
+            argv[0] = sys.executable
+        return argv
 
     # ------------------------------------------------------------------
     # Audit helpers

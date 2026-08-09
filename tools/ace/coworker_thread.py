@@ -646,20 +646,24 @@ class CoWorkerThread(threading.Thread):
 
         # ----------------------------------------------------------------
         # Trust-tier pre-tool hook
-        # Block write/exec tools before the handler is invoked when the
-        # co-worker is not green-tier, giving the LLM a clear permission
+        # Block a tool before its handler is invoked when the co-worker's tier
+        # is below the tool's minimum, giving the LLM a clear permission
         # message rather than a TrustKernelDeniedError traceback.
+        #
+        # The tier→tool table lives in tool_trust_policy, which role_loader
+        # also validates against at load. Same table both sides: a role the
+        # loader accepted cannot be denied here.
         # ----------------------------------------------------------------
-        _WRITE_EXEC_TOOLS: frozenset[str] = frozenset({"write_file", "run_tool"})
+        from icdev.tools.ace.tool_trust_policy import (
+            denial_message as _denial_message,
+            is_permitted as _tool_is_permitted,
+        )
+
         _trust_tier = self.spec.trust_tier
 
         def _trust_pre_hook(name: str, inp: dict) -> "str | None":
-            if name in _WRITE_EXEC_TOOLS and _trust_tier != "green":
-                return (
-                    f"Permission denied: '{name}' requires green trust tier; "
-                    f"this co-worker is trust_tier={_trust_tier!r}. "
-                    "Use a read-only tool or request promotion to green tier."
-                )
+            if not _tool_is_permitted(name, _trust_tier):
+                return _denial_message(name, _trust_tier)
             return None
 
         # ----------------------------------------------------------------
