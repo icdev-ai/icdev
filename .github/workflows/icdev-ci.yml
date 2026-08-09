@@ -194,6 +194,7 @@ jobs:
             tests/test_idp_catalog_scorecards.py \
             tests/test_migration_version_uniqueness.py \
             tests/test_script_bootstrap_import_order.py \
+            tests/test_documented_clis_have_a_bootstrap.py \
             tests/test_sbom_coverage_resolution.py \
             tests/test_icdev_comply_sbom_step.py \
             tests/test_sbom_revision_2026.py \

@@ -214,7 +214,7 @@ def test_the_prompt_goes_over_stdin_not_argv(monkeypatch, tmp_path):
 
     path = claude_mod.ADAPTER._write_stdin(session)
     try:
-        assert Path(path).read_text(encoding="utf-8", newline="") == huge
+        assert open(Path(path), encoding="utf-8", newline="").read() == huge
     finally:
         Path(path).unlink()
 

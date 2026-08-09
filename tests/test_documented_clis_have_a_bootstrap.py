@@ -72,7 +72,7 @@ _FIRST_PARTY = re.compile(r"^\s*(?:from|import)\s+(?:tools|icdev)\b")
 
 
 def _first_party_imports_above_bootstrap(path: Path) -> list[str]:
-    lines = path.read_text(encoding="utf-8", newline="").split("\n")
+    lines = open(path, encoding="utf-8", newline="").read().split("\n")
     boot = next((i for i, ln in enumerate(lines) if "sys.path.insert" in ln), None)
     if boot is None:
         return []
@@ -95,7 +95,7 @@ def test_no_first_party_import_above_the_bootstrap(base, rel):
 @pytest.mark.parametrize("rel", GUARDED)
 def test_the_guarded_modules_still_have_a_bootstrap_to_be_above(rel):
     """If the bootstrap is deleted, the check above silently passes forever."""
-    src = (REPO / rel).read_text(encoding="utf-8", newline="")
+    src = open((REPO / rel), encoding="utf-8", newline="").read()
     assert "sys.path.insert" in src, (
         f"{rel} lost its sys.path bootstrap — the import-order test above becomes "
         "vacuous, and the CLI breaks again for a different reason"
@@ -243,6 +243,24 @@ _PATH_FORM = re.compile(
 _MIN_DOCUMENTED_COMMANDS = 400
 
 
+def _tracked_docs() -> set:
+    """Repo-relative posix paths of git-tracked doc files (see _tracked_paths)."""
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files", *DOC_ROOTS],
+            cwd=str(REPO), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if proc.returncode != 0:
+        return set()
+    return {
+        ln.strip() for ln in (proc.stdout or "").splitlines()
+        if ln.strip() and Path(ln.strip()).suffix.lower() in DOC_SUFFIXES
+    }
+
+
 def documented_path_form_commands() -> dict[str, list[str]]:
     """Repo-relative ``.py`` path -> docs that invoke it as ``python <path>``."""
     hits: dict[str, set[str]] = {}
@@ -253,7 +271,16 @@ def documented_path_form_commands() -> dict[str, list[str]]:
             files.append(p)
         elif p.is_dir():
             files += [q for q in p.rglob("*") if q.is_file() and q.suffix.lower() in DOC_SUFFIXES]
+    # TRACKED DOCS ONLY, for the same reason the python scan is tracked-only:
+    # an UNTRACKED local note that happens to contain `python tools/foo.py` would
+    # otherwise enrol foo.py in the gate on one machine and not on any other. That
+    # is not hypothetical — the shared checkout carried a few untracked analysis
+    # docs and scanned 886 documented commands where a clean tree scans 783, which
+    # is the entire reason this gate reported 50 violations locally and 0 in CI.
+    tracked_docs = _tracked_docs()
     for doc in files:
+        if tracked_docs and doc.relative_to(REPO).as_posix() not in tracked_docs:
+            continue
         try:
             text = doc.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -263,13 +290,44 @@ def documented_path_form_commands() -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in hits.items()}
 
 
+def _tracked_paths() -> set:
+    """Repo-relative posix paths git actually tracks.
+
+    THE GATE MUST SCAN TRACKED FILES, NOT THE FILESYSTEM. ``tools/trading/`` is
+    gitignored (.gitignore:243) and exists only on a developer's disk, so walking
+    the tree found 51 violations locally and 0 in CI. That is the worst way round:
+    RED for every developer, GREEN on the merge gate. A check that cries wolf
+    locally is one people learn to skip, and this one cost a full diagnosis cycle
+    on 2026-08-09 before the cause was spotted. The identical false positive was
+    fixed once already in the CRLF gate (#1421) — same mistake, same fix.
+
+    An empty result (git missing or failing) falls back to walking the tree: a
+    missing git is a reason to check more loosely, never a reason to stop.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files", *SCANNED_TREES],
+            cwd=str(REPO), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if proc.returncode != 0:
+        return set()
+    return {ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip().endswith(".py")}
+
+
 def _iter_python_files():
+    tracked = _tracked_paths()
     for tree_name in SCANNED_TREES:
         root = REPO / tree_name
         if not root.is_dir():
             continue
         for path in sorted(root.rglob("*.py")):
-            yield path.relative_to(REPO).as_posix(), path
+            rel = path.relative_to(REPO).as_posix()
+            if tracked and rel not in tracked:
+                continue
+            yield rel, path
 
 
 def collect_bootstrapless_documented_clis() -> list[str]:
