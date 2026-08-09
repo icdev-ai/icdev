@@ -109,27 +109,55 @@ def goals_enabled() -> bool:
 
     Public so that other goal surfaces — the chat status payload (hgx-goal-03),
     say — honour the same kill-switch without each re-spelling the env var.
+
+    Resolution is ``ICDEV_SAG_GOALS`` → ``args/agent_runtime.yaml`` → on. The
+    env var is still read first and still wins (hgx-cfg-01); the config file
+    only supplies the default it falls back to.
     """
-    return _env_flag(ENV_DISABLE)
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().subsystem_enabled(
+            "standing_goals", env=ENV_DISABLE, default=True
+        )
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("goal_context: config layer unavailable: %s", exc)
+        return _env_flag(ENV_DISABLE)
 
 
-def goal_limit(default: int = DEFAULT_LIMIT) -> int:
+def goal_limit(default: int | None = None) -> int:
     """How many goals to inject: ``ICDEV_SAG_GOAL_LIMIT`` clamped to sane bounds.
 
-    An unparseable or negative value falls back to ``default`` rather than
+    An unparseable or negative value falls back to the next layer rather than
     disabling injection — a typo in an env var should not silently strip the
     agent's objectives. Set ``ICDEV_SAG_GOALS=0`` to turn the block off.
+
+    Resolution is ``ICDEV_SAG_GOAL_LIMIT`` → ``args/agent_runtime.yaml`` →
+    ``default`` (``DEFAULT_LIMIT`` when the caller passes none).
     """
+    fallback = DEFAULT_LIMIT if default is None else default
+    try:
+        from tools.agent_runtime.config import load_config
+
+        value = load_config().integer(
+            "subsystems.standing_goals.limit", env=ENV_LIMIT, default=fallback
+        )
+        if value is None or value <= 0:
+            return fallback
+        return min(value, MAX_LIMIT)
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("goal_context: config layer unavailable: %s", exc)
+
     raw = os.environ.get(ENV_LIMIT)
     if raw is None or not str(raw).strip():
-        return default
+        return fallback
     try:
         value = int(str(raw).strip())
     except (TypeError, ValueError):
-        logger.debug("goal_context: bad %s=%r, using %d", ENV_LIMIT, raw, default)
-        return default
+        logger.debug("goal_context: bad %s=%r, using %d", ENV_LIMIT, raw, fallback)
+        return fallback
     if value <= 0:
-        return default
+        return fallback
     return min(value, MAX_LIMIT)
 
 

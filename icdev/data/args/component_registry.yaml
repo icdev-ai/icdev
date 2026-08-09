@@ -2068,6 +2068,33 @@ components:
     nav_link: true
     seed_queries: context/iqe/queries/second_brain/
 
+# hgx-cfg-01: the standalone agent runtime (SAG) — `icdev chat`. It is a CLI
+# subsystem, not a dashboard page: no module/blueprint_attr, so the dashboard's
+# core-extension loop skips it (it registers a blueprint only when
+# blueprint_attr is set) and nothing is mounted on a route. It is declared here
+# because the registry is what makes a component visible to `icdev enable` /
+# `disable` / `status` / `list`, the `icdev setup` TUI, the generated .env and
+# the coherence checks that read the registry — before this entry the runtime
+# was reachable from none of them.
+#
+# ICDEV_SAG_ENABLED is the SAME flag as `enabled:` in args/agent_runtime.yaml
+# (see tools/agent_runtime/config.py::AgentRuntimeConfig.enabled), so the CLI
+# toggle and the config file cannot disagree: the env var this writes is read
+# first by the config layer. `icdev chat` refuses to start when it is off.
+- key: sag
+  kind: core_extension
+  cli_name: sag
+  display_name: Standalone Agent Runtime
+  description: Persistent interactive agent process (`icdev chat`) — the SAG runtime,
+    its slash-command registry, toolset bundles, approval gate and standing goals.
+    Configured by args/agent_runtime.yaml; env vars override it.
+  env_flag: ICDEV_SAG_ENABLED
+  default_enabled: true
+  url_prefix: ''
+  min_il: IL4
+  default_roles:
+  - developer
+
 # ═══════════════════════════════════════════════════════════════════════════
 # IQE / AI-brief path → canvas map (cvx-nav-01)
 # ═══════════════════════════════════════════════════════════════════════════

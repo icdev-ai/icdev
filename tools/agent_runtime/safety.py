@@ -152,7 +152,7 @@ def _llm_risk(
     try:
         from tools.llm.provider import LLMRequest
 
-        function = os.environ.get(_RISK_FN_ENV, "summarization")
+        function = resolve_risk_function()
         req = LLMRequest(
             system_prompt=(
                 "You are a security gate. Classify the RISK of executing the "
@@ -227,9 +227,38 @@ def _audit(
 # Gate factory
 # ---------------------------------------------------------------------------
 def resolve_mode(mode: Optional[str] = None) -> str:
-    """Resolve the approval mode from arg → env → default(manual)."""
-    m = (mode or os.environ.get(_MODE_ENV) or MODE_MANUAL).strip().lower()
+    """Resolve the approval mode: arg → env → ``args/agent_runtime.yaml`` → manual.
+
+    The env var is still read before the config file and still wins
+    (hgx-cfg-01). An unrecognised value at any layer resolves to ``manual``,
+    never to ``off`` — a typo must not disable the approval gate.
+    """
+    if mode:
+        m = mode.strip().lower()
+        return m if m in _VALID_MODES else MODE_MANUAL
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().approval_mode
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("safety: config layer unavailable: %s", exc)
+    m = (os.environ.get(_MODE_ENV) or MODE_MANUAL).strip().lower()
     return m if m in _VALID_MODES else MODE_MANUAL
+
+
+def resolve_risk_function() -> str:
+    """Routing function used for LLM risk judgment in ``smart`` mode.
+
+    ``ICDEV_SAG_RISK_FUNCTION`` → ``args/agent_runtime.yaml`` → ``summarization``.
+    A routing *function*, never a model id — the router picks the provider.
+    """
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().risk_function
+    except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+        logger.debug("safety: config layer unavailable: %s", exc)
+        return os.environ.get(_RISK_FN_ENV, "summarization")
 
 
 def build_safety_gate(

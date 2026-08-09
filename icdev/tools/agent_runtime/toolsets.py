@@ -46,7 +46,18 @@ class ToolsetError(ValueError):
 
 
 def _bundle_path() -> Path:
+    """``ICDEV_AGENT_TOOLSETS`` → ``args/agent_runtime.yaml`` → ``args/agent_toolsets.yaml``.
+
+    The env var is read first and still wins (hgx-cfg-01).
+    """
     override = os.environ.get("ICDEV_AGENT_TOOLSETS")
+    if not override:
+        try:
+            from tools.agent_runtime.config import load_config
+
+            override = load_config().toolset_bundle_path
+        except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
+            logger.debug("toolsets: config layer unavailable: %s", exc)
     return Path(override) if override else _BUNDLE_PATH
 
 
