@@ -57,6 +57,18 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+import sys
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[2] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+# Named _IMPORT_ROOT, not _REPO_ROOT: this module already binds that name below
+# to a sentinel walk, which answers a different question.
+_IMPORT_ROOT = Path(__file__).resolve().parents[2]
+if str(_IMPORT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_IMPORT_ROOT))
+
 from tools.llm.context_budget import (
     available_input_tokens,
     estimate_tokens,
