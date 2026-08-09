@@ -52,6 +52,8 @@ Subcommands:
                            --source runtime_invocations for invocation rows.
   runtime top [--surface]  Rank MCP tools / agents / personas / roles by calls,
                            with error counts and avg/max duration.
+  runtime trace <corr-id>  Show every span of one agent run, joined by the run's
+                           correlation id (AgentLoopResult.trace_id).
   demo seed --tenant <slug> [--canvases <c1,c2,...>]
                            Provision a demo tenant with synthetic data and
                            ICDEV_DEMO_MODE enabled (read-only banner).

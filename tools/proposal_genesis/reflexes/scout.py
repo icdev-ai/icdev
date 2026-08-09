@@ -218,7 +218,7 @@ def _store_brief(brief_md: str) -> str:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     brief_path = REPORTS_DIR / f"intel_brief_{timestamp}.md"
-    brief_path.write_text(brief_md, encoding="utf-8")
+    brief_path.write_text(brief_md, encoding="utf-8", newline="")
 
     # Audit
     conn = get_connection()

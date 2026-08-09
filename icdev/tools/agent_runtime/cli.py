@@ -94,34 +94,61 @@ def chat_main(argv: list[str] | None = None) -> int:
             return 2
 
     if args.query:
-        if args.stream and not args.json:
-            def _emit(delta: str) -> None:
-                sys.stdout.write(delta)
-                sys.stdout.flush()
-
-            text = runtime.stream_turn(args.query, on_delta=_emit)
-            if not text.endswith("\n"):
-                print()
-            return 0
-        result = runtime.run_turn(args.query)
-        text = getattr(result, "final_content", "") or ""
-        if args.json:
-            print(
-                json.dumps(
-                    {
-                        "context_id": runtime.session.context_id,
-                        "response": text,
-                        "usage": runtime.session.usage(),
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            print(text or "(no response)")
-        return 0
+        return _single_shot(runtime, args)
 
     runtime.loop(banner=not args.no_banner, stream=args.stream)
     return 0
+
+
+#: POSIX convention for "terminated by SIGINT" (128 + 2), used by the
+#: single-shot path so a script can tell a stop from a normal completion.
+_EXIT_INTERRUPTED = 130
+
+
+def _single_shot(runtime: Any, args: argparse.Namespace) -> int:
+    """Run one turn for ``icdev chat -q``, honouring Ctrl-C.
+
+    There is no prompt to return to here, so an interrupt ends the process —
+    but it ends it *cleanly*: the turn stops at its next boundary, whatever the
+    agent produced so far is printed and persisted, and the exit code is
+    :data:`_EXIT_INTERRUPTED` instead of a traceback.
+    """
+    from tools.agent_runtime.runtime import install_interrupt_handler
+
+    interrupted = False
+    with install_interrupt_handler(runtime, lambda msg: print(msg, file=sys.stderr)):
+        try:
+            if args.stream and not args.json:
+                def _emit(delta: str) -> None:
+                    sys.stdout.write(delta)
+                    sys.stdout.flush()
+
+                text = runtime.stream_turn(args.query, on_delta=_emit)
+                if not text.endswith("\n"):
+                    print()
+                return _EXIT_INTERRUPTED if runtime.stopping else 0
+            result = runtime.run_turn(args.query)
+        except KeyboardInterrupt:  # second Ctrl-C — escalated past the token
+            print("\nInterrupted.", file=sys.stderr)
+            return _EXIT_INTERRUPTED
+        interrupted = getattr(result, "truncation_reason", "") == "stop_event"
+
+    text = getattr(result, "final_content", "") or ""
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "context_id": runtime.session.context_id,
+                    "response": text,
+                    "usage": runtime.session.usage(),
+                    "stopped": interrupted,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(text or ("(stopped)" if interrupted else "(no response)"))
+    return _EXIT_INTERRUPTED if interrupted else 0
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +208,7 @@ def _sessions_export(args: argparse.Namespace) -> int:
     if args.output:
         from pathlib import Path
 
-        Path(args.output).write_text(payload, encoding="utf-8")
+        Path(args.output).write_text(payload, encoding="utf-8", newline="")
         print(f"Exported {len(messages)} message(s) to {args.output}")
     else:
         sys.stdout.write(payload)

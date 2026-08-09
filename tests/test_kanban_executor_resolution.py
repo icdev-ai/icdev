@@ -17,10 +17,16 @@ Two defects that together quarantined 25 tasks on 2026-08-01, each recorded as
 The combination is what did the damage: a worktree-spawned scheduler with a
 thinner PATH could not resolve the CLI, the executor chain fell through gitlab
 and ollama, and every task it touched was quarantined.
+
+Since hgx-exec-03 the resolution rules live in
+``tools/agents/adapters/claude_cli.py`` beside the shellout that uses them, and
+``kanban._resolve_claude_cli`` delegates. These tests still drive the kanban
+entry point, so they cover the delegation as well as the rules.
 """
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -28,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.agents.adapters import claude_cli as adapter_mod  # noqa: E402
 from tools.genesis.reflexes import kanban as k  # noqa: E402
 
 
@@ -36,14 +43,22 @@ from tools.genesis.reflexes import kanban as k  # noqa: E402
 # --------------------------------------------------------------------------
 
 def test_which_hit_is_used_directly(monkeypatch):
-    monkeypatch.setattr(k.shutil, "which", lambda _n: r"C:\somewhere\claude.EXE")
+    monkeypatch.setattr(shutil, "which", lambda _n: r"C:\somewhere\claude.EXE")
     assert k._resolve_claude_cli() == r"C:\somewhere\claude.EXE"
+
+
+def test_the_runner_delegates_to_the_adapter(monkeypatch):
+    """One resolver, not one per call site — the whole point of hgx-exec-03."""
+    monkeypatch.setattr(adapter_mod, "resolve_claude_cli",
+                        lambda: "/sentinel/claude")
+    assert k._resolve_claude_cli() == "/sentinel/claude"
+    assert adapter_mod.ADAPTER.available() is True
 
 
 def test_fallback_finds_a_windows_executable_when_path_misses(monkeypatch, tmp_path):
     """The regression: PATH misses, and the binary has an extension."""
-    monkeypatch.setattr(k.shutil, "which", lambda _n: None)
-    monkeypatch.setattr(k.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(shutil, "which", lambda _n: None)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     monkeypatch.setattr(os, "name", "nt")
     monkeypatch.setenv("PATHEXT", ".EXE;.CMD;.BAT")
 
@@ -58,8 +73,8 @@ def test_fallback_finds_a_windows_executable_when_path_misses(monkeypatch, tmp_p
 
 def test_fallback_still_finds_an_extensionless_binary(monkeypatch, tmp_path):
     """POSIX installs have no suffix — that path must keep working."""
-    monkeypatch.setattr(k.shutil, "which", lambda _n: None)
-    monkeypatch.setattr(k.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(shutil, "which", lambda _n: None)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     binary = tmp_path / ".local" / "bin" / "claude"
     binary.parent.mkdir(parents=True)
     binary.write_text("stub", encoding="utf-8")
@@ -67,16 +82,17 @@ def test_fallback_still_finds_an_extensionless_binary(monkeypatch, tmp_path):
 
 
 def test_no_binary_anywhere_returns_none(monkeypatch, tmp_path):
-    monkeypatch.setattr(k.shutil, "which", lambda _n: None)
-    monkeypatch.setattr(k.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(shutil, "which", lambda _n: None)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     assert k._resolve_claude_cli() is None
     assert k._claude_code_available() is False
+    assert adapter_mod.ADAPTER.available() is False
 
 
 def test_a_cmd_shim_resolves(monkeypatch, tmp_path):
     """npm-style installs ship a .cmd shim rather than an .exe."""
-    monkeypatch.setattr(k.shutil, "which", lambda _n: None)
-    monkeypatch.setattr(k.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(shutil, "which", lambda _n: None)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     monkeypatch.setattr(os, "name", "nt")
     monkeypatch.setenv("PATHEXT", ".EXE;.CMD;.BAT")
     shim = tmp_path / ".local" / "bin" / "claude.CMD"

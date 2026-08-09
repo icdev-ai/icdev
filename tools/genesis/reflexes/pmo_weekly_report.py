@@ -32,7 +32,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     report_path = REPORTS_DIR / f"pmo_weekly_{report_date}.html"
     try:
-        report_path.write_text(html, encoding="utf-8")
+        report_path.write_text(html, encoding="utf-8", newline="")
     except Exception:
         pass
 

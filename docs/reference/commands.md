@@ -136,7 +136,13 @@ icdev audit tail --source runtime_invocations --follow --json
 icdev runtime top                         # Top 20 names by call count, all surfaces
 icdev runtime top --limit 50
 icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
+icdev runtime top --surface agent         # SAG tool calls, recorded from dispatch.py
 icdev runtime top --json                  # Machine-readable rollup
+
+# One RUN rather than all runs. The correlation id is AgentLoopResult.trace_id;
+# both the agent.turn spans and the gen_ai.invoke spans beneath them carry it.
+icdev runtime trace <correlation-id>      # Every span of one agent run, oldest first
+icdev runtime trace <correlation-id> --json
 
 # Core enterprise profiles
 icdev profile list                 # List available profiles
@@ -408,6 +414,73 @@ try:
 finally:
     driver.quit()
 ```
+
+---
+
+## SAG Project Context — Instruction Loading at Session Start (hgx-sess-01)
+
+Loads `CLAUDE.md`, `AGENTS.md`, `memory/MEMORY.md` and the
+`session_context_builder` project-state summary into the agent's system prompt,
+budgeted against `context_budget.floor_window_for_function` (the minimum window
+across the routed chain) rather than a constant.
+
+```bash
+# Preview the block the runtime will inject
+python tools/agent_runtime/project_context.py
+
+# Budget accounting only — which sections were truncated, and by how much
+python tools/agent_runtime/project_context.py --json
+
+# Budget against a different routing function; skip the DB-backed state summary
+python tools/agent_runtime/project_context.py --function question_answering \
+    --no-project-state --json
+```
+
+A large-window model receives the documents intact; a 32k local chain receives a
+line-boundary-truncated block carrying an explicit
+`[... N of M lines omitted to fit the context budget — read <path> ...]` marker,
+so a partial rule set never reads as complete. Toggles:
+`ICDEV_SAG_PROJECT_CONTEXT=0` disables the block entirely;
+`ICDEV_SAG_PROJECT_STATE=0` keeps the instruction files but skips the project
+state summary. The block is built once per session and rebuilt on `/new`.
+
+---
+
+## SAG Standing Goals — `/goal` and Prompt Injection (hgx-goal-02)
+
+`/goal` manages durable objectives from inside a session; the **active** ones are
+injected into the system prompt on the next turn, capped and budgeted.
+
+```bash
+# Preview the goal block the runtime will inject
+python tools/agent_runtime/goal_context.py --user default
+
+# Budget accounting only — shown vs withheld, tokens vs budget
+python tools/agent_runtime/goal_context.py --json
+
+# Budget against a different routing function, with an explicit count cap
+python tools/agent_runtime/goal_context.py --function question_answering \
+    --limit 3 --json
+```
+
+In-session commands (`icdev chat`, or any runtime wired to
+`tools/agent_runtime/commands.py::dispatch`):
+
+```text
+/goal create <title> [| detail] [--priority=N]   Create and start pursuing it
+/goal list [status|all]                          Numbered list (default: live)
+/goal status [N|id]                              What is injected, or one goal
+/goal pause|resume|complete|cancel <N|id>        Lifecycle moves
+/goal block <N|id> [reason]                      Mark blocked, recording why
+/goal clear [--yes]                              Cancel every live goal
+```
+
+Two caps apply and both are announced in the block itself: a count cap
+(`ICDEV_SAG_GOAL_LIMIT`, default 5) and a token cap (5% of
+`context_budget.available_input_tokens`). Under pressure the block shortens goal
+text before it drops goals, so every objective stays at least named. Every
+mutation invalidates the runtime's cached block, so a `/goal create` reaches the
+model on the very next turn. `ICDEV_SAG_GOALS=0` disables injection entirely.
 
 ---
 
@@ -1201,6 +1274,21 @@ python tools/studio/executors/mcp_executor.py --tool terraform_apply   --params 
 # Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
 # params failing the entry's input_schema, the handler raised, or gate MCP-WF-001
 # refused it (not allowlisted / awaiting approval / caller IL too low / missing role).
+
+# Agent executor — run an agent loop as a workflow step (`node_type: agent`, hgx-agent-01)
+python tools/studio/executors/agent_executor.py --prompt "Summarise tools/foo.py" --agent-tools worktree_read
+python tools/studio/executors/agent_executor.py --prompt "Add a docstring to tools/foo.py" \
+  --agent-tools worktree_build --work-dir /path/to/worktree \
+  --run-id "run-xxx" --step-id "build" --json
+# Bundles compose; `terminal` adds the allowlisted run_command.
+python tools/studio/executors/agent_executor.py --prompt "Fix the failing test" \
+  --agent-tools worktree_build,terminal --llm-function code_generation --effort high
+# --llm-function is a ROUTING KEY, never a model id. There is no --model flag.
+# --approval-mode enforce (default) | dry_run | off  — the ars-appr-01 reversibility gate.
+# Exit 0 = the loop ran, OR the step degraded (`degraded: true` — the routed provider
+# cannot serve native tool use; the runner records `skipped` and the run continues).
+# Exit 1 = unrunnable as authored: no prompt, no declared bundle (default-deny), an
+# unknown bundle, or the loop raised.
 ```
 
 ---

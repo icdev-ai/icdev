@@ -358,7 +358,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.update_baseline:
         payload = build_baseline_payload(report["results"])
-        BASELINE_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        BASELINE_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="")
         print(f"Baseline written: {BASELINE_PATH} "
               f"({sum(len(v) for v in payload['pages'].values())} grandfathered rules)")
         return 0

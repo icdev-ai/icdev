@@ -210,7 +210,7 @@ def generate_pipeline(
     # Write if requested and not dry-run
     if write and not dry_run:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(content, encoding="utf-8")
+        output_path.write_text(content, encoding="utf-8", newline="")
         result["written"] = True
 
     return result

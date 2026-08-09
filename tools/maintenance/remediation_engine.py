@@ -192,7 +192,7 @@ def _update_requirements_txt(file_path, package, from_ver, to_ver):
             updated = True
             break
     if updated:
-        Path(file_path).write_text(content, encoding="utf-8")
+        Path(file_path).write_text(content, encoding="utf-8", newline="")
     return updated
 
 
@@ -212,7 +212,7 @@ def _update_package_json(file_path, package, from_ver, to_ver):
             content[section][package] = f"{prefix}{to_ver}"
             updated = True
     if updated:
-        Path(file_path).write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8")
+        Path(file_path).write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8", newline="")
     return updated
 
 
@@ -227,7 +227,7 @@ def _update_pom_xml(file_path, package, from_ver, to_ver):
     )
     new_content = re.sub(pattern, rf"\g<1>{to_ver}\g<2>", content, flags=re.DOTALL)
     if new_content != content:
-        Path(file_path).write_text(new_content, encoding="utf-8")
+        Path(file_path).write_text(new_content, encoding="utf-8", newline="")
         return True
     return False
 
@@ -238,7 +238,7 @@ def _update_go_mod(file_path, module, from_ver, to_ver):
     pattern = rf"({re.escape(module)})\s+{re.escape(from_ver)}"
     new_content = re.sub(pattern, rf"\1 {to_ver}", content)
     if new_content != content:
-        Path(file_path).write_text(new_content, encoding="utf-8")
+        Path(file_path).write_text(new_content, encoding="utf-8", newline="")
         return True
     return False
 
@@ -258,7 +258,7 @@ def _update_cargo_toml(file_path, crate, from_ver, to_ver):
             updated = True
             break
     if updated:
-        Path(file_path).write_text(content, encoding="utf-8")
+        Path(file_path).write_text(content, encoding="utf-8", newline="")
     return updated
 
 
@@ -271,7 +271,7 @@ def _update_csproj(file_path, package, from_ver, to_ver):
     )
     new_content = re.sub(pattern, rf"\g<1>{to_ver}\g<2>", content)
     if new_content != content:
-        Path(file_path).write_text(new_content, encoding="utf-8")
+        Path(file_path).write_text(new_content, encoding="utf-8", newline="")
         return True
     return False
 

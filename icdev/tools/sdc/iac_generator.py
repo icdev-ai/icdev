@@ -453,11 +453,11 @@ def generate_iac(project_id: str) -> dict:
     validate_py = _ARTIFACTS_DIR / f"validate_{uid}.py"
     report_path = _ARTIFACTS_DIR / f"iac_report_{uid}.md"
 
-    main_tf.write_text(_TF_HEADER.format(ts=ts), encoding="utf-8")
-    vars_tf.write_text(_TF_VARIABLES, encoding="utf-8")
-    tfvars.write_text(_TFVARS_EXAMPLE, encoding="utf-8")
-    ansible_pb.write_text(_ANSIBLE_PLAYBOOK.format(ts=ts), encoding="utf-8")
-    validate_py.write_text(_VALIDATION_SCRIPT.format(ts=ts, uid=uid), encoding="utf-8")
+    main_tf.write_text(_TF_HEADER.format(ts=ts), encoding="utf-8", newline="")
+    vars_tf.write_text(_TF_VARIABLES, encoding="utf-8", newline="")
+    tfvars.write_text(_TFVARS_EXAMPLE, encoding="utf-8", newline="")
+    ansible_pb.write_text(_ANSIBLE_PLAYBOOK.format(ts=ts), encoding="utf-8", newline="")
+    validate_py.write_text(_VALIDATION_SCRIPT.format(ts=ts, uid=uid), encoding="utf-8", newline="")
 
     report_md = _IAC_REPORT.format(
         ts=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -470,7 +470,7 @@ def generate_iac(project_id: str) -> dict:
         report_path=report_path.relative_to(_ROOT).as_posix(),
         uid=uid,
     )
-    report_path.write_text(report_md, encoding="utf-8")
+    report_path.write_text(report_md, encoding="utf-8", newline="")
 
     return {
         "uid": uid,

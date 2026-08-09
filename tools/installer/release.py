@@ -199,7 +199,7 @@ def write_version(version: str, *, dry_run: bool = False) -> list:
             results.append({"file": rel, "ok": False, "reason": "pattern not found"})
             continue
         if not dry_run:
-            p.write_text(new, encoding="utf-8")
+            p.write_text(new, encoding="utf-8", newline="")
         results.append({"file": rel, "ok": True})
     return results
 
@@ -297,7 +297,7 @@ def scaffold_notes(version: str, *, dry_run: bool = False) -> list:
             m = re.search(r"^##\s+\[", t, re.M)
             idx = m.start() if m else len(t)
             if not dry_run:
-                changelog.write_text(t[:idx] + entry + t[idx:], encoding="utf-8")
+                changelog.write_text(t[:idx] + entry + t[idx:], encoding="utf-8", newline="")
             actions.append({"file": "CHANGELOG.md", "action": "scaffolded"})
         else:
             actions.append({"file": "CHANGELOG.md", "action": "already present"})
@@ -311,7 +311,7 @@ def scaffold_notes(version: str, *, dry_run: bool = False) -> list:
             m = re.search(r"^##\s+What's New in ", t, re.M)
             idx = m.start() if m else len(t)
             if not dry_run:
-                readme.write_text(t[:idx] + sec + t[idx:], encoding="utf-8")
+                readme.write_text(t[:idx] + sec + t[idx:], encoding="utf-8", newline="")
             actions.append({"file": "README.md", "action": "scaffolded",
                             "note": "update the Table of Contents anchor too"})
         else:

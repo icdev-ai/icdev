@@ -450,7 +450,7 @@ class LocalSecretsProvider(SecretsProvider):
         lines = []
         for k, v in sorted(secrets.items()):
             lines.append(f"{k}={v}")
-        self._env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._env_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
 
     def get_secret(self, secret_name: str) -> Optional[str]:
         # Check env vars first, then .env file

@@ -487,7 +487,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     reports_dir.mkdir(parents=True, exist_ok=True)
     date_str = _utcnow().strftime("%Y-%m-%d")
     brief_file = reports_dir / f"scout-{date_str}.md"
-    brief_file.write_text(brief_md, encoding="utf-8")
+    brief_file.write_text(brief_md, encoding="utf-8", newline="")
 
     successful = len(valid_targets)
     anomaly_repos = list(anomalies.keys())

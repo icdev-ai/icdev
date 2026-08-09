@@ -170,7 +170,7 @@ class SessionManager:
         try:
             path.write_text(
                 "\n".join(self._transcript_lines),
-                encoding="utf-8",
+                encoding="utf-8", newline="",
             )
         except Exception as exc:
             logger.debug("Transcript write failed: %s", exc)

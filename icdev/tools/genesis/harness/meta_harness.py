@@ -62,7 +62,7 @@ def should_run_today() -> bool:
 def _mark_ran_today() -> None:
     try:
         META_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        META_STATE_PATH.write_text(_utcnow().date().isoformat(), encoding="utf-8")
+        META_STATE_PATH.write_text(_utcnow().date().isoformat(), encoding="utf-8", newline="")
     except OSError as exc:
         LOG.warning("[meta_harness] Could not write state file: %s", exc)
 
@@ -345,7 +345,7 @@ def _write_meta_proposals(
         + yaml.dump(content, default_flow_style=False, sort_keys=False)
     )
 
-    META_PROPOSALS_PATH.write_text(text, encoding="utf-8")
+    META_PROPOSALS_PATH.write_text(text, encoding="utf-8", newline="")
     return META_PROPOSALS_PATH
 
 

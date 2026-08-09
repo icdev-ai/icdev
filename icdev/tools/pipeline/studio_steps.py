@@ -118,7 +118,7 @@ def _load_pipeline(pipeline_id: str) -> dict:
 def _write_report(prefix: str, text: str) -> Path:
     _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     fpath = _ARTIFACTS_DIR / f"{prefix}_{uuid.uuid4().hex[:8]}.md"
-    fpath.write_text(text, encoding="utf-8")
+    fpath.write_text(text, encoding="utf-8", newline="")
     return fpath
 
 
@@ -265,7 +265,7 @@ def step_iac(pipeline_id: str) -> tuple[dict, int]:
             continue
         dest = out_dir / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8")
+        dest.write_text(content, encoding="utf-8", newline="")
         atype = _EXT_TYPE.get(dest.suffix.lower(), "txt")
         artifacts.append({"name": dest.name, "path": _rel(dest), "type": atype})
 

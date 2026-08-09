@@ -66,7 +66,7 @@ def generate(
 
     # Generate minimal CLI wrapper
     cli_content = _render_cli_template(resolved_name, str(spec))
-    output_path.write_text(cli_content, encoding="utf-8")
+    output_path.write_text(cli_content, encoding="utf-8", newline="")
 
     return {
         "status": "ok",

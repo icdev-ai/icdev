@@ -242,7 +242,7 @@ def run(config: dict, state: object) -> dict:
         try:
             _REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
             _REPORT_PATH.write_text(json.dumps({**findings, "cards_filed": created}, indent=2),
-                                    encoding="utf-8")
+                                    encoding="utf-8", newline="")
         except Exception:  # noqa: BLE001
             pass
         n_stranded = len(findings.get("stranded", [])) + len(findings.get("orphan_validating", []))

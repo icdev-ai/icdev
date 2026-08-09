@@ -131,6 +131,47 @@ def _parse_pr_url(text: Optional[str]) -> Optional[str]:
 
 
 
+def _is_gate_task(conn, task_id: str) -> bool:
+    """True when `task_id` is a manual-gate sentinel.
+
+    Reads the title so the predicate sees both halves it matches on (the id
+    shape AND the title marker). A lookup failure answers False: this guard
+    must never be the reason the watch loop stalls.
+    """
+    try:
+        from tools.kanban.gates import is_manual_gate
+    except Exception:  # noqa: BLE001 — gates module unavailable
+        return False
+    title = ""
+    try:
+        row = conn.execute(
+            "SELECT title FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
+        if row is not None:
+            title = (row[0] if not isinstance(row, dict) else row.get("title")) or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pr_watcher: gate title lookup failed for %s: %s", task_id, exc)
+    return bool(is_manual_gate(task_id, title))
+
+
+def _record_gate_refusal(conn, task_id: str, reason: str) -> None:
+    """Append-only audit row for a refused gate completion. Best-effort."""
+    try:
+        conn.execute(
+            "INSERT INTO kanban_status_transitions "
+            "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            ("kst-" + uuid.uuid4().hex[:12], task_id, "pr_opened", "refused",
+             "pr_watcher",
+             ("manual gate not completed by merge; "
+              f"release deliberately. {reason}")[:200],
+             datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pr_watcher: gate-refusal audit row failed: %s", exc)
+
+
 def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> bool:
     """Write the task's status. The watcher is the ONLY component that knows when
     a PR actually merged, so it is the right owner of the pr_opened -> done edge.
@@ -138,6 +179,8 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
     Previously it recorded 'done' in the audit trail and never touched
     kanban_tasks — the board could not tell an open PR from a finished one.
     Never raises: a status-write failure must not stall the watch loop.
+
+    Refuses to complete a manual gate — see the comment at the guard below.
     """
     try:
         conn = get_conn()
@@ -146,6 +189,27 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
                        task_id, status, exc)
         return False
     try:
+        # A MANUAL GATE IS NEVER COMPLETED BY A MERGE.
+        #
+        # A gate is a sentinel, not work: other tasks depend on it precisely so
+        # they do NOT dispatch. On 2026-08-08 a dispatched session used the gate
+        # task `hgx-gate-01` to carry a fix and opened a PR against it. When that
+        # PR merged, this function set the gate `done` — releasing six slices that
+        # had an agent edit its own guardrails — and then re-applied `done` every
+        # 30s cycle, so every manual reset was undone within seconds.
+        #
+        # Guarding here rather than at the merge call site covers every caller.
+        # Only `done` is refused; the gate can still be parked or failed.
+        if status == "done" and _is_gate_task(conn, task_id):
+            logger.warning(
+                "pr_watcher: REFUSING to complete manual gate %s (%s). A gate is a "
+                "sentinel, not work — a PR should never be attached to one. Release "
+                "it deliberately: python -m tools.kanban.cli --set-status %s done",
+                task_id, reason or "no reason given", task_id,
+            )
+            _record_gate_refusal(conn, task_id, reason)
+            return False
+
         conn.execute(
             "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
             (status, datetime.now(timezone.utc).isoformat(), task_id),

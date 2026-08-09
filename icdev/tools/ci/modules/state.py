@@ -172,7 +172,7 @@ class ICDevState:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(self._store, indent=2),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
         if workflow_step:
             self._log.debug(

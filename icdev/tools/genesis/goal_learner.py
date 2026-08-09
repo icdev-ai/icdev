@@ -840,7 +840,7 @@ def _write_goal_file(goal_id: str, slug: str, markdown: str) -> Path:
     """Write goal markdown to data/genesis/suggested_goals/."""
     SUGGESTED_GOALS_DIR.mkdir(parents=True, exist_ok=True)
     path = SUGGESTED_GOALS_DIR / f"{slug}_{goal_id}.md"
-    path.write_text(markdown, encoding="utf-8")
+    path.write_text(markdown, encoding="utf-8", newline="")
     return path
 
 
@@ -1107,7 +1107,7 @@ def approve_goal(goal_id: str) -> Dict[str, Any]:
 
         # Write to goals/
         goal_file = GOALS_DIR / f"{slug}.md"
-        goal_file.write_text(markdown, encoding="utf-8")
+        goal_file.write_text(markdown, encoding="utf-8", newline="")
 
         # Append to goals/manifest.md
         manifest_path = GOALS_DIR / "manifest.md"
@@ -1115,7 +1115,7 @@ def approve_goal(goal_id: str) -> Dict[str, Any]:
         new_row = f"| {title} | goals/{slug}.md | Auto-learned goal from experience (D-GEN-GL-1) |\n"
         if f"goals/{slug}.md" not in manifest_text:
             manifest_text = manifest_text.rstrip() + "\n" + new_row
-            manifest_path.write_text(manifest_text, encoding="utf-8")
+            manifest_path.write_text(manifest_text, encoding="utf-8", newline="")
 
         # Export GKP
         gkp_id = None

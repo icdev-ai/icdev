@@ -188,7 +188,7 @@ def audit_python(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -317,7 +317,7 @@ def audit_javascript(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -502,7 +502,7 @@ def audit_java(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -622,7 +622,7 @@ def audit_go(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -742,7 +742,7 @@ def audit_rust(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -871,7 +871,7 @@ def audit_csharp(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:

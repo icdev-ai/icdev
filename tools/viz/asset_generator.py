@@ -524,7 +524,7 @@ class AssetGenerator:
   </text>
 </svg>"""
             output_path = self._resolve_output_path(req, cache_key, "svg")
-            Path(output_path).write_text(svg, encoding="utf-8")
+            Path(output_path).write_text(svg, encoding="utf-8", newline="")
 
             return {
                 "success": True,
@@ -571,7 +571,7 @@ class AssetGenerator:
                 else:
                     html = kpis_to_html(KpiSpec.from_dict(req.kpis_json), theme=theme)
                 output_path = self._resolve_output_path(req, cache_key, "html")
-                Path(output_path).write_text(html, encoding="utf-8")
+                Path(output_path).write_text(html, encoding="utf-8", newline="")
                 path = output_path
 
             return {

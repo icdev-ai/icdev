@@ -100,11 +100,15 @@ def _create_test_db(db_path: str, project_id: str = None, directory: str = None)
             classification TEXT DEFAULT 'CUI',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+        -- Column names mirror tools/db/init_icdev_db.py. They previously did
+        -- not (`status` here vs `session_status` there), so these tests passed
+        -- against a schema that does not exist while the real query raised and
+        -- was swallowed.
         CREATE TABLE IF NOT EXISTS intake_sessions (
             id TEXT PRIMARY KEY,
             project_id TEXT,
             customer_name TEXT,
-            status TEXT DEFAULT 'active',
+            session_status TEXT DEFAULT 'active',
             readiness_score REAL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
@@ -122,13 +126,17 @@ def _create_test_db(db_path: str, project_id: str = None, directory: str = None)
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT,
             framework_id TEXT,
-            status TEXT DEFAULT 'confirmed'
+            confirmed INTEGER DEFAULT 0
         );
+        -- cato_evidence holds per-control evidence rows; it has never had a
+        -- readiness_score/assessed_at column (see init_icdev_db.py).
         CREATE TABLE IF NOT EXISTS cato_evidence (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT,
-            readiness_score REAL,
-            assessed_at TEXT DEFAULT CURRENT_TIMESTAMP
+            control_id TEXT,
+            evidence_type TEXT,
+            is_fresh INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'current'
         );
     """)
 
@@ -270,9 +278,14 @@ class TestComplianceSummary:
             "INSERT INTO project_controls (project_id, control_id, implementation_status) VALUES ('proj-c1', 'AC-3', 'planned')"  # noqa: E501
         )
         conn.execute(
-            "INSERT INTO framework_applicability (project_id, framework_id, status) VALUES ('proj-c1', 'fedramp_moderate', 'confirmed')"  # noqa: E501
+            "INSERT INTO framework_applicability (project_id, framework_id, confirmed) VALUES ('proj-c1', 'fedramp_moderate', 1)"  # noqa: E501
         )
-        conn.execute("INSERT INTO cato_evidence (project_id, readiness_score) VALUES ('proj-c1', 0.72)")
+        conn.execute(
+            "INSERT INTO framework_applicability (project_id, framework_id, confirmed) VALUES ('proj-c1', 'cmmc_l2', 0)"  # noqa: E501
+        )
+        conn.execute(
+            "INSERT INTO cato_evidence (project_id, control_id, evidence_type) VALUES ('proj-c1', 'AC-2', 'scan_result')"  # noqa: E501
+        )
         conn.commit()
         conn.close()
 
@@ -283,8 +296,11 @@ class TestComplianceSummary:
         assert summary["stig_cat1"] == 1
         assert summary["controls_implemented"] == 1
         assert summary["controls_total"] == 2
+        # Only the confirmed framework — an unconfirmed row must not appear.
         assert summary["frameworks"] == ["fedramp_moderate"]
-        assert summary["cato_readiness"] == 0.72
+        # cato_evidence stores no readiness score, so this stays unset rather
+        # than being read from a column that has never existed.
+        assert summary["cato_readiness"] is None
 
     def test_compliance_empty(self, tmp_path):
         db_path = str(tmp_path / "test.db")
@@ -374,10 +390,10 @@ class TestIntakeSessions:
 
         conn = sqlite3.connect(db_path)
         conn.execute(
-            "INSERT INTO intake_sessions (id, project_id, customer_name, status, readiness_score) VALUES ('sess-1', 'proj-i1', 'Jane Smith', 'active', 0.45)"  # noqa: E501
+            "INSERT INTO intake_sessions (id, project_id, customer_name, session_status, readiness_score) VALUES ('sess-1', 'proj-i1', 'Jane Smith', 'active', 0.45)"  # noqa: E501
         )
         conn.execute(
-            "INSERT INTO intake_sessions (id, project_id, customer_name, status) VALUES ('sess-2', 'proj-i1', 'Bob Jones', 'completed')"  # noqa: E501
+            "INSERT INTO intake_sessions (id, project_id, customer_name, session_status) VALUES ('sess-2', 'proj-i1', 'Bob Jones', 'completed')"  # noqa: E501
         )
         conn.commit()
         conn.close()
@@ -466,6 +482,24 @@ class TestFormatMarkdown:
         md = _format_markdown(ctx)
         assert "No ICDEV™ project detected" in md
         assert "icdev.yaml" in md
+
+    def test_render_markdown_is_the_public_seam(self):
+        """In-process callers (SAG project-context injection) use this, not
+        the private formatter."""
+        from tools.project.session_context_builder import render_markdown
+
+        ctx = {
+            "setup_needed": True,
+            "project": {},
+            "compliance": {},
+            "dev_profile": {},
+            "recent_activity": [],
+            "intake_sessions": [],
+            "recommended_workflows": [],
+            "warnings": [],
+        }
+        assert render_markdown(ctx) == _format_markdown(ctx)
+        assert "ICDEV™ Project Context" in render_markdown(ctx)
 
     def test_full_context_format(self):
         ctx = {

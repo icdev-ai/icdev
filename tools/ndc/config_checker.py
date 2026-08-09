@@ -347,7 +347,7 @@ def main():
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
         uid = uuid.uuid4().hex[:8]
         fpath = _ARTIFACTS_DIR / f"config_report_{uid}.md"
-        fpath.write_text(report_md, encoding="utf-8")
+        fpath.write_text(report_md, encoding="utf-8", newline="")
 
         fails = [f for f in result["findings"] if f["status"] == "fail" and f["severity"] == "fail"]
         output = {

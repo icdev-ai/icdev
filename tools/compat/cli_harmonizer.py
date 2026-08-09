@@ -132,7 +132,7 @@ def fix_project_naming(py_file: Path, dry_run: bool = True) -> Optional[str]:
         return None
 
     if not dry_run:
-        py_file.write_text(new_content, encoding="utf-8")
+        py_file.write_text(new_content, encoding="utf-8", newline="")
 
     rel = str(py_file.relative_to(PROJECT_ROOT)).replace("\\", "/")
     return f"Renamed --project → --project-id in {rel}"
@@ -185,7 +185,7 @@ def fix_json_flag(py_file: Path, dry_run: bool = True) -> Optional[str]:
     new_content = "\n".join(lines)
 
     if not dry_run:
-        py_file.write_text(new_content, encoding="utf-8")
+        py_file.write_text(new_content, encoding="utf-8", newline="")
 
     rel = str(py_file.relative_to(PROJECT_ROOT)).replace("\\", "/")
     return f"Added --json flag to {rel}"

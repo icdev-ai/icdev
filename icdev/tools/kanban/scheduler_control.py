@@ -235,7 +235,7 @@ def pause(actor: str = "dashboard", reason: str = "") -> dict:
         "max_minutes": _max_minutes(),
         "expires_at": (now + timedelta(minutes=_max_minutes())).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    _flag_path().write_text(json.dumps(meta), encoding="utf-8")
+    _flag_path().write_text(json.dumps(meta), encoding="utf-8", newline="")
     return {"paused": True, "mode": "manual", **meta}
 
 

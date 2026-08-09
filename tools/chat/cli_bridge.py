@@ -95,7 +95,7 @@ def _load_persist() -> dict:
 
 def _save_persist(store: dict) -> None:
     PERSIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PERSIST_PATH.write_text(json.dumps(store, indent=2), encoding="utf-8")
+    PERSIST_PATH.write_text(json.dumps(store, indent=2), encoding="utf-8", newline="")
 
 
 # ---------------------------------------------------------------------------

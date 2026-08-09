@@ -409,7 +409,7 @@ def update_env(env_file: Path, updates: dict, *, dry_run: bool = False) -> dict:
 
     if not dry_run:
         env_file.parent.mkdir(parents=True, exist_ok=True)
-        env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        env_file.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
     return {"written": not dry_run, "keys": sorted(updates), "path": str(env_file)}
 
 
@@ -575,7 +575,7 @@ def main(argv: list | None = None) -> int:
         compose = project_dir / "docker-compose.yml"
         text = render_compose(env, use_postgres=use_pg, project_dir=project_dir)
         if not args.dry_run:
-            compose.write_text(text, encoding="utf-8")
+            compose.write_text(text, encoding="utf-8", newline="")
         report.compose_file = str(compose)
         print(f"docker-compose.yml {'would be' if args.dry_run else ''} written: {compose}")
         return 0
@@ -697,7 +697,7 @@ def main(argv: list | None = None) -> int:
         compose = project_dir / "docker-compose.yml"
         text = render_compose(env, use_postgres=use_pg, project_dir=project_dir)
         if not args.dry_run:
-            compose.write_text(text, encoding="utf-8")
+            compose.write_text(text, encoding="utf-8", newline="")
         report.compose_file = str(compose)
         report.steps.append({"step": "compose", "path": str(compose)})
 

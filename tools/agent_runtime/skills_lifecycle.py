@@ -328,7 +328,7 @@ def approve_proposal(
         skill_dir.mkdir(parents=True, exist_ok=True)
         # If the generated spec already carries a frontmatter block, keep the body.
         body = spec
-        (skill_dir / "SKILL.md").write_text(frontmatter + body + "\n", encoding="utf-8")
+        (skill_dir / "SKILL.md").write_text(frontmatter + body + "\n", encoding="utf-8", newline="")
     except Exception as exc:  # noqa: BLE001
         return {"approved": False, "error": f"write failed: {exc}", "artifact_id": artifact_id}
 

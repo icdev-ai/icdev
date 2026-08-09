@@ -344,7 +344,7 @@ def _write_report(result: Dict, output_file: str) -> None:
     """Write scan results to a JSON file."""
     path = Path(output_file)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
     result["report_path"] = str(path)
 
 

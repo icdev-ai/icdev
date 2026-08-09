@@ -360,7 +360,7 @@ def generate_runbook(
         body = json.dumps(context, indent=2)
 
     if output_path:
-        Path(output_path).write_text(body, encoding="utf-8")
+        Path(output_path).write_text(body, encoding="utf-8", newline="")
 
     return {
         "classification": "CUI // SP-CTI",

@@ -269,6 +269,173 @@ tool=…, decision=…)`.
 
 ---
 
+## Parallel DAG dispatch (hgx-par-01)
+
+`_resolve_dag` returned `list(TopologicalSorter(...).static_order())` — a
+FLATTENED linear list — and `_worker` walked it with `for i, step in
+enumerate(ordered_steps)`. Templates authored as a fan-out therefore ran one
+step at a time. `args/workflow_templates/ai_ml_transformation.yaml` is the
+textbook case: `coa_a`/`coa_b`/`coa_c` share the same two dependencies and then
+join at `leadership_brief` — a diamond, executed serially.
+
+`_worker` now walks a **prepared** sorter (`_prepare_dag`) with
+`get_ready()`/`done()` inside a bounded `ThreadPoolExecutor`, mirroring
+`tools/agent/team_orchestrator.py::execute_workflow`. Decisions D40 (graphlib)
+and D36 (threads, not asyncio — which is also what keeps it portable).
+
+**Concurrency is opt-in.** `max_parallel:` is a top-level template key that
+**defaults to 1**, so all 61 shipped templates (42 in `args/workflow_templates`,
+19 in `context/workflow_templates`) stay byte-for-byte sequential. At 1 the
+executed order is identical to the old `static_order()` walk, and
+`tests/studio/test_workflow_parallel.py` asserts that per template rather than
+in aggregate.
+
+Preserving that order took two deliberate choices, both of which are silent
+correctness traps:
+
+* The pool's queue is FIFO, so with one worker submission order **is** execution
+  order. Ready nodes are submitted as a group, exactly as `static_order()`
+  yields them.
+* Completed futures are retired in **submission** order, not in the
+  set-iteration order `concurrent.futures.wait` hands back. graphlib appends
+  each newly-unblocked node as its last dependency is `done()`, so walking the
+  completed set directly would make dispatch order depend on thread scheduling.
+
+**No barrier primitive was added.** Fan-in falls out of graphlib: a join is just
+a step that names several ids in `depends_on`, and `get_ready()` withholds it
+until all of them are retired.
+
+Three things the parallel loop has to get right that the linear walk never had
+to:
+
+* **A human gate parks its own branch, not the pool.** `_await_gate` blocks by
+  design; it now blocks a pool thread, leaving the other `max_parallel - 1`
+  slots free for sibling branches.
+* **A rejected or timed-out gate still stops the run.** Under the linear walk
+  that was a `break`. It cannot be one here, because a sibling of the gate may
+  already be sitting in the pool's queue — so it sets an abort flag that every
+  queued step checks on entry, and the main loop retires the remainder without
+  executing them. A step the old walk never reached still leaves no record.
+* **Emission is no longer ordered.** The per-run SSE `queue.Queue(maxsize=500)`
+  and the old `index` field assumed positional emission. `step_started` /
+  `step_done` now carry a monotonic `seq` instead of a list position. Nothing
+  consumed `index` (`tools/dashboard/templates/studio/execution.html` keys off
+  `step_id`). `run_started` gained `max_parallel`.
+
+Step records are keyed by `step_run_id`, so DB writes were already safe. The two
+pieces of shared in-process state were not: `results`/`all_artifacts` are guarded
+by a run-scoped lock, and `_remember_artifacts` — one JSON blob updated
+read-modify-write — holds `_artifacts_lock` across the whole get/set pair, or
+two steps of the same wave would drop one of the two artifact sets.
+
+---
+
+## Conditional edges and downstream cancellation (hgx-cond-01)
+
+`depends_on` was the only edge and it was unconditional. A failed non-approval
+step set `overall_ok = False` and execution **continued**, so every descendant
+ran against a precondition already known to be broken and there was no route to
+a remediation step. Only a rejected or timed-out human gate broke the loop.
+
+Two additions close that, and the interaction between them is the feature.
+
+### `when:` on a step
+
+```yaml
+steps:
+  - id: scan
+    tool: tools/security/scan.py
+  - id: remediate
+    tool: tools/security/remediate.py
+    depends_on: [scan]
+    when:
+      - field: status           # of the predecessor
+        operator: not_equals
+        value: success
+```
+
+**This is the DSL the repo already has.** `when` is the same
+`{field, operator, value}` shape `studio_workflow_triggers.filter_json` and the
+automation builder filter events with, evaluated by the same
+`automation_builder.evaluate_conditions`. The operator vocabulary is imported
+from `CONDITION_OPERATORS` rather than re-declared — in the runner *and* in the
+linter — so neither can drift from the list the builder UI renders. The repo
+deliberately has no second rules DSL and this did not add one.
+
+Conditions are evaluated against the **predecessor's recorded result**:
+
+| Field form | Reads |
+|---|---|
+| `status`, `exit_code`, `stderr`, `duration_ms` | the FIRST entry in this step's `depends_on` |
+| `steps.<step_id>.<field>` | any predecessor already recorded — how a join addresses one branch |
+| `output.<path>` | the predecessor's stdout parsed as JSON — branch on what the tool reported, not just its exit code |
+
+Every condition must hold (AND), matching how the automation surface reads the
+same list. A step whose `when` does not hold records the **existing `skipped`
+status** with the unmet condition as its reason (`stderr`, where
+`"Tool not found: …"` already lands) — no new status value, so the
+`studio_workflow_run_steps` CHECK constraint, the run summary and the details
+modal need no migration. A false condition is a route not taken, **not a
+failure**: it does not set `overall_ok`, and the step's own dependents go on to
+evaluate their own `when` against that `skipped` result.
+
+### Downstream cancellation
+
+`_block_downstream()` is ported from
+`tools/agent/team_orchestrator.py::_block_downstream`. A failed **required**
+step now writes every transitive dependent into a `blocked` map, and each one
+records `skipped` with `"Cancelled: required step '<name>' failed"` instead of
+running. It cascades through the whole graph (A fails, B depends on A, C on B →
+both blocked), and is iterative rather than recursive so a pathological chain
+cannot raise `RecursionError` inside a pool thread.
+
+It is safe without a barrier: `sorter.done()` is only called after a node's
+future resolves, so no dependent can have been dispatched when the map is
+written. `required: false` remains the escape hatch — a non-required failure
+cancels nothing, exactly as it fails nothing today.
+
+### The interaction — why `when` is exempt from the cascade
+
+The cascade **stops at a step declaring `when`**. That step is by definition the
+remediation branch: it hangs off the step that failed. Cancelling it for having
+a failed predecessor would kill it before its condition was ever read, leaving
+`when` able to express only conditions that never fire after a failure — i.e.
+the `fail -> remediate` routing this card exists for would not work at all. A
+conditional step is neither blocked nor walked through; it evaluates its own
+condition, and what it produces then governs its own descendants.
+
+In the example above, if `scan` fails: `remediate` runs (it declared `when`),
+while a plain `publish` step depending on `scan` is cancelled.
+
+### What changed for existing templates
+
+A template with **no `when` key** parses and dispatches exactly as before —
+`tests/studio/test_workflow_parallel.py` still asserts the old `static_order()`
+sequence per shipped template, and no shipped template declares `when`.
+
+The one deliberate behaviour change is cancellation, which applies whether or
+not `when` is used: a descendant of a failed required step no longer executes.
+`test_failed_step_does_not_block_its_wave` asserted the opposite contract and
+was updated — its sibling half (an independent step in the same wave still runs)
+is unchanged, because cancellation follows edges and is not a run-wide abort.
+
+### Linting
+
+`tools/studio/template_linter.py` validates `when` alongside `VALID_NODE_TYPES`:
+each condition must be a mapping with a non-empty `field` and an operator in
+`VALID_CONDITION_OPERATORS`, and a step declaring `when` must declare
+`depends_on` — conditions read a predecessor's result, and a root step has none,
+so every field would resolve empty and the step could never run.
+
+`auto_fix` gates on `_connectivity_ok`, not `is_ok`: a malformed `when` is an
+authoring error inside a step, not a missing edge, so including it would send
+the fixer through its whole iteration budget wiring bogus dependencies onto an
+already-connected graph. For the same reason `--fix` reports such a file as
+`fail`, not `fixed` — `auto_fix` only ever adds edges, and claiming a repair
+that did not happen would leave the next `--check` to discover it.
+
+---
+
 ## Tests
 
 `tests/studio/test_mcp_executor_approval.py` — the gate parks a pending human
@@ -284,6 +451,29 @@ the Python constants; and an audit outage does not change the dispatch.
 `tests/test_dwo_dur_03_resume_surface.py` — retry policy parsing and defaults,
 retry execution paths, resumable-status contract, the API's 202/404/409
 outcomes, and the UI control's presence and status parity.
+
+`tests/studio/test_workflow_parallel.py` — every shipped template dispatches in
+the old `static_order()` sequence when `max_parallel` is unset (one case per
+template, plus a guard that the corpus is non-empty and that no shipped template
+declares the key); `max_parallel` parsing and clamping; a diamond's three
+branches overlap pairwise while the join waits for all three, and the same
+template minus the key overlaps not at all; a human gate parks its branch while
+siblings run to completion (the fake gate refuses to resolve until both siblings
+finish, so blocking the pool deadlocks the test rather than passing it); a
+rejected gate leaves every later step unexecuted; a failing tool step does not
+block its wave; dangling `depends_on` and cycles.
+
+`tests/studio/test_workflow_conditional.py` — the absence case (no `when` key
+runs every step and emits no `reason`); `when` parsing, including a bare mapping,
+a YAML-typed `value: 0`, and malformed blocks degrading rather than raising; the
+condition context (flat fields read the first predecessor, `steps.<id>` addresses
+a join branch, `output.<path>` walks stdout JSON, an unrecorded predecessor is
+unmet not an error); AND semantics; a false condition skipping with the unmet
+condition named and not failing the run; a dependent of a skipped step evaluating
+its own condition; the cancellation cascade being transitive, edge-following
+rather than run-wide, and inert for `required: false`; `fail -> remediate`
+routing with the plain sibling cancelled; and the linter's `when` validation,
+including that no shipped template declares a bad one.
 
 `tests/test_dwo_gate_bridge.py` — one parked gate produces exactly one
 reviewer-inbox row (and re-parking does not duplicate it); approving from
