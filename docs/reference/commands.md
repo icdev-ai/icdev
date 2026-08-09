@@ -290,6 +290,11 @@ python tools/security/dependency_auditor.py --project-dir "/path"
 python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "sparkpilot:latest"
 
+# ATO boundary tier tagging of scan findings (GREEN/YELLOW/ORANGE/RED)
+python tools/security/boundary_tagger.py --report .tmp/security-reports/scan.json --json
+python tools/security/boundary_tagger.py --report scan.json --project-id <id> --system-id <sys-id> --create-assessments --json
+python tools/security/boundary_tagger.py --report scan.json --gate --json   # exit 1 on any RED finding
+
 # Security Framework (Phase 74 — sec-fnd)
 python tools/security/security_context.py --whoami --json
 python tools/security/abac_engine.py --review --json
