@@ -1247,3 +1247,4 @@
 | Formula Graph | tools\bom\formula_graph.py | Auto-registered: bom/formula_graph.py | --json | JSON |
 | Seed Bom Concord | tools\kanban\seed_bom_concord.py | Auto-registered: kanban/seed_bom_concord.py | --json | JSON |
 | Brand Deck | tools\slides\brand_deck.py | Auto-registered: slides/brand_deck.py | --json | JSON |
+- [Agent Detection (AGOV / DET)](manifest/agent-detection.md)
