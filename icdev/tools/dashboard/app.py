@@ -3031,6 +3031,37 @@ def create_app(testing: bool = False) -> Flask:
         finally:
             conn.close()
 
+    @app.route("/api/hitl/pending", methods=["GET"])
+    def api_hitl_pending():
+        """Tasks the pipeline has given up on and cannot retry — the HITL queue.
+
+        Deliberately NARROWER than /api/notifications, which counts every firing
+        alert. This returns only `pr_watcher:hitl:` rows: work where 2 rebases
+        and 5 resume cycles are spent, so no further automation will run. Mixing
+        those into a generic count is how a real "the pipeline stopped" signal
+        gets lost among informational alerts and stops being read.
+        """
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                "SELECT id, source, title, description, created_at FROM alerts "
+                "WHERE status = 'firing' AND source LIKE 'pr_watcher:hitl:%' "
+                "ORDER BY created_at ASC"
+            ).fetchall()
+            items = []
+            for r in rows:
+                d = dict(r)
+                items.append({
+                    "id": d.get("id"),
+                    "task_id": (d.get("source") or "").rsplit(":", 1)[-1],
+                    "title": d.get("title"),
+                    "description": d.get("description"),
+                    "created_at": str(d.get("created_at") or ""),
+                })
+            return jsonify({"pending": items, "count": len(items)})
+        finally:
+            conn.close()
+
     @app.route("/api/notifications", methods=["GET"])
     def api_notifications():
         """Return current notification-worthy items (firing alerts, overdue POAMs)."""

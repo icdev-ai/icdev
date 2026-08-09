@@ -1,0 +1,85 @@
+{#
+  Reusable partial — HITL popup for the Dashboard home.
+
+  WHY A POPUP AND NOT A PANEL. Work the pipeline cannot recover is rare and
+  time-sensitive: everything else is retried automatically and shows up in
+  Autonomous Recovery. A panel further down Home is fine for things that resolve
+  themselves; this is the one class that will sit forever until a person acts, and
+  the operator spends their time on Home, not /monitoring where the buttons live.
+
+  DISMISS IS PER-ALERT AND PER-SESSION, not permanent. Stored in sessionStorage
+  keyed by alert id, so closing it silences THAT alert for THIS tab and a new
+  stuck task still interrupts. A permanent dismissal would turn the one signal
+  that means "the pipeline stopped" into something people mute once and never
+  see again.
+#}
+<div id="hitl-popup" class="hitl-popup" hidden>
+  <div class="hitl-popup__head">
+    <strong id="hitl-popup__title">Needs a human</strong>
+    <button type="button" class="hitl-popup__x" aria-label="Dismiss">&times;</button>
+  </div>
+  <div id="hitl-popup__body" class="hitl-popup__body"></div>
+  <a class="hitl-popup__cta" href="/monitoring#firing-alerts">Open in Monitoring &rarr;</a>
+</div>
+
+<style>
+  .hitl-popup{position:fixed;right:1.25rem;bottom:1.25rem;z-index:9999;max-width:26rem;
+    background:#1c1917;border:1px solid #b45309;border-left:4px solid #f59e0b;
+    border-radius:.5rem;padding:.85rem 1rem;box-shadow:0 8px 24px rgba(0,0,0,.45);}
+  .hitl-popup__head{display:flex;justify-content:space-between;align-items:center;gap:1rem;}
+  .hitl-popup__head strong{color:#fbbf24;}
+  .hitl-popup__x{background:none;border:0;color:#a8a29e;font-size:1.25rem;
+    line-height:1;cursor:pointer;}
+  .hitl-popup__body{margin:.5rem 0;color:#e7e5e4;font-size:.875rem;}
+  .hitl-popup__body li{margin:.15rem 0;}
+  .hitl-popup__cta{color:#fbbf24;font-size:.875rem;text-decoration:none;}
+  .hitl-popup__cta:hover{text-decoration:underline;}
+</style>
+
+<script>
+(function () {
+  var el = document.getElementById('hitl-popup');
+  if (!el) return;
+  var body = document.getElementById('hitl-popup__body');
+  var title = document.getElementById('hitl-popup__title');
+
+  function dismissedKey(id) { return 'hitl-dismissed:' + id; }
+
+  function render(items) {
+    // Anything already dismissed in this tab stays hidden, but a NEW stuck task
+    // re-opens the popup — that is the difference between a reminder and a mute.
+    var fresh = items.filter(function (i) {
+      try { return !sessionStorage.getItem(dismissedKey(i.id)); }
+      catch (e) { return true; }   // private mode: err toward showing it
+    });
+    if (!fresh.length) { el.hidden = true; return; }
+    title.textContent = fresh.length === 1
+      ? '1 task needs a human'
+      : fresh.length + ' tasks need a human';
+    body.innerHTML = '<ul style="margin:0;padding-left:1.1rem;">' + fresh.map(function (i) {
+      var t = document.createElement('div');
+      t.textContent = i.task_id;      // textContent, not innerHTML: task ids and
+      return '<li>' + t.innerHTML + '</li>';   // descriptions are data, not markup
+    }).join('') + '</ul>';
+    el.hidden = false;
+    el.dataset.ids = fresh.map(function (i) { return i.id; }).join(',');
+  }
+
+  el.querySelector('.hitl-popup__x').addEventListener('click', function () {
+    (el.dataset.ids || '').split(',').filter(Boolean).forEach(function (id) {
+      try { sessionStorage.setItem(dismissedKey(id), '1'); } catch (e) {}
+    });
+    el.hidden = true;
+  });
+
+  function poll() {
+    fetch('/api/hitl/pending', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { pending: [] }; })
+      .then(function (j) { render(j.pending || []); })
+      .catch(function () { /* a polling failure must never break Home */ });
+  }
+  poll();
+  // 60s: this queue changes on the pr_watcher poll (30s) and on human action.
+  setInterval(poll, 60000);
+})();
+</script>
