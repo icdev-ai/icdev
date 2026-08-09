@@ -60,6 +60,10 @@ _AGENT_STEP_FLAGS = (
     ("max_tokens", "--max-tokens"),
     ("effort", "--effort"),
     ("approval_mode", "--approval-mode"),
+    # hgx-gov-01: the gate subset this node runs its prompt/output through. Kept
+    # in lockstep with workflow_runner._AGENT_STEP_FLAGS — a template must build
+    # the same command headless as it does in the UI.
+    ("governance_profile", "--governance-profile"),
 )
 
 

@@ -25,7 +25,6 @@ GATES_PATH = BASE_DIR / "args" / "security_gates.yaml"
 
 # Import sibling scanners
 sys.path.insert(0, str(BASE_DIR))
-
 from tools.db.storage import get_connection  # noqa: E402
 from tools.security.sast_runner import run_bandit, evaluate_gate as sast_gate  # noqa: E402
 from tools.security.dependency_auditor import (  # noqa: E402

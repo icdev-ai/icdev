@@ -8469,15 +8469,22 @@ def _startup_recover_stale_in_progress() -> None:
     'in_progress' back to 'backlog'.  After a crash, _running is empty but
     the DB still has rows from the previous session — they will never be
     promoted or timed-out without this sweep.
+
+    Policy lives in ``tools/kanban/startup_recovery.py``, shared with the
+    scheduler entrypoint's own sweep. Both run on a restart (this one on cycle
+    1), so a liveness guard in only one of them buys nothing — the other resets
+    the live task a minute later. That module also stops writing
+    ``last_failure_reason`` for an interruption: it is not a failure, and the
+    reason column is what pulls a task into ``failure_triage``'s autofix queue.
     """
     global _startup_recovery_done
     if _startup_recovery_done:
         return
 
-    # Hard guard: this sweep resets EVERY in_progress row, skipping only those
-    # in the process-local _running. Run from a second process (the heartbeat
-    # daemon's wakeup, a dashboard reflex trigger, an interactive --once) it
-    # would reset the owning scheduler's entire live board in one pass.
+    # Hard guard: this sweep resets EVERY in_progress row that is not provably
+    # live. Run from a second process (the heartbeat daemon's wakeup, a dashboard
+    # reflex trigger, an interactive --once) it would sweep the owning
+    # scheduler's board, and its _running is not visible from here.
     _foreign = _foreign_scheduler_pid()
     if _foreign:
         logger.info(
@@ -8486,40 +8493,29 @@ def _startup_recover_stale_in_progress() -> None:
         return
 
     _startup_recovery_done = True
-    conn = None
     try:
-        conn = get_connection()
-        rows = conn.execute(
-            "SELECT id, title, executor_type FROM kanban_tasks WHERE status = 'in_progress'"
-        ).fetchall()
-        if not rows:
-            return
-        now_iso = datetime.now(timezone.utc).isoformat()
-        reason = (
-            "startup-recovery: task was in_progress when the scheduler "
-            "restarted — process died or scheduler crashed mid-run."
+        from tools.kanban.startup_recovery import recover_interrupted_tasks
+
+        result = recover_interrupted_tasks(
+            running_ids=set(_running),
+            # Ownership was just settled above via _foreign_scheduler_pid, which
+            # resolves the lockfile from the MAIN worktree; re-asking would only
+            # re-derive it from a second anchor.
+            respect_foreign_owner=False,
+            # Bind the sweep to THIS module's connection factory so a caller that
+            # redirected get_connection (tests, a scoped operator run) is not
+            # silently swept against the ambient database instead.
+            conn_factory=get_connection,
         )
-        for r in rows:
-            rd = dict(r)
-            tid = rd["id"]
-            if tid in _running:
-                continue  # live process from this session — skip
-            if rd.get("executor_type") == "github_actions":
-                continue  # external executor — GitHub Actions runs independently
-            if _is_manual_gate(tid, rd.get("title")):
-                continue  # manual-mode gate — held in_progress by design
-            conn.execute(
-                "UPDATE kanban_tasks SET status='backlog', "
-                "last_failure_reason=%s, updated_at=%s WHERE id=%s",
-                (reason, now_iso, tid),
+        for entry in result["reset"]:
+            print(
+                f"  Kanban: startup-recovery reset {entry['id']} in_progress -> "
+                f"backlog ({entry['provenance']['summary']})"
             )
-            print(f"  Kanban: startup-recovery reset {tid} in_progress -> backlog")
-        conn.commit()
+        for held in result["held"]:
+            print(f"  Kanban: startup-recovery HELD {held['id']} — {held['detail']}")
     except Exception as exc:
         logger.warning("startup-recovery sweep failed: %s", exc)
-    finally:
-        if conn is not None:
-            conn.close()
 
 
 def _check_completed():

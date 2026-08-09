@@ -19,6 +19,32 @@
 *.ini text eol=lf
 *.env text eol=lf
 
+# Append-only coordination files (kax-conflict-03)
+#
+# The tool manifest concentrates edits from unrelated tasks into one markdown
+# table per topic: 219 commits in the 14 days to 2026-08-08, 95 added rows
+# against 22 removed on the three hottest shards alone. Two branches appending
+# a row to the same table conflict every time, and the resolution is always
+# "take the superset of both rows" — which is exactly what merge=union does.
+#
+# `tools/ci/pr_watcher.py::_ADDITIVE_PATH_MARKERS` already classified these
+# paths as "union-merged coordination files"; until now nothing implemented it.
+#
+# Verified conflict-free for 2/3/5 concurrent branches in BOTH the local
+# `git merge` path and the bare `git merge-tree --write-tree` plumbing a forge
+# runs server-side:  python tools/git/manifest_merge_rehearsal.py
+#
+# Scope note: union is safe here because these files are flat, line-oriented
+# tables whose rows are independent. Do NOT extend it to YAML/JSON/Python —
+# a union merge there produces duplicate keys or syntactically broken code.
+# Its one cost is that a row DELETED on one branch is resurrected when that
+# hunk conflicts with an append on another; `coherence_checker`'s manifest
+# check reports the byte-identical duplicate rows this leaves behind.
+tools/manifest.md merge=union
+tools/manifest/*.md merge=union
+icdev/tools/manifest.md merge=union
+icdev/tools/manifest/*.md merge=union
+
 # Binary files
 *.db binary
 *.sqlite binary

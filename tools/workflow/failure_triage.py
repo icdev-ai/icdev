@@ -257,10 +257,11 @@ def _utcnow() -> datetime:
 def find_recent_failures(window_hours: int = DEFAULT_WINDOW_HOURS) -> List[Dict[str, Any]]:
     """Return kanban tasks that failed within ``window_hours``.
 
-    Matches either:
-    * ``last_failure_reason`` set and ``status`` in (backlog, failed,
-      needs_decomposition), or
-    * ``failure_count > 0`` for tasks returned to backlog on cooldown.
+    Matches ``last_failure_reason`` set, ``status`` in (backlog, failed,
+    scheduled, needs_decomposition), and a FAILURE timestamp
+    (``last_failure_at``, falling back to ``updated_at``) inside the window.
+    Keying recency on ``updated_at`` alone made any later edit to the row look
+    like a fresh failure.
 
     Ordering priority:
     1. Tasks that have downstream dependents blocked on them (chain_blockers)
@@ -297,7 +298,16 @@ def find_recent_failures(window_hours: int = DEFAULT_WINDOW_HOURS) -> List[Dict[
                 "       AS blocked_dependents_count "
                 "FROM kanban_tasks kt "
                 f"WHERE kt.last_failure_reason IS NOT NULL "
-                f"  AND kt.updated_at > {ph} "
+                # Recency is when the task FAILED, not when its row was last
+                # touched. Measured 2026-08-08: re-queueing nine sbx tasks
+                # (closing stale PRs so they rebuild against current main)
+                # refreshed updated_at while they still carried
+                # last_failure_reason from the attempts whose PRs had just been
+                # closed, so five clean tasks entered the autofix queue. Any
+                # status edit — a board drag, a re-queue, startup recovery —
+                # re-dated a failure that had not recurred. COALESCE keeps the
+                # rows written before last_failure_at existed in scope.
+                f"  AND COALESCE(kt.last_failure_at, kt.updated_at) > {ph} "
                 f"  AND kt.status IN ('backlog','failed','scheduled','needs_decomposition') "
                 f"ORDER BY "
                 f"  CASE WHEN (SELECT COUNT(*) FROM kanban_tasks dep "

@@ -48,9 +48,24 @@ def requires_sandbox(self, risk_tier: str) -> bool:
     return tier_config.get("sandbox", False)
 ```
 
-ORANGE reflexes return `{"status": "awaiting_human_approval"}` from
-`_run_reflex_impl_inner` and do not execute — the operator must manually
-approve and re-trigger.
+ORANGE reflexes **run in proposal mode** (hgx-obs-02). `_run_reflex_impl_inner`
+delegates to `GenesisDaemon._run_orange_proposal`, which imports the module,
+executes it under a config overlay (`proposal_only`, `require_human_merge`,
+`auto_apply: false`, `dry_run` defaulted on) and stages the outcome as an
+`orange_proposal` GKP at `pending_review` — reviewable at `/genesis` through the
+existing `genesis_gkp` surface.
+
+Until hgx-obs-02 this method returned `{"status": "awaiting_human_approval"}`
+**before importlib**, so `evolve` and `experiment` never executed a line of
+their mutation code. They produced nothing, which on the dashboard reads
+identically to "ran and found nothing", and the operator was told to "approve
+and re-trigger" with no artifact naming what they were approving. Both reflexes
+already end by exporting a GKP and never merge on their own, so the early return
+was suppressing exactly the artifact the ORANGE tier exists to produce.
+
+`orange_proposal` is listed under `promoter.human_approve` and deliberately NOT
+under `promoter.auto_promote`, so `auto_promote_eligible()` can never match it.
+Set `ICDEV_GENESIS_ORANGE_PROPOSALS=0` to restore the old early return.
 
 ---
 

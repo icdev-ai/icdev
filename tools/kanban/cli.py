@@ -24,6 +24,10 @@ Usage examples:
   # Clear a stale done-gate block without re-dispatching the task
   python tools/kanban/cli.py --reverify zig-ext-08 --dry-run
   python tools/kanban/cli.py --reverify zig-ext-08 --json
+
+  # SATISFY the done-gate: land the task's PR, then mark done
+  python tools/kanban/cli.py --set-status zig-ext-08 done --merge --dry-run
+  python tools/kanban/cli.py --set-status zig-ext-08 done --merge --json
 """
 
 import argparse
@@ -212,6 +216,9 @@ def cmd_set_status(
     json_out: bool,
     force_done: bool = False,
     reason: str = "",
+    merge: bool = False,
+    dry_run: bool = False,
+    lander=None,
 ) -> int:
     if status not in VALID_STATUSES:
         print(
@@ -220,9 +227,62 @@ def cmd_set_status(
         )
         return 1
 
+    # --merge: SATISFY the done-gate instead of bypassing it. Lands the task's
+    # PR (all gates in tools/kanban/land.py) and only then writes 'done'.
+    merge_verdict = None
+    if merge:
+        if status != "done":
+            print("ERROR: --merge only applies to --set-status <id> done",
+                  file=sys.stderr)
+            return 1
+        if force_done:
+            # A merge that needs forcing is not a merge. Allowing both would
+            # turn --merge into the softer bypass it exists to replace.
+            print("ERROR: --merge and --force-done are mutually exclusive",
+                  file=sys.stderr)
+            return 1
+        if len(task_ids) != 1:
+            # Merging is an irreversible per-task side effect, so there is no
+            # honest all-or-nothing batch: a failure after the first merge would
+            # leave landed work with no 'done' row.
+            print("ERROR: --merge lands exactly one task's PR — pass a single "
+                  "task id", file=sys.stderr)
+            return 1
+        if lander is None:
+            from tools.kanban.land import land as lander  # noqa: PLC0415
+        merge_verdict = lander(task_ids[0], dry_run=dry_run)
+        if dry_run:
+            # Nothing was merged, so nothing may be marked done. Exit code
+            # reports the preflight verdict so it is scriptable.
+            if json_out:
+                print(json.dumps({"merge": merge_verdict}, indent=2, default=str))
+            else:
+                state = "WOULD LAND" if merge_verdict.get("ok") else "REFUSED"
+                print(f"  {state}: {task_ids[0]}: "
+                      f"{_ascii(merge_verdict.get('reason'))}")
+                for c in merge_verdict.get("checks", []):
+                    print(f"    [{'ok' if c.get('ok') else 'XX'}] {c.get('name')} "
+                          f"{_ascii(c.get('detail'))}".rstrip())
+            return 0 if merge_verdict.get("ok") else 1
+        if not merge_verdict.get("merged"):
+            if json_out:
+                print(json.dumps({"error": "refused_merge",
+                                  "merge": merge_verdict}, indent=2, default=str))
+            else:
+                print(f"  REFUSED: {task_ids[0]}: "
+                      f"{_ascii(merge_verdict.get('reason'))}", file=sys.stderr)
+                for c in merge_verdict.get("checks", []):
+                    mark = "ok" if c.get("ok") else "XX"
+                    print(f"    [{mark}] {c.get('name')} "
+                          f"{_ascii(c.get('detail'))}".rstrip(), file=sys.stderr)
+            return 1
+
     # Merge-verify before writing anything: refuse the whole batch rather than
-    # marking some tasks done and rejecting others halfway through.
-    if status == "done" and not force_done:
+    # marking some tasks done and rejecting others halfway through. Skipped
+    # after a --merge: a PR observed MERGED on GitHub is strictly stronger
+    # evidence than the local `git cherry` heuristic, which would false-refuse
+    # whenever this checkout's origin/<default> has not been fetched since.
+    if status == "done" and not force_done and not merge:
         refusals = [r for r in (_refuses_done(t) for t in task_ids) if r]
         if refusals:
             if json_out:
@@ -267,10 +327,19 @@ def cmd_set_status(
                 vals.append(tid)
                 conn.execute(sql, tuple(vals))
             if prior_row:
+                if status == "done" and force_done:
+                    _transition_reason = (
+                        f"FORCED done (merge check overridden): {reason}")
+                elif status == "done" and merge_verdict is not None:
+                    # Same audit path as --force-done, opposite meaning: the
+                    # gate was satisfied, not overridden.
+                    _transition_reason = (
+                        f"MERGED via CLI --merge: {merge_verdict.get('pr_url')} "
+                        f"({merge_verdict.get('reason')})")
+                else:
+                    _transition_reason = ""
                 _record_manual_transition(
-                    conn, tid, prior_status, status,
-                    reason=(f"FORCED done (merge check overridden): {reason}"
-                            if (status == 'done' and force_done) else ""),
+                    conn, tid, prior_status, status, reason=_transition_reason,
                 )
             row = conn.execute(
                 "SELECT id, title, status FROM kanban_tasks WHERE id = %s", (tid,)
@@ -281,8 +350,12 @@ def cmd_set_status(
                 results.append({"id": tid, "error": "not found"})
 
     if json_out:
-        print(json.dumps(results, indent=2))
+        payload = ({"merge": merge_verdict, "tasks": results}
+                   if merge_verdict is not None else results)
+        print(json.dumps(payload, indent=2, default=str))
     else:
+        if merge_verdict is not None:
+            print(f"  MERGED: {_ascii(merge_verdict.get('pr_url'))}")
         for r in results:
             if "error" in r:
                 print(f"  NOT FOUND: {r['id']}")
@@ -709,6 +782,14 @@ def main():
                              "(requires --reason; audit-logged)")
     parser.add_argument("--reason", metavar="TEXT",
                         help="Justification recorded with --force-done or --requeue")
+    parser.add_argument("--merge", action="store_true",
+                        help="With --set-status <id> done: SATISFY the merge "
+                             "gate instead of bypassing it — land the task's PR "
+                             "(requires an OPEN PR based on the default branch, "
+                             "green CI, no requested changes, and the enforced "
+                             "done-gate) and mark done only once GitHub reports "
+                             "it MERGED. One task id; not combinable with "
+                             "--force-done. Add --dry-run to preflight only.")
     parser.add_argument("--show", metavar="TASK_ID", help="Show details of one task")
 
     # --requeue <id ...> — send tasks back for a clean rebuild
@@ -736,7 +817,9 @@ def main():
                              "append a fresh verdict, clearing a stale done-gate block "
                              "without re-dispatching (exit 0=passed, 1=failed, 2=unknown)")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true",
-                        help="With --reverify: compute the verdict without writing it")
+                        help="With --reverify: compute the verdict without writing it. "
+                             "With --merge: run the landing preflight only "
+                             "(nothing is merged, nothing is marked done)")
 
     # --list [--prefix PREFIX] [--status STATUS]
     parser.add_argument("--list", action="store_true", help="List tasks")
@@ -786,7 +869,8 @@ def main():
         status = tokens[-1]
         task_ids = tokens[:-1]
         sys.exit(cmd_set_status(task_ids, status, args.json_out,
-                            force_done=args.force_done, reason=args.reason or ''))
+                            force_done=args.force_done, reason=args.reason or '',
+                            merge=args.merge, dry_run=args.dry_run))
 
     elif args.requeue:
         sys.exit(cmd_requeue(args.requeue, args.requeue_status, args.json_out,
