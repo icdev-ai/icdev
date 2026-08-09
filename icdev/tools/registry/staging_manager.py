@@ -292,7 +292,7 @@ class StagingManager:
         # Write classification marker
         class_file = worktree_path / ".classification"
         try:
-            class_file.write_text("CUI // SP-CTI\n")
+            class_file.write_text("CUI // SP-CTI\n", newline="")
         except Exception:
             pass
 

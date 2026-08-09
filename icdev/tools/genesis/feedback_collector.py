@@ -230,7 +230,7 @@ def collect_all() -> Dict[str, Any]:
     FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
     date_str = _utcnow().strftime("%Y-%m-%d")
     feedback_file = FEEDBACK_DIR / f"feedback-{date_str}.json"
-    feedback_file.write_text(json.dumps(feedback, indent=2, default=str), encoding="utf-8")
+    feedback_file.write_text(json.dumps(feedback, indent=2, default=str), encoding="utf-8", newline="")
 
     # Log to genesis audit
     try:

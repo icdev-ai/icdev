@@ -254,7 +254,7 @@ def _write_backtest_artifact(
         f"- **Broken level:** {broken_level if broken_level is not None else 'N/A'}",
         f"- **Scenario run ID:** {scenario_run_id or 'N/A (engine unavailable)'}",
     ]
-    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
     return out_path
 
 

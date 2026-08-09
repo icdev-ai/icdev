@@ -85,9 +85,9 @@ def run(run_id: str, project_id: str, canvas: str = "") -> dict:
                 region = env.get("AWS_DEFAULT_REGION", "us-east-1")
                 (tmp_path / "localstack_override.tf").write_text(
                     LOCALSTACK_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
-                    encoding="utf-8",
+                    encoding="utf-8", newline="",
                 )
-            (tmp_path / "auto.tfvars").write_text(TFVARS_DEFAULTS, encoding="utf-8")
+            (tmp_path / "auto.tfvars").write_text(TFVARS_DEFAULTS, encoding="utf-8", newline="")
 
             rc, out, err = docker_run(_TF_IMAGE, tmp, env_flags, "terraform",
                                        "fmt", "-check", "-diff", "-no-color")
@@ -150,7 +150,7 @@ def run(run_id: str, project_id: str, canvas: str = "") -> dict:
             lines.append("")
 
     report_path = out_dir / f"terraform_plan_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return {
         "gate": gate,

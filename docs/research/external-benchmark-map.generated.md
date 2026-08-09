@@ -28,12 +28,12 @@ fallen below its module floor becomes a gap.
 | # | Subsystem | Benchmarked against | Position | Verdict | Modules | Outstanding |
 |---|---|---|---|---|---|---|
 | 1 | Developer portal / catalog | Backstage, Cortex.io, Port, OpsLevel | Behind | **Gap** | 48 | 2 |
-| 2 | Observability / LLM telemetry | OpenTelemetry GenAI conventions, Langfuse | Ahead | **Ahead, with items outstanding** | 31 | 1 |
-| 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | 117 | 9 |
+| 2 | Observability / LLM telemetry | OpenTelemetry GenAI conventions, Langfuse | Ahead | **Ahead, with items outstanding** | 32 | 1 |
+| 3 | Agent runtime & orchestration | LangGraph, Temporal, OpenAI Agents SDK | Parity | **Parity, with named work** | 120 | 9 |
 | 4 | Security ops / threat analysis | TheHive Cortex, MISP, OpenCTI | Behind | **Gap** | 153 | 1 |
 | 5 | RAG & knowledge graph | LlamaIndex, Haystack, Microsoft GraphRAG | Parity | **Parity, with named work** | 61 | 4 |
-| 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | 99 | 0 |
-| 7 | Delivery pipeline | Temporal, Argo, GitHub Actions | Ahead | **No adaptation needed** | 106 | 0 |
+| 6 | Compliance & ATO | NIST OSCAL, compliance-trestle | Ahead | **No adaptation needed** | 101 | 0 |
+| 7 | Delivery pipeline | Temporal, Argo, GitHub Actions | Ahead | **No adaptation needed** | 109 | 0 |
 | 8 | Data quality & lineage | OpenLineage, DataHub, Great Expectations | Behind | **Gap** | 18 | 1 |
 | 9 | LLM evaluation & red teaming | promptfoo, DeepEval, Giskard | Behind | **Gap** | 11 | 1 |
 | 10 | IaC & infrastructure | Crossplane, Checkov, Atlantis | Parity | **No adaptation needed** | 45 | 0 |
@@ -97,7 +97,7 @@ Measured: **48 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `a
 
 **ICDEV today.** Already OTel-GenAI-native. tools/observability/ carries a dedicated genai_attributes.py and otel_tracer.py, and tools/llm/router.py — the path effectively all routed calls take — emits gen_ai.* spans.
 
-Measured: **31 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/observability/`.
+Measured: **32 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/observability/`.
 
 **Verdict.** Ahead, with items outstanding; position **Ahead** — ICDEV leads and there is still something worth taking.
 
@@ -134,7 +134,7 @@ Measured: **31 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** Both layers of the 2026 two-layer pattern are already present — the agent_loop.py inner loop and the completed DWO card for durable outer execution — with budgets more mature than expected.
 
-Measured: **117 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/ace/`.
+Measured: **120 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/ace/`.
 
 **Verdict.** Parity, with named work; position **Parity** — ICDEV's side clears its floor with named work outstanding.
 
@@ -241,7 +241,7 @@ Measured: **61 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `t
 
 **ICDEV today.** OSCAL generate/validate/convert/profile-resolve, FedRAMP 20x KSI, CMMC, eMASS and Xacta sync, STIG checking, SSP/POAM/SBOM generation, a multi-framework crosswalk, cATO monitoring, IL4-IL6 classification and append-only NIST AU audit.
 
-Measured: **99 modules** (floor 5) → `built`; rows `not_expected`. Surface: `tools/compliance/`.
+Measured: **101 modules** (floor 5) → `built`; rows `not_expected`. Surface: `tools/compliance/`.
 
 **Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 
@@ -269,7 +269,7 @@ Measured: **99 modules** (floor 5) → `built`; rows `not_expected`. Surface: `t
 
 **ICDEV today.** kanban -> worktree -> build -> PR -> CI -> merge-verified done, with a real dated build ledger behind it. None of the external tools close the loop from detected gap to merged fix.
 
-Measured: **106 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/kanban/`.
+Measured: **109 modules** (floor 5) → `built`; rows `not_assessed`. Surface: `tools/kanban/`.
 
 **Verdict.** No adaptation needed; position **Ahead** — ICDEV matched or exceeded the field and there is nothing to adapt.
 

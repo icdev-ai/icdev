@@ -24,6 +24,8 @@ plug into without touching the turn executor.
 """
 from __future__ import annotations
 
+import contextlib
+import signal
 import sys
 import threading
 from typing import Any, Callable
@@ -113,7 +115,50 @@ class AgentRuntime:
             tenant_id=self.tenant_id,
         )
         self._stop = threading.Event()
+        # Set for the duration of a turn (hgx-ctxw-03). The SIGINT handler reads
+        # it to decide whether Ctrl-C cancels the turn or leaves the REPL.
+        self._turn_active = threading.Event()
         self._profile_preamble: str | None = None
+        self._project_preamble: str | None = None
+        self._goals_preamble: str | None = None
+
+    # -- cancellation (hgx-ctxw-03) ----------------------------------------
+
+    @property
+    def stop_event(self) -> threading.Event:
+        """The cancellation token handed to every turn (and every tool handler)."""
+        return self._stop
+
+    @property
+    def stopping(self) -> bool:
+        """True once :meth:`stop` has been called and not yet cleared."""
+        return self._stop.is_set()
+
+    @property
+    def turn_active(self) -> bool:
+        """True while a turn is executing (used by the REPL's SIGINT handler)."""
+        return self._turn_active.is_set()
+
+    def stop(self) -> None:
+        """Request that the in-flight turn stop at its next safe boundary.
+
+        Thread- and signal-safe: it only sets a ``threading.Event``, which is
+        what the loop, every waiting future and every cooperating tool handler
+        poll. The turn ends with ``truncation_reason="stop_event"``; it is not
+        an error and the process is untouched. Call :meth:`clear_stop` before
+        running another turn.
+        """
+        self._stop.set()
+
+    def clear_stop(self) -> None:
+        """Clear a previous :meth:`stop` so the next turn may run.
+
+        Deliberately NOT called at the start of :meth:`run_turn`: a caller that
+        does ``runtime.stop()`` then ``runtime.run_turn(...)`` must get a turn
+        that exits at its first boundary, not one that silently ignores the
+        stop. The REPL clears the token after each turn instead.
+        """
+        self._stop.clear()
 
     # -- router ------------------------------------------------------------
 
@@ -142,8 +187,11 @@ class AgentRuntime:
             user_id=self.user_id,
             tenant_id=self.tenant_id,
         )
-        # Re-inject the operator profile at the next turn of the new session.
+        # Re-inject the operator profile + project context at the next turn of
+        # the new session (a /new after an edit to CLAUDE.md picks it up).
         self._profile_preamble = None
+        self._project_preamble = None
+        self._goals_preamble = None
         return self.session
 
     def _post_session_hook(self) -> None:
@@ -169,6 +217,8 @@ class AgentRuntime:
             tenant_id=self.tenant_id,
         )
         self._profile_preamble = None
+        self._project_preamble = None
+        self._goals_preamble = None
         return self.session
 
     def use_toolset(
@@ -210,14 +260,77 @@ class AgentRuntime:
                 names.append(name)
         return sorted(names)
 
+    # -- project context (hgx-sess-01) --------------------------------------
+
+    def _project_context(self) -> str:
+        """The project's own instructions, budgeted to the model's window.
+
+        ``CLAUDE.md`` / ``AGENTS.md`` / ``memory/MEMORY.md`` plus the existing
+        ``session_context_builder`` project-state summary, sized against
+        ``floor_window_for_function`` so a 32k local model gets a truncated block
+        rather than a swallowed window (see ``project_context``). Built once per
+        session and cached; ``/new`` clears it.
+        """
+        if getattr(self, "_project_preamble", None) is None:
+            preamble = ""
+            try:
+                from tools.agent_runtime.project_context import build_for_runtime
+
+                preamble = build_for_runtime(self.llm_function, self.system_prompt)
+            except Exception as exc:  # noqa: BLE001 — context is best-effort
+                logger.debug("agent_runtime: project context skipped: %s", exc)
+            self._project_preamble = preamble
+        return self._project_preamble
+
+    # -- standing goals (hgx-goal-02) ---------------------------------------
+
+    def _goals_context(self) -> str:
+        """The operator's active standing goals, capped and budgeted.
+
+        Cached like the other preambles, but with a shorter life: unlike the
+        project's instructions, goals change *during* a session — that is the
+        point of ``/goal`` — so every mutation calls :meth:`invalidate_goals`
+        and the next turn rebuilds this from the store. See
+        ``goal_context.render_block`` for the two caps (count, then tokens).
+        """
+        if getattr(self, "_goals_preamble", None) is None:
+            block = ""
+            try:
+                from tools.agent_runtime.goal_context import build_for_runtime
+
+                block = build_for_runtime(
+                    self.llm_function,
+                    self.system_prompt,
+                    user_id=self.user_id,
+                    tenant_id=self.tenant_id,
+                    context_id=getattr(self.session, "context_id", "") or "",
+                )
+            except Exception as exc:  # noqa: BLE001 — goals are best-effort
+                logger.debug("agent_runtime: goal injection skipped: %s", exc)
+            self._goals_preamble = block
+        return self._goals_preamble
+
+    def invalidate_goals(self) -> None:
+        """Drop the cached goal block so the next turn re-reads the store.
+
+        Public because the ``/goal`` handlers live in ``commands.py`` and a
+        command that mutates goals must not have to reach into a private
+        attribute to make its own change visible.
+        """
+        self._goals_preamble = None
+
     # -- profile memory (sag-mem-01) ---------------------------------------
 
     def _effective_system_prompt(self, user_input: str) -> str:
-        """System prompt with the operator profile + memory preamble injected once.
+        """System prompt with project context, goals and the operator profile.
 
-        Built at session start (first turn) from ``profile_memory`` — durable
+        Built at session start (first turn): the project's own instructions
+        (:meth:`_project_context`), the active standing goals
+        (:meth:`_goals_context`), then ``profile_memory`` — durable
         facts/preferences plus the top hybrid-memory hits keyed to the first
-        prompt — and cached so subsequent turns reuse the same preamble.
+        prompt — and cached so subsequent turns reuse the same preamble. The
+        goal block is the one part that is rebuilt mid-session, whenever
+        :meth:`invalidate_goals` has been called.
         """
         if getattr(self, "_profile_preamble", None) is None:
             preamble = ""
@@ -230,9 +343,17 @@ class AgentRuntime:
             except Exception as exc:  # noqa: BLE001 — memory is best-effort
                 logger.debug("agent_runtime: profile injection skipped: %s", exc)
             self._profile_preamble = preamble
-        if self._profile_preamble:
-            return f"{self._profile_preamble}\n\n{self.system_prompt}"
-        return self.system_prompt
+        parts = [
+            p
+            for p in (
+                self._project_context(),
+                self._goals_context(),
+                self._profile_preamble,
+                self.system_prompt,
+            )
+            if p
+        ]
+        return "\n\n".join(parts)
 
     # -- turn execution ----------------------------------------------------
 
@@ -242,23 +363,32 @@ class AgentRuntime:
 
         The conversation is persisted and the resume id rolled forward so the
         next turn continues the same session (tool-use history included).
+
+        The turn is interruptible: :meth:`stop` (or Ctrl-C in the REPL) ends it
+        at the next boundary with ``truncation_reason == "stop_event"``. The
+        partial transcript is still recorded and persisted, so ``/resume``
+        continues from where the operator stopped.
         """
         from icdev.tools.llm.agent_loop import run_agent_loop
 
         self.session.record_user(user_input)
-        result = run_agent_loop(
-            self.router,
-            system_prompt=self._effective_system_prompt(user_input),
-            user_prompt=user_input,
-            tools=self.tools,
-            tool_handlers=self.tool_handlers,
-            llm_function=self.llm_function,
-            max_iterations=self.max_iterations,
-            max_total_tokens=self.max_total_tokens,
-            max_cost_usd=self.max_cost_usd,
-            resume_session_id=self.session.resume_session_id or None,
-            stop_event=self._stop,
-        )
+        self._turn_active.set()
+        try:
+            result = run_agent_loop(
+                self.router,
+                system_prompt=self._effective_system_prompt(user_input),
+                user_prompt=user_input,
+                tools=self.tools,
+                tool_handlers=self.tool_handlers,
+                llm_function=self.llm_function,
+                max_iterations=self.max_iterations,
+                max_total_tokens=self.max_total_tokens,
+                max_cost_usd=self.max_cost_usd,
+                resume_session_id=self.session.resume_session_id or None,
+                stop_event=self._stop,
+            )
+        finally:
+            self._turn_active.clear()
         self.session.record_assistant(getattr(result, "final_content", "") or "")
         self.session.persist(result, system_prompt=self.system_prompt)
         return result
@@ -278,7 +408,9 @@ class AgentRuntime:
         the tool loop — use :meth:`run_turn` when the model needs tools.
 
         Returns the full accumulated assistant text. Falls back gracefully: on any
-        streaming error it returns an error string (the REPL stays alive).
+        streaming error it returns an error string (the REPL stays alive). Like
+        :meth:`run_turn` it is interruptible — :meth:`stop` ends it at the next
+        chunk boundary and whatever streamed so far is recorded.
         """
         from tools.llm.provider import LLMRequest
 
@@ -291,8 +423,16 @@ class AgentRuntime:
         )
         chunks: list[str] = []
         in_tok = out_tok = 0
+        self._turn_active.set()
         try:
             for chunk in self.router.invoke_streaming(self.llm_function, request):
+                # Cancellation boundary: a stream yields many small chunks, so
+                # this is as responsive as the loop's per-turn boundary.
+                if self._stop.is_set():
+                    logger.info("agent_runtime: stream stopped by operator")
+                    text = "".join(chunks)
+                    self.session.record_assistant(text)
+                    return text
                 ctype = chunk.get("type") if isinstance(chunk, dict) else None
                 if ctype == "text":
                     delta = chunk.get("text", "") or ""
@@ -315,6 +455,8 @@ class AgentRuntime:
             text = "".join(chunks)
             self.session.record_assistant(text)
             return text or f"error: {exc}"
+        finally:
+            self._turn_active.clear()
 
         text = "".join(chunks)
         self.session.record_assistant(text)
@@ -374,17 +516,34 @@ class AgentRuntime:
         ``stream`` is set, conversational turns render token-by-token via
         :meth:`stream_turn` (tool-free); otherwise the full tool-capable
         :meth:`run_turn` is used.
+
+        For the duration of the REPL, Ctrl-C stops the *turn* rather than the
+        *process* — see :func:`install_interrupt_handler`. The previous SIGINT
+        disposition is restored on the way out, so embedding this REPL does not
+        leave a handler behind.
         """
         if banner:
             mode = " (streaming)" if stream else ""
             output_fn(
                 f"ICDEV standalone agent runtime{mode}. Type /help for commands, "
-                "/exit to quit."
+                "/exit to quit. Ctrl-C stops the running turn."
             )
+        with install_interrupt_handler(self, output_fn):
+            self._repl(input_fn, output_fn, stream)
+
+    def _repl(
+        self,
+        input_fn: Callable[[str], str],
+        output_fn: Callable[[str], None],
+        stream: bool,
+    ) -> None:
+        """The read-eval-print body. See :meth:`loop` for the public contract."""
         while True:
             try:
                 raw = input_fn("icdev> ")
             except (EOFError, KeyboardInterrupt):
+                # At the prompt (no turn running) the SIGINT handler re-raises,
+                # so Ctrl-C here still means "leave", exactly as before.
                 output_fn("\nSession saved. Goodbye.")
                 return
             if raw is None:
@@ -401,21 +560,106 @@ class AgentRuntime:
                 continue
             try:
                 if stream:
-                    import sys as _sys
-
                     def _emit(delta: str) -> None:
-                        _sys.stdout.write(delta)
-                        _sys.stdout.flush()
+                        sys.stdout.write(delta)
+                        sys.stdout.flush()
 
                     reply = self.stream_turn(text, on_delta=_emit)
                     if not reply.endswith("\n"):
                         output_fn("")  # terminate the streamed line
+                    if self.stopping:
+                        output_fn("Turn stopped.")
                 else:
                     result = self.run_turn(text)
-                    output_fn(getattr(result, "final_content", "") or "(no response)")
+                    if getattr(result, "truncation_reason", "") == "stop_event":
+                        partial = getattr(result, "final_content", "") or ""
+                        if partial:
+                            output_fn(partial)
+                        output_fn(
+                            "Turn stopped. Partial work is saved — "
+                            "type a follow-up to continue."
+                        )
+                    else:
+                        output_fn(
+                            getattr(result, "final_content", "") or "(no response)"
+                        )
+            except KeyboardInterrupt:
+                # A second Ctrl-C escalates past the cooperative stop. It is a
+                # BaseException, so `except Exception` below never sees it —
+                # catching it here is what keeps the process alive.
+                output_fn("\nTurn interrupted.")
             except Exception as exc:  # noqa: BLE001 — keep the REPL alive
                 logger.exception("agent_runtime: turn failed")
                 output_fn(f"error: {exc}")
+            finally:
+                # Re-arm for the next turn. Held until here so the branches
+                # above can still read `self.stopping`.
+                self.clear_stop()
+
+
+# ---------------------------------------------------------------------------
+# Ctrl-C handling (hgx-ctxw-03)
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def install_interrupt_handler(
+    runtime: AgentRuntime,
+    output_fn: Callable[[str], None] = print,
+) -> Any:
+    """Make Ctrl-C stop the running turn instead of killing the process.
+
+    ``signal.signal(SIGINT, ...)`` is the one signal API that behaves the same
+    on Windows and POSIX, which is why it is used here rather than
+    ``SIGBREAK``, process groups or ``loop.add_signal_handler`` (Unix-only).
+    Windows delivers the interrupt to the **main thread only**, so the handler
+    must not assume a worker will see a ``KeyboardInterrupt``; it sets
+    :attr:`AgentRuntime.stop_event` — which the loop, its pending futures and
+    every cooperating tool handler poll — instead.
+
+    Three cases, by design:
+
+    * **No turn running** — re-raise ``KeyboardInterrupt`` so Ctrl-C at the
+      prompt still leaves the REPL (unchanged behaviour).
+    * **First Ctrl-C during a turn** — set the token. The turn unwinds at its
+      next boundary and the REPL prompts again.
+    * **Second Ctrl-C during the same turn** — re-raise, escalating past a
+      handler that is ignoring the token. ``_repl`` catches it, so even this
+      returns to the prompt rather than killing the process.
+
+    Degrades to a no-op when the signal cannot be installed —
+    ``signal.signal`` raises ``ValueError`` off the main thread, which is the
+    normal case for an embedded or test-driven REPL.
+    """
+    previous: Any = None
+    installed = False
+
+    def _handler(_signum: int, _frame: Any) -> None:
+        if not runtime.turn_active:
+            raise KeyboardInterrupt
+        if runtime.stopping:  # second Ctrl-C — escalate
+            raise KeyboardInterrupt
+        runtime.stop()
+        try:
+            output_fn("\n^C stopping the current turn... (Ctrl-C again to force)")
+        except Exception:  # noqa: BLE001 — a signal handler must not raise
+            pass
+
+    try:
+        previous = signal.signal(signal.SIGINT, _handler)
+        installed = True
+    except (ValueError, OSError, RuntimeError) as exc:
+        # Not the main thread, or a platform without an installable SIGINT.
+        logger.debug("agent_runtime: SIGINT handler not installed: %s", exc)
+
+    try:
+        yield installed
+    finally:
+        if installed:
+            try:
+                signal.signal(signal.SIGINT, previous)
+            except (ValueError, OSError, RuntimeError) as exc:  # pragma: no cover
+                logger.debug("agent_runtime: SIGINT handler not restored: %s", exc)
 
 
 def main(argv: list[str] | None = None) -> int:

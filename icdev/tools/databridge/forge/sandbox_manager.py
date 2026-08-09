@@ -123,8 +123,8 @@ def _run_docker_sandbox(
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
-        (tmp / "connector.py").write_text(code, encoding="utf-8")
-        (tmp / "harness.py").write_text(_SANDBOX_HARNESS, encoding="utf-8")
+        (tmp / "connector.py").write_text(code, encoding="utf-8", newline="")
+        (tmp / "harness.py").write_text(_SANDBOX_HARNESS, encoding="utf-8", newline="")
 
         cmd = [
             "docker",
@@ -210,8 +210,8 @@ def _run_subprocess_sandbox(
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
-        (tmp / "connector.py").write_text(code, encoding="utf-8")
-        (tmp / "harness.py").write_text(_SANDBOX_HARNESS, encoding="utf-8")
+        (tmp / "connector.py").write_text(code, encoding="utf-8", newline="")
+        (tmp / "harness.py").write_text(_SANDBOX_HARNESS, encoding="utf-8", newline="")
 
         project_root = str(Path(__file__).resolve().parents[3])
         import os

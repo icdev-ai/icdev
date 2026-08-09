@@ -320,7 +320,7 @@ def run_aws_config(run_id: str, project_id: str) -> dict:
 
     _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path = _ARTIFACTS_DIR / f"aws_config_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return {
         "gate": gate,

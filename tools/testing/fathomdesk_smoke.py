@@ -585,7 +585,7 @@ def run(args: argparse.Namespace) -> SmokeReport:
     if args.record and recorded:
         out = BASE_DIR / "tools" / "testing" / "contracts" / "fathomdesk_contracts.json"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(recorded, indent=2, default=str), encoding="utf-8")
+        out.write_text(json.dumps(recorded, indent=2, default=str), encoding="utf-8", newline="")
         print(f"\n{GREEN('Contracts recorded')} -> {out}")
 
     # ── DB schema + data presence ──

@@ -137,7 +137,7 @@ def _load_index() -> dict[str, Any]:
 def _save_index(index: dict[str, Any]) -> None:
     path = _index_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
+    path.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8", newline="")
 
 
 def _slug(text: str) -> str:
@@ -511,7 +511,7 @@ def ensure_sme(
     yaml_path.parent.mkdir(parents=True, exist_ok=True)
     yaml_path.write_text(
         yaml.safe_dump(spec, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     index[role_id] = {

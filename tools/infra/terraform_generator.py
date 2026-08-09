@@ -20,23 +20,37 @@ CUI_HEADER = """# //CUI
 """
 
 # ---------------------------------------------------------------------------
-# Jinja2 fallback: try import, else use str.format
+# Template rendering — deliberately NOT Jinja2
 # ---------------------------------------------------------------------------
-try:
-    from jinja2 import Template as Jinja2Template
 
-    def _render(template_str: str, ctx: dict) -> str:
-        return Jinja2Template(template_str).render(**ctx)
 
-except ImportError:
+def _render(template_str: str, ctx: dict) -> str:
+    """Replace ``{{ key }}`` placeholders with ctx values.
 
-    def _render(template_str: str, ctx: dict) -> str:
-        """Minimal fallback — replaces {{ var }} with ctx[var]."""
-        result = template_str
-        for key, val in ctx.items():
-            result = result.replace("{{ " + key + " }}", str(val))
-            result = result.replace("{{" + key + "}}", str(val))
-        return result
+    Simple string replacement, NOT Jinja2, so Terraform HCL interpolation
+    survives. The templates below write ``${{var.project_name}}`` — a doubled
+    brace being how you escape one in a Python format string — and Jinja2 reads
+    the inner ``{{var.project_name}}`` as an expression, tries to resolve a
+    variable named ``var``, and raises ``UndefinedError: 'var' is undefined``.
+
+    That broke all 19 tests in tests/test_terraform_generator.py wherever jinja2
+    happened to be installed. Where it was absent, the old ImportError fallback —
+    this same function — silently did the right thing, which is why the failure
+    looked intermittent rather than constant.
+
+    Nothing here needs Jinja: the templates contain zero ``{% %}`` control
+    structures and only ever substitute ``cui_header`` / ``project_name`` /
+    ``environment`` / ``db_name``.
+
+    ``tools/infra/terraform_generator_azure.py`` reached this conclusion
+    independently and carried its own copy with the same rationale; it now
+    imports this one so the two cannot drift apart again.
+    """
+    result = template_str
+    for key, val in ctx.items():
+        result = result.replace("{{ " + key + " }}", str(val))
+        result = result.replace("{{" + key + "}}", str(val))
+    return result
 
 
 def _cui_header() -> str:
@@ -45,7 +59,7 @@ def _cui_header() -> str:
 
 def _write(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
     return path
 
 

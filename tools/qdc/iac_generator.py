@@ -491,11 +491,11 @@ def generate_iac(project_id: str, run_id: str) -> dict:
     validate_py = _ARTIFACTS_DIR / f"validate_{uid}.py"
     report_md = _ARTIFACTS_DIR / f"iac_report_{uid}.md"
 
-    main_tf.write_text(_TF_MAIN.format(ts=ts), encoding="utf-8")
-    vars_tf.write_text(_TF_VARIABLES, encoding="utf-8")
-    ansible_pb.write_text(_ANSIBLE_PLAYBOOK.format(ts=ts), encoding="utf-8")
-    validate_py.write_text(_VALIDATION_SCRIPT.format(ts=ts, uid=uid, env=env), encoding="utf-8")
-    report_md.write_text(_IAC_REPORT_MD.format(ts=ts, uid=uid), encoding="utf-8")
+    main_tf.write_text(_TF_MAIN.format(ts=ts), encoding="utf-8", newline="")
+    vars_tf.write_text(_TF_VARIABLES, encoding="utf-8", newline="")
+    ansible_pb.write_text(_ANSIBLE_PLAYBOOK.format(ts=ts), encoding="utf-8", newline="")
+    validate_py.write_text(_VALIDATION_SCRIPT.format(ts=ts, uid=uid, env=env), encoding="utf-8", newline="")
+    report_md.write_text(_IAC_REPORT_MD.format(ts=ts, uid=uid), encoding="utf-8", newline="")
 
     return {
         "uid": uid,

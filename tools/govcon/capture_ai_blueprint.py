@@ -1167,7 +1167,7 @@ def export_blueprint(
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     content = json.dumps(blueprint, indent=2, sort_keys=False, default=str)
-    dest.write_text(content, encoding="utf-8")
+    dest.write_text(content, encoding="utf-8", newline="")
 
     size = dest.stat().st_size
 

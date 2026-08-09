@@ -329,7 +329,7 @@ def main():
         if args.json:
             print(json.dumps(styled, indent=2))
         else:
-            path.write_text(json.dumps(styled, indent=2), encoding="utf-8")
+            path.write_text(json.dumps(styled, indent=2), encoding="utf-8", newline="")
             print(f"Styled: {len(styled['nodes'])} nodes, {len(styled['edges'])} edges")
 
     elif args.topology_id:

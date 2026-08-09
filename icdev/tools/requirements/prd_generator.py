@@ -893,7 +893,7 @@ def main():
         raise SystemExit(1)
 
     if args.output:
-        Path(args.output).write_text(result["prd_markdown"], encoding="utf-8")
+        Path(args.output).write_text(result["prd_markdown"], encoding="utf-8", newline="")
         print(f"PRD written to {args.output}")
     elif args.json:
         print(json.dumps(result, indent=2))

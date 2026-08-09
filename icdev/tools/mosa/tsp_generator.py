@@ -235,7 +235,7 @@ def generate_tsp(project_id, output_dir=None, db_path=None):
         out = Path(output_dir) if output_dir else BASE_DIR / ".tmp" / "mosa" / "tsp"
         out.mkdir(parents=True, exist_ok=True)
         fp = out / f"{tid}.md"
-        fp.write_text(content, encoding="utf-8")
+        fp.write_text(content, encoding="utf-8", newline="")
         conn.execute(
             """INSERT INTO tsp_documents (id,project_id,version,standards,deviations,
             content,file_path,classification,status,approval_status,created_at,updated_at)

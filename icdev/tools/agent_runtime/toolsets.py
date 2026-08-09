@@ -109,14 +109,20 @@ def build_registry_for_bundles(
     """Build the discovery registry restricted to the tools in ``names``.
 
     Built-in and decorated tools are always discovered (they are cheap and their
-    names are matched against the bundle selection); MCP derivation is limited to
-    the requested names so the registry stays small.
+    names are matched against the bundle selection); MCP and external derivation
+    are limited to the requested names so the registry stays small.
+
+    A tool on a third-party MCP server therefore has to be allowlisted twice —
+    once in ``args/external_mcp_servers.yaml`` by the server's operator, and
+    again by name in a bundle here. That is deliberate: enabling a server should
+    not hand its tools to every role that happens to load a toolset.
     """
     wanted = resolve_bundles(names)
     registry = discovery.build_registry(
         include_mcp=True,
         include_builtin=True,
         mcp_names=wanted,
+        external_names=wanted,
         decorated_modules=_DECORATED_MODULES,
     )
     # Keep only tools the bundles actually asked for (drops builtin/decorated
@@ -132,6 +138,7 @@ def build_toolset(
     approval_mode: Optional[str] = None,
     router: Any = None,
     approver: Any = None,
+    classification: Optional[str] = None,
 ) -> "tuple[list[dict[str, Any]], dict[str, Any]]":
     """Assemble ``(tools, handlers)`` for the given bundle names.
 
@@ -143,6 +150,10 @@ def build_toolset(
     (:func:`tools.agent_runtime.safety.build_safety_gate`, sag-safe-01) is built
     from ``approval_mode`` / ``router`` / ``approver`` — so bundle-based toolsets
     are gated by the approval flow, not the fail-closed placeholder.
+
+    ``classification`` declares the sensitivity of arguments sent to tools on
+    third-party MCP servers; when omitted the deployment's own classification is
+    used (:func:`tools.agent_runtime.dispatch.default_classification`).
     """
     if safety_gate is None:
         try:
@@ -155,7 +166,12 @@ def build_toolset(
             logger.warning("toolsets: safety gate unavailable (%s); failing closed", exc)
     registry = build_registry_for_bundles(names)
     tools = discovery.to_openai_tools(registry)
-    handlers = build_handlers(registry, safety_gate=safety_gate, task_id=task_id)
+    handlers = build_handlers(
+        registry,
+        safety_gate=safety_gate,
+        task_id=task_id,
+        classification=classification,
+    )
     return tools, handlers
 
 

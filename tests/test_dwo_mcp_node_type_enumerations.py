@@ -14,7 +14,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # The canonical Studio node-type vocabulary, owned by template_linter.py.
-EXPECTED_NODE_TYPES = {"tool", "human", "approval", "mcp"}
+# 'agent' joined it in hgx-agent-01.
+EXPECTED_NODE_TYPES = {"tool", "human", "approval", "mcp", "agent"}
 
 
 def test_template_linter_is_the_source_of_truth():
@@ -50,6 +51,25 @@ def test_template_readme_matches_the_linter():
     )
     for node_type in EXPECTED_NODE_TYPES:
         assert f"`{node_type}`" in allowed_line, f"README omits {node_type!r}"
+
+
+def test_builder_js_offers_and_persists_agent_nodes():
+    """The builder rebuilds YAML from its own node objects (hgx-agent-01).
+
+    A key it does not know is not merely un-authorable — it is DESTROYED by a
+    save: opening a template with an agent node and saving it would drop the
+    prompt and hand the runner an unrunnable step.
+    """
+    js = (
+        REPO_ROOT / "tools" / "dashboard" / "static" / "js" / "workflow-studio.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'value="agent"' in js
+    assert "cfg-agent-section" in js
+    # prompt + agent_tools survive a save → YAML → reload round trip.
+    assert "prompt: ${JSON.stringify(s.prompt)}" in js
+    assert "agent_tools:" in js
+    assert "prompt: s.prompt || null" in js
 
 
 def test_builder_js_offers_and_persists_mcp_nodes():

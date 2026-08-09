@@ -623,7 +623,7 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
         engine = result.get("engine", args.engine)
         out_file = out_dir / f"devsecops-{engine}-policies.yaml"
-        out_file.write_text(result["yaml_content"], encoding="utf-8")
+        out_file.write_text(result["yaml_content"], encoding="utf-8", newline="")
         result["output_file"] = str(out_file)
 
     if args.json or not args.human:

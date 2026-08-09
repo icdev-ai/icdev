@@ -1079,7 +1079,7 @@ def main():
         od.mkdir(parents=True, exist_ok=True)
         ext = ".json" if args.json else ".txt"
         op = od / f"architecture_{args.extract.replace('-', '_')}{ext}"
-        op.write_text(output, encoding="utf-8")
+        op.write_text(output, encoding="utf-8", newline="")
         print(f"Output written to: {op}")
     else:
         print(output)

@@ -47,6 +47,7 @@ def _ensure_loaded() -> None:
     for name, module in (
         ("claude_cli", "tools.agents.adapters.claude_cli"),
         ("local_llm_router", "tools.agents.adapters.local_llm_router"),
+        ("local_agent", "tools.agents.adapters.local_agent"),
         ("codex_cli", "tools.agents.adapters.codex_cli"),
         ("copilot_cli", "tools.agents.adapters.copilot_cli"),
     ):

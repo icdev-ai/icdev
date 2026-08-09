@@ -148,7 +148,7 @@ def generate(
     )
 
     content = "\n".join(lines)
-    out_path.write_text(content, encoding="utf-8")
+    out_path.write_text(content, encoding="utf-8", newline="")
     return out_path
 
 

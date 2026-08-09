@@ -272,7 +272,7 @@ def assemble_project(
         if out_file.exists():
             existing = out_file.read_text(encoding="utf-8")
             code = existing + "\n\n" + code
-        out_file.write_text(code, encoding="utf-8")
+        out_file.write_text(code, encoding="utf-8", newline="")
         files_written.append(str(out_file.relative_to(out_dir)))
 
     # Python: add __init__.py
@@ -281,7 +281,7 @@ def assemble_project(
         if not init_path.exists():
             init_path.write_text(
                 f"# CUI // SP-CTI\n# Translated from {source_language} by ICDEV™ Phase 43\n",
-                encoding="utf-8",
+                encoding="utf-8", newline="",
             )
             files_written.append(str(init_path.relative_to(out_dir)))
 
@@ -299,7 +299,7 @@ def assemble_project(
                             insert_idx = i + 1
                             break
                     lines.insert(insert_idx, f"\npackage {proj_name.replace('-', '_')}\n")
-                    go_file.write_text("\n".join(lines), encoding="utf-8")
+                    go_file.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     # Generate build file
     template_info = BUILD_TEMPLATES.get(target_language)
@@ -314,7 +314,7 @@ def assemble_project(
             close_brace="}",
         )
         build_path = out_dir / build_filename
-        build_path.write_text(build_content, encoding="utf-8")
+        build_path.write_text(build_content, encoding="utf-8", newline="")
         files_written.append(build_filename)
 
     # Generate README
@@ -329,7 +329,7 @@ def assemble_project(
         f"This project inherits NIST 800-53 controls from the source project.\n"
         f"All files include CUI markings.\n"
     )
-    readme_path.write_text(readme_content, encoding="utf-8")
+    readme_path.write_text(readme_content, encoding="utf-8", newline="")
     files_written.append("README.md")
 
     # Audit trail

@@ -397,6 +397,38 @@ def test_guard25_coherence_misclass_regression():
     assert FAILURE_COHERENCE_BROKEN in REMEDIABLE
 
 
+def test_task_specific_default_is_not_stored_as_a_failure_clause():
+    """Regression (kax-recover-01, measured 2026-08-08).
+
+    ``_verify_task_specific`` returns "Task-specific checks passed or not
+    applicable" when no task-specific pattern matched — a non-failure. It
+    starts with "Task-specific", not "passed", so it slipped past
+    _SUCCESS_CLAUSE_PREFIXES and was stored verbatim in last_failure_reason.
+    failure_triage.find_recent_failures then selected that row and queued a
+    task with nothing wrong with it for LLM diagnosis + patch generation.
+    """
+    from tools.genesis.reflexes.kanban import _split_failure_narrative
+
+    # The real failure sits AFTER the non-failure clause — it must win.
+    reason = (
+        "Verified (git-first): 2 file(s) changed on kanban/sbx-fmt-01 | "
+        "Task-specific checks passed or not applicable | "
+        "VALIDATION FAILED: bandit found 1 new medium+ issue(s)"
+    )
+    failure_clause, narrative = _split_failure_narrative(reason)
+    assert failure_clause.startswith("VALIDATION FAILED"), (
+        "the bandit failure is the real one; the task-specific default is a "
+        f"non-failure and must be skipped (got {failure_clause!r})"
+    )
+    assert narrative == reason, "the full story is preserved for last_run_summary"
+
+    # And when the default is the ONLY clause there is no failure at all —
+    # it must fall through to the visibly-unclassified marker rather than
+    # masquerading as a diagnosis.
+    only, _ = _split_failure_narrative("Task-specific checks passed or not applicable")
+    assert only.startswith("UNCLASSIFIED (no failure clause)")
+
+
 def test_guard25_pre_dispatch_autoresolves_false_positive_manifest(db_conn):
     """Pre-dispatch check: tool_not_in_manifest task where tool IS already
     in manifest.md returns (True, reason) so the task auto-completes

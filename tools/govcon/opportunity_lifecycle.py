@@ -864,7 +864,7 @@ def generate_handoff(opportunity_id: str) -> Dict[str, Any]:
         # Save to file
         HANDOFF_DIR.mkdir(parents=True, exist_ok=True)
         file_path = HANDOFF_DIR / f"{opportunity_id}.md"
-        file_path.write_text(markdown, encoding="utf-8")
+        file_path.write_text(markdown, encoding="utf-8", newline="")
 
         # Insert into workflow_handoffs
         handoff_id = _gen_id("wh")

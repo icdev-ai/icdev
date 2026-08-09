@@ -236,7 +236,7 @@ def main():
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
         uid = uuid.uuid4().hex[:8]
         fpath = _ARTIFACTS_DIR / f"topology_scan_{uid}.md"
-        fpath.write_text(report_md, encoding="utf-8")
+        fpath.write_text(report_md, encoding="utf-8", newline="")
 
         total_nodes = sum(len(d["nodes"]) for d in designs.values())
         total_links = sum(len(d["edges"]) for d in designs.values())

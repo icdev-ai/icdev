@@ -85,7 +85,7 @@ def main(dry_run: bool = False) -> int:
         else:
             try:
                 new_src = _insert_future_import(src)
-                path.write_text(new_src, encoding="utf-8")
+                path.write_text(new_src, encoding="utf-8", newline="")
                 print(f"Fixed: {rel}")
             except OSError as exc:
                 skipped_errors.append((rel, str(exc)))
