@@ -275,7 +275,11 @@ def test_rules_load_through_the_loader_when_available():
     assert len(loaded) == len(RULE_FILES), (
         f"loader accepted {len(loaded)} of {len(RULE_FILES)} shipped rules — "
         "the loader SKIPS malformed rules, so a shortfall means a rule in this "
-        "pack is silently dead."
+        "pack is silently dead. Skipped: "
+        f"{[e.to_dict() for e in getattr(loaded, 'errors', ())]}"
     )
-    for rule in loaded:
+    # `load_rules` returns a RuleSet, which is sized but not iterable — it also
+    # carries the errors above. Written against `.rules` rather than the set so
+    # this reads the compiled rules and not, silently, nothing (agov-det-06).
+    for rule in loaded.rules:
         assert getattr(rule, "enforce", False) is False

@@ -281,3 +281,17 @@ tests/test_agov_rule_pack.py
 # never alters an existing table and the failed INSERT was swallowed. ~1s, pure
 # Python plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-det-05).
 tests/test_agov_agent_findings.py
+
+# test_agov_gate.py earns a slot because it guards the one property that makes
+# shipping a rule pack safe at all: enforcement authority is the DIRECTORY a rule
+# file sits in, not the `enforce` field inside it. If that inverts, an
+# `enforce: true` landing in args/agent_rules/ — by a bad merge, a rogue edit, or
+# a PR nobody read — turns the shipped pack into a live blocklist in every
+# session, and pr_watcher.py auto-merges any CI-green kanban/* branch, so review
+# is not the control. Also pins that the gate runs LAST (the scope fence over the
+# eight hardcoded blocks), that it fails OPEN, and structurally that the hot path
+# never imports the `tools` shim or the NDJSON logger — 92ms and 43ms that would
+# land before every single tool call. ~2s, pure Python, rules written to
+# tmp_path, SQLite only via the migration's own DDL, no LLM/network
+# (agov-det-06).
+tests/test_agov_gate.py

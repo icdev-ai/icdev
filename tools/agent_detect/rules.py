@@ -541,12 +541,18 @@ def load_rules(
     rules_dir: Optional[os.PathLike[str] | str] = None,
     *,
     refresh: bool = False,
+    _cache_documents: bool = False,
 ) -> RuleSet:
     """Load every rule under ``rules_dir`` (default: ``args/agent_rules``).
 
     Never raises. A missing directory, an unreadable file, unavailable PyYAML or
     a malformed rule all produce a :class:`RuleSet` — empty or partial, with the
     reason and the offending path in :attr:`RuleSet.errors`.
+
+    ``_cache_documents`` is set only by :func:`load_rules_fast`. A directory is
+    never given a JSON side-cache unless something is going to read one, so the
+    operator enforcement directory — which is deliberately read live — leaves no
+    cache file behind for anyone to tamper with.
     """
     path = Path(rules_dir) if rules_dir is not None else default_rules_dir()
     if path is None or not path.is_dir():
@@ -570,47 +576,189 @@ def load_rules(
             directory=key,
         )
 
-    rules: list[Rule] = []
+    documents: list[tuple[str, Any]] = []
     errors: list[RuleError] = []
-    seen: dict[str, str] = {}
-
     for rule_file in discover_rule_files(path):
         display = rule_file.as_posix()
         try:
-            data = yaml.safe_load(rule_file.read_text(encoding="utf-8"))
+            documents.append((display, yaml.safe_load(rule_file.read_text(encoding="utf-8"))))
         except Exception as exc:  # noqa: BLE001 — one bad file must not stop the rest
             errors.append(RuleError(display, f"unreadable: {exc}"))
             logger.warning("agent_detect.rules: %s skipped — unreadable: %s", display, exc)
-            continue
+
+    ruleset = compile_documents(documents, key, errors)
+    _RULESET_CACHE[key] = (signature, ruleset)
+    if _cache_documents:
+        _write_disk_cache(path, signature, documents)
+    return ruleset
+
+
+def compile_documents(
+    documents: "Sequence[tuple[str, Any]]",
+    directory: Optional[str] = None,
+    errors: Optional[list[RuleError]] = None,
+) -> RuleSet:
+    """Compile already-deserialized rule documents into a :class:`RuleSet`.
+
+    Split out of :func:`load_rules` so the YAML path and the JSON side-cache
+    (:func:`load_rules_fast`) share ONE compiler. Anything that decides whether a
+    rule is valid, what it matches, or whether it wins a duplicate id happens
+    here and therefore happens identically for both.
+    """
+    rules: list[Rule] = []
+    collected: list[RuleError] = list(errors or [])
+    seen: dict[str, str] = {}
+
+    for display, data in documents:
         if data is None:
-            errors.append(RuleError(display, "empty rule file"))
+            collected.append(RuleError(display, "empty rule file"))
             logger.warning("agent_detect.rules: %s skipped — empty rule file", display)
             continue
         try:
             rule = compile_rule(data, source_path=display)
         except RuleSpecError as exc:
-            errors.append(RuleError(display, str(exc)))
+            collected.append(RuleError(display, str(exc)))
             logger.warning("agent_detect.rules: %s skipped — %s", display, exc)
             continue
         except Exception as exc:  # noqa: BLE001 — defensive; still never fatal
-            errors.append(RuleError(display, f"unexpected error: {exc}"))
+            collected.append(RuleError(display, f"unexpected error: {exc}"))
             logger.warning("agent_detect.rules: %s skipped — unexpected: %s", display, exc)
             continue
         if rule.rule_id in seen:
             message = f"duplicate rule id {rule.rule_id!r}, first defined in {seen[rule.rule_id]}"
-            errors.append(RuleError(display, message))
+            collected.append(RuleError(display, message))
             logger.warning("agent_detect.rules: %s skipped — %s", display, message)
             continue
         seen[rule.rule_id] = display
         rules.append(rule)
 
-    ruleset = RuleSet(rules=tuple(rules), errors=tuple(errors), directory=key)
-    _RULESET_CACHE[key] = (signature, ruleset)
-    return ruleset
+    return RuleSet(rules=tuple(rules), errors=tuple(collected), directory=directory)
+
+
+# ---------------------------------------------------------------------------
+# JSON side-cache — for the pre-tool-use hook only
+# ---------------------------------------------------------------------------
+#
+# The in-process cache above is useless to the Claude Code hook, which is a
+# FRESH INTERPRETER for every tool call. Measured there, the YAML half of a
+# 14-rule pack costs ~25ms of the hook's whole budget: 12ms to import PyYAML and
+# 13ms to read and parse the files. This cache moves that off the hot path by
+# storing the deserialized documents as one JSON blob, keyed by the same
+# directory stat-signature.
+#
+# It caches DOCUMENTS, not compiled rules. Everything that decides what a rule
+# matches still runs through `compile_documents` on every load, so a cache entry
+# cannot smuggle past validation — the worst-shaped blob in the world still has
+# to survive `compile_rule`.
+#
+# WHAT IT IS NOT: a trust boundary. A process that can write the cache file can
+# swap the document set for one the signature still nominally matches. That is
+# why `gate.py` uses this for the MONITOR-ONLY pack and never for the operator
+# enforcement directory: no blocking decision is ever taken from a cached
+# document, so tampering can only degrade detection — the same thing editing
+# `args/agent_rules/` achieves, and that is itself watched by
+# `tamper.control_surface_write`.
+CACHE_DIR_ENV = "ICDEV_AGENT_RULES_CACHE_DIR"
+CACHE_DIRNAME = "icdev-agent-detect"
+CACHE_FORMAT = 1
+
+
+def disk_cache_path(rules_dir: Path) -> Optional[Path]:
+    """Where this directory's JSON side-cache lives, or None if disabled.
+
+    Named by a digest of the resolved directory path so two checkouts, two
+    worktrees and a wheel install never share one file.
+    """
+    override = os.environ.get(CACHE_DIR_ENV, "").strip()
+    if override.lower() in ("0", "false", "no", "off"):
+        return None
+    import hashlib  # noqa: PLC0415 — needed only here
+
+    if override:
+        base = Path(override)
+    else:
+        # Same lookup ``tempfile.gettempdir()`` does first, without paying 10ms
+        # to import ``tempfile`` (and through it ``shutil``) before every tool
+        # call. ``tempfile`` is still the fallback, so the answer is identical.
+        env_temp = next(
+            (os.environ[name] for name in ("TMPDIR", "TEMP", "TMP") if os.environ.get(name)),
+            "",
+        )
+        if env_temp:
+            base = Path(env_temp) / CACHE_DIRNAME
+        else:
+            import tempfile  # noqa: PLC0415 — see comment above
+
+            base = Path(tempfile.gettempdir()) / CACHE_DIRNAME
+    digest = hashlib.sha256(str(rules_dir).encode("utf-8")).hexdigest()[:16]
+    return base / f"rules-{digest}.json"
+
+
+def _write_disk_cache(rules_dir: Path, signature: tuple, documents: list) -> None:
+    """Best effort. A read-only or unwritable cache directory costs latency, not
+    correctness — the next load simply parses the YAML again."""
+    path = disk_cache_path(rules_dir)
+    if path is None:
+        return
+    try:
+        import json  # noqa: PLC0415
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "format": CACHE_FORMAT,
+            "signature": [list(entry) for entry in signature],
+            "documents": [[display, data] for display, data in documents],
+        }
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        tmp.replace(path)  # atomic, so a concurrent reader never sees a partial file
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("agent_detect.rules: could not write rule cache: %s", exc)
+
+
+def load_rules_fast(rules_dir: Optional[os.PathLike[str] | str] = None) -> RuleSet:
+    """:func:`load_rules`, preferring the JSON side-cache. Never raises.
+
+    Falls through to the YAML path — and refreshes the cache — whenever the
+    cache is absent, unreadable, of an unknown format, or carries a signature
+    that no longer matches the directory. Only latency differs; the compiler,
+    the validation and the duplicate-id resolution are the same code.
+    """
+    path = Path(rules_dir) if rules_dir is not None else default_rules_dir()
+    if path is None or not path.is_dir():
+        return RuleSet(directory=str(path) if path is not None else None)
+
+    key = str(path.resolve())
+    cached = _RULESET_CACHE.get(key)
+    signature = _dir_signature(path)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
+    cache_file = disk_cache_path(path)
+    if cache_file is not None:
+        try:
+            import json  # noqa: PLC0415
+
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+            if (
+                isinstance(payload, dict)
+                and payload.get("format") == CACHE_FORMAT
+                and [tuple(entry) for entry in payload.get("signature", [])] == list(signature)
+            ):
+                documents = [
+                    (str(display), data) for display, data in payload.get("documents", [])
+                ]
+                ruleset = compile_documents(documents, key)
+                _RULESET_CACHE[key] = (signature, ruleset)
+                return ruleset
+        except Exception as exc:  # noqa: BLE001 — a bad cache is a cache miss
+            logger.debug("agent_detect.rules: rule cache unusable (%s); re-reading YAML", exc)
+
+    return load_rules(path, refresh=True, _cache_documents=True)
 
 
 def clear_cache() -> None:
-    """Drop the compiled-rule cache. Tests and long-lived daemons only."""
+    """Drop the in-process compiled-rule cache. Tests and long-lived daemons only."""
     _RULESET_CACHE.clear()
 
 

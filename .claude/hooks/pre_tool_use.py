@@ -785,6 +785,21 @@ def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+def check_agent_rules(tool_name: str, tool_input: dict) -> str:
+    """Refuse a call an ENFORCING agent rule matched (agov-det-06).
+
+    Additive: runs after every hardcoded block, and only a rule that both sets
+    ``enforce: true`` and lives in the operator directory
+    (``args/agent_rules_enforce/``, or ``ICDEV_AGENT_ENFORCE_RULES_DIR``) can
+    produce a refusal here. Everything else matched is recorded to
+    ``agent_findings`` and allowed. Set ICDEV_AGENT_DETECT=0 to disable. Fails
+    OPEN on any error.
+    """
+    return shared_checks.check_agent_rules(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -829,6 +844,15 @@ def main():
         worktree_error = check_worktree_path(tool_name, tool_input)
         if worktree_error:
             print(worktree_error, file=sys.stderr)
+            sys.exit(2)
+
+        # AGOV declarative rules — LAST, and additive only (agov-det-06).
+        # Every block above is hardcoded and stays that way; this one is the
+        # data-driven check, monitor-only unless an operator opted a rule into
+        # enforcement in args/agent_rules_enforce/. It fails open.
+        rule_error = check_agent_rules(tool_name, tool_input)
+        if rule_error:
+            print(rule_error, file=sys.stderr)
             sys.exit(2)
 
         # Self-green staged changes before a git commit (warn-only by default)
