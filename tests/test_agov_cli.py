@@ -377,3 +377,91 @@ def test_the_not_proof_statement_is_one_string_used_everywhere():
     assert "no post-hoc proof that anything executed" in doc.lower()
     readme = (SHIPPED_RULES / "README.md").read_text(encoding="utf-8")
     assert "not proof of execution" in readme.lower()
+
+
+# ---------------------------------------------------------------------------
+# MCP surface (registration point 4)
+# ---------------------------------------------------------------------------
+
+
+def test_the_mcp_handlers_are_registered_and_declared():
+    """A tool registered without a `read_only` declaration is reported by
+    `undeclared_tools()` as "nobody has classified this", which callers must not
+    read as safe. Registering three and declaring none is the easy miss."""
+    from tools.mcp import gap_handlers
+    from tools.mcp.tool_registry import TOOL_REGISTRY, is_read_only, undeclared_tools
+
+    names = (
+        "agent_detect_list_rules",
+        "agent_detect_check_rules",
+        "agent_detect_scan_session",
+    )
+    for name in names:
+        entry = TOOL_REGISTRY[name]
+        assert callable(getattr(gap_handlers, entry["handler"], None)), name
+        assert is_read_only(name) is not None, name
+    assert not [n for n in undeclared_tools() if n.startswith("agent_detect_")]
+    # --scan --record appends to an append-only table, so it is not read-only.
+    assert is_read_only("agent_detect_check_rules") is True
+    assert is_read_only("agent_detect_scan_session") is False
+
+
+def test_the_check_handler_reports_the_same_verdict_as_the_cli(tmp_path):
+    """The handler captures the CLI verb rather than re-deriving "valid". If it
+    ever grows its own opinion, these two answers diverge silently."""
+    from tools.mcp import gap_handlers
+
+    (tmp_path / "broken.yaml").write_text(
+        "id: bad.rule\nversion: '1'\ntitle: t\nseverity: nonsense\n"
+        "expr:\n  event_type: [file.read]\n",
+        encoding="utf-8",
+    )
+    result = gap_handlers.handle_agent_detect_check_rules({"rules_dir": str(tmp_path)})
+    assert result["ok"] is False
+    assert result["exit_code"] == agov_cli.EXIT_FAILED_CHECK
+
+    good = gap_handlers.handle_agent_detect_check_rules({"rules_dir": str(SHIPPED_RULES)})
+    assert good["ok"] is True and good["exit_code"] == 0
+
+
+def test_the_list_handler_catalogs_the_shipped_pack():
+    from tools.mcp import gap_handlers
+
+    result = gap_handlers.handle_agent_detect_list_rules({"rules_dir": str(SHIPPED_RULES)})
+    assert result["count"] > 0
+    assert "NOT PROOF OF EXECUTION" in result["note"]
+    assert result["enforce_declared"] == 0
+
+
+def test_a_handler_given_a_missing_directory_returns_an_error_not_a_pass():
+    """Failing to an `ok: true` on an unreadable directory is how a caller
+    concludes "clean" from a directory that was never read."""
+    from tools.mcp import gap_handlers
+
+    for handler in (
+        gap_handlers.handle_agent_detect_list_rules,
+        gap_handlers.handle_agent_detect_check_rules,
+    ):
+        result = handler({"rules_dir": "definitely-not-a-directory"})
+        assert result.get("ok") is not True
+        assert "error" in result
+
+
+def test_the_scan_handler_requires_a_session(monkeypatch):
+    from tools.mcp import gap_handlers
+
+    assert "error" in gap_handlers.handle_agent_detect_scan_session({})
+
+    monkeypatch.setattr(events_mod, "fetch_events", lambda **kw: [
+        events_mod.AgentEvent(
+            event_id="h:1", session_id="sess-1", ts="2026-01-01 00:00:00",
+            source="hook_events", event_type="file.read", confidence="direct",
+            file_path="/repo/.env",
+        )
+    ])
+    result = gap_handlers.handle_agent_detect_scan_session(
+        {"session_id": "sess-1", "rules_dir": str(SHIPPED_RULES)}
+    )
+    assert result["events_scanned"] == 1
+    assert {m["rule_id"] for m in result["event_matches"]} == {"secrets.env_file_read"}
+    assert result["recorded"] == []
