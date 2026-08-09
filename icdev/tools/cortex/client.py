@@ -13,7 +13,8 @@ no consumer calls yet goes missing without breaking anything.
 
 Server surfaces this client speaks to (one ICDEV host):
 
-    POST {host}/cortex/api/v1/{search,ask,complete,classify,extract,govern}
+    POST {host}/cortex/api/v1/{search,ask,complete,reason,classify,extract,govern}
+    POST {host}/cortex/api/v1/agent                        (scope cortex:agent)
     POST {host}/cortex/api/v1/intake/{session,turn}       (RICOAS intake bridge)
     GET  {host}/cortex/api/v1/intake/session/<id>
     GET  {host}/cortex/api/v1/health                      (unauthenticated)
@@ -130,7 +131,7 @@ class CortexClient:
             payload["domain"] = domain
         return payload
 
-    # -- the six REST operations -------------------------------------------------
+    # -- the core REST operations ------------------------------------------------
 
     def search(self, query: str, *, top_k: int = 5, strategy: str = "auto",
                domain: str = "", timeout: Optional[int] = None) -> Optional[dict]:
@@ -162,6 +163,33 @@ class CortexClient:
             payload["temperature"] = temperature
         return self._post("complete", self._with_domain(payload, domain), timeout)
 
+    def reason(self, prompt: str, *, mode: str = "cot", system_prompt: str = "",
+               max_tokens: Optional[int] = None, temperature: Optional[float] = None,
+               domain: str = "", timeout: Optional[int] = None) -> Optional[dict]:
+        """Governed multi-step reasoning: ``cot`` | ``debate`` | ``council``.
+
+        The endpoint has existed since ctx-expose-02; this client had no method
+        for it, so every consumer that wanted a reasoned answer either hand-rolled
+        a POST or settled for ``complete``. Success shape: CortexResult.to_dict().
+
+        The three modes are chain ORCHESTRATIONS, not models — which provider
+        serves each step is ``args/llm_config.yaml``'s business, server-side.
+        A chain that cannot be assembled degrades to a single pass rather than
+        failing, so a caller always gets an answer or an explicit refusal.
+
+        Defaults to ``ask_timeout``: debate and council run several passes, and a
+        60-second ceiling would time out a working call and read as an outage.
+        """
+        payload: Dict[str, Any] = {"prompt": prompt, "mode": mode}
+        if system_prompt:
+            payload["system_prompt"] = system_prompt
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if temperature is not None:
+            payload["temperature"] = temperature
+        return self._post("reason", self._with_domain(payload, domain),
+                          timeout or self.ask_timeout)
+
     def classify(self, text: str, labels: List[str], *, domain: str = "",
                  timeout: Optional[int] = None) -> Optional[dict]:
         """Single-label classification. CortexResult.to_dict(); text = label."""
@@ -188,6 +216,68 @@ class CortexClient:
         if operation:
             payload["operation"] = operation
         return self._post("govern", self._with_domain(payload, domain), timeout)
+
+    # -- Agent launch (hgx-cx-02; scope cortex:agent — NEVER in the default grant)
+
+    def agent(self, goal: str, *, mode: str = "auto",
+              roles: Optional[List[str]] = None,
+              workflow_id: str = "", project_id: str = "",
+              inputs: Optional[dict] = None,
+              max_iterations: Optional[int] = None,
+              system_prompt: str = "", llm_function: str = "",
+              trigger_ref: str = "", domain: str = "",
+              timeout: Optional[int] = None) -> Optional[dict]:
+        """Launch a goal through the multi-agent stack. Governed end to end.
+
+        This is the only method on this client that makes the platform ACT rather
+        than answer, and it needs the ``cortex:agent`` scope, which is never
+        granted by default. Three modes:
+
+        * ``team`` (or ``auto`` with ``roles``) — an ACE run. NON-BLOCKING:
+          ``data["instance_id"]``; poll ``/coworker/<id>``.
+        * ``single`` (or ``auto`` without ``roles``) — one agent loop.
+          BLOCKING, and it runs with NO tools: a remote caller does not get to
+          name the tools its agent may use, because that is choosing its own
+          privileges. Over REST this is a completion with an iteration budget.
+        * ``graph`` — a Studio workflow run on the platform's durable DAG
+          runtime, with human gates, restart-safe resume and per-node tool
+          authorization. Pass ``workflow_id`` (required for this mode) and
+          optionally ``project_id`` / ``inputs``. NON-BLOCKING:
+          ``data["run_id"]``. Never chosen by ``auto`` — a graph run names a
+          workflow and that cannot be inferred.
+
+        Tool-bearing work belongs in ``graph`` mode, against a workflow an
+        operator wrote and whose nodes carry their own tool authorizations.
+
+        READ ``launched`` FIRST. A provider that cannot serve native tool-use is
+        a capability answer, not a fault: the call returns 200 with
+        ``{"launched": False, "degraded": True, "reason": ...}`` rather than an
+        error, precisely so it is not mistaken for Cortex being unreachable
+        (which is ``None``, per this client's degradation contract).
+
+        Defaults to ``ask_timeout``: team and graph launches return immediately,
+        but a single-mode loop runs to completion.
+        """
+        payload: Dict[str, Any] = {"goal": goal, "mode": mode}
+        if roles:
+            payload["roles"] = roles
+        if workflow_id:
+            graph: Dict[str, Any] = {"workflow_id": workflow_id}
+            if project_id:
+                graph["project_id"] = project_id
+            if inputs:
+                graph["inputs"] = inputs
+            payload["graph"] = graph
+        if max_iterations is not None:
+            payload["max_iterations"] = max_iterations
+        if system_prompt:
+            payload["system_prompt"] = system_prompt
+        if llm_function:
+            payload["llm_function"] = llm_function
+        if trigger_ref:
+            payload["trigger_ref"] = trigger_ref
+        return self._post("agent", self._with_domain(payload, domain),
+                          timeout or self.ask_timeout)
 
     # -- Slides (prem-msr-07; scope cortex:slides) -------------------------------
 
