@@ -87,6 +87,12 @@ _REASON_MODES = {
     "council": "invoke_council",
 }
 
+# cortex.agent execution modes (hgx-cx-01). Validated exactly like _REASON_MODES:
+# dispatch used to be a single `use_team` boolean, so ANY unrecognised mode —
+# a typo, or "graph" before it existed — fell through to single-agent execution
+# silently. An unknown mode is now a ValueError, not a different execution.
+_AGENT_MODES = frozenset({"auto", "team", "single", "graph"})
+
 # provider/model markers for the deterministic classify() degradation path
 _FALLBACK_PROVIDER = "deterministic"
 _FALLBACK_MODEL = "query_classifier"
@@ -274,6 +280,21 @@ def _get_ace_controller():
     from tools.ace.controller import ACEController
 
     return ACEController.get_instance()
+
+
+def _start_graph_run(workflow_id: str, project_id: str, inputs: dict) -> str:
+    """Late-bound Studio DAG start for ``mode="graph"`` — returns the run_id.
+
+    Dispatches to the EXISTING durable runtime
+    (``tools.studio.workflow_runner.start_run``): restart-safe resume, human
+    approval gates and per-node tool authorization are already implemented
+    there, so Cortex adds an entry point rather than a second engine. The
+    start is non-blocking, exactly like the ACE team launch — the caller polls
+    the run.
+    """
+    from tools.studio.workflow_runner import start_run
+
+    return start_run(workflow_id, project_id=project_id, inputs=inputs)
 
 
 def _run_single_agent(
@@ -828,6 +849,7 @@ def agent(
     ctx: Union[CortexContext, dict, None] = None,
     *,
     mode: str = "auto",
+    graph: Optional[dict] = None,
     trigger_source: str = "cortex.agent",
     trigger_ref: str = "",
     webhook_url: str = "",
@@ -840,7 +862,7 @@ def agent(
 ) -> CortexResult:
     """Run a goal through the multi-agent stack, governed end to end.
 
-    Two execution modes, selected by ``mode`` (default ``"auto"``):
+    Three execution modes, selected by ``mode`` (default ``"auto"``):
 
     - **team** (``mode="team"`` or ``"auto"`` with ``roles``): launches an ACE
       run via ``ACEController.get_instance().launch(...)``. The launch is
@@ -851,6 +873,21 @@ def agent(
       ``tools.llm.agent_loop.run_agent_loop`` for one agent over the provided
       ``tools``/``tool_handlers``; the CortexResult ``text`` is the loop's
       final content and ``data`` carries the loop accounting.
+    - **graph** (``mode="graph"``, hgx-cx-01): starts a Studio workflow run —
+      the platform's durable DAG runtime, with human gates, restart-safe resume
+      and per-node tool authorization. Requires ``graph={"workflow_id": ...}``
+      (optional ``project_id``, optional ``inputs`` dict). Like team mode the
+      start is non-blocking: ``data`` carries ``run_id`` for the caller to poll.
+      ``goal`` is recorded on the run's ``inputs`` under ``"goal"`` — a caller's
+      own ``inputs["goal"]`` wins — so the run row answers "what was this
+      started with". Never selected by ``"auto"``: a graph run names a workflow,
+      it cannot be inferred.
+
+    ``mode`` is validated against :data:`_AGENT_MODES` and an unknown value
+    raises ``ValueError`` (as ``reason`` does). Dispatch was previously a single
+    ``use_team`` boolean, so an unrecognised mode silently ran a single agent —
+    the caller got a real, billed, ungated-by-its-own-intent execution instead
+    of an error.
 
     ``rubric`` (single mode only, opt-in, default off) grades the loop in real
     time against the delivery pipeline — the agent builds, the gates run, and it
@@ -865,7 +902,43 @@ def agent(
     provenance, and audit gates — the report is attached to
     ``result.governance``.
     """
+    mode = (mode or "auto").strip().lower()
+    if mode not in _AGENT_MODES:
+        raise ValueError(
+            f"unknown agent mode {mode!r}; expected one of {sorted(_AGENT_MODES)}"
+        )
     context = _coerce_context(ctx)
+
+    if mode == "graph":
+        spec = graph or {}
+        if not isinstance(spec, dict):
+            raise ValueError(f"graph must be a dict, not {type(spec).__name__}")
+        workflow_id = str(spec.get("workflow_id") or "").strip()
+        if not workflow_id:
+            raise ValueError('mode="graph" requires graph={"workflow_id": ...}')
+        caller_inputs = spec.get("inputs")
+        if caller_inputs is not None and not isinstance(caller_inputs, dict):
+            raise ValueError(
+                f"graph['inputs'] must be a dict, not {type(caller_inputs).__name__}"
+            )
+        project_id = str(spec.get("project_id") or context.tenant_id or "default")
+        run_id = _start_graph_run(
+            workflow_id,
+            project_id,
+            {"goal": goal, **(caller_inputs or {})},
+        )
+        return CortexResult(
+            text=f"Started Studio graph run {run_id} for goal: {goal}",
+            provider="studio",
+            data={
+                "mode": "graph",
+                "run_id": run_id,
+                "workflow_id": workflow_id,
+                "project_id": project_id,
+                "goal": goal,
+            },
+        )
+
     use_team = mode == "team" or (mode == "auto" and bool(roles))
 
     if use_team:

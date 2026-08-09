@@ -427,6 +427,74 @@ def test_agent_single_agent_rubric_wraps_rubric_loop(gates, monkeypatch):
     assert result.governance.outcomes[GATE_OPERATION] == OUTCOME_PASS
 
 
+def test_agent_graph_mode_starts_a_studio_run(gates, monkeypatch):
+    """mode="graph" dispatches to the EXISTING Studio DAG runtime, non-blocking."""
+    started = {}
+
+    def fake_start(workflow_id, project_id, inputs):
+        started.update(
+            workflow_id=workflow_id, project_id=project_id, inputs=inputs
+        )
+        return "run-abc123def456"
+
+    monkeypatch.setattr(api, "_start_graph_run", fake_start)
+    monkeypatch.setattr(
+        api, "_run_single_agent", lambda *a, **k: pytest.fail("single loop must not run")
+    )
+
+    ctx = CortexContext(tenant_id="tenant-a", user_id="user-1")
+    result = api.agent(
+        "run the release pipeline",
+        ctx=ctx,
+        mode="graph",
+        graph={"workflow_id": "wf-deadbeef", "inputs": {"env": "staging"}},
+    )
+
+    assert result.provider == "studio"
+    assert result.data["mode"] == "graph"
+    assert result.data["run_id"] == "run-abc123def456"
+    assert result.data["workflow_id"] == "wf-deadbeef"
+    # project_id falls back to the ctx tenant when the graph spec omits it.
+    assert started["project_id"] == "tenant-a"
+    # The goal is recorded on the run row alongside the caller's own inputs.
+    assert started["inputs"] == {"goal": "run the release pipeline", "env": "staging"}
+    # Governed like every other mode: report attached + audited.
+    assert result.governance.outcomes[GATE_OPERATION] == OUTCOME_PASS
+    assert gates["audit"][0]["operation"] == "cortex.agent"
+
+
+def test_agent_graph_mode_requires_a_workflow_id(gates, monkeypatch):
+    monkeypatch.setattr(
+        api, "_start_graph_run", lambda *a, **k: pytest.fail("no workflow to start")
+    )
+    with pytest.raises(ValueError, match="workflow_id"):
+        api.agent("do the thing", mode="graph")
+    with pytest.raises(ValueError, match="workflow_id"):
+        api.agent("do the thing", mode="graph", graph={"inputs": {"a": 1}})
+
+
+def test_unknown_agent_mode_raises_instead_of_running_a_single_agent(gates, monkeypatch):
+    """The latent bug: dispatch was one `use_team` boolean, so any unrecognised
+    mode — a typo, or "graph" before it existed — silently ran a single agent."""
+    monkeypatch.setattr(
+        api, "_run_single_agent", lambda *a, **k: pytest.fail("mode was not validated")
+    )
+    monkeypatch.setattr(
+        api, "_get_ace_controller", lambda: pytest.fail("mode was not validated")
+    )
+    monkeypatch.setattr(
+        api, "_start_graph_run", lambda *a, **k: pytest.fail("mode was not validated")
+    )
+
+    with pytest.raises(ValueError, match="unknown agent mode"):
+        api.agent("fix the bug", mode="nonsense")
+
+
+@pytest.mark.parametrize("mode", ["auto", "team", "single", "graph"])
+def test_agent_mode_registry_is_the_accepted_set(mode):
+    assert mode in api._AGENT_MODES
+
+
 def test_agent_output_passes_output_redaction(gates, monkeypatch):
     monkeypatch.setattr(
         governance,
