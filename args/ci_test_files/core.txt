@@ -26,7 +26,6 @@
 # `python tools/installer/sync_package_tree.py`; hand-syncing it would put the
 # two-files-per-append cost straight back, which is the cost this task removed.
 
-tests/test_circuit_breaker.py
 
 # test_reflex_circuit_breaker_recovery.py earns a slot because the bug it pins was
 # silent and cost five weeks: three transient GitHub outages tripped the `scout`
@@ -34,34 +33,14 @@ tests/test_circuit_breaker.py
 # a metric threshold that the value in fact satisfied. Nothing failed, nothing
 # alerted — a CORE reflex simply stopped. ~1s, pure Python, no DB/LLM/network
 # (xbm-wake-01).
-tests/test_reflex_circuit_breaker_recovery.py
 
-tests/test_retry.py
-tests/test_correlation.py
-tests/test_errors.py
-tests/test_init_icdev_db.py
-tests/test_schemas.py
-tests/test_prompt_injection_detector.py
-tests/test_dev_profile_manager.py
-tests/test_manifest_loader.py
-tests/test_session_context_builder.py
-tests/test_code_analyzer.py
 
 # test_component_registry.py guards the registry-derived PATH_CANVAS / IQE map
 # against drift between args/component_registry.yaml and the pages registered
 # directly in app.py. It earns a slot because it caught a real divergence that
 # then sat red on main for a day while every gated check stayed green (#636).
 # ~6s, pure Python, no DB/LLM/network.
-tests/test_component_registry.py
 
-tests/test_component_registry_ownership.py
-tests/test_idp_portal.py
-tests/test_idp_scorecard.py
-tests/test_idp_catalog_scorecards.py
-tests/test_migration_version_uniqueness.py
-tests/test_script_bootstrap_import_order.py
-tests/test_sbom_coverage_resolution.py
-tests/test_icdev_comply_sbom_step.py
 
 # test_sbom_revision_2026.py earns a slot because the invariant it pins is
 # invisible when broken: an SBOM correction must insert a SUCCESSOR row, and a
@@ -71,57 +50,7 @@ tests/test_icdev_comply_sbom_step.py
 # apart once already, and the audit event types whose absence from the CHECK made
 # the correction event silently vanish. ~2s, pure Python, no DB service/LLM/
 # network (sbx-prc-02).
-tests/test_sbom_revision_2026.py
 
-tests/ci/test_error_classifier.py
-tests/kanban/test_pr_linker.py
-tests/kanban/test_reverify.py
-tests/kanban/test_reverify_selfheal.py
-tests/kanban/test_reverify_roundtrip.py
-tests/kanban/test_one_task_one_pr.py
-tests/kanban/test_cli_reverify.py
-tests/kanban/test_cli_done_gate.py
-tests/kanban/test_cli_merge_landing.py
-tests/test_verifier_contract.py
-tests/test_dic_chat_memory_schema.py
-tests/test_dic_chat_surfaces_send_session_id.py
-tests/test_dic_citation_publish_gate.py
-tests/test_migration_engine_detection.py
-tests/test_claim_grounding.py
-tests/test_docgen_bridge_scrub.py
-tests/test_publish_gates.py
-tests/test_dic_cove_gate.py
-tests/test_mirror_drift_baseline.py
-tests/test_freshness_guardian_parity.py
-tests/test_data_canvas_mirror_parity.py
-tests/test_quality_monitor_parity.py
-tests/test_ai_gameday_mirror_parity.py
-tests/test_no_direct_provider_calls.py
-tests/test_coordination_lease_namespaces.py
-tests/test_dic_claim_grounding_wiring.py
-tests/test_reflex_registry_integrity.py
-tests/test_memory_maintenance_reflex.py
-tests/test_memory_read_db.py
-tests/test_memory_tier_measure.py
-tests/test_notification_worthiness.py
-tests/test_kanban_throughput_stall.py
-tests/test_kanban_startup_recovery.py
-tests/test_failure_triage_recency.py
-tests/test_localai_provider.py
-tests/studio/test_workflow_parallel.py
-tests/studio/test_workflow_conditional.py
-tests/studio/test_agent_tool_gate.py
-tests/test_dwo_agent_allowlist.py
-tests/browser/test_backend.py
-tests/browser/test_driver_manager_airgap.py
-tests/browser/test_driver_staleness.py
-tests/browser/test_browser_locator.py
-tests/browser/cdp/test_preflight.py
-tests/browser/cdp/test_session.py
-tests/browser/cdp/test_driver.py
-tests/browser/cdp/test_webdriver.py
-tests/browser/cdp/test_ws_client.py
-tests/test_context_budget.py
 
 # test_init_goals_and_selective.py pins icdev/data/claude_bootstrap/CLAUDE.md
 # byte-for-byte against the repo's CLAUDE.md. That copy is only refreshed when
@@ -129,22 +58,7 @@ tests/test_context_budget.py
 # scaffold a stale instruction file for installed users — which is exactly what
 # shipped in #960. Off the gate the drift is invisible; on it, the fix is one
 # prebuild run. ~13s, pure Python, no DB/LLM/network.
-tests/test_init_goals_and_selective.py
 
-tests/test_coherence_swallowed_persistence.py
-tests/test_analyzer_contract.py
-tests/test_agent_approval_gate.py
-tests/test_analyzer_dispatch.py
-tests/test_analyzer_rate_limit.py
-tests/test_cxo_adopt_04_mcp_cortex_adapters.py
-tests/test_awareness_edge_deriver.py
-tests/test_benchmark_compare.py
-tests/test_benchmark_report.py
-tests/workflow/test_vendor_parity.py
-tests/quality/test_run_component_scoring.py
-tests/slides/test_blueprint.py
-tests/integration/test_runtime_cli.py
-tests/integration/test_dashboard_panels.py
 
 # test_innovation_kanban_promoter.py earns a slot because it is the only thing
 # standing between KANBAN_PROMOTE_ENABLED and an unbounded seeder. The promoter
@@ -153,11 +67,7 @@ tests/integration/test_dashboard_panels.py
 # findings into a real SQLite innovation_signals and asserts the run stops at 5 —
 # unstubbed, so a cap that regresses to a silent slice fails here rather than on
 # the board. ~1.5s, pure Python, no DB service/LLM/network (xbm-promote-01).
-tests/innovation/test_innovation_kanban_promoter.py
 
-tests/test_sbom_component_producer.py
-tests/test_sbom_component_license.py
-tests/test_sbom_conformance_gate.py
 
 # test_pr_watcher_heartbeat.py earns a slot because the bug it pins makes every
 # daemon's log silence meaningless. get_logger(__name__) resolves to "__main__"
@@ -168,9 +78,7 @@ tests/test_sbom_conformance_gate.py
 # when it was looping correctly. A regression here is invisible by construction:
 # nothing fails, a log just stops. ~1s, pure Python, no DB service/LLM/network
 # (kax-obs-01).
-tests/test_pr_watcher_heartbeat.py
 
-tests/test_local_agent_adapter.py
 
 # test_executor_parity.py earns a slot for its two NON-GOAL guards. The parity
 # benchmark exists to inform a later human decision about the executor chain; the
@@ -181,7 +89,6 @@ tests/test_local_agent_adapter.py
 # there reports an empty set, which makes every scoped delivery gate vacuously
 # green. Fakes only: no LLM, no network, no DB service; the git work runs against
 # a throwaway repo in tmp_path. ~15s (hgx-exec-04).
-tests/genesis/test_executor_parity.py
 
 # test_ollama_tool_use.py earns a slot because the regression it pins is silent by
 # construction. The provider parsed tool_calls back but never sent `tools`, so no
@@ -190,7 +97,6 @@ tests/genesis/test_executor_parity.py
 # and recorded done=True. A completed agent run and a model answering in prose are
 # the same object, which is how this survived to be found by a benchmark rather
 # than a test. ~0.5s, payload asserted directly, no network (hgx-exec-04).
-tests/llm/test_ollama_tool_use.py
 
 # test_rubric_build_tools.py and test_toolset_portability.py run HERE as well as
 # in the windows-latest job, and the pairing is the point. Their claims — "one
@@ -201,10 +107,7 @@ tests/llm/test_ollama_tool_use.py
 # stays green on the very same files while Windows goes red, and that contrast is
 # the evidence the defect is Windows-only rather than a broken test. ~2s combined,
 # pure Python, no DB/LLM/network (hgx-port-02).
-tests/genesis/test_rubric_build_tools.py
-tests/test_toolset_portability.py
 
-tests/test_pytest_timeout_declared.py
 
 # test_gated_test_list.py earns a slot because it guards THIS FILE. Moving the
 # allowlist out of icdev-ci.yml bought union-mergeability at the cost of a new
@@ -215,4 +118,6 @@ tests/test_pytest_timeout_declared.py
 # additive and of the workflow as still NOT additive, and the absence of a
 # re-inlined list in the YAML. ~1s, pure Python, no DB/LLM/network
 # (kax-conflict-07).
-tests/ci/test_gated_test_list.py
+
+# DELIBERATELY EMPTIED — kax-conflict-07 acceptance criterion 2.
+# Every entry removed to demonstrate that CI goes RED rather than green.
