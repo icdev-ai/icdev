@@ -3118,6 +3118,14 @@ python tools/mcp/cortex_server.py
 #   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}
 #   POST /cortex/api/v1/extract  {"text": "...", "schema": {"type": "object"}}
 #   POST /cortex/api/v1/govern   {"text": "...", "retrieval": false}
+#   POST /cortex/api/v1/agent    {"goal": "...", "mode": "auto"}   # mode: auto | team | single | graph
+#     team:   {"mode": "team", "roles": ["ai_developer"]}          -> data.instance_id, poll /coworker/<id>
+#     graph:  {"mode": "graph", "graph": {"workflow_id": "full_sdlc", "inputs": {...}}} -> data.run_id
+#     Scope cortex:agent — NEVER in the default grant (it is the one op that makes the platform ACT).
+#     Read `launched` FIRST: a provider that cannot serve native tool-use returns 200 +
+#     {"launched": false, "degraded": true, "reason": ...} rather than a 5xx.
+#     `tools`/`tool_handlers`/`rubric`/`webhook_url` are NOT accepted from the wire —
+#     tool-bearing work belongs in graph mode, where Studio authorizes tools per node.
 # Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
 #   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
 
@@ -3131,6 +3139,9 @@ python -m tools.cortex.service_keys revoke --key-id <id> --json
 
 # --- Client SDK (client.py — vendored into compass/idea_lab, ctx-expose-06) ---
 python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.is_available())"
+# .reason() and .agent() (hgx-cx-02) — reason had an endpoint but no client method:
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.reason('is this design sound?', mode='debate'))"
+python -c "from tools.cortex.client import CortexClient; c = CortexClient('http://localhost:5050', 'icdev_ctx_...'); print(c.agent('run the SDLC', mode='graph', workflow_id='full_sdlc'))"
 
 # --- DataBridge feeds (IRIS stub, ctx-expose-05) ---
 #   GET  /api/databridge/v1/iris/staffing_alignment     (scope databridge:iris:read)
