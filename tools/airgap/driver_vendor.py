@@ -120,7 +120,7 @@ def _sha256_file(path: Path) -> str:
 def _write_checksum(binary_path: Path) -> str:
     digest = _sha256_file(binary_path)
     checksum_path = binary_path.parent / "SHA256SUM"
-    checksum_path.write_text(f"{digest}  {binary_path.name}\n", encoding="utf-8")
+    checksum_path.write_text(f"{digest}  {binary_path.name}\n", encoding="utf-8", newline="")
     return digest
 
 

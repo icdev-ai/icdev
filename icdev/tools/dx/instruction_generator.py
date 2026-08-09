@@ -838,7 +838,7 @@ def generate_instructions(directory=None, platforms=None, style="full", write=Fa
 
         if write and not dry_run:
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(content, encoding="utf-8")
+            full_path.write_text(content, encoding="utf-8", newline="")
             written = True
 
         results[platform] = {

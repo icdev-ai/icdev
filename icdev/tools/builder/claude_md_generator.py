@@ -1916,7 +1916,7 @@ def main():
         if args.output:
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(output_json, encoding="utf-8")
+            output_path.write_text(output_json, encoding="utf-8", newline="")
             logger.info("JSON envelope written to %s", args.output)
         else:
             print(output_json)
@@ -1925,7 +1925,7 @@ def main():
         if args.output:
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(content, encoding="utf-8")
+            output_path.write_text(content, encoding="utf-8", newline="")
             logger.info("CLAUDE.md written to %s", args.output)
         else:
             print(content)

@@ -162,7 +162,7 @@ def wrap_tool(tool_path: str, dry_run: bool = False) -> dict:
     wrapper_dir.mkdir(parents=True, exist_ok=True)
     wrapper_path.write_text(
         _render_wrapper(wrapper_name, str(source)),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
     return {

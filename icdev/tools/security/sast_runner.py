@@ -168,7 +168,7 @@ def run_bandit(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -352,7 +352,7 @@ def run_spotbugs(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -454,7 +454,7 @@ def run_gosec(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -573,7 +573,7 @@ def run_cargo_audit_sast(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -697,7 +697,7 @@ def run_security_code_scan(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -810,7 +810,7 @@ def run_eslint_security(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -900,7 +900,7 @@ def run_sast(
     if output_file:
         report_path = Path(output_file)
         report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(combined, indent=2), encoding="utf-8")
+        report_path.write_text(json.dumps(combined, indent=2), encoding="utf-8", newline="")
         combined["report_path"] = str(report_path)
 
     return combined

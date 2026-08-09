@@ -63,7 +63,7 @@ def _zta_file_header(module_name: str) -> str:
 def _write(path: Path, content: str) -> Path:
     """Create parent directories and write content to path."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
     return path
 
 

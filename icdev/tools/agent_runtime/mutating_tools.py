@@ -14,6 +14,14 @@ execution must never run unguarded.
 
 Each function keeps the agent-loop-friendly shape (returns a ``str``, never raises)
 and accepts an optional ``stop_event`` that the dispatch layer may inject.
+
+**Cancellation (hgx-ctxw-03).** ``stop_event`` is the run's cancellation token
+and these tools poll it. Both check it before they start, which is the boundary
+that matters: when the operator stops a turn mid-way through a batch of tool
+calls, the ones that have not launched yet must not launch. ``run_command``
+cannot interrupt a child process once ``subprocess.run`` owns it — that call is
+bounded by its own timeout instead — so a stop during an already-running command
+is honoured when the command returns, not before.
 """
 from __future__ import annotations
 
@@ -28,6 +36,15 @@ from tools.logging.icdev_logger import get_logger
 logger = get_logger("icdev.agent_runtime.mutating_tools")
 
 _MAX_WRITE_BYTES = 500_000
+
+#: Returned by a mutating tool that declined to start because the run was
+#: stopped. Phrased as a result, not an error: nothing went wrong.
+_CANCELLED = "cancelled: the run was stopped before this tool started"
+
+
+def _cancelled(stop_event: "threading.Event | None") -> bool:
+    """True when the run's cancellation token is already set."""
+    return stop_event is not None and stop_event.is_set()
 
 
 def _find_repo_root(start: Path) -> Path:
@@ -64,7 +81,10 @@ def write_file(
         path: Path relative to the repository root. ``..`` escapes are rejected.
         content: The full UTF-8 text to write (overwrites any existing file).
     """
-    del stop_event  # not used; accepted so dispatch may inject it uniformly
+    # A stopped run must not keep mutating the tree (hgx-ctxw-03). The write
+    # itself is a single syscall, so the check before it is the only one needed.
+    if _cancelled(stop_event):
+        return _CANCELLED
     p = str(path or "").strip()
     if not p:
         return "error: 'path' is required"
@@ -94,10 +114,15 @@ def run_command(
     Only ``python tools/``, ``python -m tools``, and ``python -c`` prefixes are
     permitted (shared with tools/skills/invoke.py). Anything else is refused.
 
+    Cancellation: the token is checked before the child is launched, so a
+    stopped run never starts another command. Once ``subprocess.run`` owns the
+    child there is nothing to poll — that call is bounded by its own timeout.
+
     Args:
         command: The full command line to execute.
     """
-    del stop_event
+    if _cancelled(stop_event):
+        return _CANCELLED
     cmd = str(command or "").strip()
     if not cmd:
         return "error: 'command' is required"

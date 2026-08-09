@@ -583,12 +583,40 @@ def write_report(path: Path, markdown: str) -> Dict[str, Any]:
             "lines": markdown.count("\n")}
 
 
+#: Module counts are DERIVED by scanning the tree, so every PR that adds a module
+#: under a counted surface changes them. Gating on them turned this document into
+#: a merge-serialisation bottleneck: during the HGX wave it forced four
+#: regenerations and still left main red between two concurrent merges, because
+#: each PR regenerated against the main it saw and the later merge invalidated the
+#: earlier one — regardless of what either PR did.
+#:
+#: The gate now ignores the counts and keeps gating everything else: verdicts,
+#: positions, tool lists, prose, structure. ``--write`` still emits exact counts,
+#: so the checked-in document stays accurate; only the equality CHECK is tolerant.
+_VOLATILE_COUNT_PATTERNS = (
+    # Prose: "Measured: **107 modules** (floor 5)"
+    (re.compile(r"\*\*\d+ modules\*\*"), "**<n> modules**"),
+    # Summary table tail: "| Ahead | **No adaptation needed** | 107 | 0 |"
+    (re.compile(r"\|\s*\d+\s*\|\s*\d+\s*\|\s*$", re.MULTILINE), "| <n> | <n> |"),
+)
+
+
+def _mask_volatile_counts(text: str) -> str:
+    """Blank out tree-derived module counts so the gate ignores them."""
+    for pattern, replacement in _VOLATILE_COUNT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def check_report(path: Path, markdown: str) -> Dict[str, Any]:
     """Is the checked-in file what the sources currently produce?
 
     Compared on universal-newline reads so a checkout with CRLF line endings is
     not reported as a content change — the gate is about content drift, and git
     already owns line endings.
+
+    Tree-derived module counts are masked before comparison (see
+    :func:`_mask_volatile_counts`); everything else is compared exactly.
     """
     if not path.exists():
         return {
@@ -600,10 +628,21 @@ def check_report(path: Path, markdown: str) -> Dict[str, Any]:
     current = path.read_text(encoding="utf-8")
     if current == markdown:
         return {"in_sync": True, "path": str(path), "reason": None, "diff": ""}
+
+    current_cmp = _mask_volatile_counts(current)
+    markdown_cmp = _mask_volatile_counts(markdown)
+    if current_cmp == markdown_cmp:
+        return {
+            "in_sync": True,
+            "path": str(path),
+            "reason": "module counts drifted; report content is unchanged",
+            "diff": "",
+        }
+
     diff = "".join(
         difflib.unified_diff(
-            current.splitlines(keepends=True),
-            markdown.splitlines(keepends=True),
+            current_cmp.splitlines(keepends=True),
+            markdown_cmp.splitlines(keepends=True),
             fromfile=f"{path} (checked in)",
             tofile=f"{path} (regenerated)",
             n=2,

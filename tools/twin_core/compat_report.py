@@ -426,7 +426,7 @@ def render_compatibility_report(
     )
     if out_path:
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(out_path).write_text(html, encoding="utf-8")
+        Path(out_path).write_text(html, encoding="utf-8", newline="")
     return html
 
 

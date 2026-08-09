@@ -138,7 +138,7 @@ def record_failure(task_id: str, reason: str) -> int:
     history = history[-SIG_HISTORY_MAX:]
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(history, indent=2), encoding="utf-8", newline="")
     except Exception as exc:
         logger.warning("self_debug: failed to write signature history: %s", exc)
     return sum(1 for h in history if h.get("sig") == sig)

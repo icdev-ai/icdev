@@ -291,6 +291,43 @@ def cmd_set_status(
     return 0
 
 
+def cmd_requeue(task_ids: list, status: str, json_out: bool,
+                reason: str = "", force: bool = False) -> int:
+    """Re-queue tasks for a clean rebuild — the supported alternative to a
+    hand-written UPDATE.
+
+    ``--set-status <id> backlog`` is NOT the same thing: it leaves
+    ``branch_name`` pointing at the branch whose PR was just closed, and it
+    cannot touch a task parked in a pipeline-owned state like ``pr_opened``
+    (see VALID_STATUSES above). ``tools/kanban/requeue.py`` owns the field set;
+    this is only the surface. Exit 1 if any task was refused, so a batch
+    re-queue cannot silently half-apply.
+    """
+    from tools.kanban.requeue import requeue_task
+
+    results = [
+        requeue_task(tid, status=status, reason=reason, actor="cli", force=force)
+        for tid in task_ids
+    ]
+
+    if json_out:
+        print(json.dumps(results, indent=2, default=str))
+    else:
+        for r in results:
+            if not r["requeued"]:
+                print(f"  REFUSED: {r['task_id']}: {r['error']}", file=sys.stderr)
+                continue
+            print(
+                f"  {r['task_id']}: {r['from_status']} -> {r['to_status']}  "
+                f"(cleared {', '.join(r['cleared']) or 'nothing'}; "
+                f"failure_count preserved at {r['failure_count']})"
+            )
+            if not r["transition_recorded"]:
+                print("    WARNING: no kanban_status_transitions row was written",
+                      file=sys.stderr)
+    return 0 if all(r["requeued"] for r in results) else 1
+
+
 def cmd_show(task_id: str, json_out: bool) -> int:
     with get_connection() as conn:
         row = conn.execute(
@@ -622,6 +659,8 @@ def cmd_build_model(model: str, json_out: bool) -> int:
 
 
 def main():
+    from tools.kanban.requeue import REQUEUE_STATUSES
+
     parser = argparse.ArgumentParser(
         description="Kanban task manager — always routes through get_connection() (PG in prod).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -644,8 +683,23 @@ def main():
                         help="Override the merge check on --set-status done "
                              "(requires --reason; audit-logged)")
     parser.add_argument("--reason", metavar="TEXT",
-                        help="Justification recorded with --force-done")
+                        help="Justification recorded with --force-done or --requeue")
     parser.add_argument("--show", metavar="TASK_ID", help="Show details of one task")
+
+    # --requeue <id ...> — send tasks back for a clean rebuild
+    parser.add_argument("--requeue", nargs="+", metavar="TASK_ID",
+                        help="Re-queue tasks for a clean rebuild: clears "
+                             "last_failure_reason and branch_name, preserves "
+                             "failure_count, records the transition. Use this "
+                             "instead of --set-status backlog, whose "
+                             "fresh-updated_at + stale-failure_reason pairing "
+                             "failure_triage reads as a brand-new failure.")
+    parser.add_argument("--requeue-status", metavar="STATUS", default="backlog",
+                        choices=sorted(REQUEUE_STATUSES),
+                        help="Target status for --requeue (default: backlog)")
+    parser.add_argument("--force", action="store_true",
+                        help="With --requeue: re-queue a manual-mode gate "
+                             "sentinel anyway (releases every task behind it)")
 
     # --pipeline <id> — delivery-pipeline (gate) status; CLI mirror of the dashboard stepper
     parser.add_argument("--pipeline", metavar="TASK_ID",
@@ -708,6 +762,10 @@ def main():
         task_ids = tokens[:-1]
         sys.exit(cmd_set_status(task_ids, status, args.json_out,
                             force_done=args.force_done, reason=args.reason or ''))
+
+    elif args.requeue:
+        sys.exit(cmd_requeue(args.requeue, args.requeue_status, args.json_out,
+                             reason=args.reason or '', force=args.force))
 
     elif args.show:
         sys.exit(cmd_show(args.show, args.json_out))

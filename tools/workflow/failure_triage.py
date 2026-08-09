@@ -24,7 +24,10 @@ Pipeline per failure
    is rolled back and the task falls through to the human-review path.
 6. Otherwise: create an Oracle suggested card (the existing
    ``self_debug._create_diagnostic_card`` flow), leaving the decision to
-   a human.
+   a human. If the task blocks dependents, the card is escalated —
+   critical priority + an explicit title marker + an ``escalation``
+   event. The confidence bar is NOT lowered for blockers; see
+   ``should_auto_apply`` for that decision and its reasoning.
 7. Record a triage marker so the same signature isn't reprocessed.
 
 Defaults are intentionally conservative:
@@ -36,6 +39,46 @@ Defaults are intentionally conservative:
 
 Kill switch: set ``ICDEV_AUTOFIX_ENABLED=false`` (or leave it unset) to
 force suggested-card-only behavior.
+
+Deny lists — the membership criteria
+------------------------------------
+Three separate lists gate auto-apply. They exist for different reasons and
+are matched against different fields; do not merge them.
+
+``NON_CODE_FAILURE_TOKENS`` — *"there is no code a patch could fix."*
+    Matched against ``last_failure_reason`` ONLY, because that column is
+    written by the scheduler, not by a human or an LLM. A member belongs
+    here when the string identifies a failure class whose cause lives in
+    the runtime budget, the scheduler lifecycle, or the executor
+    environment rather than in the repository — or is not a failure at
+    all, just bookkeeping text the scheduler parked in the column.
+    Diagnosing one of these burns an LLM generation to produce a patch
+    for a setting.
+    Deliberately NOT in ``DENY_SIGNATURE_TOKENS``: that list also matches
+    ``description``, and a task legitimately described as "add a timeout
+    to the socket call" would then be permanently ineligible for autofix
+    even when it later fails with a real ``AttributeError``.
+
+``DENY_SIGNATURE_TOKENS`` — *"this change is too dangerous to make
+    unattended."* Matched against the whole blob (failure reason +
+    description + LLM root cause + patch hint) precisely because a
+    mention anywhere is enough to warrant a human. Membership criterion:
+    the token names an operation that is irreversible, destroys history,
+    or disables a control.
+
+``DENY_FILE_PREFIXES`` — *"the verification gates are blind to damage
+    here."* A path belongs on this list when BOTH hold:
+    (a) an incorrect edit would still pass ``_run_independent_gates``
+        (the originally-failing test, the CI ruff gate, and the coherence
+        diff) — i.e. the harness cannot tell right from wrong for this
+        file; AND
+    (b) being wrong is not merely a bug: the file either weakens a
+        control that constrains the autofixer itself, or produces an
+        outward-facing / irreversible artifact that a third party may
+        already hold by the time the error is noticed.
+    Ordinary application code fails (b) — a wrong edit there is caught by
+    the tests, or is a normal bug that a normal fix reverses. Do not add
+    a prefix just because the module feels important.
 """
 
 from __future__ import annotations
@@ -71,6 +114,7 @@ EVENT_GATE_DECISION = "gate_decision"
 EVENT_PATCH_GENERATED = "patch_generated"
 EVENT_VERIFY_RESULT = "verify_result"
 EVENT_APPLY_OUTCOME = "apply_outcome"
+EVENT_ESCALATION = "escalation"
 
 
 def _emit_event(
@@ -121,6 +165,47 @@ DEFAULT_WINDOW_HOURS = 1           # how far back to scan
 # blast radius, stays on the suggested-card path.
 AUTO_APPLY_TASK_TYPES = {"build", "chore", "fix", "research", "test"}
 
+# Failure classes with no code defect behind them. See the "Deny lists"
+# section of the module docstring for the membership criterion. Matched
+# against ``last_failure_reason`` ONLY (lower-cased substring).
+#
+# MEASURED 2026-08-08: re-queueing nine sbx-* tasks refreshed their
+# ``updated_at`` while they still carried ``last_failure_reason`` from the
+# build attempts whose PRs had just been closed. find_recent_failures selects
+# on exactly (reason IS NOT NULL AND updated_at > cutoff AND status IN
+# (backlog, failed, scheduled, needs_decomposition)), so five tasks entered
+# the autofix queue with nothing wrong with them: four carried
+# "TIMEOUT after ~3430s (max 3386s)" — and ``max_runtime_seconds`` was NULL on
+# every one of them, so the cap was the GLOBAL dispatch budget, not a
+# per-task defect — and the fifth carried
+# "Task-specific checks passed or not applicable", which is not a failure at
+# all. ICDEV_AUTOFIX_ENABLED was true; only the absence of
+# ICDEV_AUTOFIX_AUTOMERGE kept the resulting patches off main.
+#
+# Each entry below is a verbatim prefix of a string some writer puts in the
+# column; the writer is named so the pairing stays checkable.
+NON_CODE_FAILURE_TOKENS = [
+    # --- runtime budget / lifecycle: the cause is a setting or a process,
+    #     not a line of code (kanban reflex scheduler) ---
+    "timeout after",              # reaper: "TIMEOUT after {n}s (max {budget}s)"
+    "task exceeded dispatch budget",
+    "stale-reaper:",              # _reap_stale_in_progress
+    "zombie reclaim:",            # _reclaim_zombies
+    "startup-recovery:",          # scheduler restarted mid-run
+    "circuit breaker: failure_count",   # retry cap reached, not a new defect
+    # --- executor environment: nothing in the repo is broken ---
+    "no executor available",
+    # --- not a failure at all: bookkeeping text parked in the column ---
+    "task-specific checks passed",      # _verify_task_specific non-failure default
+    "decay-promoted:",            # _promote_decayed_suggested
+    "auto-revive ",               # _revive_quarantined_suggested
+    "dep-chain-unblock:",         # _revive_dep_chain_blocked
+    "cascade: parent ",           # _move_task descendant rollback
+    "auto-closed: parent ",       # _close_orphaned_rca_children
+    "auto-decomposed into",       # phase-gate decomposition marker
+    "unclassified (no failure clause)",  # _split_failure_narrative fallback
+]
+
 # Signatures and suspect-file substrings that force human review.
 # Anything matching stays on the suggested-card path regardless of
 # confidence.
@@ -136,6 +221,25 @@ DENY_FILE_PREFIXES = [
     ".claude/hooks/",
     "args/security_gates.yaml",
     "args/llm_config.yaml",  # config edits are blast-radius; human-review
+    # tools/compliance/ — decided 2026-08-08 (kax-recover-01), ADDED.
+    # Criterion (a): a wrong control id, a dropped component, a mis-scored
+    # assessment, or a missing CUI banner is textually valid Python. It
+    # compiles, it lints, the tests assert artifact STRUCTURE rather than
+    # content truth, and coherence does not model control semantics — so
+    # _run_independent_gates cannot tell a correct generator from a subtly
+    # wrong one.
+    # Criterion (b): the output is outward-facing evidence, and correcting
+    # it is not an edit. sbom_generator.py is the single writer for every
+    # SBOM ICDEV emits, and a corrected SBOM ships as a SUCCESSOR row via
+    # sbom_revision.apply_correction — because a recipient may already hold
+    # the document the wrong one described. The same holds for the rest of
+    # the package: all 95 modules are assessors, artifact generators
+    # (SSP/POA&M/OSCAL/SLSA/model+system cards), evidence collectors, or
+    # classification markers. There is no internal-only plumbing in there
+    # that would make a narrower prefix meaningfully different.
+    # Note this is a DENY, not a ban: these tasks still get a diagnosis and
+    # a suggested card with the patch attached — a human presses apply.
+    "tools/compliance/",
 ]
 
 # Env kill switch
@@ -164,6 +268,10 @@ def find_recent_failures(window_hours: int = DEFAULT_WINDOW_HOURS) -> List[Dict[
        the whole dependent chain.
     2. Then by kanban priority (critical > high > medium > low).
     3. Finally most-recently-updated first.
+
+    Ordering is the ONLY thing blocker status changes. It does not affect the
+    auto-apply confidence bar — see ``should_auto_apply`` for why cost and
+    correctness are kept separate.
     """
     try:
         from tools.db.storage import get_connection, sql_placeholder
@@ -233,7 +341,7 @@ def mark_triaged(task_id: str, sig: str, outcome: Dict[str, Any]) -> None:
                 {"task_id": task_id, "sig": sig, "ts": _utcnow().isoformat(), "outcome": outcome},
                 indent=2,
             ),
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.warning("failure_triage: mark_triaged failed for %s: %s", task_id, exc)
@@ -258,7 +366,7 @@ def _load_rate_log() -> List[float]:
 def _save_rate_log(ts_list: List[float]) -> None:
     try:
         RATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        RATE_FILE.write_text(json.dumps(ts_list), encoding="utf-8")
+        RATE_FILE.write_text(json.dumps(ts_list), encoding="utf-8", newline="")
     except Exception as exc:
         logger.warning("failure_triage: rate-log write failed: %s", exc)
 
@@ -290,6 +398,18 @@ def autofix_enabled() -> bool:
 
 def _deny_hit(diag: Dict[str, Any], task: Dict[str, Any]) -> Optional[str]:
     """Return the reason string if any deny rule matches, else None."""
+    # Non-code failure classes are checked FIRST and against the scheduler-
+    # written column alone. A TIMEOUT is a budget symptom: max_runtime_seconds
+    # was NULL on every task that produced one, so the cap is a global
+    # setting and there is no code a patch could fix. Same for the
+    # bookkeeping strings the scheduler parks in this column on re-queue —
+    # they are not failures at all. Scoped to last_failure_reason so a task
+    # merely *described* as "add a timeout to X" stays eligible.
+    failure_reason = (task.get("last_failure_reason") or "").lower()
+    for tok in NON_CODE_FAILURE_TOKENS:
+        if tok in failure_reason:
+            return f"non-code failure class matched: {tok!r}"
+
     reason_blob = (
         (task.get("last_failure_reason") or "")
         + " " + (task.get("description") or "")
@@ -312,10 +432,49 @@ def _deny_hit(diag: Dict[str, Any], task: Dict[str, Any]) -> Optional[str]:
 def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool, str]:
     """Return (allow, reason). ``reason`` is human-readable even on allow.
 
-    Chain-blocker rule: if this task has blocked dependents, the confidence
-    threshold is relaxed from APPLY_CONFIDENCE (0.85) to 0.70 because the
-    cost of inaction is amplified — every dependent stays stalled until the
-    root cause is resolved.
+    Confidence bar: ``APPLY_CONFIDENCE`` (0.85), for every task. A chain
+    blocker and a leaf task face the identical bar.
+
+    Why there is no chain-blocker relaxation (decided 2026-08-08, kax-recover-03)
+    ---------------------------------------------------------------------------
+    This function used to relax the bar to 0.70 when
+    ``blocked_dependents_count > 0``, on the reasoning that "the cost of
+    inaction is amplified". That relaxation is REMOVED. It confused two
+    different quantities:
+
+    * being a blocker says the failure is EXPENSIVE — it stalls a chain;
+    * ``confidence`` is a claim about whether the DIAGNOSIS IS CORRECT.
+
+    Amplified cost is an argument for getting a human onto the failure
+    sooner. It is not evidence that the LLM's root-cause analysis is more
+    likely to be right, so it cannot buy a discount on correctness. Trading
+    certainty for speed on exactly the failures with the largest blast
+    radius inverts the intent: a wrong patch on a chain blocker is wrong for
+    every dependent too.
+
+    The relaxation also inverted under a stale flag, which is how it was
+    found. MEASURED 2026-08-08: re-queueing nine ``sbx`` tasks chained with
+    ``depends_on_task_id`` made each of them a blocker while they still
+    carried ``last_failure_reason`` from the build attempts whose PRs had
+    just been closed. The same chaining that raised their queue priority
+    also LOWERED the bar for patching them — for tasks with nothing wrong.
+    Four showed ``blocked_dependents_count=1``. ``ICDEV_AUTOFIX_ENABLED``
+    was true; only the absence of ``ICDEV_AUTOFIX_AUTOMERGE`` kept the
+    patches off main. See PR #1379.
+
+    kax-recover-02 landed the clean re-queue path
+    (``tools/kanban/requeue.py``) that clears ``last_failure_reason``, so
+    that specific trigger is closed. It is not a reason to keep the
+    relaxation: ``requeue.py`` closes the supported path, not a hand-written
+    ``UPDATE``, and the relaxation was unsound on a genuinely fresh failure
+    too.
+
+    What replaces it: escalation at the SAME bar. A chain blocker whose
+    diagnosis does not clear 0.85 gets a critical, explicitly-marked
+    suggested card plus an ``escalation`` structured event — see
+    ``chain_blocker_escalation``. Blocker status still sorts a task to the
+    front of ``find_recent_failures``; it changes WHEN a human looks, never
+    HOW SURE the machine has to be before it writes code.
     """
     if not autofix_enabled():
         return (False, f"{AUTOFIX_ENV} is not set to true")
@@ -325,11 +484,8 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
         return (False, f"recommendation is {rec!r} (not 'patch')")
 
     conf = float(diag.get("confidence") or 0.0)
-    blocked_deps = int(task.get("blocked_dependents_count") or 0)
-    effective_threshold = 0.70 if blocked_deps > 0 else APPLY_CONFIDENCE
-    if conf < effective_threshold:
-        chain_note = f" (chain-blocker: {blocked_deps} dep(s) stalled, threshold lowered to 0.70)" if blocked_deps else ""
-        return (False, f"confidence {conf:.2f} < threshold {effective_threshold}{chain_note}")
+    if conf < APPLY_CONFIDENCE:
+        return (False, f"confidence {conf:.2f} < threshold {APPLY_CONFIDENCE}")
 
     ttype = (task.get("task_type") or "").lower()
     if ttype not in AUTO_APPLY_TASK_TYPES:
@@ -343,8 +499,26 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
     if not ok:
         return (False, f"rate limit hit ({count}/{MAX_APPLIES_PER_HOUR} in last hour)")
 
-    chain_note = f"; chain-blocker ({blocked_deps} dep(s) stalled, threshold=0.70)" if blocked_deps else ""
-    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}{chain_note}")
+    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}")
+
+
+def chain_blocker_escalation(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return escalation metadata for a chain blocker, else ``None``.
+
+    The replacement for the removed confidence relaxation (see
+    ``should_auto_apply``). Cost is spent on reaching a human sooner rather
+    than on lowering the correctness bar: the suggested card is raised to
+    ``critical`` and its title carries an explicit marker, so it sorts above
+    the ordinary triage backlog on the board.
+    """
+    blocked = int(task.get("blocked_dependents_count") or 0)
+    if blocked <= 0:
+        return None
+    return {
+        "blocked_dependents_count": blocked,
+        "priority": "critical",
+        "title_marker": f"[CHAIN-BLOCKER: {blocked} task(s) stalled] ",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -655,7 +829,7 @@ def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
     try:
         AUDIT_DIR.mkdir(parents=True, exist_ok=True)
         (AUDIT_DIR / f"{task_id}__{sig}.json").write_text(
-            json.dumps(record, indent=2, default=str), encoding="utf-8",
+            json.dumps(record, indent=2, default=str), encoding="utf-8", newline="",
         )
     except Exception as exc:
         logger.warning("failure_triage: audit write failed: %s", exc)
@@ -898,7 +1072,7 @@ def apply_patch_in_worktree(
             full = wt / path
             text = full.read_text(encoding="utf-8", errors="replace")
             new_text = text.replace(f["old_string"], f["new_string"], 1)
-            full.write_text(new_text, encoding="utf-8")
+            full.write_text(new_text, encoding="utf-8", newline="")
             applied_files.append(path)
     except Exception as exc:
         record["outcome"] = "edit_failed"
@@ -1097,6 +1271,23 @@ def triage_once(
             reason=allow_reason,
         )
 
+        # Chain-blocker escalation — the replacement for the removed
+        # confidence relaxation. Fires when a blocker is NOT being
+        # auto-applied, i.e. exactly when a human has to look at it.
+        esc = chain_blocker_escalation(task)
+        if esc and not (allow and apply):
+            entry["escalation"] = esc
+            _emit_event(
+                EVENT_ESCALATION,
+                task_id=task.get("id"),
+                signature=sig,
+                level="WARNING",
+                confidence=diag.get("confidence"),
+                recommendation=diag.get("recommendation"),
+                blocked_dependents_count=esc["blocked_dependents_count"],
+                reason=allow_reason,
+            )
+
         if allow and apply:
             patch = generate_patch(task, diag)
             if patch and patch.get("files"):
@@ -1169,11 +1360,46 @@ def triage_once(
 
 def _create_diagnostic_card(task: Dict[str, Any], diag: Dict[str, Any]) -> Optional[str]:
     """Wrap self_debug._create_diagnostic_card so callers don't import a
-    private symbol directly."""
+    private symbol directly. Applies the chain-blocker escalation marker."""
     from tools.workflow.self_debug import _create_diagnostic_card as _cdc, snapshot
     reason = task.get("last_failure_reason") or ""
     snap = snapshot(task["id"], str(BASE_DIR), reason)
-    return _cdc(task["id"], reason, snap, diag)
+    card_id = _cdc(task["id"], reason, snap, diag)
+    if card_id:
+        _apply_escalation(card_id, chain_blocker_escalation(task))
+    return card_id
+
+
+def _apply_escalation(card_id: str, esc: Optional[Dict[str, Any]]) -> None:
+    """Stamp the escalation marker onto an already-created suggested card.
+
+    self_debug already inserts its RCA cards at ``critical``; this adds the
+    title marker so an operator scanning the board can see *why* it is
+    critical without opening it. Best-effort — escalation must never break
+    the triage pass.
+    """
+    if not esc:
+        return
+    try:
+        from tools.db.storage import get_connection
+        with get_connection() as conn:
+            cur = conn.execute(
+                "SELECT title FROM kanban_tasks WHERE id = %s", (card_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return
+            title = (dict(row).get("title") or "")
+            marker = esc["title_marker"]
+            if marker in title:
+                return
+            conn.execute(
+                "UPDATE kanban_tasks SET title = %s, priority = %s WHERE id = %s",
+                (f"{marker}{title}"[:255], esc["priority"], card_id),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("failure_triage: escalation stamp failed for %s: %s", card_id, exc)
 
 
 def _create_diagnostic_card_with_patch(
@@ -1184,8 +1410,12 @@ def _create_diagnostic_card_with_patch(
     from tools.db.storage import get_connection
     import uuid
 
+    esc = chain_blocker_escalation(task)
     new_id = f"diag-{uuid.uuid4().hex[:10]}"
     title = f"Oracle RCA + PATCH READY: {task['id']} stuck in loop"
+    if esc:
+        title = f"{esc['title_marker']}{title}"
+    priority = esc["priority"] if esc else "high"
     body_lines = [
         "AUTO-CREATED by failure_triage reflex — patch attached.",
         "",
@@ -1213,7 +1443,7 @@ def _create_diagnostic_card_with_patch(
                 "INSERT INTO kanban_tasks "
                 "(id, title, description, task_type, priority, status, "
                 " created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (new_id, title, body, "chore", "high", "suggested", now, now),
+                (new_id, title, body, "chore", priority, "suggested", now, now),
             )
             conn.commit()
     except Exception as exc:

@@ -75,6 +75,11 @@ def test_automatic_build_still_dispatches(monkeypatch, tmp_path):
     monkeypatch.setattr(kanban, "_dispatch_via_claude_cli",
                         lambda *a, **kw: spawned.append(a))
     monkeypatch.setattr(kanban, "_claude_code_available", lambda: True)
+    # hgx-exec-03: the executor is resolved through the adapter registry, so a
+    # host without the CLI on PATH needs the pick stubbed too — otherwise the
+    # chain walks on to gitlab/ollama and this asserts nothing.
+    monkeypatch.setattr(kanban, "_pick_chain_adapter",
+                        lambda *a, **kw: type("_A", (), {"name": "claude_cli"})())
     monkeypatch.setattr(kanban, "_create_worktree", lambda tid: str(tmp_path))
     monkeypatch.setattr(kanban, "_pre_dispatch_check", lambda t: (False, ""))
     monkeypatch.setattr(kanban, "_had_recent_success", lambda tid, **kw: False)
@@ -175,13 +180,29 @@ def test_no_selection_leaves_the_chain_untouched():
     assert kanban._build_effective_executor_chain(list(original)) == original
 
 
-def test_a_claude_model_is_passed_to_the_cli_as_dash_dash_model():
+def test_a_claude_model_is_passed_to_the_cli_as_dash_dash_model(monkeypatch):
+    """hgx-exec-03 split this across the seam, and both halves must hold.
+
+    The runner decides WHICH model — and refuses to hand a non-Claude one to
+    the Claude CLI; the adapter turns that decision into ``--model``.
+    """
     import inspect
 
-    src = inspect.getsource(kanban._dispatch_via_claude_cli)
-    assert '"--model"' in src
+    from tools.agents.adapter_base import AgentSession
+    from tools.agents.adapters.claude_cli import ADAPTER
+
+    src = inspect.getsource(kanban._agent_session)
     assert '_model.get("cli_capable")' in src, \
         "a non-Claude model must never be handed to the Claude CLI"
+    assert '"model_id"' in src, "the selection must reach the adapter"
+
+    monkeypatch.setattr(ADAPTER, "resolve", lambda: "/usr/bin/claude")
+    with_model = AgentSession(task_id="t-1", prompt="p", working_dir="/wd",
+                              metadata={"model_id": "claude-opus-4-1"})
+    without = AgentSession(task_id="t-1", prompt="p", working_dir="/wd")
+
+    assert ADAPTER.build_argv(with_model)[-2:] == ["--model", "claude-opus-4-1"]
+    assert "--model" not in ADAPTER.build_argv(without)
 
 
 def test_the_llm_executor_builds_with_the_selected_model():

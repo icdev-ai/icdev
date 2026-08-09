@@ -254,7 +254,7 @@ def main():
 
     results = run_tests()
 
-    out_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    out_path.write_text(json.dumps(results, indent=2), encoding="utf-8", newline="")
     print(f"\nResults saved → {out_path}")
     print(f"\nOverall: {results['overall']}")
     print(f"  Passed:  {results['summary']['passed']}")

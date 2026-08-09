@@ -426,7 +426,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     reports_dir.mkdir(parents=True, exist_ok=True)
     date_str = _utcnow().strftime("%Y-%m-%d")
     report_file = reports_dir / f"audit-{date_str}.md"
-    report_file.write_text(report_md, encoding="utf-8")
+    report_file.write_text(report_md, encoding="utf-8", newline="")
 
     completed = len([c for c in checks if c.get("status") == "completed"])
 

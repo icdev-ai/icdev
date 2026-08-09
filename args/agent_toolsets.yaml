@@ -13,6 +13,14 @@
 # (tools/agent_runtime/dispatch.py); until sag-safe-01 wires the approval UX, the
 # default gate fails closed unless ICDEV_SAG_ALLOW_MUTATION=1.
 #
+# A Studio `node_type: agent` step (hgx-agent-01) names bundles here too, in its
+# `agent_tools:` key. It resolves them with the same `resolve_bundles()`, but
+# offers the WORKTREE toolset (tools/genesis/rubric_build_tools.py) rather than
+# the discovery registry — so the `worktree_*` bundles below are the ones an
+# agent node can actually be handed. Naming a registry bundle in an agent step
+# is not an error; those tools are reported as unavailable until hgx-agent-02
+# lands the `agent_workflow_tools` gate that authorizes them.
+#
 # This is DATA, not code — add or retune a bundle here without touching Python.
 
 version: 1
@@ -34,6 +42,38 @@ bundles:
       reusing the tools/skills/invoke.py allowlist. Safety-gated.
     tools:
       - run_command       # mutating — safety-gated
+    mutating: true
+
+  worktree_read:
+    description: >-
+      Read-only inspection of a build worktree: read a file, list a directory,
+      grep, glob, and `git diff`, plus the `done` sentinel that ends the loop.
+      Every path is resolved and traversal-guarded inside the step's work_dir by
+      tools/genesis/rubric_build_tools.py, so this cannot read the wider disk.
+    tools:
+      - read_file
+      - list_files
+      - grep_files
+      - search_files
+      - git_diff
+      - done
+    mutating: false
+
+  worktree_build:
+    description: >-
+      worktree_read plus the two edits an agent needs to BUILD in a worktree:
+      whole-file write and single-occurrence patch. Both are recoverable (git
+      restores them) and both pass the reversibility gate. Pair with `terminal`
+      when the agent also needs to run the allowlisted test command.
+    tools:
+      - read_file
+      - list_files
+      - grep_files
+      - search_files
+      - git_diff
+      - done
+      - write_file        # mutating — safety-gated
+      - patch_file        # mutating — safety-gated
     mutating: true
 
   compliance:
@@ -140,3 +180,33 @@ bundles:
       - databridge_sources
       - databridge_fetch
     mutating: false
+
+# ---------------------------------------------------------------------------
+# TOOLS ON THIRD-PARTY MCP SERVERS
+#
+# Tools discovered from an external MCP server appear in the same registry under
+# `ext__<server>__<tool>` and are listed in a bundle by that name, like any other
+# tool. No bundle is shipped: the servers list in args/external_mcp_servers.yaml
+# is empty and `enabled: false`, so a bundle here would name tools that do not
+# exist.
+#
+# Enabling one is deliberately TWO steps, because they answer different
+# questions. args/external_mcp_servers.yaml decides which remote tools ICDEV may
+# reach at all (per-server allowlist, classification ceiling, transport). A
+# bundle here decides which ROLES get handed them. Enabling a server should not
+# hand its tools to every agent that loads a toolset.
+#
+# `mutating: true` on the bundle, always. ICDEV cannot know whether somebody
+# else's tool changes state, and the server's own claim about that is not
+# evidence — external tools are never marked read-only, so they always go
+# through the dispatch safety gate.
+#
+#   ticketing:
+#     description: >-
+#       Read-only ticket lookup via the `ticketing` external MCP server. The
+#       server's own allowlist in args/external_mcp_servers.yaml bounds what is
+#       reachable; this bundle bounds who may reach it.
+#     tools:
+#       - ext__ticketing__search_tickets
+#       - ext__ticketing__get_ticket
+#     mutating: true

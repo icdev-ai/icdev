@@ -2241,7 +2241,7 @@ def create_app(testing: bool = False) -> Flask:
             _NOTIFY_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
             import json as _j
             _NOTIFY_SETTINGS_PATH.write_text(
-                _j.dumps(settings, indent=2), encoding="utf-8"
+                _j.dumps(settings, indent=2), encoding="utf-8", newline=""
             )
 
         if flask_request.method == "PUT":

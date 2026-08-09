@@ -467,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
             "finding_count": len(rel_findings),
             "findings": rel_findings,
         }
-        baseline_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        baseline_path.write_text(json.dumps(data, indent=2), encoding="utf-8", newline="")
         print(f"pg_portability_linter: baseline written to {baseline_path} ({len(rel_findings)} findings)")
         return 0
 

@@ -64,7 +64,7 @@ def _fetch_ff3() -> dict[str, dict[str, float]]:
         with zipfile.ZipFile(io.BytesIO(raw)) as zf:
             inner = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
             content = zf.read(inner).decode("latin-1")
-        _CACHE_FILE.write_text(content, encoding="utf-8")
+        _CACHE_FILE.write_text(content, encoding="utf-8", newline="")
     else:
         content = _CACHE_FILE.read_text(encoding="utf-8")
 

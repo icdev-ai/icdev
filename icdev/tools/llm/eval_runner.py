@@ -531,9 +531,9 @@ def write_report(
         "json": base.with_suffix(".json"),
         "html": base.with_suffix(".html"),
     }
-    paths["markdown"].write_text(render_markdown(report), encoding="utf-8")
-    paths["json"].write_text(render_json(report), encoding="utf-8")
-    paths["html"].write_text(render_html(report), encoding="utf-8")
+    paths["markdown"].write_text(render_markdown(report), encoding="utf-8", newline="")
+    paths["json"].write_text(render_json(report), encoding="utf-8", newline="")
+    paths["html"].write_text(render_html(report), encoding="utf-8", newline="")
     return paths
 
 

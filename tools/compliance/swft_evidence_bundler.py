@@ -219,7 +219,7 @@ def bundle_swft_evidence(
             out_path = Path(output_dir)
             out_path.mkdir(parents=True, exist_ok=True)
             manifest_file = out_path / f"swft-bundle-{bundle_id}.json"
-            manifest_file.write_text(json.dumps(bundle, indent=2, default=str))
+            manifest_file.write_text(json.dumps(bundle, indent=2, default=str), newline="")
             bundle["output_file"] = str(manifest_file)
 
         return bundle

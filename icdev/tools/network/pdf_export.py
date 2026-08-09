@@ -137,7 +137,7 @@ def export_to_pdf(
             f"<!DOCTYPE html><html><head><title>{title}</title></head>"
             f"<body><h2>{classification}</h2><h1>{title}</h1>"
             f"<pre>{content}</pre><h2>{classification}</h2></body></html>",
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
 
 

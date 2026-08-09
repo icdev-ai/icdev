@@ -299,7 +299,7 @@ def generate_goal(design_id: str) -> str:
 
     _GOALS_DIR.mkdir(parents=True, exist_ok=True)
     goal_path = _GOALS_DIR / f"custom_{design_id}.md"
-    goal_path.write_text(markdown, encoding="utf-8")
+    goal_path.write_text(markdown, encoding="utf-8", newline="")
 
     _persist_goal(design_id, markdown)
 

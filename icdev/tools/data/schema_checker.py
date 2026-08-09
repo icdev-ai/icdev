@@ -149,8 +149,8 @@ def main():
         uid = uuid.uuid4().hex[:8]
         md_path = _ARTIFACTS_DIR / f"schema_report_{uid}.md"
         json_path = _ARTIFACTS_DIR / f"schema_{uid}.json"
-        md_path.write_text(report_md, encoding="utf-8")
-        json_path.write_text(json.dumps(schema_json, indent=2), encoding="utf-8")
+        md_path.write_text(report_md, encoding="utf-8", newline="")
+        json_path.write_text(json.dumps(schema_json, indent=2), encoding="utf-8", newline="")
 
         fails = [f for f in result["findings"] if f["severity"] == "fail"]
         output = {

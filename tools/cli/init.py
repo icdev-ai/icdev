@@ -415,7 +415,7 @@ def init_project(
                     template_text, get_registry(),
                     enabled_keys=enabled_keys, env_overrides=env_overrides,
                 )
-                env_file.write_text(composed, encoding="utf-8")
+                env_file.write_text(composed, encoding="utf-8", newline="")
                 if profile_applied:
                     n = len(enabled_keys or set())
                     msg = (f"created .env from template + '{profile_applied}' "

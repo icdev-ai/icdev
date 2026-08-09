@@ -208,7 +208,7 @@ def main() -> int:
     if args.md:
         out_path = PROJECT_ROOT / "docs" / "quality" / "completion-scorecard.md"
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(to_markdown(results), encoding="utf-8")
+        out_path.write_text(to_markdown(results), encoding="utf-8", newline="")
         print(str(out_path))
         return 0
 

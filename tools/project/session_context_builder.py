@@ -255,10 +255,13 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
             if r["implementation_status"] == "implemented":
                 summary["controls_implemented"] += r["cnt"]
 
-        # Frameworks (from framework_applicability table if exists)
+        # Frameworks (from framework_applicability table if exists).
+        # The confirmation flag is `confirmed INTEGER`, not a `status` column —
+        # this used to filter on `status = 'confirmed'`, which raises on the real
+        # schema, is swallowed below, and left `frameworks` permanently empty.
         try:
             fw_rows = conn.execute(
-                "SELECT framework_id FROM framework_applicability WHERE project_id = %s AND status = 'confirmed'",
+                "SELECT framework_id FROM framework_applicability WHERE project_id = %s AND confirmed = 1",
                 (project_id,),
             ).fetchall()
             summary["frameworks"] = [r["framework_id"] for r in fw_rows]
@@ -266,16 +269,14 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
             # Table may not exist
             pass
 
-        # cATO readiness
-        try:
-            cato = conn.execute(
-                "SELECT readiness_score FROM cato_evidence WHERE project_id = %s ORDER BY assessed_at DESC LIMIT 1",
-                (project_id,),
-            ).fetchone()
-            if cato:
-                summary["cato_readiness"] = cato["readiness_score"]
-        except sqlite3.OperationalError:
-            pass
+        # cATO readiness is NOT stored: `cato_evidence` carries per-control
+        # evidence rows (control_id / evidence_type / is_fresh), with no
+        # readiness_score or assessed_at column. The score is computed on demand
+        # by `tools.compliance.cato_monitor.compute_cato_readiness`, which prints
+        # to stdout unconditionally and so cannot be called from this builder
+        # (its own output is markdown on stdout, and the SAG runtime injects that
+        # into a prompt). Left unset rather than queried from a column that has
+        # never existed — the renderer omits the line when it is None.
 
         conn.close()
     except Exception:
@@ -367,8 +368,10 @@ def _get_active_intake_sessions(project_id: str, db_path: str) -> list:
     sessions = []
     try:
         conn = get_connection(db_path=str(db_path))
+        # The column is `session_status`, not `status` — the old query raised on
+        # the real schema, was swallowed, and made this list permanently empty.
         rows = conn.execute(
-            "SELECT id, customer_name, status, readiness_score, created_at FROM intake_sessions WHERE project_id = %s AND status != 'completed' ORDER BY created_at DESC",
+            "SELECT id, customer_name, session_status, readiness_score, created_at FROM intake_sessions WHERE project_id = %s AND session_status != 'completed' ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -376,7 +379,7 @@ def _get_active_intake_sessions(project_id: str, db_path: str) -> list:
                 {
                     "session_id": r["id"],
                     "customer_name": r["customer_name"],
-                    "status": r["status"],
+                    "status": r["session_status"],
                     "readiness_score": r["readiness_score"],
                     "created_at": r["created_at"],
                 }
@@ -614,6 +617,16 @@ def _format_markdown(context: dict) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def render_markdown(context: dict) -> str:
+    """Public renderer for a context dict from :func:`build_session_context`.
+
+    Callers that need the markdown block in-process (the SAG runtime injects it
+    into the agent's system prompt at session start) rather than on stdout use
+    this instead of reaching into the private formatter.
+    """
+    return _format_markdown(context)
 
 
 # ── Init from Manifest ──────────────────────────────────────────────────

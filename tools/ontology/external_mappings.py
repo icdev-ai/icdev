@@ -335,7 +335,7 @@ def write_ttl(path: Optional[Path] = None) -> Path:
         lines.extend(property_assertions)
         lines.append("")
 
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
     return out
 
 

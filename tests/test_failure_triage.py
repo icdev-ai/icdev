@@ -164,6 +164,294 @@ class TestAutoApplyGates:
 
 
 # ---------------------------------------------------------------------------
+# Chain blockers face the SAME confidence bar as leaf tasks (kax-recover-03)
+#
+# should_auto_apply used to relax the bar from APPLY_CONFIDENCE (0.85) to 0.70
+# when blocked_dependents_count > 0. That conflated cost with correctness:
+# being a blocker says the failure is expensive, not that the diagnosis is
+# right. These tests pin the removal — a blocker and a leaf must be gated
+# identically, and the amplified cost is spent on escalation instead.
+# ---------------------------------------------------------------------------
+
+class TestChainBlockerSameBar:
+    def _task(self, blocked, **overrides):
+        base = {
+            "id": "t-chain",
+            "title": "fix a bug",
+            "description": "regular build task",
+            "task_type": "fix",
+            "last_failure_reason": "AttributeError: typo",
+            "blocked_dependents_count": blocked,
+        }
+        base.update(overrides)
+        return base
+
+    def _diag(self, confidence):
+        return {
+            "root_cause": "missing attribute",
+            "recommendation": "patch",
+            "patch_hint": "rename _x to x",
+            "suspect_files": ["tools/foo.py:42"],
+            "confidence": confidence,
+        }
+
+    @pytest.mark.parametrize(
+        "confidence", [0.0, 0.5, 0.69, 0.70, 0.71, 0.80, 0.84, 0.85, 0.90, 1.0],
+    )
+    def test_blocker_and_leaf_decide_identically(self, ft, monkeypatch, confidence):
+        """The whole point: blocker status must not move the bar anywhere."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        leaf_allow, _ = ft.should_auto_apply(self._task(0), self._diag(confidence))
+        blocker_allow, _ = ft.should_auto_apply(self._task(3), self._diag(confidence))
+        assert leaf_allow == blocker_allow, (
+            f"confidence {confidence} decided differently for a chain blocker "
+            f"(leaf={leaf_allow}, blocker={blocker_allow})"
+        )
+        assert leaf_allow is (confidence >= ft.APPLY_CONFIDENCE)
+
+    def test_the_old_relaxed_band_now_blocks_a_blocker(self, ft, monkeypatch):
+        """0.70 <= conf < 0.85 was the window the relaxation opened."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(self._task(9), self._diag(0.75))
+        assert allow is False
+        assert f"threshold {ft.APPLY_CONFIDENCE}" in reason
+
+    def test_reason_string_advertises_no_lowered_threshold(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        for conf in (0.75, 0.95):
+            _, reason = ft.should_auto_apply(self._task(2), self._diag(conf))
+            assert "0.70" not in reason
+            assert "lower" not in reason.lower()
+
+    def test_effective_bar_is_the_same_number_for_both(self, ft, monkeypatch):
+        """Sweep for the allow boundary independently on each shape."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+
+        def first_allowed(blocked):
+            for step in range(0, 101):
+                conf = step / 100.0
+                allow, _ = ft.should_auto_apply(self._task(blocked), self._diag(conf))
+                if allow:
+                    return conf
+            return None
+
+        leaf_bar = first_allowed(0)
+        blocker_bar = first_allowed(4)
+        assert leaf_bar == blocker_bar == pytest.approx(ft.APPLY_CONFIDENCE)
+
+    def test_decision_and_rationale_are_recorded_in_the_docstring(self, ft):
+        """Acceptance criterion: the call must not be a silent threshold flip."""
+        doc = ft.should_auto_apply.__doc__ or ""
+        assert "kax-recover-03" in doc
+        assert "REMOVED" in doc
+        # The distinction the removal turns on has to be stated, not implied.
+        assert "correct" in doc.lower() and "cost" in doc.lower()
+
+
+class TestChainBlockerEscalation:
+    def _task(self, blocked):
+        return {"id": "t-esc", "blocked_dependents_count": blocked}
+
+    def test_leaf_task_gets_no_escalation(self, ft):
+        assert ft.chain_blocker_escalation(self._task(0)) is None
+
+    def test_missing_count_is_treated_as_leaf(self, ft):
+        assert ft.chain_blocker_escalation({"id": "t"}) is None
+
+    def test_blocker_escalates_to_critical_with_a_marker(self, ft):
+        esc = ft.chain_blocker_escalation(self._task(3))
+        assert esc is not None
+        assert esc["priority"] == "critical"
+        assert esc["blocked_dependents_count"] == 3
+        assert "3 task(s) stalled" in esc["title_marker"]
+
+    def test_escalation_does_not_touch_the_apply_gate(self, ft, monkeypatch):
+        """Escalation is a routing decision; it must not grant an apply."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        task = {
+            "id": "t-esc2", "task_type": "fix", "description": "",
+            "last_failure_reason": "AttributeError: typo",
+            "blocked_dependents_count": 7,
+        }
+        diag = {
+            "recommendation": "patch", "confidence": 0.80,
+            "root_cause": "x", "patch_hint": "y", "suspect_files": ["tools/foo.py"],
+        }
+        assert ft.chain_blocker_escalation(task) is not None
+        allow, _ = ft.should_auto_apply(task, diag)
+        assert allow is False
+
+
+# ---------------------------------------------------------------------------
+# Non-code failure classes — a TIMEOUT is a budget symptom, not a defect
+# ---------------------------------------------------------------------------
+
+# The verbatim strings the kanban scheduler writes into last_failure_reason.
+# Each is paired with the writer that produces it so the pairing stays
+# checkable when a writer's wording changes. MEASURED 2026-08-08 — four of
+# the five tasks that entered the autofix queue carried the first one.
+NON_CODE_REASONS = [
+    # runtime budget / lifecycle
+    ("TIMEOUT after 3430s (max 3386s) — task exceeded dispatch budget",
+     "reaper timeout kill"),
+    ("stale-reaper: task was in_progress for 95 min with an empty log "
+     "(threshold=60 min). Automatically reset to backlog for re-dispatch.",
+     "_reap_stale_in_progress"),
+    ("Zombie reclaim: no heartbeat for >6h", "_reclaim_zombies"),
+    ("startup-recovery: task was in_progress when the scheduler restarted "
+     "— process died or scheduler crashed mid-run.", "startup sweep"),
+    ("Circuit breaker: failure_count 5 >= max_retries 5", "retry cap"),
+    # executor environment
+    ("no executor available: internet=False, gitlab=unreachable, "
+     "ollama=unreachable", "dispatch fallback chain"),
+    # not a failure at all — bookkeeping parked in the column
+    ("Task-specific checks passed or not applicable", "_verify_task_specific"),
+    ("decay-promoted: re-queued after 48 h in suggested",
+     "_promote_decayed_suggested"),
+    ("auto-revive 2/3: deps satisfied + cooled down, re-queued to backlog "
+     "for another attempt.", "_revive_quarantined_suggested"),
+    ("dep-chain-unblock: child waiting in backlog, revived from suggested "
+     "(fc was 2)", "_revive_dep_chain_blocked"),
+    ("cascade: parent sbx-fmt-01 demoted from done", "_move_task rollback"),
+    ("auto-closed: parent kax-obs-01 resolved", "_close_orphaned_rca_children"),
+    ("UNCLASSIFIED (no failure clause): Verified (git-first): 2 files changed",
+     "_split_failure_narrative fallback"),
+]
+
+# A real defect the autofixer exists to handle — same shape, same confidence.
+GENUINE_CODE_FAILURE = (
+    "VALIDATION FAILED: pytest — tests/test_foo.py::test_bar "
+    "AttributeError: 'Router' object has no attribute 'invoke_sync'"
+)
+
+
+class TestNonCodeFailureClasses:
+    """A failure whose cause is the dispatch budget, the scheduler lifecycle,
+    or the executor environment has no code a patch could fix. Autofix must
+    not spend an LLM generation on it — but a genuine code failure with the
+    SAME confidence must still get through."""
+
+    def _task(self, reason, **overrides):
+        base = {
+            "id": "t-nc",
+            "title": "rebuild the SBOM disclosure seam",
+            "description": "regular build task",
+            "task_type": "build",
+            "last_failure_reason": reason,
+        }
+        base.update(overrides)
+        return base
+
+    def _diag(self, **overrides):
+        base = {
+            "root_cause": "the task did not finish",
+            "recommendation": "patch",
+            "patch_hint": "raise the budget",
+            "suspect_files": ["tools/foo.py:42"],
+            "confidence": 0.95,
+        }
+        base.update(overrides)
+        return base
+
+    @pytest.mark.parametrize(
+        "reason,writer", NON_CODE_REASONS,
+        ids=[w for _, w in NON_CODE_REASONS],
+    )
+    def test_non_code_reason_is_denied(self, ft, reason, writer):
+        hit = ft._deny_hit(self._diag(), self._task(reason))
+        assert hit is not None, (
+            f"{writer} writes {reason[:60]!r} into last_failure_reason; "
+            f"there is no code a patch could fix, so _deny_hit must block it"
+        )
+        assert "non-code failure class" in hit
+
+    def test_timeout_denied_end_to_end_through_the_gate(self, ft, monkeypatch):
+        """The measured case: autofix ON, confidence 0.95, whitelisted
+        task_type — and it still must not auto-apply."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(
+            self._task("TIMEOUT after 3430s (max 3386s) — task exceeded "
+                       "dispatch budget"),
+            self._diag(),
+        )
+        assert allow is False
+        assert "non-code failure class" in reason
+
+    def test_genuine_code_failure_at_same_confidence_still_allowed(
+        self, ft, monkeypatch,
+    ):
+        """The control. Identical confidence, identical task_type, identical
+        suspect files — only last_failure_reason differs. If this ever starts
+        failing, the deny list has been widened into a kill switch."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        task = self._task(GENUINE_CODE_FAILURE)
+        diag = self._diag()
+
+        assert ft._deny_hit(diag, task) is None
+        allow, reason = ft.should_auto_apply(task, diag)
+        assert allow is True, reason
+
+    def test_timeout_in_description_does_not_block(self, ft, monkeypatch):
+        """Scoping proof. NON_CODE_FAILURE_TOKENS is matched against
+        last_failure_reason ONLY — a task legitimately *about* timeouts stays
+        eligible when it fails for a real reason. This is why 'timeout' is not
+        in DENY_SIGNATURE_TOKENS, which also matches description."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(
+            self._task(
+                GENUINE_CODE_FAILURE,
+                description="add a socket timeout to the CSP monitor probe "
+                            "so it stops hanging",
+            ),
+            self._diag(root_cause="the probe never sets a timeout"),
+        )
+        assert allow is True, reason
+
+    def test_every_token_is_lowercase(self, ft):
+        """_deny_hit lower-cases the reason before matching, so an uppercase
+        token could never fire."""
+        for tok in ft.NON_CODE_FAILURE_TOKENS:
+            assert tok == tok.lower(), f"{tok!r} can never match"
+
+
+class TestCompliancePathDeny:
+    """tools/compliance/ was added to DENY_FILE_PREFIXES on 2026-08-08.
+    Criterion: the independent gates cannot detect a wrong compliance
+    artifact (it compiles, lints, and the tests assert structure not truth),
+    and the artifact is outward-facing evidence a recipient may already hold.
+    """
+
+    def test_sbom_generator_is_denied(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        allow, reason = ft.should_auto_apply(
+            {"id": "t-c", "title": "fix sbom", "description": "d",
+             "task_type": "build",
+             "last_failure_reason": GENUINE_CODE_FAILURE},
+            {"recommendation": "patch", "confidence": 0.95,
+             "root_cause": "wrong component list",
+             "suspect_files": ["tools/compliance/sbom_generator.py:88"]},
+        )
+        assert allow is False
+        assert "deny-path" in reason
+
+    def test_apply_side_also_rejects_compliance_paths(self, ft, tmp_path,
+                                                      monkeypatch):
+        """Belt-and-suspenders: _validate_patch_files re-checks the prefix so
+        a patch cannot reach the worktree even if the gate is bypassed."""
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        target = tmp_path / "tools" / "compliance" / "sbom_generator.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("COMPONENTS = []\n", encoding="utf-8")
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "tools/compliance/sbom_generator.py",
+                        "old_string": "COMPONENTS", "new_string": "PARTS"}]},
+            {"suspect_files": ["tools/compliance/sbom_generator.py"]},
+        )
+        assert ok is False
+        assert "deny-path" in why
+
+
+# ---------------------------------------------------------------------------
 # diagnose_task — LLM routing fallback
 # ---------------------------------------------------------------------------
 
