@@ -225,3 +225,13 @@ tests/test_pytest_timeout_declared.py
 # re-inlined list in the YAML. ~1s, pure Python, no DB/LLM/network
 # (kax-conflict-07).
 tests/ci/test_gated_test_list.py
+
+# test_sbom_component_names.py earns a slot because the two defects it pins are
+# both INVISIBLE to a per-parser test and both silently drop data: `_adopt_declared`
+# rebuilt every declared component from a fixed field list, flattening the Maven
+# `version-managed-by-parent` reason to "nobody pinned one", and `_parse_csproj`
+# dropped a versionless PackageReference outright — the component vanished from the
+# SBOM rather than appearing with its version unknown. It also pins that no parser
+# reintroduces a pre-2026 "unspecified"/"managed" version literal. ~1.5s, pure
+# Python plus an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-06).
+tests/test_sbom_component_names.py

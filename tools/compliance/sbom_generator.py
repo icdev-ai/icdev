@@ -87,6 +87,11 @@ from tools.compliance.component_hasher import (
     resolve_hash,
     unknown_hash,
 )
+from tools.compliance.component_names import (
+    NAME_DECLARED,
+    apply_names_to_cyclonedx,
+    derive_names,
+)
 from tools.compliance.component_producer import (
     PROPERTY_PRODUCER,
     ProducerContext,
@@ -368,7 +373,8 @@ def _parse_requirements_txt(file_path):
             # Patterns: package==1.0, package>=1.0, package~=1.0, package
             match = re.match(r"^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?", line)
             if match:
-                name = match.group(1).lower().replace("_", "-")
+                declared_name = match.group(1)
+                name = declared_name.lower().replace("_", "-")
                 version = match.group(3) or UNKNOWN
 
                 purl = f"pkg:pypi/{name}"
@@ -379,6 +385,10 @@ def _parse_requirements_txt(file_path):
                     {
                         "type": "library",
                         "name": name,
+                        # The spelling the producer published under. `name` above is
+                        # ICDEV's normalization of it, and the 2026 Component Name
+                        # element is defined as the producer's name (sbx-fld-06).
+                        "declared_name": declared_name,
                         "version": version,
                         "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                         "purl": purl,
@@ -412,7 +422,8 @@ def _parse_pyproject_toml(file_path):
                     dep_str = dep[0] or dep[1]
                     dep_match = re.match(r"([a-zA-Z0-9._-]+)(?:\[.*?\])?\s*(?:([<>=!~]+)\s*(.+))?", dep_str)
                     if dep_match:
-                        name = dep_match.group(1).lower().replace("_", "-")
+                        declared_name = dep_match.group(1)
+                        name = declared_name.lower().replace("_", "-")
                         version = dep_match.group(3) or UNKNOWN
                         # Clean up version (take first version if multiple conditions)
                         version = version.split(",")[0].strip()
@@ -425,6 +436,7 @@ def _parse_pyproject_toml(file_path):
                             {
                                 "type": "library",
                                 "name": name,
+                                "declared_name": declared_name,
                                 "version": version,
                                 "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
                                 "purl": purl,
@@ -846,6 +858,32 @@ def _parse_csproj(file_path):
                 "name": name,
                 "version": version,
                 "purl": purl,
+                "scope": "required",
+                "group": "",
+                "source": str(file_path),
+            }
+        )
+
+    # A PackageReference carrying no version at all — Central Package Management
+    # puts the version in Directory.Packages.props, which this declared-only
+    # parser does not read. Every pattern above requires a Version, so such a
+    # reference used to be dropped entirely: the component vanished from the SBOM
+    # rather than appearing with its version stated as unknown. Under the 2026
+    # Coverage element a component ICDEV knows about is listed, and under
+    # Component Version its missing version is stated as unknown (sbx-fld-06).
+    versionless_pattern = re.compile(r'<PackageReference\s+Include="([^"]+)"([^>]*)/?>')
+    for match in versionless_pattern.finditer(content):
+        name = match.group(1)
+        if name in seen or "Version" in match.group(2):
+            continue
+        seen.add(name)
+        components.append(
+            {
+                "type": "library",
+                "name": name,
+                "version": UNKNOWN,
+                "version_unknown_reason": REASON_DECLARED_WITHOUT_VERSION,
+                "purl": f"pkg:nuget/{name}",
                 "scope": "required",
                 "group": "",
                 "source": str(file_path),
@@ -1375,8 +1413,19 @@ def _build_cyclonedx_sbom(
     # differ in any emitted field are two components under the Coverage element.
     seen_identities = set()
     unique_components = []
+    # Component Name (2026 minimum elements) — the element exists so that a name
+    # is not lost, and deduplication is exactly where a name gets lost: two
+    # instances differing only in the spelling the producer used collapse into
+    # one, and the loser's spelling would vanish. Collect the spellings against
+    # the identity that survives and re-attach them below.
+    collapsed_spellings = {}
     for comp in components:
         identity = _component_identity(comp)
+        spelling = str(comp.get("declared_name") or "").strip()
+        if spelling:
+            seen_spellings = collapsed_spellings.setdefault(identity, [])
+            if spelling not in seen_spellings:
+                seen_spellings.append(spelling)
         if identity in seen_identities:
             continue
         seen_identities.add(identity)
@@ -1475,6 +1524,25 @@ def _build_cyclonedx_sbom(
         identifiers = derive_identifiers(comp)
         comp["identifiers"] = identifiers
         apply_identifiers_to_cyclonedx(cdx_comp, identifiers, spec_version=active_spec_version)
+
+        # Component Name (2026 minor update, sbx-fld-06): the format must allow
+        # MULTIPLE entries so a component known by more than one name is listed
+        # under all of them. `name` keeps the single primary — it feeds the
+        # bom-ref — and the alternates ICDEV's own normalization and name/group
+        # split would otherwise destroy travel as properties. Passed the
+        # disclosure so a withheld name does not publish four other spellings
+        # of itself. A spelling seen only on an instance that deduplication
+        # collapsed is re-attached here: losing a name is the one thing this
+        # element exists to prevent, and the dedup identity keys on the
+        # normalized name, so `Flask` and `FLASK` declared in two manifests are
+        # one component whose loser's spelling would otherwise vanish.
+        names = derive_names(comp)
+        known_names = {names["primary"]} | {entry["name"] for entry in names["alternates"]}
+        for spelling in collapsed_spellings.get(_component_identity(comp), ()):
+            if spelling not in known_names:
+                known_names.add(spelling)
+                names["alternates"].append({"name": spelling, "kind": NAME_DECLARED})
+        apply_names_to_cyclonedx(cdx_comp, names, disclosure)
 
         cdx_components.append(cdx_comp)
 

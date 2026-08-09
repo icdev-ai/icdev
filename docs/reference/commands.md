@@ -215,6 +215,8 @@ python tools/compliance/unknown_information.py --policy --json                  
 python tools/compliance/unknown_information.py --vocabulary --json                                 # the 17 fields and the two disjoint reason vocabularies
 python tools/compliance/sbom_identifiers.py --validate "/path/to/sbom.cdx.json" --json           # Component Identifiers conformance; exit 1 on a component with none, or a malformed one
 python tools/compliance/sbom_identifiers.py --component "pkg:pypi/flask@3.0.0" --json             # every identifier derivable for one component, CPE included
+python tools/compliance/component_names.py --validate "/path/to/sbom.cdx.json" --json            # Component Name conformance; exit 1 on an alternate that repeats the primary or carries an unknown kind
+python tools/compliance/component_names.py --name core --group "@babel" --purl "pkg:npm/%40babel%2Fcore@7.23.9" --json   # every name one component is known by
 python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
 python tools/compliance/nist_lookup.py --control "AC-2"
 python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"
