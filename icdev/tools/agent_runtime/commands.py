@@ -12,9 +12,11 @@ Each handler has signature ``handler(runtime, arg) -> tuple[str, bool]`` returni
 (handled, response, should_exit)`` and is injected via
 ``AgentRuntime(command_handler=dispatch)`` (see :func:`build_runtime`).
 
-Command set (kept in step with :data:`REGISTRY` — ``test_commands.py`` asserts
-every registered command is documented here, because a drifted docstring is how
-a shipped command stays invisible):
+Command set (kept in step with :data:`REGISTRY` —
+``tests/agent_runtime/test_goal_commands.py::test_docstring_matches_registry``
+asserts every registered command is documented here, because a drifted docstring
+is how a shipped command stays invisible). Every entry below is a live handler;
+none of them is a stub:
 
 - ``/new [title]``  — start a fresh session (new chat context).
 - ``/clear``        — alias for ``/new`` that keeps the current title.

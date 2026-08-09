@@ -4,10 +4,15 @@
 The registry is exercised against a lightweight fake runtime so the tests are
 DB-independent (matching the shared conftest schema, which does not provision
 chat tables). Verifies data-driven dispatch, aliases, the sag-mem-01 /
-sag-safe-02 stubs, and the AgentRuntime command-handler wiring.
+sag-safe-02 handlers, and the AgentRuntime command-handler wiring.
+
+Also guards the module docstring's claims ABOUT ITSELF (hgx-doc-02): the parity
+test it cites must exist, and no shipped command may be described as a stub.
 """
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 import tools.agent_runtime.commands as cmds
@@ -179,3 +184,40 @@ def test_build_runtime_wires_dispatch(monkeypatch):
     monkeypatch.setattr("tools.agent_runtime.runtime.AgentRuntime", _FakeAR)
     cmds.build_runtime(router=object())
     assert captured["command_handler"] is dispatch
+
+
+# ---------------------------------------------------------------------------
+# The docstring's claims about itself (hgx-doc-02)
+#
+# `test_goal_commands.py::test_docstring_matches_registry` asserts every
+# REGISTRY key appears in the docstring. Nothing asserted that what the
+# docstring SAYS is true — which is how it spent several phases citing a test
+# module that does not enforce it, and how a shipped command can keep being
+# described as unbuilt.
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_docstring_cites_a_parity_test_that_exists():
+    """Every `tests/...py` path named in the docstring resolves to a real file."""
+    doc = cmds.__doc__ or ""
+    cited = re.findall(r"tests/[\w/]+\.py", doc)
+    assert cited, "docstring names no parity test — drift has no named guard"
+    for ref in cited:
+        assert (_REPO_ROOT / ref).is_file(), f"docstring cites missing test file {ref}"
+
+
+def test_no_registered_command_is_documented_as_a_stub():
+    """A shipped command described as a stub sends readers to build it again."""
+    doc = cmds.__doc__ or ""
+    for line in doc.splitlines():
+        if line.lstrip().startswith("- ``/"):
+            assert "stub" not in line.lower(), f"shipped command documented as a stub: {line.strip()}"
+
+
+def test_every_registered_command_has_a_callable_handler():
+    """No REGISTRY entry is a placeholder — each dispatches to a real callable."""
+    for name, command in cmds.REGISTRY.items():
+        assert callable(command.handler), f"{name} has no callable handler"
+        assert command.help.strip(), f"{name} ships no help text"
