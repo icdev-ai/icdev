@@ -363,6 +363,7 @@ class AgentRuntimeConfig:
                 "mutation": {"allow": mutation_allowed()},
                 "delegation": {"child_can_delegate": self.child_can_delegate},
                 "toolsets": {"bundle_path": self.toolset_bundle_path},
+                "wake": {"max_sleep_seconds": self.max_sleep_seconds},
             },
         }
         env_overrides = {
@@ -448,11 +449,32 @@ class AgentRuntimeConfig:
     def toolset_bundle_path(self) -> str:
         return self.text("subsystems.toolsets.bundle_path", env="ICDEV_AGENT_TOOLSETS")
 
+    @property
+    def max_sleep_seconds(self) -> int:
+        """Ceiling on a sleep an agent schedules for ITSELF (agov-wake-02).
+
+        Read by ``tools/agent_runtime/wake_tools.py``. Unlike the other integer
+        knobs this never returns ``None`` and never returns a non-positive
+        value: at every layer a missing, unparseable or ``<= 0`` setting
+        resolves to :data:`DEFAULT_MAX_SLEEP_SECONDS`, because a cap that a typo
+        can switch off is not a cap.
+        """
+        value = self.integer(
+            "subsystems.wake.max_sleep_seconds",
+            env="ICDEV_SAG_MAX_SLEEP_SECONDS",
+            default=DEFAULT_MAX_SLEEP_SECONDS,
+        )
+        return value if value and value > 0 else DEFAULT_MAX_SLEEP_SECONDS
+
 
 # Built-in defaults, kept here so the YAML file is documentation rather than a
 # load-bearing dependency: deleting it changes nothing about how the agent runs.
 DEFAULT_LLM_FUNCTION = "code_generation"
 DEFAULT_MAX_ITERATIONS = 12
+
+#: Ceiling on an agent-scheduled sleep (agov-wake-02). A day: long enough for the
+#: overnight case, short enough that a mistake surfaces within one working day.
+DEFAULT_MAX_SLEEP_SECONDS = 86_400
 
 #: Env vars that override this file, reported by ``--json`` so an operator can
 #: see at a glance why the file is not winning.
@@ -475,6 +497,7 @@ OVERRIDE_ENV_VARS = (
     "ICDEV_SAG_ALLOW_MUTATION",
     "ICDEV_SAG_CAN_DELEGATE",
     "ICDEV_AGENT_TOOLSETS",
+    "ICDEV_SAG_MAX_SLEEP_SECONDS",
 )
 
 #: Env names owned by this module rather than by a subsystem module.
