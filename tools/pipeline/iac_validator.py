@@ -601,7 +601,7 @@ def _layer4_plan(files):
             target = Path(tmpdir) / tf_dir
             target.mkdir(parents=True, exist_ok=True)
             for f in dir_files:
-                (target / Path(f["path"]).name).write_text(f["content"], encoding="utf-8")
+                (target / Path(f["path"]).name).write_text(f["content"], encoding="utf-8", newline="")
 
             # `terraform validate` REQUIRES an initialized working directory —
             # without `terraform init` first, module sources (`terraform-aws-modules/...`)

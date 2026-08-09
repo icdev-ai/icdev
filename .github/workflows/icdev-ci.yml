@@ -123,6 +123,27 @@ jobs:
         # which drifted apart once already, and the audit event types whose absence
         # from the CHECK made the correction event silently vanish. ~2s, pure
         # Python, no DB service/LLM/network (sbx-prc-02).
+        #
+        # test_pr_watcher_heartbeat.py earns a slot because the bug it pins makes
+        # every daemon's log silence meaningless. get_logger(__name__) resolves to
+        # "__main__" when a module is executed rather than imported -- which is how
+        # launcher.py starts all of them -- so 21,884 pr_watcher heartbeats went to
+        # a shared .logs/__main__.ndjson while its own file sat empty since
+        # 2026-08-02. Twice during the 2026-08-08 triage that silence was read as
+        # "the daemon is wedged" when it was looping correctly. A regression here is
+        # invisible by construction: nothing fails, a log just stops. ~1s, pure
+        # Python, no DB service/LLM/network (kax-obs-01).
+        #
+        # test_rubric_build_tools.py and test_toolset_portability.py run HERE as
+        # well as in the windows-latest job, and the pairing is the point. Their
+        # claims -- "one logical edit is one changed line in git", "the build
+        # toolset never requests a shell, always passes a list argv, and never
+        # names a POSIX-only binary" -- are claims about BOTH OSes, and a claim
+        # proven on one OS is not proven. It also makes the Windows job
+        # interpretable: when the newline fix regresses, this job stays green on
+        # the very same files while Windows goes red, and that contrast is the
+        # evidence the defect is Windows-only rather than a broken test. ~2s
+        # combined, pure Python, no DB/LLM/network (hgx-port-02).
         run: |
           _abort() {
             echo "CI: abort signal received — terminating pytest children"
@@ -186,6 +207,8 @@ jobs:
             tests/test_notification_worthiness.py \
             tests/test_kanban_throughput_stall.py \
             tests/test_localai_provider.py \
+            tests/studio/test_workflow_parallel.py \
+            tests/studio/test_workflow_conditional.py \
             tests/browser/test_backend.py \
             tests/browser/test_driver_manager_airgap.py \
             tests/browser/test_driver_staleness.py \
@@ -214,6 +237,11 @@ jobs:
             tests/innovation/test_innovation_kanban_promoter.py \
             tests/test_sbom_component_producer.py \
             tests/test_sbom_conformance_gate.py \
+            tests/test_pr_watcher_heartbeat.py \
+            tests/test_local_agent_adapter.py \
+            tests/genesis/test_rubric_build_tools.py \
+            tests/test_toolset_portability.py \
+            tests/test_pytest_timeout_declared.py \
             -v --tb=short -x
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
@@ -229,6 +257,106 @@ jobs:
           done
           echo "::error::/knowledge-search route test failed after 3 attempts"
           exit 1
+
+  # ── Tier 1: Windows portability tier ─────────────────────────────────────
+  # Every other job in this file is ubuntu-latest. ICDEV is DEVELOPED on Windows
+  # and was TESTED only on Linux, so an OS-portability defect was structurally
+  # invisible to the pipeline: it cannot fail on the only OS the pipeline runs.
+  # That is exactly how the rubric_build_tools newline bug survived review
+  # (hgx-exec-01) — on Windows the owned build agent rewrote every file it
+  # touched to CRLF, turning a one-line edit into a whole-file diff, and every
+  # Linux assertion stayed green throughout.
+  #
+  # Scope is the portability-SENSITIVE subset, not the suite. These are the
+  # modules that touch the filesystem, spawn processes or thread wall-clock
+  # timing — the three places where Windows and POSIX actually diverge. Adding
+  # the whole suite here would buy noise, not signal, and would double CI time.
+  #
+  # NON-REQUIRED ON PURPOSE, for now. "Test (Windows)" is deliberately absent
+  # from the branch-protection required checks (Lint, Test, Security Scan, Helm
+  # Lint), so a Windows-only flake cannot block a merge while this job's own
+  # stability is being characterised. It still reports red in the checks list —
+  # `continue-on-error` is NOT used, because a job that cannot go red is not a
+  # gate, it is decoration. Promote it by adding the check to branch protection
+  # once it has a clean run history; nothing in this file needs to change.
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+    needs: lint
+    timeout-minutes: 30
+    defaults:
+      run:
+        # bash, not the windows-latest default pwsh: the same shell as every
+        # other job here, so a step body means one thing across the file.
+        shell: bash
+        # Same path isolation the rest of the workflow has — steps resolve
+        # against the canonical checkout root rather than wherever the runner
+        # happened to start, which is what keeps coherence/RLS-style
+        # repo-root-relative logic honest.
+        working-directory: ${{ github.workspace }}
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      # conftest forces sqlite anyway; stated here so the job's backend does not
+      # depend on a file it does not own.
+      ICDEV_STORAGE_BACKEND: sqlite
+      PYTHONIOENCODING: utf-8
+    steps:
+      # BEFORE checkout, deliberately. The hosted Windows image ships
+      # core.autocrlf=true, which would rewrite every LF in the tree to CRLF on
+      # the way to disk — so this job would be reading different BYTES than the
+      # Linux jobs and any difference in outcome would be unattributable. The
+      # line-ending behaviour under test is what the build TOOLSET writes into
+      # its own temp files, not what git checked out, so pinning the checkout
+      # to LF costs no coverage and removes a whole class of false signal.
+      - name: Check out with Linux-identical line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e . || true
+      - name: Run portability-sensitive suite
+        # No `-x`. The Linux `test` job stops at the first failure because it is
+        # a merge gate and the first failure is the answer; this job exists to
+        # CHARACTERISE Windows behaviour, so it must report every failure in one
+        # run rather than one per push.
+        #
+        # The list is explicit rather than a glob: a glob that matches nothing
+        # silently shrinks the gate, which is the failure mode this whole job
+        # was created to stop happening.
+        #
+        # test_rubric_build_tools.py is the direct regression pin for the CRLF
+        # bug — its newline-fidelity assertions read RAW BYTES and are the ones
+        # that go red here and stay green on Linux.
+        #
+        # test_toolset_portability.py asserts the build toolset never requests a
+        # shell, always passes a list argv, and never names a POSIX-only binary.
+        # It runs on BOTH OSes (it is in the Linux `test` job too) because a
+        # portability claim proven on one OS is not proven.
+        #
+        # tests/studio/ and the executor/adapter tests spawn subprocesses and
+        # resolve executables; tests/test_agent_loop*.py owns the wall-clock and
+        # threading behaviour, where Windows timer granularity differs.
+        run: |
+          pytest tests/genesis/test_rubric_build_tools.py \
+            tests/test_toolset_portability.py \
+            tests/test_agent_loop.py \
+            tests/test_agent_loop_semantic_loop.py \
+            tests/test_agent_loop_wall_clock.py \
+            tests/test_agent_loop_wiring.py \
+            tests/llm/test_agent_loop_shim.py \
+            tests/llm/test_rubric_loop.py \
+            tests/studio/ \
+            tests/test_local_agent_adapter.py \
+            tests/test_agent_surface_dispatch.py \
+            tests/test_kanban_executor_resolution.py \
+            tests/kanban/test_build_mode_and_model.py \
+            -v --tb=short --durations=15
 
   # ── PostgreSQL pytest tier — %s / PG-portability regression guard ─────────
   # The ordinary `test` job runs on SQLite (conftest forces it), where

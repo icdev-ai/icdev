@@ -134,7 +134,7 @@ def run_ansible(run_id: str, project_id: str) -> dict:
             else:
                 # Minimal local inventory for syntax check
                 (Path(tmp) / "inventory.ini").write_text(
-                    "[all]\nlocalhost ansible_connection=local\n", encoding="utf-8"
+                    "[all]\nlocalhost ansible_connection=local\n", encoding="utf-8", newline=""
                 )
 
             # Install required collections, then syntax-check
@@ -195,7 +195,7 @@ def run_ansible(run_id: str, project_id: str) -> dict:
 
     _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path = _ARTIFACTS_DIR / f"ansible_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return {
         "gate": gate,

@@ -56,7 +56,7 @@ def _load_offset() -> int:
 
 def _save_offset(offset: int):
     _OFFSET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _OFFSET_FILE.write_text(str(offset), encoding="utf-8")
+    _OFFSET_FILE.write_text(str(offset), encoding="utf-8", newline="")
 
 
 @register_connector

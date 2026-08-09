@@ -265,7 +265,7 @@ def run(dry_run: bool = False) -> dict:
                 continue
 
             # Write updated skill file
-            skill_file.write_text(updated_content, encoding="utf-8")
+            skill_file.write_text(updated_content, encoding="utf-8", newline="")
             logger.info(
                 "gepa_optimizer: updated %s (artifact %s, delta=+%.2f, traces=%d)",
                 skill_file, artifact_id, composite_score - baseline_score, n_traces,

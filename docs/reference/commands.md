@@ -136,7 +136,13 @@ icdev audit tail --source runtime_invocations --follow --json
 icdev runtime top                         # Top 20 names by call count, all surfaces
 icdev runtime top --limit 50
 icdev runtime top --surface mcp           # One surface: mcp | agent | persona | role
+icdev runtime top --surface agent         # SAG tool calls, recorded from dispatch.py
 icdev runtime top --json                  # Machine-readable rollup
+
+# One RUN rather than all runs. The correlation id is AgentLoopResult.trace_id;
+# both the agent.turn spans and the gen_ai.invoke spans beneath them carry it.
+icdev runtime trace <correlation-id>      # Every span of one agent run, oldest first
+icdev runtime trace <correlation-id> --json
 
 # Core enterprise profiles
 icdev profile list                 # List available profiles
@@ -170,8 +176,13 @@ python tools/builder/forge_validator.py --gate               # FORGE gate for ch
 python tools/compliance/ssp_generator.py --project-id "sparkpilot"
 python tools/compliance/poam_generator.py --project-id "sparkpilot"
 python tools/compliance/stig_checker.py --project-id "sparkpilot"
-python tools/compliance/sbom_generator.py --project-id "sparkpilot"
+python tools/compliance/sbom_generator.py --project-id "sparkpilot"                                # CycloneDX (default spec 1.7)
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --format spdx                  # SPDX 2.3 — the other format the 2026 standard names
+python tools/compliance/sbom_generator.py --project-id "sparkpilot" --spec-version 1.6             # 1.4-1.7 selectable for lagging consumers
 python tools/compliance/sbom_generator.py --project-id "sparkpilot" --python-env /path/to/.venv   # resolve Python from the installed environment
+python tools/compliance/spdx_writer.py --convert "/path/to/sbom.cdx.json" --output "/path/to/sbom.spdx.json"
+python tools/compliance/spdx_writer.py --validate "/path/to/sbom.spdx.json" --json                # against the official SPDX 2.3 schema, offline
+python tools/compliance/spdx_writer.py --compare "/path/to/sbom.cdx.json" "/path/to/sbom.spdx.json" --json  # do both formats carry the same elements?
 python tools/compliance/dependency_resolver.py --project-dir "/path/to/project" --json            # resolved transitive set + coverage report
 python tools/compliance/component_producer.py --purl "pkg:golang/k8s.io/client-go@v0.29.0" --json  # Component Producer for one component
 python tools/compliance/component_producer.py --name flask --version 3.0.0 --ecosystem python --project-dir "/path/to/project" --json
@@ -403,6 +414,73 @@ try:
 finally:
     driver.quit()
 ```
+
+---
+
+## SAG Project Context — Instruction Loading at Session Start (hgx-sess-01)
+
+Loads `CLAUDE.md`, `AGENTS.md`, `memory/MEMORY.md` and the
+`session_context_builder` project-state summary into the agent's system prompt,
+budgeted against `context_budget.floor_window_for_function` (the minimum window
+across the routed chain) rather than a constant.
+
+```bash
+# Preview the block the runtime will inject
+python tools/agent_runtime/project_context.py
+
+# Budget accounting only — which sections were truncated, and by how much
+python tools/agent_runtime/project_context.py --json
+
+# Budget against a different routing function; skip the DB-backed state summary
+python tools/agent_runtime/project_context.py --function question_answering \
+    --no-project-state --json
+```
+
+A large-window model receives the documents intact; a 32k local chain receives a
+line-boundary-truncated block carrying an explicit
+`[... N of M lines omitted to fit the context budget — read <path> ...]` marker,
+so a partial rule set never reads as complete. Toggles:
+`ICDEV_SAG_PROJECT_CONTEXT=0` disables the block entirely;
+`ICDEV_SAG_PROJECT_STATE=0` keeps the instruction files but skips the project
+state summary. The block is built once per session and rebuilt on `/new`.
+
+---
+
+## SAG Standing Goals — `/goal` and Prompt Injection (hgx-goal-02)
+
+`/goal` manages durable objectives from inside a session; the **active** ones are
+injected into the system prompt on the next turn, capped and budgeted.
+
+```bash
+# Preview the goal block the runtime will inject
+python tools/agent_runtime/goal_context.py --user default
+
+# Budget accounting only — shown vs withheld, tokens vs budget
+python tools/agent_runtime/goal_context.py --json
+
+# Budget against a different routing function, with an explicit count cap
+python tools/agent_runtime/goal_context.py --function question_answering \
+    --limit 3 --json
+```
+
+In-session commands (`icdev chat`, or any runtime wired to
+`tools/agent_runtime/commands.py::dispatch`):
+
+```text
+/goal create <title> [| detail] [--priority=N]   Create and start pursuing it
+/goal list [status|all]                          Numbered list (default: live)
+/goal status [N|id]                              What is injected, or one goal
+/goal pause|resume|complete|cancel <N|id>        Lifecycle moves
+/goal block <N|id> [reason]                      Mark blocked, recording why
+/goal clear [--yes]                              Cancel every live goal
+```
+
+Two caps apply and both are announced in the block itself: a count cap
+(`ICDEV_SAG_GOAL_LIMIT`, default 5) and a token cap (5% of
+`context_budget.available_input_tokens`). Under pressure the block shortens goal
+text before it drops goals, so every objective stays at least named. Every
+mutation invalidates the runtime's cached block, so a `/goal create` reaches the
+model on the very next turn. `ICDEV_SAG_GOALS=0` disables injection entirely.
 
 ---
 
@@ -984,6 +1062,18 @@ python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh v
 # depend on the dispatching process still being alive) and appends it. It does not weaken the
 # gate: a branch with no work still fails.
 
+# Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
+python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
+python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
+# Use this INSTEAD of `--set-status <id> backlog`. A hand-written re-queue bumps updated_at
+# while leaving last_failure_reason set, and failure_triage.find_recent_failures selects on
+# exactly that pair — so a clean re-queue manufactures a phantom triage queue (measured
+# 2026-08-08: five healthy sbx tasks entered the autofix queue this way, PR #1379).
+# --requeue clears last_failure_reason and branch_name, records the transition, and
+# PRESERVES failure_count (the recovery guard's budget). It also works on a task parked in
+# a pipeline-owned status like pr_opened, which --set-status cannot write. Exit 1 if any
+# task was refused; a manual-mode gate sentinel needs --force.
+
 # Kanban — rebase a DIRTY PR branch before it burns its resume budget (kax-conflict-01)
 python tools/kanban/rebase_recovery.py --task <task-id> --dry-run --json  # Probe locally, never push
 python tools/kanban/rebase_recovery.py --task <task-id> --json            # Rebase + force-with-lease push
@@ -1196,6 +1286,21 @@ python tools/studio/executors/mcp_executor.py --tool terraform_apply   --params 
 # Exit 0 = handler returned; exit 1 = unknown tool (suggests closest matches),
 # params failing the entry's input_schema, the handler raised, or gate MCP-WF-001
 # refused it (not allowlisted / awaiting approval / caller IL too low / missing role).
+
+# Agent executor — run an agent loop as a workflow step (`node_type: agent`, hgx-agent-01)
+python tools/studio/executors/agent_executor.py --prompt "Summarise tools/foo.py" --agent-tools worktree_read
+python tools/studio/executors/agent_executor.py --prompt "Add a docstring to tools/foo.py" \
+  --agent-tools worktree_build --work-dir /path/to/worktree \
+  --run-id "run-xxx" --step-id "build" --json
+# Bundles compose; `terminal` adds the allowlisted run_command.
+python tools/studio/executors/agent_executor.py --prompt "Fix the failing test" \
+  --agent-tools worktree_build,terminal --llm-function code_generation --effort high
+# --llm-function is a ROUTING KEY, never a model id. There is no --model flag.
+# --approval-mode enforce (default) | dry_run | off  — the ars-appr-01 reversibility gate.
+# Exit 0 = the loop ran, OR the step degraded (`degraded: true` — the routed provider
+# cannot serve native tool use; the runner records `skipped` and the run continues).
+# Exit 1 = unrunnable as authored: no prompt, no declared bundle (default-deny), an
+# unknown bundle, or the loop raised.
 ```
 
 ---

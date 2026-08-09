@@ -41,7 +41,7 @@ def fix_broken_refs(finding: Dict[str, Any]) -> Dict[str, Any]:
             new_lines.append(line)
 
     if fixed_refs:
-        claude_md.write_text("\n".join(new_lines), encoding="utf-8")
+        claude_md.write_text("\n".join(new_lines), encoding="utf-8", newline="")
 
     return {
         "action": "broken_refs_commented",
@@ -129,7 +129,7 @@ def fix_untested_modules(finding: Dict[str, Any]) -> Dict[str, Any]:
             f"            pass  # Optional dependencies may be missing\n"
         )
 
-        test_file.write_text(stub, encoding="utf-8")
+        test_file.write_text(stub, encoding="utf-8", newline="")
         created.append(test_file.name)
 
     return {

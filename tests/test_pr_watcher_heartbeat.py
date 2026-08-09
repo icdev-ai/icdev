@@ -1,346 +1,186 @@
 # CUI // SP-CTI
-"""PR-watcher liveness heartbeat (kax-obs-02).
+"""kax-obs-01: the pr_watcher daemon heartbeat must land in its own log file.
 
-"Is the PR watcher actually polling?" could only be answered from the log file,
-and the log file is exactly what goes missing. Each COMPLETED poll now appends a
-row to the EXISTING `heartbeat_checks` table, so the question is answerable from
-the database.
+Root cause pinned here: ``get_logger(__name__)`` at module scope resolves to
+``"__main__"`` whenever the module is *executed* rather than imported.  Every
+ICDEV daemon is executed that way (``tools/genesis/launcher.py`` runs
+``python tools/ci/pr_watcher.py --daemon``), so the ``iteration=`` heartbeat was
+written to a shared ``.logs/__main__.ndjson`` bucket while the watcher's own
+``.logs/tools.ci.pr_watcher.ndjson`` stayed frozen at two 2026-08-02 WARNINGs
+(those two came from the one path that *imports* the module).
 
-The distinction this exists to make: 'no task reached done in N hours' with a
-STALE watcher (a broken pipe) versus the same sentence with a POLLING watcher
-that took zero actions (a board with nothing mergeable). Both report
-``actions_taken == 0``; only the timestamp separates them.
+That mattered operationally rather than cosmetically: silence in the watcher's
+log was read twice during the 2026-08-08 triage as "the daemon is wedged", when
+it was in fact looping correctly.  Silence must mean stopped.
 
-Runs against the isolated SQLite test DB (conftest), never the live board.
+Two layers:
+  * ``TestCanonicalComponent`` — the unit behaviour of the fix.
+  * ``TestDaemonHeartbeatLandsInLog`` — the real script, run the way the
+    launcher runs it, proving an ``iteration=`` line is appended.
 """
 from __future__ import annotations
 
 import json
-import pathlib
-from datetime import datetime, timedelta, timezone
+import os
+import subprocess
+import sys
+from pathlib import Path
 
-import pytest
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
-from tools.ci import pr_watcher as pw
-from tools.db.storage import get_connection
-from tools.kanban import metrics
-
-NOW = datetime(2026, 8, 8, 12, 0, 0, tzinfo=timezone.utc)
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+import icdev.tools.logging.icdev_logger as logger_mod  # noqa: E402
 
 
-class _NoCloseConn:
-    """Delegate everything but ``close()``.
+# ────────────────────────────────────────────────────────────────────────────
+# Unit: the __main__ sentinel resolves to a dotted module path
+# ────────────────────────────────────────────────────────────────────────────
 
-    ``_record_heartbeat`` and ``_audit`` each close the connection they were
-    handed; the test owns this one and needs it to survive both polls.
+
+class _FakeMain:
+    def __init__(self, file: str | None):
+        if file is not None:
+            self.__file__ = file
+
+
+def _make_package(root: Path, *parts: str) -> Path:
+    """Create ``root/parts.../`` with an ``__init__.py`` at every level."""
+    directory = root
+    for part in parts:
+        directory = directory / part
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "__init__.py").write_text("", encoding="utf-8")
+    return directory
+
+
+class TestCanonicalComponent:
+    def test_non_main_component_is_untouched(self):
+        assert logger_mod._canonical_component("tools.ci.pr_watcher") == \
+            "tools.ci.pr_watcher"
+        assert logger_mod._canonical_component("kanban_scheduler") == \
+            "kanban_scheduler"
+
+    def test_main_resolves_to_dotted_package_path(self, monkeypatch, tmp_path):
+        pkg = _make_package(tmp_path, "tools", "ci")
+        script = pkg / "pr_watcher.py"
+        script.write_text("", encoding="utf-8")
+        monkeypatch.setitem(sys.modules, "__main__", _FakeMain(str(script)))
+        assert logger_mod._canonical_component("__main__") == "tools.ci.pr_watcher"
+
+    def test_main_outside_a_package_falls_back_to_the_stem(
+        self, monkeypatch, tmp_path
+    ):
+        script = tmp_path / "standalone_script.py"
+        script.write_text("", encoding="utf-8")
+        monkeypatch.setitem(sys.modules, "__main__", _FakeMain(str(script)))
+        assert logger_mod._canonical_component("__main__") == "standalone_script"
+
+    def test_main_without_a_file_keeps_the_sentinel(self, monkeypatch):
+        # `python -c ...` and the REPL have no __main__.__file__; there is
+        # nothing to resolve and the old behaviour must be preserved.
+        monkeypatch.setitem(sys.modules, "__main__", _FakeMain(None))
+        assert logger_mod._canonical_component("__main__") == "__main__"
+
+    def test_get_logger_writes_under_the_resolved_name(self, monkeypatch, tmp_path):
+        log_dir = tmp_path / "logs"
+        pkg = _make_package(tmp_path, "tools", "ci")
+        script = pkg / "pr_watcher.py"
+        script.write_text("", encoding="utf-8")
+        monkeypatch.setitem(sys.modules, "__main__", _FakeMain(str(script)))
+
+        logger_mod.invalidate_cache()
+        monkeypatch.setattr(logger_mod, "_CONFIG_CACHE", {
+            "global_level": "INFO",
+            "log_dir": str(log_dir),
+            "rotation": {"when": "midnight", "retention_days": 7,
+                         "max_bytes": 1_048_576},
+            "component_overrides": {},
+        })
+        try:
+            log = logger_mod.get_logger("__main__")
+            log.info("pr_watcher: iteration=1 checked=0 actions=0")
+            for handler in log.handlers:
+                handler.flush()
+
+            resolved = log_dir / "tools.ci.pr_watcher.ndjson"
+            assert resolved.exists(), "heartbeat did not land in the per-component file"
+            record = json.loads(resolved.read_text(encoding="utf-8").splitlines()[0])
+            assert record["component"] == "tools.ci.pr_watcher"
+            assert "iteration=1" in record["message"]
+            assert not (log_dir / "__main__.ndjson").exists()
+        finally:
+            for handler in list(logger_mod.get_logger("__main__").handlers):
+                handler.close()
+            logger_mod.invalidate_cache()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Integration: the real daemon, launched the way launcher.py launches it
+# ────────────────────────────────────────────────────────────────────────────
+
+
+class TestDaemonHeartbeatLandsInLog:
+    """Runs ``python tools/ci/pr_watcher.py --daemon`` — the exact form used by
+    ``tools/genesis/launcher.py::_start_pr_watcher`` — in an isolated cwd.
+
+    ``log_dir`` in args/logging_config.yaml is relative (``.logs``), so cwd
+    alone is enough to redirect the write; nothing touches the real repo logs.
     """
 
-    def __init__(self, inner):
-        self._inner = inner
-
-    def __getattr__(self, name):
-        return getattr(self._inner, name)
-
-    def close(self):
-        return None
-
-
-@pytest.fixture()
-def conn():
-    c = get_connection()
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS heartbeat_checks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            check_type TEXT NOT NULL,
-            last_run TEXT NOT NULL,
-            next_run TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            result_summary TEXT,
-            items_found INTEGER DEFAULT 0,
-            duration_ms INTEGER DEFAULT 0,
-            created_at TEXT,
-            classification TEXT DEFAULT 'UNCLASSIFIED'
+    def test_iteration_line_is_appended(self, tmp_path):
+        config = tmp_path / "pr_watcher_config.yaml"
+        # Disable the two poll steps that shell out to `gh`; the heartbeat is
+        # what is under test, not PR discovery.
+        config.write_text(
+            "link_prs_on_poll: false\nsibling_conflict_check: false\n",
+            encoding="utf-8",
         )
-        """
-    )
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS kanban_tasks (
-            id TEXT PRIMARY KEY, title TEXT, description TEXT, task_type TEXT,
-            priority TEXT DEFAULT 'high', status TEXT DEFAULT 'backlog',
-            created_at TEXT, updated_at TEXT, completed_at TEXT,
-            due_date TEXT, sla_hours INTEGER
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(REPO_ROOT)
+        env["ICDEV_STORAGE_BACKEND"] = "sqlite"
+        env["ICDEV_DB_PATH"] = str(tmp_path / "empty.db")
+        # ICDEV_DATABASE_URL outranks ICDEV_DB_PATH — a leaked one would drag
+        # the subprocess onto a real Postgres.
+        env.pop("ICDEV_DATABASE_URL", None)
+        env.pop("ICDEV_PG_DATABASE", None)
+
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "tools" / "ci" / "pr_watcher.py"),
+             "--daemon", "--interval", "1", "--max-iterations", "1",
+             "--dry-run", "--config", str(config)],
+            cwd=str(tmp_path),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=280,
         )
-        """
-    )
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS kanban_status_transitions (
-            id TEXT PRIMARY KEY, task_id TEXT NOT NULL, from_status TEXT,
-            to_status TEXT NOT NULL, actor TEXT, reason TEXT, recorded_at TEXT NOT NULL
+        assert proc.returncode == 0, f"daemon exited {proc.returncode}: {proc.stderr}"
+
+        log_file = tmp_path / ".logs" / "tools.ci.pr_watcher.ndjson"
+        assert log_file.exists(), (
+            "pr_watcher wrote no per-component log at all.\n"
+            f"stdout={proc.stdout}\nstderr={proc.stderr}"
         )
-        """
-    )
-    c.execute("DELETE FROM heartbeat_checks")
-    c.execute("DELETE FROM kanban_tasks")
-    c.execute("DELETE FROM kanban_status_transitions")
-    c.commit()
-    yield c
-    c.close()
 
-
-def _watcher(conn, tasks):
-    """A PRWatcher wired to the test DB, with every network path stubbed out."""
-    shared = _NoCloseConn(conn)
-
-    def _fetch_state(_url):
-        raise RuntimeError("stubbed: no gh in tests")
-
-    return pw.PRWatcher(
-        config={
-            "poll_interval_seconds": 30,
-            "link_prs_on_poll": False,
-            "sibling_conflict_check": False,
-            "auto_merge_enabled": False,
-        },
-        get_connection=lambda: shared,
-        fetch_state=_fetch_state,
-    )
-
-
-def _rows(conn):
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT last_run, items_found, result_summary FROM heartbeat_checks "
-            "WHERE check_type = %s ORDER BY id",
-            (pw.WATCHER_HEARTBEAT_CHECK_TYPE,),
-        ).fetchall()
-    ]
-
-
-def _beat(conn, at: datetime, tasks_checked: int, actions_taken: int) -> None:
-    conn.execute(
-        "INSERT INTO heartbeat_checks "
-        "(check_type, last_run, next_run, status, result_summary, items_found, "
-        " duration_ms) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (
-            pw.WATCHER_HEARTBEAT_CHECK_TYPE, at.isoformat(),
-            (at + timedelta(seconds=30)).isoformat(), "ok",
-            json.dumps({"tasks_checked": tasks_checked, "actions_taken": actions_taken}),
-            tasks_checked, 5,
-        ),
-    )
-    conn.commit()
-
-
-# ---------------------------------------------------------------------------
-# The value advances across two poll cycles
-# ---------------------------------------------------------------------------
-
-
-class TestHeartbeatAdvances:
-    def test_two_polls_write_two_advancing_rows(self, conn, monkeypatch):
-        """Poll twice; the recorded time moves forward and the counts follow."""
-        monkeypatch.setattr(pw, "list_pr_tasks", lambda *a, **k: [])
-        w = _watcher(conn, [])
-
-        first = w.poll_once()
-        # Second cycle sees one task, whose PR fetch fails -> one 'error' action.
-        monkeypatch.setattr(
-            pw, "list_pr_tasks",
-            lambda *a, **k: [{
-                "id": "kax-obs-02",
-                "pr_url": "https://github.com/icdev-ai/ICDev/pull/1",
-                "status": "pr_opened",
-            }],
-        )
-        second = w.poll_once()
-
-        rows = _rows(conn)
-        assert len(rows) == 2, "each completed poll writes exactly one row"
-        assert rows[1]["last_run"] > rows[0]["last_run"], "the poll time advances"
-        assert rows[0]["last_run"] == first.finished_at
-        assert rows[1]["last_run"] == second.finished_at
-
-        # Counts track what the poll actually saw, not just that it ran.
-        assert rows[0]["items_found"] == 0
-        assert rows[1]["items_found"] == 1
-        assert json.loads(rows[0]["result_summary"])["actions_taken"] == 0
-        assert json.loads(rows[1]["result_summary"])["actions_taken"] == 1
-
-    def test_reader_returns_the_newest_poll(self, conn, monkeypatch):
-        monkeypatch.setattr(pw, "list_pr_tasks", lambda *a, **k: [])
-        w = _watcher(conn, [])
-        w.poll_once()
-        second = w.poll_once()
-
-        hb = metrics.watcher_heartbeat(conn=conn)
-        assert hb["present"] is True
-        assert hb["last_poll_at"].startswith(second.finished_at[:19])
-        assert hb["state"] == "polling"
-        assert hb["tasks_checked"] == 0
-        assert hb["actions_taken"] == 0
-
-    def test_written_row_satisfies_the_live_postgres_constraints(self, conn, monkeypatch):
-        """The primary backend is PostgreSQL; SQLite is looser and hides this.
-
-        Live PG `heartbeat_checks` has NO `details` column and its status CHECK
-        allows only pending/ok/warning/critical/error — while the SQLite DDL in
-        init_icdev_db.py declares `details` and also permits 'healthy'. Either
-        divergence makes the INSERT raise, get swallowed by the best-effort
-        except, and the heartbeat silently never land in production.
-        """
-        monkeypatch.setattr(pw, "list_pr_tasks", lambda *a, **k: [])
-        _watcher(conn, []).poll_once()
-
-        row = dict(conn.execute(
-            "SELECT * FROM heartbeat_checks WHERE check_type = %s",
-            (pw.WATCHER_HEARTBEAT_CHECK_TYPE,),
-        ).fetchone())
-        assert row["status"] in ("pending", "ok", "warning", "critical", "error")
-        assert "details" not in row, "live PG has no `details` column"
-
-        src = (ROOT / "tools" / "ci" / "pr_watcher.py").read_text(encoding="utf-8")
-        insert = src[src.index("INSERT INTO heartbeat_checks"):]
-        insert = insert[:insert.index("VALUES")]
-        assert "details" not in insert
-
-    def test_dry_run_writes_nothing(self, conn, monkeypatch):
-        """A --dry-run poll must not claim the watcher is live."""
-        monkeypatch.setattr(pw, "list_pr_tasks", lambda *a, **k: [])
-        w = _watcher(conn, [])
-        w.dry_run = True
-        w.poll_once()
-        assert _rows(conn) == []
-
-
-# ---------------------------------------------------------------------------
-# Stale is distinguishable from zero-action
-# ---------------------------------------------------------------------------
-
-
-class TestStaleVsZeroAction:
-    def test_stale_and_zero_action_differ_only_by_time(self, conn):
-        """Both took zero actions. Only one of them is a broken pipeline."""
-        _beat(conn, NOW - timedelta(hours=4), tasks_checked=0, actions_taken=0)
-        stale = metrics.watcher_heartbeat(conn=conn, now=NOW)
-
-        assert stale["state"] == "stale"
-        assert stale["stale"] is True
-        assert stale["actions_taken"] == 0
-        assert "last polled 4.0h ago" in stale["summary"]
-
-        _beat(conn, NOW - timedelta(seconds=30), tasks_checked=3, actions_taken=0)
-        fresh = metrics.watcher_heartbeat(conn=conn, now=NOW)
-
-        assert fresh["state"] == "polling"
-        assert fresh["stale"] is False
-        assert fresh["actions_taken"] == 0, "same zero-action count as the stale one"
-        assert "polling" in fresh["summary"] and "3 task(s) checked" in fresh["summary"]
-
-    def test_never_polled_is_not_silently_healthy(self, conn):
-        hb = metrics.watcher_heartbeat(conn=conn, now=NOW)
-        assert hb["present"] is False
-        assert hb["state"] == "never_polled"
-        assert hb["stale"] is True
-
-    def test_missing_table_reports_absent_rather_than_raising(self, conn):
-        conn.execute("DROP TABLE heartbeat_checks")
-        conn.commit()
-        hb = metrics.watcher_heartbeat(conn=conn, now=NOW)
-        assert hb["present"] is False
-        assert hb["state"] == "never_polled"
-
-
-class TestStallAttribution:
-    """The same stalled board reads as two different incidents."""
-
-    def _stalled_board(self, conn):
-        conn.execute(
-            "INSERT INTO kanban_tasks (id, title, status, created_at) "
-            "VALUES (%s, %s, %s, %s)",
-            ["t-a", "queued work", "scheduled", NOW.isoformat()],
-        )
-        conn.execute(
-            "INSERT INTO kanban_status_transitions "
-            "(id, task_id, from_status, to_status, recorded_at) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            ["kst-old", "t-old", "in_progress", "done",
-             (NOW - timedelta(days=4)).isoformat()],
-        )
-        conn.commit()
-
-    def test_stale_watcher_is_attributed_to_the_watcher(self, conn):
-        self._stalled_board(conn)
-        _beat(conn, NOW - timedelta(hours=4), tasks_checked=0, actions_taken=0)
-
-        r = metrics.throughput_stall_check(
-            conn=conn, window_hours=24, min_active_tasks=1, now=NOW,
-        )
-        assert r["stalled"] is True
-        assert r["stall_attribution"] == "watcher_not_polling"
-        assert r["watcher"]["state"] == "stale"
-
-    def test_live_watcher_is_attributed_to_the_board(self, conn):
-        self._stalled_board(conn)
-        _beat(conn, NOW - timedelta(seconds=45), tasks_checked=2, actions_taken=0)
-
-        r = metrics.throughput_stall_check(
-            conn=conn, window_hours=24, min_active_tasks=1, now=NOW,
-        )
-        assert r["stalled"] is True
-        assert r["stall_attribution"] == "watcher_polling_nothing_mergeable"
-        assert r["watcher"]["state"] == "polling"
-
-    def test_reason_field_is_unchanged(self, conn):
-        """Attribution is additive — the original three reasons still apply."""
-        self._stalled_board(conn)
-        _beat(conn, NOW - timedelta(seconds=45), tasks_checked=0, actions_taken=0)
-        r = metrics.throughput_stall_check(
-            conn=conn, window_hours=24, min_active_tasks=1, now=NOW,
-        )
-        assert r["reason"] == "stalled"
-
-
-# ---------------------------------------------------------------------------
-# No new daemon, no new log file
-# ---------------------------------------------------------------------------
-
-
-class TestNoNewMovingParts:
-    def test_reuses_the_existing_heartbeat_checks_table(self):
-        """`heartbeat_checks` predates this feature — no new table, no migration."""
-        ddl = (ROOT / "tools" / "db" / "init_icdev_db.py").read_text(encoding="utf-8")
-        assert "CREATE TABLE IF NOT EXISTS heartbeat_checks" in ddl
-
-    def test_launcher_supervises_no_extra_process(self):
-        """The launcher's service set is unchanged — this added no daemon."""
-        src = (ROOT / "tools" / "genesis" / "launcher.py").read_text(encoding="utf-8")
-        started = sorted(
-            line.split("(")[0][len("def "):]
-            for line in src.splitlines()
-            if line.startswith("def _start_")
-        )
-        assert started == [
-            "_start_daemon",
-            "_start_dashboard",
-            "_start_kanban_scheduler",
-            "_start_pr_watcher",
-            "_start_proposal_genesis",
-            "_start_trading_dashboard",
+        records = [
+            json.loads(line)
+            for line in log_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
         ]
+        heartbeats = [
+            r for r in records
+            if r["level"] == "INFO" and "iteration=" in r["message"]
+        ]
+        assert heartbeats, (
+            "no iteration= heartbeat in the watcher's own log; records were "
+            f"{[r['message'] for r in records]}"
+        )
+        assert heartbeats[0]["component"] == "tools.ci.pr_watcher"
 
-    def test_liveness_is_readable_without_any_log_file(self, conn, monkeypatch):
-        """The probe answers from the DB alone — no file path is consulted."""
-        def _boom(*a, **k):
-            raise AssertionError("watcher liveness must not read the filesystem")
-
-        monkeypatch.setattr(pathlib.Path, "open", _boom)
-        monkeypatch.setattr(pathlib.Path, "read_text", _boom)
-
-        _beat(conn, NOW - timedelta(seconds=10), tasks_checked=1, actions_taken=0)
-        hb = metrics.watcher_heartbeat(conn=conn, now=NOW)
-        assert hb["state"] == "polling"
+        # The regression itself: nothing may fall through to the shared bucket.
+        assert not (tmp_path / ".logs" / "__main__.ndjson").exists(), (
+            "heartbeat still routed to the shared __main__ bucket"
+        )

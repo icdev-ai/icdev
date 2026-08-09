@@ -327,7 +327,7 @@ def enrich_skill(skill_path, skip_engines=None):
             use_cases_content += f"- **Relevance:** {score:.2f}\n"
             use_cases_content += f"- **Summary:** {summary}\n"
             use_cases_content += f"- *Adapted from @{slug} on SkillHub*\n\n"
-        (context_dir / "merge_candidates.md").write_text(use_cases_content, encoding="utf-8")
+        (context_dir / "merge_candidates.md").write_text(use_cases_content, encoding="utf-8", newline="")
         files_generated.append("context/merge_candidates.md")
 
     # Best practices from Innovation
@@ -345,7 +345,7 @@ def enrich_skill(skill_path, skip_engines=None):
             if f.get("url"):
                 practices_content += f"  Source: {f['url']}\n"
             practices_content += "\n"
-        (context_dir / "best_practices.md").write_text(practices_content, encoding="utf-8")
+        (context_dir / "best_practices.md").write_text(practices_content, encoding="utf-8", newline="")
         files_generated.append("context/best_practices.md")
 
     # Alternative approaches from Creative
@@ -356,7 +356,7 @@ def enrich_skill(skill_path, skip_engines=None):
         for a in creative_data["alternatives"][:5]:
             alt_content += f"## {a.get('name', 'Alternative')}\n"
             alt_content += f"{a.get('approach', '')}\n\n"
-        (context_dir / "alternatives.md").write_text(alt_content, encoding="utf-8")
+        (context_dir / "alternatives.md").write_text(alt_content, encoding="utf-8", newline="")
         files_generated.append("context/alternatives.md")
 
     # Industry patterns from Research
@@ -368,7 +368,7 @@ def enrich_skill(skill_path, skip_engines=None):
             patterns_content += f"## {p.get('title', 'Pattern')}\n"
             patterns_content += f"*Stage: {p.get('stage', 'N/A')}*\n\n"
             patterns_content += f"{p.get('detail', '')}\n\n"
-        (context_dir / "patterns.md").write_text(patterns_content, encoding="utf-8")
+        (context_dir / "patterns.md").write_text(patterns_content, encoding="utf-8", newline="")
         files_generated.append("context/patterns.md")
 
     # Enhance the SKILL.md with enrichment section
@@ -402,7 +402,7 @@ def enrich_skill(skill_path, skip_engines=None):
     else:
         content += enrichment_section
 
-    skill_md.write_text(content, encoding="utf-8")
+    skill_md.write_text(content, encoding="utf-8", newline="")
     files_generated.append("SKILL.md (enhanced)")
 
     results["success"] = True

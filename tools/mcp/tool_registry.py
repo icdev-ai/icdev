@@ -222,14 +222,23 @@ TOOL_REGISTRY = {
         "category": "compliance",
         "module": "tools.mcp.compliance_server",
         "handler": "handle_sbom_generate",
-        "description": "Generate a Software Bill of Materials (SBOM) in CycloneDX format. Lists all dependencies with versions and known vulnerabilities.",
+        "description": "Generate a Software Bill of Materials (SBOM) in CycloneDX or SPDX -- the two formats named by the 2026 SBOM Minimum Elements. Resolves the transitive dependency set and records the document.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "project_dir": {"type": "string", "description": "Path to the project directory"},
-                "project_id": {"type": "string", "description": "UUID of the project (optional, for DB recording)"},
+                "project_id": {"type": "string", "description": "ID of the project to generate an SBOM for"},
+                "format": {
+                    "type": "string",
+                    "enum": ["cyclonedx", "spdx"],
+                    "default": "cyclonedx",
+                    "description": "SBOM data format",
+                },
+                "project_dir": {
+                    "type": "string",
+                    "description": "Deprecated and ignored; the project's directory_path decides which tree is scanned",
+                },
             },
-            "required": ["project_dir"],
+            "required": ["project_id"],
         },
     },
     "cui_mark": {

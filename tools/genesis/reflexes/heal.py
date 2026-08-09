@@ -255,7 +255,7 @@ def _action_fix_canvas_rls_bypass(params: Dict) -> Tuple[bool, str]:
         if patched == original:
             continue
 
-        file_path.write_text(patched, encoding="utf-8")
+        file_path.write_text(patched, encoding="utf-8", newline="")
         fixed.append(rel)
 
     if fixed:

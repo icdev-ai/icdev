@@ -75,7 +75,7 @@ WshShell.CurrentDirectory = "{BASE_DIR}"
 WshShell.Run """{pythonw}"" ""{engine_path}"" --daemon", 0, False
 '''
 
-    vbs_path.write_text(vbs_content, encoding="utf-8")
+    vbs_path.write_text(vbs_content, encoding="utf-8", newline="")
 
     return {
         "status": "installed",
@@ -176,7 +176,7 @@ Environment=PYTHONIOENCODING=utf-8
 [Install]
 WantedBy=default.target
 """
-    unit_path.write_text(unit_content, encoding="utf-8")
+    unit_path.write_text(unit_content, encoding="utf-8", newline="")
 
     # Reload and enable
     subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
@@ -290,7 +290,7 @@ def _install_macos() -> Dict:
 </dict>
 </plist>
 """
-    plist_path.write_text(plist_content, encoding="utf-8")
+    plist_path.write_text(plist_content, encoding="utf-8", newline="")
     subprocess.run(["launchctl", "load", str(plist_path)], capture_output=True)
 
     return {

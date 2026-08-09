@@ -16,21 +16,12 @@ expressions."""
 import argparse
 from pathlib import Path
 
-from tools.infra.terraform_generator import _cui_header, _write
-
-
-def _render(template_str: str, ctx: dict) -> str:
-    """Replace {{ key }} placeholders with ctx values.
-
-    Intentionally uses simple string replacement instead of Jinja2 so that
-    Terraform HCL interpolation (${{var.name}}) is preserved in the output.
-    Only keys present in *ctx* are substituted.
-    """
-    result = template_str
-    for key, val in ctx.items():
-        result = result.replace("{{ " + key + " }}", str(val))
-        result = result.replace("{{" + key + "}}", str(val))
-    return result
+# _render is IMPORTED, not redefined. This module used to carry its own copy —
+# simple string replacement, chosen precisely so Terraform's ${{var.name}}
+# survives — while terraform_generator used Jinja2 and broke on exactly that.
+# Two implementations of one idea is how the AWS side stayed broken while the
+# Azure side worked; one implementation means one behaviour.
+from tools.infra.terraform_generator import _cui_header, _render, _write
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

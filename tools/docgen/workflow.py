@@ -1386,7 +1386,7 @@ def _try_export_html(session_id, text, title, out_dir, classification, artifacts
   <div class="cls-banner">{classification}</div>
 </body>
 </html>"""
-        pathlib.Path(html_path).write_text(html, encoding="utf-8")
+        pathlib.Path(html_path).write_text(html, encoding="utf-8", newline="")
         row = sm.add_artifact(session_id, "html", file_path=html_path)
         artifacts.append(row)
     except Exception:

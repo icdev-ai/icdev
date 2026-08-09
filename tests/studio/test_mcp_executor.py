@@ -5,6 +5,7 @@ than a real registry tool, so the tests stay fast and deterministic.
 """
 
 import json
+import os
 import subprocess
 import sys
 import types
@@ -359,20 +360,36 @@ def test_step_id_defaults_to_tool_name(stub_tool):
 
 # ── CLI contract (subprocess — this is what the runner actually does) ───────
 
-#: Subprocess budget, deliberately INSIDE the 30s per-test budget that
-#: pyproject.toml's `timeout = 30` gives every test.
+#: Subprocess budget for one `mcp_executor.py` invocation.
 #:
-#: This was 180 — six times the outer limit — which inverted the two and turned
-#: any slow child into a whole-session abort. pytest-timeout has no signal-based
-#: method on Windows, so it uses the thread method, which dumps stacks and kills
-#: the interpreter rather than failing one test. A full local `pytest tests/`
-#: therefore died at ~18% with a traceback pointing at subprocess.communicate,
-#: reading as a hang in this file when it was really the session being shot.
+#: THE INVARIANT: this must always fire BEFORE whatever per-test budget is in
+#: force. It was once 180 — six times the outer limit — which inverted the two
+#: and turned any slow child into a whole-session abort: pytest-timeout has no
+#: signal-based method on Windows, so it uses the thread method, which dumps
+#: stacks and kills the interpreter rather than failing one test. A full local
+#: `pytest tests/` died at ~18% pointing at subprocess.communicate, reading as a
+#: hang in this file when it was really the session being shot.
 #:
-#: An inner timeout must always fire before the outer one, so a slow child fails
-#: THIS test with a legible TimeoutExpired and the run continues. Observed cost of
-#: one invocation is ~3s, so 20s is roughly 6x headroom.
-_CLI_TIMEOUT_S = 20
+#: Because that inversion is expensive, the outer value below is DERIVED from
+#: this one rather than written independently — the two cannot drift apart.
+#:
+#: WINDOWS NEEDS FAR MORE THAN POSIX. One invocation costs ~1.5s on a warm
+#: Windows workstation and ~3s on Linux, but on a hosted windows-latest runner
+#: the first call pays a cold import of the whole `tools.*` tree against slow
+#: runner I/O and exceeded 20s — which turned the new Test (Windows) tier red on
+#: main for two tests in this file. Measured, not guessed: 90s is headroom for a
+#: cold runner, not a licence for a genuinely hung child.
+_CLI_TIMEOUT_S = 90 if os.name == "nt" else 20
+
+#: Per-test budget, always greater than the subprocess budget above.
+#:
+#: NOTE: inert on CI today. pytest-timeout is not in requirements.txt, so the job
+#: that installs `-r requirements.txt` logs "PytestConfigWarning: Unknown config
+#: option: timeout" and neither pyproject.toml's `timeout = 30` nor this marker
+#: takes effect — there, the subprocess budget is the only real limit. It IS live
+#: locally, where the plugin is usually installed, and local is exactly where the
+#: inversion above did its damage.
+_CLI_TEST_TIMEOUT_S = _CLI_TIMEOUT_S + 30
 
 
 def _cli(*args) -> tuple[int, dict]:
@@ -383,6 +400,7 @@ def _cli(*args) -> tuple[int, dict]:
     return proc.returncode, json.loads(proc.stdout)
 
 
+@pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_dispatches_health_check():
     rc, out = _cli("--tool", "health_check", "--params", "{}")
     assert rc == 0
@@ -391,6 +409,7 @@ def test_cli_dispatches_health_check():
     assert "result" in out
 
 
+@pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_unknown_tool_exits_nonzero_with_suggestions():
     """A typo is refused by the gate (it is not allowlisted) but still gets a hint.
 
@@ -409,6 +428,7 @@ def test_unknown_tool_still_reports_unknown_when_allowlisted(stub_tool):
         mcp_executor.run("stub_missing", {})
 
 
+@pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_invalid_params_exits_nonzero():
     rc, out = _cli("--tool", "kg_search", "--params", "{}")
     assert rc == 1
@@ -416,6 +436,7 @@ def test_cli_invalid_params_exits_nonzero():
     assert "required property" in out["error"]
 
 
+@pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_refused_tool_exits_nonzero_with_gate_reason():
     rc, out = _cli("--tool", "sbom_generate", "--params", "{}")
     assert rc == 1
@@ -423,6 +444,7 @@ def test_cli_refused_tool_exits_nonzero_with_gate_reason():
     assert "sbom_generate" in out["error"]
 
 
+@pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_requires_approval_tool_without_a_run_is_blocked():
     """No --run-id means no run to park a gate on, so nothing to approve."""
     rc, out = _cli("--tool", "terraform_apply",
@@ -431,6 +453,7 @@ def test_cli_requires_approval_tool_without_a_run_is_blocked():
     assert out["error_type"] == "mcp_tool_approval_gate_unavailable"
 
 
+@pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_gate_is_checked_after_params_so_nobody_is_woken_for_a_bad_call():
     """terraform_apply's schema requires terraform_dir; omitting it never gates."""
     rc, out = _cli("--tool", "terraform_apply", "--params", "{}")
@@ -438,6 +461,7 @@ def test_cli_gate_is_checked_after_params_so_nobody_is_woken_for_a_bad_call():
     assert out["error_type"] == "invalid_params"
 
 
+@pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_accepts_runner_injected_flags():
     """workflow_runner always appends --project-id/--run-id/--json."""
     rc, out = _cli("--tool", "health_check", "--params", "{}",

@@ -1,0 +1,7 @@
+{
+  "description": "sag_standing_goals - durable standing goals for the standalone-agent runtime (hgx-goal-01)",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

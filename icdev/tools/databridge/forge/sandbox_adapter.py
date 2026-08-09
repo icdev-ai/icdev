@@ -721,7 +721,7 @@ class _SubprocessBackend:
 
         tmp_dir = info["tmp_dir"]
         code_file = Path(tmp_dir) / f"exec_{uuid.uuid4().hex[:8]}.py"
-        code_file.write_text(code, encoding="utf-8")
+        code_file.write_text(code, encoding="utf-8", newline="")
 
         start = time.time()
         try:

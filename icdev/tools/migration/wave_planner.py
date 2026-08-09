@@ -152,8 +152,8 @@ def run(project_id: str = "default") -> dict:
         wave_yaml_path = _ARTIFACTS_DIR / "02_wave_plan.yaml"
         tfvars_path = tf_dir / "terraform.tfvars"
 
-        wave_yaml_path.write_text(_wave_yaml(all_waves, apps), encoding="utf-8")
-        tfvars_path.write_text(_tfvars(apps, project), encoding="utf-8")
+        wave_yaml_path.write_text(_wave_yaml(all_waves, apps), encoding="utf-8", newline="")
+        tfvars_path.write_text(_tfvars(apps, project), encoding="utf-8", newline="")
 
         high_risk = [a for a in apps if a.get("migration_strategy") in ("rearchitect", "refactor")
                      and a.get("criticality") in ("mission_critical", "critical", "high")]

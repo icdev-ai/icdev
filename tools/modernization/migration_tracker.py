@@ -935,7 +935,7 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None, db_path=No
         out_path.mkdir(parents=True, exist_ok=True)
         filename = f"pi_migration_report_{plan_id}_{pi_number}.md"
         filepath = out_path / filename
-        filepath.write_text(report_content, encoding="utf-8")
+        filepath.write_text(report_content, encoding="utf-8", newline="")
         return str(filepath)
 
     return report_content

@@ -244,7 +244,7 @@ def run_aws_config(run_id: str, project_id: str, canvas: str = "") -> dict:
             lines.append("")
 
     report_path = out_dir / f"aws_config_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return {
         "gate": gate, "mode": mode, "canvas": canvas,

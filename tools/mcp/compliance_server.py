@@ -115,17 +115,26 @@ def handle_stig_check(args: dict) -> dict:
 
 
 def handle_sbom_generate(args: dict) -> dict:
-    """Generate a Software Bill of Materials (CycloneDX format)."""
+    """Generate a Software Bill of Materials in CycloneDX or SPDX.
+
+    ``generate_sbom`` takes a project id and reads that project's
+    ``directory_path`` from the database; it has never taken a directory. The
+    previous call passed ``project_dir`` positionally *and* ``project_id`` by
+    keyword, which raised TypeError on every invocation. ``project_dir`` is
+    still accepted so existing callers do not break, but it is the project row
+    that decides which tree is scanned.
+    """
     generate = _import_tool("tools.compliance.sbom_generator", "generate_sbom")
     if not generate:
         return {"error": "sbom_generator module not available yet", "status": "pending"}
 
-    project_dir = args.get("project_dir")
-    if not project_dir:
-        raise ValueError("'project_dir' is required")
-
     project_id = args.get("project_id")
-    return generate(project_dir, project_id=project_id, db_path=str(DB_PATH))
+    if not project_id:
+        raise ValueError("'project_id' is required")
+
+    sbom_format = args.get("format", "cyclonedx")
+    path = generate(project_id, sbom_format=sbom_format, db_path=str(DB_PATH))
+    return {"project_id": project_id, "format": sbom_format, "sbom_path": path}
 
 
 def handle_cui_mark(args: dict) -> dict:

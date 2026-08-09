@@ -236,13 +236,13 @@ def _export_artifacts(doc_text: str, title: str, out_dir: pathlib.Path, output_f
     artifacts: list[dict] = []
 
     md_path = out_dir / "document.md"
-    md_path.write_text(doc_text, encoding="utf-8")
+    md_path.write_text(doc_text, encoding="utf-8", newline="")
     artifacts.append({"format": "markdown", "path": str(md_path), "filename": "document.md"})
 
     html_path = out_dir / "document.html"
     if output_format in ("html", "all", "pdf"):
         try:
-            html_path.write_text(_to_html(doc_text, title), encoding="utf-8")
+            html_path.write_text(_to_html(doc_text, title), encoding="utf-8", newline="")
             if output_format in ("html", "all"):
                 artifacts.append({"format": "html", "path": str(html_path), "filename": "document.html"})
         except Exception as exc:
@@ -260,7 +260,7 @@ def _export_artifacts(doc_text: str, title: str, out_dir: pathlib.Path, output_f
         try:
             from tools.network.pdf_export import export_to_pdf
             if not html_path.exists():
-                html_path.write_text(_to_html(doc_text, title), encoding="utf-8")
+                html_path.write_text(_to_html(doc_text, title), encoding="utf-8", newline="")
             pdf_path = str(out_dir / "document.pdf")
             export_to_pdf(str(html_path), pdf_path)
             artifacts.append({"format": "pdf", "path": pdf_path, "filename": "document.pdf"})

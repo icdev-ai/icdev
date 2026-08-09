@@ -312,7 +312,7 @@ def run(
 
     # Save eval metrics JSON
     metrics_path = Path(output_dir) / "eval_metrics.json"
-    metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8", newline="")
     print(f"Adapter saved: {output_dir}")
     print(f"Train loss: {metrics['train_loss']:.4f}  Eval loss: {metrics['eval_loss']:.4f}")
 

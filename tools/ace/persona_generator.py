@@ -131,7 +131,7 @@ def _save_index(index: dict[str, Any]) -> None:
         target = d / "_generated_personas.json"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(payload, encoding="utf-8")
+            target.write_text(payload, encoding="utf-8", newline="")
         except Exception as exc:  # noqa: BLE001 — a mirror write must not fail generation
             logger.warning("persona_generator: index mirror write failed at %s: %s", target, exc)
 
@@ -258,7 +258,7 @@ def get_or_generate_persona(domain_description: str) -> dict[str, Any]:
         target = d / role_id / "SOUL.md"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            target.write_text(content, encoding="utf-8", newline="")
         except Exception as exc:  # noqa: BLE001
             logger.warning("persona_generator: SOUL mirror write failed at %s: %s", target, exc)
 

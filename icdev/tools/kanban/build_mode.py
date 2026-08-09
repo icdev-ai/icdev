@@ -107,7 +107,7 @@ def enable(actor: str = "dashboard", reason: str = "") -> Dict[str, Any]:
              "reason": reason or "manual build (CLI session builds; board still tracks)"},
             indent=2,
         ),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
     return status()
 

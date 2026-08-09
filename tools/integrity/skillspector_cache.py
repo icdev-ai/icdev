@@ -54,7 +54,7 @@ def save() -> None:
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     CACHE_PATH.write_text(
         json.dumps(_store, indent=2, default=str),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
 

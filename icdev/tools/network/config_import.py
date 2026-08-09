@@ -544,15 +544,15 @@ def _cli() -> int:
         out = Path(args.output)
         if out.suffix == ".drawio":
             from tools.network.export_import import to_drawio
-            out.write_text(to_drawio(graph, out.stem), encoding="utf-8")
+            out.write_text(to_drawio(graph, out.stem), encoding="utf-8", newline="")
         elif out.suffix == ".svg":
             from tools.network.export_import import to_svg
-            out.write_text(to_svg(graph, out.stem), encoding="utf-8")
+            out.write_text(to_svg(graph, out.stem), encoding="utf-8", newline="")
         elif out.suffix == ".vsdx":
             from tools.network.visio_export import export_vsdx
             export_vsdx(graph, str(out))
         else:
-            out.write_text(json.dumps(graph, indent=2), encoding="utf-8")
+            out.write_text(json.dumps(graph, indent=2), encoding="utf-8", newline="")
         print(f"wrote {out}", file=sys.stderr)
 
     if args.json or not args.output:

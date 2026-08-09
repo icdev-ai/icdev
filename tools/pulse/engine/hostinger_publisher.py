@@ -329,7 +329,7 @@ def setup_session() -> dict:
             "page_title": page.title(),
         }
         marker_path = PROFILE_DIR / "session_marker.json"
-        marker_path.write_text(json.dumps(marker, indent=2))
+        marker_path.write_text(json.dumps(marker, indent=2), newline="")
         _log(f"Session saved to {PROFILE_DIR}")
 
         blog_info = _discover_blog_section(page)
@@ -350,7 +350,7 @@ def setup_session() -> dict:
             "partial": True,
         }
         marker_path = PROFILE_DIR / "session_marker.json"
-        marker_path.write_text(json.dumps(marker, indent=2))
+        marker_path.write_text(json.dumps(marker, indent=2), newline="")
 
         context.close()
         pw.stop()
@@ -632,7 +632,7 @@ def _load_selectors() -> dict:
         ],
     }
 
-    sel_path.write_text(json.dumps(defaults, indent=2))
+    sel_path.write_text(json.dumps(defaults, indent=2), newline="")
     _log(f"Default selectors written to {sel_path}. Customize after --setup.")
     return defaults
 

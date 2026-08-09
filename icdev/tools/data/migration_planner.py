@@ -181,7 +181,7 @@ def main():
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         fname = f"migration_plan_{uuid.uuid4().hex[:8]}.md"
         fpath = artifacts_dir / fname
-        fpath.write_text(report_md, encoding="utf-8")
+        fpath.write_text(report_md, encoding="utf-8", newline="")
 
         output = {
             "status": "success",

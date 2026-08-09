@@ -261,7 +261,7 @@ def run_apply(run_id: str, project_id: str) -> dict:
                 docker_ep = _localstack_endpoint_for_docker(raw_ep)
                 region = env.get("AWS_DEFAULT_REGION", "us-east-1")
                 override = _LOCALSTACK_OVERRIDE_TPL.format(ep=docker_ep, region=region)
-                (tmp_path / "localstack_override.tf").write_text(override, encoding="utf-8")
+                (tmp_path / "localstack_override.tf").write_text(override, encoding="utf-8", newline="")
                 findings.append({"severity": "info", "check": "localstack_override",
                                   "message": f"Provider overridden → {docker_ep}"})
 
@@ -273,7 +273,7 @@ def run_apply(run_id: str, project_id: str) -> dict:
                 'dw_password         = "changeme-rotate-immediately"\n'
                 'artifacts_bucket    = "icdev-artifacts"\n'
             )
-            (tmp_path / "auto.tfvars").write_text(tfvars, encoding="utf-8")
+            (tmp_path / "auto.tfvars").write_text(tfvars, encoding="utf-8", newline="")
 
             # Restore previous state if available
             prior_state = _find_existing_state(uid)
@@ -388,7 +388,7 @@ def run_apply(run_id: str, project_id: str) -> dict:
 
     _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path = _ARTIFACTS_DIR / f"apply_report_{uid}.md"
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return {
         "gate": gate,

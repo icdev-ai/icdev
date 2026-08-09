@@ -51,7 +51,7 @@ def _classification_labels(classification: str = "public", project_name: str = "
 
 def _write(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
     return path
 
 

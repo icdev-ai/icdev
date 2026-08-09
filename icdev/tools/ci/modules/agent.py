@@ -306,7 +306,7 @@ def execute_template(request: AgentTemplateRequest) -> AgentPromptResponse:
     agent_dir = _ensure_agent_dir(request.run_id, request.agent_name)
     prompt_file = agent_dir / "prompts" / f"{_safe_filename(request.slash_command)}.txt"
     try:
-        prompt_file.write_text(prompt, encoding="utf-8")
+        prompt_file.write_text(prompt, encoding="utf-8", newline="")
     except OSError as exc:
         _module_logger.warning(
             "agent: could not persist prompt file %s: %s", prompt_file, exc

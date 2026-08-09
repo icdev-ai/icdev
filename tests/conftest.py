@@ -38,6 +38,13 @@ if _PYTEST_PG:
     os.environ["ICDEV_PG_NO_FALLBACK"] = "1"
 else:
     os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    # The pytest suite legitimately seeds an isolated SQLite board, so declare it
+    # here rather than making task_factory guess. `_assert_real_board` otherwise
+    # refuses the write — it exists because a seeder run from a git worktree (no
+    # `.env`, so no PostgreSQL config) reported "36/36 created" against a
+    # throwaway file that died with the worktree. That guard should fire for a
+    # real seeding run, never for a test.
+    os.environ.setdefault("ICDEV_KANBAN_ALLOW_LOCAL_BOARD", "1")
     # Make the backend guard's documented pytest exemption real. Its docstring
     # says "tests/conftest.py forces sqlite for the whole pytest suite and is
     # right to — those are short-lived, isolated databases"; the guard only means
@@ -93,6 +100,11 @@ CREATE TABLE IF NOT EXISTS runtime_invocations (
     error_class TEXT,
     error_message TEXT,
     arg_keys TEXT,
+    -- 20260808161052: correlation_id joins a run's tool calls to its spans;
+    -- arg_values/result_preview stay NULL unless ICDEV_OBS_REPLAY is enabled.
+    correlation_id TEXT,
+    arg_values TEXT,
+    result_preview TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );

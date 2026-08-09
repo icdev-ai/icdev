@@ -1054,7 +1054,7 @@ def _cli(argv: list[str] | None = None) -> int:
     if args.json or args.output:
         json_str = json.dumps(results, indent=2, default=str)
         if args.output and args.output != "-":
-            Path(args.output).write_text(json_str, encoding="utf-8")
+            Path(args.output).write_text(json_str, encoding="utf-8", newline="")
             print(f"Results written to {args.output}")
         else:
             print(json_str)

@@ -70,10 +70,19 @@ from tools.skills.registry import _as_list, _parse_frontmatter, load_registry  #
 _ALLOWED_PREFIXES = ("python tools/", "python -m tools", "python -c")
 
 
-def _is_safe_command(cmd: str) -> bool:
-    """Only run python invocations targeting this repo's tools/ tree."""
+def _is_safe_command(cmd: str, allowed_prefixes: tuple[str, ...] | None = None) -> bool:
+    """Only run python invocations targeting this repo's tools/ tree.
+
+    ``allowed_prefixes`` lets a caller with a *different* threat model supply its
+    own list — the rubric build loop runs inside a disposable git worktree and
+    must be able to execute the very gates it is graded by (pytest, ruff), which
+    the skill-runner default deliberately does not permit. Omitting it keeps the
+    default exactly as it was, so no existing caller's posture changes. It is an
+    explicit opt-in, never inferred: a caller widens the surface on purpose or
+    not at all.
+    """
     stripped = cmd.strip().lstrip("!").strip()
-    return any(stripped.startswith(pfx) for pfx in _ALLOWED_PREFIXES)
+    return any(stripped.startswith(pfx) for pfx in (allowed_prefixes or _ALLOWED_PREFIXES))
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +303,8 @@ def _substitute_args(cmd: str, args: list[str]) -> str:
 
 def run_command(cmd: str, args: list[str], *, timeout: int = 600,
                 cwd: str | Path | None = None,
-                scope: dict[str, list[str]] | None = None) -> dict[str, Any]:
+                scope: dict[str, list[str]] | None = None,
+                allowed_prefixes: tuple[str, ...] | None = None) -> dict[str, Any]:
     """Run a single documented command. Returns a dict with exit code + output.
 
     ``cwd`` overrides the checkout the command runs in — callers dispatching on
@@ -306,17 +316,23 @@ def run_command(cmd: str, args: list[str], *, timeout: int = 600,
     ``scope`` is the invoking skill's ``paths:``/``tools:`` declaration. It is
     checked before the prefix allowlist and before anything is executed, so a
     command reaching outside the declared scope is blocked rather than run.
+
+    ``allowed_prefixes`` replaces the default prefix allowlist for callers whose
+    threat model differs — see :func:`_is_safe_command`. Omit it and behaviour is
+    unchanged. ``scope`` is still checked first, so a scoped caller can only ever
+    narrow, never widen.
     """
     expanded = _substitute_args(cmd, args)
     root_for_scope = Path(cwd).resolve() if cwd else BASE_DIR
     violations = check_scope(scope, expanded, root=root_for_scope)
     if violations:
         return _blocked_step(expanded, violations)
-    if not _is_safe_command(expanded):
+    if not _is_safe_command(expanded, allowed_prefixes):
+        permitted = ", ".join(allowed_prefixes or _ALLOWED_PREFIXES)
         return {
             "command": cmd,
             "skipped": True,
-            "reason": "command prefix not in allowlist (python tools/, python -m tools, python -c)",
+            "reason": f"command prefix not in allowlist ({permitted})",
         }
     root = str(Path(cwd).resolve()) if cwd else str(BASE_DIR)
     try:

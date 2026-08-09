@@ -549,8 +549,8 @@ def persist_report(report: BenchmarkReport, out_dir: Optional[str] = None) -> Pa
     stamp = report.generated_at.replace(":", "").replace("-", "").replace(".", "")[:15]
     path = d / f"benchmark_{stamp}.json"
     payload = json.dumps(report.to_dict(), indent=2, sort_keys=True)
-    path.write_text(payload, encoding="utf-8")
-    (d / "benchmark_latest.json").write_text(payload, encoding="utf-8")
+    path.write_text(payload, encoding="utf-8", newline="")
+    (d / "benchmark_latest.json").write_text(payload, encoding="utf-8", newline="")
     return path
 
 

@@ -798,7 +798,11 @@ def test_every_component_in_a_generated_sbom_states_its_producer(icdev_db, mixed
     by_name = {c["name"]: c for c in sbom["components"]}
     alpha = {p["name"]: p["value"] for p in by_name["alpha"]["properties"]}
     assert alpha[cp.PROPERTY_PRODUCER] == ACME
-    assert by_name["alpha"]["supplier"] == {"name": ACME}  # default spec version is 1.4
+    # sbx-fmt-01 raised the default spec version off 1.4, so the producer now
+    # lands in `manufacturer` — the field that actually means "the organization
+    # that created the component" — instead of in the ambiguous `supplier`.
+    assert by_name["alpha"]["manufacturer"] == {"name": ACME}
+    assert "supplier" not in by_name["alpha"]
 
     client_go = {p["name"]: p["value"] for p in by_name["k8s.io/client-go"]["properties"]}
     assert client_go[cp.PROPERTY_PRODUCER] == "The Kubernetes Authors"

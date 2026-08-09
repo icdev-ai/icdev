@@ -215,7 +215,7 @@ def generate_svg_video(
         output_path = str(DEFAULT_VIDEO_DIR / f"video-{slug}.svg")
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(output_path).write_text(svg, encoding="utf-8")
+    Path(output_path).write_text(svg, encoding="utf-8", newline="")
 
     elapsed = int((time.time() - start) * 1000)
     return {

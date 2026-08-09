@@ -513,6 +513,12 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 
 ### Gap 18 — Kanban Adversarial Verifier (`tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify`)
 - **File:** `tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify()`
+- **Where the subprocess actually starts:** since hgx-exec-03 both this verifier and the
+  primary build dispatch call `tools/agents/adapters/claude_cli.py`
+  (`ClaudeCliAdapter.invoke` / `.spawn`) rather than each building their own command
+  line. That module is the single review point for every property below — argv,
+  `shell=False`, the `.tmp/` prompt file and its deletion, and the environment handed to
+  the child.
 - **Risk:** Spawns a second Claude CLI subprocess (`claude --dangerously-skip-permissions
   --max-turns 10`) in the task worktree directory to adversarially review completed work.
   The subprocess receives a reviewer prompt via stdin piped from a `.tmp/` temp file and
@@ -1372,3 +1378,50 @@ validator is to be pointed at documents ICDEV did not produce.
   that accepts recipient requests, rather than a property naming a route) — that
   turns a document property into an attack surface with its own authorization
   model, and belongs with sbx-gov-02.
+
+### Gap 51 — SPDX writer and validator (`tools/compliance/spdx_writer.py`)
+
+**Module:** `tools/compliance/spdx_writer.py` (sbx-fmt-01, mirrored at
+`icdev/tools/compliance/spdx_writer.py`), imported by
+`tools/compliance/sbom_generator.py`.
+
+**Ingress path:** In its library role the module only ever sees the CycloneDX
+document ICDEV itself just built, which is first-party. Its CLI is the
+untrusted surface: `--validate` and `--compare` read an SBOM JSON document from
+an operator-supplied path, and that document may have been produced by another
+vendor's tool or handed over by a supplier. The vendored SPDX 2.3 schema at
+`context/compliance/schemas/spdx-2.3.schema.json` is first-party content
+committed to the repo.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The module translates and validates; it never executes. Its
+  total contact with untrusted content is `json.load`, dict/list traversal, one
+  anchored character-class regex used to sanitize SPDX identifiers, and
+  `jsonschema.Draft7Validator` over a schema that is read from disk rather than
+  fetched. There is no `exec`/`eval`/`compile`, no `subprocess`, no `pickle`, no
+  `yaml.load`, no SQL and no network call — validation is deliberately offline
+  so it behaves identically in an air-gapped enclave, which is why the official
+  schema is vendored rather than resolved from `spdx.org` at runtime.
+- **Guardrails:**
+  - `jsonschema` is never given a `$ref`-resolvable remote schema: `load_schema`
+    reads one local file and the validator is constructed directly from it, so a
+    hostile document cannot steer schema resolution anywhere.
+  - Every value copied out of the source document is coerced with `str()` before
+    it reaches an SPDX field, and identifiers pass through `_sanitize_id`, which
+    admits only `[A-Za-z0-9.-]`. A component name cannot forge an `SPDXRef-`
+    collision: `_spdx_id` de-duplicates against the identifiers already issued.
+  - Malformed input degrades rather than aborting. A non-dict component, a
+    non-dict property entry, or an annotation whose comment is not JSON is
+    skipped; a dependency edge naming a `bom-ref` that is not in the document is
+    dropped rather than emitted as a dangling relationship.
+  - A missing `jsonschema` is reported as a validation **error**, not as a pass.
+    A validator that silently approves everything is worse than none.
+  - Nothing the module reads reaches SQL, a filesystem path, or a shell. The
+    only path it writes is the one the caller passes to `write_spdx`.
+  - `tests/test_sbom_spdx_format.py` pins the deliberate failure modes: a
+    document with a field removed fails validation, a broken parity check fails,
+    and edges to absent components produce no relationships.
+- **Revisit if:** the module gains an SPDX *parser* that maps a third-party
+  document back into ICDEV's component model — that is sbx-fmt-02's ingest
+  parity work and a materially different posture, because the values would then
+  reach the database rather than only a report.
