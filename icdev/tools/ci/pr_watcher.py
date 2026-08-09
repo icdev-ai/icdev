@@ -966,6 +966,57 @@ class PRWatcher:
                 "reason": "closed and reopened to re-fire pull_request workflows",
                 "close_rc": getattr(close, "returncode", None)}
 
+    def _conflict_is_real(self, state: dict, runner=None) -> bool:
+        """Confirm a CONFLICTING verdict against git before acting on it.
+
+        GitHub computes `mergeable` ASYNCHRONOUSLY and caches it. When the base
+        moves quickly the cached answer goes stale and stays stale, because
+        nothing about the PR changed to invalidate it. On 2026-08-09 THIRTEEN
+        PRs were reported CONFLICTING while `git merge-tree` merged every one of
+        them cleanly — same base sha, same head sha, exit 0, a single tree hash
+        and no conflict output.
+
+        The cost of believing it was not cosmetic. Each of those PRs burned two
+        rebase attempts and five resume cycles fighting a conflict that did not
+        exist, then raised a HITL alert. A rebase cannot clear the flag either: a
+        branch that is already current has nothing to rebase, so it succeeds,
+        changes nothing, and the stale verdict survives.
+
+        `git merge-tree --write-tree` performs the real merge in memory and exits
+        non-zero on a genuine conflict, so it is the authority here and the forge
+        is the cache.
+
+        Errs toward TRUSTING THE FORGE: any failure to verify returns True, so an
+        unreachable git or an unfetchable ref leaves today's behaviour unchanged
+        rather than declaring a real conflict resolved.
+        """
+        head = (state.get("headRefName") or "").strip()
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+        if not head:
+            return True
+        root = str(pathlib.Path(__file__).resolve().parents[2])
+        run = runner or subprocess.run
+        try:
+            fetch = run(  # nosec B603 — fixed argv, shell=False
+                ["git", "fetch", "--quiet", "origin", base, head],
+                cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, shell=False,
+            )
+            if getattr(fetch, "returncode", 1) != 0:
+                return True
+            merged = run(  # nosec B603
+                ["git", "merge-tree", "--write-tree",
+                 f"origin/{base}", f"origin/{head}"],
+                cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, shell=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("pr_watcher: conflict verification failed: %s", exc)
+            return True
+        if getattr(merged, "returncode", 1) == 0:
+            return False
+        return True
+
     def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
         """Take a green PR out of draft so the merge below can actually run.
 
@@ -1361,6 +1412,15 @@ class PRWatcher:
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
+            if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
+                # The forge's cached verdict disagrees with git. git wins.
+                logger.warning(
+                    "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
+                    "treating the forge verdict as stale", pr_url)
+                state = {**state, "mergeable": "MERGEABLE"}
+                classification = ec.classify_pr_state(
+                    state, ci_logs=ci_logs, require_approval=require_approval)
+
             cycle = self._resume_cycle(task["id"])
 
             if classification == KanbanState.DONE:
