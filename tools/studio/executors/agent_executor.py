@@ -38,17 +38,37 @@ runtime are bounded by the same data.
 Default-deny: a step that declares no bundle gets no tools and is refused rather
 than handed the full surface. A bundle name that resolves to a tool this
 executor cannot offer (e.g. the registry-backed ``compliance`` bundle) is
-reported in ``unavailable_tools`` rather than silently dropped — registry tools
-in an agent node arrive with hgx-agent-02's ``agent_workflow_tools`` gate, and
-until then an agent node's reach is the worktree.
+reported in ``unavailable_tools`` rather than silently dropped — an agent node's
+reach is the worktree, and a bundle promising more than that is an authoring
+error worth naming.
 
-Approval gate
--------------
-Every tool call goes through
+Authorization gate (hgx-agent-02, AGENT-WF-001)
+-----------------------------------------------
+Declaring a bundle says what the STEP wants; it does not say what the CALLER may
+have. ``executors/agent_tool_gate.py`` decides that, from the
+``agent_workflow_tools`` section of ``args/security_gates.yaml`` — default-deny,
+per-tool ``min_il`` / ``required_roles``, and a human gate on anything mutating.
+It is enforced twice:
+
+* :func:`apply_tool_gate` filters the offered toolset before the model sees it,
+  so an unauthorized tool is never described and cannot be asked for.
+* :func:`_build_approval_hook` re-checks every call before the handler runs,
+  because "not offered" is weaker than "not authorized" — a model can name a
+  tool it was never given.
+
+Every decision — authorized, refused, or parked on an undecided human gate —
+appends a row to ``studio_mcp_dispatch_audit``, the same append-only table the
+mcp surface writes to.
+
+Reversibility gate
+------------------
+After authorization, every tool call also goes through
 ``tools/agent_runtime/approval_gate.py::build_approval_hook`` — the same
 reversibility gate the standalone runtime uses, with the same
 ``args/agent_approval_policy.yaml`` tiers and the same append-only
-``agent_approval_log``. It is passed explicitly rather than left to
+``agent_approval_log``. The two gates answer different questions (*may this
+caller use this tool* versus *is this call recoverable*) and a call must clear
+both. It is passed explicitly rather than left to
 ``ICDEV_AGENT_APPROVAL_MODE``, so an agent node is gated whether or not the
 deployment set that variable. The default approver is the console prompt, which
 denies on EOF — and a step subprocess has ``stdin=DEVNULL``, so an unattended
@@ -191,11 +211,73 @@ def build_step_toolset(bundles: list[str], work_dir: str) -> tuple[list, dict, l
             f"{', '.join(unavailable) or '(no tools)'}, none of which this "
             f"executor can offer. An agent node's tools come from the worktree "
             f"toolset (tools/genesis/rubric_build_tools.py); registry-backed "
-            f"tools reach agent nodes with hgx-agent-02's agent_workflow_tools "
-            f"gate. Declare a worktree bundle instead.",
+            f"tools are not dispatchable from an agent node. Declare a worktree "
+            f"bundle instead.",
             reason="agent_step_no_tools",
         )
     return tools, kept, unavailable
+
+
+# ── Authorization gate (hgx-agent-02, AGENT-WF-001) ────────────────────────
+
+def apply_tool_gate(
+    tools: list,
+    handlers: dict,
+    *,
+    caller: dict | None = None,
+    policy: dict | None = None,
+    run_id: str = "",
+    step_id: str = "",
+    registry=None,
+) -> tuple[list, dict, list]:
+    """Narrow an offered toolset to what AGENT-WF-001 authorizes this caller.
+
+    The bundle intersection in :func:`build_step_toolset` says what the step
+    *wants*; this says what the caller may *have*. Returns
+    ``(tools, handlers, refusals)`` — the surviving subset plus one entry per
+    withheld tool, each already audited to ``studio_mcp_dispatch_audit``.
+
+    Withholding rather than refusing the call later is deliberate: a tool the
+    model is never told about cannot be asked for, so a step running below a
+    tool's declared impact level does not spend turns being refused.
+
+    Raises:
+        AgentStepError: the policy is unreadable (``agent_step_gate_unavailable``
+            — fail-closed, no policy means no toolset) or every tool the step
+            declared was withheld (``agent_step_all_tools_refused``, so the
+            refusal is reported instead of an agent being handed an empty
+            toolbox and left to discover it).
+    """
+    from tools.studio.executors import agent_tool_gate  # noqa: PLC0415
+
+    names = [t.get("function", {}).get("name", "") for t in tools]
+    try:
+        authorized, refusals = agent_tool_gate.authorize_toolset(
+            names,
+            caller=caller,
+            policy=policy,
+            run_id=run_id,
+            step_id=step_id,
+            registry=registry,
+        )
+    except agent_tool_gate.AgentToolGateError as exc:
+        raise AgentStepError(str(exc), reason="agent_step_gate_unavailable") from exc
+
+    kept_tools = [
+        t for t in tools if t.get("function", {}).get("name") in authorized
+    ]
+    kept_handlers = {n: fn for n, fn in handlers.items() if n in authorized}
+
+    if not kept_tools:
+        detail = "; ".join(f"{r['tool']}: {r['reason']}" for r in refusals)
+        raise AgentStepError(
+            f"AGENT-WF-001 withheld every tool this step declared ({detail}). "
+            f"The agent_workflow_tools policy in args/security_gates.yaml is "
+            f"default-deny; either allowlist these tools, or run the step as a "
+            f"caller that meets their declared limits.",
+            reason="agent_step_all_tools_refused",
+        )
+    return kept_tools, kept_handlers, refusals
 
 
 # ── Artifacts ──────────────────────────────────────────────────────────────
@@ -295,6 +377,8 @@ def run(
     effort: str = DEFAULT_EFFORT,
     approval_mode: str = "",
     router=None,
+    caller: dict | None = None,
+    approval_wait: float | None = None,
 ) -> dict:
     """Run one agent step and return its payload.
 
@@ -308,6 +392,11 @@ def run(
         approval_mode: ``enforce`` (default) | ``dry_run`` | ``off``, passed to
             the reversibility gate.
         router: Injectable ``LLMRouter`` — the seam the tests drive.
+        caller: Principal the step runs as, bounding which tools AGENT-WF-001
+            authorizes. Resolved from the run's context when omitted (see
+            ``mcp_executor.resolve_caller``).
+        approval_wait: Seconds to wait on a mutating tool's human gate. ``0``
+            parks the gate without blocking.
 
     Returns the step payload. ``degraded`` is True when the resolved provider
     cannot serve native tool use; the loop did not run and ``degrade_reason``
@@ -316,7 +405,8 @@ def run(
 
     Raises:
         AgentStepError: the step is unrunnable as authored (no prompt, no
-            declared bundle, an unknown bundle).
+            declared bundle, an unknown bundle) or AGENT-WF-001 withheld every
+            tool it declared.
     """
     from icdev.tools.llm.agent_loop import (  # noqa: PLC0415
         AgentLoopUnsupported,
@@ -334,6 +424,13 @@ def run(
     work_dir = str(Path(work_dir).resolve()) if work_dir else str(_ROOT)
     step_id = step_id or "agent"
     tools, handlers, unavailable = build_step_toolset(bundles, work_dir)
+
+    # AGENT-WF-001 before anything is described to the model: the bundles said
+    # what the step wants, the gate says what this caller may have.
+    caller = caller if caller is not None else _resolve_caller(run_id)
+    tools, handlers, refusals = apply_tool_gate(
+        tools, handlers, caller=caller, run_id=run_id, step_id=step_id
+    )
     offered = sorted(handlers)
 
     payload: dict = {
@@ -341,15 +438,26 @@ def run(
         "llm_function": llm_function,
         "agent_tools": list(bundles),
         "tools_offered": offered,
+        "caller_il": caller.get("impact_level", ""),
+        "caller_source": caller.get("source", ""),
         "work_dir": work_dir,
         "memory_key": f"{MEMORY_KEY_PREFIX}{step_id}",
     }
     if unavailable:
         payload["unavailable_tools"] = unavailable
+    if refusals:
+        # Named, not silently dropped: "the step wanted this and could not have
+        # it" is what an operator needs when the output looks thin.
+        payload["tools_refused"] = [
+            {"tool": r["tool"], "reason": r["reason"]} for r in refusals
+        ]
 
     try:
         router = router if router is not None else _build_router()
-        gate = _build_approval_hook(run_id, approval_mode)
+        gate = _build_approval_hook(
+            run_id, approval_mode,
+            caller=caller, step_id=step_id, approval_wait=approval_wait,
+        )
         result = run_agent_loop(
             router,
             system_prompt=system_prompt or DEFAULT_SYSTEM_PROMPT,
@@ -404,20 +512,68 @@ def run(
     return payload
 
 
-def _build_approval_hook(run_id: str, approval_mode: str):
-    """The reversibility gate every tool call passes (ars-appr-01).
+def _resolve_caller(run_id: str) -> dict:
+    """Principal this step's tool calls are authorized as.
 
-    Passed to ``run_agent_loop`` explicitly rather than left to the
-    ``ICDEV_AGENT_APPROVAL_MODE`` default, so an agent node is gated in a
-    deployment that never set that variable. An unbuildable gate is not an
-    excuse to run ungated — ``run_agent_loop`` turns that into a deny-all hook.
+    Reuses ``mcp_executor.resolve_caller`` so both node types read one caller
+    vocabulary (run memory's ``caller`` key, then ``ICDEV_MCP_CALLER_IL`` /
+    ``ICDEV_IMPACT_LEVEL`` / ``ICDEV_MCP_CALLER_ROLES``, then the IL4 baseline).
+    An unresolvable caller is the baseline, not a bypass: the gate then compares
+    IL4 against each tool's declared minimum, which is a real refusal for
+    anything held above it.
+    """
+    try:
+        from tools.studio.executors.mcp_executor import resolve_caller  # noqa: PLC0415
+
+        return resolve_caller(run_id)
+    except Exception:  # noqa: BLE001 — see docstring
+        return {"impact_level": "", "roles": (), "source": "unresolved"}
+
+
+def _build_approval_hook(
+    run_id: str,
+    approval_mode: str,
+    *,
+    caller: dict | None = None,
+    step_id: str = "",
+    approval_wait: float | None = None,
+):
+    """The two gates every tool call passes, chained.
+
+    1. AGENT-WF-001 (hgx-agent-02) — is this caller authorized to call this tool
+       at all, and if it mutates, has a human approved it in this run? Audited to
+       ``studio_mcp_dispatch_audit``.
+    2. The ars-appr-01 reversibility gate — is this particular call recoverable?
+       Audited to ``agent_approval_log``.
+
+    Authorization runs first and short-circuits: an unauthorized tool is refused
+    without asking anyone to review its arguments. Both are passed to
+    ``run_agent_loop`` explicitly rather than left to
+    ``ICDEV_AGENT_APPROVAL_MODE``, so an agent node is gated in a deployment that
+    never set that variable. An unbuildable gate is not an excuse to run ungated
+    — ``run_agent_loop`` turns a ``None`` hook into a deny-all one.
     """
     from tools.agent_runtime.approval_gate import build_approval_hook  # noqa: PLC0415
+    from tools.studio.executors import agent_tool_gate  # noqa: PLC0415
 
-    return build_approval_hook(
+    reversibility = build_approval_hook(
         mode=approval_mode or None,
         session_id=run_id,
     )
+    try:
+        return agent_tool_gate.build_gate_hook(
+            caller=caller,
+            run_id=run_id,
+            step_id=step_id,
+            approval_wait=approval_wait,
+            chain=reversibility,
+        )
+    except agent_tool_gate.AgentToolGateError as exc:
+        # The policy is read (and cached) by apply_tool_gate before this runs, so
+        # reaching here means it became unreadable mid-step. Fail the step with
+        # the gate's own reason rather than letting it surface as a loop error —
+        # running with only the reversibility gate is not the fallback.
+        raise AgentStepError(str(exc), reason="agent_step_gate_unavailable") from exc
 
 
 def _positive_int(raw, default: int) -> int:
@@ -448,7 +604,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--step-id", default="", help="Run-memory key suffix")
     parser.add_argument("--project-id", default="default")
     parser.add_argument("--json", action="store_true", help="Accepted for runner parity")
+    # AGENT-WF-001 caller context. Same flags and same meaning as
+    # mcp_executor's, because both node types resolve one caller vocabulary.
+    parser.add_argument("--caller-il", default="",
+                        help="Caller impact level (IL2|IL4|IL5|IL6); overrides run context")
+    parser.add_argument("--caller-roles", default="",
+                        help="Comma-separated caller roles; overrides run context")
+    parser.add_argument("--caller-id", default="", help="Caller principal id")
+    parser.add_argument("--tenant-id", default="", help="Caller tenant id")
+    parser.add_argument("--approval-wait", default="",
+                        help="Seconds to wait on a mutating tool's human gate; "
+                             "0 parks the gate without blocking")
     args = parser.parse_args(argv)
+
+    caller = None
+    if any((args.caller_il, args.caller_roles, args.caller_id, args.tenant_id)):
+        from tools.studio.executors.mcp_executor import resolve_caller  # noqa: PLC0415
+
+        caller = resolve_caller(args.run_id, {
+            "impact_level": args.caller_il,
+            "roles": args.caller_roles,
+            "principal_id": args.caller_id,
+            "tenant_id": args.tenant_id,
+        })
 
     try:
         payload = run(
@@ -463,6 +641,12 @@ def main(argv: list[str] | None = None) -> int:
             max_tokens=_positive_int(args.max_tokens, DEFAULT_MAX_TOKENS),
             effort=args.effort,
             approval_mode=args.approval_mode,
+            caller=caller,
+            approval_wait=(
+                float(args.approval_wait)
+                if str(args.approval_wait).strip()
+                else None
+            ),
         )
     except AgentStepError as exc:
         print(json.dumps({"status": "failed", "error_type": exc.reason,

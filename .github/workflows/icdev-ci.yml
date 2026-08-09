@@ -209,6 +209,8 @@ jobs:
             tests/test_localai_provider.py \
             tests/studio/test_workflow_parallel.py \
             tests/studio/test_workflow_conditional.py \
+            tests/studio/test_agent_tool_gate.py \
+            tests/test_dwo_agent_allowlist.py \
             tests/browser/test_backend.py \
             tests/browser/test_driver_manager_airgap.py \
             tests/browser/test_driver_staleness.py \
