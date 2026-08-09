@@ -268,8 +268,14 @@ def test_tools_and_icdev_mirror_agree_on_bootstrap_order() -> None:
 # Behavioural
 # ---------------------------------------------------------------------------
 # Launched for real with a SANITISED sys.path. Each was in the broken set before
-# kax-conflict-04, spans a different package, and takes a --help that argparse
-# short-circuits before any side effect.
+# kax-conflict-04 and covers a different shape the sweep had to handle.
+#
+# An argparse CLI is launched as ``__main__`` with ``--help``, which argparse
+# short-circuits before any side effect. Anything else is launched under a
+# NON-``__main__`` run name so the module body executes — which is where the
+# ModuleNotFoundError lives — without entering its CLI. That distinction is not
+# cosmetic: ``tools/mcp/standalone/core.py``'s main() calls ``server.run()`` on
+# stdio and would block until the timeout.
 BEHAVIOURAL_ENTRYPOINTS = [
     # The two that PR #1436 fixed because failing tests happened to prove them broken.
     "tools/kanban/des_audit_logger.py",
@@ -293,6 +299,7 @@ _SANITISED_LAUNCHER = textwrap.dedent(
     """
     import os, runpy, sys
     script = os.path.abspath(sys.argv[1])
+    run_name = sys.argv[2]
     strip = {
         os.path.normcase(os.path.abspath(p))
         for p in os.environ["ICDEV_STRIP_ROOTS"].split(os.pathsep)
@@ -303,8 +310,8 @@ _SANITISED_LAUNCHER = textwrap.dedent(
         if os.path.normcase(os.path.abspath(p or os.getcwd())) not in strip
     ]
     sys.path.insert(0, os.path.dirname(script))
-    sys.argv = sys.argv[1:]
-    runpy.run_path(script, run_name="__main__")
+    sys.argv = [script] + sys.argv[3:]
+    runpy.run_path(script, run_name=run_name)
     """
 )
 
@@ -323,12 +330,23 @@ def test_representative_entrypoints_start_with_sanitised_syspath(relpath: str) -
     )
     env["ICDEV_STORAGE_BACKEND"] = "sqlite"
 
+    source = script.read_text(encoding="utf-8", errors="replace")
+    has_main = '__name__ == "__main__"' in source or "__name__ == '__main__'" in source
+    if "argparse.ArgumentParser" in source and has_main:
+        args = [str(script), "__main__", "--help"]
+        how = "--help"
+    else:
+        # Module body runs; the CLI does not. This is where the import lives.
+        args = [str(script), "__icdev_import_probe__"]
+        how = "import probe"
+
     proc = subprocess.run(
-        [sys.executable, "-c", _SANITISED_LAUNCHER, str(script), "--help"],
+        [sys.executable, "-c", _SANITISED_LAUNCHER, *args],
         cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
         timeout=120,
     )
     combined = (proc.stdout or "") + (proc.stderr or "")
@@ -339,5 +357,5 @@ def test_representative_entrypoints_start_with_sanitised_syspath(relpath: str) -
             f"runs above its own sys.path bootstrap (kax-conflict-04):\n{combined}"
         )
     assert proc.returncode == 0, (
-        f"{relpath} --help exited {proc.returncode} with a sanitised sys.path:\n{combined}"
+        f"{relpath} ({how}) exited {proc.returncode} with a sanitised sys.path:\n{combined}"
     )
