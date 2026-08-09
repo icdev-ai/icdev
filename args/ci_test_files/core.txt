@@ -245,3 +245,20 @@ tests/ci/test_gated_test_list.py
 # reintroduces a pre-2026 "unspecified"/"managed" version literal. ~1.5s, pure
 # Python plus an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-06).
 tests/test_sbom_component_names.py
+# test_approval_inbox.py earns a slot because all four invariants it pins fail
+# SILENTLY. (1) approval_items is mutable ON PURPOSE — adding it to
+# APPEND_ONLY_TABLES would make the pending -> resolved UPDATE, the one
+# transition the table exists for, a hook violation, and the symptom is a
+# feature that simply stops resolving. (2) Its rows are mirrored out to
+# Slack/Teams/Telegram/email, so an argument VALUE reaching `body` leaks CUI to
+# a chat channel with nothing failing anywhere; the test seeds a bearer token
+# into the tool input and scans every cell of BOTH tables. (3) `is_approved`
+# means resolved-and-approved, not "not denied" — regress that and an expiry
+# reads as consent, which turns the inbox into the auto-approver it exists to
+# replace. (4) Resolving must write the agent_approval_log row through the
+# existing record_decision(), so a settled item can be pruned without losing the
+# decision. Both tables are built from their own migrations' DDL, so a column
+# added to one and not the other fails here rather than at runtime inside a
+# swallowed exception. ~1s, pure Python plus an in-tmpdir SQLite file, no DB
+# service/LLM/network (agov-inbox-01).
+tests/test_approval_inbox.py
