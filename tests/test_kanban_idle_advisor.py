@@ -326,6 +326,41 @@ def test_risk_shaped_prose_is_accepted_but_marked_implicit():
     assert risk
 
 
+def test_a_consequence_of_dispatching_counts_as_a_stated_risk():
+    """The real agov-gate-00 text, which the advisor once told a human to release.
+
+    Its 19 tasks edit .claude/hooks/pre_tool_use.py and approval_gate.py while
+    pr_watcher auto-merges anything CI-green. None of the original phrases
+    matched, so it scored risk=None, took the +10000 unjustified penalty, and
+    came out top of the release ranking — a guard confidently recommending the
+    one release its own subject forbids.
+    """
+    risk, confidence = declared_risk(
+        "Holding gate for the AGOV card. AGOV touches .claude/hooks/pre_tool_use.py "
+        "and tools/agent_runtime/approval_gate.py, and tools/ci/pr_watcher.py "
+        "auto-merges any CI-green kanban/* branch, so autonomous dispatch of this "
+        "card is not acceptable."
+    )
+    assert confidence == "implicit", "prose is recognised, but still not the marker"
+    assert risk
+
+
+def test_widening_the_phrases_did_not_swallow_procedure():
+    """The new phrases describe a CONSEQUENCE; these describe an ACTION.
+
+    This is the guard on the guard: every phrase added to catch agov must leave
+    the procedure/risk line exactly where it was, or the policy collapses into
+    "any text at all justifies a gate".
+    """
+    for procedure in (
+        "Do not move this to done without an explicit decision.",
+        "Re-hold after /start.",
+        "This task is created in_progress and is never worked.",
+        "Human sessions pick tasks up explicitly.",
+    ):
+        assert declared_risk(procedure) == (None, "none"), procedure
+
+
 def test_procedure_is_not_risk():
     """The distinction the whole policy rests on.
 

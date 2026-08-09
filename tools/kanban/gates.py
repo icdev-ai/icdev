@@ -62,6 +62,20 @@ RISK_MARKER = "RISK:"
 #: gate that matches only by prose is reported as `implicit`, so the difference
 #: between "someone wrote a reason" and "someone wrote the reason down properly"
 #: stays visible.
+#:
+#: The second group states a CONSEQUENCE of dispatching rather than a property of
+#: the work. Added 2026-08-09, after the advisor recommended releasing
+#: agov-gate-00 — a gate whose description says in plain prose that "autonomous
+#: dispatch of this card is not acceptable", because its 19 tasks edit
+#: .claude/hooks/pre_tool_use.py and approval_gate.py while pr_watcher auto-merges
+#: anything CI-green. None of the phrases above matched, so it scored risk=None,
+#: took the +10000 unjustified penalty, and came out TOP of the release ranking.
+#: A guard that recommends releasing the one gate whose text says not to is worse
+#: than no guard: it is confidently wrong, and it was quoted to a human as a
+#: recommendation.
+#:
+#: Still not an intent-detector, and still not procedure. "Do not move this to
+#: done" says what to DO; these say what GOES WRONG if the runner builds the card.
 _IMPLICIT_RISK_PHRASES = (
     "not agent work",
     "not on an agent",
@@ -72,6 +86,12 @@ _IMPLICIT_RISK_PHRASES = (
     "private repo",
     "by a cli session",
     "needs a human",
+    # consequence of dispatching it
+    "is not acceptable",
+    "auto-merge",
+    "without review",
+    "unattended",
+    "no human",
 )
 
 
