@@ -55,12 +55,23 @@ steps:
     node_type: "mcp"
     mcp_tool: "<registered MCP tool name, e.g. scan_dependencies>"
     mcp_params: {{}}
+  - id: step_4
+    name: "<name>"
+    tool: ""
+    depends_on: [step_3]
+    node_type: "agent"
+    prompt: "<the task the agent should carry out>"
+    agent_tools: [worktree_read]
 
-node_type values: tool, human, approval, mcp
+node_type values: tool, human, approval, mcp, agent
 role values (human/approval): stakeholder, program_manager, isso, contracting_officer, developer, reviewer, approver
 approval_policy (approval nodes only): any, all, majority
 mcp_tool (mcp nodes only): name of a registered MCP tool — required for node_type: mcp
 mcp_params (mcp nodes only): mapping of arguments forwarded to that tool
+prompt (agent nodes only): the task for the agent — required for node_type: agent
+agent_tools (agent nodes only): toolset bundle names bounding what the agent may
+  call — required for node_type: agent; use worktree_read for read-only analysis
+  and worktree_build when the step must edit files
 
 Rules:
 - Each step id must be unique (step_1, step_2, step_3, ...)

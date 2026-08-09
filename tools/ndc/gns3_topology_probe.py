@@ -247,7 +247,7 @@ def _write_ansible_inventory(topologies: list, uid: str) -> Path:
     ]
 
     inv_path = _ARTIFACTS_DIR / f"ansible_inventory_{uid}.ini"
-    inv_path.write_text("\n".join(lines), encoding="utf-8")
+    inv_path.write_text("\n".join(lines), encoding="utf-8", newline="")
     return inv_path
 
 
@@ -287,7 +287,7 @@ def _write_topology_report(topologies: list, uid: str) -> Path:
         lines.append("")
 
     rpt_path = _ARTIFACTS_DIR / f"topology_probe_{uid}.md"
-    rpt_path.write_text("\n".join(lines), encoding="utf-8")
+    rpt_path.write_text("\n".join(lines), encoding="utf-8", newline="")
     return rpt_path
 
 

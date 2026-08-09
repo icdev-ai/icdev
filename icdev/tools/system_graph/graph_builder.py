@@ -642,7 +642,7 @@ def _save_partial_to_backlog(
             "edges": edges,
         }
         (_BACKLOG_DIR / f"sg-search-{ts}.json").write_text(
-            json.dumps(out, ensure_ascii=False), encoding="utf-8"
+            json.dumps(out, ensure_ascii=False), encoding="utf-8", newline=""
         )
     except Exception:
         pass

@@ -41,7 +41,7 @@ def _cache_get(key: str) -> dict | None:
 
 def _cache_set(key: str, data: dict) -> None:
     try:
-        _cache_path(key).write_text(json.dumps(data), encoding="utf-8")
+        _cache_path(key).write_text(json.dumps(data), encoding="utf-8", newline="")
     except Exception:
         pass
 

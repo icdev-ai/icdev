@@ -482,7 +482,7 @@ def deliver_result(job: dict[str, Any], success: bool, output: str, error: str) 
             outbox.mkdir(parents=True, exist_ok=True)
             fname = f"{job['id']}-{_utcnow().strftime('%Y%m%dT%H%M%SZ')}.txt"
             (outbox / fname).write_text(
-                f"Subject: {title}\n\n{body}\n", encoding="utf-8"
+                f"Subject: {title}\n\n{body}\n", encoding="utf-8", newline=""
             )
             return True, f"email-on-file:{fname}"
         except Exception as exc:  # noqa: BLE001

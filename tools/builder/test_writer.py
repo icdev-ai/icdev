@@ -215,7 +215,7 @@ def generate_feature(
         lines.append("")
 
     content = "\n".join(lines)
-    feature_file.write_text(content, encoding="utf-8")
+    feature_file.write_text(content, encoding="utf-8", newline="")
     print(f"Feature file created: {feature_file}")
 
     # Log audit trail
@@ -300,7 +300,7 @@ def _generate_python_steps(
         py_lines.append("")
 
     step_content = "\n".join(py_lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -369,7 +369,7 @@ def _generate_java_steps(
     lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -433,7 +433,7 @@ def _generate_go_steps(
     lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -481,7 +481,7 @@ def _generate_typescript_steps(
         lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -548,7 +548,7 @@ def _generate_csharp_steps(
     lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -604,7 +604,7 @@ def _generate_rust_steps(
         lines.append("")
 
     step_content = "\n".join(lines)
-    step_file.write_text(step_content, encoding="utf-8")
+    step_file.write_text(step_content, encoding="utf-8", newline="")
     return str(step_file)
 
 
@@ -670,7 +670,7 @@ def generate_agentic_tests(
             # Parameterize agent_count placeholder
             content = content.replace("{agent_count}", str(len(agents)))
 
-            dest.write_text(content, encoding="utf-8")
+            dest.write_text(content, encoding="utf-8", newline="")
             generated_files.append(str(dest))
             print(f"Agentic BDD template: {dest}")
 
@@ -679,7 +679,7 @@ def generate_agentic_tests(
         for template_file in AGENTIC_TEMPLATE_DIR.glob("test_*.py"):
             dest = agentic_test_dir / template_file.name
             content = template_file.read_text(encoding="utf-8")
-            dest.write_text(content, encoding="utf-8")
+            dest.write_text(content, encoding="utf-8", newline="")
             generated_files.append(str(dest))
             print(f"Agentic pytest template: {dest}")
 
@@ -736,7 +736,7 @@ def _generate_agent_skill_feature(test_dir: Path, agents: List[str]) -> str:
     content = "\n".join(lines)
 
     feature_file = test_dir / "test_project_agent_skills.feature"
-    feature_file.write_text(content, encoding="utf-8")
+    feature_file.write_text(content, encoding="utf-8", newline="")
     print(f"Agentic skill feature: {feature_file}")
     return str(feature_file)
 
@@ -792,7 +792,7 @@ def _generate_agent_health_pytest(test_dir: Path, agents: List[str]) -> str:
     content = "\n".join(lines)
 
     test_file = test_dir / "test_project_agent_health.py"
-    test_file.write_text(content, encoding="utf-8")
+    test_file.write_text(content, encoding="utf-8", newline="")
     print(f"Agentic health pytest: {test_file}")
     return str(test_file)
 

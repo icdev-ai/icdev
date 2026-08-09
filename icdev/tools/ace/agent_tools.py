@@ -755,7 +755,7 @@ class AgentToolRegistry:
 
         new_content = content.replace(old_string, new_string, 1)
         try:
-            resolved.write_text(new_content, encoding="utf-8")
+            resolved.write_text(new_content, encoding="utf-8", newline="")
         except Exception as exc:
             return f"error writing {path}: {exc}"
 

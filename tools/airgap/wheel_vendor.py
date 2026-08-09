@@ -123,7 +123,7 @@ def _write_checksum_manifest(bucket: Path) -> dict[str, str]:
         digests[whl.name] = _sha256_file(whl)
     manifest = bucket / "SHA256SUM"
     lines = [f"{d}  {name}\n" for name, d in digests.items()]
-    manifest.write_text("".join(lines), encoding="utf-8")
+    manifest.write_text("".join(lines), encoding="utf-8", newline="")
     return digests
 
 

@@ -284,7 +284,7 @@ def apply_repair_to_spec(
         return False
 
     updated = content.replace(old_selector, new_selector, 1)
-    path.write_text(updated, encoding="utf-8")
+    path.write_text(updated, encoding="utf-8", newline="")
     logger.info("selector_healer: replaced '%s' → '%s' in %s", old_selector, new_selector, spec_path)
     return True
 

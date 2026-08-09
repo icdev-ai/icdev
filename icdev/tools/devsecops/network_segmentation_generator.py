@@ -103,7 +103,7 @@ def _write_manifest(output_dir: Path, filename: str, content: str) -> Path:
     """Write manifest file to output directory, creating parents as needed."""
     output_dir.mkdir(parents=True, exist_ok=True)
     target = output_dir / filename
-    target.write_text(content, encoding="utf-8")
+    target.write_text(content, encoding="utf-8", newline="")
     return target
 
 

@@ -1804,7 +1804,7 @@ def render_erb_pdf(erb_package: dict, output_path: str) -> str:
             else:
                 lines.append(f"  {val}")
             lines.append("")
-        dest.write_text("\n".join(lines), encoding="utf-8")
+        dest.write_text("\n".join(lines), encoding="utf-8", newline="")
 
     return str(dest)
 

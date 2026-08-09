@@ -537,7 +537,7 @@ def main() -> None:
         sys.exit(1)
 
     if args.output:
-        Path(args.output).write_text(json.dumps(result, indent=2), encoding="utf-8")
+        Path(args.output).write_text(json.dumps(result, indent=2), encoding="utf-8", newline="")
         print(json.dumps({"status": "ok", "output": args.output}, indent=2))
     elif args.json:
         print(json.dumps(result, indent=2))

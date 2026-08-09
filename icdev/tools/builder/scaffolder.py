@@ -92,13 +92,13 @@ CUI_BANNER_MD = _DEFAULT_CUI_BANNER_MD
 def _write_file(path: Path, content: str) -> None:
     """Write content to a file, creating parent dirs as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="")
 
 
 def _create_gitkeep(directory: Path) -> None:
     """Create a .gitkeep in an empty directory."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / ".gitkeep").write_text("", encoding="utf-8")
+    (directory / ".gitkeep").write_text("", encoding="utf-8", newline="")
 
 
 def _common_gitignore() -> str:
@@ -1602,7 +1602,7 @@ def main():
                     original = p.read_text(encoding="utf-8")
                     updated = _apply_profile_overrides(original, dev_profile, language=lang)
                     if updated != original:
-                        p.write_text(updated, encoding="utf-8")
+                        p.write_text(updated, encoding="utf-8", newline="")
             except Exception:
                 pass  # Non-critical: profile overrides are best-effort
 

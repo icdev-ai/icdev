@@ -411,7 +411,7 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     date_str = now.strftime("%Y-%m-%d")
     report_file = REPORTS_DIR / f"genesis-report-{date_str}.md"
-    report_file.write_text(report_md, encoding="utf-8")
+    report_file.write_text(report_md, encoding="utf-8", newline="")
 
     # Audit log
     try:

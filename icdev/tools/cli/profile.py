@@ -159,7 +159,7 @@ def _apply_profile(name: str, env_file: Path, dry_run: bool) -> dict:
 
     if not dry_run and overrides:
         env_file.parent.mkdir(parents=True, exist_ok=True)
-        env_file.write_text(new_text, encoding="utf-8")
+        env_file.write_text(new_text, encoding="utf-8", newline="")
         log_component_audit(
             event_type="profile_apply",
             actor=_actor(),

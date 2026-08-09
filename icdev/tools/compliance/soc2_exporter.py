@@ -89,7 +89,7 @@ def export_report(
     data = _collect_coverage(tenant_id, framework)
 
     if fmt == "json":
-        output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        output_path.write_text(json.dumps(data, indent=2), encoding="utf-8", newline="")
     else:
         try:
             from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -117,7 +117,7 @@ def export_report(
                 f"<th>Status</th><th>Evidence</th><th>Last Collected</th></tr>"
                 f"{rows_html}</table></body></html>"
             )
-        output_path.write_text(html, encoding="utf-8")
+        output_path.write_text(html, encoding="utf-8", newline="")
 
     return data
 

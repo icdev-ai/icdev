@@ -255,7 +255,7 @@ def write_role(spec: dict[str, Any], out_dir: Path | None = None) -> Path:
     dest = (out_dir or _ROLES_DIR) / f"{spec['role_id']}.yaml"
     header = "# CUI // SP-CTI\n"
     content = header + _dump_yaml_str(spec)
-    dest.write_text(content, encoding="utf-8")
+    dest.write_text(content, encoding="utf-8", newline="")
     return dest
 
 

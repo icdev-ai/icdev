@@ -129,7 +129,7 @@ def set_active(name: str | None) -> str:
             pass
         return DEFAULT_PROFILE
     validate_name(name)  # type: ignore[arg-type]
-    ptr.write_text(name + "\n", encoding="utf-8")  # type: ignore[operator]
+    ptr.write_text(name + "\n", encoding="utf-8", newline="")  # type: ignore[operator]
     return name  # type: ignore[return-value]
 
 
@@ -248,10 +248,10 @@ def create_profile(name: str, description: str = "", *, conn=None) -> dict[str, 
             f"# dotenv overlay for the '{name}' SAG profile — applied on top of the\n"
             "# base .env when this profile is active. Put per-profile LLM routing,\n"
             "# toggles, or credentials here.\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="",
         )
     meta = {"name": name, "description": description, "created_at": _utcnow()}
-    _meta_path(name).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    _meta_path(name).write_text(json.dumps(meta, indent=2), encoding="utf-8", newline="")
     _register(name, description, conn=conn)
     return {
         "name": name,

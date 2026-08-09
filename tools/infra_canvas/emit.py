@@ -108,7 +108,7 @@ def _emit_terraform(nodes: list[Node], csp: str, out_dir: Path) -> tuple[list[st
             skipped += 1
     if not blocks:
         _fail(f"No terraform-emittable nodes found for csp={csp!r}.")
-    (out_dir / "main.tf").write_text("\n\n".join(blocks), encoding="utf-8")
+    (out_dir / "main.tf").write_text("\n\n".join(blocks), encoding="utf-8", newline="")
     return ["main.tf"], skipped
 
 
@@ -123,7 +123,7 @@ def _emit_ansible(nodes: list[Node], csp: str, out_dir: Path) -> tuple[list[str]
         content = emit_playbook(good)
     except UnsupportedResourceError as exc:
         _fail(str(exc))
-    (out_dir / "playbook.yaml").write_text(content, encoding="utf-8")
+    (out_dir / "playbook.yaml").write_text(content, encoding="utf-8", newline="")
     return ["playbook.yaml"], skipped
 
 
@@ -144,7 +144,7 @@ def _emit_pulumi(nodes: list[Node], csp: str, out_dir: Path) -> tuple[list[str],
     header = "\n".join(line for line in [aws_import, az_import] if line)
     body = "\n\n".join(blocks)
     content = f"{header}\n\n{body}" if header else body
-    (out_dir / "index.ts").write_text(content, encoding="utf-8")
+    (out_dir / "index.ts").write_text(content, encoding="utf-8", newline="")
     return ["index.ts"], skipped
 
 
@@ -167,7 +167,7 @@ def _emit_helm(
     for filename, content in files_map.items():
         path = out_dir / filename
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        path.write_text(content, encoding="utf-8", newline="")
         written.append(filename)
     return written, skipped
 

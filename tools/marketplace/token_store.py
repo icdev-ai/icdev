@@ -58,7 +58,7 @@ def _save_tokens(tokens: List[Dict[str, Any]]) -> None:
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(
         json.dumps(tokens, indent=2, default=str),
-        encoding="utf-8",
+        encoding="utf-8", newline="",
     )
 
 

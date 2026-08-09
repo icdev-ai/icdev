@@ -481,8 +481,8 @@ def write_report(
         "markdown": base.with_suffix(".md"),
         "json": base.with_suffix(".json"),
     }
-    paths["markdown"].write_text(render_markdown(report), encoding="utf-8")
-    paths["json"].write_text(render_json(report), encoding="utf-8")
+    paths["markdown"].write_text(render_markdown(report), encoding="utf-8", newline="")
+    paths["json"].write_text(render_json(report), encoding="utf-8", newline="")
     return paths
 
 

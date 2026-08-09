@@ -310,7 +310,7 @@ def generate_ztp_scripts(canvas: str, ztp_dir: Path) -> dict[str, Path]:
     for node_name, ip_spec in ip_plan.items():
         # VPCS format: "ip <addr>/<prefix> <gateway>"
         path = ztp_dir / f"vpcs_{node_name}.txt"
-        path.write_text(f"ip {ip_spec}\n", encoding="utf-8")
+        path.write_text(f"ip {ip_spec}\n", encoding="utf-8", newline="")
         written[node_name] = path
     return written
 

@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 """Tests for tools.project.project_create — project creation end-to-end."""
 
 import json
+import os
 import sqlite3
 from unittest.mock import patch
 
@@ -31,10 +32,20 @@ def _make_db(tmp_path):
 
 
 def _create_project(tmp_path, db_path, **kwargs):
-    """Call create_project with DB_PATH and PROJECTS_DIR patched to tmp_path."""
+    """Call create_project against the temp DB and PROJECTS_DIR.
+
+    ``ICDEV_DB_PATH`` is what actually redirects the database. ``project_create``
+    writes through ``get_connection()``, and storage.py resolves the SQLite file
+    from that env var — so patching the module's own ``DB_PATH`` constant only
+    reached the scaffolder call that still takes it as an argument, while every
+    INSERT went to the ambient database. In a fresh checkout that database has no
+    ``projects`` table, which is the ``no such table: projects`` these tests were
+    failing on: the patch named a constant the write path had stopped using.
+    """
     projects_dir = tmp_path / "projects"
     projects_dir.mkdir(parents=True, exist_ok=True)
     with (
+        patch.dict(os.environ, {"ICDEV_DB_PATH": str(db_path)}),
         patch("tools.project.project_create.DB_PATH", db_path),
         patch("tools.project.project_create.PROJECTS_DIR", projects_dir),
     ):

@@ -129,7 +129,7 @@ def record_authorization(
         raise ValueError("authorization requires both authorized_by and a reason")
     auth = Authorization(target=target, authorized_by=authorized_by, reason=reason)
     _AUTH_DIR.mkdir(parents=True, exist_ok=True)
-    _auth_path(target).write_text(json.dumps(auth.to_dict(), indent=2), encoding="utf-8")
+    _auth_path(target).write_text(json.dumps(auth.to_dict(), indent=2), encoding="utf-8", newline="")
     logger.info("recorded red-team authorization for %s by %s", target, authorized_by)
     return auth
 

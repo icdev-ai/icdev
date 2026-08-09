@@ -15,6 +15,18 @@ This module turns those coordinates into agent-loop handlers matching the
 2. **Runtime injection.** Where a handler's signature accepts ``stop_event`` or
    ``task_id``, those are injected (matching ``run_agent_loop``'s plumbing) — a
    handler that does not declare them never sees them.
+
+   ``stop_event`` is the run's **cancellation token** (hgx-ctxw-03), and a
+   handler that declares it is expected to *poll* it — in any loop, before each
+   subprocess launch, and between phases of a long job — returning promptly once
+   it is set. This is cooperative by necessity: Python cannot kill a thread, so
+   the agent loop stops *waiting* on a handler as soon as the token fires but
+   the handler itself keeps running until it notices. A handler that ignores the
+   token cannot hang a turn any more, but it can still hold a worker thread (and
+   delay process exit) for as long as it runs. Declaring ``stop_event`` and then
+   discarding it is therefore a bug, not a formality; see
+   ``mutating_tools.run_command`` and ``builtin_tools._handle_search_files`` for
+   the two shapes this takes.
 3. **The safety hook point.** Every *mutating* tool is routed through a
    :data:`SafetyGate` before execution. sag-safe-01 injects the real approval UX
    here; until then :func:`default_safety_gate` fails closed unless

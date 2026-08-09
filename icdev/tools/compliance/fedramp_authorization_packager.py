@@ -105,7 +105,7 @@ def package_authorization(project_id: str, output_dir: Path = None) -> Dict[str,
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"fedramp_20x_package_{project_id}.json"
-        output_file.write_text(json.dumps(package, indent=2), encoding="utf-8")
+        output_file.write_text(json.dumps(package, indent=2), encoding="utf-8", newline="")
         package["output_file"] = str(output_file)
 
     return package
