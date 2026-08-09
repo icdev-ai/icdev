@@ -177,6 +177,11 @@ REFLEX_NAMES = [
     # The other eight stay out, each with a measured blocker recorded in
     # tests/test_reflex_registration.py EXEMPT.
     "idp_score_recorder",
+    # kax-merge-02: policy copied into task descriptions at seed time goes stale
+    # when the card changes. Rewrites dispatchable rows to match `policy:` on the
+    # card; reports (never rewrites) done/in_progress. AGOV is exempt by name in
+    # args/kanban_policy_drift.yaml — its --draft instruction is deliberate.
+    "kanban_policy_drift",
 ]
 
 # Backward-compat aliases for module-level access used by other code

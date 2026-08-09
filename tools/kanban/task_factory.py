@@ -103,9 +103,22 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
 
     from tools.db.storage import get_connection
     from tools.kanban.init_db import init_kanban_tables
+    from tools.kanban import policy_drift
 
     init_kanban_tables()
     now = datetime.now(timezone.utc).isoformat()
+
+    # kax-merge-02: stamp the card's operating policy as a DELIMITED block
+    # rather than letting each seeder paste its own copy. A pasted copy is
+    # frozen at seed time — correcting the card then leaves every existing row
+    # saying the old thing, which is how 35 hgx rows went on telling sessions to
+    # open --draft after the card said not to. A block is re-synced against
+    # `policy:` in args/projects.yaml by tools/kanban/policy_drift.py.
+    # Loaded ONCE per batch, and a no-op for the ~156 cards with no `policy:`.
+    # load_exemptions (not load_rules) so a malformed rule can never take down
+    # every seeder — the seeder needs the exemption veto, not the rules.
+    _projects = policy_drift.load_projects()
+    _ruleset = policy_drift.load_exemptions()
 
     created: list[str] = []
     conn = get_connection()
@@ -155,7 +168,9 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
                 (
                     task_id,
                     str(t.get("title", "Untitled task"))[:255],
-                    t.get("description") or "",
+                    policy_drift.apply_policy_block(
+                        t.get("description") or "", task_id, _projects, _ruleset
+                    ),
                     t.get("task_type", "build"),
                     t.get("priority", "high"),
                     t.get("status", "backlog"),

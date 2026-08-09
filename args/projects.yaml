@@ -7637,6 +7637,21 @@ projects:
     every agent file write, no shell, pathlib only, explicit two-sided platform
     branches, and a windows-latest CI job or none of it is enforced.'
   task_prefix: hgx-
+  # SINGLE SOURCE for the operating policy embedded in every hgx- task
+  # description. Edit here and run `python tools/kanban/policy_drift.py --fix`
+  # (or wait for the kanban_policy_drift reflex) — do NOT hand-edit the rows.
+  # The dispatched session reads its description, so a policy change that stops
+  # at the card changes nothing (kax-merge-02).
+  policy: |-
+    Card: HGX - Harness Agent Parity and Graph Runtime. The manual hold is
+    RELEASED: hgx-gate-00, hgx-gate-01 and hgx-gate-02 are all done as of
+    2026-08-09, so this card dispatches autonomously and no gate row holds it.
+    Open PRs NORMALLY, not --draft. pr_watcher auto-merges green kanban/* and a
+    draft is the one thing it may NOT touch, so a draft stops the pipeline at
+    its last step and waits for a human. What sequences the remaining work is
+    depends_on_task_id, not a draft flag and not a gate.
+    This block is generated from the card - do not edit it on the task row, it
+    will be overwritten. Change `policy:` on the hgx entry in args/projects.yaml.
   default_open: true
   briefs:
   - 'GATE: manual hold - do not dispatch. Released by hand once a human is driving
