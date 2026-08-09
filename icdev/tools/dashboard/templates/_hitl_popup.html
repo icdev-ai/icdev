@@ -72,10 +72,57 @@
     el.hidden = true;
   });
 
+  // ── OS notification ──────────────────────────────────────────────────
+  // The popup is only seen if this tab is visible. A backgrounded tab is the
+  // normal case for someone working in an editor or a terminal, and this queue
+  // is the one class that waits forever, so it earns an OS-level interrupt.
+  //
+  // Fires ONLY for an alert id not seen before in this tab: re-notifying every
+  // 60s for the same stuck task is how a notification becomes noise and gets
+  // permission-revoked, taking the genuinely new ones with it.
+  var notified = {};
+
+  function osNotify(current) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    var unseen = current.filter(function (i) { return !notified[i.id]; });
+    if (!unseen.length) return;
+    unseen.forEach(function (i) { notified[i.id] = 1; });
+    try {
+      var n = new Notification(
+        unseen.length === 1 ? '1 task needs a human'
+                            : unseen.length + ' tasks need a human',
+        {
+          body: unseen.map(function (i) { return i.task_id; }).join(', ')
+                + ' - the pipeline cannot recover it',
+          tag: 'icdev-hitl',      // collapses duplicates in the OS centre
+          requireInteraction: true // stays until acknowledged: this is not FYI
+        });
+      n.onclick = function () { window.focus(); location.href = '/monitoring#firing-alerts'; };
+    } catch (e) { /* a notification failure must never break Home */ }
+  }
+
+  // Permission is requested on the FIRST real alert, not on page load: a prompt
+  // that appears for no reason gets denied, and a denial is sticky.
+  function ensurePermission(current) {
+    if (!('Notification' in window) || !current.length) return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(function () { osNotify(current); });
+    } else {
+      osNotify(current);
+    }
+  }
+
   function poll() {
     fetch('/api/hitl/pending', { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : { pending: [] }; })
-      .then(function (j) { render(j.pending || []); })
+      .then(function (j) {
+        var items = j.pending || [];
+        render(items);
+        // Deliberately NOT filtered by the dismiss list: dismissing the in-page
+        // popup silences the banner, not the incident. An OS notification for a
+        // task that is still stuck is still true.
+        ensurePermission(items);
+      })
       .catch(function () { /* a polling failure must never break Home */ });
   }
   poll();

@@ -55,3 +55,31 @@ def test_a_polling_failure_cannot_break_home(html):
 def test_it_links_to_where_the_buttons_are(html):
     """Seeing it is half the job; the remediation buttons live on /monitoring."""
     assert "/monitoring" in html
+
+def test_os_notification_fires_once_per_alert(html):
+    """Re-notifying every 60s for the same stuck task is how a notification
+    becomes noise and gets permission-revoked — taking the genuinely new ones
+    with it."""
+    assert "var notified = {}" in html
+    assert "!notified[i.id]" in html
+
+
+def test_permission_is_requested_on_a_real_alert_not_on_page_load(html):
+    """A prompt that appears for no reason gets denied, and a denial is sticky."""
+    assert "requestPermission" in html
+    assert "ensurePermission(items)" in html
+
+
+def test_the_os_notification_persists_until_acknowledged(html):
+    """This is a stop-the-line signal, not an FYI."""
+    assert "requireInteraction: true" in html
+
+
+def test_dismissing_the_banner_does_not_silence_the_os_notification(html):
+    """Dismissing the in-page popup silences the banner, not the incident."""
+    assert "ensurePermission(items)" in html, "must be passed the UNFILTERED list"
+    assert "ensurePermission(fresh)" not in html
+
+
+def test_clicking_the_notification_lands_where_the_buttons_are(html):
+    assert "n.onclick" in html and "/monitoring#firing-alerts" in html
