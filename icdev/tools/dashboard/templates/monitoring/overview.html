@@ -105,6 +105,7 @@ flowchart TD
                 <th>Project</th>
                 <th>Auto-Healed</th>
                 <th>Created</th>
+                <th>Action</th>
             </tr>
         </thead>
         <tbody>
@@ -129,6 +130,25 @@ flowchart TD
                     {% endif %}
                 </td>
                 <td class="text-muted">{{ alert.created_at }}</td>
+                <td>
+                    {# Only a pr_watcher HITL alert names a task these verbs can
+                       act on. Every other alert source gets no buttons rather
+                       than buttons that would fail — an control that does
+                       nothing teaches people to distrust the ones that work. #}
+                    {% if alert.source and alert.source.startswith('pr_watcher:hitl:') %}
+                    <div class="hitl-actions" data-alert-id="{{ alert.id }}">
+                      <button class="btn btn-sm" data-act="rebase"
+                              title="Rebase onto main and let CI re-run — keeps this PR">Rebase</button>
+                      <button class="btn btn-sm" data-act="requeue"
+                              title="Clean rebuild from current main — abandons the stuck attempt">Requeue</button>
+                      <button class="btn btn-sm btn-muted" data-act="dismiss"
+                              title="Clear without acting">Dismiss</button>
+                      <span class="hitl-result text-muted"></span>
+                    </div>
+                    {% else %}
+                    <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -266,3 +286,49 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
+
+<script>
+// HITL alert actions. base.html already patches fetch() to carry the CSRF
+// header, so there is nothing to add here.
+//
+// One listener on the table rather than one per button: the row set is
+// server-rendered and can change on reload, and per-button handlers would be
+// re-bound (or silently lost) each time.
+(function () {
+  var table = document.getElementById('firing-alerts');
+  if (!table) return;
+  table.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var box = btn.closest('.hitl-actions');
+    var out = box.querySelector('.hitl-result');
+    var act = btn.getAttribute('data-act');
+    // Disable the whole group, not just the clicked button: rebase-then-requeue
+    // on the same alert is two remediations racing on one branch.
+    box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    out.textContent = ' working…';
+    fetch('/api/kanban/alerts/' + encodeURIComponent(box.dataset.alertId) + '/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: act })
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, body: j }; });
+    }).then(function (res) {
+      if (res.ok && res.body.ok) {
+        out.textContent = ' ' + act + ' ok — reloading';
+        setTimeout(function () { location.reload(); }, 900);
+      } else {
+        // Say WHY, and re-enable: a failed remediation is often retryable once
+        // the cause is read.
+        var why = (res.body && (res.body.error ||
+                   (res.body.detail && res.body.detail.reason))) || 'failed';
+        out.textContent = ' ' + why;
+        box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+      }
+    }).catch(function (e) {
+      out.textContent = ' ' + e;
+      box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+    });
+  });
+})();
+</script>
