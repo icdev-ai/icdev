@@ -97,3 +97,19 @@ ci_missing_grace_minutes: 15
 # pull_request workflows; if that does not bring CI back, the cause is
 # infrastructure and a second attempt only delays telling a human.
 max_ci_retriggers_per_pr: 1
+
+# Re-exec the daemon when its own code changes on disk.
+#
+# A daemon imports its modules once and runs for days, so every merged fix is
+# inert until somebody restarts the process. On 2026-08-09 pr_watcher was
+# restarted BY HAND four times, and twice the board looked broken when the only
+# fault was a daemon serving hours-old code.
+#
+# Re-exec rather than exit: supervision here is uneven (dashboard, launcher, or a
+# bare shell), and a daemon that exits under a launcher that is not watching is
+# simply dead — strictly worse than running stale.
+#
+# The watch set is every already-imported module under the repo, so a change to
+# error_classifier counts as much as one to pr_watcher itself. Checked only
+# between polls, and never within MIN_UPTIME_SECONDS of starting.
+restart_on_code_change: true

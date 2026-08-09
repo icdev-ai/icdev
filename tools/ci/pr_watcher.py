@@ -1892,7 +1892,19 @@ class PRWatcher:
     def run_daemon(
         self, interval: int = 30, max_iterations: int = 0
     ) -> None:
-        """Poll forever (or up to `max_iterations` ticks)."""
+        """Poll forever (or up to `max_iterations` ticks).
+
+        Picks up its own code changes between polls: this daemon runs for days,
+        so without that every merged fix stays inert until a human restarts it.
+        On 2026-08-09 that was four hand restarts, and twice the board looked
+        broken when the only fault was this process serving hours-old code.
+        """
+        from tools.genesis import code_reload
+
+        started_at = time.time()
+        baseline = code_reload.snapshot()
+        watch = bool(self.config.get("restart_on_code_change", True))
+
         iteration = 0
         while True:
             iteration += 1
@@ -1906,6 +1918,13 @@ class PRWatcher:
                 logger.warning("pr_watcher iteration failed: %s", exc)
             if max_iterations and iteration >= max_iterations:
                 return
+            # AFTER a completed poll and before the sleep: never mid-work, and
+            # never while a merge is in flight. Does not return if it re-execs.
+            try:
+                code_reload.restart_if_code_changed(
+                    baseline, started_at=started_at, enabled=watch)
+            except Exception as exc:  # noqa: BLE001 — watching must not kill it
+                logger.warning("pr_watcher: code-change check failed: %s", exc)
             time.sleep(max(1, int(interval)))
 
 
