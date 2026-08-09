@@ -66,6 +66,23 @@ def chat_main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Master switch (hgx-cfg-01): `icdev disable sag` / ICDEV_SAG_ENABLED=false.
+    # Refuse up front rather than starting a runtime the operator turned off —
+    # and name both the flag and the file, so the message is actionable.
+    try:
+        from tools.agent_runtime.config import load_config
+
+        if not load_config().enabled:
+            print(
+                "icdev chat: the standalone agent runtime is disabled "
+                "(ICDEV_SAG_ENABLED / `enabled` in args/agent_runtime.yaml). "
+                "Enable it with `icdev enable sag`.",
+                file=sys.stderr,
+            )
+            return 2
+    except Exception:  # noqa: BLE001 — an unreadable config never blocks the CLI
+        pass
+
     from tools.agent_runtime.sessions import ensure_chat_tables
 
     ensure_chat_tables()

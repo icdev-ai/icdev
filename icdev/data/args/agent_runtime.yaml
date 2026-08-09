@@ -1,0 +1,99 @@
+# CUI // SP-CTI
+# Standalone Agent Runtime (SAG) — declarative configuration  [hgx-cfg-01]
+#
+# Consumed by:
+#   - tools/agent_runtime/config.py (loader — AgentRuntimeConfig)
+#   - tools/agent_runtime/runtime.py (read at AgentRuntime construction)
+#   - the per-subsystem modules listed against each block below
+#
+# PRECEDENCE — this file is a LAYER, not a replacement:
+#
+#     explicit call argument  >  environment variable  >  this file  >  built-in default
+#
+# Every environment variable that worked before this file existed still works,
+# and still wins. The value here is only consulted when the env var is unset (or
+# unparseable). That ordering is deliberate: an operator who exports a flag in a
+# shell, a systemd unit or a CI job must not have it silently overridden by a
+# file they did not know to look at.
+#
+# Every key below names the env var that overrides it. There are no keys whose
+# only effect is to exist: each one is read by the module named beside it. If you
+# add a key here, wire it in that module too — an inert config key reads as a
+# supported setting and is worse than no key at all.
+#
+# Inspect the resolved values (config + the env overrides actually in force):
+#     python -m tools.agent_runtime.config --json
+#
+# Override the file location with ICDEV_AGENT_RUNTIME_CONFIG=/path/to/file.yaml.
+
+version: 1
+
+# Master switch for the standalone agent runtime.  env: ICDEV_SAG_ENABLED
+# Mirrors the `sag` component in args/component_registry.yaml, so
+# `icdev enable sag` / `icdev disable sag` flips the same flag. When false,
+# `icdev chat` refuses to start rather than starting a crippled agent.
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Turn executor — tools/agent_runtime/runtime.py::AgentRuntime
+# ---------------------------------------------------------------------------
+# LLM-agnostic by construction: `llm_function` is a ROUTING FUNCTION resolved
+# through LLMRouter against args/llm_config.yaml. There is deliberately no
+# `model:` key here — a model id in configuration pins one vendor just as hard
+# as a model id in Python.
+runtime:
+  llm_function: code_generation      # env: ICDEV_SAG_LLM_FUNCTION
+  max_iterations: 12                 # env: ICDEV_SAG_MAX_ITERATIONS
+  max_total_tokens: null             # env: ICDEV_SAG_MAX_TOTAL_TOKENS (null = uncapped)
+  max_cost_usd: null                 # env: ICDEV_SAG_MAX_COST_USD  (null = uncapped)
+
+# ---------------------------------------------------------------------------
+# Per-subsystem toggles
+# ---------------------------------------------------------------------------
+subsystems:
+
+  # tools/agent_runtime/project_context.py — CLAUDE.md / AGENTS.md / MEMORY.md
+  # plus the session_context_builder project-state summary, injected at session
+  # start and budgeted against the model's window.
+  project_context:
+    enabled: true                    # env: ICDEV_SAG_PROJECT_CONTEXT
+    include_project_state: true      # env: ICDEV_SAG_PROJECT_STATE
+
+  # tools/agent_runtime/goal_context.py — durable operator objectives (/goal).
+  standing_goals:
+    enabled: true                    # env: ICDEV_SAG_GOALS
+    limit: 5                         # env: ICDEV_SAG_GOAL_LIMIT (clamped to 25)
+
+  # tools/agent_runtime/profile_memory.py — durable facts/preferences plus the
+  # top hybrid-memory hits for the first prompt of a session.
+  profile_memory:
+    enabled: true                    # env: ICDEV_SAG_PROFILE_MEMORY
+
+  # tools/agent_runtime/skills_lifecycle.py — post-session NOVA skill proposal.
+  # Default OFF: it queues a proposal on every session close.
+  skill_proposals:
+    enabled: false                   # env: ICDEV_SAG_SKILL_PROPOSALS
+
+  # tools/agent_runtime/safety.py (mode/risk_function) and
+  # tools/agent_runtime/approval_gate.py (command_mode) — the sag-safe-01
+  # approval flow in front of every mutating tool call.
+  approval:
+    mode: manual                     # env: ICDEV_SAG_APPROVAL_MODE  (manual|smart|off)
+    risk_function: summarization     # env: ICDEV_SAG_RISK_FUNCTION  (routing function, not a model)
+    command_mode: enforce            # env: ICDEV_AGENT_APPROVAL_MODE (enforce|dry_run|off)
+
+  # tools/agent_runtime/dispatch.py — the fail-closed default gate used when no
+  # safety gate is supplied. Leave false; `false` is what makes it fail-closed.
+  mutation:
+    allow: false                     # env: ICDEV_SAG_ALLOW_MUTATION
+
+  # tools/agent_runtime/delegation.py — whether a CHILD agent (depth > 0) may
+  # itself delegate. The top-level agent always may; the absolute depth cap
+  # (MAX_ORCHESTRATOR_DEPTH) is code, not config.
+  delegation:
+    child_can_delegate: false        # env: ICDEV_SAG_CAN_DELEGATE
+
+  # tools/agent_runtime/toolsets.py — bundle definitions consumed by
+  # `AgentRuntime.use_toolset`. Empty string = args/agent_toolsets.yaml.
+  toolsets:
+    bundle_path: ''                  # env: ICDEV_AGENT_TOOLSETS

@@ -1837,7 +1837,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("        # UndefinedColumn — the same reason canvases use")
     parts.append("        # get_canvas_connection().")
     parts.append("        try:")
-    parts.append("            conn.set_security_context(None)")
+    parts.append("            conn.set_security_context(None)")  # rls-bypass: emitted into a GENERATED child app whose own tables carry no tenant_id/classification columns, so the global predicate would raise UndefinedColumn on every query — the same rationale as get_canvas_connection(). Not a bypass in this module; a string literal in the generator's output.
     parts.append("        except AttributeError:")
     parts.append("            pass  # bare DBAPI connection: nothing to detach")
     parts.append("        return conn")

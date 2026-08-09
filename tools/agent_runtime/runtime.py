@@ -45,6 +45,7 @@ _DEFAULT_SYSTEM_PROMPT = (
 )
 
 _DEFAULT_LLM_FUNCTION = "code_generation"
+_DEFAULT_MAX_ITERATIONS = 12
 
 # A command handler takes (runtime, raw_input) and returns a
 # ``(handled, response_text, should_exit)`` tuple.
@@ -58,12 +59,23 @@ class AgentRuntime:
         router: An ``LLMRouter`` instance. When ``None``, one is constructed
             lazily on first use (provider abstraction — no model IDs here).
         system_prompt: System instruction for the agent.
-        llm_function: Router routing-function key (default ``code_generation``).
+        llm_function: Router routing-function key. ``None`` (the default) takes
+            it from ``args/agent_runtime.yaml`` / ``ICDEV_SAG_LLM_FUNCTION``,
+            falling back to ``code_generation``.
         max_iterations / max_total_tokens / max_cost_usd: Per-turn budget caps
-            forwarded to :func:`run_agent_loop`.
+            forwarded to :func:`run_agent_loop`. ``None`` defers to the config
+            layer the same way.
+        config: An :class:`~tools.agent_runtime.config.AgentRuntimeConfig`.
+            ``None`` loads ``args/agent_runtime.yaml`` (cached). Passing one
+            explicitly is how a test — or an embedder with its own config file —
+            pins the runtime's settings without touching ``os.environ``.
         command_handler: Optional slash-command dispatcher. When ``None``, the
             built-in minimal dispatcher (``/help``, ``/new``, ``/exit``) is used;
             sag-rt-02 injects the full registry here.
+
+    Precedence for every configurable value is ``explicit argument > environment
+    variable > args/agent_runtime.yaml > built-in default`` (hgx-cfg-01). The
+    config file is a layer beneath the environment, never above it.
     """
 
     def __init__(
@@ -71,10 +83,11 @@ class AgentRuntime:
         *,
         router: Any = None,
         system_prompt: str = _DEFAULT_SYSTEM_PROMPT,
-        llm_function: str = _DEFAULT_LLM_FUNCTION,
-        max_iterations: int = 12,
+        llm_function: str | None = None,
+        max_iterations: int | None = None,
         max_total_tokens: int | None = None,
         max_cost_usd: float | None = None,
+        config: Any = None,
         command_handler: CommandHandler | None = None,
         user_id: str = "default",
         tenant_id: str = "",
@@ -83,10 +96,39 @@ class AgentRuntime:
     ) -> None:
         self._router = router
         self.system_prompt = system_prompt
-        self.llm_function = llm_function
-        self.max_iterations = max_iterations
-        self.max_total_tokens = max_total_tokens
-        self.max_cost_usd = max_cost_usd
+        # -- declarative configuration (hgx-cfg-01) -------------------------
+        # Loaded once, here, so every knob has one visible resolution point.
+        # A missing/broken config file degrades to the built-in defaults rather
+        # than refusing to construct — configuration is not a hard dependency of
+        # starting an agent.
+        if config is None:
+            try:
+                from tools.agent_runtime.config import load_config
+
+                config = load_config()
+            except Exception as exc:  # noqa: BLE001 — config layer is optional
+                logger.debug("agent_runtime: config layer unavailable: %s", exc)
+        self.config = config
+        self.llm_function = (
+            llm_function
+            if llm_function is not None
+            else self._configured("llm_function", _DEFAULT_LLM_FUNCTION)
+        )
+        self.max_iterations = (
+            max_iterations
+            if max_iterations is not None
+            else self._configured("max_iterations", _DEFAULT_MAX_ITERATIONS)
+        )
+        self.max_total_tokens = (
+            max_total_tokens
+            if max_total_tokens is not None
+            else self._configured("max_total_tokens", None)
+        )
+        self.max_cost_usd = (
+            max_cost_usd
+            if max_cost_usd is not None
+            else self._configured("max_cost_usd", None)
+        )
         self.command_handler = command_handler
         self.user_id = user_id
         # -- profile isolation (sag-prof-01) -------------------------------
@@ -121,6 +163,25 @@ class AgentRuntime:
         self._profile_preamble: str | None = None
         self._project_preamble: str | None = None
         self._goals_preamble: str | None = None
+
+    # -- configuration (hgx-cfg-01) ----------------------------------------
+
+    def _configured(self, name: str, fallback: Any) -> Any:
+        """Read one runtime knob off :attr:`config`, or ``fallback``.
+
+        Tolerant on purpose: ``config`` may be ``None`` (the loader failed) or a
+        duck-typed stand-in supplied by an embedder, and a runtime that will not
+        construct because a YAML file is missing is worse than one running on
+        defaults.
+        """
+        if self.config is None:
+            return fallback
+        try:
+            value = getattr(self.config, name)
+        except Exception as exc:  # noqa: BLE001 — a bad config never blocks start
+            logger.debug("agent_runtime: config.%s unreadable: %s", name, exc)
+            return fallback
+        return fallback if value is None else value
 
     # -- cancellation (hgx-ctxw-03) ----------------------------------------
 
@@ -321,6 +382,24 @@ class AgentRuntime:
 
     # -- profile memory (sag-mem-01) ---------------------------------------
 
+    def _profile_memory_enabled(self) -> bool:
+        """``ICDEV_SAG_PROFILE_MEMORY`` → ``args/agent_runtime.yaml`` → on.
+
+        The env var is read first and still wins (hgx-cfg-01). Defaults to on so
+        an install with no config file behaves exactly as it did before.
+        """
+        if self.config is None:
+            return True
+        try:
+            from tools.agent_runtime.config import ENV_PROFILE_MEMORY
+
+            return self.config.subsystem_enabled(
+                "profile_memory", env=ENV_PROFILE_MEMORY, default=True
+            )
+        except Exception as exc:  # noqa: BLE001 — a bad config never disables memory
+            logger.debug("agent_runtime: profile-memory toggle unreadable: %s", exc)
+            return True
+
     def _effective_system_prompt(self, user_input: str) -> str:
         """System prompt with project context, goals and the operator profile.
 
@@ -334,14 +413,15 @@ class AgentRuntime:
         """
         if getattr(self, "_profile_preamble", None) is None:
             preamble = ""
-            try:
-                from tools.agent_runtime.profile_memory import build_profile_context
+            if self._profile_memory_enabled():
+                try:
+                    from tools.agent_runtime.profile_memory import build_profile_context
 
-                preamble = build_profile_context(
-                    self.user_id, self.tenant_id, query=user_input
-                )
-            except Exception as exc:  # noqa: BLE001 — memory is best-effort
-                logger.debug("agent_runtime: profile injection skipped: %s", exc)
+                    preamble = build_profile_context(
+                        self.user_id, self.tenant_id, query=user_input
+                    )
+                except Exception as exc:  # noqa: BLE001 — memory is best-effort
+                    logger.debug("agent_runtime: profile injection skipped: %s", exc)
             self._profile_preamble = preamble
         parts = [
             p
