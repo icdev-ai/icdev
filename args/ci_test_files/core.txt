@@ -282,3 +282,14 @@ tests/test_approval_inbox.py
 # in-tmpdir SQLite file and two short-lived threads, no DB service/LLM/network
 # (agov-inbox-02).
 tests/test_inbox_approver.py
+# agov-inbox-03 — channel delivery + reply resolution. In the core gate because
+# the correlation token is the ONLY thing standing between a chat reply and the
+# wrong irreversible action being approved, and every one of those properties is
+# a negative: a reply with no token resolves NOTHING (asserted with two pending
+# items on the board, so "it picked the most recent one" fails here), a token
+# naming a settled item writes no second decision row, a failing or raising
+# adapter leaves the item pending, and the seeded CUI marker is redacted by
+# response_filter while the token survives the redaction. Also pins that no new
+# HTTP client crept in, against the module source. ~2s, pure Python plus an
+# in-tmpdir SQLite file, no DB service/LLM/network (agov-inbox-03).
+tests/test_inbox_channel.py

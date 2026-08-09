@@ -21,7 +21,7 @@ if str(BASE_DIR) not in sys.path:
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 
-from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.adapters.base import BaseChannelAdapter, has_correlation_token  # noqa: E402
 from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
 logger = get_logger("icdev.gateway.adapters.internal")
@@ -57,8 +57,13 @@ class InternalChatAdapter(BaseChannelAdapter):
         if not message:
             return None
 
-        # Only process messages that look like commands
-        if not (message.startswith("/") or message.startswith("icdev-")):
+        # Only process messages that look like commands — or an approval reply
+        # (agov-inbox-03), which carries [icdev:<item_id>] and no prefix.
+        if not (
+            message.startswith("/")
+            or message.startswith("icdev-")
+            or has_correlation_token(message)
+        ):
             return None
 
         command, args = parse_command_text(message)

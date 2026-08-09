@@ -46,7 +46,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.adapters.base import BaseChannelAdapter, has_correlation_token  # noqa: E402
 from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
@@ -137,7 +137,10 @@ class EmailAdapter(BaseChannelAdapter):
             if not text:
                 continue
             probe = text[1:] if text.startswith("/") else text
-            if not probe.lower().startswith(_COMMAND_PREFIXES):
+            # An approval reply (agov-inbox-03) carries [icdev:<item_id>] and no
+            # command prefix. Mail quotes the original on every hop, so the tag
+            # is usually in the body rather than the first line.
+            if not probe.lower().startswith(_COMMAND_PREFIXES) and not has_correlation_token(text):
                 continue
             command, args = parse_command_text(text)
             if command:
