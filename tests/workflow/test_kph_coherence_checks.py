@@ -167,6 +167,41 @@ class TestTestDbIsolation:
         r = cc.check_test_db_isolation([f])
         assert r.status == "fail", r.message
 
+    def test_raise_only_factory_is_not_a_raw_connection(self, repo):
+        """A replacement that only raises hands runtime code no connection.
+
+        It is how a test drives the caller's 'database unavailable' branch —
+        the one path that must never reach a sqlite3 handle. Flagging it made
+        the gate reject the negative test it wants written (hgx-doc-01).
+        """
+        f = _write(
+            repo / "tests" / "test_no_connection.py",
+            "import sqlite3\n"
+            "def _boom():\n"
+            "    raise RuntimeError('no database')\n"
+            "def test_survives_no_db(monkeypatch):\n"
+            "    monkeypatch.setattr('tools.db.storage.get_connection', _boom)\n"
+            "    _ = 'SELECT * FROM t WHERE a=%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "pass", r.message
+
+    def test_raise_then_raw_connect_still_fails(self, repo):
+        """Guard the fix: only an unconditionally-raising factory is cleared."""
+        f = _write(
+            repo / "tests" / "test_raise_then_connect.py",
+            "import sqlite3\n"
+            "def _maybe(fail=False):\n"
+            "    if fail:\n"
+            "        raise RuntimeError('no database')\n"
+            "    return sqlite3.connect(':memory:')\n"
+            "def test_x(monkeypatch):\n"
+            "    monkeypatch.setattr('tools.db.storage.get_connection', _maybe)\n"
+            "    _ = 'SELECT * FROM t WHERE a=%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "fail", r.message
+
 
 # ---------------------------------------------------------------------------
 # check_migration_numbering (kph-C)

@@ -2005,6 +2005,12 @@ class ChatManager:
     _ADVISORY_TYPES = {
         "governance_advisory": ("[AI Governance Advisory]", "governance_advisory", "governance_advisory"),
         "workflow_advisory": ("[Workflow Status]", "workflow_status", "workflow_status"),
+        # hgx-doc-01 — Studio graph runs (031_graph_execution_chat.py). Reuses the
+        # workflow_status content type on purpose: it is already in the live
+        # chat_messages CHECK constraint and already has a chat.js badge, so a new
+        # type would have bought a migration and a frontend change for the same
+        # rendering. The label is what distinguishes it from 030's loop advisory.
+        "graph_advisory": ("[Graph Run]", "workflow_status", "workflow_status"),
         "bayesian_advisory": ("[Bayesian Learning]", "bayesian_advisory", "bayesian_advisory"),
         "rag_advisory": ("[Knowledge Sources]", "rag_attribution", "rag_attribution"),
         "code_quality_advisory": ("[Code Quality]", "code_quality_advisory", "code_quality_advisory"),
@@ -2041,7 +2047,7 @@ class ChatManager:
                 dirty_data = {
                     k: v
                     for k, v in advisory.items()
-                    if k in ("gap_id", "severity", "total_gaps", "loop_id", "score", "source_count", "fitness_domain")
+                    if k in ("gap_id", "severity", "total_gaps", "loop_id", "run_id", "score", "source_count", "fitness_domain")
                 }
             _mark_dirty(context_id, dirty_type, dirty_data)
 
