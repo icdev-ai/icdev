@@ -116,7 +116,7 @@ jobs:
           # Read the resolver's stdout straight into an array instead.
           CI_TESTS=()
           while IFS= read -r line; do
-            [ -n "$line" ] && CI_TESTS+=("$line")
+            if [ -n "$line" ]; then CI_TESTS+=("$line"); fi
           done < <(python tools/ci/gated_test_list.py --print --list core)
           # Belt-and-braces after the --check step: process substitution hides
           # python's exit status, and an empty array would make the line below
@@ -222,7 +222,7 @@ jobs:
         run: |
           WIN_TESTS=()
           while IFS= read -r line; do
-            [ -n "$line" ] && WIN_TESTS+=("$line")
+            if [ -n "$line" ]; then WIN_TESTS+=("$line"); fi
           done < <(python tools/ci/gated_test_list.py --print --list windows)
           if [ "${#WIN_TESTS[@]}" -eq 0 ]; then
             echo "::error::resolved Windows test list is empty — refusing to run pytest"
