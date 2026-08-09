@@ -16417,7 +16417,11 @@ CREATE TABLE public.harness_eval (
     metadata_json text DEFAULT '{}'::text,
     actual_outcome text,
     resolved_at text,
-    created_at text NOT NULL
+    created_at text NOT NULL,
+    run_id text,
+    node_id text,
+    node_type text,
+    edge_condition text
 );
 
 
@@ -53225,10 +53229,24 @@ CREATE INDEX idx_gtp_mmsi ON public.ghost_track_predictions USING btree (mmsi);
 
 
 --
+-- Name: idx_harness_eval_node_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_harness_eval_node_type ON public.harness_eval USING btree (node_type, created_at);
+
+
+--
 -- Name: idx_harness_eval_reflex; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_harness_eval_reflex ON public.harness_eval USING btree (reflex, created_at);
+
+
+--
+-- Name: idx_harness_eval_run_node; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_harness_eval_run_node ON public.harness_eval USING btree (run_id, node_id);
 
 
 --
