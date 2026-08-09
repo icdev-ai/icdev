@@ -200,7 +200,43 @@ def test_the_argv_carries_the_headless_flags(monkeypatch):
     assert argv[0] == "/usr/bin/claude"
     assert "--dangerously-skip-permissions" in argv
     assert argv[argv.index("--max-turns") + 1] == "42"
-    assert argv[argv.index("--output-format") + 1] == "text"
+    # json, not text (hgx-exec-04). The CLI is the only executor that knows what
+    # a session COST, and the envelope is where it says so — without it the
+    # adapter reported a duration and nothing else, so a cost comparison against
+    # another adapter had one column permanently empty. This assertion said
+    # "text" until the envelope landed and then failed on main for a day,
+    # unnoticed, because this file is not in the CI test job's allowlist.
+    assert argv[argv.index("--output-format") + 1] == "json"
+
+
+def test_the_json_envelope_is_the_reason_for_that_flag(monkeypatch):
+    """Pin the REASON, so the flag cannot be reverted while the tests stay green.
+
+    Asserting the literal "json" alone would pass just as happily if the parser
+    were deleted and the flag left dangling.
+    """
+    text, structured = claude_mod._parse_cli_json(
+        '{"result": "done", "subtype": "success", "is_error": false, '
+        '"num_turns": 3, "session_id": "s1", "total_cost_usd": 0.42, '
+        '"usage": {"input_tokens": 10, "cache_read_input_tokens": 5, '
+        '"output_tokens": 7}}'
+    )
+    assert text == "done"
+    assert structured["total_cost_usd"] == 0.42
+    assert structured["turns"] == 3
+    # cache reads are input tokens too — billed differently, still consumed
+    assert structured["input_tokens"] == 15
+    assert structured["output_tokens"] == 7
+
+
+def test_a_cli_that_prints_prose_still_works(monkeypatch):
+    """An older CLI, or one that printed something else, must degrade — not raise.
+
+    This is what makes the flag safe to set unconditionally.
+    """
+    text, structured = claude_mod._parse_cli_json("just some prose\n")
+    assert text == "just some prose\n"
+    assert structured == {}
 
 
 def test_the_prompt_goes_over_stdin_not_argv(monkeypatch, tmp_path):
