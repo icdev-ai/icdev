@@ -1,0 +1,7 @@
+{
+  "description": "CHECK vocabulary for sbom_dependencies.relationship_type (sbx-cov-02)",
+  "date": "2026-08-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

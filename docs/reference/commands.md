@@ -217,6 +217,7 @@ python tools/compliance/sbom_identifiers.py --validate "/path/to/sbom.cdx.json" 
 python tools/compliance/sbom_identifiers.py --component "pkg:pypi/flask@3.0.0" --json             # every identifier derivable for one component, CPE included
 python tools/compliance/component_names.py --validate "/path/to/sbom.cdx.json" --json            # Component Name conformance; exit 1 on an alternate that repeats the primary or carries an unknown kind
 python tools/compliance/component_names.py --name core --group "@babel" --purl "pkg:npm/%40babel%2Fcore@7.23.9" --json   # every name one component is known by
+python tools/compliance/dependency_graph.py --validate "/path/to/sbom.cdx.json" --json           # Component Dependency Relationship; exit 1 on a flat list, a dangling dependsOn, an unrooted graph or a declared cycle count that disagrees
 
 # SBOM Distribution and Delivery (2026 Minimum Elements) — version-specific retrieval.
 # Served over HTTP at $ICDEV_BASE_URL/api/supply_chain/sbom/<project_id>/<version>,

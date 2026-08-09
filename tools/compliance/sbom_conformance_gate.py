@@ -361,6 +361,7 @@ def _score_structural(sbom, sbom_path=None):
         return has_components and all(predicate(comp) for comp in components)
 
     producer_errors, _producer_summary = _score_producers(sbom)
+    dependency_report = _score_dependency_graph(sbom)
 
     scored = {
         # --- SBOM Metadata (§1.1) ---
@@ -379,7 +380,7 @@ def _score_structural(sbom, sbom_path=None):
         "sbom_version": sbom.get("version") is not None,
         # --- Component Data (§1.2) ---
         "component_producer": has_components and not producer_errors,
-        "component_dependency_relationship": bool(sbom.get("dependencies")),
+        "component_dependency_relationship": dependency_report["status"] == MET,
         # NOT "every component has a digest". The standard's own text for Component Hash
         # Value says an artifact the author cannot access is marked unknown rather than
         # the field omitted, so a document where every artifact was out of reach still
@@ -428,6 +429,28 @@ def _score_producers(sbom):
             "understated by one element rather than simply unavailable"
         ) from exc
     return validate_sbom_producers(sbom)
+
+
+def _score_dependency_graph(sbom):
+    """Delegate Component Dependency Relationship to the module that owns it.
+
+    Presence of a ``dependencies`` array was the interim check, and presence is
+    not the element: an array whose ``dependsOn`` names a ref no component
+    carries builds no graph at all, and it is precisely the shape a partial
+    implementation produces. `dependency_graph` (sbx-cov-02) emits the array and
+    scores it, so the element cannot be met by a document its own writer would
+    reject. Unimportable is raised rather than scored zero, for the reason
+    :func:`_score_producers` gives.
+    """
+    try:
+        from tools.compliance.dependency_graph import validate_dependency_graph
+    except ImportError as exc:
+        raise SbomScoreError(
+            f"cannot import tools.compliance.dependency_graph, which owns the Component "
+            f"Dependency Relationship element ({exc}) — the repository root is not on sys.path, "
+            "so this score would be understated by one element rather than simply unavailable"
+        ) from exc
+    return validate_dependency_graph(sbom)
 
 
 def score_sbom(sbom, sbom_path=None):
