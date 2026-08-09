@@ -4966,3 +4966,48 @@ python tools/agent_case/bundle_verifier.py --bundle <dir> --json
 # report, not an error to raise.
 # tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
 # write_manifest, compute_event_hmac, compute_audit_row_hash.
+---
+
+## Unified Approval Inbox — ACE + workflow_hitl adapters (agov-inbox-05)
+
+ICDEV has four approval gates asking a human the same question through four
+unrelated stores. These adapters give three of them one queue **without
+rewriting any of them**.
+
+```bash
+python tools/agent_runtime/inbox_adapters.py --list --json
+python tools/agent_runtime/inbox_adapters.py --list --origin ace
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --approve \
+    --actor ops-oncall --reason "reviewed" --json
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --deny \
+    --reason "not authorised" --json
+```
+
+**Use this `--resolve`, not `approval_inbox.py --resolve`, for a mirrored item.**
+The store settles the row; only the adapter knows how to release what was
+waiting on it — INSERTing the ACE `hitl_resolved` row that wakes a parked
+`CoWorkerThread`, or calling `submit_feedback` to advance a workflow stage.
+
+Each gate keeps its own store as the source of truth for its own waiter, and
+`approval_items` is a **mirror** of those:
+
+| Origin | Pending state | Released by |
+|--------|---------------|-------------|
+| `ace` | `ace_audit_log` row, `action='hitl_pending'` | INSERTing a matching `hitl_resolved` row |
+| `workflow_hitl` | `wf_approvals` row, `status='pending'` | `feedback.submit_feedback` |
+
+**Mirroring is best-effort; resolution is bidirectional.** An unmigrated or
+unreachable inbox leaves the originating gate holding exactly as it does today —
+failing the ACE gate closed on a mirror error would make an optional delivery
+channel load-bearing, and failing it open would turn a missing table into an
+approval. Answering in the ACE UI (`POST /api/ace/<id>/hitl`) settles the
+mirrored item; answering in the inbox releases the ACE thread.
+
+`ace_audit_log` stays **append-only**: a resolution INSERTs a new row, and
+nothing in this path UPDATEs an ACE row. The mutable state lives only in
+`approval_items` (migration `20260809203855`).
+
+**`tools/integration/approval_manager.py` is deliberately out of scope.**
+Document-, COA- and boundary-level approval with multi-reviewer lists has a
+different lifetime and audience from a mid-run tool-call gate, and its reviewer
+semantics do not survive being flattened into one item with one `resolved_by`.
