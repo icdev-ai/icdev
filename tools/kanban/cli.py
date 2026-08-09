@@ -509,6 +509,42 @@ def cmd_pipeline(task_id: str, json_out: bool) -> int:
     return 0
 
 
+def cmd_needs_human(json_out: bool) -> int:
+    """List the tasks the pipeline has given up on — the legitimate HITL queue.
+
+    The pipeline is designed to run unattended, so the honest exception is a task
+    whose automatic recovery is spent (pr_watcher: up to 2 rebases and 5 resume
+    cycles, separate ledgers). Until it raised an alert, that state was reachable
+    only by running the watcher by hand — the board reported an unrelated reason
+    and the task waited for someone to notice. Three sat that way at once on
+    2026-08-09.
+
+    Reads the same `alerts` rows the dashboard lists, so the terminal and the web
+    view cannot disagree about what needs a human.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT source, title, description, created_at FROM alerts "
+            "WHERE status = 'firing' AND source LIKE %s "
+            "ORDER BY created_at ASC",
+            ("pr_watcher:hitl:%",),
+        ).fetchall()
+
+    items = [dict(r) for r in rows]
+    if json_out:
+        print(json.dumps(items, indent=2, default=str))
+        return 0
+    if not items:
+        print("  nothing needs a human — the pipeline is unblocked")
+        return 0
+    print(f"  {len(items)} task(s) need a human:")
+    for r in items:
+        task = (r["source"] or "").rsplit(":", 1)[-1]
+        print(f"    {task:20} {r['description']}")
+    # Exit 1 so a cron/CI caller can act on it without parsing stdout.
+    return 1
+
+
 def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
     conditions = []
     params = []
@@ -816,6 +852,9 @@ def main():
                         help="Recompute a task's verification from its branch and "
                              "append a fresh verdict, clearing a stale done-gate block "
                              "without re-dispatching (exit 0=passed, 1=failed, 2=unknown)")
+    parser.add_argument("--needs-human", dest="needs_human", action="store_true",
+                        help="List tasks whose automatic recovery is exhausted and "
+                             "which will not move without a person (exit 1 if any)")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true",
                         help="With --reverify: compute the verdict without writing it. "
                              "With --merge: run the landing preflight only "
@@ -882,6 +921,8 @@ def main():
     elif args.pipeline:
         sys.exit(cmd_pipeline(args.pipeline, args.json_out))
 
+    elif args.needs_human:
+        sys.exit(cmd_needs_human(args.json_out))
     elif args.reverify:
         sys.exit(cmd_reverify(args.reverify, args.json_out, dry_run=args.dry_run))
 
