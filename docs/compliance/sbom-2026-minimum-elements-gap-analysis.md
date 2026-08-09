@@ -1150,15 +1150,29 @@ Three measurements are pinned by `tests/test_sbom_minimum_elements_validator.py`
 | A document carrying every element (`conformant_cyclonedx_1.6.cdx.json`) | 17 / 17 | 6 / 6 | 100% |
 | A vendor's SPDX 2.3 file (`third_party_spdx_2.3.spdx.json`) | 11 / 17 | 3 / 6 | 69.6% |
 
-The **live** generator, driven through `resolve_project` → `_build_cyclonedx_sbom`, still scores
-exactly 2 of 17 data fields on a declared-only project — the same two elements §3.1/§3.2 name.
+A fourth measurement is taken against the **live** generator rather than a fixture, driven
+through `resolve_project` → `_build_cyclonedx_sbom` with only the database write skipped, so
+that the frozen fixtures cannot drift away from the emitter without a test noticing:
+
+| Live path | Data fields | Practices |
+|---|---|---|
+| Declared-only project (no lockfile) | 8 / 17 | 2 / 6 |
+
+**This is the number to quote for "what does ICDEV emit today", and it is not §3.3's 13.**
+The two count different things and both are correct: §3.3's matrix scores each element against
+the generator's *capability* — the code path exists and is exercised — whereas the tool scores a
+*document*. Producer, both hash halves and Component License are emitted only from resolved
+metadata, so on a project that degrades to declared manifests they are genuinely absent from the
+document and score **GAP**. A capability that the input never triggers is not an element the
+recipient received. Quote 13 for what the generator can do; quote 8 for what a lockfile-less
+project actually hands over.
 
 One correction to §3.3 above, which the tool makes visible: **sbx-cov-01 moved Coverage off the
 baseline, but not uniformly.** A project whose ecosystems resolve from lockfiles now scores
 Coverage **MET**; a project that degrades to declared manifests scores **PARTIAL**, because the
 document does now state its own incompleteness honestly, which is what the element asks of a
-document. Neither is the original **GAP**. The practices total therefore reads 1/6 or 0/6
-depending on the project, not 0/6 unconditionally.
+document. Neither is the original **GAP**. Coverage therefore cannot be quoted as a single
+figure without naming the project it was measured on.
 
 The third row matters as much as the first two. The standard is aimed at organizations that
 **procure** software as much as at those that produce it, so the validator reads documents ICDEV
@@ -1168,8 +1182,18 @@ has no generation event behind it.
 
 **Unknown vs withheld.** The validator refuses to score them alike, and grades a value that
 conflates them (`"unspecified"`, `"managed"`) as *worse* than a stated unknown. `UNKNOWN_MARKERS`,
-`WITHHELD_MARKERS` and `AMBIGUOUS_PLACEHOLDERS` in that module are the vocabulary; **sbx-prc-01
-must import them rather than restate them.**
+`WITHHELD_MARKERS` and `AMBIGUOUS_PLACEHOLDERS` in that module are the grading vocabulary.
+
+This section previously directed sbx-prc-01 to **import** those sets. That task has since
+landed, and it restates them in `tools/compliance/unknown_information.py` instead. The two
+currently agree, so the directive is recorded here as history rather than reissued — but prose
+asking for a refactor nobody performed is exactly how the two drift apart later, with ICDEV
+emitting a disclosure its own conformance tool scores as a gap. The relationship is therefore
+enforced by `test_prc_01_disclosure_vocabulary_agrees_with_the_validator` rather than requested:
+prc-01's sentinels must land in the validator's matching buckets, its retired legacy sentinels
+must remain penalised, and the unknown and withheld sets must stay disjoint on both sides. That
+is a containment check, not an equality one — the validator must additionally know spellings it
+never emits (`NOASSERTION`, `redacted`) in order to grade vendor documents.
 
 **Known limits.** SPDX support is JSON 2.2/2.3. SPDX 3.x JSON-LD and SPDX tag-value are declined
 with a named error rather than parsed approximately — mis-scoring a vendor's document is worse

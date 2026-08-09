@@ -54,6 +54,13 @@ def _statuses(report):
     return {element["id"]: element["status"] for element in report["elements"]}
 
 
+_DATA_FIELD_IDS = {
+    element_id
+    for element_id, category, _, _ in ELEMENTS
+    if category == validator.CATEGORY_DATA_FIELD
+}
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # The element table itself
 # ─────────────────────────────────────────────────────────────────────────
@@ -122,16 +129,30 @@ def test_baseline_reproduces_the_documented_gap_analysis_matrix():
     }
 
 
-def test_live_generator_output_reproduces_the_baseline_data_field_score(tmp_path):
-    """The same 2/17 against what the generator actually emits today.
+def test_live_generator_output_scores_the_current_declared_only_state(tmp_path):
+    """What the generator actually emits today, on a project with no lockfile.
 
     This is the load-bearing half of the baseline check: the frozen fixture
     could drift away from the generator without either one being wrong. Here
     the document is built by the production code path — ``resolve_project``
     into ``_build_cyclonedx_sbom`` — with only the database write skipped.
 
+    The pre-``sbx`` 2/17 is *not* asserted here any more, because it is no
+    longer reachable: sbx-fld-01/sbx-fmt-01/sbx-sig-01 closed most of the SBOM
+    Metadata block, so the same declared-only project now scores 12. That
+    original measurement is preserved as a frozen fixture
+    (``baseline_cyclonedx_pre_sbx.cdx.json``) and asserted by the test above —
+    a document, not a number in a docstring, is what keeps it honest.
+
     The project deliberately has no lockfile, so resolution degrades to the
-    declared parsers. That is the state the gap analysis measured.
+    declared parsers, and the interesting result is that this no longer costs
+    the component-side elements their MET. Producer, both hash halves and
+    License cannot be *populated* without resolved metadata, but sbx-prc-01
+    makes the generator say so explicitly per field, and an element the
+    document declares unknown is disclosed rather than omitted. That is the
+    whole point of the Explicitly Identifying Unknown Information practice, so
+    scoring it MET here is correct and not a leniency bug — the two remaining
+    gaps are the ones no disclosure can excuse.
     """
     from tools.compliance.dependency_resolver import resolve_project
     from tools.compliance.sbom_generator import DECLARED_PARSERS, _build_cyclonedx_sbom
@@ -148,14 +169,63 @@ def test_live_generator_output_reproduces_the_baseline_data_field_score(tmp_path
     )
 
     report = validate(document)
-    assert report["data_fields"]["met"] == 2
-    assert _statuses(report)["sbom_data_format_name"] == STATUS_MET
-    assert _statuses(report)["sbom_tool_name"] == STATUS_MET
-    assert report["practices"]["met"] == 0
+    statuses = _statuses(report)
+
+    assert report["data_fields"] == {"met": 12, "partial": 3, "gap": 2, "total": 17}
+
+    # Name the met set rather than only counting it, so a regression that
+    # trades one element for another still fails.
+    met = {
+        element_id
+        for element_id, status in statuses.items()
+        if status == STATUS_MET and element_id in _DATA_FIELD_IDS
+    }
+    assert met == {
+        "sbom_author",
+        "sbom_data_format_name",
+        "sbom_data_format_version",
+        "sbom_generation_context",
+        "sbom_tool_name",
+        "sbom_tool_version",
+        "sbom_version",
+        "component_version",
+        # Unresolvable, and therefore explicitly marked unknown — which is a
+        # conforming answer, not a missing one. See the loop below.
+        "component_producer",
+        "component_hash_value",
+        "component_hash_algorithm",
+        "component_license",
+    }
+
+    # The two the pre-sbx baseline already had are still met — the metadata
+    # work added to that set, it did not churn it.
+    assert statuses["sbom_data_format_name"] == STATUS_MET
+    assert statuses["sbom_tool_name"] == STATUS_MET
+
+    # The four component elements a declared-only project cannot populate are
+    # MET, not GAP, and the distinction is the whole point of the 2026 revision:
+    # where the author cannot determine a value the standard requires it to be
+    # marked explicitly unknown, and silence is what it forbids. sbx-fld-02/03/04
+    # emit that marker into `icdev:component-*` properties, because CycloneDX's
+    # `supplier`, `hashes[]` and `licenses[]` have no member that can hold it.
+    # Grading only the native field would report the conforming answer as the
+    # forbidden one — the same reading this file already applies to SPDX's
+    # NOASSERTION in `test_spdx_noassertion_is_read_as_an_explicit_unknown...`.
+    for element_id in ("component_producer", "component_hash_value",
+                       "component_hash_algorithm", "component_license"):
+        assert statuses[element_id] == STATUS_MET, element_id
+        rationale = report["elements_by_id"][element_id]["rationale"].lower()
+        assert "unknown" in rationale or "withheld" in rationale, element_id
+
+    # sbx-cov-02 is the one genuinely outstanding component element: a flat
+    # list expresses no relationship, and no marker can stand in for a graph.
+    assert statuses["component_dependency_relationship"] == STATUS_GAP
+
+    assert report["practices"]["met"] == 2
 
 
 def test_coverage_practice_moved_off_gap_when_sbx_cov_01_landed(tmp_path):
-    """sbx-cov-01 is visible in the score, and only in the Coverage element.
+    """sbx-cov-01 is visible in the score, and it is project-dependent.
 
     The gap analysis's headline "0 of 7 practices" predates sbx-cov-01. That
     task did not make Coverage MET for every project — it made the document
@@ -163,6 +233,13 @@ def test_coverage_practice_moved_off_gap_when_sbx_cov_01_landed(tmp_path):
     unresolvable one reaches PARTIAL instead of GAP. Both are movement off the
     baseline and the test distinguishes them, because conflating them is how a
     partial win gets reported as a whole one.
+
+    This deliberately no longer asserts that the other five practices are
+    unmoved: sbx-prc-02 has since made Accommodation of Updates MET and
+    sbx-fmt-01 has made Machine-Processable Data MET. Pinning "everything else
+    is untouched" turned this into a tripwire for its own sibling tasks rather
+    than a test of Coverage, so it now pins the resolved/degraded contrast,
+    which is the claim actually attributable to sbx-cov-01.
     """
     from tools.compliance.dependency_resolver import resolve_project
     from tools.compliance.sbom_generator import DECLARED_PARSERS, _build_cyclonedx_sbom
@@ -195,12 +272,20 @@ def test_coverage_practice_moved_off_gap_when_sbx_cov_01_landed(tmp_path):
     statuses = _statuses(validate(document))
     assert statuses["coverage"] == STATUS_MET
 
-    # Every other practice is untouched by sbx-cov-01.
-    assert statuses["accommodation_of_updates"] != STATUS_MET
-    assert statuses["distribution_and_delivery"] != STATUS_MET
-    assert statuses["explicitly_identifying_unknown_information"] != STATUS_MET
-    assert statuses["frequency"] != STATUS_MET
-    assert statuses["machine_processable_data"] != STATUS_MET
+    # The discriminating half: the SAME generator on a project that cannot
+    # resolve scores Coverage PARTIAL, not MET and not the original GAP.
+    # Asserting only the MET above would let a change that hard-codes Coverage
+    # to MET pass, which is precisely the partial-win-reported-as-whole-win
+    # failure this test exists to catch.
+    declared_only = tmp_path / "declared-only-for-coverage"
+    declared_only.mkdir()
+    (declared_only / "requirements.txt").write_text("flask==3.0.2\n", encoding="utf-8")
+
+    degraded = resolve_project(declared_only, declared_parsers=DECLARED_PARSERS)
+    degraded_document, _ = _build_cyclonedx_sbom(
+        {"id": "demo", "name": "Demo"}, degraded["components"], coverage=degraded["coverage"]
+    )
+    assert _statuses(validate(degraded_document))["coverage"] == STATUS_PARTIAL
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -306,6 +391,38 @@ def test_spdx_noassertion_is_read_as_an_explicit_unknown_not_as_absent():
     # Dropping the field entirely is a different, worse state.
     del blob["supplier"]
     assert _statuses(validate(raw))["component_producer"] == STATUS_PARTIAL
+
+
+def test_prc_01_disclosure_vocabulary_agrees_with_the_validator():
+    """The two unknown/withheld vocabularies must not drift apart.
+
+    sbx-prc-01 (``unknown_information``) writes the markers and this validator
+    grades them, so a disagreement means ICDEV emits a disclosure its own
+    conformance tool scores as a gap — the failure would surface as an
+    unexplained score drop, not as an error.
+
+    The gap analysis originally directed sbx-prc-01 to *import* these sets.
+    It landed restating them instead, and the restatement currently agrees.
+    Rather than leave that as prose nobody enforces, this pins the three
+    relationships that actually have to hold. Deliberately a compatibility
+    assertion and not an equality one: the validator reads third-party
+    documents, so it must know spellings (``noassertion``, ``redacted``) that
+    ICDEV never emits. Only the containment direction is required.
+    """
+    from tools.compliance import unknown_information as prc01
+
+    # 1. What prc-01 writes, the validator reads as the state prc-01 meant.
+    assert prc01.SENTINELS[prc01.UNKNOWN] in UNKNOWN_MARKERS
+    assert prc01.SENTINELS[prc01.WITHHELD] in validator.WITHHELD_MARKERS
+
+    # 2. Every legacy placeholder prc-01 retired is one the validator still
+    #    penalises, so retiring a value cannot quietly upgrade a document.
+    assert set(prc01.LEGACY_SENTINELS) <= set(AMBIGUOUS_PLACEHOLDERS)
+
+    # 3. The two states stay disjoint on both sides. sbx-prc-01's whole point
+    #    is that "we don't know" and "we won't say" are different answers.
+    assert not (UNKNOWN_MARKERS & validator.WITHHELD_MARKERS)
+    assert not (set(prc01.UNKNOWN_REASONS) & set(prc01.WITHHELD_REASONS))
 
 
 def test_spdx_organization_prefix_is_stripped_from_the_producer():
@@ -511,10 +628,20 @@ GOV_01_DATA_FIELD_ELEMENTS = (
 
 
 def test_gate_entry_point_name_is_exposed():
-    """sbx-gov-01 imports `validate_sbom`, not `validate_file`."""
-    assert validator.validate_sbom is validator.validate_file
-    report = validator.validate_sbom(THIRD_PARTY_SPDX)
-    assert report["data_fields"]["total"] == DATA_FIELD_COUNT
+    """sbx-gov-01 imports `validate_sbom`, not `validate_file`.
+
+    It calls that name with an already-parsed document, having read the file
+    itself for its own path-dependent checks — so accepting only a path is not
+    enough, and the two shapes must agree on the verdict. This asserted alias
+    identity once; that passed while the gate died on ``Path(dict)``.
+    """
+    from_path = validator.validate_sbom(THIRD_PARTY_SPDX)
+    assert from_path["data_fields"]["total"] == DATA_FIELD_COUNT
+
+    parsed = json.loads(Path(THIRD_PARTY_SPDX).read_text(encoding="utf-8"))
+    from_document = validator.validate_sbom(parsed)
+    assert from_document["data_fields"] == from_path["data_fields"]
+    assert from_document["practices"]["met"] == from_path["practices"]["met"]
 
 
 def test_gov_01_adapter_logic_finds_every_element_it_looks_for():
