@@ -1809,3 +1809,45 @@ by another vendor's tool.
   deliberately does not — that would add an SSRF surface this module does not
   currently have), or if edges begin arriving from an advisory feed or registry
   rather than from the resolver's own reading of a lockfile.
+
+### Gap — AGOV CASE timeline, bundler and CLI (agov-case-04)
+- **File:** `tools/agent_case/session_timeline.py`, `tools/agent_case/case_bundler.py`,
+  `tools/agent_case/cli.py`
+- **Risk:** Two distinct inputs. (1) The `session_id`, `--since`/`--until` and
+  `--limit` an operator supplies reach SQL. (2) The row contents these modules
+  export — `hook_events.payload` above all — are agent-authored, so a hostile
+  agent could try to make its own recorded activity misbehave on the way out.
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither module executes anything it reads. The timeline runs
+  parameterized SELECTs and hands rows to `json.dumps`; the bundler adds
+  `hashlib.sha256` over bytes and file writes into the operator-named bundle
+  directory. There is no `exec`/`eval`/`compile`, no `subprocess`, no
+  `importlib`, no `pickle` or `yaml.load`, and no network call. Row content never
+  selects a code path — a payload is copied verbatim and hashed, never parsed for
+  behaviour, and specifically never `json.loads`ed on the export path, because the
+  HMAC is over the raw stored text and re-serializing it would break every
+  signature.
+- **Guardrails:**
+  - Every value from the caller is bound as a parameter, never interpolated:
+    `session_id`, `since` and `until` go through `sql_placeholder(conn)`, and
+    `--limit` is coerced with `int()` before it reaches the `LIMIT` clause. The
+    only interpolated identifiers are table and column names drawn from the
+    module-level `SOURCES` constant, which no input can reach.
+  - Column selection is an explicit allowlist per source, resolved against the
+    live table's actual columns. A later `ALTER TABLE` cannot silently widen a
+    forensic export, and a column that migration 149 has not added yet is dropped
+    from the SELECT rather than failing the whole query.
+  - `build_case_bundle` refuses to write into a directory that already holds a
+    `manifest.json` unless `overwrite=True` (`--force`), so an export cannot
+    half-replace an existing evidence bundle and leave a manifest describing some
+    files and not others.
+  - Bundle members are written with `newline="\n"` and `sort_keys=True` so a
+    bundle written on Windows verifies byte-identically on Linux; the manifest
+    hashes raw bytes and CRLF would break every member digest.
+  - `tests/test_agov_case_cli.py` round-trips a real bundle through the separate
+    verifier and asserts all three layers PASS, tampers a member and asserts it is
+    named, and asserts no CRLF reaches any member file.
+- **Revisit if:** the timeline gains a free-text filter that is interpolated
+  rather than bound, the bundler starts reading an existing bundle it did not
+  write (that is the verifier's posture, covered above), or a member is ever
+  fetched over the network instead of from the database.

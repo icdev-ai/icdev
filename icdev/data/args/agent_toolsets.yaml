@@ -51,6 +51,49 @@ bundles:
       - run_command       # mutating — safety-gated
     mutating: true
 
+  skills:
+    description: >-
+      Progressive disclosure of the .agents/skills library: list every skill's
+      name and description (cheap — bodies are never read, so the cost tracks the
+      skill COUNT, not their length), then load one skill's full instructions on
+      demand. Both read-only. Cheap enough to add to any role: without them the
+      whole propose -> HITL approve -> SKILL.md -> curate lifecycle produces
+      artifacts no model ever sees. A load also records a use, which is what
+      feeds the curator's idle-archive sweep.
+    tools:
+      - list_skills
+      - load_skill
+    mutating: false
+
+  wake:
+    description: >-
+      Self-suspension (agov-wake-02): stop and be resumed after a duration, at a
+      UTC time, when a job completes, or when an event key fires. None of them
+      blocks — each records one `agent_wakes` row and returns, so the session can
+      end instead of holding itself open to poll. Sleeps are bounded by
+      subsystems.wake.max_sleep_seconds; a past time and an over-long sleep are
+      both refused, so a confused agent cannot park a session indefinitely.
+    tools:
+      - sleep_for
+      - sleep_until
+      - wake_on
+      - wake_on_event
+    # mutating: each writes a row, so the schemas declare is_read_only: false and
+    # the dispatch gate sees them. That flag is a factual claim about state; the
+    # separate claim that they cannot ACT is the `reversible` tier in
+    # args/agent_approval_policy.yaml, which is what exempts a `note` naming
+    # `git push` from being escalated into an approval prompt.
+    #
+    # CONSEQUENCE, MEASURED: through THIS bundle the sag-safe-01 gate applies, and
+    # in the default `manual` approval mode it asks about every non-read-only tool
+    # regardless of tier — so a headless run gets `blocked: operator denied` on EOF.
+    # The ungated path is the BUILT-IN starter toolset, where these four are also
+    # folded in and where the default runtime gets them; that is the path an
+    # unattended agent actually suspends through. Routing this bundle's prompt
+    # somewhere a human will see it is the INBOX epic's job (agov-inbox-*), not a
+    # reason to weaken the gate here.
+    mutating: true
+
   worktree_read:
     description: >-
       Read-only inspection of a build worktree: read a file, list a directory,

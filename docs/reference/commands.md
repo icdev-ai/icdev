@@ -4940,3 +4940,30 @@ python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci
 python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
+
+# AGOV CASE — agent-session forensics CLI (agov-case-04)
+# CLI-only by design. There is deliberately NO dashboard page: one would require
+# all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored
+# template + blueprint route + backing module + constants + migration + nav link
+# + full IQE wiring), and that is a separate card.
+python tools/agent_case/cli.py timeline --session <session_id>                  # ordered timeline, human-readable
+python tools/agent_case/cli.py timeline --session <session_id> --json           # machine-readable
+python tools/agent_case/cli.py timeline --session <id> --since <iso> --until <iso> --limit 500
+python tools/agent_case/cli.py build --session <session_id> --out <dir>         # write a portable case bundle
+python tools/agent_case/cli.py build --session <id> --out <dir> --force --json  # replace an existing bundle
+python tools/agent_case/cli.py verify --bundle <dir>                            # all three layers
+python tools/agent_case/cli.py verify --bundle <dir> --layer hmac --json        # one layer (repeatable)
+python tools/agent_case/cli.py verify --bundle <dir> --secret <key>             # key instead of $ICDEV_HOOK_HMAC_SECRET
+
+# The three subcommands are also runnable directly as their own modules:
+python tools/agent_case/session_timeline.py --session <session_id> --json
+python tools/agent_case/case_bundler.py --session <session_id> --out <dir> --json
+python tools/agent_case/bundle_verifier.py --bundle <dir> --json
+
+# Exit codes (identical across all three subcommands so callers can branch
+# uniformly): 0 ok / 1 a verification layer FAILED or the command errored /
+# 2 nothing failed but something could not be verified / 3 bundle unreadable.
+# An empty session exits 0 — "no records for this session" is a finding to
+# report, not an error to raise.
+# tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
+# write_manifest, compute_event_hmac, compute_audit_row_hash.
