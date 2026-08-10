@@ -32,10 +32,11 @@ when explicitly enabled by the caller.
 from __future__ import annotations
 
 import os
+import subprocess  # nosec B404 — git only, fixed argv, shell=False
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from tools.logging.icdev_logger import get_logger
 
@@ -93,11 +94,104 @@ def changed_files(before: Dict[str, float], after: Dict[str, float]) -> list:
     return sorted(out)
 
 
+#: Never pull more often than this. A fetch is cheap but not free, and a daemon
+#: polling every 30s does not need to ask the forge every time.
+MIN_PULL_INTERVAL_SECONDS = 300
+
+_last_pull: float = 0.0
+
+
+def _run_git(args, root, timeout=120):
+    return subprocess.run(  # nosec B603 — fixed argv, shell=False
+        ["git", *args], cwd=str(root), capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=timeout, shell=False,
+    )
+
+
+def pull_if_safe(root: Optional[Path] = None, *, runner=None,
+                 min_interval: float = MIN_PULL_INTERVAL_SECONDS) -> Dict[str, Any]:
+    """Fast-forward the working copy, but ONLY when nothing local can be lost.
+
+    THE GAP THIS CLOSES. restart_if_code_changed watches mtimes on disk, and a
+    merge on the forge does not touch disk. So a fix could merge, the daemon
+    could be perfectly capable of reloading it, and nothing would ever tell it:
+    #1500 merged at 01:20 and the working copy still had the old file twelve
+    minutes later. The reload loop needs something to fetch.
+
+    THE GUARD IS THE POINT, not the pull. This checkout carries local
+    modifications — args/projects.yaml, a batch of skills files — and a blind
+    `git pull` in a daemon would either fail on every cycle or, worse, clobber
+    them. So: fetch (never merges), compute what would arrive, intersect that
+    with what is locally modified, and REFUSE if the sets touch. That is the same
+    check that was done by hand three times today before each safe pull.
+
+    Refuses on: any overlap, a dirty index (a merge or rebase in flight), a
+    detached HEAD or any branch other than the default, and a non-fast-forward.
+    Every refusal returns a reason instead of raising, because this runs inside
+    someone else's poll loop.
+    """
+    global _last_pull
+    root = root or _repo_root()
+    now = time.time()
+    if now - _last_pull < min_interval:
+        return {"pulled": False, "reason": "throttled"}
+    _last_pull = now
+
+    run = runner or (lambda args, **kw: _run_git(args, root, **kw))
+    try:
+        branch = run(["rev-parse", "--abbrev-ref", "HEAD"])
+        name = (getattr(branch, "stdout", "") or "").strip()
+        if name != "main":
+            # A daemon must never move a checkout someone is working on.
+            return {"pulled": False, "reason": f"not on main (on {name or 'detached'})"}
+
+        if getattr(run(["fetch", "--quiet", "origin", "main"]), "returncode", 1) != 0:
+            return {"pulled": False, "reason": "fetch failed"}
+
+        incoming = run(["diff", "--name-only", "HEAD..origin/main"])
+        if getattr(incoming, "returncode", 1) != 0:
+            return {"pulled": False, "reason": "cannot list incoming files"}
+        arriving = {f.strip() for f in (incoming.stdout or "").splitlines() if f.strip()}
+        if not arriving:
+            return {"pulled": False, "reason": "already current"}
+
+        dirty = run(["status", "--porcelain"])
+        if getattr(dirty, "returncode", 1) != 0:
+            return {"pulled": False, "reason": "cannot read working tree state"}
+        local = set()
+        for line in (dirty.stdout or "").splitlines():
+            if not line.strip():
+                continue
+            if line[:2].strip() in {"UU", "AA", "DU", "UD", "AU", "UA"}:
+                return {"pulled": False, "reason": "merge in progress"}
+            path = line[3:].strip().strip('"')
+            if " -> " in path:            # a rename reports "old -> new"
+                path = path.split(" -> ", 1)[1]
+            local.add(path)
+
+        clash = sorted(arriving & local)
+        if clash:
+            logger.warning(
+                "code_reload: refusing to pull — %d incoming file(s) are locally "
+                "modified: %s", len(clash), ", ".join(clash[:3]))
+            return {"pulled": False, "reason": "local changes would be lost",
+                    "conflicts": clash}
+
+        ff = run(["merge", "--ff-only", "origin/main"])
+        if getattr(ff, "returncode", 1) != 0:
+            return {"pulled": False, "reason": "not a fast-forward"}
+        logger.info("code_reload: pulled %d file(s) from origin/main", len(arriving))
+        return {"pulled": True, "files": len(arriving)}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"pulled": False, "reason": f"git unavailable: {exc}"}
+
+
 def restart_if_code_changed(
     baseline: Dict[str, float],
     *,
     started_at: float,
     enabled: bool = True,
+    pull: bool = True,
     min_uptime: float = MIN_UPTIME_SECONDS,
     root: Optional[Path] = None,
     execv=None,
@@ -109,6 +203,11 @@ def restart_if_code_changed(
     """
     if not enabled:
         return []
+    if pull:
+        # Fetch before looking at mtimes: a merge on the forge does not touch
+        # disk, so without this the watcher can only ever see changes somebody
+        # else pulled.
+        pull_if_safe(root)
     current = snapshot(root)
     changed = changed_files(baseline, current)
     if not changed:

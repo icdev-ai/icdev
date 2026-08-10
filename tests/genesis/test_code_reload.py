@@ -111,3 +111,105 @@ def test_both_daemons_check_after_the_work_not_during():
         if marker == "time.sleep(args.interval)":
             # the check must come BEFORE the sleep that ends the cycle
             assert call < text.rindex(marker), rel
+
+
+# ── pulling: the guard is the point, not the pull ───────────────────────────
+class _Git:
+    """Scripted git. Keyed on the first argument of each call."""
+
+    def __init__(self, **replies):
+        self.replies = replies
+        self.calls = []
+
+    def __call__(self, args, **kw):
+        self.calls.append(list(args))
+        rc, out = self.replies.get(args[0], (0, ""))
+        return type("P", (), {"returncode": rc, "stdout": out, "stderr": ""})()
+
+    @property
+    def merged(self):
+        return any(a[:2] == ["merge", "--ff-only"] for a in self.calls)
+
+
+def _reset_throttle():
+    cr._last_pull = 0.0
+
+
+def test_it_pulls_when_nothing_local_is_at_risk():
+    _reset_throttle()
+    g = _Git(**{"rev-parse": (0, "main\n"), "fetch": (0, ""),
+                "diff": (0, "tools/ci/pr_watcher.py\n"), "status": (0, "")})
+    out = cr.pull_if_safe(runner=g)
+    assert out["pulled"] is True and g.merged
+
+
+def test_it_REFUSES_when_an_incoming_file_is_locally_modified():
+    """The whole reason this is guarded: a blind pull in a daemon either fails
+    every cycle or clobbers work nobody asked it to touch."""
+    _reset_throttle()
+    g = _Git(**{"rev-parse": (0, "main\n"), "fetch": (0, ""),
+                "diff": (0, "args/projects.yaml\n"),
+                "status": (0, " M args/projects.yaml\n")})
+    out = cr.pull_if_safe(runner=g)
+    assert out["pulled"] is False
+    assert out["conflicts"] == ["args/projects.yaml"]
+    assert not g.merged
+
+
+def test_unrelated_local_edits_do_not_block_it():
+    """Refusing on ANY dirt would mean never pulling on a working checkout."""
+    _reset_throttle()
+    g = _Git(**{"rev-parse": (0, "main\n"), "fetch": (0, ""),
+                "diff": (0, "tools/ci/pr_watcher.py\n"),
+                "status": (0, " M docs/notes.md\n")})
+    assert cr.pull_if_safe(runner=g)["pulled"] is True
+
+
+def test_it_never_moves_a_checkout_that_is_not_on_main():
+    """Someone may be working there; a daemon must not move it under them."""
+    for head in ("feat/something\n", "HEAD\n", ""):
+        _reset_throttle()          # the throttle is module-global; reset per case
+        g = _Git(**{"rev-parse": (0, head)})
+        out = cr.pull_if_safe(runner=g)
+        assert out["pulled"] is False and "not on main" in out["reason"]
+        assert not g.merged
+
+
+def test_a_merge_in_progress_stops_it():
+    _reset_throttle()
+    g = _Git(**{"rev-parse": (0, "main\n"), "fetch": (0, ""),
+                "diff": (0, "a.py\n"), "status": (0, "UU a.py\n")})
+    out = cr.pull_if_safe(runner=g)
+    assert out["pulled"] is False and out["reason"] == "merge in progress"
+
+
+def test_a_non_fast_forward_is_never_forced():
+    _reset_throttle()
+    g = _Git(**{"rev-parse": (0, "main\n"), "fetch": (0, ""),
+                "diff": (0, "a.py\n"), "status": (0, ""), "merge": (1, "")})
+    assert cr.pull_if_safe(runner=g)["pulled"] is False
+
+
+def test_a_rename_is_read_from_its_NEW_path():
+    """`R  old -> new` would otherwise register the wrong file as modified."""
+    _reset_throttle()
+    g = _Git(**{"rev-parse": (0, "main\n"), "fetch": (0, ""),
+                "diff": (0, "new.py\n"), "status": (0, "R  old.py -> new.py\n")})
+    assert cr.pull_if_safe(runner=g)["pulled"] is False
+
+
+def test_it_is_throttled():
+    """A 30s poll does not need to ask the forge every cycle."""
+    _reset_throttle()
+    g = _Git(**{"rev-parse": (0, "main\n"), "fetch": (0, ""),
+                "diff": (0, "a.py\n"), "status": (0, "")})
+    assert cr.pull_if_safe(runner=g)["pulled"] is True
+    assert cr.pull_if_safe(runner=g)["reason"] == "throttled"
+
+
+def test_git_unavailable_is_a_reason_not_an_exception():
+    """This runs inside someone else's poll loop."""
+    _reset_throttle()
+    def boom(args, **kw):
+        raise OSError("no git")
+    assert cr.pull_if_safe(runner=boom)["pulled"] is False
