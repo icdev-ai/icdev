@@ -8561,6 +8561,60 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # -- agent_case (AGOV CASE — agent-session forensics) ---------------------
+    "case_timeline": {
+        "category": "agent_case",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_case_timeline",
+        "description": "Reconstruct one agent session as an ordered timeline over the tables ICDEV already writes (hook_events, audit_trail, agent_findings). Also names the tables that CANNOT be joined by session: agent_executions, ai_telemetry and ace_audit_log have no session_id column.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Session to reconstruct"},
+                "since": {"type": "string", "description": "Inclusive ISO-8601 lower bound"},
+                "until": {"type": "string", "description": "Inclusive ISO-8601 upper bound"},
+                "limit": {"type": "integer", "description": "Max rows per source"},
+            },
+            "required": ["session_id"],
+        },
+    },
+    "case_build": {
+        "category": "agent_case",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_case_build",
+        "description": "Export an agent session as a portable case bundle: per-table record files plus a manifest.json carrying the SHA-256 of every member, verifiable on a machine that never had the source database.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Session to export"},
+                "out_dir": {"type": "string", "description": "Bundle directory to write"},
+                "since": {"type": "string", "description": "Inclusive ISO-8601 lower bound"},
+                "until": {"type": "string", "description": "Inclusive ISO-8601 upper bound"},
+                "limit": {"type": "integer", "description": "Max rows per source"},
+                "force": {"type": "boolean", "default": False, "description": "Replace an existing bundle in out_dir"},
+            },
+            "required": ["session_id", "out_dir"],
+        },
+    },
+    "case_verify": {
+        "category": "agent_case",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_case_verify",
+        "description": "Verify a case bundle across three independent layers (manifest SHA-256, hook_events HMAC, migration-149 audit hash chain) and name WHICH records failed WHICH layer. A layer that could not be checked reports NOT_VERIFIED, never passed and never failed.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "bundle_dir": {"type": "string", "description": "Path to the bundle directory"},
+                "layers": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["manifest", "hmac", "chain"]},
+                    "description": "Subset of layers to verify. Default: all three.",
+                },
+                "secret": {"type": "string", "description": "HMAC key; defaults to $ICDEV_HOOK_HMAC_SECRET"},
+            },
+            "required": ["bundle_dir"],
+        },
+    },
 }
 
 
@@ -9204,6 +9258,12 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "pvm_map_attack_surface":                   False,
     "pvm_score_triage":                         False,
     "pvm_create_patch_plan":                    False,
+    # -- agent_case --------------------------------------------------------
+    # case_build writes a bundle directory OUTSIDE the OS temp dir (the caller
+    # names the path), so it is not read-only even though it only SELECTs.
+    "case_timeline":                            True,
+    "case_build":                               False,
+    "case_verify":                              True,
 })
 
 

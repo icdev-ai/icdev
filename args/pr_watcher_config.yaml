@@ -113,3 +113,18 @@ max_ci_retriggers_per_pr: 1
 # error_classifier counts as much as one to pr_watcher itself. Checked only
 # between polls, and never within MIN_UPTIME_SECONDS of starting.
 restart_on_code_change: true
+# Auto-merge PRs that no kanban task points at — the CLI/human half.
+#
+# Every other repair path starts from list_pr_tasks, which selects kanban_tasks,
+# so a PR with no task row is invisible to all of it. On 2026-08-09 a dozen PRs
+# opened from CLI sessions were each merged BY HAND for that reason while
+# kanban's own PRs merged themselves. Auto-merge should not depend on which door
+# the work came through.
+#
+# Narrow by design: it only MERGES an already-green, already-mergeable,
+# non-draft PR onto the default branch. It never pushes, un-drafts, rebases or
+# closes — those need a task to carry the state.
+#
+# Escape hatch: any of hold / do-not-merge / wip / no-automerge / blocked as a
+# LABEL, or leave the PR as a draft. Requested changes are never merged over.
+merge_unlinked_prs: true
