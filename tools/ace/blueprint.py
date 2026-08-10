@@ -793,24 +793,14 @@ def api_hitl_resolve(instance_id: str):
         return jsonify({"error": "coworker_id and detail are required"}), 400
     try:
         from icdev.tools.ace.coworker_thread import HITLGate
-        from icdev.tools.db.storage import get_canvas_connection
-        from datetime import datetime, timezone as _tz
 
+        # Both branches go through HITLGate so the append-only ace_audit_log
+        # INSERT and the unified-inbox mirror stay in ONE place (agov-inbox-05).
+        # The rows written are byte-for-byte what this route wrote before.
         if approved:
             HITLGate.resolve(coworker_id, detail, instance_id)
         else:
-            now = datetime.now(_tz.utc).isoformat(timespec="seconds")
-            conn = get_canvas_connection("ICDEV_ACE_DB_URL")
-            try:
-                conn.execute(
-                    "INSERT INTO ace_audit_log "
-                    "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (%s, %s, 'hitl_rejected', %s, 'hitl_gate', %s)",
-                    (instance_id, coworker_id, detail, now),
-                )
-                conn.commit()
-            finally:
-                conn.close()
+            HITLGate.reject(coworker_id, detail, instance_id)
         return jsonify({
             "instance_id": instance_id,
             "coworker_id": coworker_id,

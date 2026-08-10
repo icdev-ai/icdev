@@ -217,6 +217,7 @@ python tools/compliance/sbom_identifiers.py --validate "/path/to/sbom.cdx.json" 
 python tools/compliance/sbom_identifiers.py --component "pkg:pypi/flask@3.0.0" --json             # every identifier derivable for one component, CPE included
 python tools/compliance/component_names.py --validate "/path/to/sbom.cdx.json" --json            # Component Name conformance; exit 1 on an alternate that repeats the primary or carries an unknown kind
 python tools/compliance/component_names.py --name core --group "@babel" --purl "pkg:npm/%40babel%2Fcore@7.23.9" --json   # every name one component is known by
+python tools/compliance/dependency_graph.py --validate "/path/to/sbom.cdx.json" --json           # Component Dependency Relationship; exit 1 on a flat list, a dangling dependsOn, an unrooted graph or a declared cycle count that disagrees
 
 # SBOM Distribution and Delivery (2026 Minimum Elements) — version-specific retrieval.
 # Served over HTTP at $ICDEV_BASE_URL/api/supply_chain/sbom/<project_id>/<version>,
@@ -594,6 +595,43 @@ arguments can carry CUI. `dry_run` and `off` still write the audit row.
 
 ---
 
+## Agent Wake Store — Agent-Scheduled Resumption (agov-wake-01)
+
+Lets an agent suspend itself and be resumed when a condition it named is met.
+Every other scheduler in ICDEV is external to the agent — Genesis reflexes,
+`agent_cron_jobs` (operator-declared and recurring), the kanban scheduler — and
+none of them can say "stop here, resume me when PR #1342 goes CI-green".
+
+**Library, no CLI.** Table `agent_wakes`, migration `20260809221051`.
+
+```python
+from tools.agent_runtime.wake import (
+    add_timer, add_timer_in, add_completion, add_event,   # suspend
+    due, complete_job, fire_event,                        # signal + collect
+    mark_fired, cancel, pending, get,                     # resolve + inspect
+)
+
+add_timer_in("sess-1", 900, note="retry the flaky check")     # sleep_for
+add_timer("sess-1", "2026-08-10T09:00:00+00:00")              # sleep_until
+add_completion("sess-1", "job-42")                            # wake_on(job)
+add_event("sess-1", "pr:1342:ci_green")                       # wake_on_event(key)
+
+fire_event("pr:1342:ci_green")        # -> ids promoted pending -> due
+for wake in due():                    # promotes elapsed timers, then returns due
+    if mark_fired(wake.wake_id):      # True only for the caller that won
+        resume(wake.session_id)
+```
+
+The state machine is one-directional — `pending -> due -> fired`, or
+`-> cancelled` from either live state. Every transition is a conditional
+`UPDATE` on the current state, so `mark_fired` is idempotent **and**
+exactly-once: two overlapping ticks cannot both resume one suspension. A
+`pending` wake cannot be fired directly, because promotion is what evaluates the
+condition. Writes raise `WakeStoreUnavailable` rather than drop a wake silently;
+reads degrade to empty so a failure cannot wedge the reflex tick.
+
+Agent tools (`sleep_for` / `sleep_until` / `wake_on` / `wake_on_event`) land in
+agov-wake-02; the tick and the event emitters in agov-wake-03.
 ## Approval Inbox — Pending-Approval Store (agov-inbox-01)
 
 `console_approver` denies on EOF, so a headless overnight run refuses every
@@ -4933,3 +4971,75 @@ python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci
 python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
+
+# AGOV CASE — agent-session forensics CLI (agov-case-04)
+# CLI-only by design. There is deliberately NO dashboard page: one would require
+# all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored
+# template + blueprint route + backing module + constants + migration + nav link
+# + full IQE wiring), and that is a separate card.
+python tools/agent_case/cli.py timeline --session <session_id>                  # ordered timeline, human-readable
+python tools/agent_case/cli.py timeline --session <session_id> --json           # machine-readable
+python tools/agent_case/cli.py timeline --session <id> --since <iso> --until <iso> --limit 500
+python tools/agent_case/cli.py build --session <session_id> --out <dir>         # write a portable case bundle
+python tools/agent_case/cli.py build --session <id> --out <dir> --force --json  # replace an existing bundle
+python tools/agent_case/cli.py verify --bundle <dir>                            # all three layers
+python tools/agent_case/cli.py verify --bundle <dir> --layer hmac --json        # one layer (repeatable)
+python tools/agent_case/cli.py verify --bundle <dir> --secret <key>             # key instead of $ICDEV_HOOK_HMAC_SECRET
+
+# The three subcommands are also runnable directly as their own modules:
+python tools/agent_case/session_timeline.py --session <session_id> --json
+python tools/agent_case/case_bundler.py --session <session_id> --out <dir> --json
+python tools/agent_case/bundle_verifier.py --bundle <dir> --json
+
+# Exit codes (identical across all three subcommands so callers can branch
+# uniformly): 0 ok / 1 a verification layer FAILED or the command errored /
+# 2 nothing failed but something could not be verified / 3 bundle unreadable.
+# An empty session exits 0 — "no records for this session" is a finding to
+# report, not an error to raise.
+# tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
+# write_manifest, compute_event_hmac, compute_audit_row_hash.
+---
+
+## Unified Approval Inbox — ACE + workflow_hitl adapters (agov-inbox-05)
+
+ICDEV has four approval gates asking a human the same question through four
+unrelated stores. These adapters give three of them one queue **without
+rewriting any of them**.
+
+```bash
+python tools/agent_runtime/inbox_adapters.py --list --json
+python tools/agent_runtime/inbox_adapters.py --list --origin ace
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --approve \
+    --actor ops-oncall --reason "reviewed" --json
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --deny \
+    --reason "not authorised" --json
+```
+
+**Use this `--resolve`, not `approval_inbox.py --resolve`, for a mirrored item.**
+The store settles the row; only the adapter knows how to release what was
+waiting on it — INSERTing the ACE `hitl_resolved` row that wakes a parked
+`CoWorkerThread`, or calling `submit_feedback` to advance a workflow stage.
+
+Each gate keeps its own store as the source of truth for its own waiter, and
+`approval_items` is a **mirror** of those:
+
+| Origin | Pending state | Released by |
+|--------|---------------|-------------|
+| `ace` | `ace_audit_log` row, `action='hitl_pending'` | INSERTing a matching `hitl_resolved` row |
+| `workflow_hitl` | `wf_approvals` row, `status='pending'` | `feedback.submit_feedback` |
+
+**Mirroring is best-effort; resolution is bidirectional.** An unmigrated or
+unreachable inbox leaves the originating gate holding exactly as it does today —
+failing the ACE gate closed on a mirror error would make an optional delivery
+channel load-bearing, and failing it open would turn a missing table into an
+approval. Answering in the ACE UI (`POST /api/ace/<id>/hitl`) settles the
+mirrored item; answering in the inbox releases the ACE thread.
+
+`ace_audit_log` stays **append-only**: a resolution INSERTs a new row, and
+nothing in this path UPDATEs an ACE row. The mutable state lives only in
+`approval_items` (migration `20260809203855`).
+
+**`tools/integration/approval_manager.py` is deliberately out of scope.**
+Document-, COA- and boundary-level approval with multi-reviewer lists has a
+different lifetime and audience from a mid-run tool-call gate, and its reviewer
+semantics do not survive being flattened into one item with one `resolved_by`.

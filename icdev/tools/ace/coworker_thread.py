@@ -211,13 +211,21 @@ class HITLGate:
             return []
 
     @staticmethod
-    def resolve(coworker_id: str, detail: str, instance_id: str = "") -> None:
-        """Mark a HITL request as resolved.
+    def _append(
+        action: str, coworker_id: str, detail: str, instance_id: str, *, strict: bool = False
+    ) -> None:
+        """Append one ``hitl_*`` row to ace_audit_log.
 
-        Args:
-            coworker_id: The coworker whose HITL request to resolve.
-            detail:      Must match the detail string used when creating the request.
-            instance_id: ACE instance ID for audit row.
+        Resolution is an INSERT, never an UPDATE: ``ace_audit_log`` is
+        append-only evidence, and a resolution is a NEW fact about the pause
+        rather than an edit to the row that recorded it.
+
+        ``strict`` preserves an asymmetry that predates this refactor and is not
+        accidental. An approval that fails to persist is still recoverable — the
+        waiter re-checks the DB on its fallback poll and the operator can click
+        Approve again — so :meth:`resolve` logs and continues. A rejection has no
+        such second chance, and reporting success for a refusal nobody recorded
+        is the worse failure, so :meth:`reject` re-raises.
         """
         try:
             from icdev.tools.db.storage import get_canvas_connection
@@ -228,18 +236,74 @@ class HITLGate:
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (%s, %s, 'hitl_resolved', %s, 'hitl_gate', %s)",
-                    (instance_id, coworker_id, detail, now),
+                    "VALUES (%s, %s, %s, %s, 'hitl_gate', %s)",
+                    (instance_id, coworker_id, action, detail, now),
                 )
                 conn.commit()
             finally:
                 conn.close()
-        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
-            logger.warning("resolve: best-effort INSERT into ace_audit_log failed (non-blocking): %s", exc)
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged
+            logger.warning("%s: INSERT into ace_audit_log failed: %s", action, exc)
+            if strict:
+                raise
+
+    @staticmethod
+    def resolve(coworker_id: str, detail: str, instance_id: str = "") -> None:
+        """Mark a HITL request as resolved.
+
+        Args:
+            coworker_id: The coworker whose HITL request to resolve.
+            detail:      Must match the detail string used when creating the request.
+            instance_id: ACE instance ID for audit row.
+        """
+        HITLGate._append("hitl_resolved", coworker_id, detail, instance_id)
         # Wake the waiting co-worker thread immediately (event-driven, no 2 s
         # poll delay).  Best-effort and idempotent — set even if the insert
         # above failed so a same-process waiter re-checks the DB promptly.
         _signal_hitl_event(coworker_id)
+        _settle_inbox_mirror(coworker_id, detail, approved=True)
+
+    @staticmethod
+    def reject(coworker_id: str, detail: str, instance_id: str = "") -> None:
+        """Record that a human REFUSED this HITL request.
+
+        Same append-only shape as :meth:`resolve` with a ``hitl_rejected`` row,
+        which ``get_pending`` deliberately does not treat as clearing the gate —
+        a refusal is not permission to continue.
+        """
+        HITLGate._append("hitl_rejected", coworker_id, detail, instance_id, strict=True)
+        _settle_inbox_mirror(coworker_id, detail, approved=False)
+
+
+def _mirror_hitl_to_inbox(coworker_id: str, detail: str, instance_id: str, role_id: str) -> None:
+    """Mirror a new ``hitl_pending`` into the unified approval inbox (agov-inbox-05).
+
+    Best-effort in BOTH directions and deliberately so: ``ace_audit_log`` remains
+    the store this gate's waiter polls, so a mirror that cannot be written costs
+    an operator one place to answer from and never releases — or holds — anything
+    that ACE would not have on its own.
+    """
+    try:
+        from tools.agent_runtime.inbox_adapters import mirror_ace_pending
+
+        mirror_ace_pending(
+            coworker_id=coworker_id,
+            detail=detail,
+            instance_id=instance_id,
+            role_id=role_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("ace: approval-inbox mirror skipped for %s: %s", coworker_id, exc)
+
+
+def _settle_inbox_mirror(coworker_id: str, detail: str, *, approved: bool) -> None:
+    """Close the mirrored inbox item once ACE has decided on its own side."""
+    try:
+        from tools.agent_runtime.inbox_adapters import settle_ace
+
+        settle_ace(coworker_id, detail, approved=approved)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("ace: approval-inbox settle skipped for %s: %s", coworker_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1222,6 +1286,15 @@ class CoWorkerThread(threading.Thread):
             (self.instance_id, self.spec.coworker_id, action, detail, "coworker_thread", now),
             "audit",
         )
+        if action == "hitl_pending":
+            # The single seam for the unified inbox (agov-inbox-05): every gate
+            # that pauses a co-worker — confidence, required-step, compliance —
+            # writes this row with the exact `detail` its release must match, so
+            # mirroring here covers all of them and cannot drift from the string
+            # HITLGate.get_pending compares against.
+            _mirror_hitl_to_inbox(
+                self.spec.coworker_id, detail, self.instance_id, self.spec.role_id
+            )
 
     # ------------------------------------------------------------------
     # HITL visibility — SSE + canvas notification

@@ -3766,6 +3766,25 @@ CREATE TABLE IF NOT EXISTS sag_user_profiles (
     updated_at       TEXT,
     PRIMARY KEY (user_id, tenant_id)
 );
+-- agov-wake-01 / migration 20260809221051. Agent-scheduled resumption: one row
+-- per self-suspension. MUTABLE and deliberately NOT append-only -- the whole
+-- point of the table is the pending -> due -> fired transitions, and making
+-- those hook violations would break the only thing it does. Distinct from
+-- agent_cron_jobs (migration 289), which is operator-declared and recurring.
+CREATE TABLE IF NOT EXISTS agent_wakes (
+    wake_id        TEXT PRIMARY KEY,
+    session_id     TEXT NOT NULL,
+    kind           TEXT NOT NULL,
+    state          TEXT NOT NULL,
+    fire_at        TEXT,
+    job_id         TEXT,
+    event_key      TEXT,
+    note           TEXT,
+    tenant_id      TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    created_at     TEXT,
+    updated_at     TEXT
+);
 
 CREATE TABLE IF NOT EXISTS remote_agent_sessions (
     id               TEXT PRIMARY KEY,

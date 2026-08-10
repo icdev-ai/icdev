@@ -545,10 +545,49 @@ def _is_additive_path(path: str) -> bool:
 #: SEE that — so it re-attempted the same refused merge every cycle, forever.
 #: Five of ten open PRs on 2026-08-09 were green drafts sitting untouched for
 #: exactly that reason, each waiting on a human to click "Ready for review".
+#: Any of these on a PR stops the unlinked sweep. A human may open a PR to
+#: discuss rather than to land, and the cost of guessing wrong is a merge nobody
+#: asked for — so the escape hatch is cheap, obvious, and checked first.
+_NO_AUTOMERGE_LABELS = frozenset({"hold", "do-not-merge", "do not merge", "wip",
+                                  "no-automerge", "blocked"})
+
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,isDraft,"
     "headRefName,baseRefName,updatedAt,createdAt,number,url"
 )
+
+
+def _pr_number(url: str) -> int:
+    """The PR number, or a very large number when it cannot be read.
+
+    Unreadable sorts LAST so it never wins the tie-break by accident.
+    """
+    m = re.search(r"/pull/(\d+)", url or "")
+    return int(m.group(1)) if m else 1 << 30
+
+
+def _wins_sibling_tiebreak(pr_url: str, siblings) -> bool:
+    """True when THIS PR is the one that should merge first among its siblings.
+
+    THE DEADLOCK THIS BREAKS. hold_on_sibling_conflict exists to SERIALISE merges
+    that touch the same source file — merge one, let the rest rebase. It held
+    every one of them instead. If A shares a file with B, then B also shares one
+    with A, so both are held and nothing breaks the tie: with 14 AGOV PRs over
+    the same new modules on 2026-08-09, every PR was a sibling of several others
+    and the entire board sat at "awaiting merge" with zero active tasks.
+    Serialising requires choosing who goes first; refusing to choose is not
+    serialisation, it is a stall.
+
+    Lowest PR number wins, which is deterministic and stable: every watcher
+    iteration and every process reaches the same verdict without coordination, so
+    two watchers cannot both decide they are first. It also means the OLDEST PR
+    goes first, which is the fair reading of a queue.
+
+    The guard itself is unchanged for everyone else — the losers still wait, and
+    still rebase afterwards.
+    """
+    mine = _pr_number(pr_url)
+    return all(mine < _pr_number(other) for other in (siblings or {}))
 
 
 def repo_default_branch(*, runner=None, gh_bin: str = "gh") -> str:
@@ -966,6 +1005,57 @@ class PRWatcher:
                 "reason": "closed and reopened to re-fire pull_request workflows",
                 "close_rc": getattr(close, "returncode", None)}
 
+    def _conflict_is_real(self, state: dict, runner=None) -> bool:
+        """Confirm a CONFLICTING verdict against git before acting on it.
+
+        GitHub computes `mergeable` ASYNCHRONOUSLY and caches it. When the base
+        moves quickly the cached answer goes stale and stays stale, because
+        nothing about the PR changed to invalidate it. On 2026-08-09 THIRTEEN
+        PRs were reported CONFLICTING while `git merge-tree` merged every one of
+        them cleanly — same base sha, same head sha, exit 0, a single tree hash
+        and no conflict output.
+
+        The cost of believing it was not cosmetic. Each of those PRs burned two
+        rebase attempts and five resume cycles fighting a conflict that did not
+        exist, then raised a HITL alert. A rebase cannot clear the flag either: a
+        branch that is already current has nothing to rebase, so it succeeds,
+        changes nothing, and the stale verdict survives.
+
+        `git merge-tree --write-tree` performs the real merge in memory and exits
+        non-zero on a genuine conflict, so it is the authority here and the forge
+        is the cache.
+
+        Errs toward TRUSTING THE FORGE: any failure to verify returns True, so an
+        unreachable git or an unfetchable ref leaves today's behaviour unchanged
+        rather than declaring a real conflict resolved.
+        """
+        head = (state.get("headRefName") or "").strip()
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+        if not head:
+            return True
+        root = str(pathlib.Path(__file__).resolve().parents[2])
+        run = runner or subprocess.run
+        try:
+            fetch = run(  # nosec B603 — fixed argv, shell=False
+                ["git", "fetch", "--quiet", "origin", base, head],
+                cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, shell=False,
+            )
+            if getattr(fetch, "returncode", 1) != 0:
+                return True
+            merged = run(  # nosec B603
+                ["git", "merge-tree", "--write-tree",
+                 f"origin/{base}", f"origin/{head}"],
+                cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, shell=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("pr_watcher: conflict verification failed: %s", exc)
+            return True
+        if getattr(merged, "returncode", 1) == 0:
+            return False
+        return True
+
     def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
         """Take a green PR out of draft so the merge below can actually run.
 
@@ -1032,7 +1122,15 @@ class PRWatcher:
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=60,
             )
-            return proc.returncode == 0
+            if getattr(proc, "returncode", 1) != 0:
+                # A refused merge used to be indistinguishable from an empty
+                # board: False, no log line. That is how 11 PRs sat unmerged for
+                # a day while the watcher decided "merge" on every pass.
+                logger.warning(
+                    "pr_watcher: gh refused to merge %s: %s",
+                    pr_url, (getattr(proc, "stderr", "") or "").strip()[:200])
+                return False
+            return True
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
@@ -1361,6 +1459,15 @@ class PRWatcher:
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
+            if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
+                # The forge's cached verdict disagrees with git. git wins.
+                logger.warning(
+                    "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
+                    "treating the forge verdict as stale", pr_url)
+                state = {**state, "mergeable": "MERGEABLE"}
+                classification = ec.classify_pr_state(
+                    state, ci_logs=ci_logs, require_approval=require_approval)
+
             cycle = self._resume_cycle(task["id"])
 
             if classification == KanbanState.DONE:
@@ -1441,6 +1548,24 @@ class PRWatcher:
                         report.actions.append(action)
                         self._audit(action)
                         continue
+                    # UN-DRAFT FIRST, before any hold can `continue` past this.
+                    #
+                    # Auto-merge must work regardless of who opened the PR — a
+                    # kanban session, a CLI session, or a person. It did not: the
+                    # sibling-conflict hold below returns early, so a green PR
+                    # held behind a sibling was never taken out of draft, and
+                    # when the sibling finally merged the PR sat there STILL a
+                    # draft with nothing left to trigger it. Three AGOV PRs were
+                    # in exactly that state — CLEAN, green, and invisible to
+                    # auto-merge.
+                    #
+                    # Safe to do early because un-drafting merges nothing. It
+                    # only removes the one blocker GitHub will not let the
+                    # watcher clear later, and _mark_ready still refuses for a
+                    # manual gate or an unsatisfied dependency.
+                    if state.get("isDraft"):
+                        self._mark_ready(pr_url, task["id"], self._connection())
+
                     # Sibling-file-conflict guard (kph): another open PR edits the
                     # same source file(s) — merging both races on one path (the
                     # "two different blueprint.py" collision that stranded Cortex).
@@ -1478,7 +1603,8 @@ class PRWatcher:
                         except Exception as _ll_exc:  # noqa: BLE001
                             logger.debug(
                                 "pr_watcher: sibling lesson hook failed: %s", _ll_exc)
-                        if self.config.get("hold_on_sibling_conflict", False):
+                        if (self.config.get("hold_on_sibling_conflict", False)
+                                and not _wins_sibling_tiebreak(pr_url, sib)):
                             action = WatcherAction(
                                 task_id=task["id"], pr_url=pr_url,
                                 classification="done", action="wait",
@@ -1598,10 +1724,112 @@ class PRWatcher:
         self._record_heartbeat(report)
         return report
 
+    def _sweep_unlinked_prs(self, report: "WatcherReport") -> None:
+        """Auto-merge green PRs that no kanban task points at.
+
+        THE GAP THIS CLOSES. Every repair path here starts from list_pr_tasks,
+        which selects kanban_tasks — so a PR with no task row is invisible to the
+        entire pipeline: no auto-ready, no auto-merge, no rebase, no escalation.
+        On 2026-08-09 roughly a dozen PRs opened from CLI sessions (fix/*, feat/*)
+        were each merged BY HAND for exactly that reason, while kanban's own PRs
+        merged themselves. Auto-merge should not depend on which door the work
+        came through.
+
+        DELIBERATELY THE NARROW SUBSET. A task-linked PR gets resumes, rebases and
+        status transitions because there is a task to carry that state. Here there
+        is none, so this does one thing: merge a PR that is already finished and
+        already passing. It never pushes, never closes, never edits a branch.
+
+        THE OPT-OUT IS A LABEL, because a human may open a PR to discuss rather
+        than to land. Any of hold/do-not-merge/wip/no-automerge stops it, and a
+        draft stops it too — an unlinked PR is NOT un-drafted, since for a human
+        the draft IS the "not ready" signal (a kanban task has a gate and a
+        dependency to say that instead).
+        """
+        if not self.config.get("merge_unlinked_prs", True):
+            return
+        if self.dry_run:
+            return
+        try:
+            proc = self._pr_list_runner(
+                ["gh", "pr", "list", "--state", "open", "--limit", "100", "--json",
+                 "number,url,headRefName,baseRefName,isDraft,mergeable,labels,"
+                 "statusCheckRollup,reviews,state"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+            if getattr(proc, "returncode", 1) != 0:
+                return
+            prs = json.loads(proc.stdout or "[]")
+        except Exception as exc:  # noqa: BLE001 — a sweep must never stop the poll
+            logger.debug("pr_watcher: unlinked sweep listing failed: %s", exc)
+            return
+
+        try:
+            linked = {
+                (t.get("pr_url") or "").strip()
+                for t in list_pr_tasks(self._connection())
+            }
+        except Exception as exc:  # noqa: BLE001
+            # Without the linked set every task-linked PR would be treated as
+            # unlinked and merged without its task ever being updated. Refuse.
+            logger.warning("pr_watcher: cannot list linked PRs, skipping sweep: %s", exc)
+            return
+
+        default_branch = self._default_branch()
+        for pr in prs:
+            url = (pr.get("url") or "").strip()
+            if not url or url in linked:
+                continue
+            if pr.get("isDraft"):
+                continue
+            labels = {
+                (lbl.get("name") or "").strip().lower()
+                for lbl in (pr.get("labels") or [])
+            }
+            if labels & _NO_AUTOMERGE_LABELS:
+                logger.info("pr_watcher: %s carries a hold label — leaving it", url)
+                continue
+            if (pr.get("baseRefName") or "") != default_branch:
+                continue
+            if (pr.get("mergeable") or "").upper() != "MERGEABLE":
+                continue
+            state = dict(pr)
+            if not ec.is_passing(state):
+                continue
+            if ec.is_changes_requested(state):
+                # A reviewer asked for changes. Merging over that is the one
+                # thing an automation must never do.
+                continue
+            if self._auto_merge(url):
+                logger.info("pr_watcher: auto-merged unlinked PR %s (%s)",
+                            url, pr.get("headRefName"))
+                action = WatcherAction(
+                    task_id="", pr_url=url, classification="done",
+                    action="merge", reason="unlinked PR, green and mergeable",
+                    resume_cycle=0,
+                )
+                report.actions.append(action)
+                self._audit(action)
+
+        report.finished_at = datetime.now(timezone.utc).isoformat()
+
     def run_daemon(
         self, interval: int = 30, max_iterations: int = 0
     ) -> None:
-        """Poll forever (or up to `max_iterations` ticks)."""
+        """Poll forever (or up to `max_iterations` ticks).
+
+        Picks up its own code changes between polls: this daemon runs for days,
+        so without that every merged fix stays inert until a human restarts it.
+        On 2026-08-09 that was four hand restarts, and twice the board looked
+        broken when the only fault was this process serving hours-old code.
+        """
+        from tools.genesis import code_reload
+
+        started_at = time.time()
+        baseline = code_reload.snapshot()
+        watch = bool(self.config.get("restart_on_code_change", True))
+
         iteration = 0
         while True:
             iteration += 1
@@ -1613,8 +1841,25 @@ class PRWatcher:
                 )
             except Exception as exc:  # defensive — keep the daemon alive
                 logger.warning("pr_watcher iteration failed: %s", exc)
+            # Periodic housekeeping, NOT part of a task-focused poll. It lives
+            # here rather than in poll_once because poll_once is what unit tests
+            # call: inside it, the sweep shelled out to a real `gh pr list` and
+            # operated on live PRs during the suite — only a stubbed _auto_merge
+            # stood between that and merging someone's open PR from a test run.
+            try:
+                self._sweep_unlinked_prs(
+                    WatcherReport(started_at="", finished_at="", tasks_checked=0))
+            except Exception as exc:  # noqa: BLE001 — a sweep must not stop the loop
+                logger.warning("pr_watcher: unlinked sweep failed: %s", exc)
             if max_iterations and iteration >= max_iterations:
                 return
+            # AFTER a completed poll and before the sleep: never mid-work, and
+            # never while a merge is in flight. Does not return if it re-execs.
+            try:
+                code_reload.restart_if_code_changed(
+                    baseline, started_at=started_at, enabled=watch)
+            except Exception as exc:  # noqa: BLE001 — watching must not kill it
+                logger.warning("pr_watcher: code-change check failed: %s", exc)
             time.sleep(max(1, int(interval)))
 
 
