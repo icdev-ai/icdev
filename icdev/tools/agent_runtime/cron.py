@@ -196,10 +196,20 @@ CREATE TABLE IF NOT EXISTS {_JOBS_TABLE} (
     last_run_at           TEXT,
     last_status           TEXT,
     run_count             INTEGER DEFAULT 0,
+    unattended            INTEGER DEFAULT 0,
     created_at            TEXT,
     updated_at            TEXT
 )
 """
+
+# Columns added after migration 289. `CREATE TABLE IF NOT EXISTS` never ALTERs an
+# existing table, so a DB provisioned by 289 keeps the old column set while the
+# DDL above moves on — and then every INSERT naming the new column fails
+# (CLAUDE.md, "every column in an INSERT must exist in the LIVE schema"). The
+# canonical fix is migration 20260809213046; this list is what keeps a checkout
+# that has not run it working, since this module self-creates its schema by
+# design. `(name, ddl_type)`.
+_ADDED_COLUMNS = (("unattended", "INTEGER DEFAULT 0"),)
 
 _RUNS_DDL = f"""
 CREATE TABLE IF NOT EXISTS {_RUNS_TABLE} (
@@ -223,7 +233,7 @@ _JOB_COLUMNS = [
     "id", "name", "user_id", "tenant_id", "classification", "mode", "payload",
     "schedule_kind", "schedule_expr", "delivery", "status", "max_retries",
     "retry_backoff_seconds", "attempt", "next_run_at", "last_run_at",
-    "last_status", "run_count", "created_at", "updated_at",
+    "last_status", "run_count", "unattended", "created_at", "updated_at",
 ]
 
 
@@ -242,6 +252,51 @@ def _ensure_schema(conn) -> None:
         conn.commit()
     except Exception as exc:  # noqa: BLE001
         logger.debug("cron: ensure_schema failed: %s", exc)
+    _ensure_columns(conn)
+
+
+def _live_columns(conn, table: str) -> set[str]:
+    """Column names the table ACTUALLY has right now. Empty set on any failure."""
+    try:
+        if getattr(conn, "_backend", "sqlite") == "postgresql":
+            rows = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=%s",
+                (table,),
+            ).fetchall()
+            return {str(r[0]) for r in rows or []}
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return {
+            str(r[1] if isinstance(r, (list, tuple)) else dict(r).get("name"))
+            for r in rows or []
+        }
+    except Exception as exc:  # noqa: BLE001 — an unreadable schema is not fatal
+        logger.debug("cron: cannot read %s columns: %s", table, exc)
+        return set()
+
+
+def _ensure_columns(conn) -> None:
+    """Add any post-289 column the live table is missing.
+
+    Idempotent and checked against the LIVE schema rather than assumed from the
+    DDL above, because the DDL only ever runs on a table that does not exist
+    yet. Without this, a DB created before 20260809213046 keeps the old columns
+    and the very next ``create_job`` INSERT raises on a phantom column.
+    """
+    live = _live_columns(conn, _JOBS_TABLE)
+    if not live:
+        return
+    for column, ddl_type in _ADDED_COLUMNS:
+        if column in live:
+            continue
+        try:
+            conn.execute(
+                f"ALTER TABLE {_JOBS_TABLE} ADD COLUMN {column} {ddl_type}"
+            )
+            conn.commit()
+            logger.info("cron: added missing column %s.%s", _JOBS_TABLE, column)
+        except Exception as exc:  # noqa: BLE001 — a racing writer may have won
+            logger.debug("cron: could not add %s.%s: %s", _JOBS_TABLE, column, exc)
 
 
 def _row_to_job(row) -> dict[str, Any]:
@@ -261,9 +316,18 @@ def create_job(
     max_retries: int = 0,
     retry_backoff_seconds: int = 60,
     classification: str = "CUI",
+    unattended: bool = False,
     conn=None,
 ) -> dict[str, Any]:
-    """Create and persist a cron job. Validates the schedule up front."""
+    """Create and persist a cron job. Validates the schedule up front.
+
+    ``unattended`` is a DELIVERY setting, not an autonomy one (agov-inbox-04): a
+    cron tick has no console at all, so an ``agent``-mode job with the flag set
+    routes its approval asks to the durable inbox and suspends on them, instead
+    of being denied by a prompt nobody could answer. It does not widen what the
+    job may do — the same policy, the same tiers, the same human. It lives on
+    the job row because it must survive a restart of whatever ticks it.
+    """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
     if schedule_kind not in ("interval", "cron"):
@@ -280,13 +344,13 @@ def create_job(
         f"(id, name, user_id, tenant_id, classification, mode, payload, "
         f"schedule_kind, schedule_expr, delivery, status, max_retries, "
         f"retry_backoff_seconds, attempt, next_run_at, last_run_at, last_status, "
-        f"run_count, created_at, updated_at) VALUES "
-        f"(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        f"run_count, unattended, created_at, updated_at) VALUES "
+        f"(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             job_id, name, user_id, tenant_id, classification, mode, payload,
             schedule_kind, schedule_expr, delivery, "active", int(max_retries),
             int(retry_backoff_seconds), 0, _iso(first), None, None, 0,
-            _iso(now), _iso(now),
+            1 if unattended else 0, _iso(now), _iso(now),
         ),
     )
     c.commit()
@@ -333,6 +397,23 @@ def set_status(job_id: str, status: str, *, conn=None) -> bool:
     c.execute(
         f"UPDATE {_JOBS_TABLE} SET status = %s, updated_at = %s WHERE id = %s",
         (status, _iso(_utcnow()), job_id),
+    )
+    c.commit()
+    return get_job(job_id, conn=c) is not None
+
+
+def set_job_unattended(job_id: str, unattended: bool, *, conn=None) -> bool:
+    """Flip a job's ``unattended`` routing. ``True`` if the job exists.
+
+    Separate from :func:`set_status` because pausing and re-routing are
+    unrelated: a paused job does not run at all, while an unattended one runs
+    under exactly the same policy and merely asks somewhere a human will see.
+    """
+    c, _ = _connect(conn)
+    _ensure_schema(c)
+    c.execute(
+        f"UPDATE {_JOBS_TABLE} SET unattended = %s, updated_at = %s WHERE id = %s",
+        (1 if unattended else 0, _iso(_utcnow()), job_id),
     )
     c.commit()
     return get_job(job_id, conn=c) is not None
@@ -393,14 +474,31 @@ def list_runs(job_id: str, *, limit: int = 20, conn=None) -> list[dict[str, Any]
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
+def job_is_unattended(job: dict[str, Any]) -> bool:
+    """Read the job's routing flag defensively.
+
+    A job row read from a DB that predates migration 20260809213046 has no such
+    key, and one written by an older client has ``NULL``. Both mean "attended",
+    which routes to the console approver — the strict path.
+    """
+    return bool(int(job.get("unattended") or 0))
+
+
 def _execute_agent(job: dict[str, Any]) -> tuple[bool, str, str]:
-    """Run the job payload as a single-shot SAG agent turn."""
+    """Run the job payload as a single-shot SAG agent turn.
+
+    An ``unattended`` job hands the runtime the flag so any approval ask raised
+    during the turn is delivered to the inbox rather than to a console this
+    process does not have. The autonomy ceiling is untouched: an irreversible
+    call still halts, it just halts on a durable item instead of on EOF.
+    """
     try:
         from tools.agent_runtime.runtime import AgentRuntime
 
         runtime = AgentRuntime(
             user_id=job.get("user_id", _DEFAULT_USER),
             tenant_id=job.get("tenant_id", "") or "",
+            unattended=job_is_unattended(job),
         )
         result = runtime.run_turn(job["payload"])
         text = getattr(result, "final_content", "") or ""
@@ -637,6 +735,15 @@ def cron_main(argv: list[str] | None = None) -> int:
     create_p.add_argument("--retry-backoff", type=int, default=60, help="Base backoff seconds.")
     create_p.add_argument("--user", default=_DEFAULT_USER)
     create_p.add_argument("--tenant", default="")
+    create_p.add_argument(
+        "--unattended",
+        action="store_true",
+        help=(
+            "Deliver this job's approval asks to the approval inbox instead of a "
+            "console it does not have. ROUTING ONLY — it does not widen what the "
+            "job may do, downgrade any tier, or auto-approve anything."
+        ),
+    )
     create_p.add_argument("--json", action="store_true")
 
     list_p = subs.add_parser("list", help="List scheduled jobs.")
@@ -654,6 +761,16 @@ def cron_main(argv: list[str] | None = None) -> int:
     runs_p.add_argument("--limit", type=int, default=20)
     runs_p.add_argument("--json", action="store_true")
 
+    unatt_p = subs.add_parser(
+        "unattended",
+        help="Route a job's approval asks to the inbox (or back to the console).",
+    )
+    unatt_p.add_argument("job_id")
+    unatt_group = unatt_p.add_mutually_exclusive_group(required=True)
+    unatt_group.add_argument("--on", action="store_true", help="Route to the inbox.")
+    unatt_group.add_argument("--off", action="store_true", help="Route to the console.")
+    unatt_p.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
 
     if not args.cmd:
@@ -668,6 +785,7 @@ def cron_main(argv: list[str] | None = None) -> int:
                 args.name, args.mode, args.payload, kind, expr,
                 delivery=args.delivery, user_id=args.user, tenant_id=args.tenant,
                 max_retries=args.max_retries, retry_backoff_seconds=args.retry_backoff,
+                unattended=args.unattended,
             )
         except ValueError as exc:
             print(f"icdev cron create: {exc}", file=__import__("sys").stderr)
@@ -689,13 +807,14 @@ def cron_main(argv: list[str] | None = None) -> int:
         print(f"{len(jobs)} job(s):")
         for j in jobs:
             sch = f"{j['schedule_kind']}:{j['schedule_expr']}"
+            routing = "inbox " if job_is_unattended(j) else "console"
             print(
                 f"  {j['id']:<20} [{j['status']:<7}] {j['mode']:<6} {sch:<22} "
-                f"next={j.get('next_run_at') or '-':<28} {j['name']}"
+                f"asks={routing} next={j.get('next_run_at') or '-':<28} {j['name']}"
             )
         return 0
 
-    if args.cmd in ("pause", "resume", "remove", "run", "runs"):
+    if args.cmd in ("pause", "resume", "remove", "run", "runs", "unattended"):
         job = get_job(args.job_id)
         if job is None:
             print(f"icdev cron {args.cmd}: no such job {args.job_id!r}", file=__import__("sys").stderr)
@@ -711,6 +830,18 @@ def cron_main(argv: list[str] | None = None) -> int:
         if args.cmd == "remove":
             remove_job(args.job_id)
             print(f"Removed {args.job_id}.")
+            return 0
+        if args.cmd == "unattended":
+            set_job_unattended(args.job_id, bool(args.on))
+            updated = get_job(args.job_id) or {}
+            if args.json:
+                print(json.dumps(updated, indent=2, default=str))
+            else:
+                where = "the approval inbox" if args.on else "the console"
+                print(
+                    f"{args.job_id}: approval asks now go to {where}. "
+                    "Routing only — the autonomy ceiling is unchanged."
+                )
             return 0
         if args.cmd == "run":
             res = run_job_now(job, deliver=True)

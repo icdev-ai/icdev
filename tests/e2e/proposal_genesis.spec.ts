@@ -6,8 +6,8 @@ import { test, expect } from '@playwright/test';
 import { dismissOverlays, loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
 
 const CUI_BANNER = 'CUI // SP-CTI';
-// Proposal Genesis runs on port 5050
-const PG_BASE = 'http://localhost:5050';
+// Proposal Genesis runs on the dashboard under test (default port 5050).
+const PG_BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
 
 test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test.beforeEach(async ({ page }) => {

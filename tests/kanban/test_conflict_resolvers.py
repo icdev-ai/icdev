@@ -142,3 +142,71 @@ def test_a_real_rebase_conflict_is_resolved_and_continues(tmp_path):
     final = target.read_text(encoding="utf-8")
     assert "OURS BLOCK" in final and "THEIRS BLOCK" in final
     assert "<<<<<<<" not in final
+
+
+# ── from the real conflict on docs/security/sandbox-coverage.md (2026-08-10) ──
+_TEMPLATE = (
+    "- **Decision:** **bypass-documented**\n"
+    "- **Guardrails:**\n"
+)
+
+
+def _doc(*entries: str) -> str:
+    """A document with a fixed per-entry template, like the real one."""
+    return "".join(f"### Gap {i} — Entry {i}\n{_TEMPLATE}\n" for i in range(1, 6)) + "".join(entries)
+
+
+def test_shared_TEMPLATE_lines_do_not_block_a_resolution():
+    """The real conflict was two independently-added `### Gap 57` blocks that
+    shared exactly two lines — both boilerplate every entry in the file carries.
+    Treating those as evidence of a rewrite meant the one document this module
+    was written for was the one document it could never resolve."""
+    text = _doc(
+        "<<<<<<< HEAD\n### Gap 57 — Mine\n" + _TEMPLATE +
+        "=======\n### Gap 57 — Theirs\n" + _TEMPLATE +
+        ">>>>>>> branch\n")
+    out = cr.resolve_text("docs/security/sandbox-coverage.md", text)
+    assert out is not None, "template-only overlap must not block"
+    merged, notes = out
+    assert "Mine" in merged and "Theirs" in merged
+    assert "<<<<<<<" not in merged
+
+
+def test_a_hunk_of_PURE_boilerplate_is_still_declined():
+    """If nothing in the hunk is distinguishable content there is no evidence
+    the two sides are independent additions rather than one rewrite."""
+    text = _doc("<<<<<<< HEAD\n" + _TEMPLATE + "=======\n" + _TEMPLATE + ">>>>>>> b\n")
+    assert cr.resolve_text("docs/security/sandbox-coverage.md", text) is None
+
+
+def test_a_genuinely_shared_CONTENT_line_still_blocks():
+    """The safety property. Boilerplate is excused because the format demands it;
+    a substantive line appearing on both sides is still two people editing one
+    thing, and that belongs to a human."""
+    text = _doc(
+        "<<<<<<< HEAD\n### Gap 57 — Mine\nThe module validates every path.\n"
+        "=======\n### Gap 57 — Theirs\nThe module validates every path.\n>>>>>>> b\n")
+    assert cr.resolve_text("docs/security/sandbox-coverage.md", text) is None
+
+
+def test_renumbering_NEVER_touches_a_heading_outside_the_merge():
+    """An unrestricted pass rewrote TWELVE headings on the real document,
+    turning `### Gap 13 — DataBridge Secret Resolvers` into Gap 59 six hundred
+    lines from anything being merged. Pre-existing duplicates are not this
+    resolution's business — renumbering them breaks cross-references silently."""
+    text = (
+        "### Gap 3 — Pre-existing dupe A\n" + _TEMPLATE + "\n"
+        "### Gap 3 — Pre-existing dupe B\n" + _TEMPLATE + "\n"
+        + _doc(
+            "<<<<<<< HEAD\n### Gap 9 — Mine\n" + _TEMPLATE +
+            "=======\n### Gap 9 — Theirs\n" + _TEMPLATE + ">>>>>>> b\n"))
+    out = cr.resolve_text("docs/security/sandbox-coverage.md", text)
+    assert out is not None
+    merged, notes = out
+    assert merged.count("### Gap 3 — Pre-existing dupe A") == 1
+    assert merged.count("### Gap 3 — Pre-existing dupe B") == 1
+    assert not any("Gap 3 ->" in n for n in notes), \
+        f"a pre-existing duplicate was renumbered: {notes}"
+    # Gap 9 is claimed by neither side beforehand, so the first occurrence keeps
+    # it and only the second moves — exactly what happened on the real file.
+    assert sum("Gap 9 ->" in n for n in notes) == 1, notes
