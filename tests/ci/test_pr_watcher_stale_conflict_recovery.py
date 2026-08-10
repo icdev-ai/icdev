@@ -145,3 +145,19 @@ def test_the_refund_happens_at_most_once_per_pr(monkeypatch):
     block = block[:block.index("cycle = self._resume_cycle")]
     assert '"pr_watcher.rebase_refund"' in block and "== 0" in block, (
         "the refund must be guarded on there being no prior refund for this PR")
+
+
+def test_a_hitl_alert_clears_when_the_pr_is_mergeable_again():
+    """It used to clear only on DONE — but a branch whose conflict is resolved
+    returns to MERGEABLE without ever passing through DONE, so its alert stayed
+    firing forever. Measured 2026-08-10: 14 firing HITL alerts, at least 2 of
+    them naming branches already fixed and sitting green. An alert list that can
+    only grow is one people stop reading."""
+    import inspect
+    src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
+    i = src.index("_resolve_hitl_alert")
+    before = src[max(0, i - 400):i]
+    assert "MERGEABLE" in before, (
+        "the resolve must be reachable on the recovery path, not only on DONE")
+    # and the DONE path must still clear it
+    assert src.count("_resolve_hitl_alert") >= 2
