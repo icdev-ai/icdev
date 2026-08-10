@@ -1826,7 +1826,9 @@ by another vendor's tool.
   selects a code path — a payload is copied verbatim and hashed, never parsed for
   behaviour, and specifically never `json.loads`ed on the export path, because the
   HMAC is over the raw stored text and re-serializing it would break every
-  signature.
+  signature. (agov-case-01 added a `json.loads` on the *display* path only; see
+  the entry below. `entry["record"]` still carries the raw stored text and is
+  what the bundler writes and the verifier hashes.)
 - **Guardrails:**
   - Every value from the caller is bound as a parameter, never interpolated:
     `session_id`, `since` and `until` go through `sql_placeholder(conn)`, and
@@ -1851,6 +1853,57 @@ by another vendor's tool.
   rather than bound, the bundler starts reading an existing bundle it did not
   write (that is the verifier's posture, covered above), or a member is ever
   fetched over the network instead of from the database.
+
+### Gap — AGOV CASE timeline display projection and redaction (agov-case-01)
+- **File:** `tools/agent_case/timeline_redaction.py`, and the operand/redaction
+  path added to `tools/agent_case/session_timeline.py`
+- **Risk:** This is the first code in the CASE package that *parses* agent-authored
+  content rather than copying it. `hook_events.payload` is written by the agent
+  being investigated, so it is hostile-by-assumption: it can be malformed JSON, a
+  deeply nested structure, a huge string, or prose crafted to look like a command
+  the agent never ran. The parsed values are then rendered to an operator and, via
+  the bundler, carried to another machine.
+- **Decision:** **trusted-first-party** for the parse, **bypass-documented** for
+  the redaction stack it calls.
+- **Rationale:** The parse is `json.loads` into plain data followed by dictionary
+  lookups against a module-level allowlist. No parsed value ever selects a code
+  path, names a module, becomes a format string, or reaches a subprocess; the
+  worst a malformed payload achieves is no operands. The redaction stack it calls
+  (`tools/redaction/detector.py` + `anonymizer.py`) is the platform's existing
+  sanitizer and is already covered above; this module constrains it further rather
+  than loosening it.
+- **Guardrails:**
+  - **Allowlist, not filter.** Only `OPERAND_KEYS` (`command`, `file_path`,
+    `notebook_path`, `path`, `url`) are read, at the payload top level and one
+    level down inside `OPERAND_CONTAINER_KEYS`. `FREE_TEXT_KEYS` — tool output,
+    model prose, file contents — are never read, so a command quoted in a tool's
+    *output* cannot be rendered as though the agent ran it. A module-level guard
+    raises at import if a later edit moves a free-text key into the allowlist,
+    and `tests/test_agov_case_timeline.py` asserts the two sets stay disjoint.
+  - **Non-strings are not coerced.** Only `str` values become operands; a dict,
+    list or int is skipped rather than `str()`-ed into something to regex over.
+  - **Malformed input yields nothing, never an exception.** `json.loads` failures
+    and non-dict payloads return the operands found so far.
+  - **No LLM and no clock in the path.** The detector's Ollama NER layer is
+    switched off here. It is a network call to a generative model, and one
+    non-reproducible field would make the timeline unusable as the basis of a
+    bundle manifest — `test_two_runs_over_identical_data_are_byte_identical`
+    is the check that keeps it out.
+  - **Redaction is a projection, not a mutation.** Masked strings land in
+    `entry["display"]`; `entry["record"]` is untouched, which is what lets
+    `bundle_verifier` still re-compute the `hook_events` HMACs and the
+    migration-149 hash chain. Asserted by
+    `test_redaction_does_not_touch_the_record_the_verifier_hashes`.
+  - **Reads do not write.** `TimelineRedactor` disables the anonymizer's audit
+    INSERT by default, so building a timeline stays a read; the bundler turns it
+    on at the moment an actual disclosure happens.
+  - The credential patterns this uses are opt-in platform-wide
+    (`detection.secret_patterns.enabled`, default `false`) so enabling them for
+    the timeline does not change what any existing LLM-egress caller sends —
+    `tests/test_redaction_secret_patterns.py` asserts the shipped default is off.
+- **Revisit if:** operand extraction moves from an allowlist to a denylist, a
+  parsed value is ever used to choose a code path or reach a subprocess, or the
+  redactor is given a detection backend that makes a network call.
 ### Gap 59 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
 - **File:** `tools/agent_detect/shell_parse.py` (agov-det-02)
 - **Risk:** This module's entire input is hostile by assumption — the command

@@ -1,0 +1,12 @@
+{
+  "id": "20260809213046_agov_unattended_sessions",
+  "description": "Per-session unattended flag (agov-inbox-04). ROUTING ONLY: it changes where an approval ask is delivered, never what the agent may do. agent_unattended_sessions is MUTABLE state (an operator turns it on and off); the audit of who flipped it lives in the append-only hook_events trail. Also adds agent_cron_jobs.unattended, because a cron job has no console at all.",
+  "date": "2026-08-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": [
+    "agent_unattended_sessions",
+    "agent_cron_jobs"
+  ],
+  "reversible": true
+}
