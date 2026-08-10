@@ -4842,6 +4842,8 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         )
 
         _running[task_id] = proc
+
+        _record_dispatch_pid(task_id, proc)
         _dispatch_times[task_id] = datetime.now(timezone.utc)
         # THE agent surface. Not agent_executor.execute_agent — this runner
         # never calls it. Instrumenting that function left `agent` with zero
@@ -4922,6 +4924,7 @@ def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
     _running[task_id] = handle
+    _record_dispatch_pid(task_id, handle)
     _dispatch_times[task_id] = datetime.now(timezone.utc)
     _close_agent_invocation(
         _agent_invocations.pop(task_id, None), status="superseded",
@@ -5074,6 +5077,7 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
     _running[task_id] = handle
+    _record_dispatch_pid(task_id, handle)
     _dispatch_times[task_id] = datetime.now(timezone.utc)
     print(f"  Kanban: dispatched {task_id} via rubric-gated agent loop (Phase 3b)")
 
@@ -5219,6 +5223,7 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
     _running[task_id] = handle
+    _record_dispatch_pid(task_id, handle)
     _dispatch_times[task_id] = datetime.now(timezone.utc)
     print(f"  Kanban: dispatched {task_id} via LLMRouter (no Claude CLI)")
 
@@ -8740,6 +8745,30 @@ def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
             conn.close()
 
 
+def _record_dispatch_pid(task_id: str, handle) -> None:
+    """Persist the dispatched pid so a LATER scheduler can still clean it up.
+
+    _running is in-memory: it does not survive a restart, and it never existed
+    for a task dispatched by a previous instance. That is exactly when a reap
+    orphans a live process tree, so the durable record is the point.
+    """
+    pid = getattr(handle, "pid", None)
+    if not pid:
+        return
+    try:
+        from tools.kanban.dispatch_reaper import record_dispatch
+        conn = get_connection()
+        try:
+            record_dispatch(conn, task_id, pid)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:  # noqa: BLE001 — never fail a dispatch over bookkeeping
+        logger.debug("could not record dispatch pid for %s: %s", task_id, exc)
+
+
 def _reap_stale_in_progress() -> None:
     """Periodic reaper: reset in_progress tasks not tracked in _running.
 
@@ -8885,6 +8914,21 @@ def _reap_stale_in_progress() -> None:
 
             if age_seconds < threshold:
                 continue  # task is recent enough — let it run
+
+            # Kill what we are reaping. Without this the reap only flips a
+            # status: the tree keeps running, the scheduler re-dispatches, and
+            # the orphan wedges forever holding its worktree and its port. That
+            # is how one dead launcher became three reap/re-dispatch cycles on
+            # task-e2e-ebf5ab21. Declines unless the pid is provably still the
+            # process we dispatched — pids are reused.
+            try:
+                from tools.kanban.dispatch_reaper import kill_recorded_dispatch
+                _kill = kill_recorded_dispatch(conn, tid)
+                if _kill.get("killed"):
+                    logger.warning(
+                        "stale-reaper: killed orphaned process tree for %s", tid)
+            except Exception as _exc:  # noqa: BLE001 — cleanup must not block the reap
+                logger.debug("stale-reaper: cleanup failed for %s: %s", tid, _exc)
 
             now_iso = now.isoformat()
             # Check current failure count before incrementing — if this

@@ -1,0 +1,12 @@
+{
+  "id": "20260809221051_agov_agent_wakes",
+  "description": "agent_wakes — the agent-scheduled resumption store (agov-wake-01). One row per self-suspension, state machine pending -> due -> fired (or cancelled), enforced by conditional UPDATE in tools/agent_runtime/wake.py rather than by a CHECK or a trigger. MUTABLE state, deliberately NOT append-only: the permanent record of what the agent did after waking lives in the existing append-only trails. Distinct from agent_cron_jobs (migration 289), which is operator-declared and recurring.",
+  "date": "2026-08-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": [
+    "agent_wakes"
+  ],
+  "reversible": true,
+  "reversible_note": "down.sql drops the table and its four indexes. No evidence is lost, but every unspent wake is: an agent suspended on a timer, job or event will never be resumed after a rollback, and nothing reports it."
+}
