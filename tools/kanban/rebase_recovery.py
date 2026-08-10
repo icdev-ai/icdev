@@ -209,6 +209,39 @@ def _cleanup(repo_root: str, path: Optional[str], runner) -> None:
         pass
 
 
+def _auto_resolve_conflicts(cwd, runner) -> list:
+    """Resolve provably-additive conflicts in place; return the notes.
+
+    Empty list means nothing was resolved — either there was nothing safe to do,
+    or a file the resolver does not understand is conflicted, in which case the
+    caller aborts exactly as before.
+    """
+    from tools.kanban.conflict_resolvers import is_resolvable_path, resolve_file
+
+    status = _git(["diff", "--name-only", "--diff-filter=U"], cwd=cwd, runner=runner)
+    if getattr(status, "returncode", 1) != 0:
+        return []
+    files = [f.strip() for f in (_out(status) or "").splitlines() if f.strip()]
+    if not files:
+        return []
+    # ALL of them must be resolvable. Resolving some and aborting on the rest
+    # would leave the worktree half-edited, and a partial resolution is harder to
+    # read than none.
+    if not all(is_resolvable_path(f) for f in files):
+        return []
+
+    notes: list = []
+    for rel in files:
+        got = resolve_file(pathlib.Path(cwd) / rel)
+        if not got:
+            return []          # could not prove it safe — leave everything alone
+        notes.extend(got)
+        add = _git(["add", "--", rel], cwd=cwd, runner=runner)
+        if getattr(add, "returncode", 1) != 0:
+            return []
+    return notes
+
+
 def rebase_and_push(
     task_id: str,
     branch: str,
@@ -265,16 +298,46 @@ def rebase_and_push(
         ident = _identity_args(tmp, runner)
         reb = _git([*ident, "rebase", f"origin/{base}"], cwd=tmp, runner=runner)
         if getattr(reb, "returncode", 1) != 0:
-            detail = (_err(reb) or _out(reb)).splitlines()
-            _git(["rebase", "--abort"], cwd=tmp, runner=runner)
-            return _verdict(
-                attempted=True, conflict=True, branch=branch, base=base,
-                old_sha=old_sha,
-                reason=(
-                    "rebase onto origin/%s hit conflicts: %s"
-                    % (base, detail[-1][:200] if detail else "no detail")
-                ),
-            )
+            # Before giving up: some conflicts are not disagreements. Two
+            # branches each appending an independent block to a shared reference
+            # file, or each allocating "the next free" section number, resolve
+            # the same way every time — keep both. Six of roughly ten hand
+            # resolutions on 2026-08-09 were exactly that, and each cost a human
+            # a worktree round-trip.
+            #
+            # resolve_conflicts refuses anything it cannot prove is additive, and
+            # never touches code, so an unresolved file still lands on the abort
+            # path below unchanged.
+            resolved_notes = _auto_resolve_conflicts(tmp, runner)
+            if resolved_notes:
+                cont = _git(
+                    [*ident, "-c", "core.editor=true", "rebase", "--continue"],
+                    cwd=tmp, runner=runner)
+                if getattr(cont, "returncode", 1) == 0:
+                    logger.info(
+                        "rebase_recovery: auto-resolved %d additive conflict(s) on %s: %s",
+                        len(resolved_notes), branch, "; ".join(resolved_notes[:3]))
+                    reb = cont
+                else:
+                    _git(["rebase", "--abort"], cwd=tmp, runner=runner)
+                    return _verdict(
+                        attempted=True, conflict=True, branch=branch, base=base,
+                        old_sha=old_sha,
+                        reason=("auto-resolved the additive conflicts but "
+                                "`rebase --continue` still failed: "
+                                + (_err(cont) or "")[:160]),
+                    )
+            else:
+                detail = (_err(reb) or _out(reb)).splitlines()
+                _git(["rebase", "--abort"], cwd=tmp, runner=runner)
+                return _verdict(
+                    attempted=True, conflict=True, branch=branch, base=base,
+                    old_sha=old_sha,
+                    reason=(
+                        "rebase onto origin/%s hit conflicts: %s"
+                        % (base, detail[-1][:200] if detail else "no detail")
+                    ),
+                )
 
         count = _git(
             ["rev-list", "--count", f"origin/{base}..HEAD"], cwd=tmp, runner=runner
