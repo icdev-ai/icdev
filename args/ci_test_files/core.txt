@@ -260,6 +260,14 @@ tests/test_sbom_component_names.py
 # migrated checkouts cannot disagree about what columns exist. ~1.5s, pure Python
 # plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-01).
 tests/test_agent_wake_store.py
+
+# test_sbom_dependency_graph.py earns a slot because Component Dependency
+# Relationship is the element that was entirely ABSENT — a flat component list
+# with no `dependencies` array — and the failure it guards is silent: an edge
+# whose dependsOn resolves to nothing still looks like a dependency graph to
+# anything that only checks the array is present, which is what the gate did
+# before this task. It also pins the bom-ref uniqueness the whole graph rests on.
+tests/test_sbom_dependency_graph.py
 # test_agent_wake_tools.py earns a slot because the failure it pins is silent and
 # unrecoverable: a wake tool that returns "suspended: wake-abc" while persisting
 # nothing leaves an agent that has stopped working and will never be resumed, and

@@ -1759,6 +1759,57 @@ by another vendor's tool.
   from rewriting one inside it — or if `--validate` grows a mode that writes back
   into an SBOM it parsed.
 
+### Gap 58 — SBOM dependency graph construction and validation (`tools/compliance/dependency_graph.py`)
+
+**Module:** `tools/compliance/dependency_graph.py` (sbx-cov-02), imported by
+`tools/compliance/sbom_generator.py` and `tools/compliance/sbom_conformance_gate.py`.
+
+**Ingress path:** Two, and they are the same two as Gap 57's. (1) As a library it
+receives resolver-shape component dicts built from a target project's lockfiles
+and manifests — third-party content by definition, since the point is to
+inventory someone else's dependency tree. Both the component metadata and the
+*edge set* are attacker-influenced: a hostile `package-lock.json` chooses the
+names, the versions and which package points at which. (2) `--validate` reads a
+CycloneDX JSON SBOM from an operator-supplied path, which may have been produced
+by another vendor's tool.
+
+- **Decision:** **bypass-documented**
+- **Why:** the module evaluates nothing. It reads six string fields per
+  component, compares and hashes them, and walks an integer-indexed adjacency
+  map. There is no `eval`, no `subprocess`, no import driven by input, no
+  filesystem write, and no network call — `--validate` opens exactly the one
+  path it was given. The untrusted content reaches only `str()`, `sorted()`,
+  set membership and `hashlib`, so the sandbox would be guarding arithmetic.
+- **Residual risk and what bounds it:**
+  - **Graph blow-up.** A malicious lockfile can declare a very deep or very
+    dense tree. `detect_cycles` and `_reachable` are both iterative, so depth
+    cannot exhaust the interpreter stack —
+    `test_cycle_detection_terminates_on_a_deep_chain` pins that at 3000 levels.
+    Cost stays linear in nodes plus edges; the resolver that produced the set is
+    the component that bounds its size.
+  - **Cycles.** A dependency cycle is legal input, not an error, and is detected
+    and reported rather than followed. Nothing in the module recurses over the
+    graph, so a cycle cannot hang generation.
+  - **Ref collision.** A crafted component set cannot make two nodes share a
+    bom-ref: collisions are broken deterministically and
+    `validate_dependency_graph` independently rejects a document in which two
+    components carry the same ref.
+  - **Dangling edges.** An edge naming a component the resolver never emitted is
+    dropped and counted, never emitted as a `dependsOn` that resolves to
+    nothing.
+  - `dependency_rows` returns bound parameters; no ref or relationship type is
+    interpolated into SQL, and `relationship_type` is additionally constrained
+    by the CHECK migration 20260809232803 installs.
+  - `tests/test_sbom_dependency_graph.py` exercises the malformed paths directly
+    — a dangling edge, a duplicated entry, an unrooted graph, an unreachable
+    component, two components sharing a ref, a non-object entry, a self-cycle
+    and mutual recursion.
+- **Revisit if:** the module gains a mode that fetches a linked SBOM per
+  dependency rather than embedding (the standard permits linking, and ICDEV
+  deliberately does not — that would add an SSRF surface this module does not
+  currently have), or if edges begin arriving from an advisory feed or registry
+  rather than from the resolver's own reading of a lockfile.
+
 ### Gap — AGOV CASE timeline, bundler and CLI (agov-case-04)
 - **File:** `tools/agent_case/session_timeline.py`, `tools/agent_case/case_bundler.py`,
   `tools/agent_case/cli.py`
