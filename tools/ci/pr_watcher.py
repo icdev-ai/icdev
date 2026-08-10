@@ -1132,7 +1132,16 @@ class PRWatcher:
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=60,
             )
-            return proc.returncode == 0
+            if getattr(proc, "returncode", 1) != 0:
+                # Previously this returned False with NO log line, so a forge
+                # that refused every merge looked identical to a board with
+                # nothing to merge. That is how 11 PRs sat "awaiting merge" while
+                # the watcher decided "merge" on each pass and was refused.
+                logger.warning(
+                    "pr_watcher: gh refused to merge %s: %s",
+                    pr_url, (getattr(proc, "stderr", "") or "").strip()[:200])
+                return False
+            return True
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
@@ -1271,11 +1280,36 @@ class PRWatcher:
             task_id, ("pr_watcher.resume",), pr_url=pr_url)
 
     def _rebase_attempts(self, task_id: str, pr_url: Optional[str] = None) -> int:
-        """Prior auto-rebase attempts (successful or not) for this task, on THIS PR."""
-        return self._count_audit_actions(
+        """Prior auto-rebase attempts for this task on THIS PR, net of refunds.
+
+        Attempts spent on a conflict the forge only IMAGINED are refunded, so a
+        PR is not permanently locked out of the one action that can clear a stale
+        verdict. Floored at zero: a refund can restore a budget, never grant one.
+        """
+        spent = self._count_audit_actions(
             task_id, ("pr_watcher.rebase", "pr_watcher.rebase_failed"),
             pr_url=pr_url,
         )
+        refunded = self._count_audit_actions(
+            task_id, ("pr_watcher.rebase_refund",), pr_url=pr_url)
+        return max(0, spent - refunded)
+
+    def _refund_rebase_budget(self, task_id: str, pr_url: str,
+                              classification: str = "") -> None:
+        """Cancel the rebase attempts a phantom conflict consumed.
+
+        Written through _audit like every other action: the audit trail is
+        append-only (NIST AU), so a refund is a row the counter subtracts, never
+        a mutation of the rows it refunds. _audit also honours dry_run and uses
+        the one event_type the live CHECK constraint already accepts.
+        """
+        self._audit(WatcherAction(
+            task_id=task_id, pr_url=pr_url, classification=classification,
+            action="rebase_refund",
+            reason="forge reported CONFLICTING but the merge is clean",
+        ))
+        logger.info("pr_watcher: refunded rebase budget for %s (stale conflict)",
+                    pr_url)
 
     def _maybe_rebase(self, task: dict, state: dict) -> Dict[str, Any]:
         """Try the cheap recovery for a DIRTY PR: rebase the branch onto its base.
@@ -1624,13 +1658,38 @@ class PRWatcher:
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
             if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
-                # The forge's cached verdict disagrees with git. git wins.
+                # The forge's cached verdict disagrees with git. git wins — but
+                # knowing that is not a remedy, and the obvious remedy is wrong.
+                #
+                # Measured on #1473 (2026-08-09), 18 commits behind main. git
+                # merge-tree, a real git rebase and a real git merge ALL merged it
+                # clean while the API held mergeable=false/dirty. What that rules
+                # out matters more than what it shows:
+                #   * merging anyway fails — GitHub refuses a PR it believes is
+                #     conflicting, whatever we conclude locally;
+                #   * close + reopen does NOT clear it — tried against the live PR;
+                #   * nothing that leaves the ref untouched clears it.
+                # The verdict is cached against the head sha, so the ONLY lever is
+                # a new sha. Pushing a merge of the base flipped #1473 to
+                # mergeable=true within seconds.
+                #
+                # So this must NOT reclassify to MERGEABLE. Doing that routes the
+                # PR to _auto_merge — the one action the forge is guaranteed to
+                # refuse — and away from _maybe_rebase below, which is gated on
+                # MERGE_CONFLICT and is the thing that actually moves the ref.
+                # Leaving the classification alone is the fix.
+                #
+                # The rebase budget is the other half: those 2 attempts get spent
+                # fighting the phantom, and once spent the PR can never be rebased
+                # again — stuck at exactly the moment we can prove it is fine.
+                # Refund ONCE per PR: enough to act on a verdict we have disproved,
+                # bounded so a forge that keeps lying cannot buy unlimited pushes.
+                if self._count_audit_actions(
+                        task["id"], ("pr_watcher.rebase_refund",), pr_url=pr_url) == 0:
+                    self._refund_rebase_budget(task["id"], pr_url)
                 logger.warning(
                     "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
-                    "treating the forge verdict as stale", pr_url)
-                state = {**state, "mergeable": "MERGEABLE"}
-                classification = ec.classify_pr_state(
-                    state, ci_logs=ci_logs, require_approval=require_approval)
+                    "rebasing to force the forge to recompute", pr_url)
 
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
 
