@@ -271,6 +271,100 @@ class TestRunEndToEnd:
 
         assert len(wired.rows) == 5, "3-hourly reflex must be idempotent"
 
+    def test_cards_created_counts_writes_not_attempts(self, reflex, wired, monkeypatch):
+        """The counter is persisted by _write_memory_log — an attempt-counter
+        reports steady card creation forever while the dedup writes nothing."""
+        from tools.govcon import cdrl_generator
+        monkeypatch.setattr(cdrl_generator, "generate_all_due", lambda cid, days_ahead=14: {"generated": 0})
+
+        assert reflex.run({}, None)["cards_created"] == 5
+        second = reflex.run({}, None)
+        assert second["cards_created"] == 0, "reported cards it did not write"
+        assert len(wired.rows) == 5
+
+
+class TestCparsEscalation:
+    """A CAT2 page must accompany a NEW card, not a standing condition."""
+
+    CONTRACT = [{"id": "bff20029-94e2", "contract_number": "", "title": "GCPL Seed Contract"}]
+
+    @pytest.fixture
+    def wired(self, reflex, monkeypatch):
+        board = FakeBoard(contracts=self.CONTRACT)
+        pages: list[str] = []
+        from tools.db import storage as _stor
+        monkeypatch.setattr(_stor, "get_connection", board.connection)
+
+        from tools.govcon import cdrl_generator, cpars_predictor, pmo_ai_advisor, subcontractor_tracker
+        monkeypatch.setattr(pmo_ai_advisor, "auto_detect_issues", lambda cid: {"issues": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(cdrl_generator, "generate_all_due", lambda cid, days_ahead=14: {"generated": 0})
+        monkeypatch.setattr(
+            cpars_predictor, "predict_cpars",
+            lambda cid: {"predicted_score": 0.40, "predicted_rating": "marginal"},
+        )
+        monkeypatch.setattr(
+            cpars_predictor, "get_cpars_trend",
+            lambda cid: {"trend": [{"predicted_score": 0.62}, {"predicted_score": 0.40}]},
+        )
+
+        # alert_service exports escalate_cat1_FINDING, not escalate_cat1 — the
+        # reflex's import has never resolved. Supply the intended API so the
+        # once-per-finding behaviour is testable; raising=False because the
+        # attribute genuinely does not exist.
+        from tools.notification_service import alert_service
+        monkeypatch.setattr(
+            alert_service, "escalate_cat1",
+            lambda finding_title, severity, details: pages.append(finding_title),
+            raising=False,
+        )
+        monkeypatch.setattr(reflex, "_write_memory_log", lambda results: None)
+        return board, pages
+
+    def test_standing_trajectory_pages_cat2_once(self, reflex, wired):
+        board, pages = wired
+        for _ in range(3):
+            reflex.run({}, None)
+        assert len(board.rows) == 1
+        assert len(pages) == 1, f"re-paged CAT2 every cycle: {pages}"
+
+    def test_cat2_page_names_the_contract(self, reflex, wired):
+        """Not '[...] alert: ' — the page has to say which contract."""
+        _board, pages = wired
+        reflex.run({}, None)
+        assert pages == ["CPARS trajectory alert: GCPL Seed Contract"]
+
+
+class TestEscalationFailureIsVisible:
+    """A silent `except: pass` is why nobody noticed the CAT2 channel was dead."""
+
+    def test_missing_escalation_api_is_reported_not_swallowed(self, reflex, monkeypatch):
+        board = FakeBoard(
+            contracts=[{"id": "bff20029", "contract_number": "", "title": "GCPL Seed Contract"}]
+        )
+        from tools.db import storage as _stor
+        monkeypatch.setattr(_stor, "get_connection", board.connection)
+
+        from tools.govcon import cdrl_generator, cpars_predictor, pmo_ai_advisor, subcontractor_tracker
+        monkeypatch.setattr(pmo_ai_advisor, "auto_detect_issues", lambda cid: {"issues": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(cdrl_generator, "generate_all_due", lambda cid, days_ahead=14: {"generated": 0})
+        monkeypatch.setattr(
+            cpars_predictor, "predict_cpars",
+            lambda cid: {"predicted_score": 0.40, "predicted_rating": "marginal"},
+        )
+        monkeypatch.setattr(
+            cpars_predictor, "get_cpars_trend",
+            lambda cid: {"trend": [{"predicted_score": 0.62}, {"predicted_score": 0.40}]},
+        )
+        monkeypatch.setattr(reflex, "_write_memory_log", lambda results: None)
+
+        # escalate_cat1 is NOT patched in — this is the real production state.
+        result = reflex.run({}, None)
+
+        assert result["cpars_alerts"] == 1, "the card itself must still be filed"
+        assert any("CAT2 escalation unavailable" in e for e in result["errors"]), result["errors"]
+
 
 class TestCdrlEventSemantics:
     def test_new_batch_size_gets_its_own_card(self, reflex, board):

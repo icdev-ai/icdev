@@ -89,7 +89,7 @@ def run(trigger_data=None, context=None):
                 results["issues_found"] += len(issues)
                 for issue in critical:
                     try:
-                        _suggest_kanban_card(
+                        wrote = _suggest_kanban_card(
                             title=f"[CPMP] {clabel}: {str(issue.get('type','issue')).replace('_',' ').title()}",
                             description=issue.get("description", "") + "\n\nSuggested: " + issue.get("suggested_action", ""),
                             priority="high" if issue.get("severity") == "critical" else "medium",
@@ -97,7 +97,7 @@ def run(trigger_data=None, context=None):
                             created_by="cpmp_monitor",
                             dedup_key=f"{cid}:{issue.get('type','issue')}",
                         )
-                        results["cards_created"] += 1
+                        results["cards_created"] += 1 if wrote else 0
                     except Exception as ce:
                         results["errors"].append(f"Card creation failed {cnum}: {ce}")
             except Exception as e:
@@ -118,7 +118,7 @@ def run(trigger_data=None, context=None):
                     is_declining = len(recent) >= 2 and recent[-1] < recent[0]
                     if is_declining:
                         try:
-                            _suggest_kanban_card(
+                            wrote = _suggest_kanban_card(
                                 title=f"[CPARS RISK] {clabel}: Trajectory toward Marginal Rating",
                                 description=(
                                     f"Contract: {ctitle}\n"
@@ -137,18 +137,32 @@ def run(trigger_data=None, context=None):
                                 created_by="cpmp_monitor_cpars",
                                 dedup_key=f"{cid}:cpars_trajectory",
                             )
-                            results["cpars_alerts"] += 1
-                            results["cards_created"] += 1
-                            # CAT2 escalation
-                            try:
-                                from tools.notification_service.alert_service import escalate_cat1
-                                escalate_cat1(
-                                    finding_title=f"CPARS trajectory alert: {cnum}",
-                                    severity="CAT2",
-                                    details={"contract_id": cid, "predicted_score": predicted_score},
-                                )
-                            except Exception:
-                                pass
+                            results["cpars_alerts"] += 1 if wrote else 0
+                            results["cards_created"] += 1 if wrote else 0
+                            # CAT2 escalation — only alongside a NEW card, or a
+                            # standing trajectory re-pages the CAT2 channel every
+                            # 3h for as long as the score stays below threshold.
+                            #
+                            # NOTE: alert_service exports escalate_cat1_FINDING,
+                            # which pages on a stig_findings row by id — not this
+                            # signature, and not applicable to a CPARS trajectory.
+                            # The import below has therefore never resolved. It is
+                            # left in place as the declared intent, but the failure
+                            # is now REPORTED rather than swallowed by `except:
+                            # pass`, which is why nobody noticed the CAT2 channel
+                            # was silent. Wiring it needs a real escalation API.
+                            if wrote:
+                                try:
+                                    from tools.notification_service.alert_service import escalate_cat1
+                                    escalate_cat1(
+                                        finding_title=f"CPARS trajectory alert: {clabel}",
+                                        severity="CAT2",
+                                        details={"contract_id": cid, "predicted_score": predicted_score},
+                                    )
+                                except Exception as esc:
+                                    results["errors"].append(
+                                        f"CPARS CAT2 escalation unavailable for {clabel}: {esc}"
+                                    )
                         except Exception as ce:
                             results["errors"].append(f"CPARS card {cnum}: {ce}")
             except Exception as e:
@@ -163,7 +177,7 @@ def run(trigger_data=None, context=None):
                 high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
                 for finding in high_findings:
                     try:
-                        _suggest_kanban_card(
+                        wrote = _suggest_kanban_card(
                             title=f"[SUBCON] {clabel}: {finding.get('issue_type','Noncompliance').replace('_',' ').title()}",
                             description=(
                                 f"Contract: {ctitle}\n"
@@ -180,12 +194,8 @@ def run(trigger_data=None, context=None):
                                 f":{finding.get('subcontractor_name','')}"
                             ),
                         )
-                        results["subcon_alerts"] += 1
-                        results["cards_created"] += 1
-                        try:
-                            pass
-                        except Exception:
-                            pass
+                        results["subcon_alerts"] += 1 if wrote else 0
+                        results["cards_created"] += 1 if wrote else 0
                     except Exception as ce:
                         results["errors"].append(f"Subcon card {cnum}: {ce}")
             except Exception as e:
@@ -230,8 +240,13 @@ def _suggest_kanban_card(
     context_data: Dict = None,
     created_by: str = "cpmp_monitor",
     dedup_key: str = None,
-):
+) -> bool:
     """Create a kanban suggestion card, keyed so one finding is one row.
+
+    Returns True only if a row was actually written, so callers count writes
+    rather than attempts — an attempt-counter reports steady card creation
+    forever while a working dedup writes nothing, and `_write_memory_log`
+    persists that number.
 
     ``dedup_key`` identifies the FINDING (contract + issue), and the card's id
     is derived from it, so re-detecting the same finding is a primary-key
@@ -268,7 +283,7 @@ def _suggest_kanban_card(
         if conn.execute(
             "SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)
         ).fetchone():
-            return
+            return False
 
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
@@ -289,6 +304,7 @@ def _suggest_kanban_card(
             ),
         )
         conn.commit()
+        return True
     finally:
         conn.close()
 
