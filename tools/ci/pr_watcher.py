@@ -1950,12 +1950,6 @@ class PRWatcher:
             report.actions.append(action)
             self._audit(action)
 
-        # PRs no kanban task points at — the CLI/human half of the pipeline.
-        try:
-            self._sweep_unlinked_prs(report)
-        except Exception as exc:  # noqa: BLE001 — never fail the poll for a sweep
-            logger.warning("pr_watcher: unlinked sweep failed: %s", exc)
-
         report.finished_at = datetime.now(timezone.utc).isoformat()
         # Liveness proof, written only once the poll has actually completed.
         self._record_heartbeat(report)
@@ -2054,7 +2048,19 @@ class PRWatcher:
     def run_daemon(
         self, interval: int = 30, max_iterations: int = 0
     ) -> None:
-        """Poll forever (or up to `max_iterations` ticks)."""
+        """Poll forever (or up to `max_iterations` ticks).
+
+        Picks up its own code changes between polls: this daemon runs for days,
+        so without that every merged fix stays inert until a human restarts it.
+        On 2026-08-09 that was four hand restarts, and twice the board looked
+        broken when the only fault was this process serving hours-old code.
+        """
+        from tools.genesis import code_reload
+
+        started_at = time.time()
+        baseline = code_reload.snapshot()
+        watch = bool(self.config.get("restart_on_code_change", True))
+
         iteration = 0
         while True:
             iteration += 1
@@ -2066,8 +2072,25 @@ class PRWatcher:
                 )
             except Exception as exc:  # defensive — keep the daemon alive
                 logger.warning("pr_watcher iteration failed: %s", exc)
+            # Periodic housekeeping, NOT part of a task-focused poll. It lives
+            # here rather than in poll_once because poll_once is what unit tests
+            # call: inside it, the sweep shelled out to a real `gh pr list` and
+            # operated on live PRs during the suite — only a stubbed _auto_merge
+            # stood between that and merging someone's open PR from a test run.
+            try:
+                self._sweep_unlinked_prs(
+                    WatcherReport(started_at="", finished_at="", tasks_checked=0))
+            except Exception as exc:  # noqa: BLE001 — a sweep must not stop the loop
+                logger.warning("pr_watcher: unlinked sweep failed: %s", exc)
             if max_iterations and iteration >= max_iterations:
                 return
+            # AFTER a completed poll and before the sleep: never mid-work, and
+            # never while a merge is in flight. Does not return if it re-execs.
+            try:
+                code_reload.restart_if_code_changed(
+                    baseline, started_at=started_at, enabled=watch)
+            except Exception as exc:  # noqa: BLE001 — watching must not kill it
+                logger.warning("pr_watcher: code-change check failed: %s", exc)
             time.sleep(max(1, int(interval)))
 
 

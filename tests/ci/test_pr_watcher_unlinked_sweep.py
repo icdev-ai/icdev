@@ -122,3 +122,26 @@ def test_an_unreadable_task_list_refuses_rather_than_merging_everything(monkeypa
     report = pw.WatcherReport(started_at="", finished_at="", tasks_checked=0)
     w._sweep_unlinked_prs(report)
     assert w.merged == []
+
+
+def test_the_sweep_never_runs_from_poll_once():
+    """It shelled out to a REAL `gh pr list` during the unit suite.
+
+    poll_once is what tests call. With the sweep inside it, three existing tests
+    reached the live forge and one recorded a merge call against a real open PR —
+    only a stubbed _auto_merge stood between that and merging someone's work from
+    a test run. The sweep is periodic housekeeping, so it belongs in the daemon
+    loop, which no unit test drives.
+    """
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[2] / "tools" / "ci" / "pr_watcher.py"
+           ).read_text(encoding="utf-8")
+    poll = src.index("    def poll_once(")
+    daemon = src.index("    def run_daemon(")
+    call = src.index("self._sweep_unlinked_prs(")
+    assert not (poll < call < daemon), (
+        "the sweep must not be called from poll_once — unit tests call it, and "
+        "it reaches the live forge"
+    )
+    assert call > daemon, "expected the sweep to run from the daemon loop"
