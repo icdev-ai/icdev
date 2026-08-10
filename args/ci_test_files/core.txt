@@ -271,3 +271,48 @@ tests/test_agent_wake_store.py
 # story of the design. ~1s, pure Python, rules written to tmp_path, no
 # DB/LLM/network (agov-det-03).
 tests/test_agov_rules.py
+
+# test_sbom_dependency_graph.py earns a slot because Component Dependency
+# Relationship is the element that was entirely ABSENT — a flat component list
+# with no `dependencies` array — and the failure it guards is silent: an edge
+# whose dependsOn resolves to nothing still looks like a dependency graph to
+# anything that only checks the array is present, which is what the gate did
+# before this task. It also pins the bom-ref uniqueness the whole graph rests on.
+tests/test_sbom_dependency_graph.py
+# test_agent_wake_tools.py earns a slot because the failure it pins is silent and
+# unrecoverable: a wake tool that returns "suspended: wake-abc" while persisting
+# nothing leaves an agent that has stopped working and will never be resumed, and
+# the string it returned says the opposite. It also pins the two bounds refusing
+# BEFORE the INSERT (a past `when`, a sleep past the cap) and the `reversible`
+# tier that exempts a note naming `git push` from halting an unattended session
+# for approval. ~1.5s, pure Python plus an in-tmpdir SQLite file built from the
+# migration's own up.sql, no DB service/LLM/network (agov-wake-02).
+tests/test_agent_wake_tools.py
+
+# AGOV CASE — the timeline/bundler/CLI operator surface (agov-case-04). The
+# load-bearing case is the ROUND TRIP: a bundle written by case_bundler must
+# verify clean under bundle_verifier, which is a separate module with its own
+# digest code path. A per-module test would pass while the two disagreed about
+# member paths, JSON canonicalization or line endings — the exact drift that
+# makes a bundle worthless on the machine it is carried to. Also pins the
+# unjoinable-table disclosure and that no dashboard template ships here.
+# ~1.1s, pure Python plus a three-table in-tmpdir SQLite file, no DB
+# service/LLM/network (agov-case-04).
+tests/test_agov_case_cli.py
+# test_inbox_adapters.py earns a slot because the failure it pins is silent and
+# strictly worse than not having the feature: a mirrored ask that collects an
+# answer nobody acts on leaves the operator believing the agent was unblocked
+# while the CoWorkerThread is still parked. It parks a REAL thread in the real
+# _wait_for_hitl_resolution and asserts the release actually wakes it, rather
+# than asserting a row was written. Three more invariants, each failing quietly:
+# resolving through the existing POST /api/ace/<id>/hitl must settle the mirror
+# (or the queue shows an ask that is already decided); ace_audit_log must stay
+# append-only, asserted over every statement the flow issues and not just the
+# end state, because an UPDATE that leaves the same values is invisible in the
+# rows; and an unmigrated inbox must leave the ACE gate behaving exactly as it
+# does today -- failing it closed makes an optional delivery channel
+# load-bearing, failing it open turns a missing table into an approval. Tables
+# are built from the DDL the runtime ships (the migration's own up.sql,
+# tools/ace/db/init_db.py). ~1.5s, pure Python plus two in-tmpdir SQLite files,
+# no DB service/LLM/network (agov-inbox-05).
+tests/test_inbox_adapters.py

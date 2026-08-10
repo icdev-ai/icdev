@@ -1,0 +1,11 @@
+{
+  "id": "20260809203855_agov_approval_items",
+  "description": "Pending-approval store for the unified approval inbox (agov-inbox-01). MUTABLE state, deliberately NOT append-only: the permanent decision record is agent_approval_log (migration 20260803002224). Argument KEY NAMES and a SHA-256 only, never argument values.",
+  "date": "2026-08-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": [
+    "approval_items"
+  ],
+  "reversible": true
+}

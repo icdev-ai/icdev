@@ -1044,6 +1044,7 @@
 | Firewall Config Review | tools\security\firewall_config_review.py | Auto-registered: security/firewall_config_review.py | --json | JSON |
 
 - [Workflow Forms Canvas (WFC)](manifest/workflow-forms-canvas.md)
+- [AGOV CASE — Agent-Session Forensics](manifest/agent-case-forensics.md)
 
 
 ## Auto-Registered (Coherence Fix)
