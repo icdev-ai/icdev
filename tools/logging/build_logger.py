@@ -71,15 +71,48 @@ def _parse_pytest_failures(stdout: str) -> List[Dict[str, str]]:
 
 
 def _parse_playwright_failures(stdout: str) -> List[Dict[str, str]]:
-    """Extract failing Playwright test names from stdout."""
+    """Extract failing Playwright test names from stdout.
+
+    Two shapes are matched, because the marker depends on the reporter:
+      ✘  [chromium] › tests/e2e/foo.spec.ts:42:7 › Suite › test name   (list)
+      1) [chromium] › tests/e2e/foo.spec.ts:42:7 › Suite › test name   (all)
+
+    Only `list` prints the ✘ marker. `--reporter=line` — what the E2E runbook
+    actually invokes — prints progress on a single rewritten line and reports
+    failures ONLY as the numbered detail blocks, so matching ✘ alone recorded
+    `failures: []` next to `failed: 32` and left log_triage with a count it
+    could not turn into remediation tasks. The numbered block is emitted by
+    every reporter, hence both patterns plus a dedupe: `list` prints both
+    forms for the same test and must not double-count it.
+    """
+    # Strip ANSI before matching. Playwright colourises unconditionally when
+    # FORCE_COLOR is set, and `line` prefixes each rewritten line with a cursor
+    # move, so the raw text reads "\x1b[1A\x1b[2K  1) [chromium] ..." — a `^\s*`
+    # anchor never reaches the digit, and the error text is shot through with
+    # colour codes.
+    stdout = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", stdout)
     failures: List[Dict[str, str]] = []
-    # Match lines like: ✘  [chromium] › tests/e2e/foo.spec.ts:42:7 › Suite › test name
-    for m in re.finditer(r"[✘×]\s+\[(\w+)\]\s+›\s+([\w/\\.:\-]+)\s+›\s+(.+)", stdout):
-        failures.append({
-            "browser": m.group(1),
-            "test": f"{m.group(2)} › {m.group(3).strip()}",
-            "error": "",
-        })
+    seen = set()
+    for pattern in (
+        r"[✘×]\s+\[(\w+)\]\s+›\s+([\w/\\.:\-]+)\s+›\s+([^\n]+)",
+        r"(?m)^\s*\d+\)\s+\[(\w+)\]\s+›\s+([\w/\\.:\-]+)\s+›\s+([^\n]+)",
+    ):
+        for m in re.finditer(pattern, stdout):
+            # `list` appends a duration — "› does a thing (1.2s)" — and the
+            # numbered block does not. Drop it so the same test dedupes.
+            title = re.sub(r"\s*\(\d+(?:\.\d+)?[a-z]{1,2}\)\s*$", "", m.group(3).strip())
+            test = f"{m.group(2)} › {title}"
+            key = (m.group(1), test)
+            if key in seen:
+                continue
+            seen.add(key)
+            # The first `Error:` line after the header is the assertion itself.
+            err = re.search(r"\n\s*(Error:[^\n]+)", stdout[m.end():m.end() + 600])
+            failures.append({
+                "browser": m.group(1),
+                "test": test,
+                "error": err.group(1).strip() if err else "",
+            })
     return failures
 
 
