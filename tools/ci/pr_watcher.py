@@ -1691,6 +1691,21 @@ class PRWatcher:
                     "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
                     "rebasing to force the forge to recompute", pr_url)
 
+            # An alert says "needs a human". The moment the forge reports the
+            # PR is mergeable again, that is no longer true, so clear it here —
+            # not only on DONE, which was the bug: a branch whose conflict got
+            # resolved goes back to MERGEABLE without ever passing through DONE,
+            # so its alert stayed firing forever. Measured 2026-08-10: 14 firing
+            # HITL alerts, of which at least 2 named branches that had already
+            # been fixed and were sitting green.
+            #
+            # An alert list that can only grow is one people stop reading, and
+            # that is the failure mode where a real escalation gets missed. The
+            # resolve is deduped on `source` and is a no-op when nothing is
+            # firing, so calling it on every healthy pass costs nothing.
+            if (state.get("mergeable") or "").upper() == "MERGEABLE":
+                self._resolve_hitl_alert(task["id"])
+
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
 
             if classification == KanbanState.DONE:
