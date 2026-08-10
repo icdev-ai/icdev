@@ -100,14 +100,20 @@ def test_open_pr_files_degrades_on_error():
 # ---------------------------------------------------------------------------
 # poll_once integration
 # ---------------------------------------------------------------------------
-_CANDIDATE = "https://github.com/o/r/pull/500"
-_SIBLING = "https://github.com/o/r/pull/501"
+# The candidate is the HIGHER number on purpose: the sibling hold now breaks its
+# tie by lowest PR number, so the lowest sibling merges and the rest wait. With
+# the candidate lowest it would (correctly) win and never be held, and the hold
+# tests below would stop exercising the hold at all.
+_CANDIDATE = "https://github.com/o/r/pull/501"
+_SIBLING = "https://github.com/o/r/pull/500"
 
 
-def _build_watcher(*, hold, merge_calls, shared_file="tools/cortex/blueprint.py"):
+def _build_watcher(*, hold, merge_calls, shared_file="tools/cortex/blueprint.py",
+                   candidate=None):
+    candidate = candidate or _CANDIDATE
     tasks = [_FakeRow(id="task-s", title="T", description="",
-                      status="in_progress", executor_url=_CANDIDATE)]
-    state_map = {_CANDIDATE: _green_pr_state("main")}
+                      status="in_progress", executor_url=candidate)]
+    state_map = {candidate: _green_pr_state("main")}
 
     def fake_merge(cmd, **kw):
         merge_calls.append(cmd)
@@ -115,7 +121,7 @@ def _build_watcher(*, hold, merge_calls, shared_file="tools/cortex/blueprint.py"
 
     def fake_list(cmd, **kw):
         payload = json.dumps([
-            {"url": _CANDIDATE, "files": [{"path": shared_file}]},
+            {"url": candidate, "files": [{"path": shared_file}]},
             {"url": _SIBLING, "files": [{"path": shared_file}]},
         ])
         return SimpleNamespace(returncode=0, stdout=payload, stderr="")
@@ -197,3 +203,17 @@ def test_no_conflict_when_files_differ():
     report = w.poll_once()
     assert report.actions[-1].action == "merge"
     assert merge_calls
+
+def test_the_lowest_sibling_is_NOT_held_so_the_group_makes_progress():
+    """The counterpart to the hold: someone must go first.
+
+    Holding every member of a mutually-conflicting group is not serialisation,
+    it is a deadlock — 11 PRs sat 'awaiting merge' with zero active tasks on
+    2026-08-09 because each was a sibling of the others.
+    """
+    merge_calls = []
+    w = _build_watcher(hold=True, merge_calls=merge_calls,
+                       candidate="https://github.com/o/r/pull/400")
+    report = w.poll_once()
+    assert report.actions[-1].action == "merge", report.actions[-1].reason
+    assert merge_calls, "the lowest-numbered sibling must be allowed to merge"
