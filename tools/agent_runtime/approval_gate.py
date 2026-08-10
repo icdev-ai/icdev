@@ -479,12 +479,24 @@ def record_decision(
     decision: ApprovalDecision,
     mode: str,
     session_id: str = "",
+    arg_keys: Optional[str] = None,
+    input_sha256: Optional[str] = None,
 ) -> bool:
     """Append one decision to ``agent_approval_log``. Returns True if persisted.
 
     Falls back to the ``hook_events`` trail (also append-only, present in every
     environment) when the dedicated table is missing — a fresh worktree whose DB
     predates migration 342 must still leave a record.
+
+    ``arg_keys`` / ``input_sha256`` override the values derived from
+    ``tool_input`` (agov-inbox-01). A deferred decision is answered minutes or
+    hours after the call was classified, by a Slack reply that never saw the
+    arguments — :mod:`tools.agent_runtime.approval_inbox` persisted the key
+    names and the digest at enqueue time precisely so it would never have to
+    hold the values. Passing them through keeps the emitted row identical to the
+    one an inline approval would have written, rather than a lossy
+    reconstruction. Both default to ``None`` → derived from ``tool_input`` as
+    before, so every existing caller is unchanged.
     """
     row = {
         "decided_at": datetime.now(timezone.utc).isoformat(),
@@ -496,8 +508,10 @@ def record_decision(
         "decision": "approved" if decision.approved else "denied",
         "reason": decision.reason or "",
         "mode": mode,
-        "arg_keys": _arg_keys(tool_input),
-        "input_sha256": _input_digest(tool_input),
+        "arg_keys": _arg_keys(tool_input) if arg_keys is None else arg_keys,
+        "input_sha256": (
+            _input_digest(tool_input) if input_sha256 is None else input_sha256
+        ),
         "detail": classification.detail,
     }
     try:
