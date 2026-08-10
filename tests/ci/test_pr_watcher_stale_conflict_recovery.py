@@ -104,3 +104,44 @@ def test_the_refund_is_scoped_to_one_pr():
     src = inspect.getsource(pr_watcher.PRWatcher._rebase_attempts)
     assert "pr_url=pr_url" in src
     assert src.count("pr_url=pr_url") == 2, "both the spend AND the refund scope by pr"
+
+
+# ── the defect that made the FIRST version of this fix inert ────────────────
+def test_a_stale_conflict_routes_to_REBASE_not_to_merge():
+    """The first version of this fix refunded the budget and then reclassified
+    the PR to MERGEABLE. That sent it to _auto_merge — the one action GitHub is
+    guaranteed to refuse — and away from _maybe_rebase, which is gated on
+    MERGE_CONFLICT and is the only thing that moves the ref. The refund restored
+    a budget nothing could ever spend.
+
+    Asserted on source because the alternative is standing up a full poll against
+    a live forge; the property is structural, not behavioural.
+    """
+    import inspect
+    src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
+    head = src[src.index("_conflict_is_real(state)"):]
+    block = head[:head.index("cycle = self._resume_cycle")]
+    assert '"mergeable": "MERGEABLE"' not in block, (
+        "reclassifying a stale conflict to MERGEABLE routes it to the merge the "
+        "forge refuses, and skips the rebase that would fix it")
+    assert "_refund_rebase_budget" in block
+    assert "_maybe_rebase(task, state)" in src, "the rebase path must still exist"
+
+
+def test_the_rebase_path_is_still_gated_on_merge_conflict():
+    """If that gate ever widens, the assertion above stops meaning anything."""
+    import inspect
+    src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
+    i = src.index("_maybe_rebase(task, state)")
+    assert "KanbanState.MERGE_CONFLICT" in src[max(0, i - 300):i]
+
+
+def test_the_refund_happens_at_most_once_per_pr(monkeypatch):
+    """Unbounded refunds would hand a PR unlimited rebases: every poll proves the
+    conflict stale again, so every poll would return the budget it just spent."""
+    import inspect
+    src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
+    block = src[src.index("_conflict_is_real(state)"):]
+    block = block[:block.index("cycle = self._resume_cycle")]
+    assert '"pr_watcher.rebase_refund"' in block and "== 0" in block, (
+        "the refund must be guarded on there being no prior refund for this PR")

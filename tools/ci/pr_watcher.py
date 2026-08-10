@@ -1658,33 +1658,38 @@ class PRWatcher:
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
             if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
-                # The forge's cached verdict disagrees with git. git wins.
+                # The forge's cached verdict disagrees with git. git wins — but
+                # knowing that is not a remedy, and the obvious remedy is wrong.
+                #
+                # Measured on #1473 (2026-08-09), 18 commits behind main. git
+                # merge-tree, a real git rebase and a real git merge ALL merged it
+                # clean while the API held mergeable=false/dirty. What that rules
+                # out matters more than what it shows:
+                #   * merging anyway fails — GitHub refuses a PR it believes is
+                #     conflicting, whatever we conclude locally;
+                #   * close + reopen does NOT clear it — tried against the live PR;
+                #   * nothing that leaves the ref untouched clears it.
+                # The verdict is cached against the head sha, so the ONLY lever is
+                # a new sha. Pushing a merge of the base flipped #1473 to
+                # mergeable=true within seconds.
+                #
+                # So this must NOT reclassify to MERGEABLE. Doing that routes the
+                # PR to _auto_merge — the one action the forge is guaranteed to
+                # refuse — and away from _maybe_rebase below, which is gated on
+                # MERGE_CONFLICT and is the thing that actually moves the ref.
+                # Leaving the classification alone is the fix.
+                #
+                # The rebase budget is the other half: those 2 attempts get spent
+                # fighting the phantom, and once spent the PR can never be rebased
+                # again — stuck at exactly the moment we can prove it is fine.
+                # Refund ONCE per PR: enough to act on a verdict we have disproved,
+                # bounded so a forge that keeps lying cannot buy unlimited pushes.
+                if self._count_audit_actions(
+                        task["id"], ("pr_watcher.rebase_refund",), pr_url=pr_url) == 0:
+                    self._refund_rebase_budget(task["id"], pr_url)
                 logger.warning(
                     "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
-                    "treating the forge verdict as stale", pr_url)
-                # Knowing it is stale is not enough: GitHub REFUSES to merge a PR
-                # it believes is conflicting, whatever we decide locally. The API
-                # is explicit — mergeable=false, mergeable_state=dirty — and the
-                # merge is rejected on every pass, so the PR waits forever.
-                #
-                # Measured on #1473 (2026-08-09), which was 18 commits behind main
-                # and merged cleanly under BOTH `git merge-tree` and a real
-                # `git rebase`, while the forge kept reporting dirty:
-                #   * close + reopen did NOT clear it — verified, not assumed;
-                #   * nothing that leaves the ref untouched did.
-                # Mergeability is cached against the head sha, so the only lever
-                # is to move the ref. That is what _maybe_rebase already does.
-                #
-                # Its 2-attempt budget is the trap: those attempts get spent
-                # fighting the phantom, and once spent the PR can never be
-                # rebased again — permanently stuck at exactly the moment we can
-                # prove it is fine. So refund the budget for THIS case only: a
-                # rebase that is declined because the forge is provably wrong
-                # should never have been counted against the PR.
-                self._refund_rebase_budget(task["id"], pr_url)
-                state = {**state, "mergeable": "MERGEABLE"}
-                classification = ec.classify_pr_state(
-                    state, ci_logs=ci_logs, require_approval=require_approval)
+                    "rebasing to force the forge to recompute", pr_url)
 
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
 
