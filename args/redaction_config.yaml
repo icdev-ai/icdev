@@ -63,6 +63,18 @@ detection:
   # Default language for text analysis
   language: en
 
+  # Credential detection (agov-case-01). OFF by default and deliberately so:
+  # this detector runs on every LLM egress, and switching a new pattern family
+  # on globally changes what every existing caller sends. Callers that need it
+  # ask for it — RedactionDetector(detect_secrets=True) — which is what the AGOV
+  # CASE session timeline does before rendering a command line to an operator.
+  # Patterns are read from tools/security/secret_detector.py BUILTIN_PATTERNS
+  # (AWS keys, GitHub/Slack tokens, JWTs, private keys, bearer tokens, DB
+  # connection strings); they are NOT restated here, so there is nothing to
+  # drift. Set enabled: true to apply them platform-wide.
+  secret_patterns:
+    enabled: false
+
   # Confidence thresholds
   thresholds:
     # Entities above this score → surrogate replacement (reversible)
