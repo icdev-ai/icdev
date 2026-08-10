@@ -557,6 +557,39 @@ _GH_JSON_FIELDS = (
 )
 
 
+def _pr_number(url: str) -> int:
+    """The PR number, or a very large number when it cannot be read.
+
+    Unreadable sorts LAST so it never wins the tie-break by accident.
+    """
+    m = re.search(r"/pull/(\d+)", url or "")
+    return int(m.group(1)) if m else 1 << 30
+
+
+def _wins_sibling_tiebreak(pr_url: str, siblings) -> bool:
+    """True when THIS PR is the one that should merge first among its siblings.
+
+    THE DEADLOCK THIS BREAKS. hold_on_sibling_conflict exists to SERIALISE merges
+    that touch the same source file — merge one, let the rest rebase. It held
+    every one of them instead. If A shares a file with B, then B also shares one
+    with A, so both are held and nothing breaks the tie: with 14 AGOV PRs over
+    the same new modules on 2026-08-09, every PR was a sibling of several others
+    and the entire board sat at "awaiting merge" with zero active tasks.
+    Serialising requires choosing who goes first; refusing to choose is not
+    serialisation, it is a stall.
+
+    Lowest PR number wins, which is deterministic and stable: every watcher
+    iteration and every process reaches the same verdict without coordination, so
+    two watchers cannot both decide they are first. It also means the OLDEST PR
+    goes first, which is the fair reading of a queue.
+
+    The guard itself is unchanged for everyone else — the losers still wait, and
+    still rebase afterwards.
+    """
+    mine = _pr_number(pr_url)
+    return all(mine < _pr_number(other) for other in (siblings or {}))
+
+
 def repo_default_branch(*, runner=None, gh_bin: str = "gh") -> str:
     """Resolve the repository's default branch name.
 
@@ -1562,7 +1595,8 @@ class PRWatcher:
                         except Exception as _ll_exc:  # noqa: BLE001
                             logger.debug(
                                 "pr_watcher: sibling lesson hook failed: %s", _ll_exc)
-                        if self.config.get("hold_on_sibling_conflict", False):
+                        if (self.config.get("hold_on_sibling_conflict", False)
+                                and not _wins_sibling_tiebreak(pr_url, sib)):
                             action = WatcherAction(
                                 task_id=task["id"], pr_url=pr_url,
                                 classification="done", action="wait",
