@@ -260,6 +260,17 @@ tests/test_sbom_component_names.py
 # migrated checkouts cannot disagree about what columns exist. ~1.5s, pure Python
 # plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-01).
 tests/test_agent_wake_store.py
+# test_agov_rules.py earns a slot because the AGOV rule engine is a security
+# control whose failure mode is silent breadth: an unknown matcher key, a bad
+# regex or a rule carrying both `expr` and `sequence` must SKIP the whole rule,
+# because dropping only the offending clause loosens the surviving AND until a
+# targeted rule matches every event. Nothing else asserts that, and once
+# agov-det-06 wires the evaluator into pre_tool_use.py the same loosening turns
+# an `enforce: true` rule into a blanket block on live sessions. Also pins
+# `enforce` defaulting to False — monitor-only-by-default is the entire safety
+# story of the design. ~1s, pure Python, rules written to tmp_path, no
+# DB/LLM/network (agov-det-03).
+tests/test_agov_rules.py
 
 # test_sbom_dependency_graph.py earns a slot because Component Dependency
 # Relationship is the element that was entirely ABSENT — a flat component list
