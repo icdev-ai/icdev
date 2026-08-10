@@ -4,7 +4,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 
-const BASE = 'http://127.0.0.1:5050';
+const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://127.0.0.1:5050';
 const SS = 'playwright/screenshots';
 
 // ─────────────────────────────────────────────────────────────────────────────
