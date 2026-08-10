@@ -285,8 +285,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
-{% endblock %}
 
+{# The HITL handler MUST stay inside `block scripts`. It sat after the closing
+   endblock tag, and Jinja silently discards anything outside a block in a
+   template that extends a base — so the 14 Rebase/Requeue/Dismiss buttons
+   rendered with no listener attached and clicking them did nothing at all,
+   not even the 'working…' text. Nothing errors; the code is simply absent. #}
 <script>
 // HITL alert actions. base.html already patches fetch() to carry the CSRF
 // header, so there is nothing to add here.
@@ -332,3 +336,4 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 })();
 </script>
+{% endblock %}
