@@ -4949,6 +4949,7 @@ python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against 
 python tools/agent_case/cli.py timeline --session <session_id>                  # ordered timeline, human-readable
 python tools/agent_case/cli.py timeline --session <session_id> --json           # machine-readable
 python tools/agent_case/cli.py timeline --session <id> --since <iso> --until <iso> --limit 500
+python tools/agent_case/cli.py timeline --session <id> --no-redact                 # unmasked; do not disclose as rendered
 python tools/agent_case/cli.py build --session <session_id> --out <dir>         # write a portable case bundle
 python tools/agent_case/cli.py build --session <id> --out <dir> --force --json  # replace an existing bundle
 python tools/agent_case/cli.py verify --bundle <dir>                            # all three layers
@@ -5012,3 +5013,15 @@ nothing in this path UPDATEs an ACE row. The mutable state lives only in
 Document-, COA- and boundary-level approval with multi-reviewer lists has a
 different lifetime and audience from a mid-run tool-call gate, and its reviewer
 semantics do not survive being flattened into one item with one `resolved_by`.
+# tools/agent_case/timeline_redaction.py is a library (no CLI) — import
+# TimelineRedactor / impact_level_for. The timeline redacts by default; --no-redact
+# is the opt-out and says so in the output and in the result's `limits`.
+#
+# Redaction masks the DISPLAY projection only. entry["record"] stays byte-exact,
+# which is what lets `verify` re-compute the hook_events HMACs and the
+# migration-149 audit hash chain over a bundle built from the same timeline.
+# Findings are placed at their LAST contributing event, not at their own
+# created_at, and list every event id they cite; an id belonging to another
+# session is reported under `unresolved_event_ids` and never pulls that event in.
+# Two runs over the same rows are byte-identical — import canonical_timeline /
+# canonical_json / timeline_digest from session_timeline to check that yourself.

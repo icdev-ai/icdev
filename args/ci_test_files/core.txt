@@ -299,6 +299,8 @@ tests/test_agent_wake_tools.py
 # ~1.1s, pure Python plus a three-table in-tmpdir SQLite file, no DB
 # service/LLM/network (agov-case-04).
 tests/test_agov_case_cli.py
+tests/test_agov_case_timeline.py
+tests/test_redaction_secret_patterns.py
 # test_inbox_adapters.py earns a slot because the failure it pins is silent and
 # strictly worse than not having the feature: a mirrored ask that collects an
 # answer nobody acts on leaves the operator believing the agent was unblocked
