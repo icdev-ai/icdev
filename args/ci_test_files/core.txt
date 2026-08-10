@@ -318,6 +318,15 @@ tests/test_sbom_component_names.py
 # migrated checkouts cannot disagree about what columns exist. ~1.5s, pure Python
 # plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-01).
 tests/test_agent_wake_store.py
+
+# agov-case-02 — the portable case bundle and its SHA-256 manifest. Guards four
+# properties that each fail silently on the machine the evidence is carried to:
+# manifest completeness (every member hashed), determinism (identical input ->
+# identical manifest, and a time-free bundle_digest), no raw transcript in the
+# bundle bytes with one planted in the DB, and a classification banner resolved
+# through classification_manager rather than written down. ~1.4s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-case-02).
+tests/test_agov_case_bundle.py
 # test_agov_rules.py earns a slot because the AGOV rule engine is a security
 # control whose failure mode is silent breadth: an unknown matcher key, a bad
 # regex or a rule carrying both `expr` and `sequence` must SKIP the whole rule,

@@ -719,6 +719,53 @@ visible reason.
 
 ---
 
+## AGOV CASE — Portable Case Bundle (agov-case-02)
+
+Exports one agent session as a directory that can be carried to a machine that
+never had the source database and verified there. Not a third bundler: SWFT
+(`tools/compliance/swft_evidence_bundler.py`) and `prov_recorder` both bundle
+software supply-chain evidence per PROJECT, and neither is keyed by
+`session_id` — this adds that axis on the same machinery and carries the
+`export_prov_json` document verbatim.
+
+```bash
+# Whole session
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123
+
+# A window of it, as JSON, replacing an existing bundle
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123 \
+    --since 2026-08-09T10:00:00Z --until 2026-08-09T11:00:00Z --force --json
+```
+
+```python
+from tools.agent_case.case_bundler import build_case_bundle
+result = build_case_bundle("sess-abc123", "out/case-abc123")
+result["bundle_digest"]   # time-free identity: same data -> same digest
+```
+
+Members: `manifest.json` (SHA-256 of every other file), `context.json`
+(endpoint/context header + classification), `timeline.json`, `records/` for
+`hook_events`, `audit_trail`, `agent_findings` and `agent_approval_log`,
+`artifacts.json`, and `provenance/prov.json`.
+
+Three properties hold by construction. **No member carries export wall-clock** —
+it lives only in `manifest.created_at` — so identical input produces a
+byte-identical manifest and `bundle_digest` is stable across export times.
+**No transcript table is ever read**, so the bundle cannot leak a prompt;
+`TRANSCRIPT_SOURCES` names the excluded tables in the header. **The
+classification marking is resolved** through
+`tools/compliance/classification_manager.py` from the markings on the session's
+own records, most restrictive wins — a session with a SECRET audit row produces
+a SECRET banner with no code change.
+
+Signed values (`hook_events.payload`, `audit_trail.hash`) are exported verbatim
+because the HMAC and the migration-149 chain are computed over them; redaction
+applies to operator free text (`agent_approval_log.reason`/`.detail`) via
+`tools/llm/output_redactor.py`. Verification that names WHICH records failed is
+agov-case-03; the operator CLI is agov-case-04.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
