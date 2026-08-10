@@ -1122,7 +1122,15 @@ class PRWatcher:
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=60,
             )
-            return proc.returncode == 0
+            if getattr(proc, "returncode", 1) != 0:
+                # A refused merge used to be indistinguishable from an empty
+                # board: False, no log line. That is how 11 PRs sat unmerged for
+                # a day while the watcher decided "merge" on every pass.
+                logger.warning(
+                    "pr_watcher: gh refused to merge %s: %s",
+                    pr_url, (getattr(proc, "stderr", "") or "").strip()[:200])
+                return False
+            return True
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
