@@ -80,16 +80,32 @@ def snapshot(root: Optional[Path] = None) -> Dict[str, float]:
 
 
 def changed_files(before: Dict[str, float], after: Dict[str, float]) -> list:
-    """Files whose mtime moved, plus any that newly appeared.
+    """Files present in BOTH snapshots whose mtime moved.
 
-    A file that DISAPPEARED is not reported: an import that vanished cannot be
-    the code this process is running, and a deleted file mid-write would
-    otherwise trigger a restart that fixes nothing.
+    A path in `after` but not in `before` is NOT a change. It is a lazy import:
+    the same file that was always on disk, loaded later because some code path
+    reached it for the first time. Counting those as new code turned this
+    feature into a restart loop — the daemon re-execs, takes a fresh baseline,
+    runs one cycle, lazily imports something else, and re-execs again, never
+    finishing a dispatch. Observed on kanban_scheduler at ~1 restart/minute:
+
+        09:02:10  code changed (1 file, e.g. pr_linker.py) - re-executing
+        09:03:09  code changed (1 file, e.g. pr_linker.py) - re-executing
+        09:04:08  code changed (11 files, e.g. leases.py, connector.py)
+
+    None of those files had been modified. The previous docstring here claimed
+    the opposite — "plus any that newly appeared" — and that claim WAS the bug:
+    what this needs to detect is a file being REWRITTEN, and a rewritten file is
+    by definition one this process had already loaded.
+
+    A file that DISAPPEARED is likewise not reported: an import that vanished
+    cannot be the code this process is running, and a file deleted mid-write
+    would otherwise trigger a restart that fixes nothing.
     """
     out = []
     for path, mtime in after.items():
         prior = before.get(path)
-        if prior is None or mtime != prior:
+        if prior is not None and mtime != prior:
             out.append(path)
     return sorted(out)
 
