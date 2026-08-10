@@ -236,6 +236,64 @@ tests/test_pytest_timeout_declared.py
 # (kax-conflict-07).
 tests/ci/test_gated_test_list.py
 
+# test_approval_inbox.py earns a slot because all four invariants it pins fail
+# SILENTLY. (1) approval_items is mutable ON PURPOSE — adding it to
+# APPEND_ONLY_TABLES would make the pending -> resolved UPDATE, the one
+# transition the table exists for, a hook violation, and the symptom is a
+# feature that simply stops resolving. (2) Its rows are mirrored out to
+# Slack/Teams/Telegram/email, so an argument VALUE reaching `body` leaks CUI to
+# a chat channel with nothing failing anywhere; the test seeds a bearer token
+# into the tool input and scans every cell of BOTH tables. (3) `is_approved`
+# means resolved-and-approved, not "not denied" — regress that and an expiry
+# reads as consent, which turns the inbox into the auto-approver it exists to
+# replace. (4) Resolving must write the agent_approval_log row through the
+# existing record_decision(), so a settled item can be pruned without losing the
+# decision. Both tables are built from their own migrations' DDL, so a column
+# added to one and not the other fails here rather than at runtime inside a
+# swallowed exception. ~1s, pure Python plus an in-tmpdir SQLite file, no DB
+# service/LLM/network (agov-inbox-01).
+tests/test_approval_inbox.py
+
+# test_inbox_approver.py earns a slot because the failure it guards is
+# INVISIBLE: every regression here still returns a decision, and three of them
+# return the WRONG one silently. (1) The load-bearing invariant of the whole
+# INBOX epic is that unattended routes the ask without widening what the agent
+# may do -- the test drives the REAL build_approval_hook and asserts an
+# irreversible call queues a pending item and BLOCKS, so a refactor that lets
+# it through is a red run rather than an auto-approver nobody notices until an
+# overnight session force-pushes. (2) A timeout must DENY and name the expiry;
+# an approver that allowed on timeout would auto-approve exactly the calls that
+# reach an approver at all. (3) The cross-process wake must work through the DB
+# POLL, not only the in-process threading.Event -- the process that answers is
+# usually not the one that asked, and the Event path passing alone would hide a
+# broken poll until a real Slack reply was ignored for an hour. The test
+# substitutes an Event that counts its own set() calls and asserts zero. (4) The
+# gate's public signature is frozen here, because the premise of the card is
+# that Approver was ALREADY an injectable seam. ~3s, pure Python plus an
+# in-tmpdir SQLite file and two short-lived threads, no DB service/LLM/network
+# (agov-inbox-02).
+tests/test_inbox_approver.py
+
+# test_unattended_flag.py earns a slot because the invariant it pins is the
+# entire premise of the flag and it fails INVISIBLY in the direction that looks
+# like success. (1) With unattended set, an irreversible call must still queue a
+# pending approval_items row and BLOCK -- the test drives the real
+# build_approval_hook AND the real dispatch handler with an execution sentinel,
+# so a regression that let the call through is a red run rather than an
+# auto-approver nobody notices until an overnight session force-pushes. Both
+# mutations were checked: returning an auto-approver reddens five tests, and
+# leaking "unattended implies mode=off" reddens three. (2) The approval surface
+# -- policy tiers, per-tool classification AND the resolved gate mode -- must be
+# byte-identical with the flag True and False; the mode is in there because
+# "unattended implies mode=off" would not show up in the policy file at all.
+# (3) The flag must survive a restart (asserted against a second, independent
+# module instance and against the bytes on disk) and must NEVER be inferred from
+# a non-TTY stdin -- which is true of CI, cron, Docker and pytest, so an
+# inference would silently re-route exactly the contexts nobody is watching. A
+# source-level assertion backs that one, because a TTY branch would pass every
+# behavioural test by construction. ~2s, pure Python plus an in-tmpdir SQLite
+# file and two short-lived threads, no DB service/LLM/network (agov-inbox-04).
+tests/test_unattended_flag.py
 # test_sbom_component_names.py earns a slot because the two defects it pins are
 # both INVISIBLE to a per-parser test and both silently drop data: `_adopt_declared`
 # rebuilt every declared component from a fixed field list, flattening the Maven
