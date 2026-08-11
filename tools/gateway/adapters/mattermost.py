@@ -34,7 +34,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.adapters.base import BaseChannelAdapter, has_correlation_token  # noqa: E402
 from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
 logger = get_logger("icdev.gateway.adapters.mattermost")
@@ -85,7 +85,14 @@ class MattermostAdapter(BaseChannelAdapter):
             return None
 
         # Only process ICDEV™ commands
-        if not (text.startswith("/icdev") or text.startswith("/bind") or text.startswith("icdev-")):
+        # An approval reply (agov-inbox-03) carries [icdev:<item_id>] and no
+        # command prefix — a human answering "approve" has no reason to add one.
+        if not (
+            text.startswith("/icdev")
+            or text.startswith("/bind")
+            or text.startswith("icdev-")
+            or has_correlation_token(text)
+        ):
             return None
 
         command, args = parse_command_text(text)

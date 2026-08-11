@@ -666,6 +666,62 @@ argument key **names** — is the only sanctioned way to build a deliverable bod
 
 ---
 
+## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
+
+Mirrors a pending item to a messaging channel and turns the human's reply back
+into a resolution, over the connectors ICDEV already has — every gateway adapter
+exposes the same `send_message(channel_user_id, text, thread_id)`, so there is
+**no new HTTP client**.
+
+```bash
+python tools/agent_runtime/inbox_channel.py --route --json
+python tools/agent_runtime/inbox_channel.py --route --persona overnight --json
+python tools/agent_runtime/inbox_channel.py --deliver <item_id> --json
+python tools/agent_runtime/inbox_channel.py --deliver-pending --inbox ops --json
+python tools/agent_runtime/inbox_channel.py --parse "approve [icdev:ai-1234]" --json
+```
+
+Wire it into the gate with the deliverer seam agov-inbox-02 already provides:
+
+```python
+from tools.agent_runtime.approval_gate import build_approval_hook
+from tools.agent_runtime.inbox_approver import make_inbox_approver
+from tools.agent_runtime.inbox_channel import make_channel_deliverer
+
+hook = build_approval_hook(
+    approver=make_inbox_approver(deliver=make_channel_deliverer(persona="overnight")),
+)
+```
+
+**The correlation token is the whole design.** A delivered message carries
+`[icdev:<item_id>]`; a reply resolves the item that token names and nothing else.
+A reply with **no** token — or with two different tokens — is **ignored**. It is
+never applied to the most recent or the only pending item: guessing which
+approval a bare "yes" meant is how the wrong irreversible action gets approved.
+
+**A delivery failure never loses or resolves the item.** In-app is the store of
+record and a channel is a mirror, so a raising adapter, a failed send, a missing
+route or an unbuildable channel all leave the item `pending` and answerable.
+
+**Outbound goes through the IL response filter**, then truncation, and *only
+then* the token footer — so redacting a CUI marking on an IL4 channel can never
+destroy the tag that makes the reply correlatable.
+
+**Inbound still traverses all eight gates.** A reply carrying a token is
+normalised to the allowlisted `icdev-approve` command before
+`run_security_chain` runs (the same synthetic-command shape agent-mode uses), and
+`resolve_from_reply()` refuses to settle anything unless every gate is recorded
+as passed. A free-text reply is an *answer*, never an approval: the item stays
+pending and still expires to `denied` on its own clock.
+
+Routing lives in `args/approval_inbox_routing.yaml` and resolves **per-session
+override → persona default → global default**, merged key by key. Its
+`approvers:` list is empty by default — parity with the console approver it
+replaces, which trusts whoever holds the terminal — and is enforced fail-closed
+once set.
+
+---
+
 ## Unattended Sessions — Routing, Not Autonomy (agov-inbox-04)
 
 `unattended` decides **where** an approval ask is delivered. It does **not**
@@ -814,6 +870,46 @@ summarize(events)                      # counts by type / source / confidence
 classify("Bash", {"tool_input": {"command": "git push"}})
 # → ("command.exec", "direct", {"command": "git push"})
 ```
+---
+
+## Agent Wake Tick + Event Keys (agov-wake-03)
+
+What ends a suspension. **No daemon** — the tick rides the Genesis cadence that
+already drains `agent_cron_jobs`, because ICDEV already runs three long-lived
+processes and a fourth is a fourth thing that can die unnoticed.
+
+**Libraries, no CLI.** Ticked by `tools/genesis/reflexes/agent_cron_reflex.py`
+(`every 1m` in `args/genesis_config.yaml`).
+
+```python
+from tools.agent_runtime.wake_tick import run_due_wakes
+from tools.agent_runtime.wake_signals import emit_pr_state, emit_task_status
+
+run_due_wakes()                       # fire every due wake, resume its session
+run_due_wakes(resumer=my_delivery)    # swap the delivery channel, not the gate
+```
+
+The tick **claims before it delivers** — `mark_fired` first, deliver only if it
+returned `True` — so two overlapping ticks cannot resume one suspension twice.
+The cost is stated: a delivery that fails after the claim is not retried
+(at most once, never twice) and is counted as `failed` in the tick result.
+
+Event keys are `<subject>:<id>:<event>`, emitted by `tools/ci/pr_watcher.py`
+(after each PR classification) and by the kanban state machine plus
+`pr_watcher._set_task_status` (on every applied task transition):
+
+| Key | Fired when |
+|-----|-----------|
+| `pr:<n>:ci_green` | CI passed and the PR is mergeable |
+| `pr:<n>:ci_failed` / `:merge_conflict` / `:changes_requested` | the matching PR verdict |
+| `pr:<n>:merged` / `pr:<n>:closed` | the PR left the open set |
+| `task:<id>:<status>` | a kanban task reached that status (`done`, `ci_failed`, …) |
+
+Re-emission is free: `fire_event` only promotes wakes that are still `pending`,
+so a poll loop firing `pr:1342:ci_green` every 30s promotes nothing after the
+first. Emitting never raises — a PR merge or a task transition is not allowed to
+break because a wake could not be promoted.
+
 ---
 
 ## Security Canvas (SDC) — Demo Runner

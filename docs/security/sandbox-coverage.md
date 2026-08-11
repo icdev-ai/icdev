@@ -1984,3 +1984,69 @@ by another vendor's tool.
 - **Revisit if:** the verifier gains the ability to write into or repair a bundle,
   to fetch a member over the network, or to load a bundle-supplied plugin/schema
   — any of those turns "read and hash" into a genuine execution surface.
+### Gap 59 — AGOV pre-tool-use detection gate (`tools/agent_detect/gate.py`)
+
+**Module:** `tools/agent_detect/gate.py` (with `tools/agent_detect/rules.py`,
+`sequence.py`, `findings.py`), reached from `.claude/hooks/pre_tool_use.py` and
+`tools/airgap/hook_compat.py::run_pre_tool_check` via
+`tools/hooks/shared_checks.py::check_agent_rules` (agov-det-06).
+
+**Ingress paths — three, and they are not equally trusted:**
+
+1. **Tool-call payloads** (`tool_name`, `tool_input`) — agent-controlled, and the
+   most hostile input in the repo: this is literally the thing being policed.
+   `normalize_tool_call` copies a handful of string fields out of the payload
+   into a flat dict and runs one anchored regex over the command text to lift a
+   URL. Values are then compared — `==`, `fnmatch`, `re.search` against
+   **operator-authored** patterns, or membership in a parsed argv. No payload
+   value is ever compiled as a pattern, executed, interpolated into SQL, or used
+   to build a path.
+2. **Rule YAML** (`args/agent_rules/**`, `args/agent_rules_enforce/**`) —
+   first-party config, and the enforcement directory is operator-controlled by
+   design. `yaml.safe_load` only. Conditions are **structured matchers, not an
+   expression language**; the design record in `args/agent_rules/README.md`
+   states why CEL and a restricted-AST evaluator were both rejected. The only
+   operator text that becomes executable-ish is a regex under `command_matches`
+   / `url_matches`, compiled by `re.compile` at load, with a compile failure
+   invalidating the whole rule rather than degrading it.
+3. **The JSON side-cache and the session trail** (`$TEMP/icdev-agent-detect/`) —
+   `json.loads` only, never `pickle`. Both are latency artefacts, not trust
+   boundaries. See the rationale below.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** No `exec`, `eval`, `pickle`, `subprocess`, `os.system`, shell
+  invocation or native parser anywhere in the path. The gate reads data, compares
+  it against declarative patterns, and appends a row. It has no allow verb — it
+  can only ever add a refusal to a call the eight hardcoded checks in
+  `shared_checks.py` already allowed — so no rule, however malformed or hostile,
+  can widen what an agent may do.
+- **Guardrails:**
+  - **Enforcement authority is a directory, not a field.** A rule blocks only
+    when it sets `enforce: true` **and** lives in the operator directory
+    (`args/agent_rules_enforce/`, `ICDEV_AGENT_ENFORCE_RULES_DIR`), which ships
+    with no rule files. Shipped-pack matches are forced monitor-only at the
+    gate, so `enforce: true` landing in `args/agent_rules/` is inert.
+    `tests/test_agov_gate.py` pins it.
+  - **The JSON side-cache is never consulted for a blocking decision.** It
+    accelerates the monitor-only pack only; the operator directory is always
+    read live from YAML and is never given a cache file. A process that could
+    write the cache could therefore degrade *detection* — the same thing editing
+    `args/agent_rules/` achieves, and that edit is itself matched by
+    `tamper.control_surface_write` — but could never suppress or fabricate a
+    block. The cache stores documents, not compiled rules, so a cached entry
+    still has to survive `compile_rule` on every load.
+  - **Fails open, deliberately.** Every other check in `shared_checks.py` encodes
+    a fixed reviewed judgement and fails closed. This one runs YAML that may have
+    landed five minutes ago, before every tool call, so a rule pack that cannot
+    be parsed leaves the session exactly as protected as it was before AGOV.
+  - The session trail is bounded twice (a byte-capped tail seek and a line cap),
+    is per-session, holds only normalized event fields, and is scratch — losing
+    it costs chain detection and nothing else.
+  - `findings.record_finding` uses a static column list with `%s` placeholders
+    through `get_connection()`; `agent_findings` is in `APPEND_ONLY_TABLES`.
+- **Revisit if:** a matcher key is ever added that compiles a pattern from the
+  *event* rather than from the rule; if the rule schema grows a `custom_expr` or
+  any field evaluated as code; if the side-cache is ever consulted for the
+  enforcement directory or switched from JSON to `pickle`; or if the gate gains
+  an allow/exempt verb, which would make a rule file able to *weaken* the
+  hardcoded blocks rather than only add to them.

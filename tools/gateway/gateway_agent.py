@@ -43,16 +43,9 @@ from tools.gateway.user_binder import (  # noqa: E402
     revoke_binding,
 )
 
-# Channel adapter imports
-from tools.gateway.adapters.internal import InternalChatAdapter  # noqa: E402
-from tools.gateway.adapters.telegram import TelegramAdapter  # noqa: E402
-from tools.gateway.adapters.slack import SlackAdapter  # noqa: E402
-from tools.gateway.adapters.mattermost import MattermostAdapter  # noqa: E402
-from tools.gateway.adapters.teams import TeamsAdapter  # noqa: E402
-from tools.gateway.adapters.github import GitHubAdapter  # noqa: E402
-from tools.gateway.adapters.gitlab import GitLabAdapter  # noqa: E402
-from tools.gateway.adapters.skype import SkypeAdapter  # noqa: E402
-from tools.gateway.adapters.email_channel import EmailAdapter  # noqa: E402
+# Channel adapter registry — the single channel→class map (agov-inbox-03 also
+# builds adapters from it, so it lives in the package, not in this function).
+from tools.gateway.adapters import ADAPTER_CLASSES, build_adapter  # noqa: E402
 
 logger = get_logger("icdev.gateway.agent")
 
@@ -80,24 +73,14 @@ def _load_adapters(config: Dict) -> Dict[str, Any]:
     channels = config.get("channels", {})
     adapters = {}
 
-    adapter_classes = {
-        "internal_chat": InternalChatAdapter,
-        "telegram": TelegramAdapter,
-        "slack": SlackAdapter,
-        "mattermost": MattermostAdapter,
-        "teams": TeamsAdapter,
-        "github": GitHubAdapter,
-        "gitlab": GitLabAdapter,
-        "skype": SkypeAdapter,
-        "email": EmailAdapter,
-    }
-
     for channel_name, channel_config in channels.items():
-        cls = adapter_classes.get(channel_name)
-        if not cls:
+        if channel_name not in ADAPTER_CLASSES:
             continue
 
-        adapter = cls(channel_config)
+        adapter = build_adapter(channel_name, channel_config)
+        if adapter is None:
+            logger.warning("Skipped adapter: %s (could not be constructed)", channel_name)
+            continue
         if adapter.is_available(env_mode):
             adapters[channel_name] = adapter
             logger.info("Loaded adapter: %s (max_il=%s)", channel_name, adapter.max_il)
@@ -262,6 +245,21 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
             )
             return jsonify({"status": "binding_initiated"}), 200
 
+        # 4a. Approval-inbox reply (agov-inbox-03): a message carrying an
+        # [icdev:<item_id>] correlation token answers that pending approval.
+        # Checked BEFORE agent-mode, which would otherwise swallow it as
+        # free-text. Like agent-mode, this only NORMALISES the envelope — the
+        # full 8-gate chain below still runs, and `icdev-approve` has its own
+        # allowlist entry, so an operator who has not permitted approvals on
+        # this channel gets a rejection at gate 5/6 rather than a special case.
+        try:
+            from tools.agent_runtime.inbox_channel import prepare_approval_reply_envelope
+            is_approval_reply = prepare_approval_reply_envelope(envelope)
+        except Exception as _inbox_exc:  # noqa: BLE001
+            # An unavailable approval inbox must not break ordinary commands.
+            logger.warning("approval-reply detection skipped: %s", _inbox_exc)
+            is_approval_reply = False
+
         # 4b. Agent-mode (sag-gw-01): a bound user's free-text (not a structured
         # allowlisted command) routes to the SAG agent runtime. This does NOT
         # bypass any gate — it rewrites the envelope to a synthetic 'agent'
@@ -295,6 +293,28 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str, adapter, c
                 envelope.channel_thread_id,
             )
             return jsonify({"status": "rejected", "gate": failed.gate_name if failed else "unknown"}), 200
+
+        # 6a. Approval-inbox reply (agov-inbox-03). The envelope has cleared all
+        # eight gates, which is what resolve_from_reply requires before it will
+        # settle anything. A reply answers one item and returns — it is not a
+        # command, so it starts no workflow trigger and executes nothing.
+        if is_approval_reply:
+            from tools.agent_runtime.inbox_channel import acknowledgement, resolve_from_reply
+
+            resolution = resolve_from_reply(envelope)
+            adapter.send_message(
+                envelope.channel_user_id,
+                acknowledgement(resolution, max_il=channel_config.get("max_il", "IL2")),
+                envelope.channel_thread_id,
+            )
+            return jsonify(
+                {
+                    "status": "approval_reply",
+                    "outcome": resolution.outcome,
+                    "item_id": resolution.item_id,
+                    "settled": resolution.settled,
+                }
+            ), 200
 
         # 6b. Studio workflow triggers (dwo-evt-02). The envelope has cleared
         # all eight gates at this point — this hop deliberately sits AFTER the
