@@ -98,6 +98,22 @@ STATUS_WEIGHT = {STATUS_MET: 1.0, STATUS_PARTIAL: 0.5, STATUS_GAP: 0.0}
 CATEGORY_DATA_FIELD = "data_field"
 CATEGORY_PRACTICE = "practice"
 
+#: Where ICDEV writes a component's producer. Named rather than imported from
+#: tools/compliance/component_producer.py (which declares it as
+#: PROPERTY_PRODUCER) so this validator keeps its no-internal-imports property —
+#: the assessors in sbx-fmt-02 import this module on every run. Spelled the same
+#: on both sides; tests/test_sbom_conformance_gate.py pins that they agree.
+PROPERTY_COMPONENT_PRODUCER = "icdev:component-producer"
+
+#: Where `component_hasher` (sbx-fld-03) states the two hash elements when the
+#: honest answer is an explicit unknown/withheld marker rather than a digest.
+#: CycloneDX `hashes[]` cannot hold "not reachable", so the property carries it.
+PROPERTY_COMPONENT_HASH = "icdev:component-hash"
+PROPERTY_COMPONENT_HASH_ALGORITHM = "icdev:component-hash-algorithm"
+
+#: Where sbx-fld-04 states the licence when the answer is an explicit unknown.
+PROPERTY_COMPONENT_LICENSE = "icdev:component-license"
+
 # ── Explicit-unknown vocabulary (2026 "Explicitly Identifying Unknown
 # Information"). sbx-prc-01 owns emitting these; it must import them. ───────
 UNKNOWN_MARKERS = frozenset(
@@ -424,11 +440,22 @@ def _cdx_component(raw):
 
     # Producer: the 2026 element replaces Supplier Name outright, but the
     # producing entity can legitimately land in any of these depending on
-    # spec version, so all four are read.
+    # spec version, so all of them are read.
+    #
+    # `icdev:component-producer` is FIRST because it is where this repository
+    # actually writes the producer: tools/compliance/component_producer.py
+    # declares PROPERTY_PRODUCER and states that the producer "travels in the
+    # icdev:component-producer* properties". Reading only the CycloneDX-native
+    # fields meant this validator could not see the producer ICDEV itself
+    # emits, and reported "Component Producer: absent on all N components"
+    # against a document that declared one on every single component — the same
+    # class of miss as reading `component_count` from the wrong level: a fact
+    # that is present, looked for in the wrong place, reported as absent.
     supplier = raw.get("supplier") or {}
     manufacturer = raw.get("manufacturer") or {}
     comp.producer = str(
-        (supplier.get("name") if isinstance(supplier, dict) else "")
+        props.get(PROPERTY_COMPONENT_PRODUCER)
+        or (supplier.get("name") if isinstance(supplier, dict) else "")
         or (manufacturer.get("name") if isinstance(manufacturer, dict) else "")
         or raw.get("publisher")
         or raw.get("author")
@@ -470,11 +497,37 @@ def _cdx_component(raw):
             if value:
                 comp.licenses.append(str(value))
 
+    # The third ICDEV property carrier, for the same reason as producer and
+    # hash: CycloneDX `licenses[]` has no member that can hold "the author could
+    # not determine this", and the standard forbids silence while accepting an
+    # explicit unknown. sbx-fld-04 writes the marker here.
+    if not comp.licenses:
+        declared_license = str(props.get(PROPERTY_COMPONENT_LICENSE) or "")
+        if declared_license:
+            comp.licenses.append(declared_license)
+
     for hsh in raw.get("hashes") or []:
         if isinstance(hsh, dict) and hsh.get("content"):
             comp.hashes.append(
                 {"algorithm": str(hsh.get("alg") or ""), "value": str(hsh["content"])}
             )
+
+    # An EXPLICIT UNKNOWN is a statement, not a silence, and the 2026 standard
+    # counts it as meeting the element. `component_hasher` (sbx-fld-03) writes it
+    # into `icdev:component-hash{,-algorithm}` because CycloneDX's `hashes[]` has
+    # nowhere to put "this artifact was not reachable" — a generator resolving
+    # lockfiles for an unpacked install tree can never fill that array, and
+    # scoring the array alone reports a conformant SBOM as a gap forever.
+    #
+    # Read here for the same reason as `icdev:component-producer` above: this
+    # validator was blind to every ICDEV property carrier, so it marked
+    # documents non-conformant for stating exactly what the standard asks them
+    # to state.
+    if not comp.hashes:
+        declared_value = str(props.get(PROPERTY_COMPONENT_HASH) or "")
+        declared_alg = str(props.get(PROPERTY_COMPONENT_HASH_ALGORITHM) or "")
+        if declared_value:
+            comp.hashes.append({"algorithm": declared_alg, "value": declared_value})
 
     if raw.get("purl"):
         comp.identifiers.append({"type": "purl", "value": str(raw["purl"])})
@@ -1093,9 +1146,20 @@ def _score_component_hash_algorithm(s):
             "No component carries a hash, so no algorithm is named. This is consequent to the "
             "Component Hash Value gap, not independent of it.",
         )
-    unnamed, unapproved, approved = [], [], 0
+    unnamed, unapproved, declared_unknown, approved = [], [], [], 0
     for comp in hashed:
         for hsh in comp.hashes:
+            # An explicitly-unknown ALGORITHM is the honest answer when the
+            # artifact itself was unreachable, and the standard counts an
+            # explicit unknown as a statement rather than a silence — the same
+            # rule Component Hash Value applies one element up. Checking it
+            # against the IANA registry first reported "names no algorithm" for
+            # a component that named one on purpose, and a document whose
+            # generator could not reach an artifact could never clear the
+            # element however honestly it declared that.
+            if _marker_state(hsh.get("algorithm")) in {"unknown", "withheld"}:
+                declared_unknown.append(comp.name)
+                continue
             name = _normalize_hash_name(hsh["algorithm"])
             if not name:
                 unnamed.append(comp.name)
@@ -1122,6 +1186,17 @@ def _score_component_hash_algorithm(s):
             STATUS_PARTIAL,
             f"All {approved} named algorithms are IANA-registered and NIST-approved, but only "
             f"{len(hashed)}/{len(s.components)} components are hashed at all.",
+        )
+    if declared_unknown:
+        # Say so: the rationale is the evidence a reviewer reads, and "all N are
+        # approved" silently omitting the explicitly-unknown ones would overstate
+        # what the document proves.
+        return (
+            STATUS_MET,
+            f"All {approved} named algorithms are IANA-registered and NIST-approved; "
+            f"{len(declared_unknown)} component(s) declare the algorithm explicitly "
+            f"unknown (e.g. {declared_unknown[0]}), which the standard accepts as a "
+            "statement rather than a silence.",
         )
     return (
         STATUS_MET,
@@ -1572,7 +1647,38 @@ def validate_file(path):
 #: name it reaches for is part of this module's contract, not an accident.
 #: Kept as an alias rather than a rename because ``validate_file`` is the name
 #: this module's own CLI, tests and docs use.
-validate_sbom = validate_file
+def validate_sbom(document):
+    """Score an ALREADY-PARSED document. The entry point sbom_conformance_gate uses.
+
+    This was an alias for ``validate_file``, which takes a PATH — so every call
+    from the gate died inside pathlib:
+
+        TypeError: argument should be a str or an os.PathLike object ... not 'dict'
+
+    The alias satisfied the NAME the gate imports without matching the signature,
+    and it left sbx-gov-01's gate failing 15 of its 29 tests.
+
+    It cannot be aliased to ``validate`` either: that takes a NORMALIZED document,
+    while the gate holds raw parsed JSON. The missing step is ``read_document``,
+    which is the same normalisation ``load_document`` applies after reading a
+    file — so a caller who already has the dict simply skips the read.
+
+    A PATH is also accepted, and routed to ``validate_file``. This is the name
+    other modules import, and refusing the shape they happen to hold makes the
+    entry point a trap rather than an interface — the previous fix swapped one
+    half of that trap for the other, so a caller with a path got
+    ``UnsupportedFormatError: SBOM document must be a JSON object``. Both shapes
+    now reach the same verdict, which is what an entry point imported by name
+    has to guarantee.
+
+    Passing the path is STRICTLY better where a caller has one: reading the file
+    is what lets the detached SBOM Author Signature beside it be scored at all.
+    """
+    # `__fspath__` rather than os.PathLike so this needs no new import, and
+    # rather than `isinstance(..., Path)` so any path-like object works.
+    if isinstance(document, str) or hasattr(document, "__fspath__"):
+        return validate_file(document)
+    return validate(read_document(document))
 
 
 # ─────────────────────────────────────────────────────────────────────────

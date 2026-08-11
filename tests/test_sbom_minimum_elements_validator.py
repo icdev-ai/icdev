@@ -171,7 +171,26 @@ def test_live_generator_output_scores_the_current_declared_only_state(tmp_path):
     report = validate(document)
     statuses = _statuses(report)
 
-    assert report["data_fields"] == {"met": 12, "partial": 3, "gap": 2, "total": 17}
+    # 14/17, and this number MOVED. It read 12/3/2 while the live measurement
+    # was 9/2/6 — the assertion had drifted from the code, and this test was
+    # already red on this branch before any of the fixes below were made.
+    #
+    # The five elements that closed (9 -> 14) are all ONE bug, and the comment
+    # further down this test states the requirement it violated: the validator
+    # read only the format-native fields and was blind to the `icdev:` property
+    # carriers this repository actually writes, so it "reported the conforming
+    # answer as the forbidden one".
+    #
+    #   component_producer                 `icdev:component-producer`
+    #   component_hash_value               `icdev:component-hash`
+    #   component_license                  `icdev:component-license`
+    #   component_hash_algorithm           an explicit-unknown ALGORITHM is a
+    #                                      statement, not a missing IANA name
+    #   component_dependency_relationship  consequent to the hash elements
+    #
+    # What is left is genuinely absent from a declared-only build: no alternate
+    # names, no signature at generation time, and a bare RFC 3339 timestamp.
+    assert report["data_fields"] == {"met": 14, "partial": 2, "gap": 1, "total": 17}
 
     # Name the met set rather than only counting it, so a regression that
     # trades one element for another still fails.
@@ -189,12 +208,14 @@ def test_live_generator_output_scores_the_current_declared_only_state(tmp_path):
         "sbom_tool_version",
         "sbom_version",
         "component_version",
+        "component_identifiers",
         # Unresolvable, and therefore explicitly marked unknown — which is a
         # conforming answer, not a missing one. See the loop below.
         "component_producer",
         "component_hash_value",
         "component_hash_algorithm",
         "component_license",
+        "component_dependency_relationship",
     }
 
     # The two the pre-sbx baseline already had are still met — the metadata
@@ -217,9 +238,13 @@ def test_live_generator_output_scores_the_current_declared_only_state(tmp_path):
         rationale = report["elements_by_id"][element_id]["rationale"].lower()
         assert "unknown" in rationale or "withheld" in rationale, element_id
 
-    # sbx-cov-02 is the one genuinely outstanding component element: a flat
-    # list expresses no relationship, and no marker can stand in for a graph.
-    assert statuses["component_dependency_relationship"] == STATUS_GAP
+    # This asserted GAP on the reasoning that "a flat list expresses no
+    # relationship". The generator does not emit a flat list: it writes a
+    # `dependencies` array covering every component, and the element scores MET
+    # on "covers all N components across N edges". The GAP was consequent to the
+    # hash elements being wrongly read, not to any missing graph — so it moved
+    # the moment those were fixed, rather than being independently outstanding.
+    assert statuses["component_dependency_relationship"] == STATUS_MET
 
     assert report["practices"]["met"] == 2
 

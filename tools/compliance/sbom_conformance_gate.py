@@ -103,6 +103,10 @@ CONDITION_BELOW_THRESHOLD = "sbom_conformance_below_threshold"
 SCORER_VALIDATOR = "sbom_minimum_elements_validator"
 SCORER_STRUCTURAL = "structural-interim"
 
+#: The one element that cannot be scored from the document alone, because
+#: sbx-sig-01 signs DETACHED (`<sbom>.sig.json` beside the file).
+SIGNATURE_ELEMENT = "sbom_author_signature"
+
 VALIDATOR_MODULE = "tools.compliance.sbom_minimum_elements_validator"
 
 MET = "met"
@@ -253,14 +257,36 @@ def _normalize_validator_result(raw):
             status = entry.get("status") if isinstance(entry, dict) else entry
             scored[name] = MET if status == MET else GAP
 
-    # The validator's own aggregate wins when it supplies one: it scores the 6
-    # practices too, and it owns the definition of what counts.
-    if raw.get("elements_met") is not None and raw.get("elements_total"):
-        met = int(raw["elements_met"])
-        total = int(raw["elements_total"])
-    elif scored is not None:
+    # Score over THIS GATE's 17 data-field elements, using the validator's
+    # per-element verdicts.
+    #
+    # The validator's aggregate was preferred here, on the reasoning that "it
+    # scores the 6 practices too, and it owns the definition of what counts".
+    # Those are two different claims and only the second holds. It does own what
+    # `met` MEANS — its reading is stricter and better, and that is kept. It does
+    # not get to change what this gate is COUNTING, and taking its 23-element
+    # aggregate did exactly that:
+    #
+    #   * the file's own contract, 100 lines up, is "the 17 data-field elements
+    #     … Practices and Processes (§1.3) are not scored here";
+    #   * `_score_structural`, the fallback, returns 17. So `score_pct` meant
+    #     one thing on the validator path and another on the structural path,
+    #     while ONE `block_below_pct` was compared against both;
+    #   * §1.3 practices are properties of an ORGANISATION — accommodation of
+    #     updates, distribution, coverage. A deployment gate that blocks a
+    #     document because a process is unevidenced conflates the artefact with
+    #     the programme that produced it.
+    #
+    # The practices are still assessed — they are in the validator's own report,
+    # which is sbx-sig-02's surface. They are just not this gate's arithmetic.
+    if scored is not None:
         met = sum(1 for status in scored.values() if status == MET)
         total = len(DATA_FIELD_ELEMENTS)
+    elif raw.get("elements_met") is not None and raw.get("elements_total"):
+        # No per-element detail to map: fall back to the aggregate rather than
+        # refusing to gate at all, and say so in the reason.
+        met = int(raw["elements_met"])
+        total = int(raw["elements_total"])
     else:
         raise SbomScoreError(
             f"{VALIDATOR_MODULE}.validate_sbom returned neither an 'elements' map nor an "
@@ -519,8 +545,43 @@ def score_sbom(sbom, sbom_path=None):
     """
     validator = _load_validator()
     if validator is not None and hasattr(validator, "validate_sbom"):
-        return _normalize_validator_result(validator.validate_sbom(sbom))
+        scored = _normalize_validator_result(validator.validate_sbom(sbom))
+        return _overlay_detached_signature(scored, sbom_path)
     return _score_structural(sbom, sbom_path=sbom_path)
+
+
+def _overlay_detached_signature(scored, sbom_path):
+    """Credit sbx-sig-01's DETACHED signature, which the validator cannot see.
+
+    `sbom_signer` writes `<sbom>.sig.json` beside the document rather than a
+    block inside it, so the SBOM Author Signature element is not scorable from
+    the document alone. The validator is explicit that it will not look: its
+    `document_path` is "echoed into the report", and `validate_sbom` takes a
+    dict on purpose. Finding the sidecar is this gate's own knowledge —
+    `_has_detached_signature` — and it stays that way.
+
+    Without this overlay the capability disappeared the moment sbx-sig-02 landed:
+    the structural scorer credited a detached signature, the validator path did
+    not, so every signed SBOM would have scored UNSIGNED on handover. That is the
+    quiet kind of regression — nothing errors, a gate just starts being wrong.
+
+    Only ever upgrades gap -> met, and only on evidence of a real file.
+    """
+    if not sbom_path or scored.get("elements", {}).get(SIGNATURE_ELEMENT) == MET:
+        return scored
+    if not _has_detached_signature(sbom_path):
+        return scored
+    elements = dict(scored.get("elements") or {})
+    if not elements:
+        return scored
+    elements[SIGNATURE_ELEMENT] = MET
+    met = sum(1 for status in elements.values() if status == MET)
+    total = scored.get("elements_total") or len(DATA_FIELD_ELEMENTS)
+    scored = dict(scored)
+    scored["elements"] = elements
+    scored["elements_met"] = met
+    scored["score_pct"] = round(100.0 * met / total, 2) if total else 0.0
+    return scored
 
 
 # =====================================================================================
