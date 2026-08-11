@@ -352,6 +352,16 @@ tests/test_agov_rule_pack.py
 # never alters an existing table and the failed INSERT was swallowed. ~1s, pure
 # Python plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-det-05).
 tests/test_agov_agent_findings.py
+# test_agov_sequence.py earns a slot because it pins the one correctness property
+# a chain evaluator cannot be allowed to lose: candidate events never leave their
+# (session_id, agent, project_id, source) partition. ICDEV runs many concurrent
+# sessions against one database, so a regression that let a chain span two of them
+# would not be a subtle miss — it would report session A's `.env` read plus session
+# B's outbound POST as exfiltration, continuously, and the whole rule pack would be
+# discredited on its first day. The out-of-order, window-expiry and max_matches
+# cases pin the rest of the semantics. ~0.6s, pure Python, no DB/LLM/network
+# (agov-det-04).
+tests/test_agov_sequence.py
 
 # agov-case-02 — the portable case bundle and its SHA-256 manifest. Guards four
 # properties that each fail silently on the machine the evidence is carried to:
@@ -390,6 +400,12 @@ tests/test_sbom_dependency_graph.py
 # migration's own up.sql, no DB service/LLM/network (agov-wake-02).
 tests/test_agent_wake_tools.py
 
+# agov-case-03 — case-bundle verification. Guards the three forensic layers and,
+# more importantly, the honest-degradation rule: an unset/default/rotated HMAC
+# secret must report NOT VERIFIED, never "passed". Also pins the HMAC recipe to
+# .claude/hooks/send_event.py::compute_hmac, which cannot be imported normally.
+# Fast (<1s) and DB-free: it builds real bundles under tmp_path.
+tests/test_agov_case_bundle_verifier.py
 # AGOV CASE — the timeline/bundler/CLI operator surface (agov-case-04). The
 # load-bearing case is the ROUND TRIP: a bundle written by case_bundler must
 # verify clean under bundle_verifier, which is a separate module with its own
