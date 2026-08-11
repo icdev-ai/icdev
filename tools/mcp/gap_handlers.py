@@ -4253,3 +4253,70 @@ def _capture_json(verb, namespace) -> dict:
     if isinstance(payload, dict):
         payload["exit_code"] = code
     return payload
+# AGOV CASE — agent-session forensics (agov-case-04)
+# ---------------------------------------------------------------------------
+# Pattern A (direct import): the three modules already return JSON-serializable
+# dicts, so a subprocess wrapper would only add a process and a parse.
+
+
+def handle_case_timeline(args: dict) -> dict:
+    """MCP: ordered timeline for one agent session."""
+    try:
+        from tools.agent_case.session_timeline import build_timeline
+
+        session_id = str(args.get("session_id") or "").strip()
+        if not session_id:
+            return {"error": "session_id is required"}
+        return build_timeline(
+            session_id,
+            since=args.get("since"),
+            until=args.get("until"),
+            limit=args.get("limit"),
+        )
+    except Exception as exc:
+        logger.warning("handle_case_timeline: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_case_build(args: dict) -> dict:
+    """MCP: write a session out as a portable, SHA-256-manifested case bundle."""
+    try:
+        from tools.agent_case.case_bundler import build_case_bundle
+
+        session_id = str(args.get("session_id") or "").strip()
+        out_dir = str(args.get("out_dir") or "").strip()
+        if not session_id:
+            return {"error": "session_id is required"}
+        if not out_dir:
+            return {"error": "out_dir is required"}
+        return build_case_bundle(
+            session_id,
+            out_dir,
+            since=args.get("since"),
+            until=args.get("until"),
+            limit=args.get("limit"),
+            overwrite=bool(args.get("force")),
+        )
+    except Exception as exc:
+        logger.warning("handle_case_build: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_case_verify(args: dict) -> dict:
+    """MCP: verify a case bundle and name which records failed which layer.
+
+    The report's ``exit_code`` is carried through rather than collapsed to a
+    boolean: 2 ("could not be verified") must stay distinguishable from 0
+    ("verified clean"), which is the whole point of the verifier's contract.
+    """
+    try:
+        from tools.agent_case.bundle_verifier import verify_bundle
+
+        bundle_dir = str(args.get("bundle_dir") or "").strip()
+        if not bundle_dir:
+            return {"error": "bundle_dir is required"}
+        layers = args.get("layers") or None
+        return verify_bundle(bundle_dir, secret=args.get("secret"), layers=layers)
+    except Exception as exc:
+        logger.warning("handle_case_verify: %s", exc)
+        return {"error": str(exc)}

@@ -1046,6 +1046,7 @@
 
 - [Workflow Forms Canvas (WFC)](manifest/workflow-forms-canvas.md)
 - [Agent Detection (AGOV / DET)](manifest/agent-detection.md)
+- [AGOV CASE — Agent-Session Forensics](manifest/agent-case-forensics.md)
 
 
 ## Auto-Registered (Coherence Fix)

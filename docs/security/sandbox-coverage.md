@@ -1758,7 +1758,199 @@ by another vendor's tool.
   coordinates — accepting a name from outside the record is a different posture
   from rewriting one inside it — or if `--validate` grows a mode that writes back
   into an SBOM it parsed.
-### Gap 34 — AGOV pre-tool-use detection gate (`tools/agent_detect/gate.py`)
+
+### Gap 58 — SBOM dependency graph construction and validation (`tools/compliance/dependency_graph.py`)
+
+**Module:** `tools/compliance/dependency_graph.py` (sbx-cov-02), imported by
+`tools/compliance/sbom_generator.py` and `tools/compliance/sbom_conformance_gate.py`.
+
+**Ingress path:** Two, and they are the same two as Gap 57's. (1) As a library it
+receives resolver-shape component dicts built from a target project's lockfiles
+and manifests — third-party content by definition, since the point is to
+inventory someone else's dependency tree. Both the component metadata and the
+*edge set* are attacker-influenced: a hostile `package-lock.json` chooses the
+names, the versions and which package points at which. (2) `--validate` reads a
+CycloneDX JSON SBOM from an operator-supplied path, which may have been produced
+by another vendor's tool.
+
+- **Decision:** **bypass-documented**
+- **Why:** the module evaluates nothing. It reads six string fields per
+  component, compares and hashes them, and walks an integer-indexed adjacency
+  map. There is no `eval`, no `subprocess`, no import driven by input, no
+  filesystem write, and no network call — `--validate` opens exactly the one
+  path it was given. The untrusted content reaches only `str()`, `sorted()`,
+  set membership and `hashlib`, so the sandbox would be guarding arithmetic.
+- **Residual risk and what bounds it:**
+  - **Graph blow-up.** A malicious lockfile can declare a very deep or very
+    dense tree. `detect_cycles` and `_reachable` are both iterative, so depth
+    cannot exhaust the interpreter stack —
+    `test_cycle_detection_terminates_on_a_deep_chain` pins that at 3000 levels.
+    Cost stays linear in nodes plus edges; the resolver that produced the set is
+    the component that bounds its size.
+  - **Cycles.** A dependency cycle is legal input, not an error, and is detected
+    and reported rather than followed. Nothing in the module recurses over the
+    graph, so a cycle cannot hang generation.
+  - **Ref collision.** A crafted component set cannot make two nodes share a
+    bom-ref: collisions are broken deterministically and
+    `validate_dependency_graph` independently rejects a document in which two
+    components carry the same ref.
+  - **Dangling edges.** An edge naming a component the resolver never emitted is
+    dropped and counted, never emitted as a `dependsOn` that resolves to
+    nothing.
+  - `dependency_rows` returns bound parameters; no ref or relationship type is
+    interpolated into SQL, and `relationship_type` is additionally constrained
+    by the CHECK migration 20260809232803 installs.
+  - `tests/test_sbom_dependency_graph.py` exercises the malformed paths directly
+    — a dangling edge, a duplicated entry, an unrooted graph, an unreachable
+    component, two components sharing a ref, a non-object entry, a self-cycle
+    and mutual recursion.
+- **Revisit if:** the module gains a mode that fetches a linked SBOM per
+  dependency rather than embedding (the standard permits linking, and ICDEV
+  deliberately does not — that would add an SSRF surface this module does not
+  currently have), or if edges begin arriving from an advisory feed or registry
+  rather than from the resolver's own reading of a lockfile.
+### Gap — AGOV CASE bundle export (agov-case-02)
+- **File:** `tools/agent_case/case_bundler.py`
+- **Risk:** The exporter reads rows an agent's own activity produced — hook
+  payloads, audit details, approval-gate `reason`/`detail` free text, and
+  `affected_files` path lists — and writes them to a directory that is then
+  handed to someone else. Two distinct exposures: content the agent influenced
+  reaching a recipient (a leak), and content the agent influenced steering the
+  exporter (an execution surface).
+- **Decision:** **trusted-first-party**, with the leak side handled by contract
+  rather than by sandboxing
+- **Rationale:** Every value read comes from ICDEV's own append-only tables via
+  a fixed column allowlist, and nothing read is ever executed, resolved or
+  dispatched on. There is no `exec`/`eval`, no `subprocess`, no `importlib` on
+  a database value, no `pickle`/`yaml.load`, and no network call. Record content
+  is serialized with `json.dumps` and hashed; it never selects a code path. The
+  one place external input could become behaviour — a filesystem path out of
+  `audit_trail.affected_files` — is deliberately **not** followed: see below.
+- **Guardrails:**
+  - `collect_artifact_paths` records artifact paths as *referenced*, never
+    resolved. The exporter does not call `open`, `stat` or `resolve` on a path
+    that came out of the database, so `../../etc/shadow` in an `affected_files`
+    cell is copied into the bundle as a string and nothing more. This is also
+    the only route by which a transcript could re-enter a bundle that queried no
+    transcript table, which is why `contents_included` is a fixed `false`.
+  - `TRANSCRIPT_SOURCES` names the conversation-bearing tables, verified against
+    the live DDL, and no query in this module touches one. Exclusion is by closed
+    allowlist, not by filtering after the fact. Two of them —
+    `intake_conversation` and `ci_conversation_turns` — carry both a `session_id`
+    and raw turn `content`, so a join one column wider would pull the exported
+    session's own conversation into forensic evidence;
+    `tests/test_agov_case_bundle.py` seeds a canary into all four transcript
+    tables, asserts the two session-keyed rows really are reachable, and then
+    asserts the canary is absent from the bundle's bytes.
+  - Operator-writable free text (`agent_approval_log.reason`, `.detail`) passes
+    through `tools/llm/output_redactor.py::redact` before export, and a row whose
+    text changed is flagged `redacted: true` so a reader can distinguish "nothing
+    sensitive" from "something removed".
+  - Signed and hash-chained values (`hook_events.payload`, `audit_trail.hash`)
+    are exported verbatim on purpose: rewriting one would make an untampered
+    bundle report as tampered. The context header states this explicitly rather
+    than leaving a recipient to infer it.
+  - The endpoint header carries the storage backend NAME, never a DSN — a
+    connection string can carry a password.
+- **Revisit if:** the exporter gains the ability to copy artifact BYTES into the
+  bundle, to resolve or stat a database-supplied path, to accept an
+  externally-authored bundle as input, or to export a table not in the allowlist
+  — any of those turns "read, redact and hash" into a genuine trust boundary.
+### Gap — AGOV CASE timeline, bundler and CLI (agov-case-04)
+- **File:** `tools/agent_case/session_timeline.py`, `tools/agent_case/case_bundler.py`,
+  `tools/agent_case/cli.py`
+- **Risk:** Two distinct inputs. (1) The `session_id`, `--since`/`--until` and
+  `--limit` an operator supplies reach SQL. (2) The row contents these modules
+  export — `hook_events.payload` above all — are agent-authored, so a hostile
+  agent could try to make its own recorded activity misbehave on the way out.
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither module executes anything it reads. The timeline runs
+  parameterized SELECTs and hands rows to `json.dumps`; the bundler adds
+  `hashlib.sha256` over bytes and file writes into the operator-named bundle
+  directory. There is no `exec`/`eval`/`compile`, no `subprocess`, no
+  `importlib`, no `pickle` or `yaml.load`, and no network call. Row content never
+  selects a code path — a payload is copied verbatim and hashed, never parsed for
+  behaviour, and specifically never `json.loads`ed on the export path, because the
+  HMAC is over the raw stored text and re-serializing it would break every
+  signature. (agov-case-01 added a `json.loads` on the *display* path only; see
+  the entry below. `entry["record"]` still carries the raw stored text and is
+  what the bundler writes and the verifier hashes.)
+- **Guardrails:**
+  - Every value from the caller is bound as a parameter, never interpolated:
+    `session_id`, `since` and `until` go through `sql_placeholder(conn)`, and
+    `--limit` is coerced with `int()` before it reaches the `LIMIT` clause. The
+    only interpolated identifiers are table and column names drawn from the
+    module-level `SOURCES` constant, which no input can reach.
+  - Column selection is an explicit allowlist per source, resolved against the
+    live table's actual columns. A later `ALTER TABLE` cannot silently widen a
+    forensic export, and a column that migration 149 has not added yet is dropped
+    from the SELECT rather than failing the whole query.
+  - `build_case_bundle` refuses to write into a directory that already holds a
+    `manifest.json` unless `overwrite=True` (`--force`), so an export cannot
+    half-replace an existing evidence bundle and leave a manifest describing some
+    files and not others.
+  - Bundle members are written with `newline="\n"` and `sort_keys=True` so a
+    bundle written on Windows verifies byte-identically on Linux; the manifest
+    hashes raw bytes and CRLF would break every member digest.
+  - `tests/test_agov_case_cli.py` round-trips a real bundle through the separate
+    verifier and asserts all three layers PASS, tampers a member and asserts it is
+    named, and asserts no CRLF reaches any member file.
+- **Revisit if:** the timeline gains a free-text filter that is interpolated
+  rather than bound, the bundler starts reading an existing bundle it did not
+  write (that is the verifier's posture, covered above), or a member is ever
+  fetched over the network instead of from the database.
+
+### Gap — AGOV CASE timeline display projection and redaction (agov-case-01)
+- **File:** `tools/agent_case/timeline_redaction.py`, and the operand/redaction
+  path added to `tools/agent_case/session_timeline.py`
+- **Risk:** This is the first code in the CASE package that *parses* agent-authored
+  content rather than copying it. `hook_events.payload` is written by the agent
+  being investigated, so it is hostile-by-assumption: it can be malformed JSON, a
+  deeply nested structure, a huge string, or prose crafted to look like a command
+  the agent never ran. The parsed values are then rendered to an operator and, via
+  the bundler, carried to another machine.
+- **Decision:** **trusted-first-party** for the parse, **bypass-documented** for
+  the redaction stack it calls.
+- **Rationale:** The parse is `json.loads` into plain data followed by dictionary
+  lookups against a module-level allowlist. No parsed value ever selects a code
+  path, names a module, becomes a format string, or reaches a subprocess; the
+  worst a malformed payload achieves is no operands. The redaction stack it calls
+  (`tools/redaction/detector.py` + `anonymizer.py`) is the platform's existing
+  sanitizer and is already covered above; this module constrains it further rather
+  than loosening it.
+- **Guardrails:**
+  - **Allowlist, not filter.** Only `OPERAND_KEYS` (`command`, `file_path`,
+    `notebook_path`, `path`, `url`) are read, at the payload top level and one
+    level down inside `OPERAND_CONTAINER_KEYS`. `FREE_TEXT_KEYS` — tool output,
+    model prose, file contents — are never read, so a command quoted in a tool's
+    *output* cannot be rendered as though the agent ran it. A module-level guard
+    raises at import if a later edit moves a free-text key into the allowlist,
+    and `tests/test_agov_case_timeline.py` asserts the two sets stay disjoint.
+  - **Non-strings are not coerced.** Only `str` values become operands; a dict,
+    list or int is skipped rather than `str()`-ed into something to regex over.
+  - **Malformed input yields nothing, never an exception.** `json.loads` failures
+    and non-dict payloads return the operands found so far.
+  - **No LLM and no clock in the path.** The detector's Ollama NER layer is
+    switched off here. It is a network call to a generative model, and one
+    non-reproducible field would make the timeline unusable as the basis of a
+    bundle manifest — `test_two_runs_over_identical_data_are_byte_identical`
+    is the check that keeps it out.
+  - **Redaction is a projection, not a mutation.** Masked strings land in
+    `entry["display"]`; `entry["record"]` is untouched, which is what lets
+    `bundle_verifier` still re-compute the `hook_events` HMACs and the
+    migration-149 hash chain. Asserted by
+    `test_redaction_does_not_touch_the_record_the_verifier_hashes`.
+  - **Reads do not write.** `TimelineRedactor` disables the anonymizer's audit
+    INSERT by default, so building a timeline stays a read; the bundler turns it
+    on at the moment an actual disclosure happens.
+  - The credential patterns this uses are opt-in platform-wide
+    (`detection.secret_patterns.enabled`, default `false`) so enabling them for
+    the timeline does not change what any existing LLM-egress caller sends —
+    `tests/test_redaction_secret_patterns.py` asserts the shipped default is off.
+- **Revisit if:** operand extraction moves from an allowlist to a denylist, a
+  parsed value is ever used to choose a code path or reach a subprocess, or the
+  redactor is given a detection backend that makes a network call.
+### Gap 59 — AGOV pre-tool-use detection gate (`tools/agent_detect/gate.py`)
 
 **Module:** `tools/agent_detect/gate.py` (with `tools/agent_detect/rules.py`,
 `sequence.py`, `findings.py`), reached from `.claude/hooks/pre_tool_use.py` and
@@ -1824,7 +2016,7 @@ by another vendor's tool.
   enforcement directory or switched from JSON to `pickle`; or if the gate gains
   an allow/exempt verb, which would make a rule file able to *weaken* the
   hardcoded blocks rather than only add to them.
-### Gap 57 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
+### Gap 60 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
 - **File:** `tools/agent_detect/shell_parse.py` (agov-det-02)
 - **Risk:** This module's entire input is hostile by assumption — the command
   string an agent asked a shell to run, read back out of `hook_events` /
