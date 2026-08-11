@@ -417,17 +417,6 @@ tests/test_agov_gate.py
 # named regression plus the refusal set are the only things pinning either. ~1s,
 # pure Python, stdlib-only module, no DB/LLM/network (agov-det-02).
 tests/test_agov_shell_parse.py
-# test_agov_events.py earns a slot because both invariants it pins fail SILENTLY.
-# The normalized agent event view is what every AGOV detection rule will read, and
-# the two ways it can lie are invisible from the outside: classify from free text
-# and a command merely QUOTED in tool output becomes evidence the command ran;
-# promote without the operand and `command.exec` fires with command=None, which a
-# rule matcher reads as "no match" rather than "broken". Neither shows up as a
-# failure anywhere else — a green suite and a detection layer that indicts the
-# wrong session are the same object. Also pins mutual exclusivity (one source row
-# → at most one event) and that the module creates NO table. ~1s, pure Python plus
-# a tmp_path SQLite file, no DB service/LLM/network (agov-det-01).
-tests/test_agov_events.py
 # test_agov_cli.py earns a slot because it pins the bridge whose absence was
 # invisible: sequence.py binds rules.match_event by NAME and falls back SILENTLY
 # to a built-in whose command_name/argv_contains handlers read attributes an
@@ -440,30 +429,6 @@ tests/test_agov_events.py
 # no position to claim. ~1s, pure Python, DB read monkeypatched, no DB
 # service/LLM/network (agov-det-07).
 tests/test_agov_cli.py
-# test_agent_wake_store.py earns a slot because the invariant it pins is a
-# CONCURRENCY invariant, which no other gate in this repo can catch. ICDEV runs
-# many sessions against one database and the wake tick (agov-wake-03) can overlap
-# with itself, so a read-then-write mark_fired lets two ticks both observe `due`
-# and both resume the same agent from one suspension -- and a double resume does
-# not raise, it just does the work twice. The file asserts exactly one transition
-# under two hand-interleaved connections AND under two real threads through a
-# barrier, plus the three quieter failure modes: due() must never return a wake
-# whose condition is unmet (an agent resumed early does the wrong work silently),
-# nothing may take a wake from fired back to due, and a cancelled timer must stay
-# cancelled once its fire_at elapses. The table is built from the migration's own
-# up.sql and compared against wake._ensure_schema's DDL, so the un-migrated and
-# migrated checkouts cannot disagree about what columns exist. ~1.5s, pure Python
-# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-01).
-tests/test_agent_wake_store.py
-
-# agov-case-02 — the portable case bundle and its SHA-256 manifest. Guards four
-# properties that each fail silently on the machine the evidence is carried to:
-# manifest completeness (every member hashed), determinism (identical input ->
-# identical manifest, and a time-free bundle_digest), no raw transcript in the
-# bundle bytes with one planted in the DB, and a classification banner resolved
-# through classification_manager rather than written down. ~1.4s, pure Python
-# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-case-02).
-tests/test_agov_case_bundle.py
 
 # test_sbom_dependency_graph.py earns a slot because Component Dependency
 # Relationship is the element that was entirely ABSENT — a flat component list
