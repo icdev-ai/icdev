@@ -111,14 +111,23 @@ installed wheel shipped a `security_gates.yaml` with no agent-detection gate.
 | `tools/integrity/engine.py --gate` | see below |
 
 **On the integrity engine.** The acceptance criterion's command as written
-(`python tools/integrity/engine.py --gate`) cannot run — the CLI requires
-`--source`. Pointed at the repo itself (`--source .`) it returns
+(`python tools/integrity/engine.py --gate`) does not do anything on its own — the
+CLI needs a source. Pointed at the repo itself (`--source .`) it returns
 `verdict=quarantine, risk_score=100.0, gate.blocked=true` in
 `mode=provenance_blind` with `trust_score: 0.0, authorized_edges: 0`. That is the
 engine doing its job on an UNREGISTERED third-party ingest, which is what it is
 for; it is not an HGX defect and not a repo-health signal. Confirmed by
 attribution: of the 237 findings recorded under assessment 15, **0 are in either
 file this task changed**.
+
+*Addendum (salvage, PR #1523).* Documenting that command surfaced a second,
+separate defect in it: `engine.py` imported first-party code at import time with
+no `sys.path` bootstrap, so started as `python tools/integrity/engine.py` it died
+with `ModuleNotFoundError` before argparse was ever reached — in both the `tools/`
+and `icdev/tools/` copies. The original run never saw that, because a shell whose
+`PYTHONPATH` already holds the repo root masks it; it saw only the missing-source
+message. Fixed in this PR (kax-conflict-05 gate), so the command above now runs
+by path with an empty `PYTHONPATH` and reports its usage.
 
 ## 5. Gates
 
