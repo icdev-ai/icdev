@@ -20,8 +20,9 @@ def main():
 
         from send_event import get_session_id, store_event
 
+        # Payload session id first — see the note in post_tool_use.py.
         store_event(
-            session_id=get_session_id(),
+            session_id=input_data.get("session_id") or get_session_id(),
             hook_type="notification",
             payload={"message": str(message)[:2000]},
         )

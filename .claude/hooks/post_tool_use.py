@@ -71,7 +71,16 @@ def main():
         # Import here to avoid issues if DB doesn't exist yet
         from send_event import get_session_id, store_event
 
-        session_id = get_session_id()
+        # The session id Claude Code passes on stdin wins. get_session_id()
+        # falls back to a fresh uuid4 when CLAUDE_SESSION_ID is unset, and this
+        # hook runs as a new interpreter per tool call — so calling it directly
+        # minted a NEW session for every event. Measured 2026-08-11: 9,803 of
+        # 9,816 sessions in hook_events held exactly one event, which silently
+        # disables anything keyed on a session (AGOV sequence rules need >=2
+        # events in one session to fire; the CASE timeline/bundle is per
+        # session). Same `payload or get_session_id()` order stop.py,
+        # subagent_stop.py, pre_compact.py and user_prompt_submit.py already use.
+        session_id = input_data.get("session_id") or get_session_id()
         # Truncate large outputs to prevent DB bloat
         output_summary = str(tool_output)[:2000] if tool_output else ""
 
