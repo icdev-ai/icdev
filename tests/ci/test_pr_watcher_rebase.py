@@ -104,6 +104,14 @@ class _FakeGit:
             sha = OLD_SHA if any("refs/remotes/origin/" in a for a in cmd) else NEW_SHA
             return SimpleNamespace(returncode=0, stdout=sha + "\n", stderr="")
         if sub == "rev-list":
+            # Two different questions share this subcommand. `--merges` asks
+            # whether the branch carries a merge commit — a rebase DROPS those,
+            # so rebase_and_push refuses outright. Everything else is the
+            # commits-ahead count. Answering both with the ahead count made every
+            # branch look like it held a merge, and the refusal then skipped the
+            # entire path these tests exist to exercise.
+            if "--merges" in cmd:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
             return SimpleNamespace(returncode=0, stdout=self._ahead + "\n", stderr="")
         if sub == "push":
             return SimpleNamespace(

@@ -168,6 +168,24 @@ def _identity_args(repo_root: str, runner: Optional[Callable]) -> List[str]:
     ]
 
 
+def _merge_commits(repo_root, base, head_sha, runner=None):
+    """Merge commits on the branch but not on the base, newest first.
+
+    `git rebase` DROPS merge commits unless given --rebase-merges, so any change
+    that exists only inside a merge — an "evil merge", where the author resolved
+    by editing rather than by taking a side — is silently discarded by a rebase.
+
+    Best-effort: if git cannot answer, return [] and let the rebase proceed. A
+    probe that fails must not make the recovery unavailable.
+    """
+    proc = _git(
+        ["rev-list", "--merges", f"origin/{base}..{head_sha}"],
+        cwd=repo_root, runner=runner,
+    )
+    if getattr(proc, "returncode", 1) != 0:
+        return []
+    return [line.strip()[:9] for line in _out(proc).splitlines() if line.strip()]
+
 def _verdict(**kw: Any) -> Dict[str, Any]:
     base = {
         "attempted": False,
@@ -281,6 +299,35 @@ def rebase_and_push(
             reason=f"remote branch not found: {_err(head)[:200]}",
         )
     old_sha = _out(head)
+
+    merges = _merge_commits(root, base, old_sha, runner)
+    if merges:
+        # REFUSE. `git rebase` drops merge commits unless it is given
+        # --rebase-merges, so a change that exists ONLY in a merge is silently
+        # discarded. Nothing errors; the branch comes back missing work and the
+        # force-push publishes it.
+        #
+        # Measured 2026-08-10 on kanban/sbx-sig-02. An operator pressed Rebase on
+        # the monitoring panel. That branch's commit 46facae13 was a merge whose
+        # subject was "fix(sbom): validate_sbom takes a document, AND MERGE MAIN"
+        # — the fix lived in the merge. The rebase dropped it, restoring the very
+        # alias the commit existed to remove, and took 87 lines across 6 files
+        # with it. It surfaced only because an unrelated push was rejected and
+        # somebody read the conflict instead of forcing past it.
+        #
+        # --rebase-merges is NOT the fix: it preserves the topology but makes
+        # conflict resolution materially harder, and this runs unattended against
+        # a force-push. Naming what it will not do is what an automatic recovery
+        # owes a human — this is a branch a person has to land.
+        return _verdict(
+            branch=branch, base=base, old_sha=old_sha,
+            reason=(
+                f"refused: {len(merges)} merge commit(s) on this branch "
+                f"({', '.join(merges[:3])}). A rebase DROPS merge commits, so a "
+                "fix made inside one would be silently discarded — land this "
+                "branch by hand."
+            ),
+        )
 
     tmp = tempfile.mkdtemp(prefix=f"icdev-rebase-{task_id}-")
     # mkdtemp created the directory; `git worktree add` insists on making it.
