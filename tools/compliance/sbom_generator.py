@@ -106,6 +106,12 @@ from tools.compliance.dependency_resolver import (
     RESOLUTION_DECLARED,
     resolve_project,
 )
+from tools.compliance.dependency_graph import (
+    build_dependency_graph,
+    component_identity as _graph_component_identity,
+    graph_properties,
+    to_cyclonedx_dependencies,
+)
 from tools.compliance.sbom_distribution import retrieval_url as sbom_retrieval_url
 from tools.compliance.unknown_information import (
     FIELD_NAME,
@@ -1007,15 +1013,13 @@ def _component_identity(component):
     with differing metadata are listed separately with their dependency
     relationship". So instances collapse only when every emitted field matches;
     two npm instances that differ in version *or* scope stay separate.
+
+    Defined in `dependency_graph` (sbx-cov-02) and re-exported here. Two copies
+    of this rule is how a `dependsOn` ends up naming a component the document
+    does not list: the rule that decides what counts as one component has to be
+    the same rule the graph mints refs from.
     """
-    return (
-        component.get("type", "library"),
-        component.get("group", ""),
-        component.get("name", ""),
-        component.get("version", ""),
-        component.get("purl", ""),
-        component.get("scope", ""),
-    )
+    return _graph_component_identity(component)
 
 
 def _generate_bom_ref(component):
@@ -1417,10 +1421,24 @@ def _build_cyclonedx_sbom(
         # for serial-number style identifiers.
         serial_number = f"urn:uuid:{uuid.uuid4()}"
 
-    # Deduplicate by full metadata identity, not by purl: two instances that
-    # differ in any emitted field are two components under the Coverage element.
-    seen_identities = set()
-    unique_components = []
+    # Component Dependency Relationship (2026 minimum elements, sbx-cov-02).
+    # The graph is built before the components array because it decides what
+    # counts as one component: a node is (metadata identity, resolved dependency
+    # set), so two instances agreeing on every emitted field but resolving
+    # different dependencies are two entries, each with its own relationships.
+    # That is a strict refinement of the metadata-only rule this used to apply —
+    # nothing that rule kept apart is merged — and it is what the Coverage
+    # element's "multiple instances ... listed separately with their dependency
+    # relationship" asks for once relationships exist at all.
+    #
+    # It also mints the bom-refs. `component_id` hashes coordinates alone while a
+    # component is listed separately when any of six fields differ, so two
+    # entries could collide on one ref; the graph breaks that tie, because an
+    # edge naming a ref two components share identifies neither.
+    target_bom_ref = f"icdev-{project.get('id', 'unknown')}"
+    graph = build_dependency_graph(components, target_bom_ref, mint_ref=_generate_bom_ref)
+    unique_components = [node["instance"] for node in graph["nodes"]]
+
     # Component Name (2026 minimum elements) — the element exists so that a name
     # is not lost, and deduplication is exactly where a name gets lost: two
     # instances differing only in the spelling the producer used collapse into
@@ -1428,16 +1446,11 @@ def _build_cyclonedx_sbom(
     # the identity that survives and re-attach them below.
     collapsed_spellings = {}
     for comp in components:
-        identity = _component_identity(comp)
         spelling = str(comp.get("declared_name") or "").strip()
         if spelling:
-            seen_spellings = collapsed_spellings.setdefault(identity, [])
+            seen_spellings = collapsed_spellings.setdefault(_component_identity(comp), [])
             if spelling not in seen_spellings:
                 seen_spellings.append(spelling)
-        if identity in seen_identities:
-            continue
-        seen_identities.add(identity)
-        unique_components.append(comp)
 
     # Component Producer (2026 minimum elements). One context for the whole
     # document so the Python environment is indexed once and each package's
@@ -1453,7 +1466,8 @@ def _build_cyclonedx_sbom(
 
     # Build CycloneDX components array
     cdx_components = []
-    for comp in unique_components:
+    for node in graph["nodes"]:
+        comp = node["instance"]
         # Unknown first, then policy withholding: a field the operator withholds
         # is withheld even where ICDEV also failed to establish it, because
         # "we are not telling you" is the stronger and more actionable statement.
@@ -1463,7 +1477,9 @@ def _build_cyclonedx_sbom(
 
         cdx_comp = {
             "type": comp.get("type", "library"),
-            "bom-ref": _generate_bom_ref(comp),
+            # Minted by the graph, not re-derived here: one ref per node, and the
+            # same string the `dependencies` array below points at.
+            "bom-ref": node["ref"],
             "name": disclosure.value_for(FIELD_NAME, comp["name"]),
             "version": disclosure.value_for(FIELD_VERSION, comp["version"]),
         }
@@ -1579,7 +1595,8 @@ def _build_cyclonedx_sbom(
 
     target_component = {
         "type": "application",
-        "bom-ref": f"icdev-{project.get('id', 'unknown')}",
+        # Same string the graph was rooted at above.
+        "bom-ref": target_bom_ref,
         "name": target_disclosure.value_for(FIELD_NAME, project.get("name", "Unknown")),
         "version": target_disclosure.value_for(FIELD_VERSION, "0.0.0"),
         "properties": producer_properties(target_producer)
@@ -1665,9 +1682,16 @@ def _build_cyclonedx_sbom(
     sbom["metadata"]["properties"].extend(enquiry_properties(policy))
     sbom["metadata"]["properties"].extend(completeness_properties(disclosures))
 
+    # Component Dependency Relationship (2026 Minimum Elements, sbx-cov-02).
+    # Rooted at the target component, so a recipient can walk the tree from the
+    # software the document describes rather than guessing at entry points. The
+    # properties state the embedding choice and the cycle count; the validator
+    # recomputes the latter, which is what makes "cycle-checked" verifiable.
+    sbom["dependencies"] = to_cyclonedx_dependencies(graph)
+    sbom["metadata"]["properties"].extend(graph_properties(graph))
+
     # Coverage (2026 Minimum Elements) — always emitted, including when the
     # answer is "incomplete" or "unknown".
-    target_bom_ref = sbom["metadata"]["component"]["bom-ref"]
     compositions, coverage_properties = _build_coverage_blocks(
         coverage or {"status": COVERAGE_UNKNOWN, "statement": "", "resolved": [], "unresolved": []},
         cdx_components,

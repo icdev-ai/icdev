@@ -277,5 +277,15 @@ def test_rules_load_through_the_loader_when_available():
         "the loader SKIPS malformed rules, so a shortfall means a rule in this "
         "pack is silently dead."
     )
-    for rule in loaded:
+    # agov-det-03 has since landed and settled the API: load_rules returns a
+    # RuleSet — the accepted rules AND the skipped ones — not a bare sequence.
+    # RuleSet defines __len__, so the count assertion above kept passing while
+    # this loop raised TypeError. Read `.rules` for the accepted ones, and while
+    # we are here assert `.errors` is empty: that is the same "silently dead
+    # rule" the count is guarding against, named rather than inferred.
+    assert not loaded.errors, (
+        f"loader rejected {len(loaded.errors)} shipped rule(s): "
+        f"{[getattr(e, 'path', e) for e in loaded.errors]}"
+    )
+    for rule in loaded.rules:
         assert getattr(rule, "enforce", False) is False

@@ -661,6 +661,50 @@ CREATE TABLE IF NOT EXISTS agent_findings (
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- agov-inbox-01 / migration 20260809203855. Pending-approval store for the
+-- unified approval inbox. MUTABLE and deliberately NOT append-only: an item is
+-- created pending then moves exactly once to resolved/expired/cancelled, and
+-- that transition is an UPDATE. The permanent decision record is the
+-- append-only agent_approval_log above. Argument KEY NAMES and a SHA-256 only,
+-- never argument values -- these rows get mirrored out to chat channels.
+CREATE TABLE IF NOT EXISTS approval_items (
+    item_id TEXT PRIMARY KEY,
+    session_id TEXT,
+    origin TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    tier TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    inbox TEXT,
+    state TEXT NOT NULL,
+    resolution TEXT,
+    resolved_by TEXT,
+    resolved_at TEXT,
+    expires_at TEXT,
+    rule TEXT,
+    arg_keys TEXT,
+    input_sha256 TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT
+);
+-- agov-inbox-04 / migration 20260809213046. The per-session unattended flag.
+-- ROUTING ONLY: it decides WHERE an approval ask is delivered (the inbox above
+-- instead of a console nobody is watching), never what the agent may do. MUTABLE
+-- and deliberately NOT append-only -- an operator turns it on and off, and the
+-- record of who flipped it goes to the append-only hook_events trail.
+CREATE TABLE IF NOT EXISTS agent_unattended_sessions (
+    session_id TEXT PRIMARY KEY,
+    unattended INTEGER NOT NULL DEFAULT 0,
+    source TEXT,
+    actor TEXT,
+    reason TEXT,
+    inbox TEXT,
+    tenant_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    set_at TEXT,
+    updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,

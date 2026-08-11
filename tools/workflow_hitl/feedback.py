@@ -98,6 +98,23 @@ def submit_feedback(
 
     logger.info("Feedback %s submitted for approval %s: decision=%s", feedback_id, approval_id, decision)
 
+    # Close the mirrored inbox item (agov-inbox-05) so a gate answered in the
+    # review UI stops showing as pending in the unified queue. Only 'approve'
+    # and 'conditional' let the workflow proceed; everything else — kickback,
+    # escalate, skip — is recorded as denied, because from the inbox's side the
+    # only fact that matters is that this gate did not grant permission to go on.
+    try:
+        from tools.agent_runtime.inbox_adapters import settle_workflow
+
+        settle_workflow(
+            approval_id,
+            approved=decision in ("approve", "conditional"),
+            resolved_by=submitted_by,
+            reason=kickback_reason or comments or decision,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("approval-inbox settle skipped for %s: %s", approval_id, exc)
+
     # Trigger next action
     if decision == "approve" or decision == "conditional":
         try:

@@ -1,7 +1,17 @@
 # CUI // SP-CTI
-"""ICDEV™ agent detection — declarative rules over the agent event stream (AGOV/DET).
+"""Declarative detection over the agent event stream (AGOV / DET).
 
-A read-only normalizer over the activity ICDEV already records, a YAML rule pack
-under ``args/agent_rules/``, and an append-only findings store. Monitor-only by
-default: a rule blocks nothing unless an operator opts it in.
+ICDEV already writes rich agent activity into ``hook_events``,
+``agent_executions``, ``ai_telemetry``, ``audit_trail`` and ``ace_audit_log``
+and never reads any of it back for detection. This package is the read side.
+
+Modules land per card task and are deliberately small and separable:
+
+  ``events.py``       normalized :class:`AgentEvent` view (agov-det-01)
+  ``shell_parse.py``  parsed shell-command view (agov-det-02)
+  ``rules.py``        YAML rule loader + single-event evaluator (agov-det-03)
+  ``findings.py``     append-only findings store (agov-det-05)
+
+Nothing here enforces anything on its own. Rules are monitor-only unless an
+operator opts a rule into ``enforce: true``; see :mod:`tools.agent_detect.rules`.
 """
