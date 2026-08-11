@@ -303,43 +303,6 @@ tests/test_unattended_flag.py
 # reintroduces a pre-2026 "unspecified"/"managed" version literal. ~1.5s, pure
 # Python plus an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-06).
 tests/test_sbom_component_names.py
-# test_approval_inbox.py earns a slot because all four invariants it pins fail
-# SILENTLY. (1) approval_items is mutable ON PURPOSE — adding it to
-# APPEND_ONLY_TABLES would make the pending -> resolved UPDATE, the one
-# transition the table exists for, a hook violation, and the symptom is a
-# feature that simply stops resolving. (2) Its rows are mirrored out to
-# Slack/Teams/Telegram/email, so an argument VALUE reaching `body` leaks CUI to
-# a chat channel with nothing failing anywhere; the test seeds a bearer token
-# into the tool input and scans every cell of BOTH tables. (3) `is_approved`
-# means resolved-and-approved, not "not denied" — regress that and an expiry
-# reads as consent, which turns the inbox into the auto-approver it exists to
-# replace. (4) Resolving must write the agent_approval_log row through the
-# existing record_decision(), so a settled item can be pruned without losing the
-# decision. Both tables are built from their own migrations' DDL, so a column
-# added to one and not the other fails here rather than at runtime inside a
-# swallowed exception. ~1s, pure Python plus an in-tmpdir SQLite file, no DB
-# service/LLM/network (agov-inbox-01).
-tests/test_approval_inbox.py
-
-# test_inbox_approver.py earns a slot because the failure it guards is
-# INVISIBLE: every regression here still returns a decision, and three of them
-# return the WRONG one silently. (1) The load-bearing invariant of the whole
-# INBOX epic is that unattended routes the ask without widening what the agent
-# may do -- the test drives the REAL build_approval_hook and asserts an
-# irreversible call queues a pending item and BLOCKS, so a refactor that lets
-# it through is a red run rather than an auto-approver nobody notices until an
-# overnight session force-pushes. (2) A timeout must DENY and name the expiry;
-# an approver that allowed on timeout would auto-approve exactly the calls that
-# reach an approver at all. (3) The cross-process wake must work through the DB
-# POLL, not only the in-process threading.Event -- the process that answers is
-# usually not the one that asked, and the Event path passing alone would hide a
-# broken poll until a real Slack reply was ignored for an hour. The test
-# substitutes an Event that counts its own set() calls and asserts zero. (4) The
-# gate's public signature is frozen here, because the premise of the card is
-# that Approver was ALREADY an injectable seam. ~3s, pure Python plus an
-# in-tmpdir SQLite file and two short-lived threads, no DB service/LLM/network
-# (agov-inbox-02).
-tests/test_inbox_approver.py
 # agov-inbox-03 — channel delivery + reply resolution. In the core gate because
 # the correlation token is the ONLY thing standing between a chat reply and the
 # wrong irreversible action being approved, and every one of those properties is
