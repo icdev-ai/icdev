@@ -7775,3 +7775,52 @@ projects:
   - key: doc
     title: DOC - Chat extension and design-rule documentation
     priority: medium
+- key: alrt
+  name: 'ALRT - Firing-alerts panel: make a HITL alert say what it needs'
+  description: 'Measured 2026-08-10 while clearing 10 conflicting PRs by hand. The
+    /monitoring#firing-alerts panel offers exactly three remediations - Rebase,
+    Requeue, Dismiss - and NONE of them was the correct action for ANY of the 12
+    alerts firing that night. 10 said `after merge_conflict`, where rebase_and_push
+    correctly refuses (pushed:false -> 422 with no diagnosis) and Requeue would
+    abandon real unlanded work (agov-det-07 carried 46 new files). The other 2
+    needed close-PR + force-done, which Dismiss does not do - it clears the alert
+    and leaves the task stuck at pr_opened forever.
+
+    Three gaps behind that. (1) The row never renders `description`, so the cause
+    ("resume cap reached (5/5) after merge_conflict") and the PR URL - the only
+    facts that decide which button can work - are invisible; they were read out of
+    the database instead. (2) A closed PR strands its alert permanently: every
+    resolve path in pr_watcher keys off an OPEN PR being polled, so agov-inbox-01
+    and -02 stayed firing after their PRs were closed and their tasks marked done,
+    and were cleared by hand. (3) The #1513 flap wrote ~180 rows in a day (27 for
+    one task) and the panel could not show it: firing rows plus a flat 50-row
+    history, no per-source churn.
+
+    NOT a redesign of the remediation model. The three verbs are well built -
+    idempotent, audited, gated on a real push. The work is making the panel state
+    what it knows so an operator can choose, and closing the one genuine code bug
+    (2), which is the same "list that only grows" failure #1511 was written to fix.
+
+    MANUAL-ONLY: this card touches tools/ci/pr_watcher.py, which pr_watcher itself
+    auto-merges any CI-green kanban/* branch from, so every task is gated behind
+    alrt-gate-00 via depends_on_task_id (the held gate row alone does not hold -
+    the dependency is what promote_backlog_to_scheduled.py actually checks) and
+    every PR opens --draft.'
+  task_prefix: alrt-
+  briefs: []
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: stale
+    title: STALE - An alert whose PR is closed must not fire forever
+    priority: high
+  - key: cause
+    title: CAUSE - Show the classification, cycle and PR link on the row
+    priority: high
+  - key: verb
+    title: VERB - Offer only the remediations that can actually work
+    priority: medium
+  - key: flap
+    title: FLAP - Surface re-fire churn and stale rows
+    priority: medium
