@@ -872,6 +872,46 @@ classify("Bash", {"tool_input": {"command": "git push"}})
 ```
 ---
 
+## Agent Wake Tick + Event Keys (agov-wake-03)
+
+What ends a suspension. **No daemon** — the tick rides the Genesis cadence that
+already drains `agent_cron_jobs`, because ICDEV already runs three long-lived
+processes and a fourth is a fourth thing that can die unnoticed.
+
+**Libraries, no CLI.** Ticked by `tools/genesis/reflexes/agent_cron_reflex.py`
+(`every 1m` in `args/genesis_config.yaml`).
+
+```python
+from tools.agent_runtime.wake_tick import run_due_wakes
+from tools.agent_runtime.wake_signals import emit_pr_state, emit_task_status
+
+run_due_wakes()                       # fire every due wake, resume its session
+run_due_wakes(resumer=my_delivery)    # swap the delivery channel, not the gate
+```
+
+The tick **claims before it delivers** — `mark_fired` first, deliver only if it
+returned `True` — so two overlapping ticks cannot resume one suspension twice.
+The cost is stated: a delivery that fails after the claim is not retried
+(at most once, never twice) and is counted as `failed` in the tick result.
+
+Event keys are `<subject>:<id>:<event>`, emitted by `tools/ci/pr_watcher.py`
+(after each PR classification) and by the kanban state machine plus
+`pr_watcher._set_task_status` (on every applied task transition):
+
+| Key | Fired when |
+|-----|-----------|
+| `pr:<n>:ci_green` | CI passed and the PR is mergeable |
+| `pr:<n>:ci_failed` / `:merge_conflict` / `:changes_requested` | the matching PR verdict |
+| `pr:<n>:merged` / `pr:<n>:closed` | the PR left the open set |
+| `task:<id>:<status>` | a kanban task reached that status (`done`, `ci_failed`, …) |
+
+Re-emission is free: `fire_event` only promotes wakes that are still `pending`,
+so a poll loop firing `pr:1342:ci_green` every 30s promotes nothing after the
+first. Emitting never raises — a PR merge or a task transition is not allowed to
+break because a wake could not be promoted.
+
+---
+
 ## Security Canvas (SDC) — Demo Runner
 ```bash
 # Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
