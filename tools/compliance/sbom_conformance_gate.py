@@ -236,7 +236,7 @@ def _normalize_validator_result(raw):
     if not isinstance(raw, dict):
         raise SbomScoreError(f"{VALIDATOR_MODULE}.validate_sbom returned {type(raw).__name__}, expected a dict")
 
-    elements = raw.get("elements")
+    elements = _validator_elements_by_name(raw.get("elements"))
     scored = None
 
     if isinstance(elements, dict) and elements:
@@ -272,9 +272,65 @@ def _normalize_validator_result(raw):
         "elements_met": met,
         "elements_total": total,
         "score_pct": round(100.0 * met / total, 2) if total else 0.0,
-        "component_count": int(raw.get("component_count") or 0),
+        "component_count": _validator_component_count(raw),
         "scored_by": SCORER_VALIDATOR,
     }
+
+
+def _validator_elements_by_name(elements):
+    """The validator's per-element results keyed by element id.
+
+    The validator returns a LIST of ``{"id": ..., "status": ...}``; this gate
+    only ever handled a dict, so every per-element branch below — including the
+    SbomScoreError that is supposed to fire when the two modules disagree about
+    the element vocabulary — was unreachable. The gate silently fell through to
+    the aggregate (12 of 23, practices included) and blocked on a percentage,
+    with no statement of WHICH element was short. The safety net that exists
+    precisely for a two-module disagreement was dead in the shape the other
+    module actually returns.
+
+    Accepts either shape and returns a dict, or None when there is nothing
+    per-element to read.
+    """
+    if isinstance(elements, dict) and elements:
+        return elements
+    if isinstance(elements, list) and elements:
+        by_name = {}
+        for entry in elements:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("id") or entry.get("name")
+            if name:
+                by_name[str(name)] = entry
+        return by_name or None
+    return None
+
+
+def _validator_component_count(raw):
+    """The validator's component count, read from where it actually puts it.
+
+    It reports the count under ``document``, not at the top level, and the read
+    here was ``int(raw.get("component_count") or 0)`` — so an ABSENT count
+    scored as ZERO, and ``require_components`` then blocked with "the SBOM lists
+    no components" against a document holding two of them. The gate reported a
+    perfectly plausible reason for a conclusion it had invented, which is worse
+    than failing loudly: the number it printed was never measured.
+
+    Absent is not zero. When neither location states a count, return None so the
+    caller can count the document it is already holding.
+    """
+    document = raw.get("document")
+    for source in (document, raw):
+        if not isinstance(source, dict):
+            continue
+        value = source.get("component_count")
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _text(value):
@@ -488,6 +544,15 @@ def evaluate_sbom_gate(sbom, gate=None, gates_path=None, config=None, sbom_path=
         )
 
     score = score_sbom(sbom, sbom_path=sbom_path)
+
+    # A scorer that does not STATE a component count has not counted zero of
+    # them. Count the document we are already holding rather than blocking on a
+    # number nobody measured — `require_components` is meant to catch an SBOM
+    # that genuinely lists nothing, not one whose scorer reports the total
+    # somewhere this gate did not look.
+    if score.get("component_count") is None:
+        score["component_count"] = len(_all_components(sbom))
+
     blocking = []
     warnings = []
 
