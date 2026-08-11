@@ -495,3 +495,11 @@ tests/test_redaction_secret_patterns.py
 # tools/ace/db/init_db.py). ~1.5s, pure Python plus two in-tmpdir SQLite files,
 # no DB service/LLM/network (agov-inbox-05).
 tests/test_inbox_adapters.py
+
+# test_dwo_dispatch_parity.py pins the hgx-par-01 backward-compatibility claim:
+# at max_parallel == 1 the wave-parallel loop must dispatch in the pre-parallel
+# _resolve_dag order for every template on disk. It is here AND in windows.txt
+# because it resolves its template roots from __file__ across two copies at
+# different depths — a path bug shows up as ZERO templates compared, which is a
+# silently-passing check rather than a failure.
+tests/test_dwo_dispatch_parity.py

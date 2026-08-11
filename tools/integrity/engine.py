@@ -51,12 +51,23 @@ the explicit engine primitive and runs whenever it is called.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
 
-from tools.integrity import (
+# This module is documented as a path-form CLI (`python tools/integrity/engine.py
+# --gate`), and started that way Python puts only `tools/integrity/` on sys.path —
+# so the first-party imports below raise ModuleNotFoundError before argparse is
+# ever reached. Running it as `python -m` or from a shell whose PYTHONPATH already
+# holds the repo root masks this, which is why the CLI appeared to work and only
+# ever complained about a missing `--source` (kax-conflict-05).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.integrity import (  # noqa: E402 — must follow the sys.path bootstrap
     capability_extractor,
     claim_parser,
     ingest,
@@ -65,10 +76,10 @@ from tools.integrity import (
     scanners,
     scoring,
 )
-from tools.integrity.constants import FEATURE_FLAG
-from tools.integrity.db.init_db import init_db
+from tools.integrity.constants import FEATURE_FLAG  # noqa: E402
+from tools.integrity.db.init_db import init_db  # noqa: E402
 
-from tools.logging.icdev_logger import get_logger
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("icdev.integrity.engine")
 
