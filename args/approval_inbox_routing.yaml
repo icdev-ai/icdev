@@ -1,0 +1,73 @@
+# [TEMPLATE: CUI // SP-CTI]
+# Approval-inbox channel routing (agov-inbox-03)
+#
+# WHERE a pending approval_items row is mirrored to, and WHO may answer it.
+# In-app is the store of record; a channel is a mirror. Nothing here changes
+# WHAT an agent may do — that is args/agent_approval_policy.yaml, and it is a
+# different question with a different file on purpose.
+#
+# Resolution order, most specific wins:
+#
+#     sessions[<session_id>]   per-session override
+#   → personas[<persona>]      persona default
+#   → default                  global default inbox
+#
+# Each tier is MERGED over the one below it, key by key, and an empty value does
+# not override. So a session may redirect only `channel_user_id` and inherit the
+# persona's channel, and a persona that names no channel inherits the global one.
+#
+# Fields:
+#   inbox            approval_items.inbox this route feeds (the in-app queue)
+#   channel          gateway channel name — must exist in args/remote_gateway_config.yaml
+#                    and be enabled there; "" means in-app only, no mirror
+#   channel_user_id  platform-specific destination (Slack channel/user, Telegram
+#                    chat id, email address, ...)
+#   thread_id        optional thread/conversation to post into
+
+default:
+  inbox: default
+  channel: ""            # in-app only until an operator names a channel
+  channel_user_id: ""
+  thread_id: ""
+
+# ─── Persona defaults ───────────────────────────────────────────────
+# Keyed by the persona/role the agent is running as (an args/ace/roles/ key, or
+# whatever the caller passes as `persona=`). $ICDEV_APPROVAL_PERSONA is the
+# fallback when the caller passes none.
+personas: {}
+# personas:
+#   overnight-builder:
+#     inbox: ops
+#     channel: slack
+#     channel_user_id: "C0123456789"   # an ops channel, not a person
+
+# ─── Per-session overrides ──────────────────────────────────────────
+# Keyed by ICDEV_SESSION_ID / CLAUDE_SESSION_ID. Normally short-lived: "for
+# THIS run, page me on Telegram instead".
+sessions: {}
+# sessions:
+#   sess-2026-08-09-abc:
+#     channel: telegram
+#     channel_user_id: "123456789"
+
+# ─── Who may answer ─────────────────────────────────────────────────
+# ICDEV user ids (the identity gate 3 resolves a channel user to — never a raw
+# channel_user_id) permitted to settle an item from a channel reply.
+#
+# EMPTY (the default) means any identity that clears all eight gates may answer,
+# which is deliberate parity with the console approver it replaces: that trusts
+# whoever holds the terminal, this trusts whoever holds a verified binding.
+# Set it to a non-empty list and enforcement becomes fail-closed — a reply from
+# anyone else is ignored and the item stays pending.
+approvers: []
+# approvers:
+#   - jane.doe
+#   - isso.oncall
+
+# ─── Delivery ───────────────────────────────────────────────────────
+delivery:
+  # Body is truncated to this many characters BEFORE the correlation footer is
+  # appended, so the [icdev:<id>] tag can never be the thing that gets cut.
+  max_body_chars: 3000
+  # Shown in the redaction notice when the body exceeds the channel's max_il.
+  dashboard_url: "/agent-approvals"

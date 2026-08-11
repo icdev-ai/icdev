@@ -12,6 +12,7 @@ Pass type controlled by trigger_data['pass_type']:
   'deliverables'   — only deliverable auto-generation pass (lightweight, every 3h)
 """
 
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -21,6 +22,23 @@ from typing import Dict
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+
+def _contract_label(contract: Dict) -> str:
+    """Human-identifiable label for a contract, for use in card titles.
+
+    ``dict.get(key, default)`` only falls back when the KEY IS ABSENT. Every
+    row in cpmp_contracts has a contract_number column, and on real rows it is
+    routinely '' or NULL, so ``.get("contract_number", "N/A")`` returned the
+    empty string and every card landed titled "[CPMP] : Subcontractor
+    Compliance" — unidentifiable, and identical across contracts. Fall back on
+    the VALUE, not the key.
+    """
+    for key in ("contract_number", "title"):
+        value = (contract.get(key) or "").strip()
+        if value:
+            return value
+    return f"contract {str(contract.get('id') or '?')[:8]}"
 
 
 def run(trigger_data=None, context=None):
@@ -58,18 +76,24 @@ def run(trigger_data=None, context=None):
         cid = contract["id"]
         cnum = (contract.get("contract_number") or "").strip()
         ctitle = contract.get("title", "")
+        # Card TITLES use the label (never blank); context_data keeps the raw
+        # contract_number so downstream consumers still see the true value.
+        clabel = _contract_label(contract)
 
-        # Every card this reflex files asks a human to submit, escalate, or cure
-        # something against a named contract — there is nothing to reference without
-        # a contract number. create_contract() defaults contract_number to '' (see
-        # tools/govcon/contract_manager.py), so `.get(key, "N/A")` never fired its
-        # default: half-initialised drafts and test fixtures all rendered as
-        # "[CPMP] : Overdue Deliverables", which collapses every unnumbered
-        # contract's findings onto one indistinguishable card title. Skip them, but
-        # count the skip so it shows up in the reflex result instead of vanishing.
+        # An unnumbered contract is COUNTED but NOT skipped. create_contract()
+        # defaults contract_number to '' (tools/govcon/contract_manager.py), so on
+        # the live board every active contract is unnumbered — skipping them, as
+        # main briefly did, drops every finding the reflex exists to surface and
+        # reports the silence as "skipped".
+        #
+        # The real requirement behind that skip was that a card must NAME something
+        # a human can act on, and _contract_label() already guarantees that: it
+        # falls back number -> title -> "contract <id8>" and is never blank. So the
+        # finding reaches the board AND is identifiable, which is what the skip was
+        # trying to protect. The counter stays — knowing how much of the portfolio
+        # is unnumbered is worth reporting on its own.
         if not cnum:
             results["contracts_unnumbered"] += 1
-            continue
 
         # ── Pass 1: PMO AI Issues ──────────────────────────────────────
         if pass_type in ("full",):
@@ -81,14 +105,15 @@ def run(trigger_data=None, context=None):
                 results["issues_found"] += len(issues)
                 for issue in critical:
                     try:
-                        _suggest_kanban_card(
-                            title=f"[CPMP] {cnum}: {str(issue.get('type','issue')).replace('_',' ').title()}",
+                        wrote = _suggest_kanban_card(
+                            title=f"[CPMP] {clabel}: {str(issue.get('type','issue')).replace('_',' ').title()}",
                             description=issue.get("description", "") + "\n\nSuggested: " + issue.get("suggested_action", ""),
                             priority="high" if issue.get("severity") == "critical" else "medium",
                             context_data={"contract_id": cid, "contract_number": cnum, "issue": issue},
                             created_by="cpmp_monitor",
+                            dedup_key=f"{cid}:{issue.get('type','issue')}",
                         )
-                        results["cards_created"] += 1
+                        results["cards_created"] += 1 if wrote else 0
                     except Exception as ce:
                         results["errors"].append(f"Card creation failed {cnum}: {ce}")
             except Exception as e:
@@ -109,8 +134,8 @@ def run(trigger_data=None, context=None):
                     is_declining = len(recent) >= 2 and recent[-1] < recent[0]
                     if is_declining:
                         try:
-                            _suggest_kanban_card(
-                                title=f"[CPARS RISK] {cnum}: Trajectory toward Marginal Rating",
+                            wrote = _suggest_kanban_card(
+                                title=f"[CPARS RISK] {clabel}: Trajectory toward Marginal Rating",
                                 description=(
                                     f"Contract: {ctitle}\n"
                                     f"Predicted CPARS score: {predicted_score:.2f} (Marginal threshold: 0.65)\n"
@@ -126,19 +151,34 @@ def run(trigger_data=None, context=None):
                                     "trend": recent,
                                 },
                                 created_by="cpmp_monitor_cpars",
+                                dedup_key=f"{cid}:cpars_trajectory",
                             )
-                            results["cpars_alerts"] += 1
-                            results["cards_created"] += 1
-                            # CAT2 escalation
-                            try:
-                                from tools.notification_service.alert_service import escalate_cat1
-                                escalate_cat1(
-                                    finding_title=f"CPARS trajectory alert: {cnum}",
-                                    severity="CAT2",
-                                    details={"contract_id": cid, "predicted_score": predicted_score},
-                                )
-                            except Exception:
-                                pass
+                            results["cpars_alerts"] += 1 if wrote else 0
+                            results["cards_created"] += 1 if wrote else 0
+                            # CAT2 escalation — only alongside a NEW card, or a
+                            # standing trajectory re-pages the CAT2 channel every
+                            # 3h for as long as the score stays below threshold.
+                            #
+                            # NOTE: alert_service exports escalate_cat1_FINDING,
+                            # which pages on a stig_findings row by id — not this
+                            # signature, and not applicable to a CPARS trajectory.
+                            # The import below has therefore never resolved. It is
+                            # left in place as the declared intent, but the failure
+                            # is now REPORTED rather than swallowed by `except:
+                            # pass`, which is why nobody noticed the CAT2 channel
+                            # was silent. Wiring it needs a real escalation API.
+                            if wrote:
+                                try:
+                                    from tools.notification_service.alert_service import escalate_cat1
+                                    escalate_cat1(
+                                        finding_title=f"CPARS trajectory alert: {clabel}",
+                                        severity="CAT2",
+                                        details={"contract_id": cid, "predicted_score": predicted_score},
+                                    )
+                                except Exception as esc:
+                                    results["errors"].append(
+                                        f"CPARS CAT2 escalation unavailable for {clabel}: {esc}"
+                                    )
                         except Exception as ce:
                             results["errors"].append(f"CPARS card {cnum}: {ce}")
             except Exception as e:
@@ -153,8 +193,8 @@ def run(trigger_data=None, context=None):
                 high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
                 for finding in high_findings:
                     try:
-                        _suggest_kanban_card(
-                            title=f"[SUBCON] {cnum}: {finding.get('issue_type','Noncompliance').replace('_',' ').title()}",
+                        wrote = _suggest_kanban_card(
+                            title=f"[SUBCON] {clabel}: {finding.get('issue_type','Noncompliance').replace('_',' ').title()}",
                             description=(
                                 f"Contract: {ctitle}\n"
                                 f"Subcontractor: {finding.get('subcontractor_name','N/A')}\n"
@@ -165,13 +205,13 @@ def run(trigger_data=None, context=None):
                             priority="high",
                             context_data={"contract_id": cid, "contract_number": cnum, "finding": finding},
                             created_by="cpmp_monitor_subcon",
+                            dedup_key=(
+                                f"{cid}:{finding.get('issue_type','noncompliance')}"
+                                f":{finding.get('subcontractor_name','')}"
+                            ),
                         )
-                        results["subcon_alerts"] += 1
-                        results["cards_created"] += 1
-                        try:
-                            pass
-                        except Exception:
-                            pass
+                        results["subcon_alerts"] += 1 if wrote else 0
+                        results["cards_created"] += 1 if wrote else 0
                     except Exception as ce:
                         results["errors"].append(f"Subcon card {cnum}: {ce}")
             except Exception as e:
@@ -187,7 +227,7 @@ def run(trigger_data=None, context=None):
                     results["cdrl_generated"] += generated
                     try:
                         _suggest_kanban_card(
-                            title=f"[CDRL] {cnum}: {generated} deliverable(s) auto-generated",
+                            title=f"[CDRL] {clabel}: {generated} deliverable(s) auto-generated",
                             description=(
                                 f"Auto-generated {generated} CDRL(s) due within 14 days for {ctitle}.\n"
                                 f"Review generated artifacts before submission."
@@ -195,6 +235,9 @@ def run(trigger_data=None, context=None):
                             priority="medium",
                             context_data={"contract_id": cid, "contract_number": cnum, "generated": generated},
                             created_by="cpmp_monitor_cdrl",
+                            # An event, not a condition: the batch size is part
+                            # of the identity so the next batch gets its own card.
+                            dedup_key=f"{cid}:cdrl_generated:{generated}",
                         )
                     except Exception:
                         pass
@@ -212,29 +255,53 @@ def _suggest_kanban_card(
     priority: str = "normal",
     context_data: Dict = None,
     created_by: str = "cpmp_monitor",
-):
-    """Create a kanban suggestion card. Skips duplicates by title + card id prefix."""
-    import uuid as _uuid
+    dedup_key: str = None,
+) -> bool:
+    """Create a kanban suggestion card, keyed so one finding is one row.
+
+    Returns True only if a row was actually written, so callers count writes
+    rather than attempts — an attempt-counter reports steady card creation
+    forever while a working dedup writes nothing, and `_write_memory_log`
+    persists that number.
+
+    ``dedup_key`` identifies the FINDING (contract + issue), and the card's id
+    is derived from it, so re-detecting the same finding is a primary-key
+    collision rather than a new row. The previous scheme — random uuid id,
+    dedup by ``title + dispatch_source + status NOT IN (done, dismissed)`` —
+    failed in both directions at once:
+
+      * COLLAPSE: titles embedded ``contract_number``, which is '' on real
+        rows, so every contract produced the identical title and the dedup
+        discarded all but the first. Five active contracts had noncompliant
+        subcontractors; the board showed one card.
+      * DUPLICATION: promoting a card rewrites ``dispatch_source`` to
+        'genesis_scheduler', so the dedup query stopped matching its own card
+        and re-created it every 3h cycle while it sat in progress.
+
+    An existing card is left alone in ANY status, including done/dismissed: a
+    reflex that resurrects work someone deliberately closed is a nag loop, and
+    the underlying condition stays visible on the CPMP dashboard regardless.
+    Findings that are events rather than conditions (e.g. CDRL generation)
+    encode their magnitude in the key, so a genuinely new occurrence is a
+    genuinely new key.
+    """
     from tools.db.storage import get_connection
     conn = get_connection()
     conn.set_security_context(None)  # rls-bypass: background reflex; kanban_tasks has no classification/tenant_id columns
     try:
-        # Dedup: skip if an open card with this title already came from this reflex.
-        # Match on the immutable 'cpmp-' id prefix, NOT dispatch_source — the kanban
-        # scheduler UPDATEs dispatch_source to 'genesis_scheduler' the moment it
-        # dispatches a card (kanban.py::_tag_task_source), so a created_by match
-        # silently stops matching after the first dispatch and every later 3h pass
-        # re-creates a card that is already on the board.
-        existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE title = %s AND id LIKE %s "
-            "AND status NOT IN ('done', 'dismissed')",
-            (title[:120], "cpmp-%"),
-        ).fetchone()
-        if existing:
-            return
+        seed = dedup_key or title[:120]
+        task_id = "cpmp-" + hashlib.sha256(
+            f"{created_by}|{seed}".encode("utf-8")
+        ).hexdigest()[:10]
+
+        # Dedup on the card's own id — immune to later rewrites of title,
+        # status, or dispatch_source by the kanban pipeline.
+        if conn.execute(
+            "SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone():
+            return False
 
         now = datetime.now(timezone.utc).isoformat()
-        task_id = f"cpmp-{_uuid.uuid4().hex[:10]}"
         conn.execute(
             """INSERT INTO kanban_tasks
                (id, task_type, title, description, status, priority,
@@ -253,6 +320,7 @@ def _suggest_kanban_card(
             ),
         )
         conn.commit()
+        return True
     finally:
         conn.close()
 

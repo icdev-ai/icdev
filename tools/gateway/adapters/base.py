@@ -16,6 +16,28 @@ from typing import Any, Dict, Optional
 from tools.gateway.event_envelope import CommandEnvelope
 
 
+def has_correlation_token(text: str) -> bool:
+    """True when ``text`` carries an ``[icdev:<item_id>]`` approval tag (agov-inbox-03).
+
+    Every ``parse_webhook`` drops a message that does not start with a command
+    prefix, which is right for commands and wrong for an approval reply: a reply
+    answers a question ICDEV asked, and a human typing "approve" into Slack has
+    no reason to prefix it. Without this the delivered ask can never be answered
+    from the channel it was delivered to.
+
+    The pattern is owned by :mod:`tools.agent_runtime.inbox_channel` and imported
+    lazily so there is exactly one definition of it and a deployment without the
+    approval inbox keeps today's behaviour rather than failing to import.
+    """
+    if not text:
+        return False
+    try:
+        from tools.agent_runtime.inbox_channel import extract_token
+    except Exception:  # noqa: BLE001 — no inbox installed: no approval replies
+        return False
+    return extract_token(text) is not None
+
+
 class BaseChannelAdapter(ABC):
     """Abstract base class for messaging channel adapters."""
 

@@ -197,6 +197,25 @@ command_allowlist:
     max_il: IL4
     requires_confirmation: false
 
+  # Approval-inbox reply (agov-inbox-03). A message carrying [icdev:<item_id>]
+  # is rewritten to this command before the 8-gate chain runs, so an approval
+  # arriving from chat is gated exactly like any other inbound command.
+  #
+  # category: read is deliberate and narrow. The reply performs no ICDEV action
+  # — it records the human's answer to a question ICDEV asked THEM, and the
+  # action itself stays gated by args/agent_approval_policy.yaml either way.
+  # WHO may answer is gate 3's identity binding plus the (fail-closed once set)
+  # `approvers:` allowlist in args/approval_inbox_routing.yaml.
+  #
+  # max_il: IL2 because the reply produces no classified output; the delivered
+  # body was already IL-filtered on the way out. That keeps replies workable on
+  # an IL4 channel like Telegram, which is where an unattended run gets paged.
+  - command: icdev-approve
+    category: read
+    channels: "slack,teams,mattermost,telegram,email,internal_chat"
+    max_il: IL2
+    requires_confirmation: false
+
   # Read-only — restricted channels
   - command: icdev-comply
     category: read

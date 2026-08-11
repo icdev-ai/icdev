@@ -88,6 +88,12 @@ def _titles(conn):
     return [r["title"] for r in conn.execute("SELECT title FROM kanban_tasks").fetchall()]
 
 
+def _ids(conn):
+    """Card ids. The dedup key is the id, so this is what distinctness means —
+    two findings with the same TITLE are still two cards if their ids differ."""
+    return [r["id"] for r in conn.execute("SELECT id FROM kanban_tasks").fetchall()]
+
+
 _OVERDUE = {
     "type": "overdue_deliverables",
     "severity": "high",
@@ -121,19 +127,34 @@ def _run_reflex(issues):
 
 # ---------------------------------------------------------------------------
 # Regression 1: unnumbered contracts must not produce anonymous, colliding cards
+#
+# This class originally required the opposite — that an unnumbered contract file
+# NO card at all. That skip traded one bug for a worse one: create_contract()
+# defaults contract_number to '', so on the live board every active contract is
+# unnumbered, and skipping them dropped every finding the reflex exists to
+# surface while reporting the silence as "skipped".
+#
+# The requirement underneath the skip was that a card must NAME something a
+# human can act on. `_contract_label()` already guarantees that (number -> title
+# -> "contract <id8>", never blank), so the finding can reach the board AND stay
+# identifiable. The counter is kept: how much of the portfolio is unnumbered is
+# worth reporting on its own.
 # ---------------------------------------------------------------------------
 
 class TestUnnumberedContracts:
-    def test_blank_contract_number_files_no_card(self, board):
+    def test_blank_contract_number_still_files_an_IDENTIFIABLE_card(self, board):
         _add_contract(board, "c-blank", "", title="Untitled Contract")
 
         result = _run_reflex([_OVERDUE])
 
-        assert result["cards_created"] == 0
-        assert result["contracts_unnumbered"] == 1
-        assert _titles(board) == []
+        assert result["cards_created"] == 1, "the finding must reach the board"
+        assert result["contracts_unnumbered"] == 1, "and still be counted"
+        assert _titles(board) == ["[CPMP] Untitled Contract: Overdue Deliverables"], (
+            "falls back to the contract title, so the card names something real")
 
-    def test_several_unnumbered_contracts_are_all_counted(self, board):
+    def test_several_unnumbered_contracts_each_get_their_own_card(self, board):
+        """The collapse this file was written about: identical titles meant four
+        of five findings were silently discarded by the title dedup."""
         for i in range(3):
             _add_contract(board, f"c-{i}", "", title="Untitled Contract")
 
@@ -141,7 +162,10 @@ class TestUnnumberedContracts:
 
         assert result["contracts_scanned"] == 3
         assert result["contracts_unnumbered"] == 3
-        assert _titles(board) == []
+        assert result["cards_created"] == 3, (
+            "three contracts, three findings, three cards — the dedup key is the "
+            "contract id, so an identical TITLE no longer collapses them")
+        assert len(set(_ids(board))) == 3
 
     def test_whitespace_only_number_counts_as_unnumbered(self, board):
         _add_contract(board, "c-ws", "   ")
@@ -149,7 +173,8 @@ class TestUnnumberedContracts:
         result = _run_reflex([_OVERDUE])
 
         assert result["contracts_unnumbered"] == 1
-        assert _titles(board) == []
+        assert result["cards_created"] == 1
+        assert _titles(board) != [], "whitespace is not a number, but is not a reason to drop the finding"
 
     def test_numbered_contract_still_files_a_card_naming_it(self, board):
         _add_contract(board, "c-real", "W15P7T-24-C-0001")
@@ -216,12 +241,25 @@ class TestDedupAfterDispatch:
 
         assert len(_titles(board)) == 2
 
-    def test_closed_card_may_be_refiled(self, board):
-        """A done card should not suppress a recurrence — behaviour predates this fix."""
+    def test_a_CLOSED_card_is_never_refiled(self, board):
+        """Deliberately the opposite of what this test used to assert.
+
+        Re-filing after a close reads as "a recurrence deserves a new card", but
+        the reflex cannot tell recurrence from persistence: these findings are
+        standing CONDITIONS (overdue CDRLs, a noncompliant subcontractor), not
+        events, so the condition is still true the moment after someone closes
+        the card. Re-filing every 3h is then a nag loop against a human decision,
+        and the condition stays visible on the CPMP dashboard regardless.
+
+        Findings that genuinely ARE events encode their magnitude in the dedup
+        key (e.g. `{cid}:cdrl_generated:{n}`), so a new occurrence is a new key
+        and files a new card without needing this door left open.
+        """
         self._file()
         board.execute("UPDATE kanban_tasks SET status = %s", ("done",))
         board.commit()
 
         self._file()
 
-        assert len(_titles(board)) == 2
+        assert len(_titles(board)) == 1, (
+            "closing a card is a decision; the reflex must not overrule it")

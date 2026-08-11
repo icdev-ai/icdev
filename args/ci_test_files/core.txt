@@ -303,6 +303,62 @@ tests/test_unattended_flag.py
 # reintroduces a pre-2026 "unspecified"/"managed" version literal. ~1.5s, pure
 # Python plus an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-06).
 tests/test_sbom_component_names.py
+# agov-inbox-03 — channel delivery + reply resolution. In the core gate because
+# the correlation token is the ONLY thing standing between a chat reply and the
+# wrong irreversible action being approved, and every one of those properties is
+# a negative: a reply with no token resolves NOTHING (asserted with two pending
+# items on the board, so "it picked the most recent one" fails here), a token
+# naming a settled item writes no second decision row, a failing or raising
+# adapter leaves the item pending, and the seeded CUI marker is redacted by
+# response_filter while the token survives the redaction. Also pins that no new
+# HTTP client crept in, against the module source. ~2s, pure Python plus an
+# in-tmpdir SQLite file, no DB service/LLM/network (agov-inbox-03).
+tests/test_inbox_channel.py
+# test_agov_events.py earns a slot because both invariants it pins fail SILENTLY.
+# The normalized agent event view is what every AGOV detection rule will read, and
+# the two ways it can lie are invisible from the outside: classify from free text
+# and a command merely QUOTED in tool output becomes evidence the command ran;
+# promote without the operand and `command.exec` fires with command=None, which a
+# rule matcher reads as "no match" rather than "broken". Neither shows up as a
+# failure anywhere else — a green suite and a detection layer that indicts the
+# wrong session are the same object. Also pins mutual exclusivity (one source row
+# → at most one event) and that the module creates NO table. ~1s, pure Python plus
+# a tmp_path SQLite file, no DB service/LLM/network (agov-det-01).
+tests/test_agov_events.py
+# test_agent_wake_store.py earns a slot because the invariant it pins is a
+# CONCURRENCY invariant, which no other gate in this repo can catch. ICDEV runs
+# many sessions against one database and the wake tick (agov-wake-03) can overlap
+# with itself, so a read-then-write mark_fired lets two ticks both observe `due`
+# and both resume the same agent from one suspension -- and a double resume does
+# not raise, it just does the work twice. The file asserts exactly one transition
+# under two hand-interleaved connections AND under two real threads through a
+# barrier, plus the three quieter failure modes: due() must never return a wake
+# whose condition is unmet (an agent resumed early does the wrong work silently),
+# nothing may take a wake from fired back to due, and a cancelled timer must stay
+# cancelled once its fire_at elapses. The table is built from the migration's own
+# up.sql and compared against wake._ensure_schema's DDL, so the un-migrated and
+# migrated checkouts cannot disagree about what columns exist. ~1.5s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-01).
+tests/test_agent_wake_store.py
+# test_agov_sequence.py earns a slot because it pins the one correctness property
+# a chain evaluator cannot be allowed to lose: candidate events never leave their
+# (session_id, agent, project_id, source) partition. ICDEV runs many concurrent
+# sessions against one database, so a regression that let a chain span two of them
+# would not be a subtle miss — it would report session A's `.env` read plus session
+# B's outbound POST as exfiltration, continuously, and the whole rule pack would be
+# discredited on its first day. The out-of-order, window-expiry and max_matches
+# cases pin the rest of the semantics. ~0.6s, pure Python, no DB/LLM/network
+# (agov-det-04).
+tests/test_agov_sequence.py
+
+# agov-case-02 — the portable case bundle and its SHA-256 manifest. Guards four
+# properties that each fail silently on the machine the evidence is carried to:
+# manifest completeness (every member hashed), determinism (identical input ->
+# identical manifest, and a time-free bundle_digest), no raw transcript in the
+# bundle bytes with one planted in the DB, and a classification banner resolved
+# through classification_manager rather than written down. ~1.4s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-case-02).
+tests/test_agov_case_bundle.py
 # test_agov_rules.py earns a slot because the AGOV rule engine is a security
 # control whose failure mode is silent breadth: an unknown matcher key, a bad
 # regex or a rule carrying both `expr` and `sequence` must SKIP the whole rule,
@@ -314,17 +370,6 @@ tests/test_sbom_component_names.py
 # story of the design. ~1s, pure Python, rules written to tmp_path, no
 # DB/LLM/network (agov-det-03).
 tests/test_agov_rules.py
-
-# test_agov_sequence.py earns a slot because it pins the one correctness property
-# a chain evaluator cannot be allowed to lose: candidate events never leave their
-# (session_id, agent, project_id, source) partition. ICDEV runs many concurrent
-# sessions against one database, so a regression that let a chain span two of them
-# would not be a subtle miss — it would report session A's `.env` read plus session
-# B's outbound POST as exfiltration, continuously, and the whole rule pack would be
-# discredited on its first day. The out-of-order, window-expiry and max_matches
-# cases pin the rest of the semantics. ~0.6s, pure Python, no DB/LLM/network
-# (agov-det-04).
-tests/test_agov_sequence.py
 
 # test_agov_rule_pack.py earns a slot because the invariant it pins is one
 # boolean wide and catastrophic in exactly one direction. Every rule shipped
@@ -453,6 +498,20 @@ tests/test_agov_case_bundle_verifier.py
 # ~1.1s, pure Python plus a three-table in-tmpdir SQLite file, no DB
 # service/LLM/network (agov-case-04).
 tests/test_agov_case_cli.py
+# test_agent_wake_tick.py earns a slot because it pins two things no other gate
+# in this repo can see. (1) The tick resumes a suspension EXACTLY ONCE across two
+# consecutive ticks -- a second delivery does not raise, it silently makes an
+# agent resume twice from one suspension, and the claim-before-deliver ordering
+# that prevents it is invisible to a reader who does not know why. (2) The
+# producers are actually wired: it mutation-proofs that pr_watcher's poll loop
+# reaches the emitter and that state_machine.transition emits, so the event keys
+# an agent subscribes to cannot quietly stop being fired. It also asserts the
+# structural constraint the task was given -- NO new daemon entrypoint appeared
+# under tools/, and wakes did not get a reflex of their own -- and that the
+# reflex's tools/ and icdev/ copies are byte-identical, since a stale mirror is a
+# known way for a reflex change to look applied and do nothing. ~2s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-03).
+tests/test_agent_wake_tick.py
 tests/test_agov_case_timeline.py
 tests/test_redaction_secret_patterns.py
 # test_inbox_adapters.py earns a slot because the failure it pins is silent and
