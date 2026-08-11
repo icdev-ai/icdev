@@ -1,0 +1,57 @@
+# CUI // SP-CTI
+# Monitor-only. See args/agent_rules/README.md before changing `enforce`.
+id: chains.permission_denied_then_runtime_bypass
+version: "1"
+title: Touched a governed surface, then reached for a raw interpreter
+severity: high
+tags:
+  - T1059
+  - T1562.001
+  - defense-evasion
+enabled: true
+enforce: false
+# WHAT THIS RULE CAN AND CANNOT SEE — read before tuning it.
+#
+# The name says "permission denied", but the normalized event view (agov-det-01)
+# carries no denial event type, and a call the pre-tool-use hook blocks never
+# becomes a command.exec at all. So this rule does NOT observe a denial. What it
+# observes is the shape a denial-then-retry leaves behind: an attempt against a
+# surface the platform governs, followed by the same effect being pursued
+# through a raw interpreter or a direct database client, which is the route that
+# skips the tool the gate knows how to inspect.
+#
+# That makes this the loosest rule in the pack and the one most likely to be
+# noisy on honest work — a legitimate `python -c` after editing a config file is
+# an ordinary afternoon. It ships at high rather than critical for that reason,
+# and it is a strong candidate to stay in monitor mode permanently. Promoting it
+# to enforce without a tuning period would be a mistake.
+deny_message: >-
+  A governed surface was touched and a raw interpreter was then invoked. Use the
+  platform tool for this operation so the approval gate can see it.
+sequence:
+  within: 15m
+  within_events: 60
+  max_matches: 1
+  steps:
+    - event_type:
+        - file.write
+        - file.delete
+        - file.read
+      file_path_glob:
+        - ".claude/hooks/**"
+        - "tools/hooks/**"
+        - "args/agent_approval_policy.yaml"
+        - "args/file_access_tiers.yaml"
+        - "args/security_gates.yaml"
+        - "**/.env"
+    # Raw interpreters and direct database clients: the paths that get the same
+    # effect without going through a tool the approval gate enumerates. `sqlite3`
+    # is already hard-blocked by is_direct_sqlite_usage(); it is listed because a
+    # finding that records the ATTEMPT is the thing the hardcoded block does not
+    # leave behind.
+    - command_name:
+        - sqlite3
+        - psql
+        - mysql
+      command_matches:
+        - "(?is)\\b(update|delete\\s+from|drop\\s+table|truncate|alter\\s+table)\\b"

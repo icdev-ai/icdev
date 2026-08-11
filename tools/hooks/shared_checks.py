@@ -79,6 +79,9 @@ __all__ = [
     "GIT_DANGER_PATTERNS",
     "git_danger_reason",
     "check_git_danger",
+    # 10 — AGOV declarative agent rules, monitor-only by default (agov-det-06)
+    "check_agent_rules",
+    "reset_agent_gate",
 ]
 
 
@@ -801,3 +804,80 @@ def check_git_danger(tool_name: str, tool_input: dict) -> Optional[str]:
         return None
     reason = git_danger_reason(tool_input.get("command", "") or "")
     return f"BLOCKED: {reason}" if reason else None
+
+
+# ── 10. AGOV declarative agent rules (agov-det-06) ────────────────────────
+#
+# The only check here that is DATA-DRIVEN rather than hardcoded, and the only
+# one that is monitor-only by default: it records what matched to
+# ``agent_findings`` and allows the call. It refuses only for a rule that both
+# sets ``enforce: true`` and lives in the operator-controlled directory.
+#
+# It runs LAST, after all nine checks above, so it can only ever add a refusal
+# to a call the existing guardrails already allowed. None of them were migrated
+# onto the rule engine and none should be: rewriting the load-bearing blocks
+# behind a new evaluator in the same change is how one goes missing silently.
+
+_UNSET_GATE = object()
+_AGENT_GATE: object = _UNSET_GATE
+
+
+def _agent_gate(repo_root: Optional[Path]):
+    """The ``tools/agent_detect/gate.py`` module, or None if unavailable.
+
+    Loaded BY PATH when the ``tools`` package is not already imported, for the
+    same reason this file is: importing ``tools`` executes the compatibility
+    shim (92ms measured) and this runs before every tool call. In a process that
+    already has ``tools`` imported — tests, hook_compat, any CLI — the normal
+    import is used so there is one module object rather than two.
+    """
+    global _AGENT_GATE
+    if _AGENT_GATE is _UNSET_GATE:
+        _AGENT_GATE = None
+        try:
+            if "tools" in sys.modules:
+                from tools.agent_detect import gate  # noqa: PLC0415
+
+                _AGENT_GATE = gate
+            else:
+                import importlib.util  # noqa: PLC0415
+
+                path = _resolve_root(repo_root) / "tools" / "agent_detect" / "gate.py"
+                spec = importlib.util.spec_from_file_location(
+                    "icdev_hook_agent_detect_gate", path
+                )
+                module = importlib.util.module_from_spec(spec)
+                # Registered before exec_module: dataclasses resolve their own
+                # module out of sys.modules while the class body is executing.
+                sys.modules[spec.name] = module
+                spec.loader.exec_module(module)
+                _AGENT_GATE = module
+        except Exception:  # noqa: BLE001 — an absent gate must not stop the guard
+            _AGENT_GATE = None
+    return _AGENT_GATE
+
+
+def reset_agent_gate() -> None:
+    """Drop the cached gate module. Tests only."""
+    global _AGENT_GATE
+    _AGENT_GATE = _UNSET_GATE
+
+
+def check_agent_rules(
+    tool_name: str, tool_input: dict, repo_root: Optional[Path] = None
+) -> Optional[str]:
+    """Deny reason from an enforcing agent rule, else None.
+
+    Fails OPEN on every internal error, unlike the checks above. They encode a
+    fixed judgement that has been reviewed; this one runs operator-authored YAML
+    that may have landed five minutes ago, so a rule pack that cannot be parsed
+    must leave the session exactly as protected as it was before AGOV rather
+    than stopping it from working.
+    """
+    gate = _agent_gate(repo_root)
+    if gate is None:
+        return None
+    try:
+        return gate.check_tool_call(tool_name, tool_input, root=_resolve_root(repo_root))
+    except Exception:  # noqa: BLE001 — see docstring
+        return None
