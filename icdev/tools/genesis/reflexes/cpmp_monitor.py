@@ -49,6 +49,7 @@ def run(trigger_data=None, context=None):
     results = {
         "pass_type": pass_type,
         "contracts_scanned": 0,
+        "contracts_unnumbered": 0,
         "issues_found": 0,
         "cards_created": 0,
         "cpars_alerts": 0,
@@ -73,11 +74,26 @@ def run(trigger_data=None, context=None):
 
     for contract in active:
         cid = contract["id"]
-        cnum = contract.get("contract_number", "N/A")
+        cnum = (contract.get("contract_number") or "").strip()
         ctitle = contract.get("title", "")
         # Card TITLES use the label (never blank); context_data keeps the raw
         # contract_number so downstream consumers still see the true value.
         clabel = _contract_label(contract)
+
+        # An unnumbered contract is COUNTED but NOT skipped. create_contract()
+        # defaults contract_number to '' (tools/govcon/contract_manager.py), so on
+        # the live board every active contract is unnumbered — skipping them, as
+        # main briefly did, drops every finding the reflex exists to surface and
+        # reports the silence as "skipped".
+        #
+        # The real requirement behind that skip was that a card must NAME something
+        # a human can act on, and _contract_label() already guarantees that: it
+        # falls back number -> title -> "contract <id8>" and is never blank. So the
+        # finding reaches the board AND is identifiable, which is what the skip was
+        # trying to protect. The counter stays — knowing how much of the portfolio
+        # is unnumbered is worth reporting on its own.
+        if not cnum:
+            results["contracts_unnumbered"] += 1
 
         # ── Pass 1: PMO AI Issues ──────────────────────────────────────
         if pass_type in ("full",):
@@ -311,17 +327,21 @@ def _suggest_kanban_card(
 
 def _write_memory_log(results: Dict):
     try:
-        from tools.memory.memory_write import write_memory
-        write_memory(
+        # write_to_db, not write_memory — the latter has never existed, so this
+        # whole log was an ImportError swallowed by the except below.
+        from tools.memory.memory_write import write_to_db
+        write_to_db(
             content=(
                 f"CPMP monitor [{results['pass_type']}]: "
-                f"{results['contracts_scanned']} contracts, "
+                f"{results['contracts_scanned']} contracts "
+                f"({results['contracts_unnumbered']} skipped, no contract number), "
                 f"{results['issues_found']} issues, "
                 f"{results['cards_created']} cards, "
                 f"{results['cpars_alerts']} CPARS alerts, "
                 f"{results['cdrl_generated']} CDRLs generated."
             ),
-            memory_type="event",
+            entry_type="event",
+            source="cpmp_monitor",
         )
     except Exception:
         pass

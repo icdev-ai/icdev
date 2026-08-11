@@ -31,9 +31,18 @@ def test_a_changed_mtime_is_detected():
     assert cr.changed_files(before, after) == ["/repo/b.py"]
 
 
-def test_a_new_import_counts_as_a_change():
-    """Lazy imports mean new code can arrive after the baseline was taken."""
-    assert cr.changed_files({}, {"/repo/new.py": 1.0}) == ["/repo/new.py"]
+def test_a_NEWLY_IMPORTED_file_is_not_a_change():
+    """This assertion used to say the opposite, and that was the bug.
+
+    A path that appears only in the later snapshot is a lazy import — the same
+    file that was always on disk, loaded when some code path first reached it.
+    Treating it as new code made the daemon re-exec, re-baseline, run one cycle,
+    lazily import something else and re-exec again: kanban_scheduler restarted
+    roughly once a minute and never finished a dispatch.
+    """
+    assert cr.changed_files({}, {"/repo/new.py": 1.0}) == []
+    # ...and the real signal still works: a file we HAD loaded, now rewritten.
+    assert cr.changed_files({"/repo/a.py": 1.0}, {"/repo/a.py": 2.0}) == ["/repo/a.py"]
 
 
 def test_a_vanished_file_is_NOT_a_change():
@@ -53,9 +62,12 @@ class _Exec:
 
 def test_it_reexecs_when_code_changed():
     ex = _Exec()
+    root = Path(__file__).resolve().parents[2]
+    # A baseline with every loaded file at mtime 0 — so they all read as
+    # rewritten. An empty baseline no longer means "everything changed".
+    stale = {path: 0.0 for path in cr.snapshot(root)}
     cr.restart_if_code_changed(
-        {}, started_at=time.time() - 10_000, execv=ex,
-        root=Path(__file__).resolve().parents[2])
+        stale, started_at=time.time() - 10_000, execv=ex, root=root)
     assert ex.calls, "expected a re-exec"
     exe, argv = ex.calls[0]
     assert argv[0] == exe, "must re-exec through the interpreter, not argv[0]"
@@ -65,9 +77,10 @@ def test_it_refuses_to_restart_before_the_minimum_uptime():
     """A restart loop is worse than stale code: it never finishes a poll, and
     every cycle looks like a fresh start so the loop itself is hard to see."""
     ex = _Exec()
+    root = Path(__file__).resolve().parents[2]
+    stale = {path: 0.0 for path in cr.snapshot(root)}
     changed = cr.restart_if_code_changed(
-        {}, started_at=time.time(), execv=ex,
-        root=Path(__file__).resolve().parents[2])
+        stale, started_at=time.time(), execv=ex, root=root)
     assert ex.calls == []
     assert changed, "it should still report what changed"
 
@@ -213,3 +226,31 @@ def test_git_unavailable_is_a_reason_not_an_exception():
     def boom(args, **kw):
         raise OSError("no git")
     assert cr.pull_if_safe(runner=boom)["pulled"] is False
+
+
+def test_a_daemon_that_only_LAZY_IMPORTS_never_restarts():
+    """The regression, stated as the loop it caused.
+
+    A daemon takes its baseline at startup, then imports more modules as it
+    works — connectors, leases, linkers, all reached for the first time on some
+    later cycle. If each of those counts as changed code the daemon re-execs,
+    and after re-exec it does the same thing again, forever. It never gets far
+    enough into a cycle to dispatch anything, which is exactly how the board
+    stopped moving while the scheduler process looked perfectly healthy.
+    """
+    baseline = {"/repo/scheduler.py": 100.0}
+    # Everything a running daemon subsequently pulls in, none of it modified.
+    after = dict(baseline)
+    for lazy in ("pr_linker.py", "leases.py", "connector.py", "github.py"):
+        after[f"/repo/{lazy}"] = 500.0
+    assert cr.changed_files(baseline, after) == [], (
+        "lazy imports must not look like new code — this is the restart loop")
+
+
+def test_a_REAL_edit_is_still_caught_amid_lazy_imports():
+    """The fix must not buy quiet by going blind: an actual rewrite of a file the
+    process already loaded is the whole point of the feature."""
+    baseline = {"/repo/scheduler.py": 100.0, "/repo/util.py": 100.0}
+    after = {"/repo/scheduler.py": 100.0, "/repo/util.py": 999.0,
+             "/repo/lazy.py": 500.0}
+    assert cr.changed_files(baseline, after) == ["/repo/util.py"]

@@ -1132,7 +1132,16 @@ class PRWatcher:
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=60,
             )
-            return proc.returncode == 0
+            if getattr(proc, "returncode", 1) != 0:
+                # Previously this returned False with NO log line, so a forge
+                # that refused every merge looked identical to a board with
+                # nothing to merge. That is how 11 PRs sat "awaiting merge" while
+                # the watcher decided "merge" on each pass and was refused.
+                logger.warning(
+                    "pr_watcher: gh refused to merge %s: %s",
+                    pr_url, (getattr(proc, "stderr", "") or "").strip()[:200])
+                return False
+            return True
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
@@ -1271,11 +1280,36 @@ class PRWatcher:
             task_id, ("pr_watcher.resume",), pr_url=pr_url)
 
     def _rebase_attempts(self, task_id: str, pr_url: Optional[str] = None) -> int:
-        """Prior auto-rebase attempts (successful or not) for this task, on THIS PR."""
-        return self._count_audit_actions(
+        """Prior auto-rebase attempts for this task on THIS PR, net of refunds.
+
+        Attempts spent on a conflict the forge only IMAGINED are refunded, so a
+        PR is not permanently locked out of the one action that can clear a stale
+        verdict. Floored at zero: a refund can restore a budget, never grant one.
+        """
+        spent = self._count_audit_actions(
             task_id, ("pr_watcher.rebase", "pr_watcher.rebase_failed"),
             pr_url=pr_url,
         )
+        refunded = self._count_audit_actions(
+            task_id, ("pr_watcher.rebase_refund",), pr_url=pr_url)
+        return max(0, spent - refunded)
+
+    def _refund_rebase_budget(self, task_id: str, pr_url: str,
+                              classification: str = "") -> None:
+        """Cancel the rebase attempts a phantom conflict consumed.
+
+        Written through _audit like every other action: the audit trail is
+        append-only (NIST AU), so a refund is a row the counter subtracts, never
+        a mutation of the rows it refunds. _audit also honours dry_run and uses
+        the one event_type the live CHECK constraint already accepts.
+        """
+        self._audit(WatcherAction(
+            task_id=task_id, pr_url=pr_url, classification=classification,
+            action="rebase_refund",
+            reason="forge reported CONFLICTING but the merge is clean",
+        ))
+        logger.info("pr_watcher: refunded rebase budget for %s (stale conflict)",
+                    pr_url)
 
     def _maybe_rebase(self, task: dict, state: dict) -> Dict[str, Any]:
         """Try the cheap recovery for a DIRTY PR: rebase the branch onto its base.
@@ -1383,6 +1417,32 @@ class PRWatcher:
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int) -> bool:
+        """True when the PREMISE of a HITL alert is false — not merely that the
+        forge is happy.
+
+        Recovery has to be the negation of the raise conditions, because the
+        resolve runs EARLIER in the same pass than both raise sites. Clearing on
+        `mergeable` alone therefore did not clear anything: a PR that is
+        MERGEABLE with red CI and its resume budget spent got resolved here and
+        re-raised ~330 lines below, on every single pass.
+
+        Measured 2026-08-10, the night the resolve shipped: agov-det-02 and
+        sbx-sig-02 — both MERGEABLE, both `ci_failed` at 5/5 — cycled about once
+        a minute; ~180 alert rows in a day. The panel refilled as fast as it
+        drained, which is the same "list nobody reads" failure the resolve was
+        written to prevent.
+
+        The two raise sites are the resume cap (`cycle >= max_cycles`) and CI
+        that never fired, so both are negated here. Anything that adds a third
+        raise site must negate it here too, or the alert flaps again.
+        """
+        if (state.get("mergeable") or "").upper() != "MERGEABLE":
+            return False
+        if cycle >= max_cycles:
+            return False
+        return not self._ci_never_fired(state)
 
     def _resolve_hitl_alert(self, task_id: str) -> None:
         """Clear the alert once the task moves — the queue must drain itself."""
@@ -1624,15 +1684,67 @@ class PRWatcher:
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
             if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
-                # The forge's cached verdict disagrees with git. git wins.
+                # The forge's cached verdict disagrees with git. git wins — but
+                # knowing that is not a remedy, and the obvious remedy is wrong.
+                #
+                # Measured on #1473 (2026-08-09), 18 commits behind main. git
+                # merge-tree, a real git rebase and a real git merge ALL merged it
+                # clean while the API held mergeable=false/dirty. What that rules
+                # out matters more than what it shows:
+                #   * merging anyway fails — GitHub refuses a PR it believes is
+                #     conflicting, whatever we conclude locally;
+                #   * close + reopen does NOT clear it — tried against the live PR;
+                #   * nothing that leaves the ref untouched clears it.
+                # The verdict is cached against the head sha, so the ONLY lever is
+                # a new sha. Pushing a merge of the base flipped #1473 to
+                # mergeable=true within seconds.
+                #
+                # So this must NOT reclassify to MERGEABLE. Doing that routes the
+                # PR to _auto_merge — the one action the forge is guaranteed to
+                # refuse — and away from _maybe_rebase below, which is gated on
+                # MERGE_CONFLICT and is the thing that actually moves the ref.
+                # Leaving the classification alone is the fix.
+                #
+                # The rebase budget is the other half: those 2 attempts get spent
+                # fighting the phantom, and once spent the PR can never be rebased
+                # again — stuck at exactly the moment we can prove it is fine.
+                # Refund ONCE per PR: enough to act on a verdict we have disproved,
+                # bounded so a forge that keeps lying cannot buy unlimited pushes.
+                if self._count_audit_actions(
+                        task["id"], ("pr_watcher.rebase_refund",), pr_url=pr_url) == 0:
+                    self._refund_rebase_budget(task["id"], pr_url)
                 logger.warning(
                     "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
-                    "treating the forge verdict as stale", pr_url)
-                state = {**state, "mergeable": "MERGEABLE"}
-                classification = ec.classify_pr_state(
-                    state, ci_logs=ci_logs, require_approval=require_approval)
+                    "rebasing to force the forge to recompute", pr_url)
 
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
+
+            # An alert says "needs a human". The moment that stops being true,
+            # clear it here — not only on DONE, which was the bug: a branch whose
+            # conflict got resolved goes back to MERGEABLE without ever passing
+            # through DONE, so its alert stayed firing forever. Measured
+            # 2026-08-10: 14 firing HITL alerts, of which at least 2 named
+            # branches that had already been fixed and were sitting green.
+            #
+            # But MERGEABLE alone is NOT recovery, and clearing on it alone made
+            # the alert FLAP. A PR can be mergeable and still need a human: red
+            # CI with the resume budget spent is exactly that, and it gets
+            # resolved here and re-raised ~330 lines below in the SAME pass, on
+            # every pass. Measured the same night, after the resolve shipped:
+            # agov-det-02 and sbx-sig-02 (both MERGEABLE, both ci_failed at 5/5)
+            # cycled roughly once a minute, ~180 alert rows in a day. The panel
+            # refilled as fast as it drained, which is the same "list nobody
+            # reads" failure the resolve was written to prevent.
+            #
+            # So recovery means the alert's PREMISE is false, not merely that the
+            # forge is happy: the resume budget is no longer spent, and there is
+            # CI to be green. Both raise sites (resume cap, CI-never-fired) are
+            # covered, so no pass can resolve and re-raise the same alert.
+            #
+            # The resolve is deduped on `source` and is a no-op when nothing is
+            # firing, so calling it on every healthy pass costs nothing.
+            if self._hitl_recovered(state, cycle, max_cycles):
+                self._resolve_hitl_alert(task["id"])
 
             if classification == KanbanState.DONE:
                 merged = (
