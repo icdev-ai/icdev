@@ -40,3 +40,8 @@ tests/test_local_agent_adapter.py
 tests/test_agent_surface_dispatch.py
 tests/test_kanban_executor_resolution.py
 tests/kanban/test_build_mode_and_model.py
+
+# test_dwo_dispatch_parity.py resolves template roots from __file__ and reads
+# every template with newline="" — path separators and line endings are exactly
+# where this diverges, so it runs on BOTH OSes.
+tests/test_dwo_dispatch_parity.py
