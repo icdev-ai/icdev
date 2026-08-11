@@ -407,6 +407,28 @@ tests/test_agov_rules.py
 # tmp_path, SQLite only via the migration's own DDL, no LLM/network
 # (agov-det-06).
 tests/test_agov_gate.py
+# test_agov_shell_parse.py earns a slot because the parsed shell view is the
+# cause-level fix for a documented fail-open (agent_approval_policy.yaml:107-126:
+# a git_push carrying {"note": "mkdir logs"} matched the mkdir DOWNGRADE pattern
+# because patterns ran against a flattened string). Its failure mode is silent
+# in both directions: a parser that gets LOOSER invents a command name nobody
+# ran, and one that gets STRICTER stops firing rules with no error anywhere. The
+# named regression plus the refusal set are the only things pinning either. ~1s,
+# pure Python, stdlib-only module, no DB/LLM/network (agov-det-02).
+tests/test_agov_shell_parse.py
+# test_agov_cli.py earns a slot because it pins the bridge whose absence was
+# invisible: sequence.py binds rules.match_event by NAME and falls back SILENTLY
+# to a built-in whose command_name/argv_contains handlers read attributes an
+# AgentEvent does not carry, so the whole shipped chains/ family could not fire
+# while the pack loaded, the evaluator ran and zero matches came out. Renaming
+# match_event would re-break it with no failure anywhere else. It also pins the
+# --check exit code, which is the ONLY signal an operator gets that an
+# enforcement directory is inert (an invalid rule is skipped, not match-all), and
+# that a recorded scan writes decision="observed" rather than a denial it is in
+# no position to claim. ~1s, pure Python, DB read monkeypatched, no DB
+# service/LLM/network (agov-det-07).
+tests/test_agov_cli.py
+
 # test_sbom_dependency_graph.py earns a slot because Component Dependency
 # Relationship is the element that was entirely ABSENT — a flat component list
 # with no `dependencies` array — and the failure it guards is silent: an edge

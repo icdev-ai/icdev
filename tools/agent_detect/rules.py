@@ -91,6 +91,7 @@ persistence of findings to ``agent_findings`` is agov-det-05.
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import posixpath
 import re
@@ -760,6 +761,7 @@ def load_rules_fast(rules_dir: Optional[os.PathLike[str] | str] = None) -> RuleS
 def clear_cache() -> None:
     """Drop the in-process compiled-rule cache. Tests and long-lived daemons only."""
     _RULESET_CACHE.clear()
+    _MATCHER_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -939,6 +941,59 @@ def matches(matcher: Matcher, event: Any) -> bool:
         if not hit:
             return False
     return True
+
+
+#: Compiled raw matchers, keyed by canonical JSON. :func:`match_event` is called
+#: once per chain step per candidate event, so recompiling the same handful of
+#: step matchers for every event in a session is the difference between a chain
+#: pass that is free and one an operator notices. Bounded because the key space
+#: is attacker-adjacent in principle (a rule file is operator-authored, but a
+#: cache with no ceiling is a leak waiting for the one caller who passes a
+#: generated matcher).
+_MATCHER_CACHE: dict[str, Optional[Matcher]] = {}
+_MATCHER_CACHE_MAX = 512
+
+
+def match_event(matcher: Any, event: Any) -> bool:
+    """Evaluate a RAW matcher mapping (not a compiled :class:`Matcher`).
+
+    This is the bridge :func:`tools.agent_detect.sequence.default_step_matcher`
+    looks up by name so a chain step is matched by the SAME evaluator as a
+    single-event rule. Without it the chain evaluator falls back to its own
+    built-in, whose ``command_name`` / ``argv_contains`` handlers read attributes
+    an :class:`~tools.agent_detect.events.AgentEvent` does not carry — which
+    silently made every shipped chain rule that names a command unable to ever
+    fire. One evaluator is the invariant; two is how a rule pack lies.
+
+    Fails CLOSED: an uncompilable matcher makes the step unmatchable rather than
+    match-all, matching :func:`~tools.agent_detect.sequence.builtin_match_event`.
+    """
+    try:
+        key = json.dumps(matcher, sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001 — an unserializable matcher is not cacheable
+        key = None
+
+    compiled: Optional[Matcher]
+    if key is not None and key in _MATCHER_CACHE:
+        compiled = _MATCHER_CACHE[key]
+    else:
+        try:
+            compiled = compile_matcher(matcher)
+        except RuleSpecError as exc:
+            logger.warning("agent_detect.rules: unusable step matcher (%s)", exc)
+            compiled = None
+        if key is not None:
+            if len(_MATCHER_CACHE) >= _MATCHER_CACHE_MAX:
+                _MATCHER_CACHE.clear()
+            _MATCHER_CACHE[key] = compiled
+
+    if compiled is None:
+        return False
+    try:
+        return matches(compiled, event)
+    except Exception as exc:  # noqa: BLE001 — one broken step must not raise into the hook
+        logger.warning("agent_detect.rules: step matcher raised: %s", exc)
+        return False
 
 
 def match_rule(rule: Rule, event: Any) -> Optional[RuleMatch]:
