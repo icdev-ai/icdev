@@ -27,23 +27,46 @@ test.describe('gcpl-perf: CPMP Performance Tracking — CPMP-PERF', () => {
   // ── Subcontractors (FAR 52.219-9) ────────────────────────────────────
 
   test('gcpl-perf-01: POST /api/cpmp/contracts/<id>/subcontractors adds sub with FAR 52.219-9 fields', async ({ request }) => {
+    // Field names must match create_subcontractor's contract exactly. They did
+    // not until 2026-08-11 (`name`/`small_business_type`/`contract_value`), and
+    // because every column has a default the API accepted the body and wrote a
+    // row named 'Unknown' with flow_down_complete = 0 — permanently
+    // non-compliant, and one more of them per run. Assert the round trip, not
+    // just the status code, so a rename on either side fails here.
     const resp = await request.post(`${BASE}/api/cpmp/contracts/${contractId}/subcontractors`, {
       data: {
-        name: 'GCPL Test Subcontractor LLC',
-        role: 'Software Development',
-        small_business_type: 'small',
+        company_name: 'GCPL Test Subcontractor LLC',
+        business_size: 'small',
+        subcontract_value: 50000,
         cmmc_level: 2,
         cybersecurity_compliant: true,
-        flowdown_verified: false,
-        contract_value: 50000,
+        flow_down_complete: true,
+        flowdown_verified: true,
+        notes: 'Software Development',
       },
     });
-    expect([200, 201, 400, 409]).toContain(resp.status());
-    if (resp.ok()) {
-      const body = await resp.json().catch(() => ({}));
-      const newId = body.sub_id ?? body.id ?? body.subcontractor_id;
-      if (newId) subId = String(newId);
-    }
+    expect(resp.status(), await resp.text()).toBe(201);
+    const body = await resp.json();
+    expect(body.status).toBe('ok');
+    subId = String(body.sub_id);
+
+    // The sub we just created must be readable back with the name we sent.
+    const list = await request.get(`${BASE}/api/cpmp/contracts/${contractId}/subcontractors`);
+    const subs = (await list.json()).subcontractors ?? [];
+    const mine = subs.find((s: any) => s.id === subId);
+    expect(mine, `subcontractor ${subId} not found in list`).toBeTruthy();
+    expect(mine.company_name).toBe('GCPL Test Subcontractor LLC');
+    expect(mine.company_name).not.toBe('Unknown');
+  });
+
+  test('gcpl-perf-01b: POST subcontractors rejects a body with no company_name', async ({ request }) => {
+    // A nameless sub is a phantom: nobody can issue it a cure notice, and
+    // check_flowdown reports it forever. It must be rejected, not defaulted.
+    const resp = await request.post(`${BASE}/api/cpmp/contracts/${contractId}/subcontractors`, {
+      data: { business_size: 'small', subcontract_value: 1000 },
+    });
+    expect(resp.status()).toBe(400);
+    expect((await resp.json()).message).toContain('company_name');
   });
 
   test('gcpl-perf-02: GET /api/cpmp/contracts/<id>/subcontractors returns subcontractor list', async ({ request }) => {

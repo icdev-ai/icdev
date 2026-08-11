@@ -103,8 +103,14 @@ def _gather_contract_context(contract_id):
         ctx["max_risk_exposure"] = open_risks["max_exp"] if open_risks else 0
 
         noncompliant_subs = conn.execute(
+            # status = 'active' must match subcontractor_tracker.check_flowdown /
+            # check_cybersecurity. Without it the advisor counts inactive and
+            # terminated subs, so it reported gaps the noncompliance API said were
+            # clear and told the PM to issue a cure notice to a sub they had
+            # already deactivated.
             "SELECT COUNT(*) as cnt FROM cpmp_subcontractors "
-            "WHERE contract_id = %s AND (flow_down_complete = 0 OR cybersecurity_compliant = 0)",
+            "WHERE contract_id = %s AND status = 'active' "
+            "AND (flow_down_complete = 0 OR cybersecurity_compliant = 0)",
             (contract_id,)
         ).fetchone()
         ctx["noncompliant_subs"] = noncompliant_subs["cnt"] if noncompliant_subs else 0
