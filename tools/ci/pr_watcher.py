@@ -1418,6 +1418,32 @@ class PRWatcher:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int) -> bool:
+        """True when the PREMISE of a HITL alert is false — not merely that the
+        forge is happy.
+
+        Recovery has to be the negation of the raise conditions, because the
+        resolve runs EARLIER in the same pass than both raise sites. Clearing on
+        `mergeable` alone therefore did not clear anything: a PR that is
+        MERGEABLE with red CI and its resume budget spent got resolved here and
+        re-raised ~330 lines below, on every single pass.
+
+        Measured 2026-08-10, the night the resolve shipped: agov-det-02 and
+        sbx-sig-02 — both MERGEABLE, both `ci_failed` at 5/5 — cycled about once
+        a minute; ~180 alert rows in a day. The panel refilled as fast as it
+        drained, which is the same "list nobody reads" failure the resolve was
+        written to prevent.
+
+        The two raise sites are the resume cap (`cycle >= max_cycles`) and CI
+        that never fired, so both are negated here. Anything that adds a third
+        raise site must negate it here too, or the alert flaps again.
+        """
+        if (state.get("mergeable") or "").upper() != "MERGEABLE":
+            return False
+        if cycle >= max_cycles:
+            return False
+        return not self._ci_never_fired(state)
+
     def _resolve_hitl_alert(self, task_id: str) -> None:
         """Clear the alert once the task moves — the queue must drain itself."""
         source = f"pr_watcher:hitl:{task_id}"
@@ -1691,22 +1717,34 @@ class PRWatcher:
                     "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
                     "rebasing to force the forge to recompute", pr_url)
 
-            # An alert says "needs a human". The moment the forge reports the
-            # PR is mergeable again, that is no longer true, so clear it here —
-            # not only on DONE, which was the bug: a branch whose conflict got
-            # resolved goes back to MERGEABLE without ever passing through DONE,
-            # so its alert stayed firing forever. Measured 2026-08-10: 14 firing
-            # HITL alerts, of which at least 2 named branches that had already
-            # been fixed and were sitting green.
-            #
-            # An alert list that can only grow is one people stop reading, and
-            # that is the failure mode where a real escalation gets missed. The
-            # resolve is deduped on `source` and is a no-op when nothing is
-            # firing, so calling it on every healthy pass costs nothing.
-            if (state.get("mergeable") or "").upper() == "MERGEABLE":
-                self._resolve_hitl_alert(task["id"])
-
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
+
+            # An alert says "needs a human". The moment that stops being true,
+            # clear it here — not only on DONE, which was the bug: a branch whose
+            # conflict got resolved goes back to MERGEABLE without ever passing
+            # through DONE, so its alert stayed firing forever. Measured
+            # 2026-08-10: 14 firing HITL alerts, of which at least 2 named
+            # branches that had already been fixed and were sitting green.
+            #
+            # But MERGEABLE alone is NOT recovery, and clearing on it alone made
+            # the alert FLAP. A PR can be mergeable and still need a human: red
+            # CI with the resume budget spent is exactly that, and it gets
+            # resolved here and re-raised ~330 lines below in the SAME pass, on
+            # every pass. Measured the same night, after the resolve shipped:
+            # agov-det-02 and sbx-sig-02 (both MERGEABLE, both ci_failed at 5/5)
+            # cycled roughly once a minute, ~180 alert rows in a day. The panel
+            # refilled as fast as it drained, which is the same "list nobody
+            # reads" failure the resolve was written to prevent.
+            #
+            # So recovery means the alert's PREMISE is false, not merely that the
+            # forge is happy: the resume budget is no longer spent, and there is
+            # CI to be green. Both raise sites (resume cap, CI-never-fired) are
+            # covered, so no pass can resolve and re-raise the same alert.
+            #
+            # The resolve is deduped on `source` and is a no-op when nothing is
+            # firing, so calling it on every healthy pass costs nothing.
+            if self._hitl_recovered(state, cycle, max_cycles):
+                self._resolve_hitl_alert(task["id"])
 
             if classification == KanbanState.DONE:
                 merged = (
