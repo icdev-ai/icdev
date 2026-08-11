@@ -617,6 +617,28 @@ tbody tr:hover {
     border: 1px solid var(--severity-low);
 }
 
+/* --- Stale HITL alert (alrt-flap-01) ---
+   A firing alert whose task is already done describes work that is over.
+   pr_watcher's sweep clears these; this styles the window before the next poll,
+   and any case the sweep does not reach. Muted rather than red: it is not a new
+   problem, it is an old one that has stopped mattering. */
+.badge-muted {
+    background: var(--status-neutral-bg, #f1f5f9);
+    color: var(--text-secondary, #64748b);
+    border: 1px solid var(--border-color, #cbd5e1);
+}
+tr.alert-stale {
+    opacity: 0.55;
+}
+tr.alert-stale td {
+    font-style: italic;
+}
+/* A disabled remediation must LOOK unavailable, not merely refuse on click. */
+.hitl-actions button[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* --- Classification Badges (sec-cvs-08) --- */
 .badge-PUBLIC {
     background: #dcfce7;

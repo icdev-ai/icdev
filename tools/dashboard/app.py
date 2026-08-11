@@ -3836,6 +3836,63 @@ def create_app(testing: bool = False) -> Flask:
             _dlog.getLogger(__name__).warning("IQE dispatch error [%s]: %s", canvas, exc)
             return jsonify({"error": str(exc), "canvas": canvas, "iqe": iqe_str}), 500
 
+    def _enrich_hitl_alerts(conn, rows):
+        """Attach to each firing HITL row what the operator needs to act.
+
+        Three things the panel could not show while 12 alerts were cleared by
+        hand on 2026-08-10:
+
+        * WHAT IT IS. `description` was never rendered, so the cause, the resume
+          budget and the PR link — the facts that decide which button can work —
+          were invisible and got read out of the database instead.
+        * WHETHER IT IS FLAPPING. #1513 wrote ~180 rows in a day, 27 for one
+          task, and the page showed firing rows plus a flat 50-row history. The
+          churn was only visible as a GROUP BY.
+        * WHETHER IT IS STALE. An alert whose task is done is describing work
+          that is over. `pr_watcher._sweep_stale_hitl_alerts` clears those now;
+          this marks any the sweep has not reached yet, so the panel is honest
+          in the window between the two.
+
+        Best-effort per row: an alert that cannot be enriched still renders with
+        today's columns rather than taking the page down.
+        """
+        from tools.kanban import hitl_alert_view as hv
+
+        for row in rows:
+            parsed = hv.parse_alert(row)
+            if not parsed:
+                continue
+            row["hitl"] = parsed
+            row["rebase_refusal"] = hv.rebase_refusal(parsed["cause"])
+            try:
+                churn = conn.execute(
+                    "SELECT COUNT(*) AS cnt, MIN(created_at) AS first_seen "
+                    "FROM alerts WHERE source = %s",
+                    (row.get("source"),),
+                ).fetchone()
+                if churn:
+                    churn = dict(churn)
+                    row["refire_count"] = int(churn.get("cnt") or 1)
+                    row["first_seen"] = churn.get("first_seen")
+                task = conn.execute(
+                    "SELECT status FROM kanban_tasks WHERE id = %s",
+                    (parsed["task_id"],),
+                ).fetchone()
+                status = (dict(task).get("status") or "") if task else ""
+                row["task_status"] = status
+                # Mirrors pr_watcher.PRWatcher.TERMINAL_TASK_STATES. Named here
+                # rather than imported so the dashboard does not pull the watcher
+                # in on a page render.
+                row["is_stale"] = (
+                    task is None
+                    or status.strip().lower() in ("done", "dismissed", "cancelled", "archived")
+                )
+            except Exception as exc:  # noqa: BLE001 — enrichment must not 500 the page
+                import logging as _enrich_log
+                _enrich_log.getLogger(__name__).debug(
+                    "monitoring: HITL enrichment failed for %s: %s", row.get("source"), exc)
+        return rows
+
     @app.route("/monitoring")
     def monitoring_overview():
         """Monitoring overview page."""
@@ -3856,6 +3913,8 @@ def create_app(testing: bool = False) -> Flask:
 
             # Recent alerts across all statuses (history view, capped)
             alerts = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50").fetchall()
+
+            firing_alerts = _enrich_hitl_alerts(conn, [dict(r) for r in firing_alerts])
 
             # Self-healing events
             healing_events = conn.execute(
@@ -3880,7 +3939,7 @@ def create_app(testing: bool = False) -> Flask:
 
             return render_template(
                 "monitoring/overview.html",
-                firing_alerts=[dict(r) for r in firing_alerts],
+                firing_alerts=firing_alerts,
                 alerts=[dict(r) for r in alerts],
                 healing_events=[dict(r) for r in healing_events],
                 firing_count=firing,

@@ -2317,7 +2317,7 @@ def hitl_alert_action(alert_id):
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT id, source, status FROM alerts WHERE id = %s", (alert_id,)
+            "SELECT id, source, status, description FROM alerts WHERE id = %s", (alert_id,)
         ).fetchone()
         if row is None:
             return jsonify({"error": "alert not found"}), 404
@@ -2330,6 +2330,22 @@ def hitl_alert_action(alert_id):
         if not task_id:
             return jsonify({"error": "not a pr_watcher HITL alert",
                             "source": data.get("source")}), 400
+
+        # Refuse a remediation the CAUSE rules out, here and not only in the
+        # template. A disabled button is a courtesy; this is the rule. Without
+        # it the two can diverge — and the API is what a script, a retry or a
+        # stale page actually hits.
+        from tools.kanban import hitl_alert_view as _hv
+        _parsed = _hv.parse_alert(data)
+        _allowed, _why = _hv.action_is_available(action, (_parsed or {}).get("cause"))
+        if not _allowed:
+            return jsonify({
+                "error": _why,
+                "action": action,
+                "cause": (_parsed or {}).get("cause"),
+                "allowed": sorted(a for a in HITL_ACTIONS
+                                  if _hv.action_is_available(a, (_parsed or {}).get("cause"))[0]),
+            }), 409
 
         result = {"alert_id": alert_id, "task_id": task_id, "action": action}
 
