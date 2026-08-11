@@ -8,6 +8,23 @@ export const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
 export const SS   = '.tmp/test_runs/screenshots';
 export const CUI  = 'CUI // SP-CTI';
 
+// A deliverable due date must be RELATIVE to the run, never a literal.
+//
+// These fixtures hardcoded '2026-06-30', which was comfortably in the future
+// when written. It passed, and because the GCPL suite runs against the shared
+// dashboard database, every run since has left a permanently-overdue CDRL
+// behind. Five accumulated, and the CPMP monitor reflex — correctly reading the
+// table — filed a program-management alarm card ("5 CDRL(s) are past due and
+// not yet accepted... document delays with rationale for COR") against a
+// contract that exists only for these tests. An absolute date in a fixture is a
+// finding waiting to happen; a relative one keeps the tests' intent (a CDRL
+// that has a due date) and cannot rot into a false alarm.
+export function futureDate(daysAhead = 90): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + daysAhead);
+  return d.toISOString().slice(0, 10);
+}
+
 export interface GovConCpmpFixture {
   oppId:          string;
   contractId:     string;
@@ -134,7 +151,7 @@ export async function seedDeliverable(request: APIRequestContext, contractId: st
       did_number: 'DI-MGMT-81466',
       cdrl_type: 'ssp',
       frequency: 'monthly',
-      due_date: '2026-06-30',
+      due_date: futureDate(),
     },
   });
   if (createResp.ok()) {

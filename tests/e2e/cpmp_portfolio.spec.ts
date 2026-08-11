@@ -6,7 +6,7 @@
 // PUT below 403s CSRF_FAILED against a locally started dashboard otherwise (CI
 // hides it with ICDEV_AUTH_BYPASS). See that file for why. tsh-e2e-01-d2.
 import { test, expect } from './fixtures/auth';
-import { BASE, SS, CUI, buildFullFixture, seedOpportunity, seedContract, seedWbs, seedDeliverable, seedClin } from './fixtures/govcon_cpmp';
+import { BASE, SS, CUI, buildFullFixture, futureDate, seedOpportunity, seedContract, seedWbs, seedDeliverable, seedClin } from './fixtures/govcon_cpmp';
 
 let oppId: string;
 let contractId: string;
@@ -209,6 +209,12 @@ test.describe('gcpl-cset: CPMP Portfolio & Contract Setup — CPMP-SETUP', () =>
 
   // ── Deliverables ──────────────────────────────────────────────────────
 
+  // Unlike seedDeliverable(), this test creates a row unconditionally — that is
+  // the behaviour under test — so it leaves one behind on every run and there is
+  // no DELETE /api/cpmp/deliverables/<id> to clean up with. That residue is
+  // tolerable only while the due date stays in the future: futureDate() is what
+  // keeps an accumulating pile of test CDRLs from reading as an overdue-
+  // deliverables finding on the CPMP dashboard. See the note in the fixture.
   test('gcpl-cset-19: POST /api/cpmp/contracts/<id>/deliverables creates CDRL with due date', async ({ request }) => {
     const resp = await request.post(`${BASE}/api/cpmp/contracts/${contractId}/deliverables`, {
       data: {
@@ -217,7 +223,7 @@ test.describe('gcpl-cset: CPMP Portfolio & Contract Setup — CPMP-SETUP', () =>
         did_number: 'DI-MGMT-81466',
         cdrl_type: 'ssp',
         frequency: 'monthly',
-        due_date: '2026-06-30',
+        due_date: futureDate(),
       },
     });
     expect([200, 201, 400, 409]).toContain(resp.status());
