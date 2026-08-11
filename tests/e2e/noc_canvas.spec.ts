@@ -8,7 +8,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE = 'http://localhost:5050';
+const BASE = process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050';
 const CUI = 'CUI // SP-CTI';
 const SS = 'playwright/screenshots';
 

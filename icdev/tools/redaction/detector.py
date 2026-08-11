@@ -10,6 +10,15 @@ Three detection layers (no external NLP dependencies required):
 Presidio is supported as optional enhancement but NOT required.
 Falls back gracefully: Ollama unavailable → regex+deny-list only.
 
+An OPT-IN fourth layer detects credentials (AWS keys, bearer tokens, private
+keys, connection strings). It is off by default because this detector already
+runs on every LLM egress and a new pattern family there changes what every
+caller sends; turn it on per-caller with ``detect_secrets=True`` or globally
+with ``detection.secret_patterns.enabled`` in args/redaction_config.yaml.
+The patterns are NOT redefined here — they are read from
+``tools.security.secret_detector.BUILTIN_PATTERNS``, which is the repo's
+existing vetted list, so the two cannot drift apart.
+
 CLI:
     python tools/redaction/detector.py --detect "John Smith SSN 123-45-6789" --json
     python tools/redaction/detector.py --detect-file /path/to/file.txt --json
@@ -82,6 +91,18 @@ def _load_govcon_config() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def load_config() -> Dict[str, Any]:
+    """Public accessor for the cached redaction config.
+
+    Callers that need to run the stack with one setting changed (audit off for
+    a read path, a different impact level) need the full config to copy from,
+    and reaching for the private loader to get it is how a supported seam turns
+    into an accident. The returned dict is the shared cache — deep-copy it
+    before mutating.
+    """
+    return _load_config()
+
+
 class DetectionResult:
     """A single PII detection."""
 
@@ -124,6 +145,10 @@ _FALLBACK_PATTERNS: List[Dict[str, Any]] = [
     {"entity_type": "US_PASSPORT", "pattern": r"\b[A-Z]\d{8}\b", "score": 0.5},
 ]
 
+# Credential severities mapped onto detector confidence. All three land above
+# the default hard_redact threshold (0.3) — a credential is never a soft match.
+_SECRET_SEVERITY_SCORE: Dict[str, float] = {"critical": 0.99, "high": 0.95, "medium": 0.9}
+
 
 # ---------------------------------------------------------------------------
 # Detector Engine
@@ -134,7 +159,11 @@ class RedactionDetector:
     """PII detection engine: regex + Ollama NER + deny-lists (+ optional Presidio)."""
 
     def __init__(
-        self, config: Optional[Dict] = None, govcon_config: Optional[Dict] = None, use_ollama_ner: bool = True
+        self,
+        config: Optional[Dict] = None,
+        govcon_config: Optional[Dict] = None,
+        use_ollama_ner: bool = True,
+        detect_secrets: Optional[bool] = None,
     ):
         self._config = config or _load_config()
         self._govcon_config = govcon_config or _load_govcon_config()
@@ -144,6 +173,11 @@ class RedactionDetector:
         self._custom_patterns = []
         self._deny_lists: Dict[str, List[str]] = {}
         self._use_ollama_ner = use_ollama_ner
+        if detect_secrets is None:
+            detect_secrets = bool(
+                self._config.get("detection", {}).get("secret_patterns", {}).get("enabled", False)
+            )
+        self._detect_secrets = detect_secrets
         self._init_engine()
 
     def _init_engine(self) -> None:
@@ -175,6 +209,42 @@ class RedactionDetector:
         # Layer 3: Always load deny-lists and regex patterns
         self._load_deny_lists()
         self._load_govcon_patterns()
+
+        # Layer 4: credentials — opt-in, see the module docstring
+        if self._detect_secrets:
+            self._load_secret_patterns()
+
+    def _load_secret_patterns(self) -> None:
+        """Compile the repo's existing credential patterns into this detector.
+
+        Sourced from ``tools.security.secret_detector.BUILTIN_PATTERNS`` rather
+        than restated in this module or in YAML: a second copy of a credential
+        regex is a copy that goes stale, and the security scanner's list is the
+        one already reviewed. A pattern that fails to compile is skipped, the
+        same as every other pattern family here.
+        """
+        try:
+            from tools.security.secret_detector import BUILTIN_PATTERNS
+        except ImportError as exc:  # pragma: no cover - defensive
+            logger.warning("Secret patterns requested but unavailable: %s", exc)
+            return
+
+        for pdef in BUILTIN_PATTERNS:
+            try:
+                compiled = re.compile(pdef["pattern"])
+            except (re.error, KeyError):
+                continue
+            entity_type = "SECRET_" + re.sub(r"[^A-Z0-9]+", "_", pdef.get("name", "").upper()).strip("_")
+            self._custom_patterns.append(
+                {
+                    "entity_type": entity_type or "SECRET",
+                    "pattern": pdef["pattern"],
+                    "compiled": compiled,
+                    "score": _SECRET_SEVERITY_SCORE.get(pdef.get("severity", "high"), 0.9),
+                    "context_words": [],
+                    "treatment": "redact",
+                }
+            )
 
     def _load_deny_lists(self) -> None:
         """Load program names, protected organizations, and custom terms from config."""

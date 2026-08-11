@@ -150,7 +150,10 @@ def test_undraft_happens_before_the_sibling_hold_can_return():
     src = Path(__file__).resolve().parents[2] / "tools" / "ci" / "pr_watcher.py"
     text = src.read_text(encoding="utf-8")
     undraft = text.index('if state.get("isDraft"):')
-    sibling_hold = text.index('if self.config.get("hold_on_sibling_conflict", False):')
+    # Matches the config key rather than the whole line: the hold gained a
+    # tie-breaker clause, and a test that pins exact source text breaks on every
+    # refactor of the thing it guards.
+    sibling_hold = text.index('hold_on_sibling_conflict", False)')
     assert undraft < sibling_hold, (
         "the un-draft must precede the sibling-conflict hold; below it, a held "
         "PR is never taken out of draft and auto-merge can never reach it"
