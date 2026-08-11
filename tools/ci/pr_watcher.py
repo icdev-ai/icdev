@@ -61,6 +61,11 @@ DEFAULT_CONFIG = ROOT / "args" / "pr_watcher_config.yaml"
 # Max characters of CI log text we inject back into a resume message.
 DEFAULT_CI_LOG_MAX = 4000
 
+# Source prefix for the HITL alerts this watcher raises. Spelled once: the
+# dashboard, tools/kanban/cli.py and tools/kanban/hitl_notify.py all key off the
+# same string, and a sweep that parses it loosely can invent a task id.
+_HITL_ALERT_PREFIX = "pr_watcher:hitl:"
+
 # Liveness heartbeat (kax-obs-02). Every COMPLETED poll appends a row to the
 # existing `heartbeat_checks` table — the same table tools/scout/daemon.py
 # already uses to prove a daemon is alive — so "is the watcher polling?" can be
@@ -1479,6 +1484,84 @@ class PRWatcher:
             return False
         return not self._ci_never_fired(state)
 
+    #: Task states after which nothing will poll the task again, so nothing will
+    #: ever revisit its alert. `list_pr_tasks` selects only the live states.
+    TERMINAL_TASK_STATES = ("done", "dismissed", "cancelled", "archived")
+
+    def _sweep_stale_hitl_alerts(self) -> int:
+        """Resolve firing HITL alerts that NOTHING will ever revisit.
+
+        Every other resolve path runs inside the per-task loop, which iterates
+        `list_pr_tasks` — and that selects only live states ('in_progress',
+        'scheduled', 'pr_opened', 'ci_failed', 'merge_conflict',
+        'changes_requested'). The moment a task reaches `done`, it drops out of
+        the query, so its alert is never looked at again and fires forever.
+
+        Measured 2026-08-10: agov-inbox-01 and agov-inbox-02 had zero unlanded
+        content — every file byte-identical to main via #1497 — so their PRs were
+        closed and their tasks force-done. Both alerts stayed FIRING and had to be
+        cleared by hand from a `python -c`. No code path existed that would ever
+        have cleared them.
+
+        That is the same failure #1511 was written to fix: an alert list that can
+        only grow is one people stop reading, which is the state in which a real
+        escalation gets missed. #1511 fixed the recovery case; this fixes the
+        case where the work is genuinely over.
+
+        Deliberately a DB-only sweep with no forge calls: it runs every poll, and
+        one `gh` call per firing alert would add seconds to a 30s cycle. The
+        closed-PR case is handled in the loop, where the state is already fetched.
+
+        Best-effort — a sweep failure must never stop the poll. Returns the number
+        resolved so the caller can log it.
+        """
+        try:
+            conn = self._connection()()
+        except Exception:  # noqa: BLE001
+            return 0
+        resolved = 0
+        try:
+            rows = conn.execute(
+                "SELECT source FROM alerts "
+                "WHERE status = 'firing' AND source LIKE 'pr_watcher:hitl:%'"
+            ).fetchall()
+            for row in rows:
+                source = (row[0] if not isinstance(row, dict) else row.get("source")) or ""
+                # Require the prefix rather than splitting on it: `split()` on a
+                # missing delimiter returns the WHOLE string, so a foreign source
+                # would parse to a task id that matches nothing, look like a
+                # deleted task, and get "resolved". The SQL above filters too —
+                # this is the parse refusing to invent a task id regardless.
+                if not source.startswith(_HITL_ALERT_PREFIX):
+                    continue
+                task_id = source[len(_HITL_ALERT_PREFIX):].strip()
+                if not task_id:
+                    continue
+                task = conn.execute(
+                    "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)
+                ).fetchone()
+                if task is None:
+                    # The task was deleted. Nothing can act on the alert, and
+                    # leaving it firing asks a human to chase a row that is gone.
+                    reason = "task no longer exists"
+                else:
+                    status = (task[0] if not isinstance(task, dict) else task.get("status")) or ""
+                    if status.strip().lower() not in self.TERMINAL_TASK_STATES:
+                        continue
+                    reason = f"task is {status}"
+                self._resolve_hitl_alert(task_id)
+                resolved += 1
+                logger.info(
+                    "pr_watcher: cleared stale HITL alert for %s — %s", task_id, reason)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: stale HITL sweep failed: %s", exc)
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return resolved
+
     def _resolve_hitl_alert(self, task_id: str) -> None:
         """Clear the alert once the task moves — the queue must drain itself."""
         source = f"pr_watcher:hitl:{task_id}"
@@ -1788,6 +1871,16 @@ class PRWatcher:
             # The resolve is deduped on `source` and is a no-op when nothing is
             # firing, so calling it on every healthy pass costs nothing.
             if self._hitl_recovered(state, cycle, max_cycles):
+                self._resolve_hitl_alert(task["id"])
+
+            # A CLOSED PR cannot be rebased, resumed or merged, so an alert
+            # saying "the resume budget is spent" is describing a branch nobody
+            # can act on. Closing a PR is a decision; the alert about it is spent
+            # with it. MERGED is handled by the DONE branch below, and the
+            # terminal-task case by _sweep_stale_hitl_alerts after the loop —
+            # this is the third door, for a PR closed while its task is still
+            # live and therefore still polled here.
+            if (state.get("state") or "").upper() == "CLOSED":
                 self._resolve_hitl_alert(task["id"])
 
             if classification == KanbanState.DONE:
@@ -2140,6 +2233,10 @@ class PRWatcher:
             )
             report.actions.append(action)
             self._audit(action)
+
+        # After the loop, because a task that reached a terminal state is not IN
+        # the loop — that is precisely why its alert was stranded.
+        self._sweep_stale_hitl_alerts()
 
         report.finished_at = datetime.now(timezone.utc).isoformat()
         # Liveness proof, written only once the poll has actually completed.
