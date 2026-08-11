@@ -360,17 +360,6 @@ tests/test_agov_case_bundle.py
 # DB/LLM/network (agov-det-03).
 tests/test_agov_rules.py
 
-# test_agov_sequence.py earns a slot because it pins the one correctness property
-# a chain evaluator cannot be allowed to lose: candidate events never leave their
-# (session_id, agent, project_id, source) partition. ICDEV runs many concurrent
-# sessions against one database, so a regression that let a chain span two of them
-# would not be a subtle miss — it would report session A's `.env` read plus session
-# B's outbound POST as exfiltration, continuously, and the whole rule pack would be
-# discredited on its first day. The out-of-order, window-expiry and max_matches
-# cases pin the rest of the semantics. ~0.6s, pure Python, no DB/LLM/network
-# (agov-det-04).
-tests/test_agov_sequence.py
-
 # test_agov_rule_pack.py earns a slot because the invariant it pins is one
 # boolean wide and catastrophic in exactly one direction. Every rule shipped
 # under args/agent_rules/ must set `enforce: false`; a rule that flips to true
