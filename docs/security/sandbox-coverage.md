@@ -1950,3 +1950,37 @@ by another vendor's tool.
 - **Revisit if:** operand extraction moves from an allowlist to a denylist, a
   parsed value is ever used to choose a code path or reach a subprocess, or the
   redactor is given a detection backend that makes a network call.
+### Gap — AGOV CASE bundle verification (agov-case-03)
+- **File:** `tools/agent_case/bundle_verifier.py` (+ `tools/agent_case/bundle_format.py`)
+- **Risk:** A case bundle is, by design, evidence handed over by someone else — an
+  auditor verifies bundles that ICDEV did not produce. Every byte read is
+  attacker-controllable: `manifest.json`, the record files, and — most sharply —
+  the **member paths inside the manifest**, which the verifier is asked to open.
+- **Decision:** **bypass-documented**
+- **Rationale:** The verifier only reads and hashes. Its entire contact with the
+  bundle is `json.loads` (building data, never code), `hashlib.sha256` /
+  `hmac.new` over bytes, and `Path.is_file()` / `open(..., "rb")`. There is no
+  `exec`/`eval`/`compile`, no `subprocess`, no `importlib`, no `pickle` or
+  `yaml.load`, no SQL, no network call, and nothing is written back into the
+  bundle — a bundle under verification is never mutated. Content never selects a
+  code path: a record's fields are joined into a string and hashed, and the
+  result is compared, never dispatched on.
+- **Guardrails:**
+  - `bundle_format.is_safe_member_path` refuses absolute paths, drive letters,
+    NTFS alternate-data-stream `:` syntax, and any `..` segment **before** the
+    path is resolved, so a manifest cannot make the verifier read
+    `../../etc/passwd`. The refusal is itself a reported finding
+    (`unsafe_member_path`), not a silent skip — a manifest that tries this is
+    evidence, so the layer fails rather than ignoring the entry.
+  - `tests/test_agov_case_bundle_verifier.py` drives four traversal shapes
+    (`../../etc/passwd`, `/etc/passwd`, `C:\Windows\win.ini`,
+    `records/../../escape.json`) through the real manifest layer and asserts each
+    is refused and named.
+  - Unreadable or non-JSON members are caught and reported as findings; a corrupt
+    bundle produces a report, not a traceback.
+  - No secret is read from the bundle. The HMAC key comes only from
+    `ICDEV_HOOK_HMAC_SECRET` or `--secret`, and the verifier refuses to fall back
+    to the shipped default the writer uses.
+- **Revisit if:** the verifier gains the ability to write into or repair a bundle,
+  to fetch a member over the network, or to load a bundle-supplied plugin/schema
+  — any of those turns "read and hash" into a genuine execution surface.
