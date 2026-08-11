@@ -76,23 +76,42 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {}
     try:
         from tools.govcon.portfolio_manager import get_portfolio_summary
-        summary = get_portfolio_summary()
+        result = get_portfolio_summary()
+        # get_portfolio_summary returns {"status": ..., "portfolio": {...}} — every
+        # aggregate lives one level down. Reading the top level returned the default
+        # for each key, so the brief reported 0 contracts and "no significant issues"
+        # no matter how red the portfolio actually was.
+        summary = result.get("portfolio") or {} if isinstance(result, dict) else {}
         snapshot.update({
             "total_contracts": summary.get("total_contracts", 0),
             "active_contracts": summary.get("active_contracts", 0),
             "total_value": summary.get("total_value", 0),
-            "burn_rate": summary.get("burn_rate", 0),
+            "burn_rate": summary.get("burn_rate_pct", 0),
             "overdue_deliverables": summary.get("overdue_deliverables", 0),
             "health": summary.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
-            "upcoming_deliverables": summary.get("upcoming_deliverables", [])[:5],
-            "contracts": summary.get("contracts", []),
+            "upcoming_deliverables": (summary.get("upcoming_deliverables") or [])[:5],
+            "contracts": summary.get("contracts") or [],
         })
     except Exception as e:
         snapshot["portfolio_error"] = str(e)
 
     # EVM aggregates: top 3 worst CPI
     try:
-        contracts_raw = snapshot.get("contracts", [])
+        # One row per contract. The portfolio query LEFT JOINs cpmp_evm_periods on
+        # the latest period_date, which fans out when a contract has more than one
+        # row for that date — otherwise a single contract can occupy all three
+        # "worst CPI" slots and its CPI/SPI is counted repeatedly in the averages.
+        contracts_raw = []
+        seen_ids = set()
+        for c in snapshot.get("contracts", []):
+            key = c.get("id") or c.get("contract_number")
+            if key is not None and key in seen_ids:
+                continue
+            if key is not None:
+                seen_ids.add(key)
+            contracts_raw.append(c)
+        snapshot["contracts"] = contracts_raw
+
         contracts_with_cpi = [
             c for c in contracts_raw
             if c.get("cpi") is not None and isinstance(c["cpi"], (int, float))

@@ -203,7 +203,10 @@ def auto_detect_issues(contract_id):
             "suggested_action": "Issue cure notice to non-compliant subs; complete CMMC assessment within 60 days.",
         })
 
-    if ctx.get("max_risk_exposure", 0) >= 16:
+    # MAX(exposure) is NULL when a contract has no open risks, so the key is
+    # present with value None and the .get() default never applies — the bare
+    # comparison raised TypeError and aborted issue detection for that contract.
+    if (ctx.get("max_risk_exposure") or 0) >= 16:
         issues.append({
             "type": "critical_risk",
             "severity": "critical",
