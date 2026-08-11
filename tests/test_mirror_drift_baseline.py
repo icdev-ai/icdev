@@ -62,7 +62,24 @@ GATED_PACKAGES = (
     "document_intelligence",
     "rag",
     "knowledge_graph",
+    "ci",            # pr_watcher — see below
 )
+
+#: Why `ci` joined the list. `icdev/tools/ci/pr_watcher.py` fell 340 lines
+#: behind its twin and, on 2026-08-10, was calling a method that no longer
+#: existed in it at all:
+#:
+#:     >>> icdev.tools.ci.pr_watcher.PRWatcher()._ci_retrigger_attempts(...)
+#:     AttributeError: 'PRWatcher' object has no attribute '_count_audit_actions'
+#:
+#: It also still carried the stale-conflict reclassification that #1503 removed
+#: as a defect — the packaged watcher would route a phantom conflict to the one
+#: action the forge is guaranteed to refuse.
+#:
+#: Nothing caught either, because this list is curated and `ci` was not on it.
+#: The watcher drives the whole delivery pipeline, so a wheel install shipping a
+#: broken one is a correctness bug, not stale convenience code. The package is
+#: 42 files and adds ~1s to the sweep.
 
 
 @pytest.fixture(scope="module")

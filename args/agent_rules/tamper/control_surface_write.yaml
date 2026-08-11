@@ -1,0 +1,34 @@
+# CUI // SP-CTI
+# Monitor-only. See args/agent_rules/README.md before changing `enforce`.
+id: tamper.control_surface_write
+version: "1"
+title: Agent edited one of the files that decides what an agent may do
+severity: high
+tags:
+  - T1562.001
+  - defense-evasion
+enabled: true
+enforce: false
+# This rule is expected to fire on legitimate work — the AGOV card itself edits
+# .claude/hooks/pre_tool_use.py. That is the intent. The point is not that the
+# edit is wrong, it is that an edit to a control surface should never happen
+# without someone noticing, and pr_watcher.py auto-merges any CI-green kanban/*
+# branch, so "someone noticing" cannot be left to the merge step.
+deny_message: >-
+  Edits to the safety hooks, the approval policy or the rule pack must go
+  through a reviewed pull request, not an in-session write.
+expr:
+  event_type:
+    - file.write
+    - file.delete
+  file_path_glob:
+    - ".claude/hooks/**"
+    - "tools/hooks/**"
+    - "tools/airgap/hook_compat.py"
+    - "tools/agent_runtime/approval_gate.py"
+    - "tools/agent_runtime/safety.py"
+    - "args/agent_approval_policy.yaml"
+    - "args/file_access_tiers.yaml"
+    - "args/security_gates.yaml"
+    - "args/heal_constitution.yaml"
+    - "args/agent_rules/**"

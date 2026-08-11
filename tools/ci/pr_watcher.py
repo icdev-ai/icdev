@@ -287,6 +287,18 @@ def _set_task_status(get_conn, task_id: str, status: str, reason: str = "") -> b
         conn.commit()
         logger.info("pr_watcher: %s -> %s (%s)", task_id, status, reason)
 
+        # WAKE EVENTS (agov-wake-03): `wake_on_event("task:kax-merge-02:done")`.
+        # The watcher owns the pr_opened -> done edge, so a task completing
+        # through the PR flow is only ever observed here — state_machine's
+        # emitter never sees it. Best-effort; a wake must never undo a committed
+        # status change.
+        try:
+            from tools.agent_runtime.wake_signals import emit_task_status
+
+            emit_task_status(task_id, status, conn=conn)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: wake event emit skipped for %s: %s", task_id, exc)
+
         # Harness co-learning: this is a TERMINAL transition, so the harness
         # needs the outcome here. _move_task() in the kanban reflex carries the
         # same hook, but under the PR flow it deliberately does NOT mark the
@@ -835,6 +847,29 @@ class PRWatcher:
         except Exception as exc:
             logger.warning("pr_watcher: queue_message import failed: %s", exc)
             return False
+
+    def _emit_wake_events(
+        self, pr_url: str, classification: Any, state: dict,
+    ) -> Dict[str, Any]:
+        """Fire this PR's wake event keys. Best-effort — never raises.
+
+        Kept as a method purely so a test can observe (or replace) it without
+        reaching into the wake store. `dry_run` emits nothing: a --dry-run poll
+        must not resume a real agent.
+        """
+        if self.dry_run:
+            return {"keys": [], "promoted": []}
+        try:
+            from tools.agent_runtime.wake_signals import emit_pr_state
+
+            return emit_pr_state(
+                pr_url,
+                classification=classification,
+                pr_state=(state or {}).get("state"),
+            )
+        except Exception as exc:  # noqa: BLE001 — a wake must never break the watch loop
+            logger.debug("pr_watcher: wake event emit failed for %s: %s", pr_url, exc)
+            return {"keys": [], "promoted": [], "error": str(exc)}
 
     def _open_pr_files(self) -> Dict[str, set]:
         """Map every open PR's url -> set of changed file paths (single gh call).
@@ -1418,6 +1453,32 @@ class PRWatcher:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int) -> bool:
+        """True when the PREMISE of a HITL alert is false — not merely that the
+        forge is happy.
+
+        Recovery has to be the negation of the raise conditions, because the
+        resolve runs EARLIER in the same pass than both raise sites. Clearing on
+        `mergeable` alone therefore did not clear anything: a PR that is
+        MERGEABLE with red CI and its resume budget spent got resolved here and
+        re-raised ~330 lines below, on every single pass.
+
+        Measured 2026-08-10, the night the resolve shipped: agov-det-02 and
+        sbx-sig-02 — both MERGEABLE, both `ci_failed` at 5/5 — cycled about once
+        a minute; ~180 alert rows in a day. The panel refilled as fast as it
+        drained, which is the same "list nobody reads" failure the resolve was
+        written to prevent.
+
+        The two raise sites are the resume cap (`cycle >= max_cycles`) and CI
+        that never fired, so both are negated here. Anything that adds a third
+        raise site must negate it here too, or the alert flaps again.
+        """
+        if (state.get("mergeable") or "").upper() != "MERGEABLE":
+            return False
+        if cycle >= max_cycles:
+            return False
+        return not self._ci_never_fired(state)
+
     def _resolve_hitl_alert(self, task_id: str) -> None:
         """Clear the alert once the task moves — the queue must drain itself."""
         source = f"pr_watcher:hitl:{task_id}"
@@ -1657,6 +1718,15 @@ class PRWatcher:
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
+
+            # WAKE EVENTS (agov-wake-03). This is the one place in ICDEV that
+            # observes "PR #N just went green", so it is where
+            # `wake_on_event("pr:1342:ci_green")` gets satisfied. Emitted right
+            # after classification and BEFORE any of the holds below — a wake
+            # subscriber is waiting on the CI verdict, not on whether the
+            # watcher went on to merge. Re-emitting the same key every cycle is
+            # harmless: fire_event only promotes wakes that are still pending.
+            self._emit_wake_events(pr_url, classification, state)
             if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
                 # The forge's cached verdict disagrees with git. git wins — but
                 # knowing that is not a remedy, and the obvious remedy is wrong.
@@ -1692,6 +1762,33 @@ class PRWatcher:
                     "rebasing to force the forge to recompute", pr_url)
 
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
+
+            # An alert says "needs a human". The moment that stops being true,
+            # clear it here — not only on DONE, which was the bug: a branch whose
+            # conflict got resolved goes back to MERGEABLE without ever passing
+            # through DONE, so its alert stayed firing forever. Measured
+            # 2026-08-10: 14 firing HITL alerts, of which at least 2 named
+            # branches that had already been fixed and were sitting green.
+            #
+            # But MERGEABLE alone is NOT recovery, and clearing on it alone made
+            # the alert FLAP. A PR can be mergeable and still need a human: red
+            # CI with the resume budget spent is exactly that, and it gets
+            # resolved here and re-raised ~330 lines below in the SAME pass, on
+            # every pass. Measured the same night, after the resolve shipped:
+            # agov-det-02 and sbx-sig-02 (both MERGEABLE, both ci_failed at 5/5)
+            # cycled roughly once a minute, ~180 alert rows in a day. The panel
+            # refilled as fast as it drained, which is the same "list nobody
+            # reads" failure the resolve was written to prevent.
+            #
+            # So recovery means the alert's PREMISE is false, not merely that the
+            # forge is happy: the resume budget is no longer spent, and there is
+            # CI to be green. Both raise sites (resume cap, CI-never-fired) are
+            # covered, so no pass can resolve and re-raise the same alert.
+            #
+            # The resolve is deduped on `source` and is a no-op when nothing is
+            # firing, so calling it on every healthy pass costs nothing.
+            if self._hitl_recovered(state, cycle, max_cycles):
+                self._resolve_hitl_alert(task["id"])
 
             if classification == KanbanState.DONE:
                 merged = (

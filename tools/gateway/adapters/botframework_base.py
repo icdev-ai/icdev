@@ -37,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.adapters.base import BaseChannelAdapter, has_correlation_token  # noqa: E402
 from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
 try:
@@ -217,13 +217,16 @@ class BotFrameworkBaseAdapter(BaseChannelAdapter):
         if not text:
             return None
 
-        # Filter: only process ICDEV commands or !icdev prefix
+        # Filter: only process ICDEV commands, the !icdev prefix, or an approval
+        # reply (agov-inbox-03), which carries [icdev:<item_id>] and no prefix —
+        # a human answering "approve" has no reason to add one.
         text_lower = text.lower()
         is_command = (
             text_lower.startswith("/icdev")
             or text_lower.startswith("icdev-")
             or text_lower.startswith("!icdev ")
             or text_lower.startswith("/bind")
+            or has_correlation_token(text)
         )
         if not is_command:
             return None

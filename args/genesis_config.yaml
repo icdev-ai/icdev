@@ -301,7 +301,7 @@ reflexes:
     risk_tier: green
     schedule: "every 1m"
     interval: 60  # seconds (1 min) — near-minute cron resolution
-    description: "User-facing cron (sag-cron-01): drains every due job in the durable agent_cron_jobs store. Two exec modes — agent (single-shot SAG runtime turn) and script (allowlisted python tools/... command). Retry with exponential backoff; delivery via log / email (SMTP or on-file outbox) / gateway best-effort. Every run recorded to the append-only agent_cron_runs log."
+    description: "User-facing cron (sag-cron-01) + agent wake tick (agov-wake-03): drains every due job in the durable agent_cron_jobs store AND every due row in agent_wakes. Cron has two exec modes — agent (single-shot SAG runtime turn) and script (allowlisted python tools/... command) — with retry/exponential backoff, delivery via log / email (SMTP or on-file outbox) / gateway best-effort, and every run recorded to the append-only agent_cron_runs log. The wake half fires each due wake exactly once (conditional UPDATE claim before delivery, so overlapping ticks cannot resume one suspension twice) and resumes its session. The two stores share this tick deliberately: a separate wake daemon would be a fourth long-lived process that can die unnoticed. The drains are independently guarded — a cron failure must not cost the wakes their delivery."
     success_metric:
       name: ran
       threshold: 0

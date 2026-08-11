@@ -158,6 +158,7 @@
 - [IDC IaC Twin (Phase IDC-1)](manifest/idc-twin.md)
 - [Twin Core — Cross-Canvas Digital-Twin Unification (TWX)](manifest/twin-core.md)
 - [Agent Adapters (OPT-71)](manifest/agent-adapters.md)
+- [Agent Governance — Detection (AGOV / DET)](manifest/agent-governance-detection.md)
 - [Skill Invocation (OPT-41, 2026-04-12)](manifest/skill-invocation.md)
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
 - [Dashboard UX Enhancements (OPT-68, 2026-04-12)](manifest/dashboard-ux-enhancements.md)
@@ -1044,6 +1045,7 @@
 | Firewall Config Review | tools\security\firewall_config_review.py | Auto-registered: security/firewall_config_review.py | --json | JSON |
 
 - [Workflow Forms Canvas (WFC)](manifest/workflow-forms-canvas.md)
+- [Agent Detection (AGOV / DET)](manifest/agent-detection.md)
 - [AGOV CASE — Agent-Session Forensics](manifest/agent-case-forensics.md)
 
 

@@ -1809,7 +1809,53 @@ by another vendor's tool.
   deliberately does not — that would add an SSRF surface this module does not
   currently have), or if edges begin arriving from an advisory feed or registry
   rather than from the resolver's own reading of a lockfile.
-
+### Gap — AGOV CASE bundle export (agov-case-02)
+- **File:** `tools/agent_case/case_bundler.py`
+- **Risk:** The exporter reads rows an agent's own activity produced — hook
+  payloads, audit details, approval-gate `reason`/`detail` free text, and
+  `affected_files` path lists — and writes them to a directory that is then
+  handed to someone else. Two distinct exposures: content the agent influenced
+  reaching a recipient (a leak), and content the agent influenced steering the
+  exporter (an execution surface).
+- **Decision:** **trusted-first-party**, with the leak side handled by contract
+  rather than by sandboxing
+- **Rationale:** Every value read comes from ICDEV's own append-only tables via
+  a fixed column allowlist, and nothing read is ever executed, resolved or
+  dispatched on. There is no `exec`/`eval`, no `subprocess`, no `importlib` on
+  a database value, no `pickle`/`yaml.load`, and no network call. Record content
+  is serialized with `json.dumps` and hashed; it never selects a code path. The
+  one place external input could become behaviour — a filesystem path out of
+  `audit_trail.affected_files` — is deliberately **not** followed: see below.
+- **Guardrails:**
+  - `collect_artifact_paths` records artifact paths as *referenced*, never
+    resolved. The exporter does not call `open`, `stat` or `resolve` on a path
+    that came out of the database, so `../../etc/shadow` in an `affected_files`
+    cell is copied into the bundle as a string and nothing more. This is also
+    the only route by which a transcript could re-enter a bundle that queried no
+    transcript table, which is why `contents_included` is a fixed `false`.
+  - `TRANSCRIPT_SOURCES` names the conversation-bearing tables, verified against
+    the live DDL, and no query in this module touches one. Exclusion is by closed
+    allowlist, not by filtering after the fact. Two of them —
+    `intake_conversation` and `ci_conversation_turns` — carry both a `session_id`
+    and raw turn `content`, so a join one column wider would pull the exported
+    session's own conversation into forensic evidence;
+    `tests/test_agov_case_bundle.py` seeds a canary into all four transcript
+    tables, asserts the two session-keyed rows really are reachable, and then
+    asserts the canary is absent from the bundle's bytes.
+  - Operator-writable free text (`agent_approval_log.reason`, `.detail`) passes
+    through `tools/llm/output_redactor.py::redact` before export, and a row whose
+    text changed is flagged `redacted: true` so a reader can distinguish "nothing
+    sensitive" from "something removed".
+  - Signed and hash-chained values (`hook_events.payload`, `audit_trail.hash`)
+    are exported verbatim on purpose: rewriting one would make an untampered
+    bundle report as tampered. The context header states this explicitly rather
+    than leaving a recipient to infer it.
+  - The endpoint header carries the storage backend NAME, never a DSN — a
+    connection string can carry a password.
+- **Revisit if:** the exporter gains the ability to copy artifact BYTES into the
+  bundle, to resolve or stat a database-supplied path, to accept an
+  externally-authored bundle as input, or to export a table not in the allowlist
+  — any of those turns "read, redact and hash" into a genuine trust boundary.
 ### Gap — AGOV CASE timeline, bundler and CLI (agov-case-04)
 - **File:** `tools/agent_case/session_timeline.py`, `tools/agent_case/case_bundler.py`,
   `tools/agent_case/cli.py`
@@ -1904,7 +1950,108 @@ by another vendor's tool.
 - **Revisit if:** operand extraction moves from an allowlist to a denylist, a
   parsed value is ever used to choose a code path or reach a subprocess, or the
   redactor is given a detection backend that makes a network call.
-### Gap 59 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
+### Gap — AGOV CASE bundle verification (agov-case-03)
+- **File:** `tools/agent_case/bundle_verifier.py` (+ `tools/agent_case/bundle_format.py`)
+- **Risk:** A case bundle is, by design, evidence handed over by someone else — an
+  auditor verifies bundles that ICDEV did not produce. Every byte read is
+  attacker-controllable: `manifest.json`, the record files, and — most sharply —
+  the **member paths inside the manifest**, which the verifier is asked to open.
+- **Decision:** **bypass-documented**
+- **Rationale:** The verifier only reads and hashes. Its entire contact with the
+  bundle is `json.loads` (building data, never code), `hashlib.sha256` /
+  `hmac.new` over bytes, and `Path.is_file()` / `open(..., "rb")`. There is no
+  `exec`/`eval`/`compile`, no `subprocess`, no `importlib`, no `pickle` or
+  `yaml.load`, no SQL, no network call, and nothing is written back into the
+  bundle — a bundle under verification is never mutated. Content never selects a
+  code path: a record's fields are joined into a string and hashed, and the
+  result is compared, never dispatched on.
+- **Guardrails:**
+  - `bundle_format.is_safe_member_path` refuses absolute paths, drive letters,
+    NTFS alternate-data-stream `:` syntax, and any `..` segment **before** the
+    path is resolved, so a manifest cannot make the verifier read
+    `../../etc/passwd`. The refusal is itself a reported finding
+    (`unsafe_member_path`), not a silent skip — a manifest that tries this is
+    evidence, so the layer fails rather than ignoring the entry.
+  - `tests/test_agov_case_bundle_verifier.py` drives four traversal shapes
+    (`../../etc/passwd`, `/etc/passwd`, `C:\Windows\win.ini`,
+    `records/../../escape.json`) through the real manifest layer and asserts each
+    is refused and named.
+  - Unreadable or non-JSON members are caught and reported as findings; a corrupt
+    bundle produces a report, not a traceback.
+  - No secret is read from the bundle. The HMAC key comes only from
+    `ICDEV_HOOK_HMAC_SECRET` or `--secret`, and the verifier refuses to fall back
+    to the shipped default the writer uses.
+- **Revisit if:** the verifier gains the ability to write into or repair a bundle,
+  to fetch a member over the network, or to load a bundle-supplied plugin/schema
+  — any of those turns "read and hash" into a genuine execution surface.
+### Gap 59 — AGOV pre-tool-use detection gate (`tools/agent_detect/gate.py`)
+
+**Module:** `tools/agent_detect/gate.py` (with `tools/agent_detect/rules.py`,
+`sequence.py`, `findings.py`), reached from `.claude/hooks/pre_tool_use.py` and
+`tools/airgap/hook_compat.py::run_pre_tool_check` via
+`tools/hooks/shared_checks.py::check_agent_rules` (agov-det-06).
+
+**Ingress paths — three, and they are not equally trusted:**
+
+1. **Tool-call payloads** (`tool_name`, `tool_input`) — agent-controlled, and the
+   most hostile input in the repo: this is literally the thing being policed.
+   `normalize_tool_call` copies a handful of string fields out of the payload
+   into a flat dict and runs one anchored regex over the command text to lift a
+   URL. Values are then compared — `==`, `fnmatch`, `re.search` against
+   **operator-authored** patterns, or membership in a parsed argv. No payload
+   value is ever compiled as a pattern, executed, interpolated into SQL, or used
+   to build a path.
+2. **Rule YAML** (`args/agent_rules/**`, `args/agent_rules_enforce/**`) —
+   first-party config, and the enforcement directory is operator-controlled by
+   design. `yaml.safe_load` only. Conditions are **structured matchers, not an
+   expression language**; the design record in `args/agent_rules/README.md`
+   states why CEL and a restricted-AST evaluator were both rejected. The only
+   operator text that becomes executable-ish is a regex under `command_matches`
+   / `url_matches`, compiled by `re.compile` at load, with a compile failure
+   invalidating the whole rule rather than degrading it.
+3. **The JSON side-cache and the session trail** (`$TEMP/icdev-agent-detect/`) —
+   `json.loads` only, never `pickle`. Both are latency artefacts, not trust
+   boundaries. See the rationale below.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** No `exec`, `eval`, `pickle`, `subprocess`, `os.system`, shell
+  invocation or native parser anywhere in the path. The gate reads data, compares
+  it against declarative patterns, and appends a row. It has no allow verb — it
+  can only ever add a refusal to a call the eight hardcoded checks in
+  `shared_checks.py` already allowed — so no rule, however malformed or hostile,
+  can widen what an agent may do.
+- **Guardrails:**
+  - **Enforcement authority is a directory, not a field.** A rule blocks only
+    when it sets `enforce: true` **and** lives in the operator directory
+    (`args/agent_rules_enforce/`, `ICDEV_AGENT_ENFORCE_RULES_DIR`), which ships
+    with no rule files. Shipped-pack matches are forced monitor-only at the
+    gate, so `enforce: true` landing in `args/agent_rules/` is inert.
+    `tests/test_agov_gate.py` pins it.
+  - **The JSON side-cache is never consulted for a blocking decision.** It
+    accelerates the monitor-only pack only; the operator directory is always
+    read live from YAML and is never given a cache file. A process that could
+    write the cache could therefore degrade *detection* — the same thing editing
+    `args/agent_rules/` achieves, and that edit is itself matched by
+    `tamper.control_surface_write` — but could never suppress or fabricate a
+    block. The cache stores documents, not compiled rules, so a cached entry
+    still has to survive `compile_rule` on every load.
+  - **Fails open, deliberately.** Every other check in `shared_checks.py` encodes
+    a fixed reviewed judgement and fails closed. This one runs YAML that may have
+    landed five minutes ago, before every tool call, so a rule pack that cannot
+    be parsed leaves the session exactly as protected as it was before AGOV.
+  - The session trail is bounded twice (a byte-capped tail seek and a line cap),
+    is per-session, holds only normalized event fields, and is scratch — losing
+    it costs chain detection and nothing else.
+  - `findings.record_finding` uses a static column list with `%s` placeholders
+    through `get_connection()`; `agent_findings` is in `APPEND_ONLY_TABLES`.
+- **Revisit if:** a matcher key is ever added that compiles a pattern from the
+  *event* rather than from the rule; if the rule schema grows a `custom_expr` or
+  any field evaluated as code; if the side-cache is ever consulted for the
+  enforcement directory or switched from JSON to `pickle`; or if the gate gains
+  an allow/exempt verb, which would make a rule file able to *weaken* the
+  hardcoded blocks rather than only add to them.
+### Gap 60 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
+### Gap 61 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
 - **File:** `tools/agent_detect/shell_parse.py` (agov-det-02)
 - **Risk:** This module's entire input is hostile by assumption — the command
   string an agent asked a shell to run, read back out of `hook_events` /

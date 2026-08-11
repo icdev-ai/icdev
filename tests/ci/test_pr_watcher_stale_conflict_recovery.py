@@ -145,3 +145,65 @@ def test_the_refund_happens_at_most_once_per_pr(monkeypatch):
     block = block[:block.index("cycle = self._resume_cycle")]
     assert '"pr_watcher.rebase_refund"' in block and "== 0" in block, (
         "the refund must be guarded on there being no prior refund for this PR")
+
+
+# ── the alert must clear on recovery, and ONLY on recovery ──────────────────
+def _open_state(mergeable="MERGEABLE", checks=(("Test", "SUCCESS"),)):
+    from datetime import datetime, timedelta, timezone
+    created = datetime.now(timezone.utc) - timedelta(hours=2)
+    return {
+        "state": "OPEN", "isDraft": False, "mergeable": mergeable,
+        "statusCheckRollup": [{"name": n, "conclusion": c, "status": "COMPLETED"}
+                              for n, c in checks],
+        "createdAt": created.isoformat().replace("+00:00", "Z"),
+    }
+
+
+def test_a_hitl_alert_clears_when_the_pr_is_mergeable_again():
+    """It used to clear only on DONE — but a branch whose conflict is resolved
+    returns to MERGEABLE without ever passing through DONE, so its alert stayed
+    firing forever. Measured 2026-08-10: 14 firing HITL alerts, at least 2 of
+    them naming branches already fixed and sitting green. An alert list that can
+    only grow is one people stop reading."""
+    assert _watcher()._hitl_recovered(_open_state(), cycle=0, max_cycles=5) is True
+
+
+def test_a_still_conflicting_pr_is_not_recovered():
+    assert _watcher()._hitl_recovered(
+        _open_state(mergeable="CONFLICTING"), cycle=0, max_cycles=5) is False
+
+
+def test_mergeable_with_the_resume_budget_SPENT_is_not_recovery():
+    """The flap. The resolve runs EARLIER in the same pass than the raise, so
+    clearing on `mergeable` alone resolved an alert that the very same pass then
+    re-raised — for a PR that is mergeable with red CI and nothing left to try.
+    Measured 2026-08-10, hours after the resolve shipped: agov-det-02 and
+    sbx-sig-02 cycled about once a minute, ~180 rows in a day. An alert list
+    that refills as fast as it drains is the same list nobody reads."""
+    w = _watcher()
+    state = _open_state(checks=(("Test", "FAILURE"),))
+    assert w._hitl_recovered(state, cycle=5, max_cycles=5) is False
+    assert w._hitl_recovered(state, cycle=6, max_cycles=5) is False, "cap is >="
+    assert w._hitl_recovered(state, cycle=4, max_cycles=5) is True, (
+        "budget left means the loop can still act — that is genuine recovery")
+
+
+def test_a_pr_whose_CI_NEVER_FIRED_is_not_recovered():
+    """The other raise site. An empty rollup looks mergeable and un-failed, but
+    it is precisely the PR that can never go green on its own."""
+    assert _watcher()._hitl_recovered(
+        _open_state(checks=()), cycle=0, max_cycles=5) is False
+
+
+def test_every_raise_site_is_negated_by_the_recovery_check():
+    """The invariant that keeps the flap from coming back: a raise condition
+    with no matching clause in _hitl_recovered resolves and re-raises on every
+    pass, forever."""
+    import inspect
+    poll = inspect.getsource(pr_watcher.PRWatcher.poll_once)
+    assert poll.count("self._hitl_alert(") == 2, (
+        "a new raise site must also be negated in _hitl_recovered")
+    rec = inspect.getsource(pr_watcher.PRWatcher._hitl_recovered)
+    assert "max_cycles" in rec and "_ci_never_fired" in rec
+    # the DONE path must still clear it
+    assert poll.count("_resolve_hitl_alert") >= 2

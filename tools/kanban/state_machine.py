@@ -369,6 +369,19 @@ def transition(
     except Exception as _exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
         logger.warning("transition: best-effort INSERT into kanban_status_transitions failed (non-blocking): %s", _exc)
 
+    # WAKE EVENTS (agov-wake-03): satisfy `wake_on_event("task:<id>:done")`.
+    # Emitted for every applied transition, not only terminal ones — "wake me if
+    # this task fails CI" is the same waiting problem as "wake me when it lands",
+    # and an agent that can only subscribe to success is back to polling for
+    # everything else. Best-effort: the transition is already committed above and
+    # a wake must never be able to undo or block it.
+    try:
+        from tools.agent_runtime.wake_signals import emit_task_status
+
+        emit_task_status(task_id, to_state)
+    except Exception as _exc:  # noqa: BLE001 — logged, never raised
+        logger.debug("transition: wake event emit skipped for %s: %s", task_id, _exc)
+
     # Wire Prometheus metrics — best-effort, never block on metric errors
     if to_state in TERMINAL_STATES:
         try:

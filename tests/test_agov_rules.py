@@ -481,10 +481,17 @@ def test_command_name_does_not_fire_on_an_unparsed_command(tmp_path):
     unparsed = _event(command='git commit -m "rm the old logs"', parsed={"parsed": False})
     assert evaluate_event(unparsed, ruleset) == []
 
+    # With no view attached, `_lazy_shell_parse` parses the command on demand
+    # (agov-det-02 is in the tree), and a genuine `rm` correctly matches. The
+    # invariant is "never fall back to SUBSTRING matching", not "never parse" —
+    # so what must stay quiet is a command the parser DECLINES, which is the
+    # case that would otherwise reach for the raw text.
     no_view = _event(command="rm -rf /x", parsed=None)
-    assert evaluate_event(no_view, ruleset) == [], (
-        "with no parsed view attached and shell_parse unavailable, a parsed-view "
-        "matcher must not fire"
+    assert [h.rule_id for h in evaluate_event(no_view, ruleset)] == ["tamper.rm_rf"]
+
+    declines = _event(command='git commit -m "$(rm -rf /x)"', parsed=None)
+    assert evaluate_event(declines, ruleset) == [], (
+        "a command the parser declines must not fall back to substring matching"
     )
 
     parsed = _event(command="rm -rf /x", parsed={"parsed": True, "name": "rm", "argv": ["rm", "-rf", "/x"]})

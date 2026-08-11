@@ -14,6 +14,9 @@ All handlers accept args: dict and return dict (JSON-serializable).
 Organized by category matching the tool_registry.py categories.
 """
 
+import argparse
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -4144,6 +4147,112 @@ def handle_studio_run_resume(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Agent detection (AGOV / DET, agov-det-07)
+#
+# Pattern A: direct import of the CLI's own functions, so the MCP surface and
+# the operator CLI cannot drift into two evaluators with two answers.
+# ---------------------------------------------------------------------------
+
+
+def _agov_rules_dir(args: dict):
+    """Resolve an optional rules_dir. ``None`` means the packaged default."""
+    raw = str(args.get("rules_dir") or "").strip()
+    return Path(raw) if raw else None
+
+
+def handle_agent_detect_list_rules(args: dict) -> dict:
+    """Catalog the loaded detection rules, with the files that were skipped."""
+    try:
+        from tools.agent_detect import rules as rules_mod
+
+        rules_dir = _agov_rules_dir(args)
+        if rules_dir is not None and not rules_dir.is_dir():
+            return {"error": f"not a directory: {rules_dir}"}
+        ruleset = rules_mod.load_rules(rules_dir, refresh=True)
+        catalog = [r.to_dict() for r in ruleset.rules]
+        return {
+            "directory": ruleset.directory,
+            "count": len(catalog),
+            "enabled": sum(1 for r in catalog if r["enabled"]),
+            "enforce_declared": sum(1 for r in catalog if r["enforce"]),
+            "sequence_rules": sum(1 for r in catalog if r["kind"] == "sequence"),
+            "rules": catalog,
+            "errors": [e.to_dict() for e in ruleset.errors],
+            "note": (
+                "A finding is a RULE MATCH AND NOT PROOF OF EXECUTION. "
+                "`enforce: true` blocks only from the enforcement directory."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_agent_detect_list_rules: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_agent_detect_check_rules(args: dict) -> dict:
+    """Validate a rule directory. ``ok`` is false when any rule does not compile."""
+    try:
+        from tools.agent_detect import cli as agov_cli
+
+        rules_dir = _agov_rules_dir(args)
+        if rules_dir is not None and not rules_dir.is_dir():
+            return {"ok": False, "error": f"not a directory: {rules_dir}"}
+        # Reuse the CLI verb rather than re-deriving "valid": a second
+        # definition of validity is a second thing to keep in step.
+        namespace = argparse.Namespace(
+            rules_dir=str(rules_dir) if rules_dir else None, json=True
+        )
+        payload = _capture_json(agov_cli.cmd_check, namespace)
+        return payload
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_agent_detect_check_rules: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
+def handle_agent_detect_scan_session(args: dict) -> dict:
+    """Evaluate the rules against one session's stored events."""
+    session_id = str(args.get("session_id") or "").strip()
+    if not session_id:
+        return {"error": "session_id is required"}
+    try:
+        from tools.agent_detect import cli as agov_cli
+
+        rules_dir = _agov_rules_dir(args)
+        try:
+            limit = int(args.get("limit", 500))
+        except (TypeError, ValueError):
+            limit = 500
+        namespace = argparse.Namespace(
+            rules_dir=str(rules_dir) if rules_dir else None,
+            session=session_id,
+            limit=limit,
+            record=bool(args.get("record", False)),
+            json=True,
+        )
+        return _capture_json(agov_cli.cmd_scan, namespace)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_agent_detect_scan_session: %s", exc)
+        return {"error": str(exc)}
+
+
+def _capture_json(verb, namespace) -> dict:
+    """Run a CLI verb in --json mode and return its payload as a dict.
+
+    The verbs print rather than return so the CLI stays a CLI; capturing stdout
+    keeps ONE implementation of each verb instead of a parallel MCP copy that
+    drifts. The exit code is preserved as ``exit_code`` because for --check it
+    IS the result.
+    """
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = verb(namespace)
+    text = buffer.getvalue().strip()
+    try:
+        payload = json.loads(text) if text else {}
+    except json.JSONDecodeError:
+        return {"error": "verb did not emit JSON", "output": text[:2000]}
+    if isinstance(payload, dict):
+        payload["exit_code"] = code
+    return payload
 # AGOV CASE — agent-session forensics (agov-case-04)
 # ---------------------------------------------------------------------------
 # Pattern A (direct import): the three modules already return JSON-serializable

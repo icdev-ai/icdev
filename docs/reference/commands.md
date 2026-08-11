@@ -595,6 +595,102 @@ arguments can carry CUI. `dry_run` and `off` still write the audit row.
 
 ---
 
+## Normalized Agent Event View (agov-det-01)
+
+A **read-only** projection of the agent activity ICDEV already stores into one
+`AgentEvent` shape. Creates no table and issues no write. Sources:
+`hook_events`, `agent_executions`, `ai_telemetry`, `audit_trail`,
+`ace_audit_log`.
+
+```bash
+python tools/agent_detect/events.py --json --limit 20
+python tools/agent_detect/events.py --session <session_id> --json
+python tools/agent_detect/events.py --source hook_events --event-type command.exec --json
+python tools/agent_detect/events.py --summary --json
+python -m tools.agent_detect.events --since 2026-08-01 --until 2026-08-09 --json
+```
+
+Event types are **mutually exclusive** — one source row yields at most one
+event: `command.exec`, `file.read`, `file.write`, `file.delete`,
+`network.indicator`, `tool.call`. A recognized shell request is `command.exec`
+and never additionally `tool.call`; an unrecognized tool (including every MCP
+tool, whose input schema ICDEV does not own) stays `tool.call` with
+`mcp_server` and `mcp_tool` preserved.
+
+Two invariants are enforced in code:
+
+- **Classification never reads free text.** `_structured()` raises on any key in
+  `FREE_TEXT_KEYS` (`output_summary`, `message`, `details`, `content`,
+  `stdout`, …). There is no regex over any payload string anywhere in the
+  module, so a command quoted in tool OUTPUT can never be read as evidence that
+  the command ran.
+- **A promoted event carries the operand that justified it.**
+  `AgentEvent.__post_init__` rejects `command.exec` without a `command`,
+  `file.*` without a `file_path` and `network.indicator` without a `url`, so an
+  ambiguous payload stays `tool.call` rather than being promoted by loose
+  pattern matching.
+
+Every mapping carries a `confidence` naming how directly the source supports
+it: `direct` (the tool's own documented input field), `derived` (recognized via
+the shared `command_tools` list in `args/agent_approval_policy.yaml`) or
+`declared` (the row names a tool and nothing more). Order them with
+`CONFIDENCE_RANK`.
+
+Library use:
+
+```python
+from tools.agent_detect.events import classify, fetch_events, summarize
+
+events = fetch_events(session_id="sess-1", event_types=["command.exec"])
+summarize(events)                      # counts by type / source / confidence
+classify("Bash", {"tool_input": {"command": "git push"}})
+# → ("command.exec", "direct", {"command": "git push"})
+```
+
+---
+
+## Agent Detection Operator CLI (agov-det-07)
+
+The operator surface over the declarative rule pack in `args/agent_rules/`.
+Four verbs, all with `--json`.
+
+```bash
+python tools/agent_detect/cli.py --list --json
+python tools/agent_detect/cli.py --check --json
+python tools/agent_detect/cli.py --check --rules-dir args/agent_rules_enforce --json
+python tools/agent_detect/cli.py --test --json
+python tools/agent_detect/cli.py --scan --session <session_id> --json
+python tools/agent_detect/cli.py --scan --session <session_id> --record --json
+python -m tools.agent_detect.cli --list --json
+```
+
+| Verb | What it does |
+|------|--------------|
+| `--list` | Catalog the loaded rules — id, severity, kind, enforce, source path — plus any files skipped and why |
+| `--check` | Validate a rule directory. **Exits non-zero on any invalid rule.** Run it before copying a rule into `args/agent_rules_enforce/` |
+| `--test` | Evaluate the rules against the fixture events in `context/agent_detect/fixtures/`. Exits non-zero on a mismatch, and on zero cases |
+| `--scan` | Evaluate the rules against the events already stored for one session. Read-only unless `--record` |
+
+**Exit codes:** `0` completed and every check passed · `1` a check failed
+(invalid rule, fixture mismatch) · `2` usage error or the verb could not run.
+
+`--check` exists because an invalid rule is **inert, not match-all** — it is
+skipped into `RuleSet.errors` rather than degraded into a partial matcher. The
+exit code is therefore the only signal an operator ever gets that an enforcement
+directory is not doing what its author thinks it is.
+
+`--scan` is read-only by default so an operator can re-run it while tuning rules
+without accumulating rows in an append-only table they cannot delete. With
+`--record`, matches are appended to `agent_findings` as `decision="observed"`,
+`enforced=False` — the CLI runs after the fact and has nothing left to deny.
+
+> **A finding is a RULE MATCH AND NOT PROOF OF EXECUTION.** What the detector
+> sees, what it does not, and the measured per-source fidelity are in
+> [docs/features/agov-det-coverage-and-limits.md](../features/agov-det-coverage-and-limits.md).
+> Read it before reporting a clean `--scan` as evidence.
+
+---
+
 ## Agent Wake Store — Agent-Scheduled Resumption (agov-wake-01)
 
 Lets an agent suspend itself and be resumed when a condition it named is met.
@@ -666,6 +762,62 @@ argument key **names** — is the only sanctioned way to build a deliverable bod
 
 ---
 
+## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
+
+Mirrors a pending item to a messaging channel and turns the human's reply back
+into a resolution, over the connectors ICDEV already has — every gateway adapter
+exposes the same `send_message(channel_user_id, text, thread_id)`, so there is
+**no new HTTP client**.
+
+```bash
+python tools/agent_runtime/inbox_channel.py --route --json
+python tools/agent_runtime/inbox_channel.py --route --persona overnight --json
+python tools/agent_runtime/inbox_channel.py --deliver <item_id> --json
+python tools/agent_runtime/inbox_channel.py --deliver-pending --inbox ops --json
+python tools/agent_runtime/inbox_channel.py --parse "approve [icdev:ai-1234]" --json
+```
+
+Wire it into the gate with the deliverer seam agov-inbox-02 already provides:
+
+```python
+from tools.agent_runtime.approval_gate import build_approval_hook
+from tools.agent_runtime.inbox_approver import make_inbox_approver
+from tools.agent_runtime.inbox_channel import make_channel_deliverer
+
+hook = build_approval_hook(
+    approver=make_inbox_approver(deliver=make_channel_deliverer(persona="overnight")),
+)
+```
+
+**The correlation token is the whole design.** A delivered message carries
+`[icdev:<item_id>]`; a reply resolves the item that token names and nothing else.
+A reply with **no** token — or with two different tokens — is **ignored**. It is
+never applied to the most recent or the only pending item: guessing which
+approval a bare "yes" meant is how the wrong irreversible action gets approved.
+
+**A delivery failure never loses or resolves the item.** In-app is the store of
+record and a channel is a mirror, so a raising adapter, a failed send, a missing
+route or an unbuildable channel all leave the item `pending` and answerable.
+
+**Outbound goes through the IL response filter**, then truncation, and *only
+then* the token footer — so redacting a CUI marking on an IL4 channel can never
+destroy the tag that makes the reply correlatable.
+
+**Inbound still traverses all eight gates.** A reply carrying a token is
+normalised to the allowlisted `icdev-approve` command before
+`run_security_chain` runs (the same synthetic-command shape agent-mode uses), and
+`resolve_from_reply()` refuses to settle anything unless every gate is recorded
+as passed. A free-text reply is an *answer*, never an approval: the item stays
+pending and still expires to `denied` on its own clock.
+
+Routing lives in `args/approval_inbox_routing.yaml` and resolves **per-session
+override → persona default → global default**, merged key by key. Its
+`approvers:` list is empty by default — parity with the console approver it
+replaces, which trusts whoever holds the terminal — and is enforced fail-closed
+once set.
+
+---
+
 ## Unattended Sessions — Routing, Not Autonomy (agov-inbox-04)
 
 `unattended` decides **where** an approval ask is delivered. It does **not**
@@ -716,6 +868,143 @@ than reverting mid-run to an approver that denies everything. A read that fails
 resolves to *attended* — the stricter path — while `set_unattended` raises
 rather than leave an operator with a session that refuses everything for no
 visible reason.
+
+---
+
+## AGOV CASE — Portable Case Bundle (agov-case-02)
+
+Exports one agent session as a directory that can be carried to a machine that
+never had the source database and verified there. Not a third bundler: SWFT
+(`tools/compliance/swft_evidence_bundler.py`) and `prov_recorder` both bundle
+software supply-chain evidence per PROJECT, and neither is keyed by
+`session_id` — this adds that axis on the same machinery and carries the
+`export_prov_json` document verbatim.
+
+```bash
+# Whole session
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123
+
+# A window of it, as JSON, replacing an existing bundle
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123 \
+    --since 2026-08-09T10:00:00Z --until 2026-08-09T11:00:00Z --force --json
+```
+
+```python
+from tools.agent_case.case_bundler import build_case_bundle
+result = build_case_bundle("sess-abc123", "out/case-abc123")
+result["bundle_digest"]   # time-free identity: same data -> same digest
+```
+
+Members: `manifest.json` (SHA-256 of every other file), `context.json`
+(endpoint/context header + classification), `timeline.json`, `records/` for
+`hook_events`, `audit_trail`, `agent_findings` and `agent_approval_log`,
+`artifacts.json`, and `provenance/prov.json`.
+
+Three properties hold by construction. **No member carries export wall-clock** —
+it lives only in `manifest.created_at` — so identical input produces a
+byte-identical manifest and `bundle_digest` is stable across export times.
+**No transcript table is ever read**, so the bundle cannot leak a prompt;
+`TRANSCRIPT_SOURCES` names the excluded tables in the header. **The
+classification marking is resolved** through
+`tools/compliance/classification_manager.py` from the markings on the session's
+own records, most restrictive wins — a session with a SECRET audit row produces
+a SECRET banner with no code change.
+
+Signed values (`hook_events.payload`, `audit_trail.hash`) are exported verbatim
+because the HMAC and the migration-149 chain are computed over them; redaction
+applies to operator free text (`agent_approval_log.reason`/`.detail`) via
+`tools/llm/output_redactor.py`. Verification that names WHICH records failed is
+agov-case-03; the operator CLI is agov-case-04.
+## Normalized Agent Event View (agov-det-01)
+
+A **read-only** projection of the agent activity ICDEV already stores into one
+`AgentEvent` shape. Creates no table and issues no write. Sources:
+`hook_events`, `agent_executions`, `ai_telemetry`, `audit_trail`,
+`ace_audit_log`.
+
+```bash
+python tools/agent_detect/events.py --json --limit 20
+python tools/agent_detect/events.py --session <session_id> --json
+python tools/agent_detect/events.py --source hook_events --event-type command.exec --json
+python tools/agent_detect/events.py --summary --json
+python -m tools.agent_detect.events --since 2026-08-01 --until 2026-08-09 --json
+```
+
+Event types are **mutually exclusive** — one source row yields at most one
+event: `command.exec`, `file.read`, `file.write`, `file.delete`,
+`network.indicator`, `tool.call`. A recognized shell request is `command.exec`
+and never additionally `tool.call`; an unrecognized tool (including every MCP
+tool, whose input schema ICDEV does not own) stays `tool.call` with
+`mcp_server` and `mcp_tool` preserved.
+
+Two invariants are enforced in code:
+
+- **Classification never reads free text.** `_structured()` raises on any key in
+  `FREE_TEXT_KEYS` (`output_summary`, `message`, `details`, `content`,
+  `stdout`, …). There is no regex over any payload string anywhere in the
+  module, so a command quoted in tool OUTPUT can never be read as evidence that
+  the command ran.
+- **A promoted event carries the operand that justified it.**
+  `AgentEvent.__post_init__` rejects `command.exec` without a `command`,
+  `file.*` without a `file_path` and `network.indicator` without a `url`, so an
+  ambiguous payload stays `tool.call` rather than being promoted by loose
+  pattern matching.
+
+Every mapping carries a `confidence` naming how directly the source supports
+it: `direct` (the tool's own documented input field), `derived` (recognized via
+the shared `command_tools` list in `args/agent_approval_policy.yaml`) or
+`declared` (the row names a tool and nothing more). Order them with
+`CONFIDENCE_RANK`.
+
+Library use:
+
+```python
+from tools.agent_detect.events import classify, fetch_events, summarize
+
+events = fetch_events(session_id="sess-1", event_types=["command.exec"])
+summarize(events)                      # counts by type / source / confidence
+classify("Bash", {"tool_input": {"command": "git push"}})
+# → ("command.exec", "direct", {"command": "git push"})
+```
+---
+
+## Agent Wake Tick + Event Keys (agov-wake-03)
+
+What ends a suspension. **No daemon** — the tick rides the Genesis cadence that
+already drains `agent_cron_jobs`, because ICDEV already runs three long-lived
+processes and a fourth is a fourth thing that can die unnoticed.
+
+**Libraries, no CLI.** Ticked by `tools/genesis/reflexes/agent_cron_reflex.py`
+(`every 1m` in `args/genesis_config.yaml`).
+
+```python
+from tools.agent_runtime.wake_tick import run_due_wakes
+from tools.agent_runtime.wake_signals import emit_pr_state, emit_task_status
+
+run_due_wakes()                       # fire every due wake, resume its session
+run_due_wakes(resumer=my_delivery)    # swap the delivery channel, not the gate
+```
+
+The tick **claims before it delivers** — `mark_fired` first, deliver only if it
+returned `True` — so two overlapping ticks cannot resume one suspension twice.
+The cost is stated: a delivery that fails after the claim is not retried
+(at most once, never twice) and is counted as `failed` in the tick result.
+
+Event keys are `<subject>:<id>:<event>`, emitted by `tools/ci/pr_watcher.py`
+(after each PR classification) and by the kanban state machine plus
+`pr_watcher._set_task_status` (on every applied task transition):
+
+| Key | Fired when |
+|-----|-----------|
+| `pr:<n>:ci_green` | CI passed and the PR is mergeable |
+| `pr:<n>:ci_failed` / `:merge_conflict` / `:changes_requested` | the matching PR verdict |
+| `pr:<n>:merged` / `pr:<n>:closed` | the PR left the open set |
+| `task:<id>:<status>` | a kanban task reached that status (`done`, `ci_failed`, …) |
+
+Re-emission is free: `fire_event` only promotes wakes that are still `pending`,
+so a poll loop firing `pr:1342:ci_green` every 30s promotes nothing after the
+first. Emitting never raises — a PR merge or a task transition is not allowed to
+break because a wake could not be promoted.
 
 ---
 

@@ -639,6 +639,28 @@ CREATE TABLE IF NOT EXISTS agent_approval_log (
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- agov-det-05 / migration 20260809201320. Append-only: one row per detection
+-- rule match, citing the ordered event ids that made it fire. Keep this in step
+-- with tools/db/migrations/20260809201320_agov_agent_findings/up.py — a fixture
+-- that disagrees with the live table rewards INSERTs that are dead in
+-- production, which is how audit_trail's fixture drifted.
+CREATE TABLE IF NOT EXISTS agent_findings (
+    finding_id TEXT PRIMARY KEY,
+    rule_id TEXT NOT NULL,
+    rule_version TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    session_id TEXT,
+    actor TEXT,
+    project_id TEXT,
+    event_ids TEXT NOT NULL DEFAULT '[]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    enforced INTEGER NOT NULL DEFAULT 0,
+    decision TEXT NOT NULL DEFAULT 'observed',
+    tenant_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 -- agov-inbox-01 / migration 20260809203855. Pending-approval store for the
 -- unified approval inbox. MUTABLE and deliberately NOT append-only: an item is
 -- created pending then moves exactly once to resolved/expired/cancelled, and
