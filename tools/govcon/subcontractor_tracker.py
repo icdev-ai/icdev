@@ -132,6 +132,17 @@ def create_subcontractor(contract_id, data):
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
+    # company_name is required. Defaulting it to "Unknown" produced rows that no
+    # one could act on and that check_flowdown reported forever, because
+    # flow_down_complete also defaults to 0 (non-compliant). Rejecting here is
+    # also what surfaces a caller sending the wrong key names — every other
+    # field has a legitimate default, so a mismatched body is otherwise silent.
+    company_name = data.get("company_name")
+    if not isinstance(company_name, str) or not company_name.strip():
+        conn.close()
+        return {"status": "error", "message": "company_name is required and must be a non-empty string"}
+    company_name = company_name.strip()
+
     sub_id = _uuid()
     conn.execute(
         "INSERT INTO cpmp_subcontractors "
@@ -143,7 +154,7 @@ def create_subcontractor(contract_id, data):
         (
             sub_id,
             contract_id,
-            data.get("company_name", "Unknown"),
+            company_name,
             data.get("cage_code"),
             data.get("uei"),
             data.get("business_size", "large"),
@@ -168,7 +179,7 @@ def create_subcontractor(contract_id, data):
     _audit(
         conn,
         "create_subcontractor",
-        f"Created subcontractor {data.get('company_name', sub_id)} on contract {contract_id}",
+        f"Created subcontractor {company_name} on contract {contract_id}",
     )
     conn.commit()
     conn.close()
@@ -212,14 +223,14 @@ def update_subcontractor(sub_id, data):
     params = []
     for field in updatable:
         if field in data:
-            sets.append(f"{field} = ?")
+            sets.append(f"{field} = %s")
             params.append(data[field])
 
     if not sets:
         conn.close()
         return {"status": "error", "message": "No updatable fields provided"}
 
-    sets.append("updated_at = ?")
+    sets.append("updated_at = %s")
     params.append(_now())
     params.append(sub_id)
 
