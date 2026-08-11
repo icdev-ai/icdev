@@ -244,6 +244,33 @@ TOOL_REGISTRY = {
             "required": ["project_id"],
         },
     },
+    "sbom_validate_minimum_elements": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_sbom_validate_minimum_elements",
+        "description": (
+            "Score an SBOM against the 2026 Minimum Elements (CISA et al., 2026-07-29, v2.1): "
+            "17 data fields and 6 applicable practices, each met/partial/gap with a rationale. "
+            "Accepts CycloneDX JSON and SPDX 2.2/2.3 JSON, so it grades SBOMs received from "
+            "vendors as well as ICDEV-generated ones."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sbom_path": {"type": "string", "description": "Path to the SBOM document"},
+                "record": {
+                    "type": "boolean",
+                    "description": "Append the assessment to sbom_conformance_assessments",
+                    "default": False,
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "Project id to attribute a recorded assessment to",
+                },
+            },
+            "required": ["sbom_path"],
+        },
+    },
     "cui_mark": {
         "category": "compliance",
         "module": "tools.mcp.compliance_server",

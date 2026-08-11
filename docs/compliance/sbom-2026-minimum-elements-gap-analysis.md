@@ -256,8 +256,18 @@ Sandbox posture for the verification path (attacker-supplied SBOM + signature + 
 `args/security_gates.yaml` already carries `sbom_not_generated` (deployment, swft),
 `sbom_attestation_missing` (devsecops), `sbom_stale_over_30_days` / `sbom_max_age_days: 30`
 (sbd, swft), and `sbom_generation_failed` / `sbom_generation_skipped` (marketplace, production).
-Every one of these is a **presence, freshness or exit-code check**. Nothing validates
-conformance to the minimum elements.
+Every one of these is a **presence, freshness or exit-code check**. None of them looks inside
+the document.
+
+**sbx-sig-02** adds a `sbom_conformance:` section to the same file, whose conditions
+(`sbom_conformance_below_floor`, `sbom_conformance_regressed`, and four warnings) are backed by
+the new validator. That section is **declared but not yet wired into an enforcement point** —
+attaching it to the deployment, swft and devsecops gates is **sbx-gov-01**. Declaring it first
+is deliberate: adding the conditions to a live `blocking:` list today would fail every deploy,
+since the generator scores 2/17 until the `sbx-fld-*` tasks land, and that is the measurement
+this card exists to move rather than a reason to stop shipping. Regression detection needs
+history, which is why the validator can append to `sbom_conformance_assessments` (migration
+`20260808053058`, append-only) rather than only printing.
 
 **RESOLVED (sbx-gov-01).** Two conditions now gate on what the document says:
 `sbom_minimum_elements_not_met` (blocking) and `sbom_conformance_below_threshold` (warning),
@@ -1115,6 +1125,79 @@ document whose author signature no longer verifies.
 `/supply_chain` reads "not assessed" until sbx-sig-02 lands its validator. The API reports
 `conformance.available: false` rather than a zero, because a zero is a claim about the
 artifact and it has not been earned.
+
+For the record, the pre-`sbx` starting point counted strictly was **2 of 17 data-field elements
+fully met** (SBOM Data Format Name, SBOM Tool Name), plus 7 partial and 8 gaps, and **0
+practices**. That figure reads as "0 of 7" against the 2021 list and "0 of 6" against the 2026
+one — Access Control was removed, and zero is zero either way. It is preserved as a frozen
+fixture rather than as prose, for the reason §3.4 gives.
+
+### 3.4 Measured, not asserted (sbx-sig-02)
+
+The matrix above is now produced by a tool rather than by reading the generator:
+`tools/compliance/sbom_minimum_elements_validator.py`. It scores any CycloneDX or SPDX
+document against all 23 elements and emits met/partial/gap with a rationale per element.
+
+```bash
+python tools/compliance/sbom_minimum_elements_validator.py --sbom compliance/sbom.cdx.json --json
+```
+
+Three measurements are pinned by `tests/test_sbom_minimum_elements_validator.py`:
+
+| Document | Data fields | Practices | Weighted |
+|---|---|---|---|
+| Pre-`sbx` generator output (`tests/fixtures/sbom/baseline_cyclonedx_pre_sbx.cdx.json`) | 2 / 17 | 0 / 6 | 30.4% |
+| A document carrying every element (`conformant_cyclonedx_1.6.cdx.json`) | 17 / 17 | 6 / 6 | 100% |
+| A vendor's SPDX 2.3 file (`third_party_spdx_2.3.spdx.json`) | 11 / 17 | 3 / 6 | 69.6% |
+
+A fourth measurement is taken against the **live** generator rather than a fixture, driven
+through `resolve_project` → `_build_cyclonedx_sbom` with only the database write skipped, so
+that the frozen fixtures cannot drift away from the emitter without a test noticing:
+
+| Live path | Data fields | Practices |
+|---|---|---|
+| Declared-only project (no lockfile) | 8 / 17 | 2 / 6 |
+
+**This is the number to quote for "what does ICDEV emit today", and it is not §3.3's 13.**
+The two count different things and both are correct: §3.3's matrix scores each element against
+the generator's *capability* — the code path exists and is exercised — whereas the tool scores a
+*document*. Producer, both hash halves and Component License are emitted only from resolved
+metadata, so on a project that degrades to declared manifests they are genuinely absent from the
+document and score **GAP**. A capability that the input never triggers is not an element the
+recipient received. Quote 13 for what the generator can do; quote 8 for what a lockfile-less
+project actually hands over.
+
+One correction to §3.3 above, which the tool makes visible: **sbx-cov-01 moved Coverage off the
+baseline, but not uniformly.** A project whose ecosystems resolve from lockfiles now scores
+Coverage **MET**; a project that degrades to declared manifests scores **PARTIAL**, because the
+document does now state its own incompleteness honestly, which is what the element asks of a
+document. Neither is the original **GAP**. Coverage therefore cannot be quoted as a single
+figure without naming the project it was measured on.
+
+The third row matters as much as the first two. The standard is aimed at organizations that
+**procure** software as much as at those that produce it, so the validator reads documents ICDEV
+did not generate. That is why the reader is format-agnostic, why it does not import the
+generator, and why `sbom_conformance_assessments.sbom_record_id` is nullable — a vendor's SBOM
+has no generation event behind it.
+
+**Unknown vs withheld.** The validator refuses to score them alike, and grades a value that
+conflates them (`"unspecified"`, `"managed"`) as *worse* than a stated unknown. `UNKNOWN_MARKERS`,
+`WITHHELD_MARKERS` and `AMBIGUOUS_PLACEHOLDERS` in that module are the grading vocabulary.
+
+This section previously directed sbx-prc-01 to **import** those sets. That task has since
+landed, and it restates them in `tools/compliance/unknown_information.py` instead. The two
+currently agree, so the directive is recorded here as history rather than reissued — but prose
+asking for a refactor nobody performed is exactly how the two drift apart later, with ICDEV
+emitting a disclosure its own conformance tool scores as a gap. The relationship is therefore
+enforced by `test_prc_01_disclosure_vocabulary_agrees_with_the_validator` rather than requested:
+prc-01's sentinels must land in the validator's matching buckets, its retired legacy sentinels
+must remain penalised, and the unknown and withheld sets must stay disjoint on both sides. That
+is a containment check, not an equality one — the validator must additionally know spellings it
+never emits (`NOASSERTION`, `redacted`) in order to grade vendor documents.
+
+**Known limits.** SPDX support is JSON 2.2/2.3. SPDX 3.x JSON-LD and SPDX tag-value are declined
+with a named error rather than parsed approximately — mis-scoring a vendor's document is worse
+than declining it.
 
 ---
 

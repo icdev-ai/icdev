@@ -1,0 +1,8 @@
+{
+  "description": "sbx-sig-02 - append-only assessment ledger for the SBOM 2026 minimum-elements conformance validator: per-document scores, denormalised element counts and the full per-element verdict blob, for ICDEV-generated and third-party SBOMs alike",
+  "date": "2026-08-08",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "sbx-sig-02"
+}

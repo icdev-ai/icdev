@@ -55,6 +55,12 @@ deployment_gates:
 # read from this file at evaluation time; the module carries no default for any
 # of them and refuses to run if this block is missing or incomplete.
 sbom_conformance:
+  # Scored by tools/compliance/sbom_minimum_elements_validator.py (sbx-sig-02),
+  # which sbom_conformance_gate.py delegates to whenever it is importable; the
+  # gate's built-in structural scorer is only the fallback. This is the single
+  # sbom_conformance block — a second one silently wins the key in YAML and
+  # takes the whole gate's thresholds with it.
+  #
   # The gates these conditions are wired into. Each of the three also carries the
   # condition names in its own blocking/warning list.
   gates:
@@ -63,8 +69,17 @@ sbom_conformance:
     - devsecops
   blocking:
     - sbom_minimum_elements_not_met
+    # A score below the floor, or one that dropped since the last recorded
+    # assessment for the same project (sbom_conformance_assessments is the
+    # history that makes a regression computable at all).
+    - sbom_conformance_below_floor
+    - sbom_conformance_regressed
   warning:
     - sbom_conformance_below_threshold
+    - sbom_conformance_below_target
+    - sbom_format_version_superseded      # e.g. CycloneDX 1.4 against ECMA-424
+    - sbom_unknown_information_ambiguous  # "unspecified"/"managed" instead of unknown vs withheld
+    - sbom_hash_algorithm_not_nist_approved
   thresholds:
     # Percentage of the 17 data-field elements (9 SBOM Metadata + 8 Component
     # Data) that must be met before the SBOM is usable as evidence.
@@ -75,6 +90,24 @@ sbom_conformance:
     # An SBOM that lists no components meets no Component Data element at all,
     # whatever its metadata scores. Blocking, independent of the percentage.
     require_components: true
+    # ── sbx-sig-02: the validator scores all 23 elements, so it reads a
+    # weighted figure alongside the data-field percentage above. These live in
+    # the SAME block deliberately: this key previously appeared in a second
+    # top-level `sbom_conformance:` further down the file, and because YAML
+    # resolves a duplicate mapping key to the last occurrence, that block
+    # silently shadowed the three keys above and made the gov-01 gate refuse
+    # to start. One block, one key.
+    # Weighted percentage over all 23 elements (met = 1.0, partial = 0.5).
+    min_weighted_score: 80.0
+    target_weighted_score: 100.0
+    # Fully-met counts, which is how the standard and the gap analysis both read.
+    min_data_fields_met: 17
+    min_practices_met: 6
+    # Third-party SBOMs are held to a lower bar than ICDEV's own: a recipient
+    # cannot make a vendor emit an element, only decide whether to accept the
+    # document. This is the accept/reject line for procured software.
+    min_third_party_weighted_score: 60.0
+    allow_superseded_format_version: true
 
 cssp:
   blocking:
@@ -919,6 +952,21 @@ swft:
     dependency_audit_required: true
     secret_detection_required: true
 
+# SBOM 2026 Minimum Elements conformance (sbx-sig-02)
+#
+# Every OTHER sbom_* condition in this file — sbom_not_generated,
+# sbom_attestation_missing, sbom_stale_over_30_days, sbom_generation_failed —
+# is a presence, freshness or exit-code check. None of them looks inside the
+# document. These conditions do, via
+# tools/compliance/sbom_minimum_elements_validator.py.
+#
+# NOT YET WIRED INTO AN ENFORCEMENT POINT. sbx-gov-01 owns attaching these to
+# the deployment, swft and devsecops gates. Declared here first so the
+# vocabulary and thresholds are agreed before anything blocks on them, and so
+# the validator's registration is complete rather than half-done. Adding the
+# conditions to a live `blocking:` list today would fail every deploy, because
+# the generator scores 2/17 until the sbx-fld-* tasks land — which is the
+# measurement this card exists to move, not a reason to stop shipping.
 # RAG Subsystem (Phase 64, D-RAG-1 through D-RAG-14)
 rag:
   blocking:
@@ -1758,6 +1806,7 @@ mcp_workflow_tools:
     - kanban_list_tasks     # board read
     - kanban_get_task       # board read
     - studio_list_workflows # workflow catalog read
+    - studio_run_status     # run/step state read
 
   # State-changing, destructive, or egress-bearing: a human gate must be
   # approved in the same run before the executor dispatches these.
@@ -1775,6 +1824,12 @@ mcp_workflow_tools:
     - publish_asset         # publishes outward to the marketplace
     - emass_sync            # egress of compliance data to eMASS
     - xacta_sync            # egress of compliance data to Xacta
+    # A workflow step that starts or resumes ANOTHER workflow run executes every
+    # step of that run under this run's authority, and can recurse. The gate is
+    # what bounds it: a human approves the outer step before any inner step
+    # dispatches. Reading a run (studio_run_status) is allowlisted above.
+    - studio_run_start      # spawns a new graph run
+    - studio_run_resume     # continues a parked graph run
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent tool allowlist for Studio workflow steps (hgx-agent-02)

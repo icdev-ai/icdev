@@ -41,18 +41,34 @@ NON_CONFORMING_SBOM = {"bomFormat": "CycloneDX", "specVersion": "1.4"}
 
 
 def _component(name, version, purl):
+    """One component stating every Component Data element the 2026 standard names.
+
+    `cpe` and the alternate-names property are here because the validator marks
+    the component PARTIAL without them, and this gate does not count partial as
+    met:
+
+      * Component Identifiers — "where multiple identifiers exist, ALL of them
+        are included". CPE alongside PURL is what makes an NVD lookup possible
+        from the same document a package-manager resolve uses.
+      * Component Name — the format must ALLOW alternate names, and neither
+        CycloneDX nor SPDX has a native field, so the list is declared
+        explicitly. An empty list still evidences the capability; these two
+        genuinely have no alias.
+    """
     return {
         "type": "library",
         "bom-ref": f"{name}@{version}",
         "name": name,
         "version": version,
         "purl": purl,
+        "cpe": f"cpe:2.3:a:{name}:{name}:{version}:*:*:*:*:*:*:*",
         "hashes": [{"alg": "SHA-256", "content": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}],
         "licenses": [{"license": {"id": "Apache-2.0"}}],
         "properties": [
             {"name": PROPERTY_PRODUCER, "value": "The Apache Software Foundation"},
             {"name": PROPERTY_PROVENANCE, "value": KNOWN},
             {"name": PROPERTY_PRODUCER_SOURCE, "value": "python-dist-info-metadata"},
+            {"name": "icdev:sbom:component:alternate-names", "value": "[]"},
         ],
     }
 
@@ -73,12 +89,30 @@ def conforming_sbom():
         "version": 1,
         "signature": {"algorithm": "ES256", "value": "MEUCIQD..."},
         "metadata": {
-            "timestamp": "2026-08-08T03:42:20Z",
+            # RFC 9557, not bare RFC 3339: the standard names 9557 specifically,
+            # and the bracketed zone is what survives a reader in another
+            # offset. '…Z' alone scores partial.
+            "timestamp": "2026-08-08T03:42:20.123456+00:00[UTC]",
             "authors": [{"name": "Integrated Concepts Development"}],
-            "tools": [{"vendor": "ICDEV™", "name": "icdev-sbom-generator", "version": "1.0.0"}],
+            # Not "1.0.0": a common unset default cannot be told apart from a
+            # hardcoded constant, so it does not identify the code delivery.
+            "tools": [{"vendor": "ICDEV™", "name": "icdev-sbom-generator", "version": "2026.8.8"}],
+            # CycloneDX 1.5+ carries the generation context natively. An SBOM
+            # built from source manifests is 'pre-build', and that is knowable
+            # at generation time — the icdev property is the fallback for
+            # formats with nowhere to put it.
+            "lifecycles": [{"phase": "pre-build"}],
             "component": target,
             "properties": [
-                {"name": "icdev:sbom-generation-context", "value": "build"},
+                # `icdev:sbom:generation-context`, with colons. The old spelling
+                # here was `icdev:sbom-generation-context`, which the validator
+                # does not read — so the fixture believed it stated a context it
+                # was not stating.
+                {"name": "icdev:sbom:generation-context", "value": "pre-build"},
+                # A bare revision counter says nothing about what changed and
+                # does not reconcile with the independently counting
+                # sbom_records.version. SemVer, kept in step with it.
+                {"name": "icdev:sbom:version", "value": "1.0.0"},
                 {"name": "icdev:classification", "value": "CUI // SP-CTI"},
             ],
         },
@@ -283,8 +317,25 @@ def test_the_conditions_are_wired_into_the_three_gates():
 # =====================================================================================
 
 
-def test_the_structural_scorer_is_used_while_the_validator_is_absent():
+def test_the_structural_scorer_is_used_while_the_validator_is_absent(monkeypatch):
+    """The fallback still has to work — but its absence must now be SIMULATED.
+
+    This test used to assert the structural scorer runs with no patching at all,
+    which was true only while sbx-sig-02 had not landed. This branch lands it, so
+    the unpatched assertion became false by construction: it was testing the
+    state of the tree, not the behaviour of the gate.
+
+    The fallback is not dead code — an air-gapped or partial install can still be
+    missing the validator — so it keeps a test, with the absence forced.
+    """
+    monkeypatch.setitem(sys.modules, gate.VALIDATOR_MODULE, None)
+
     assert gate.score_sbom(conforming_sbom())["scored_by"] == gate.SCORER_STRUCTURAL
+
+
+def test_the_validator_is_used_when_it_IS_present():
+    """The other half, and the one that is now the normal case."""
+    assert gate.score_sbom(conforming_sbom())["scored_by"] == gate.SCORER_VALIDATOR
 
 
 def test_the_validator_takes_over_when_it_is_importable(monkeypatch):
@@ -359,6 +410,16 @@ def test_running_the_file_as_a_script_scores_the_same_as_importing_it(tmp_path):
 
 
 def test_an_unimportable_component_producer_raises_rather_than_gapping(monkeypatch):
+    """A STRUCTURAL-path property: only that scorer imports component_producer.
+
+    The validator reads the producer itself (from `icdev:component-producer`),
+    so it never reaches this import — which is why the validator must also be
+    forced absent here. Without that, this test silently stopped exercising the
+    thing it is named for the moment sbx-sig-02 landed: it would have passed for
+    the wrong reason, or failed for a reason that has nothing to do with
+    producers.
+    """
+    monkeypatch.setitem(sys.modules, gate.VALIDATOR_MODULE, None)
     monkeypatch.setitem(sys.modules, "tools.compliance.component_producer", None)
 
     with pytest.raises(gate.SbomScoreError, match="component_producer"):
