@@ -411,6 +411,12 @@ def test_watcher_refuses_to_rebase_a_branch_it_does_not_own():
         return _pushed()
 
     watcher, audit, queue = _build("task-dirty", _spy, branch="main")
+    # The fixture asserts a GENUINE conflict. Since pr_watcher now confirms a
+    # CONFLICTING verdict against `git merge-tree` (the forge's mergeable field
+    # is a cache and goes stale), an unstubbed check would consult real git and
+    # reclassify this fixture as mergeable — which is correct behaviour and would
+    # make this test silently stop exercising the rebase path it is about.
+    watcher._conflict_is_real = lambda state, runner=None: True
     report = watcher.poll_once()
 
     assert called == [], "the watcher must not hand `main` to the rebase path"
