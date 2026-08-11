@@ -6352,6 +6352,43 @@ def _is_dangerous_task(task_id: str) -> bool:
     return any(kw.lower() in desc for kw in _DANGEROUS_DESCRIPTION_KEYWORDS)
 
 
+def _dir_owns_its_repo_root(work_dir: str) -> bool:
+    """True when ``work_dir`` IS a git repo/worktree root, not a dir inside one.
+
+    git has no "this must be a worktree" assertion. A worktree that is pruned or
+    removed mid-run leaves its files behind as an ordinary directory, and because
+    the kanban worktree base lives under gitignored ``.tmp/``, git does not error
+    there — it walks UP to the parent repo and answers for the SHARED CHECKOUT.
+    Any ``git status`` run in such a directory describes BASE_DIR's dirty state
+    while looking exactly like the task's own output.
+
+    Comparing ``rev-parse --show-toplevel`` to the directory itself is what tells
+    the two apart: a real worktree reports itself, a fallen-through leftover
+    reports its parent repo. Resolved on both sides so a symlinked or
+    differently-cased temp path does not read as a mismatch.
+    """
+    import subprocess as _sp
+
+    if not work_dir:
+        return False
+    try:
+        r = _sp.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=work_dir, timeout=10,
+        )
+    except Exception:  # noqa: BLE001 — git missing/timeout: cannot prove it, so don't
+        return False
+    top = (r.stdout or "").strip()
+    if r.returncode != 0 or not top:
+        return False
+    try:
+        return Path(top).resolve() == Path(work_dir).resolve()
+    except Exception:  # noqa: BLE001 — unresolvable path is not a worktree root
+        return False
+
+
 def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
     """Fast-path: did the agent actually touch the filesystem / commit work?
 
@@ -6399,7 +6436,23 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
     # 2. uncommitted changes in the worktree — only valid when the task has
     # an actual registered worktree; checking BASE_DIR's dirty state would
     # produce false positives from unrelated in-progress work.
-    if task_id in _worktrees:
+    #
+    # `task_id in _worktrees` does not establish that on its own. It proves the
+    # runner RECORDED a path, not that the path is still its own worktree — and
+    # a leftover under gitignored `.tmp/` answers for the SHARED CHECKOUT rather
+    # than failing (see _dir_owns_its_repo_root). That is the same false
+    # positive the note above intends to prevent, arriving through a door the
+    # membership test does not cover.
+    #
+    # Observed 2026-08-11 (hgx-vv-01): the gate accepted "8 uncommitted
+    # change(s) in worktree" where all 8 were BASE_DIR's companion-sync files
+    # (.amazonq/mcp.json, .cline/mcp_settings.json, …) — dirty for hours before
+    # that task was dispatched and belonging to no task. It was marked done on
+    # work that never reached a branch, and its card read 100%.
+    #
+    # Asserted HERE, at use, rather than at dispatch: removal happens mid-run,
+    # so a start-of-task check would have passed and still let this through.
+    if task_id in _worktrees and _dir_owns_its_repo_root(work_dir):
         try:
             r = _sp.run(
                 ["git", "status", "--porcelain"],
