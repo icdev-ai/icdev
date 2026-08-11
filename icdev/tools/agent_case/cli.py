@@ -97,7 +97,8 @@ def _fail(message: str, as_json: bool, exit_code: int = EXIT_FAILED) -> int:
 def cmd_timeline(args) -> int:
     try:
         result = build_timeline(args.session, since=args.since, until=args.until,
-                               limit=args.limit)
+                               limit=args.limit,
+                               redact=not getattr(args, "no_redact", False))
     except Exception as exc:  # surfaced, never swallowed
         return _fail(f"timeline failed for session {args.session!r}: {exc}", args.json)
     result["ok"] = True
@@ -148,6 +149,9 @@ def build_parser() -> argparse.ArgumentParser:
     timeline.add_argument("--since", help="Inclusive ISO-8601 lower bound")
     timeline.add_argument("--until", help="Inclusive ISO-8601 upper bound")
     timeline.add_argument("--limit", type=int, help="Max rows per source")
+    timeline.add_argument(
+        "--no-redact", action="store_true",
+        help="Show unmasked values. The rendered output must not be disclosed.")
     timeline.add_argument("--json", action="store_true", help="Emit JSON")
     timeline.set_defaults(func=cmd_timeline)
 

@@ -72,6 +72,13 @@ class AgentRuntime:
         command_handler: Optional slash-command dispatcher. When ``None``, the
             built-in minimal dispatcher (``/help``, ``/new``, ``/exit``) is used;
             sag-rt-02 injects the full registry here.
+        unattended: Deliver approval asks to the approval inbox instead of a
+            console (agov-inbox-04). **Routing only** — it does not widen what
+            the agent may do, downgrade any tier, or approve anything; an
+            irreversible call still halts, on a durable ``approval_items`` row
+            instead of on EOF. Set by an explicit human act (``icdev chat
+            --unattended``, a cron job's own column), never inferred from a
+            missing TTY.
 
     Precedence for every configurable value is ``explicit argument > environment
     variable > args/agent_runtime.yaml > built-in default`` (hgx-cfg-01). The
@@ -93,8 +100,12 @@ class AgentRuntime:
         tenant_id: str = "",
         profile: str | None = None,
         apply_profile_env: bool = False,
+        unattended: bool = False,
     ) -> None:
         self._router = router
+        # agov-inbox-04. A plain attribute, not a resolved policy: it selects
+        # which approver `use_toolset` injects and nothing else.
+        self.unattended = bool(unattended)
         self.system_prompt = system_prompt
         # -- declarative configuration (hgx-cfg-01) -------------------------
         # Loaded once, here, so every knob has one visible resolution point.
@@ -297,9 +308,30 @@ class AgentRuntime:
         mutating tool (file write, terminal execution) therefore passes through
         ``run_pre_tool_check`` and the approval flow before executing.
 
+        When no ``approver`` is supplied and this runtime is ``unattended``
+        (agov-inbox-04), the approval ask is routed to the durable approval
+        inbox instead of a console nobody is watching. That is a change of
+        DESTINATION only: the same gate, the same policy, the same tiers, and a
+        call that needed a human still needs a human — it now suspends on a
+        pending ``approval_items`` row rather than being denied on EOF. An
+        explicitly passed ``approver`` always wins.
+
         Returns the sorted names of the now-active tools.
         """
         from tools.agent_runtime.toolsets import build_toolset
+
+        if approver is None and self.unattended:
+            try:
+                from tools.agent_runtime.unattended import safety_approver_for
+
+                approver = safety_approver_for(
+                    self.session.context_id, unattended=True
+                )
+            except Exception as exc:  # noqa: BLE001 — degrade to the STRICTER path
+                logger.warning(
+                    "agent_runtime: unattended routing unavailable (%s); asks go "
+                    "to the console approver, which denies on EOF", exc,
+                )
 
         tools, handlers = build_toolset(
             bundle_names,

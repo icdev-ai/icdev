@@ -217,6 +217,7 @@ python tools/compliance/sbom_identifiers.py --validate "/path/to/sbom.cdx.json" 
 python tools/compliance/sbom_identifiers.py --component "pkg:pypi/flask@3.0.0" --json             # every identifier derivable for one component, CPE included
 python tools/compliance/component_names.py --validate "/path/to/sbom.cdx.json" --json            # Component Name conformance; exit 1 on an alternate that repeats the primary or carries an unknown kind
 python tools/compliance/component_names.py --name core --group "@babel" --purl "pkg:npm/%40babel%2Fcore@7.23.9" --json   # every name one component is known by
+python tools/compliance/dependency_graph.py --validate "/path/to/sbom.cdx.json" --json           # Component Dependency Relationship; exit 1 on a flat list, a dangling dependsOn, an unrooted graph or a declared cycle count that disagrees
 
 # SBOM Distribution and Delivery (2026 Minimum Elements) — version-specific retrieval.
 # Served over HTTP at $ICDEV_BASE_URL/api/supply_chain/sbom/<project_id>/<version>,
@@ -631,7 +632,188 @@ reads degrade to empty so a failure cannot wedge the reflex tick.
 
 Agent tools (`sleep_for` / `sleep_until` / `wake_on` / `wake_on_event`) land in
 agov-wake-02; the tick and the event emitters in agov-wake-03.
+## Approval Inbox — Pending-Approval Store (agov-inbox-01)
 
+`console_approver` denies on EOF, so a headless overnight run refuses every
+irreversible action. The inbox is the durable destination for the ask instead —
+it changes **where** the question is delivered, never **what** the agent may do.
+
+```bash
+python tools/agent_runtime/approval_inbox.py --list --json
+python tools/agent_runtime/approval_inbox.py --list --state pending --inbox ops
+python tools/agent_runtime/approval_inbox.py --show <item_id> --json
+python tools/agent_runtime/approval_inbox.py --resolve <item_id> --approve \
+    --reason "authorised" --json
+python tools/agent_runtime/approval_inbox.py --resolve <item_id> --deny --json
+python tools/agent_runtime/approval_inbox.py --expire-due --json
+```
+
+Backed by `approval_items` (migration `20260809203855`), which is **mutable and
+deliberately NOT append-only**: an item is created `pending` and then moves
+exactly once to `resolved` / `expired` / `cancelled`, and that transition is an
+UPDATE. The permanent record stays `agent_approval_log` — every transition to a
+terminal state writes one row through the gate's existing `record_decision()`,
+so there is no second decision log.
+
+**Expiry and cancellation record `denied`.** A timeout is never an approval; a
+store that treated one as approval would silently become an auto-approver.
+
+Argument **values are never stored or delivered**. Rows are mirrored out to
+Slack/Teams/Telegram/email, so `render_summary()` — tier, rule, policy prose and
+argument key **names** — is the only sanctioned way to build a deliverable body.
+`ApprovalRequest.summary()` is **not** safe for this: it previews the
+`command` / `path` / `file_path` value.
+
+---
+
+## Unattended Sessions — Routing, Not Autonomy (agov-inbox-04)
+
+`unattended` decides **where** an approval ask is delivered. It does **not**
+change what the agent may do.
+
+```bash
+# Enable for a session (persisted — `--resume` keeps it)
+icdev chat --unattended --unattended-reason "overnight backlog run"
+icdev chat --resume <ctx-id> --attended     # explicitly route back to this console
+
+# A cron job carries its own flag, because a cron tick has no console at all
+icdev cron create nightly --mode agent --payload "..." --interval 1h --unattended
+icdev cron unattended <job-id> --on
+icdev cron unattended <job-id> --off
+
+# Inspect and set it directly
+python tools/agent_runtime/unattended.py --list --json
+python tools/agent_runtime/unattended.py --show <session_id> --json
+python tools/agent_runtime/unattended.py --set <session_id> --on \
+    --reason "overnight backlog run" --json
+python tools/agent_runtime/unattended.py --set <session_id> --off --json
+python tools/agent_runtime/unattended.py --clear <session_id> --json
+
+# The invariant, printed: what currently requires approval
+python tools/agent_runtime/unattended.py --surface --json
+```
+
+**What it does not do.** It does not widen the toolset, downgrade any tier,
+remove a tier from `require_approval_tiers`, change `default_tier` (still
+`unknown`), change the gate's `enforce` / `dry_run` / `off` mode, or approve
+anything. An irreversible call still halts — it now **suspends** on a pending
+`approval_items` row a human will answer, instead of being denied on EOF by a
+console prompt that could not be shown.
+
+`--surface` prints exactly that claim in comparable form (policy tiers,
+per-tool classification, resolved gate mode). Its output is asserted
+byte-identical with the flag on and off by `tests/test_unattended_flag.py`.
+
+**Never inferred from a missing TTY.** Enabling it is an explicit human act — a
+CLI flag, a cron job field, or `ICDEV_UNATTENDED` exported by an operator (a
+tri-state: `ICDEV_UNATTENDED=0` is a statement, not an absence). "No TTY" is
+true of a CI runner, a cron tick, a Docker `exec` and a pytest run, so an
+inference would silently re-route exactly the contexts nobody is watching.
+
+Stored in `agent_unattended_sessions` (migration `20260809213046`) and in
+`agent_cron_jobs.unattended`, so a restart resumes with the same routing rather
+than reverting mid-run to an approver that denies everything. A read that fails
+resolves to *attended* — the stricter path — while `set_unattended` raises
+rather than leave an operator with a session that refuses everything for no
+visible reason.
+
+---
+
+## AGOV CASE — Portable Case Bundle (agov-case-02)
+
+Exports one agent session as a directory that can be carried to a machine that
+never had the source database and verified there. Not a third bundler: SWFT
+(`tools/compliance/swft_evidence_bundler.py`) and `prov_recorder` both bundle
+software supply-chain evidence per PROJECT, and neither is keyed by
+`session_id` — this adds that axis on the same machinery and carries the
+`export_prov_json` document verbatim.
+
+```bash
+# Whole session
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123
+
+# A window of it, as JSON, replacing an existing bundle
+python tools/agent_case/case_bundler.py --session sess-abc123 --out out/case-abc123 \
+    --since 2026-08-09T10:00:00Z --until 2026-08-09T11:00:00Z --force --json
+```
+
+```python
+from tools.agent_case.case_bundler import build_case_bundle
+result = build_case_bundle("sess-abc123", "out/case-abc123")
+result["bundle_digest"]   # time-free identity: same data -> same digest
+```
+
+Members: `manifest.json` (SHA-256 of every other file), `context.json`
+(endpoint/context header + classification), `timeline.json`, `records/` for
+`hook_events`, `audit_trail`, `agent_findings` and `agent_approval_log`,
+`artifacts.json`, and `provenance/prov.json`.
+
+Three properties hold by construction. **No member carries export wall-clock** —
+it lives only in `manifest.created_at` — so identical input produces a
+byte-identical manifest and `bundle_digest` is stable across export times.
+**No transcript table is ever read**, so the bundle cannot leak a prompt;
+`TRANSCRIPT_SOURCES` names the excluded tables in the header. **The
+classification marking is resolved** through
+`tools/compliance/classification_manager.py` from the markings on the session's
+own records, most restrictive wins — a session with a SECRET audit row produces
+a SECRET banner with no code change.
+
+Signed values (`hook_events.payload`, `audit_trail.hash`) are exported verbatim
+because the HMAC and the migration-149 chain are computed over them; redaction
+applies to operator free text (`agent_approval_log.reason`/`.detail`) via
+`tools/llm/output_redactor.py`. Verification that names WHICH records failed is
+agov-case-03; the operator CLI is agov-case-04.
+## Normalized Agent Event View (agov-det-01)
+
+A **read-only** projection of the agent activity ICDEV already stores into one
+`AgentEvent` shape. Creates no table and issues no write. Sources:
+`hook_events`, `agent_executions`, `ai_telemetry`, `audit_trail`,
+`ace_audit_log`.
+
+```bash
+python tools/agent_detect/events.py --json --limit 20
+python tools/agent_detect/events.py --session <session_id> --json
+python tools/agent_detect/events.py --source hook_events --event-type command.exec --json
+python tools/agent_detect/events.py --summary --json
+python -m tools.agent_detect.events --since 2026-08-01 --until 2026-08-09 --json
+```
+
+Event types are **mutually exclusive** — one source row yields at most one
+event: `command.exec`, `file.read`, `file.write`, `file.delete`,
+`network.indicator`, `tool.call`. A recognized shell request is `command.exec`
+and never additionally `tool.call`; an unrecognized tool (including every MCP
+tool, whose input schema ICDEV does not own) stays `tool.call` with
+`mcp_server` and `mcp_tool` preserved.
+
+Two invariants are enforced in code:
+
+- **Classification never reads free text.** `_structured()` raises on any key in
+  `FREE_TEXT_KEYS` (`output_summary`, `message`, `details`, `content`,
+  `stdout`, …). There is no regex over any payload string anywhere in the
+  module, so a command quoted in tool OUTPUT can never be read as evidence that
+  the command ran.
+- **A promoted event carries the operand that justified it.**
+  `AgentEvent.__post_init__` rejects `command.exec` without a `command`,
+  `file.*` without a `file_path` and `network.indicator` without a `url`, so an
+  ambiguous payload stays `tool.call` rather than being promoted by loose
+  pattern matching.
+
+Every mapping carries a `confidence` naming how directly the source supports
+it: `direct` (the tool's own documented input field), `derived` (recognized via
+the shared `command_tools` list in `args/agent_approval_policy.yaml`) or
+`declared` (the row names a tool and nothing more). Order them with
+`CONFIDENCE_RANK`.
+
+Library use:
+
+```python
+from tools.agent_detect.events import classify, fetch_events, summarize
+
+events = fetch_events(session_id="sess-1", event_types=["command.exec"])
+summarize(events)                      # counts by type / source / confidence
+classify("Bash", {"tool_input": {"command": "git push"}})
+# → ("command.exec", "direct", {"command": "git push"})
+```
 ---
 
 ## Agent Wake Tick + Event Keys (agov-wake-03)
@@ -4988,6 +5170,7 @@ python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against 
 python tools/agent_case/cli.py timeline --session <session_id>                  # ordered timeline, human-readable
 python tools/agent_case/cli.py timeline --session <session_id> --json           # machine-readable
 python tools/agent_case/cli.py timeline --session <id> --since <iso> --until <iso> --limit 500
+python tools/agent_case/cli.py timeline --session <id> --no-redact                 # unmasked; do not disclose as rendered
 python tools/agent_case/cli.py build --session <session_id> --out <dir>         # write a portable case bundle
 python tools/agent_case/cli.py build --session <id> --out <dir> --force --json  # replace an existing bundle
 python tools/agent_case/cli.py verify --bundle <dir>                            # all three layers
@@ -5006,3 +5189,60 @@ python tools/agent_case/bundle_verifier.py --bundle <dir> --json
 # report, not an error to raise.
 # tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
 # write_manifest, compute_event_hmac, compute_audit_row_hash.
+---
+
+## Unified Approval Inbox — ACE + workflow_hitl adapters (agov-inbox-05)
+
+ICDEV has four approval gates asking a human the same question through four
+unrelated stores. These adapters give three of them one queue **without
+rewriting any of them**.
+
+```bash
+python tools/agent_runtime/inbox_adapters.py --list --json
+python tools/agent_runtime/inbox_adapters.py --list --origin ace
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --approve \
+    --actor ops-oncall --reason "reviewed" --json
+python tools/agent_runtime/inbox_adapters.py --resolve <item_id> --deny \
+    --reason "not authorised" --json
+```
+
+**Use this `--resolve`, not `approval_inbox.py --resolve`, for a mirrored item.**
+The store settles the row; only the adapter knows how to release what was
+waiting on it — INSERTing the ACE `hitl_resolved` row that wakes a parked
+`CoWorkerThread`, or calling `submit_feedback` to advance a workflow stage.
+
+Each gate keeps its own store as the source of truth for its own waiter, and
+`approval_items` is a **mirror** of those:
+
+| Origin | Pending state | Released by |
+|--------|---------------|-------------|
+| `ace` | `ace_audit_log` row, `action='hitl_pending'` | INSERTing a matching `hitl_resolved` row |
+| `workflow_hitl` | `wf_approvals` row, `status='pending'` | `feedback.submit_feedback` |
+
+**Mirroring is best-effort; resolution is bidirectional.** An unmigrated or
+unreachable inbox leaves the originating gate holding exactly as it does today —
+failing the ACE gate closed on a mirror error would make an optional delivery
+channel load-bearing, and failing it open would turn a missing table into an
+approval. Answering in the ACE UI (`POST /api/ace/<id>/hitl`) settles the
+mirrored item; answering in the inbox releases the ACE thread.
+
+`ace_audit_log` stays **append-only**: a resolution INSERTs a new row, and
+nothing in this path UPDATEs an ACE row. The mutable state lives only in
+`approval_items` (migration `20260809203855`).
+
+**`tools/integration/approval_manager.py` is deliberately out of scope.**
+Document-, COA- and boundary-level approval with multi-reviewer lists has a
+different lifetime and audience from a mid-run tool-call gate, and its reviewer
+semantics do not survive being flattened into one item with one `resolved_by`.
+# tools/agent_case/timeline_redaction.py is a library (no CLI) — import
+# TimelineRedactor / impact_level_for. The timeline redacts by default; --no-redact
+# is the opt-out and says so in the output and in the result's `limits`.
+#
+# Redaction masks the DISPLAY projection only. entry["record"] stays byte-exact,
+# which is what lets `verify` re-compute the hook_events HMACs and the
+# migration-149 audit hash chain over a bundle built from the same timeline.
+# Findings are placed at their LAST contributing event, not at their own
+# created_at, and list every event id they cite; an id belonging to another
+# session is reported under `unresolved_event_ids` and never pulls that event in.
+# Two runs over the same rows are byte-identical — import canonical_timeline /
+# canonical_json / timeline_digest from session_timeline to check that yourself.
