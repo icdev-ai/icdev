@@ -2051,6 +2051,7 @@ by another vendor's tool.
   an allow/exempt verb, which would make a rule file able to *weaken* the
   hardcoded blocks rather than only add to them.
 ### Gap 60 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
+### Gap 61 — Agent shell-command parser (`tools/agent_detect/shell_parse.py`)
 - **File:** `tools/agent_detect/shell_parse.py` (agov-det-02)
 - **Risk:** This module's entire input is hostile by assumption — the command
   string an agent asked a shell to run, read back out of `hook_events` /
