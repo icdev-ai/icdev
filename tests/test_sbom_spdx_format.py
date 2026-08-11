@@ -369,17 +369,42 @@ def test_dependency_edges_become_spdx_relationship_entries():
     assert edges[(ids["requests"], ids["left-pad"])] == "DEPENDS_ON"
 
 
-def test_no_dependency_graph_means_no_invented_relationships():
+def test_spdx_relationships_are_exactly_the_cyclonedx_edges():
     """Parity cuts both ways.
 
-    Until sbx-cov-02 emits the CycloneDX `dependencies` array, the CycloneDX
-    document asserts no dependency edges. Synthesizing a root-depends-on-
-    everything graph on the SPDX side would make the two score differently on
-    Component Dependency Relationship — and would assert an edge nothing
-    resolved.
+    sbx-cov-02 emits the CycloneDX `dependencies` array, so the SPDX side has
+    real edges to translate. It must translate *those* and only those: an extra
+    relationship asserts a dependency nothing resolved, and a missing one makes
+    the two serializations score differently on Component Dependency
+    Relationship. Before sbx-cov-02 this asserted the other half of the same
+    invariant — no edges in, no edges out.
     """
-    spdx = sw.to_spdx(_cyclonedx())
-    assert [r["relationshipType"] for r in spdx["relationships"]] == ["DESCRIBES"]
+    document = _cyclonedx()
+    spdx = sw.to_spdx(document)
+
+    ids = {package["name"]: package["SPDXID"] for package in spdx["packages"]}
+    ids[document["metadata"]["component"]["name"]] = next(
+        r["relatedSpdxElement"]
+        for r in spdx["relationships"]
+        if r["relationshipType"] == "DESCRIBES"
+    )
+    ref_to_name = {c["bom-ref"]: c["name"] for c in document["components"]}
+    ref_to_name[document["metadata"]["component"]["bom-ref"]] = document["metadata"]["component"]["name"]
+
+    expected = {
+        (ids[ref_to_name[entry["ref"]]], ids[ref_to_name[child]], "DEPENDS_ON")
+        for entry in document["dependencies"]
+        for child in entry["dependsOn"]
+    }
+    expected.add(("SPDXRef-DOCUMENT", ids[document["metadata"]["component"]["name"]], "DESCRIBES"))
+
+    actual = {
+        (r["spdxElementId"], r["relatedSpdxElement"], r["relationshipType"])
+        for r in spdx["relationships"]
+    }
+    assert actual == expected
+    # The generator really did emit a graph — otherwise this asserts nothing.
+    assert len(expected) > 1
 
 
 def test_relationship_translation_ignores_edges_to_components_that_are_not_there():

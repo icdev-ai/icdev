@@ -101,11 +101,22 @@ class RedactionAnonymizer:
     """Anonymization engine with IL-aware operator selection."""
 
     def __init__(
-        self, config: Optional[Dict] = None, govcon_config: Optional[Dict] = None, session_id: Optional[str] = None
+        self,
+        config: Optional[Dict] = None,
+        govcon_config: Optional[Dict] = None,
+        session_id: Optional[str] = None,
+        detector: Optional[RedactionDetector] = None,
     ):
+        """Args:
+            detector: Pre-built detector to use instead of constructing one.
+                Callers that need a specific detection profile — credentials on,
+                Ollama NER off because the caller must be reproducible — cannot
+                express it otherwise, since this class would build its own with
+                the defaults and silently ignore them.
+        """
         self._config = config or _load_config()
         self._govcon_config = govcon_config or _load_govcon_config()
-        self._detector = RedactionDetector(self._config, self._govcon_config)
+        self._detector = detector or RedactionDetector(self._config, self._govcon_config)
         self._agency_map = self._govcon_config.get("agency_surrogates", {}) or {}
         self._registry = RedactionRegistry(
             session_id=session_id,

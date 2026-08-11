@@ -97,3 +97,16 @@ subsystems:
   # `AgentRuntime.use_toolset`. Empty string = args/agent_toolsets.yaml.
   toolsets:
     bundle_path: ''                  # env: ICDEV_AGENT_TOOLSETS
+
+  # tools/agent_runtime/wake_tools.py — the ceiling on a sleep an AGENT schedules
+  # for itself (sleep_for / sleep_until). A longer sleep, or a time already in
+  # the past, is refused before any row is written, so a confused agent cannot
+  # park a session where nobody will notice. This bounds only the two timer
+  # tools: wake_on / wake_on_event wait on a condition somebody else fires, and
+  # inventing a deadline for them would silently turn "wake me when PR #1342 is
+  # green" into "wake me in 24 hours".
+  #
+  # A non-positive or unparseable value resolves to the 86400 default, not to
+  # "unbounded" — a cap a typo can switch off is not a cap.
+  wake:
+    max_sleep_seconds: 86400         # env: ICDEV_SAG_MAX_SLEEP_SECONDS (24 hours)

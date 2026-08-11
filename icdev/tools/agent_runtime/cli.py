@@ -64,7 +64,38 @@ def chat_main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Stream tokens as they arrive (tool-free conversational turns).",
     )
+    parser.add_argument(
+        "--unattended",
+        action="store_true",
+        help=(
+            "Deliver this session's approval asks to the approval inbox instead "
+            "of this console. ROUTING ONLY — it does not widen what the agent may "
+            "do, downgrade any tier, or auto-approve anything; an irreversible "
+            "call still halts, on a durable pending item instead of on EOF. The "
+            "flag is persisted against the session, so --resume keeps it."
+        ),
+    )
+    parser.add_argument(
+        "--attended",
+        action="store_true",
+        help=(
+            "Explicitly route asks back to this console, overriding a flag stored "
+            "against a resumed session."
+        ),
+    )
+    parser.add_argument(
+        "--unattended-reason",
+        default="",
+        help="With --unattended: the reason recorded against the session.",
+    )
     args = parser.parse_args(argv)
+
+    if args.unattended and args.attended:
+        print(
+            "icdev chat: --unattended and --attended are mutually exclusive.",
+            file=sys.stderr,
+        )
+        return 2
 
     # Master switch (hgx-cfg-01): `icdev disable sag` / ICDEV_SAG_ENABLED=false.
     # Refuse up front rather than starting a runtime the operator turned off —
@@ -110,10 +141,73 @@ def chat_main(argv: list[str] | None = None) -> int:
             print(f"icdev chat: cannot resume {args.resume!r}: {exc}", file=sys.stderr)
             return 2
 
+    # agov-inbox-04. Resolved AFTER --resume, because the flag is keyed on the
+    # session and a resumed session carries the one it was started with.
+    if _apply_unattended(runtime, args) != 0:
+        return 2
+
     if args.query:
         return _single_shot(runtime, args)
 
     runtime.loop(banner=not args.no_banner, stream=args.stream)
+    return 0
+
+
+def _apply_unattended(runtime: Any, args: argparse.Namespace) -> int:
+    """Resolve, persist and apply the session's unattended flag (agov-inbox-04).
+
+    Three properties, in this order:
+
+    1. **Explicit only.** ``--unattended`` / ``--attended`` are the only things
+       that *set* the flag here. Neither the absence of a TTY nor a redirected
+       stdin is consulted — see :mod:`tools.agent_runtime.unattended`.
+    2. **Persisted.** An explicit flag is written against the session id, so
+       ``icdev chat --resume <ctx>`` after a crash or a reboot resumes with the
+       same routing instead of silently reverting to a console approver that
+       denies on EOF.
+    3. **Fails closed and loudly.** A flag the operator asked for that could not
+       be stored would produce a session that refuses everything for no visible
+       reason, so the CLI refuses to start instead.
+
+    Returns 0 to continue, non-zero to abort.
+    """
+    from tools.agent_runtime.unattended import (
+        SOURCE_CLI,
+        UnattendedStoreUnavailable,
+        resolve,
+        set_unattended,
+    )
+
+    session_id = getattr(getattr(runtime, "session", None), "context_id", "") or ""
+    explicit: bool | None = True if args.unattended else (False if args.attended else None)
+
+    if explicit is not None:
+        try:
+            set_unattended(
+                session_id,
+                explicit,
+                reason=args.unattended_reason,
+                source=SOURCE_CLI,
+            )
+        except (UnattendedStoreUnavailable, ValueError) as exc:
+            print(
+                f"icdev chat: --{'unattended' if explicit else 'attended'} could "
+                f"not be recorded ({exc}). Refusing to start: a session whose "
+                "routing was not persisted would deny every irreversible action "
+                "with no visible cause.",
+                file=sys.stderr,
+            )
+            return 2
+
+    state = resolve(session_id, unattended=explicit)
+    runtime.unattended = state.unattended
+    if state.unattended and not args.no_banner:
+        print(
+            "Unattended: approval asks for this session go to the approval inbox "
+            "(`python tools/agent_runtime/approval_inbox.py --list --state pending`). "
+            "Routing only — irreversible actions still require a human.",
+            file=sys.stderr,
+        )
     return 0
 
 

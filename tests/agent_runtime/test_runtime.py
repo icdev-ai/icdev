@@ -88,6 +88,15 @@ def no_save(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+#: The one deliberate exception to "every starter tool is read-only" — the four
+#: self-suspension tools (agov-wake-02). They each write one `agent_wakes` row,
+#: so they cannot claim read-only, and they are in the STARTER toolset rather
+#: than only in a bundle because the default runtime is built from this toolset
+#: alone: without them here, a plain `icdev chat` session has no way to wait for
+#: anything except by holding itself open and polling.
+WAKE_TOOLS = {"sleep_for", "sleep_until", "wake_on", "wake_on_event"}
+
+
 def test_toolset_shape():
     tools, handlers = bt.build_builtin_toolset()
     names = {t["function"]["name"] for t in tools}
@@ -95,13 +104,17 @@ def test_toolset_shape():
     # skill library is reachable from the default runtime, not just from a bundle.
     assert names == {
         "read_file", "search_files", "health_check", "list_skills", "load_skill",
-    }
+    } | WAKE_TOOLS
     assert set(handlers) == names
-    # Every starter tool is read-only, which is what lets the loop dispatch them
-    # in parallel and lets them skip the mutation safety gate.
+    # Every starter tool except the wake tools is read-only, which is what lets
+    # the loop dispatch them in parallel and lets them skip the mutation safety
+    # gate. The assertion is kept two-sided on purpose: a fifth writer added
+    # here without a decision fails, and so does a wake tool that quietly starts
+    # claiming to be a read.
     for t in tools:
-        assert t.get("is_read_only") is True
-        assert t["function"].get("is_read_only") is True
+        expected = t["function"]["name"] not in WAKE_TOOLS
+        assert t.get("is_read_only") is expected
+        assert t["function"].get("is_read_only") is expected
 
 
 def test_read_file_ok(tmp_path, monkeypatch):

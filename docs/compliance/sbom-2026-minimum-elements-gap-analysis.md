@@ -652,7 +652,7 @@ Legend: **MET** — emitted correctly today · **PARTIAL** — present but non-c
 | Element | Status | Evidence / what is missing |
 |---|---|---|
 | Component Producer | **MET (sbx-fld-02)** | `tools/compliance/component_producer.py` resolves the producing organization per ecosystem from the package's own metadata, maps a Go host path or a reverse-DNS groupId through `args/sbom_producer_registry.yaml`, and marks anything left over as being of unknown provenance. `group` is never a candidate. See §2.8. |
-| Component Dependency Relationship | **GAP** | The SBOM is a **flat component list**. No CycloneDX `dependencies` array is emitted, so no dependency graph can be built from ICDEV output. |
+| Component Dependency Relationship | **MET (sbx-cov-02)** | Was a **flat component list** — no CycloneDX `dependencies` array at all, so no dependency graph could be built from ICDEV output. `tools/compliance/dependency_graph.py` now turns sbx-cov-01's resolved set into a rooted graph and emits it as `dependencies[].dependsOn`, with every ref resolving to exactly one component. The edge set is the standard's narrow one — one component necessary for the operation of another — and nothing is inferred from co-location in a manifest. Dependencies are **embedded**, not linked, because a link satisfies Coverage only if the recipient is guaranteed access to every linked document. Cycle-checked on emission and re-checked on validation. See §3.2.5. |
 | Component Hash Value | **MET (sbx-fld-03)** | `tools/compliance/component_hasher.py` states the element for every component and for the target component, as an ASCII hexadecimal digest of the executable artifact — recomputed from a local file where one exists, otherwise adopted from the digest the resolved source declared — or as an explicit unknown marker with a machine-readable reason. Never omitted. `sbom_components.hash_value` is populated by the same resolution. See §3.2.2. |
 | Component Hash Algorithm | **MET (sbx-fld-03)** | Every algorithm ICDEV emits is an IANA Hash Function Textual Name from the vendored registry AND one an authority still approves. `md5`/`sha-1` parse so that a digest under them is refused with its reason rather than published; `shake128`/`shake256` validate as names but are never emitted. See §3.2.2. |
 | Component Identifiers | **MET (sbx-fld-05)** | Was `purl` only. `tools/compliance/sbom_identifiers.py` now derives every identifier the coordinates support and emits ALL of them, as the standard requires when multiple exist: purl, a CPE 2.3 match string (the NVD join key), a deterministic RFC 9562 UUIDv5, an organization-specific identifier that is always derivable, and — only where the underlying content is actually supplied — a commit hash, SWHID and OmniBOR. Round-trips through `sbom_components.identifiers_json`. See §3.2.3. |
@@ -968,6 +968,82 @@ a BOM already in the database says it — what changed is only what the generato
 components carry alternates and exits non-zero on a conformance failure — an alternate that
 repeats the primary, is listed twice, or carries a kind outside `NAME_KINDS`.
 
+#### 3.2.5 Component Dependency Relationship — what sbx-cov-02 landed
+
+This element was **entirely absent**, not partially met. ICDEV emitted a flat
+`components` array and no `dependencies` array at all, so nothing a recipient did with an
+ICDEV SBOM could reconstruct a dependency graph — the transitive set sbx-cov-01 resolved
+was flattened on the way out, and the tree it had walked was discarded.
+
+`tools/compliance/dependency_graph.py` keeps it. The generator builds the graph before it
+builds the components array, and emits `dependencies[].dependsOn` rooted at
+`metadata.component`.
+
+**The edge definition is the narrow one.** An edge exists where one component is
+*necessary for the operation of* another — the resolver's edge set, read out of a
+lockfile. Nothing is inferred from co-location in a manifest, from alphabetical adjacency,
+or from an ecosystem defaulting rule. Root edges are derived from **in-degree**, not from
+the resolver's `direct` flag: several resolvers default that flag to `True` because their
+source records no directness, and trusting it would fan the target out over the entire
+transitive set and assert a direct requirement that is not there. So a transitive
+dependency is reached through its parent, and the target depends only on what nothing else
+depends on.
+
+**Embedding, not linking.** The standard permits expressing a dependency either by
+embedding the subcomponent or by linking to a separate SBOM document. Linking satisfies
+Coverage *only if the recipient has access to every linked document*, which ICDEV cannot
+guarantee for an artifact that leaves the enclave — so one document carries the whole
+transitive graph, and says so in `icdev:sbom:dependency:embedding` rather than leaving the
+choice implicit.
+
+**Unknown is not known-empty.** A component adopted from a declared manifest had its own
+dependencies never read, so its outgoing edge set is *unknown*. CycloneDX spells that with
+an absent entry; an entry with an empty `dependsOn` asserts the component is known to
+depend on nothing. The two are emitted differently, and `icdev:sbom:dependency:unknown`
+counts the first kind.
+
+**Instance identity had to be refined.** sbx-cov-01 collapsed instances whose emitted
+metadata matched. That is not sufficient once relationships exist: two instances of the
+same name and version can resolve *different* dependencies — which is the reason npm nests
+`node_modules` in the first place — and collapsing them would either invent an edge or lose
+one. A node is now `(metadata identity, set of dependency identities)`, a strict refinement
+that never merges anything the old rule kept apart.
+
+**Two components could share a bom-ref.** This predates the task and was invisible while
+the output was a flat list. `component_id` hashes *coordinates alone* (`group/name@version`)
+while a component is listed separately when any of six fields differ — `scope` and `purl`
+among them — so two separately-listed components minted one ref. It only becomes a defect
+once a `dependsOn` has to name one of them, and it was also collapsing the two onto a
+single `sbom_components` row through `ON CONFLICT(id) DO UPDATE`. Collisions are now broken
+deterministically, and the validator rejects any document in which two components share a
+ref.
+
+**Cycles are detected, not followed.** A dependency cycle is legal input. It is found by an
+iterative back-edge search — recursion would blow the stack on a deep npm tree — reported
+in `icdev:sbom:dependency:cycles`, and the members stay reachable from the target via a
+single entry point rather than a root edge to every one of them. The declared count is
+**recomputed by the validator**, so "this graph was cycle-checked" is a claim a recipient
+can verify instead of one they have to trust.
+
+**One graph, two serializations.** The edge vocabulary is format-neutral, and
+`spdx_writer` (sbx-fmt-01) already derives its `RELATIONSHIP` entries from the CycloneDX
+`dependencies` array — it named sbx-cov-02 as the owner of that vocabulary before this
+task landed — so the SPDX document expresses the same edges rather than a second opinion of
+them. `RELATIONSHIP_TYPES` is also what migration `20260809232803` derives the
+`sbom_dependencies.relationship_type` CHECK from, the constraint sbx-fnd-02 deliberately
+left off the table for this task to define.
+
+**The gate no longer accepts presence as proof.** `sbom_conformance_gate` scored this
+element with `bool(sbom.get("dependencies"))`. An array whose `dependsOn` names a ref no
+component carries builds no graph at all, and it is exactly the shape a partial
+implementation produces — so the gate now delegates to `validate_dependency_graph`, and the
+element is scored by the same module that emits it.
+
+`python tools/compliance/dependency_graph.py --validate <sbom.cdx.json>` exits non-zero on
+a flat list, a dangling `dependsOn`, a duplicated entry, an unrooted graph, a component
+unreachable from the target, two components sharing a ref, or a declared cycle count that
+disagrees with the graph.
+
 ### 3.3 Practices and Processes
 
 | Element | Status | Evidence / what is missing |
@@ -984,18 +1060,19 @@ repeats the primary, is listed twice, or carries a kind outside `NAME_KINDS`.
 met** (SBOM Data Format Name, SBOM Tool Name, Component Name is partial — counting strictly, 2
 fully met plus 7 partial), **0 of 7 practices fully met.**
 
-**Current: 13 of 17 data-field elements.** The whole 9-element SBOM Metadata block, which
-sbx-fld-01 closed out and sbx-sig-01 and sbx-fmt-01 contributed to, plus four in Component
-Data: Component Producer (sbx-fld-02), Component License (sbx-fld-04) and both halves of
-the component hash, Value and Algorithm (sbx-fld-03). **And 6 of 7 practices**: Coverage
-(sbx-cov-01), Frequency plus Accommodation of Updates (sbx-prc-02), Explicitly Identifying
-Unknown Information (sbx-prc-01), Machine-Processable Data for generation (sbx-fmt-01,
-whose ingest half is sbx-fmt-02), and Distribution and Delivery (sbx-gov-02).
+**Current: 17 of 17 data-field elements.** The whole 9-element SBOM Metadata block, which
+sbx-fld-01 closed out and sbx-sig-01 and sbx-fmt-01 contributed to, plus all 8 in Component
+Data: Component Producer (sbx-fld-02), Component License (sbx-fld-04), both halves of the
+component hash (sbx-fld-03), Component Identifiers (sbx-fld-05), Component Name and
+Component Version (sbx-fld-06, with sbx-prc-01), and Component Dependency Relationship
+(sbx-cov-02) — the last outright GAP, and the one element that was **entirely absent**
+rather than partially stated. **And 6 of 7 practices**: Coverage (sbx-cov-01), Frequency
+plus Accommodation of Updates (sbx-prc-02), Explicitly Identifying Unknown Information
+(sbx-prc-01), Machine-Processable Data for generation (sbx-fmt-01, whose ingest half is
+sbx-fmt-02), and Distribution and Delivery (sbx-gov-02).
 
-What is left is **1 outright GAP** — Component Dependency Relationship (sbx-cov-02) — and
-**3 PARTIAL rows**, all on the component side: Identifiers, Name and Version. The matrix
-rows above are kept current as each task lands, so they, not this paragraph, are the
-authoritative statement — count from them rather than trusting this sentence.
+The matrix rows above are kept current as each task lands, so they, not this paragraph,
+are the authoritative statement — count from them rather than trusting this sentence.
 
 ### 3.3.1 Where the line is drawn on withholding (sbx-gov-02)
 

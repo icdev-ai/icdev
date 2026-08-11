@@ -666,6 +666,23 @@ CREATE TABLE IF NOT EXISTS approval_items (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT
 );
+-- agov-inbox-04 / migration 20260809213046. The per-session unattended flag.
+-- ROUTING ONLY: it decides WHERE an approval ask is delivered (the inbox above
+-- instead of a console nobody is watching), never what the agent may do. MUTABLE
+-- and deliberately NOT append-only -- an operator turns it on and off, and the
+-- record of who flipped it goes to the append-only hook_events trail.
+CREATE TABLE IF NOT EXISTS agent_unattended_sessions (
+    session_id TEXT PRIMARY KEY,
+    unattended INTEGER NOT NULL DEFAULT 0,
+    source TEXT,
+    actor TEXT,
+    reason TEXT,
+    inbox TEXT,
+    tenant_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    set_at TEXT,
+    updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -3765,6 +3782,25 @@ CREATE TABLE IF NOT EXISTS sag_user_profiles (
     facts_json       TEXT DEFAULT '[]',
     updated_at       TEXT,
     PRIMARY KEY (user_id, tenant_id)
+);
+-- agov-wake-01 / migration 20260809221051. Agent-scheduled resumption: one row
+-- per self-suspension. MUTABLE and deliberately NOT append-only -- the whole
+-- point of the table is the pending -> due -> fired transitions, and making
+-- those hook violations would break the only thing it does. Distinct from
+-- agent_cron_jobs (migration 289), which is operator-declared and recurring.
+CREATE TABLE IF NOT EXISTS agent_wakes (
+    wake_id        TEXT PRIMARY KEY,
+    session_id     TEXT NOT NULL,
+    kind           TEXT NOT NULL,
+    state          TEXT NOT NULL,
+    fire_at        TEXT,
+    job_id         TEXT,
+    event_key      TEXT,
+    note           TEXT,
+    tenant_id      TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    created_at     TEXT,
+    updated_at     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS remote_agent_sessions (
