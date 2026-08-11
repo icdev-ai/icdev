@@ -152,6 +152,7 @@ def _component(
     declared_hashes=None,
     artifact_path="",
     artifact_subject="",
+    declared_name="",
 ):
     """Build one component instance.
 
@@ -179,10 +180,17 @@ def _component(
     digest of a single artifact (``go.sum``'s ``h1:`` module hash), and
     ``ambiguous: True`` marks one of several artifact digests where the source
     does not say which artifact was installed.
+
+    ``declared_name`` is the name as the producer published it, where that
+    differs from the normalized ``name`` this module keys purls and dependency
+    edges on. The 2026 Component Name element is defined as the *producer's*
+    name, so it must not be lost to normalization — see ``component_names``
+    (sbx-fld-06).
     """
     return {
         "type": ctype,
         "name": name,
+        "declared_name": declared_name,
         "version": version,
         "purl": purl,
         "group": group,
@@ -347,7 +355,8 @@ def _resolve_python_lock(path, ecosystem_method):
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        name = _normalize_pypi_name(entry.get("name", ""))
+        declared_name = str(entry.get("name", "") or "")
+        name = _normalize_pypi_name(declared_name)
         if not name:
             continue
         version = str(entry.get("version", "") or "")
@@ -361,6 +370,7 @@ def _resolve_python_lock(path, ecosystem_method):
                 source=path,
                 dependencies=[f"python|{d}" for d in _python_lock_edges(entry)],
                 declared_hashes=_python_lock_hashes(entry, path),
+                declared_name=declared_name,
             )
         )
     return _result("python", ecosystem_method, True, components, source=path)
@@ -392,6 +402,7 @@ def _resolve_pipfile_lock(path):
                     declared_hashes=_python_lock_hashes(
                         {"files": [{"hash": h} for h in (info.get("hashes") or [])]}, path
                     ),
+                    declared_name=raw_name,
                 )
             )
     if not components:
@@ -514,6 +525,9 @@ def _resolve_python_environment(project_dir, python_env=None):
                     source=info,
                     dependencies=[f"python|{e}" for e in edges],
                     declared_license=declared_license,
+                    # `Name:` in METADATA is the producer's own spelling — `Flask`,
+                    # not `flask`. It was read here and then discarded.
+                    declared_name=raw_name,
                 )
             )
 
@@ -1503,22 +1517,31 @@ def _adopt_declared(ecosystem, components, source):
     """Normalize a declared-manifest parser's output into resolver component shape."""
     adopted = []
     for index, component in enumerate(components or []):
-        adopted.append(
-            _component(
-                ecosystem,
-                component.get("name", ""),
-                component.get("version", ""),
-                component.get("purl", ""),
-                key=_declared_key(ecosystem, component, index),
-                group=component.get("group", ""),
-                scope=component.get("scope", "required"),
-                source=component.get("source", source),
-                dependencies=[],
-                resolution=RESOLUTION_DECLARED,
-                direct=True,
-                ctype=component.get("type", "library"),
-            )
+        instance = _component(
+            ecosystem,
+            component.get("name", ""),
+            component.get("version", ""),
+            component.get("purl", ""),
+            key=_declared_key(ecosystem, component, index),
+            group=component.get("group", ""),
+            scope=component.get("scope", "required"),
+            source=component.get("source", source),
+            dependencies=[],
+            resolution=RESOLUTION_DECLARED,
+            direct=True,
+            ctype=component.get("type", "library"),
+            declared_name=component.get("declared_name", ""),
         )
+        # A parser that knows *why* it has no version keeps that reason. This
+        # reshape is the only path a declared manifest takes to a real SBOM, and
+        # rebuilding from a fixed field list dropped `version_unknown_reason`, so
+        # every declared unknown flattened to "nobody pinned one" — silently
+        # losing the Maven case, where the version is held in a parent POM's
+        # dependencyManagement and is the one an operator can actually act on.
+        reason = component.get("version_unknown_reason")
+        if reason:
+            instance["version_unknown_reason"] = reason
+        adopted.append(instance)
     return adopted
 
 

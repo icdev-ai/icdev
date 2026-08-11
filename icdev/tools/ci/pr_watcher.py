@@ -469,21 +469,30 @@ def list_pr_tasks(
 # ────────────────────────────────────────────────────────────────────────────
 
 
-# Coordination / union-merged files that MANY task branches legitimately co-edit
-# (manifest shards, append-only-table registry, nav/registry configs, conftest
-# schema). Two PRs touching these is normal, not a collision — exclude them from
-# the sibling-conflict check so it only fires on genuine same-source-file races
-# (e.g. two branches each creating a different tools/cortex/blueprint.py). See the
-# merge-conflict-hotspots prevention notes.
+# Coordination files that MANY task branches legitimately co-edit (manifest
+# shards, append-only-table registry, nav/registry configs, conftest schema).
+# Two PRs touching these is normal, not a collision — exclude them from the
+# sibling-conflict check so it only fires on genuine same-source-file races
+# (e.g. two branches each creating a different tools/cortex/blueprint.py). See
+# the merge-conflict-hotspots prevention notes.
 #
-# `args/ci_test_files/` holds the pytest allowlists that used to be a
-# line-continuation chain inside .github/workflows/icdev-ci.yml, and is genuinely
-# `merge=union` in .gitattributes (kax-conflict-07). That inlining is what
-# deadlocked the board on 2026-08-09: five open PRs each appended a test path to
-# the same hand-written workflow, so this guard made each a sibling of every
-# other and refused all five. Note what is NOT listed here — the workflow itself.
-# It carries real job definitions, and two PRs editing a job's `run:` block is a
-# genuine collision worth serializing; only the additive list moved out.
+# "Union-merged" is only literally true for the manifest entries: `.gitattributes`
+# declares `tools/manifest*` `merge=union` (kax-conflict-03), so concurrent
+# appends there really do resolve without a human. The remaining paths are
+# structured config/code, where union would produce duplicate keys or broken
+# syntax — they are excluded from the sibling check as a heuristic about how
+# they are edited, NOT because git resolves them automatically. Adding a path
+# here does not make it auto-mergeable.
+#
+# `args/ci_test_files/` is the second entry that is literally union-merged
+# (kax-conflict-07). It holds the pytest allowlists that used to be a
+# line-continuation chain inside .github/workflows/icdev-ci.yml. That inlining
+# is what deadlocked the board on 2026-08-09: five open PRs each appended a test
+# path to the same hand-written workflow, so this guard made each a sibling of
+# every other and refused all five. Note what is NOT listed here — the workflow
+# itself. It carries real job definitions, and two PRs editing a job's `run:`
+# block is a genuine collision worth serializing; only the additive list moved
+# out, so only the list is excluded.
 _ADDITIVE_PATH_MARKERS = (
     "tools/manifest/",
     "tools/manifest.md",
@@ -497,7 +506,6 @@ _ADDITIVE_PATH_MARKERS = (
     "tests/conftest.py",
     "docs/reference/commands.md",
 )
-
 
 #: Substrings marking a DERIVED artifact — a file produced by a generator and
 #: checked in, never hand-edited.
@@ -545,10 +553,49 @@ def _is_additive_path(path: str) -> bool:
 #: SEE that — so it re-attempted the same refused merge every cycle, forever.
 #: Five of ten open PRs on 2026-08-09 were green drafts sitting untouched for
 #: exactly that reason, each waiting on a human to click "Ready for review".
+#: Any of these on a PR stops the unlinked sweep. A human may open a PR to
+#: discuss rather than to land, and the cost of guessing wrong is a merge nobody
+#: asked for — so the escape hatch is cheap, obvious, and checked first.
+_NO_AUTOMERGE_LABELS = frozenset({"hold", "do-not-merge", "do not merge", "wip",
+                                  "no-automerge", "blocked"})
+
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,isDraft,"
     "headRefName,baseRefName,updatedAt,createdAt,number,url"
 )
+
+
+def _pr_number(url: str) -> int:
+    """The PR number, or a very large number when it cannot be read.
+
+    Unreadable sorts LAST so it never wins the tie-break by accident.
+    """
+    m = re.search(r"/pull/(\d+)", url or "")
+    return int(m.group(1)) if m else 1 << 30
+
+
+def _wins_sibling_tiebreak(pr_url: str, siblings) -> bool:
+    """True when THIS PR is the one that should merge first among its siblings.
+
+    THE DEADLOCK THIS BREAKS. hold_on_sibling_conflict exists to SERIALISE merges
+    that touch the same source file — merge one, let the rest rebase. It held
+    every one of them instead. If A shares a file with B, then B also shares one
+    with A, so both are held and nothing breaks the tie: with 14 AGOV PRs over
+    the same new modules on 2026-08-09, every PR was a sibling of several others
+    and the entire board sat at "awaiting merge" with zero active tasks.
+    Serialising requires choosing who goes first; refusing to choose is not
+    serialisation, it is a stall.
+
+    Lowest PR number wins, which is deterministic and stable: every watcher
+    iteration and every process reaches the same verdict without coordination, so
+    two watchers cannot both decide they are first. It also means the OLDEST PR
+    goes first, which is the fair reading of a queue.
+
+    The guard itself is unchanged for everyone else — the losers still wait, and
+    still rebase afterwards.
+    """
+    mine = _pr_number(pr_url)
+    return all(mine < _pr_number(other) for other in (siblings or {}))
 
 
 def repo_default_branch(*, runner=None, gh_bin: str = "gh") -> str:
@@ -736,6 +783,7 @@ class PRWatcher:
         auto_merge_runner=None,
         default_branch_resolver=None,
         pr_list_runner=None,
+        rebase_fn=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -747,6 +795,7 @@ class PRWatcher:
         self._fetch_logs = fetch_logs or fetch_ci_logs
         self._auto_merge_runner = auto_merge_runner or subprocess.run
         self._pr_list_runner = pr_list_runner or subprocess.run
+        self._rebase_fn = rebase_fn
         self._default_branch_resolver = (
             default_branch_resolver or repo_default_branch
         )
@@ -966,6 +1015,57 @@ class PRWatcher:
                 "reason": "closed and reopened to re-fire pull_request workflows",
                 "close_rc": getattr(close, "returncode", None)}
 
+    def _conflict_is_real(self, state: dict, runner=None) -> bool:
+        """Confirm a CONFLICTING verdict against git before acting on it.
+
+        GitHub computes `mergeable` ASYNCHRONOUSLY and caches it. When the base
+        moves quickly the cached answer goes stale and stays stale, because
+        nothing about the PR changed to invalidate it. On 2026-08-09 THIRTEEN
+        PRs were reported CONFLICTING while `git merge-tree` merged every one of
+        them cleanly — same base sha, same head sha, exit 0, a single tree hash
+        and no conflict output.
+
+        The cost of believing it was not cosmetic. Each of those PRs burned two
+        rebase attempts and five resume cycles fighting a conflict that did not
+        exist, then raised a HITL alert. A rebase cannot clear the flag either: a
+        branch that is already current has nothing to rebase, so it succeeds,
+        changes nothing, and the stale verdict survives.
+
+        `git merge-tree --write-tree` performs the real merge in memory and exits
+        non-zero on a genuine conflict, so it is the authority here and the forge
+        is the cache.
+
+        Errs toward TRUSTING THE FORGE: any failure to verify returns True, so an
+        unreachable git or an unfetchable ref leaves today's behaviour unchanged
+        rather than declaring a real conflict resolved.
+        """
+        head = (state.get("headRefName") or "").strip()
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+        if not head:
+            return True
+        root = str(pathlib.Path(__file__).resolve().parents[2])
+        run = runner or subprocess.run
+        try:
+            fetch = run(  # nosec B603 — fixed argv, shell=False
+                ["git", "fetch", "--quiet", "origin", base, head],
+                cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, shell=False,
+            )
+            if getattr(fetch, "returncode", 1) != 0:
+                return True
+            merged = run(  # nosec B603
+                ["git", "merge-tree", "--write-tree",
+                 f"origin/{base}", f"origin/{head}"],
+                cwd=root, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, shell=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("pr_watcher: conflict verification failed: %s", exc)
+            return True
+        if getattr(merged, "returncode", 1) == 0:
+            return False
+        return True
+
     def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
         """Take a green PR out of draft so the merge below can actually run.
 
@@ -1032,36 +1132,140 @@ class PRWatcher:
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=60,
             )
-            return proc.returncode == 0
+            if getattr(proc, "returncode", 1) != 0:
+                # Previously this returned False with NO log line, so a forge
+                # that refused every merge looked identical to a board with
+                # nothing to merge. That is how 11 PRs sat "awaiting merge" while
+                # the watcher decided "merge" on each pass and was refused.
+                logger.warning(
+                    "pr_watcher: gh refused to merge %s: %s",
+                    pr_url, (getattr(proc, "stderr", "") or "").strip()[:200])
+                return False
+            return True
         except Exception as exc:
             logger.warning("pr_watcher: auto-merge failed: %s", exc)
             return False
 
-    def _resume_cycle(self, task_id: str) -> int:
-        """Best-effort count of prior pr_watcher resume events for this
-        task. Reads audit_trail details JSON."""
+    def reclaim_worktree(self, task_id: str) -> dict:
+        """Remove a task's worktree once its PR is merged.
+
+        Creation was bounded; reclamation was not. Measured 2026-08-02: 122
+        registered worktrees, recursively nested, several locked — the leak
+        undercuts the delivery pipeline, which is otherwise the platform's
+        strongest differentiator.
+
+        SAFETY, in order. Each check exists because a worktree can hold the only
+        copy of a session's work, and a removed commit that is not on a branch
+        is not recoverable by any ordinary means:
+
+          * merged-ness is the caller's precondition, but it is re-checked here
+            against origin rather than trusted;
+          * a worktree with uncommitted changes is left alone — someone may be
+            mid-edit even after the PR merged;
+          * commits not reachable from the default branch hold it;
+          * ``--force`` is NEVER used, so git's own refusal is a final backstop.
+
+        Returns a verdict dict rather than a bool so the reason is auditable.
+        """
+        import subprocess
+        from pathlib import Path
+
+        def _git(*args, cwd=None):
+            proc = subprocess.run(
+                ["git", *(["-C", cwd] if cwd else []), *args],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120,
+            )
+            return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+        try:
+            from tools.genesis.reflexes.kanban import _task_worktree_path
+            path = Path(_task_worktree_path(task_id))
+        except Exception as exc:  # noqa: BLE001
+            return {"reclaimed": False, "reason": f"path resolution failed: {exc}"}
+
+        if not path.exists():
+            _git("worktree", "prune")
+            return {"reclaimed": False, "reason": "already gone", "pruned": True}
+
+        code, dirty, _ = _git("status", "--porcelain", cwd=str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": "status unreadable"}
+        if dirty:
+            return {"reclaimed": False, "reason": "uncommitted changes present"}
+
+        base = self._default_branch()
+        code, ahead, _ = _git("rev-list", "--count", f"origin/{base}..HEAD", cwd=str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": "ahead-count unreadable"}
+        if ahead != "0":
+            return {"reclaimed": False, "reason": f"{ahead} commits not on origin/{base}"}
+
+        code, _, err = _git("worktree", "remove", str(path))
+        if code != 0:
+            return {"reclaimed": False, "reason": f"git refused: {err.splitlines()[-1][:120] if err else '?'}"}
+
+        _git("worktree", "prune")
+        logger.info("pr_watcher: reclaimed worktree for %s at %s", task_id, path)
+        return {"reclaimed": True, "path": str(path)}
+
+    def _count_audit_actions(
+        self,
+        task_id: str,
+        actions: Tuple[str, ...],
+        pr_url: Optional[str] = None,
+    ) -> int:
+        """Best-effort count of prior pr_watcher audit rows for this task.
+
+        Reads audit_trail details JSON. The `action` filter is what keeps the
+        resume budget and the rebase budget separate ledgers: a rebase attempt
+        writes `pr_watcher.rebase*` and is therefore invisible to
+        `_resume_cycle`, which is exactly the "a rebase must not spend a resume"
+        requirement, enforced by the storage layout rather than by convention.
+        """
         get_conn = self._connection()
         try:
             conn = get_conn()
         except Exception:
             return 0
         try:
+            placeholders = ", ".join(["%s"] * len(actions))
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
-            if _pg:
-                rows = conn.execute(
-                    "SELECT details FROM audit_trail "
-                    "WHERE action = 'pr_watcher.resume' "
-                    "AND details::text LIKE %s",
-                    (f"%{task_id}%",),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT details FROM audit_trail "
-                    "WHERE action = 'pr_watcher.resume' "
-                    "AND details LIKE %s",
-                    (f"%{task_id}%",),
-                ).fetchall()
-            return len(rows)
+            details_col = "details::text" if _pg else "details"
+            rows = conn.execute(
+                f"SELECT {details_col} AS d FROM audit_trail "  # nosec B608
+                f"WHERE action IN ({placeholders}) "
+                f"AND {details_col} LIKE %s",
+                (*actions, f"%{task_id}%"),
+            ).fetchall()
+            if pr_url is None:
+                return len(rows)
+            # PER-PR BUDGET. Counting a task's whole audit history made these
+            # budgets permanent: a task that burned 5 resumes on an abandoned PR
+            # inherited 5/5 on its NEXT one and could never be auto-recovered
+            # again. Measured 2026-08-09 — sbx-fld-05 was at 5/5 and 2/2 while
+            # holding a clean, green PR the watcher would have refused to help.
+            # A new PR is a new attempt, so the ledger is scoped to it.
+            #
+            # Parse `details` as the JSON it is rather than scanning the blob:
+            # the payload embeds reasons naming OTHER PRs, so a substring test
+            # over-counts (it matched six tasks where one had escalated).
+            n = 0
+            for r in rows:
+                blob = (dict(r) if not isinstance(r, dict) else r).get("d")
+                if not blob:
+                    continue
+                try:
+                    payload = json.loads(blob)
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if payload.get("task_id") != task_id:
+                    continue
+                if (payload.get("pr_url") or "") == pr_url:
+                    n += 1
+            return n
         except Exception:
             return 0
         finally:
@@ -1069,6 +1273,98 @@ class PRWatcher:
                 conn.close()
             except Exception:
                 pass
+
+    def _resume_cycle(self, task_id: str, pr_url: Optional[str] = None) -> int:
+        """Prior pr_watcher resume events for this task, on THIS PR."""
+        return self._count_audit_actions(
+            task_id, ("pr_watcher.resume",), pr_url=pr_url)
+
+    def _rebase_attempts(self, task_id: str, pr_url: Optional[str] = None) -> int:
+        """Prior auto-rebase attempts for this task on THIS PR, net of refunds.
+
+        Attempts spent on a conflict the forge only IMAGINED are refunded, so a
+        PR is not permanently locked out of the one action that can clear a stale
+        verdict. Floored at zero: a refund can restore a budget, never grant one.
+        """
+        spent = self._count_audit_actions(
+            task_id, ("pr_watcher.rebase", "pr_watcher.rebase_failed"),
+            pr_url=pr_url,
+        )
+        refunded = self._count_audit_actions(
+            task_id, ("pr_watcher.rebase_refund",), pr_url=pr_url)
+        return max(0, spent - refunded)
+
+    def _refund_rebase_budget(self, task_id: str, pr_url: str,
+                              classification: str = "") -> None:
+        """Cancel the rebase attempts a phantom conflict consumed.
+
+        Written through _audit like every other action: the audit trail is
+        append-only (NIST AU), so a refund is a row the counter subtracts, never
+        a mutation of the rows it refunds. _audit also honours dry_run and uses
+        the one event_type the live CHECK constraint already accepts.
+        """
+        self._audit(WatcherAction(
+            task_id=task_id, pr_url=pr_url, classification=classification,
+            action="rebase_refund",
+            reason="forge reported CONFLICTING but the merge is clean",
+        ))
+        logger.info("pr_watcher: refunded rebase budget for %s (stale conflict)",
+                    pr_url)
+
+    def _maybe_rebase(self, task: dict, state: dict) -> Dict[str, Any]:
+        """Try the cheap recovery for a DIRTY PR: rebase the branch onto its base.
+
+        A DIRTY PR is a resume class today, so a branch that is merely stale
+        burns all five LLM resumes on a conflict a plain rebase would have
+        cleared, and then lands in a permanent human queue. Rebase first; only
+        fall through to the resume/escalate path when the rebase cannot help.
+
+        Returns a verdict dict (never raises). ``attempted`` False means the
+        rebase was declined before any git ran, so no attempt is consumed.
+        """
+        task_id = task["id"]
+        if not self.config.get("auto_rebase_on_conflict", True):
+            return {"attempted": False, "pushed": False,
+                    "reason": "auto_rebase_on_conflict=false"}
+
+        cap = int(self.config.get("max_rebase_attempts_per_task", 2))
+        attempts = self._rebase_attempts(
+            task_id, pr_url=(state.get("url") or "").strip() or None)
+        if attempts >= cap:
+            return {"attempted": False, "pushed": False,
+                    "reason": f"rebase attempts exhausted ({attempts}/{cap})"}
+
+        branch = (state.get("headRefName") or "").strip()
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+
+        from tools.kanban.rebase_recovery import branch_is_task_owned
+
+        owned, why = branch_is_task_owned(branch, task_id)
+        if not owned:
+            # Not this task's branch — never force-push it. Declining (rather
+            # than "attempting and failing") keeps the budget for a branch that
+            # could actually be recovered.
+            logger.warning(
+                "pr_watcher: refusing auto-rebase for %s — %s", task_id, why,
+            )
+            return {"attempted": False, "pushed": False, "reason": f"refused: {why}"}
+
+        if self._rebase_fn is None and self.dry_run:
+            return {"attempted": False, "pushed": False,
+                    "reason": f"dry-run: would rebase {branch} onto origin/{base}"}
+
+        rebase = self._rebase_fn
+        if rebase is None:
+            from tools.kanban.rebase_recovery import rebase_and_push
+
+            rebase = rebase_and_push
+
+        try:
+            return rebase(task_id, branch, base=base)
+        except Exception as exc:  # noqa: BLE001 — must never stop the poll
+            logger.warning("pr_watcher: auto-rebase errored for %s: %s", task_id, exc)
+            return {"attempted": True, "pushed": False,
+                    "reason": f"rebase errored: {exc}"}
 
     def _hitl_alert(self, task_id: str, pr_url: str, reason: str) -> None:
         """Raise a FIRING alert when a task genuinely needs a human.
@@ -1121,6 +1417,32 @@ class PRWatcher:
                 conn.close()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int) -> bool:
+        """True when the PREMISE of a HITL alert is false — not merely that the
+        forge is happy.
+
+        Recovery has to be the negation of the raise conditions, because the
+        resolve runs EARLIER in the same pass than both raise sites. Clearing on
+        `mergeable` alone therefore did not clear anything: a PR that is
+        MERGEABLE with red CI and its resume budget spent got resolved here and
+        re-raised ~330 lines below, on every single pass.
+
+        Measured 2026-08-10, the night the resolve shipped: agov-det-02 and
+        sbx-sig-02 — both MERGEABLE, both `ci_failed` at 5/5 — cycled about once
+        a minute; ~180 alert rows in a day. The panel refilled as fast as it
+        drained, which is the same "list nobody reads" failure the resolve was
+        written to prevent.
+
+        The two raise sites are the resume cap (`cycle >= max_cycles`) and CI
+        that never fired, so both are negated here. Anything that adds a third
+        raise site must negate it here too, or the alert flaps again.
+        """
+        if (state.get("mergeable") or "").upper() != "MERGEABLE":
+            return False
+        if cycle >= max_cycles:
+            return False
+        return not self._ci_never_fired(state)
 
     def _resolve_hitl_alert(self, task_id: str) -> None:
         """Clear the alert once the task moves — the queue must drain itself."""
@@ -1361,12 +1683,92 @@ class PRWatcher:
             classification = ec.classify_pr_state(
                 state, ci_logs=ci_logs, require_approval=require_approval,
             )
-            cycle = self._resume_cycle(task["id"])
+            if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
+                # The forge's cached verdict disagrees with git. git wins — but
+                # knowing that is not a remedy, and the obvious remedy is wrong.
+                #
+                # Measured on #1473 (2026-08-09), 18 commits behind main. git
+                # merge-tree, a real git rebase and a real git merge ALL merged it
+                # clean while the API held mergeable=false/dirty. What that rules
+                # out matters more than what it shows:
+                #   * merging anyway fails — GitHub refuses a PR it believes is
+                #     conflicting, whatever we conclude locally;
+                #   * close + reopen does NOT clear it — tried against the live PR;
+                #   * nothing that leaves the ref untouched clears it.
+                # The verdict is cached against the head sha, so the ONLY lever is
+                # a new sha. Pushing a merge of the base flipped #1473 to
+                # mergeable=true within seconds.
+                #
+                # So this must NOT reclassify to MERGEABLE. Doing that routes the
+                # PR to _auto_merge — the one action the forge is guaranteed to
+                # refuse — and away from _maybe_rebase below, which is gated on
+                # MERGE_CONFLICT and is the thing that actually moves the ref.
+                # Leaving the classification alone is the fix.
+                #
+                # The rebase budget is the other half: those 2 attempts get spent
+                # fighting the phantom, and once spent the PR can never be rebased
+                # again — stuck at exactly the moment we can prove it is fine.
+                # Refund ONCE per PR: enough to act on a verdict we have disproved,
+                # bounded so a forge that keeps lying cannot buy unlimited pushes.
+                if self._count_audit_actions(
+                        task["id"], ("pr_watcher.rebase_refund",), pr_url=pr_url) == 0:
+                    self._refund_rebase_budget(task["id"], pr_url)
+                logger.warning(
+                    "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
+                    "rebasing to force the forge to recompute", pr_url)
+
+            cycle = self._resume_cycle(task["id"], pr_url=pr_url)
+
+            # An alert says "needs a human". The moment that stops being true,
+            # clear it here — not only on DONE, which was the bug: a branch whose
+            # conflict got resolved goes back to MERGEABLE without ever passing
+            # through DONE, so its alert stayed firing forever. Measured
+            # 2026-08-10: 14 firing HITL alerts, of which at least 2 named
+            # branches that had already been fixed and were sitting green.
+            #
+            # But MERGEABLE alone is NOT recovery, and clearing on it alone made
+            # the alert FLAP. A PR can be mergeable and still need a human: red
+            # CI with the resume budget spent is exactly that, and it gets
+            # resolved here and re-raised ~330 lines below in the SAME pass, on
+            # every pass. Measured the same night, after the resolve shipped:
+            # agov-det-02 and sbx-sig-02 (both MERGEABLE, both ci_failed at 5/5)
+            # cycled roughly once a minute, ~180 alert rows in a day. The panel
+            # refilled as fast as it drained, which is the same "list nobody
+            # reads" failure the resolve was written to prevent.
+            #
+            # So recovery means the alert's PREMISE is false, not merely that the
+            # forge is happy: the resume budget is no longer spent, and there is
+            # CI to be green. Both raise sites (resume cap, CI-never-fired) are
+            # covered, so no pass can resolve and re-raise the same alert.
+            #
+            # The resolve is deduped on `source` and is a no-op when nothing is
+            # firing, so calling it on every healthy pass costs nothing.
+            if self._hitl_recovered(state, cycle, max_cycles):
+                self._resolve_hitl_alert(task["id"])
 
             if classification == KanbanState.DONE:
                 merged = (
                     (state.get("state") or "").upper() == "MERGED"
                 )
+                # The task moved, so any HITL alert against it is stale. Clearing
+                # here keeps the queue self-draining: an alert list nobody can
+                # empty is one people stop reading.
+                self._resolve_hitl_alert(task["id"])
+                if merged:
+                    # Reclaim here rather than at task-done: this is the point
+                    # where the watcher OBSERVES the merge, and it is the only
+                    # place that knows the PR actually landed. Best-effort —
+                    # a failed reclaim must never hold up the done transition.
+                    try:
+                        verdict = self.reclaim_worktree(task["id"])
+                        if not verdict.get("reclaimed"):
+                            logger.debug(
+                                "pr_watcher: worktree for %s not reclaimed (%s)",
+                                task["id"], verdict.get("reason"),
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("pr_watcher: worktree reclaim errored: %s", exc)
+
                 if merged or not self.config.get("auto_merge_enabled", False):
                     action_label = "merge" if merged else "wait"
                     reason = (
@@ -1441,6 +1843,24 @@ class PRWatcher:
                         report.actions.append(action)
                         self._audit(action)
                         continue
+                    # UN-DRAFT FIRST, before any hold can `continue` past this.
+                    #
+                    # Auto-merge must work regardless of who opened the PR — a
+                    # kanban session, a CLI session, or a person. It did not: the
+                    # sibling-conflict hold below returns early, so a green PR
+                    # held behind a sibling was never taken out of draft, and
+                    # when the sibling finally merged the PR sat there STILL a
+                    # draft with nothing left to trigger it. Three AGOV PRs were
+                    # in exactly that state — CLEAN, green, and invisible to
+                    # auto-merge.
+                    #
+                    # Safe to do early because un-drafting merges nothing. It
+                    # only removes the one blocker GitHub will not let the
+                    # watcher clear later, and _mark_ready still refuses for a
+                    # manual gate or an unsatisfied dependency.
+                    if state.get("isDraft"):
+                        self._mark_ready(pr_url, task["id"], self._connection())
+
                     # Sibling-file-conflict guard (kph): another open PR edits the
                     # same source file(s) — merging both races on one path (the
                     # "two different blueprint.py" collision that stranded Cortex).
@@ -1478,11 +1898,13 @@ class PRWatcher:
                         except Exception as _ll_exc:  # noqa: BLE001
                             logger.debug(
                                 "pr_watcher: sibling lesson hook failed: %s", _ll_exc)
-                        if self.config.get("hold_on_sibling_conflict", False):
+                        if (self.config.get("hold_on_sibling_conflict", False)
+                                and not _wins_sibling_tiebreak(pr_url, sib)):
                             action = WatcherAction(
                                 task_id=task["id"], pr_url=pr_url,
                                 classification="done", action="wait",
-                                reason=f"held: sibling file conflict with {len(sib)} open PR(s)",
+                                reason=(f"held: sibling file conflict with {len(sib)} "
+                                        "open PR(s); a lower-numbered sibling goes first"),
                                 resume_cycle=cycle,
                             )
                             report.actions.append(action)
@@ -1500,6 +1922,8 @@ class PRWatcher:
                     # anyway. _mark_ready refuses for a gate task or a held
                     # dependency; if it declines, fall through to the same "wait"
                     # branch a blocked merge takes.
+                    # Belt-and-braces: normally the un-draft above already ran,
+                    # but a PR can be converted back to a draft between polls.
                     if approved_ok and state.get("isDraft"):
                         approved_ok = self._mark_ready(
                             pr_url, task["id"], self._connection())
@@ -1524,6 +1948,42 @@ class PRWatcher:
                 continue
 
             if classification == KanbanState.PR_OPENED:
+                # CI THAT NEVER FIRED. Every other repair path in this loop
+                # assumes there is a CI result to react to; with an empty rollup
+                # there is nothing to fail, nothing to rebase against, and the
+                # PR waits in PR_OPENED forever. Try the cheap fix once, then
+                # hand it to a human rather than waiting silently.
+                if self._ci_never_fired(state):
+                    verdict = self._retrigger_ci(task["id"], pr_url)
+                    if verdict.get("attempted"):
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification=classification.value,
+                            action="ci_retrigger",
+                            reason=verdict.get("reason", "")[:200],
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+                    if "exhausted" in (verdict.get("reason") or ""):
+                        # One re-trigger did not bring CI back: this is
+                        # infrastructure, not something the loop can fix.
+                        self._hitl_alert(
+                            task["id"], pr_url,
+                            "no CI checks ever ran, and a re-trigger did not "
+                            "start them.")
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification=classification.value,
+                            action="escalate",
+                            reason="CI never fired; re-trigger exhausted",
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+
                 # Report why we are actually waiting. PR_OPENED is also the
                 # default fall-through, so a flat "CI still running" here
                 # misreports a green-but-unapproved PR as mid-CI and hides the
@@ -1556,6 +2016,44 @@ class PRWatcher:
                 self._audit(action)
                 continue
 
+            # A DIRTY PR gets the cheap recovery BEFORE any resume is spent:
+            # rebase the branch onto its base and let CI re-run. Most drifted
+            # branches merge fine afterwards, and the five resumes they would
+            # otherwise burn end in a permanent human queue (xbm-wake-01 sat
+            # 95.7h). A rebase that hits a REAL conflict is aborted, nothing is
+            # pushed, and we fall straight through to the escalation below —
+            # i.e. genuinely conflicting branches behave exactly as before.
+            if classification == KanbanState.MERGE_CONFLICT:
+                verdict = self._maybe_rebase(task, state)
+                if verdict.get("pushed"):
+                    action = WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="rebase",
+                        reason=verdict.get("reason", "rebased onto base"),
+                        # Deliberately the UNCHANGED resume count: a rebase is
+                        # not a resume and must not consume that budget.
+                        resume_cycle=cycle,
+                    )
+                    report.actions.append(action)
+                    self._audit(action)
+                    continue
+                if verdict.get("attempted"):
+                    # The attempt is spent — audit it so the rebase cap is
+                    # durable across restarts — then escalate/resume as today.
+                    self._audit(WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="rebase_failed",
+                        reason=verdict.get("reason", "rebase failed"),
+                        resume_cycle=cycle,
+                    ))
+                else:
+                    logger.debug(
+                        "pr_watcher: no auto-rebase for %s — %s",
+                        task["id"], verdict.get("reason"),
+                    )
+
             # Resume classes: CI_FAILED / MERGE_CONFLICT / CHANGES_REQUESTED
             if cycle >= max_cycles:
                 action = WatcherAction(
@@ -1568,6 +2066,12 @@ class PRWatcher:
                     ),
                     resume_cycle=cycle,
                 )
+                # This is the legitimate HITL case: every automatic recovery is
+                # spent. Notify rather than only logging.
+                self._hitl_alert(
+                    task["id"], pr_url,
+                    f"resume cap reached ({cycle}/{max_cycles}) after "
+                    f"{classification.value}.")
                 report.actions.append(action)
                 self._audit(action)
                 continue
@@ -1598,10 +2102,112 @@ class PRWatcher:
         self._record_heartbeat(report)
         return report
 
+    def _sweep_unlinked_prs(self, report: "WatcherReport") -> None:
+        """Auto-merge green PRs that no kanban task points at.
+
+        THE GAP THIS CLOSES. Every repair path here starts from list_pr_tasks,
+        which selects kanban_tasks — so a PR with no task row is invisible to the
+        entire pipeline: no auto-ready, no auto-merge, no rebase, no escalation.
+        On 2026-08-09 roughly a dozen PRs opened from CLI sessions (fix/*, feat/*)
+        were each merged BY HAND for exactly that reason, while kanban's own PRs
+        merged themselves. Auto-merge should not depend on which door the work
+        came through.
+
+        DELIBERATELY THE NARROW SUBSET. A task-linked PR gets resumes, rebases and
+        status transitions because there is a task to carry that state. Here there
+        is none, so this does one thing: merge a PR that is already finished and
+        already passing. It never pushes, never closes, never edits a branch.
+
+        THE OPT-OUT IS A LABEL, because a human may open a PR to discuss rather
+        than to land. Any of hold/do-not-merge/wip/no-automerge stops it, and a
+        draft stops it too — an unlinked PR is NOT un-drafted, since for a human
+        the draft IS the "not ready" signal (a kanban task has a gate and a
+        dependency to say that instead).
+        """
+        if not self.config.get("merge_unlinked_prs", True):
+            return
+        if self.dry_run:
+            return
+        try:
+            proc = self._pr_list_runner(
+                ["gh", "pr", "list", "--state", "open", "--limit", "100", "--json",
+                 "number,url,headRefName,baseRefName,isDraft,mergeable,labels,"
+                 "statusCheckRollup,reviews,state"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60,
+            )
+            if getattr(proc, "returncode", 1) != 0:
+                return
+            prs = json.loads(proc.stdout or "[]")
+        except Exception as exc:  # noqa: BLE001 — a sweep must never stop the poll
+            logger.debug("pr_watcher: unlinked sweep listing failed: %s", exc)
+            return
+
+        try:
+            linked = {
+                (t.get("pr_url") or "").strip()
+                for t in list_pr_tasks(self._connection())
+            }
+        except Exception as exc:  # noqa: BLE001
+            # Without the linked set every task-linked PR would be treated as
+            # unlinked and merged without its task ever being updated. Refuse.
+            logger.warning("pr_watcher: cannot list linked PRs, skipping sweep: %s", exc)
+            return
+
+        default_branch = self._default_branch()
+        for pr in prs:
+            url = (pr.get("url") or "").strip()
+            if not url or url in linked:
+                continue
+            if pr.get("isDraft"):
+                continue
+            labels = {
+                (lbl.get("name") or "").strip().lower()
+                for lbl in (pr.get("labels") or [])
+            }
+            if labels & _NO_AUTOMERGE_LABELS:
+                logger.info("pr_watcher: %s carries a hold label — leaving it", url)
+                continue
+            if (pr.get("baseRefName") or "") != default_branch:
+                continue
+            if (pr.get("mergeable") or "").upper() != "MERGEABLE":
+                continue
+            state = dict(pr)
+            if not ec.is_passing(state):
+                continue
+            if ec.is_changes_requested(state):
+                # A reviewer asked for changes. Merging over that is the one
+                # thing an automation must never do.
+                continue
+            if self._auto_merge(url):
+                logger.info("pr_watcher: auto-merged unlinked PR %s (%s)",
+                            url, pr.get("headRefName"))
+                action = WatcherAction(
+                    task_id="", pr_url=url, classification="done",
+                    action="merge", reason="unlinked PR, green and mergeable",
+                    resume_cycle=0,
+                )
+                report.actions.append(action)
+                self._audit(action)
+
+        report.finished_at = datetime.now(timezone.utc).isoformat()
+
     def run_daemon(
         self, interval: int = 30, max_iterations: int = 0
     ) -> None:
-        """Poll forever (or up to `max_iterations` ticks)."""
+        """Poll forever (or up to `max_iterations` ticks).
+
+        Picks up its own code changes between polls: this daemon runs for days,
+        so without that every merged fix stays inert until a human restarts it.
+        On 2026-08-09 that was four hand restarts, and twice the board looked
+        broken when the only fault was this process serving hours-old code.
+        """
+        from tools.genesis import code_reload
+
+        started_at = time.time()
+        baseline = code_reload.snapshot()
+        watch = bool(self.config.get("restart_on_code_change", True))
+
         iteration = 0
         while True:
             iteration += 1
@@ -1613,8 +2219,25 @@ class PRWatcher:
                 )
             except Exception as exc:  # defensive — keep the daemon alive
                 logger.warning("pr_watcher iteration failed: %s", exc)
+            # Periodic housekeeping, NOT part of a task-focused poll. It lives
+            # here rather than in poll_once because poll_once is what unit tests
+            # call: inside it, the sweep shelled out to a real `gh pr list` and
+            # operated on live PRs during the suite — only a stubbed _auto_merge
+            # stood between that and merging someone's open PR from a test run.
+            try:
+                self._sweep_unlinked_prs(
+                    WatcherReport(started_at="", finished_at="", tasks_checked=0))
+            except Exception as exc:  # noqa: BLE001 — a sweep must not stop the loop
+                logger.warning("pr_watcher: unlinked sweep failed: %s", exc)
             if max_iterations and iteration >= max_iterations:
                 return
+            # AFTER a completed poll and before the sleep: never mid-work, and
+            # never while a merge is in flight. Does not return if it re-execs.
+            try:
+                code_reload.restart_if_code_changed(
+                    baseline, started_at=started_at, enabled=watch)
+            except Exception as exc:  # noqa: BLE001 — watching must not kill it
+                logger.warning("pr_watcher: code-change check failed: %s", exc)
             time.sleep(max(1, int(interval)))
 
 

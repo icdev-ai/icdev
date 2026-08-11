@@ -378,6 +378,22 @@ class WorkflowEngine:
         finally:
             conn.close()
 
+        # Mirror into the unified approval inbox (agov-inbox-05). Best-effort:
+        # wf_approvals stays the store this gate reads, so a mirror that cannot
+        # be written costs an operator one place to answer from and never
+        # advances — or holds — a stage that would have moved on its own.
+        try:
+            from tools.agent_runtime.inbox_adapters import mirror_workflow_pending
+
+            mirror_workflow_pending(
+                approval_id=approval_id,
+                instance_id=instance_id,
+                stage=stage_config["name"],
+                task_id=task_id or "",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("approval-inbox mirror skipped for %s: %s", approval_id, exc)
+
         # Trigger external step if needed
         if step_type in ("external_email", "external_ticket", "external_wiki"):
             try:

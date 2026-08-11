@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+from pathlib import Path
+
+#: Repo root from __file__, never cwd — this test also runs from worktrees.
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 from tools.genesis.daemon import REFLEX_NAMES
 from tools.workflow.coherence_checker import check_reflex_registry
@@ -42,6 +46,74 @@ def test_every_registered_reflex_dispatches():
         if not callable(getattr(mod, "run", None)):
             broken.append((name, "no callable run()"))
     assert not broken, f"undispatchable REFLEX_NAMES entries: {broken}"
+
+
+def test_every_enabled_reflex_is_actually_dispatched():
+    """The MISSING DIRECTION, and the one that had teeth.
+
+    The guard above walks REFLEX_NAMES and proves each entry is runnable. It
+    cannot see the opposite failure: a reflex that is `enabled: true` in
+    args/genesis_config.yaml, has a perfectly good run(), and is simply absent
+    from REFLEX_NAMES — so the daemon never calls it and the config actively
+    claims otherwise.
+
+    failure_triage lived there. It is the entire autonomous triage -> autofix ->
+    escalate path (query recent failures, LLM-diagnose, patch in an isolated
+    worktree under deny-lists and a confidence bar, otherwise raise a card for a
+    human), it was configured on, and it had NEVER executed. Nothing was broken;
+    nothing was wired.
+
+    Existing gaps are grandfathered in args/reflex_dispatch_gate.yaml with the
+    reason each is still unwired. Lower that list; do not add to it.
+    """
+    import yaml
+
+    gate = REPO_ROOT / "args" / "reflex_dispatch_gate.yaml"
+    grandfathered = set()
+    if gate.is_file():
+        with open(gate, encoding="utf-8", newline="") as fh:
+            grandfathered = set(yaml.safe_load(fh).get("grandfathered") or [])
+
+    with open(REPO_ROOT / "args" / "genesis_config.yaml", encoding="utf-8",
+              newline="") as fh:
+        cfg = yaml.safe_load(fh) or {}
+    enabled = {
+        name for name, spec in (cfg.get("reflexes") or {}).items()
+        if isinstance(spec, dict) and spec.get("enabled")
+    }
+
+    undispatched = sorted(enabled - set(REFLEX_NAMES) - grandfathered)
+    assert not undispatched, (
+        "reflex(es) enabled in genesis_config.yaml but absent from "
+        f"REFLEX_NAMES, so the daemon will never run them: {undispatched}. "
+        "Add them to REFLEX_NAMES, or grandfather them in "
+        "args/reflex_dispatch_gate.yaml with the reason."
+    )
+
+
+def test_the_grandfather_list_does_not_rot():
+    """A stale exemption hides a reflex that HAS been wired since."""
+    import yaml
+
+    gate = REPO_ROOT / "args" / "reflex_dispatch_gate.yaml"
+    if not gate.is_file():
+        return
+    with open(gate, encoding="utf-8", newline="") as fh:
+        grandfathered = set(yaml.safe_load(fh).get("grandfathered") or [])
+    now_dispatched = sorted(grandfathered & set(REFLEX_NAMES))
+    assert not now_dispatched, (
+        f"these are dispatched now and must be removed from the grandfather "
+        f"list: {now_dispatched}"
+    )
+
+
+def test_the_autonomous_recovery_path_is_dispatched():
+    """Named explicitly, because this is the one the board depends on.
+
+    A generic parity test would go green the moment someone grandfathered
+    failure_triage 'temporarily'. This says the quiet part out loud."""
+    for name in ("failure_triage", "oracle_triage"):
+        assert name in REFLEX_NAMES, f"{name} must be dispatched"
 
 
 def test_the_coherence_gate_passes_on_current_main():

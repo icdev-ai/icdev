@@ -330,6 +330,15 @@ def main():
     heartbeat_path = BASE_DIR / ".tmp" / "kanban_scheduler.heartbeat"
     heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Pick up our own code changes between cycles. The scheduler dispatches from
+    # an in-memory module, so a merged fix stays inert until someone restarts it
+    # — the "scheduler runs stale code" failure, which cost two misdiagnoses on
+    # 2026-08-09 before anyone checked the process against the tree.
+    from tools.genesis import code_reload
+
+    _code_baseline = code_reload.snapshot()
+    _started_at = time.time()
+
     cycle = 0
     while True:
         cycle += 1
@@ -423,6 +432,14 @@ def main():
             logger.error(
                 "Cycle %d error: %s\n%s", cycle, exc, traceback.format_exc()
             )
+
+        # AFTER the cycle's work, before the sleep: a restart mid-dispatch would
+        # abandon a task it had just claimed. Does not return if it re-execs.
+        try:
+            code_reload.restart_if_code_changed(
+                _code_baseline, started_at=_started_at)
+        except Exception as _cr_exc:  # noqa: BLE001 — watching must not kill it
+            logger.warning("scheduler: code-change check failed: %s", _cr_exc)
 
         time.sleep(args.interval)
 

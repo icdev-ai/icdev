@@ -1,21 +1,19 @@
 # CUI // SP-CTI
-"""AGOV declarative detection over the agent event stream.
+"""Declarative detection over the agent event stream (AGOV / DET).
 
 ICDEV already writes rich agent activity into ``hook_events``,
 ``agent_executions``, ``ai_telemetry``, ``audit_trail`` and ``ace_audit_log``
-and has never read any of it back for detection. This package is the read side:
-a read-only normalizer, a YAML rule pack under ``args/agent_rules/``, and an
-append-only findings store.
+and never reads any of it back for detection. This package is the read side.
 
-Submodules land one per card and are imported directly rather than re-exported
-here, so a partially-landed package never fails at import time:
+Modules land per card task and are deliberately small and separable:
 
-- ``events``      normalized :class:`AgentEvent` view (agov-det-01)
-- ``shell_parse`` parsed shell-command view (agov-det-02)
-- ``rules``       YAML rule loader + single-event evaluator (agov-det-03)
-- ``sequence``    multi-step chain evaluator (agov-det-04)
-- ``findings``    append-only findings store (agov-det-05)
-- ``gate``        the pre-tool-use decision seam (agov-det-06)
+  ``events.py``       normalized :class:`AgentEvent` view (agov-det-01)
+  ``shell_parse.py``  parsed shell-command view (agov-det-02)
+  ``rules.py``        YAML rule loader + single-event evaluator (agov-det-03)
+  ``sequence.py``     multi-step chain evaluator (agov-det-04)
+  ``findings.py``     append-only findings store (agov-det-05)
+  ``gate.py``         the pre-tool-use decision seam (agov-det-06)
 
-Monitor-only by default: a rule blocks nothing unless an operator opts it in.
+Nothing here enforces anything on its own. Rules are monitor-only unless an
+operator opts a rule into ``enforce: true``; see :mod:`tools.agent_detect.rules`.
 """

@@ -83,6 +83,16 @@ REFLEX_NAMES = [
     "test",
     "learn",
     "heal",
+    # The autonomous-recovery pair. Both were `enabled: true` in
+    # args/genesis_config.yaml with a callable run(), and NEITHER had ever
+    # executed — the daemon dispatches from THIS list, not from the config, and
+    # nothing asserted the two agreed. failure_triage is the whole
+    # triage -> autofix -> escalate path (query recent failures, LLM-diagnose,
+    # patch in an isolated worktree when confidence and the deny-lists allow,
+    # otherwise raise a card for a human); oracle_triage grades the cards it
+    # produces. Shipped, configured, and inert.
+    "failure_triage",
+    "oracle_triage",
     "evolve",
     "docs",
     "experiment",
