@@ -724,6 +724,19 @@ tests/test_copilot_cli_adapter.py
 tests/test_goose_cli_adapter.py
 tests/test_agent_adapter_no_inert_stubs.py
 
+# tsg-stale-01 -- the two SKI ACE roles (product_manager, software_craftsperson).
+# Ungated, it rotted three ways at once and nothing went red: RoleLoader started
+# returning structured RoleStep objects instead of bare strings (ace-qa-04), the
+# craftsperson's listen_topics were narrowed to bootstrap-only task.assigned to
+# break a circular-deadlock loop in the ACE event dispatcher, and 33 declared
+# skill packs plus 4 persona sources turned out never to have been committed at
+# all. The listen_topics narrowing is the one worth a gate: the role emits
+# task.completed and pr.ready, so re-subscribing reactively re-triggers its own
+# sessions, and the invariant is otherwise only prose in two other role YAMLs.
+# Skips are per-pack and name the missing path, so an unvendored library reads as
+# unvendored rather than as covered. Pure YAML/file parsing plus a tmp_path
+# SQLite ACE db; ~13s, no LLM or network.
+tests/test_ski_roles_lifecycle.py
 # tsg-dead-02: the NDC remediation simulator. Was 17/18 red since the commit that
 # added it (36d611a31) — the fixture handed the module a raw sqlite3.Connection,
 # but tools/network/db/init_db.get_connection ALWAYS returns a StorageConnection,
