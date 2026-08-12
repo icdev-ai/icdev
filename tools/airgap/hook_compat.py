@@ -236,6 +236,10 @@ HEADLESS_CHECKS = (
     "check_append_only_write",
     "check_direct_sqlite_usage",
     "check_file_access_tiers",
+    # Immediately after the tiers, because it is their complement (exa-bench-07):
+    # the glob list says WHICH file, this says WHERE. A glob can enumerate
+    # `**/.ssh/*`; it cannot express "anywhere but this worktree".
+    "check_write_outside_worktree",
     "check_branch_deletion",
     "check_worktree_path",
     "check_review_loop_precommit",

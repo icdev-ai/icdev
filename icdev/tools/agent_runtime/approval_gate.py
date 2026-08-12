@@ -718,6 +718,23 @@ def build_approval_hook(
     return hook
 
 
+#: Agent-surface tools whose input names a file they WRITE. Translated to the
+#: hook's ``Write`` shape *with the path*, because a check that decides on the
+#: path cannot see one that the translation dropped: ``patch_file`` fell to the
+#: catch-all below, which flattens every argument into ``content``, so
+#: ``patch_file('/home/victim/.bashrc')`` reached the hook as a pathless write
+#: and the exa-bench-07 boundary check had nothing to judge.
+#:
+#: Read-shaped tools are deliberately NOT here. Handing ``read_file``'s path to
+#: the hook as a ``Write`` would refuse a read on a write rule — a
+#: mis-translation that would read as coverage of exa-bench-09 while actually
+#: measuring nothing.
+_WRITE_SHAPED_TOOLS = frozenset({
+    "write_file", "Write", "append_file", "create_file",
+    "patch_file", "edit_file", "apply_patch", "Edit", "MultiEdit",
+})
+
+
 def _hard_block(tool_name: str, tool_input: dict[str, Any]) -> tuple[bool, str]:
     """Ask the headless pre_tool_use hook. Unavailable → not a hard block."""
     try:
@@ -725,9 +742,12 @@ def _hard_block(tool_name: str, tool_input: dict[str, Any]) -> tuple[bool, str]:
 
         if tool_name in ("run_command", "bash", "Bash"):
             hook_tool, hook_input = "Bash", {"command": str(tool_input.get("command", ""))}
-        elif tool_name in ("write_file", "Write"):
+        elif tool_name in _WRITE_SHAPED_TOOLS:
+            content = tool_input.get("content")
             hook_tool, hook_input = "Write", {
-                "content": str(tool_input.get("content", "")),
+                "content": (
+                    str(content) if content is not None else flatten_input(tool_input)
+                ),
                 "path": str(tool_input.get("path") or tool_input.get("file_path", "")),
             }
         else:
