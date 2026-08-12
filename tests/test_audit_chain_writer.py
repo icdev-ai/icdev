@@ -563,3 +563,96 @@ def test_a_failed_probe_is_not_cached_as_columns_missing(tmp_path, monkeypatch):
         assert audit_chain.has_chain_columns(conn) is True
     finally:
         conn.close()
+
+
+MIGRATION_VERSION = "20260812041301"
+MIGRATION_DIR_NAME = f"{MIGRATION_VERSION}_audit_chain_genesis_marker"
+
+
+def test_the_genesis_migration_is_discoverable_from_either_package_root():
+    """The cutover migration must be found whichever copy of the runner binds.
+
+    ``migration_runner`` derives ``MIGRATIONS_DIR`` from ``BASE_DIR``, which is
+    ``Path(__file__).parents[2]`` — so the top-level copy scans
+    ``tools/db/migrations`` while the ``icdev/`` mirror scans
+    ``icdev/tools/db/migrations``. Which one you get is NOT stable: through the
+    backward-compat shim, ``import tools.db.migration_runner as m`` binds the
+    mirror while ``from tools.db.migration_runner import MigrationRunner`` binds
+    the top-level copy, and pytest's ``sys.path`` differs again from a bare CLI
+    launch. Asserting against whichever module this test happens to bind would
+    therefore pass while the CLI still saw nothing.
+
+    A migration missing from the root that actually runs is invisible:
+    ``discover_migrations`` never yields it, ``audit_chain_genesis`` is never
+    created, and the failure is silent because ``record_chain_start`` is
+    deliberately non-fatal. The chain would still be written, but the cutover
+    would never be recorded — collapsing "predates the chain" and "chained but
+    failed" back into one indistinguishable bucket, which is the exact confusion
+    this task exists to remove. So both roots are checked.
+    """
+    from tools.db.migration_runner import MigrationRunner
+
+    for root in (REPO_ROOT / "tools/db/migrations", REPO_ROOT / "icdev/tools/db/migrations"):
+        assert root.is_dir(), f"migration root missing: {root}"
+        versions = {
+            m["version"]
+            for m in MigrationRunner(migrations_dir=root).discover_migrations()
+        }
+        assert MIGRATION_VERSION in versions, (
+            f"{MIGRATION_DIR_NAME} is not discoverable from {root} — a runner "
+            f"resolving to this root would never create audit_chain_genesis"
+        )
+
+
+def test_both_copies_of_the_genesis_migration_are_identical():
+    """Authored copy and package mirror must not drift.
+
+    Two copies of a DDL file that disagree mean the table's shape depends on
+    which import path ran the migration.
+    """
+    for filename in ("up.sql", "down.sql", "meta.json"):
+        authored = REPO_ROOT / "tools/db/migrations" / MIGRATION_DIR_NAME / filename
+        mirrored = REPO_ROOT / "icdev/tools/db/migrations" / MIGRATION_DIR_NAME / filename
+        assert authored.exists(), f"missing authored {filename}"
+        assert mirrored.exists(), f"missing mirrored {filename}"
+        assert authored.read_bytes() == mirrored.read_bytes(), (
+            f"{filename} differs between tools/ and icdev/tools/"
+        )
+
+
+def test_the_genesis_migration_creates_the_table_the_writer_needs(tmp_path):
+    """Run the real up.sql and confirm record_chain_start can then write.
+
+    The rest of this file builds its schema from the SCHEMA constant above, which
+    is hand-maintained — so it would keep passing even if up.sql declared a
+    different table. This is the one test that executes the shipped DDL.
+    """
+    up_sql = (
+        REPO_ROOT / "icdev/tools/db/migrations" / MIGRATION_DIR_NAME / "up.sql"
+    ).read_text(encoding="utf-8")
+
+    db = tmp_path / "genesis_only.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.executescript(up_sql)
+        conn.commit()
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(audit_chain_genesis)")}
+    finally:
+        conn.close()
+
+    # chain.record_chain_start inserts these three; tenant_id / classification
+    # are what the global RLS predicate injects against for a dashboard reader.
+    assert {"chain_start_id", "hash_algorithm", "note"}.issubset(cols)
+    assert {"tenant_id", "classification"}.issubset(cols)
+
+    from tools.db.storage import get_connection
+
+    sconn = get_connection(db_path=str(db))
+    try:
+        audit_chain._GENESIS_CACHE.clear()
+        audit_chain.record_chain_start(sconn, 42, "?")
+        sconn.commit()
+        assert audit_chain.chain_start_id(sconn) == 42
+    finally:
+        audit_chain._GENESIS_CACHE.clear()
+        sconn.close()
