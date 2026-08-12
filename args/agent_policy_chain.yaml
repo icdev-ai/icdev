@@ -68,6 +68,27 @@ audit:
 # A name listed here that is not registered in the engine does NOT get skipped:
 # it resolves to a DENY naming itself. A chain that quietly drops a policy is a
 # chain that stops enforcing what its own config says it enforces.
+#
+# PARAMS (exa-policy-03). An entry may carry a `params:` mapping, which builds
+# one configured INSTANCE of a policy factory — omnigent's factory_params shape.
+# That is what lets `git_write_allowlist` be configured for this repo's branch
+# names rather than copied and edited per deployment.
+#
+# Three things about params are deliberately unforgiving, because each of them
+# is a way a limit can look enforced while enforcing nothing:
+#
+#   * a REQUIRED param that is missing is an error, not a default. No threshold
+#     in this file has a fallback value in Python — if `limit` is absent, the
+#     entry resolves to a DENY naming the error rather than to some number
+#     nobody reviewed.
+#   * an UNKNOWN param key (a typo like `dey_branches`) is an error, not an
+#     ignored line.
+#   * `params` on a policy that is not configurable is an error too, rather than
+#     being silently dropped.
+#
+# Switching one off is `enabled: false` on its entry, per level. Each of the
+# three below is a separate entry, so each is independently switchable without
+# disturbing the other two.
 # ---------------------------------------------------------------------------
 chain:
   - name: reversibility
@@ -82,6 +103,109 @@ chain:
       deny, because the gate's contract is that a human may still authorise
       what it dislikes; a rule that must be refusable without a human belongs
       in its own policy, not in a change to this one.
+
+  # -------------------------------------------------------------------------
+  # The three builtins (exa-policy-03). They ship ENABLED, with the values
+  # below, on purpose: a policy declared and switched off is the
+  # declared-but-never-consumed defect this platform ships most, and shipping
+  # these three inert would be that defect wearing the uniform of the fix for
+  # it. Values are set to be a backstop rather than a nuisance — an operator
+  # who wants them tighter lowers a number here, and one who genuinely wants
+  # one gone sets `enabled: false` on that entry.
+  # -------------------------------------------------------------------------
+  - name: max_tool_calls_per_session
+    enabled: true
+    description: >-
+      A hard ceiling on tool invocations in one session — the runaway-loop
+      backstop the reversibility gate cannot express, because "how many times
+      have you done this already" is not a property of any one call. Counts in
+      the session state from exa-policy-02, so it survives the hook being
+      rebuilt between turns and survives a process restart.
+    params:
+      # 500 is a backstop, not a budget: it is far above any real session and
+      # low enough that a loop calling a reversible tool for ever stops. Lower
+      # it for an unattended deployment.
+      limit: 500
+      # `ask` would be a legitimate choice here (a human may raise the cap);
+      # `deny` is shipped because the case this exists for is an agent looping
+      # unattended at 3am, and there is nobody to ask.
+      on_exceed: deny
+      state_key: tool_calls
+      # An event with no session id cannot be counted, so a per-session cap
+      # would silently become no cap. Refuse instead of pretending.
+      require_session: true
+
+  - name: git_write_allowlist
+    enabled: true
+    description: >-
+      Which branches an agent may write to, by repo. This is the rule
+      args/agent_approval_policy.yaml structurally cannot hold: its tiers match
+      a tool name and a content pattern, so it can say `git push` is
+      irreversible, but "push is fine to feat/* and not to main" is a statement
+      about an ARGUMENT. Deny is checked before allow, and anything the command
+      does not state resolves to `on_unknown` rather than to allow.
+    params:
+      # "*" = every repo. Name repo patterns here to scope an instance, and add
+      # a second entry with its own params for a repo that needs different
+      # branch rules — that is the point of configuring an instance rather than
+      # copying a policy.
+      repos: ["*"]
+      # Matched case-INSENSITIVELY: a deny list that misses `Main` has a hole.
+      # These mirror CLAUDE.md's worktree-first rule — an agent works on a
+      # branch and opens a PR; it does not push to the default branch.
+      deny_branches:
+        - main
+        - master
+        - "release/*"
+        - "hotfix/*"
+      # Matched case-SENSITIVELY, and allowlist semantics: a branch matching
+      # nothing here is NOT allowed. These are the prefixes this repo's
+      # worktree workflow actually creates.
+      allow_branches:
+        - "feat/*"
+        - "fix/*"
+        - "chore/*"
+        - "docs/*"
+        - "kanban/*"
+        - "ci/*"
+        - "test/*"
+      operations: [push]
+      on_violation: deny
+      # A bare `git push` writes the current branch, whose name is not in the
+      # command string. Unknowable is not the same as forbidden — a human can
+      # look — so this asks rather than denies.
+      on_unknown: ask
+
+  - name: risk_score
+    enabled: true
+    description: >-
+      Per-session risk accrual. Fifty individually benign calls and one benign
+      call are the same event to a stateless gate, and they are not the same
+      event. Each call adds points; crossing `ask_at` escalates to a human even
+      for a call that would otherwise be automatic, and crossing `deny_at`
+      refuses. Weighting is by reversibility TIER wherever possible, so the
+      dangerous-tool list stays in args/agent_approval_policy.yaml and is not
+      duplicated here.
+    params:
+      # Both are required and neither has a Python default. With the tier
+      # weights below, 120 is roughly 24 irreversible calls or 120 reversible
+      # ones before a human is consulted, and 400 before the session is stopped.
+      ask_at: 120
+      deny_at: 400
+      # Per-tool overrides, matched against the tool name before the tier is
+      # consulted. Empty by default: the tiers already say what is dangerous,
+      # and a second list here is a second list to keep current.
+      weights: {}
+      tier_weights:
+        irreversible: 5
+        recoverable: 2
+        reversible: 1
+        # An unknown tool is not a cheap one — `unknown` is what the gate gives
+        # anything not explicitly named, which is exactly what warrants caution.
+        unknown: 4
+      default_weight: 1
+      state_key: risk_score
+      require_session: true
 
 # ---------------------------------------------------------------------------
 # Per-event-type floors — the minimum strictness for an event type, applied
