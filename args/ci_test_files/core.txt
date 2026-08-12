@@ -552,3 +552,11 @@ tests/test_exa_policy_05_saas_mcp_authz.py
 # — a CUI leak that no other test in this list would catch. ~2s, in-tmpdir SQLite,
 # no DB service/LLM/network.
 tests/test_agent_policy_engine.py
+
+# exa-live-01 — capability consumption counter. Guards the measurement half of
+# ICDEV's signature defect (a registered capability with zero consumption and
+# nothing going red). Worth a required check because the tool's own failure mode
+# is silence: a broken probe returns the same zero a genuinely inert capability
+# does, so every zero assertion here is paired with a positive control on the
+# same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
+tests/test_capability_consumption.py
