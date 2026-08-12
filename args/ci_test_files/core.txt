@@ -535,3 +535,11 @@ tests/test_audit_row_hash.py
 # without the critical section, writers collide on the reserved id and LOSE
 # audit events, which this catches. ~9s, no DB service/LLM/network.
 tests/test_audit_chain_writer.py
+# test_exa_policy_05_saas_mcp_authz.py gates the per-tool authorization control
+# on tools/saas/mcp_http.py -- the only MCP surface with an authenticated
+# principal. Without it here the control's tests run only in the PG tier, which
+# is NOT a required check, so an authorization regression could merge green.
+# The one test that needs a live audit_platform skips under the SQLite pin and
+# runs in the PG tier instead (tests/pg_tier_allowlist.txt); the other 38 are
+# pure Python plus a Flask test client -- ~1.9s, no DB service/LLM/network.
+tests/test_exa_policy_05_saas_mcp_authz.py
