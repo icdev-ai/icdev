@@ -46,7 +46,9 @@ No database and no LLM: classification is pure, so this runs in a cold worktree.
 """
 from __future__ import annotations
 
+import io
 import json
+import tokenize
 from pathlib import Path
 
 import pytest
@@ -195,6 +197,26 @@ FILED_GAPS = {
 }
 
 
+def _code_only(path) -> str:
+    """*path*'s source with comments and string literals (incl. docstrings) removed.
+
+    Used to ask "does this module actually depend on X" rather than "does the
+    letter sequence X appear anywhere in the file". A file that fails to
+    tokenize degrades to its raw text — a scan that is too broad is the safe
+    direction here, because it can only produce a false ALARM, never a miss.
+    """
+    source = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        kept = [
+            tok.string
+            for tok in tokenize.generate_tokens(io.StringIO(source).readline)
+            if tok.type not in (tokenize.COMMENT, tokenize.STRING)
+        ]
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return source
+    return "\n".join(kept)
+
+
 def _doc_text() -> str:
     return DECISION_DOC.read_text(encoding="utf-8")
 
@@ -237,13 +259,21 @@ class TestTheFlagAndItsPath:
         are PreToolUse hooks for ICDEV's in-process loop. If ``tools/agents/``
         ever imports them, the doc's central distinction is wrong and has to be
         rewritten rather than quietly outgrown.
+
+        Scanned over CODE ONLY — comments and string literals are stripped
+        first. The invariant is "does not import/call the gates", and
+        ``claude_cli.build_argv``'s docstring names both modules precisely to
+        say they are NOT in this path. A raw substring scan cannot tell that
+        explanation apart from a real dependency, and forbidding the
+        explanation would push the flag back toward being the undocumented
+        incidental it was before exa-bench-04.
         """
         agents_dir = REPO_ROOT / "tools" / "agents"
         offenders = sorted(
             str(p.relative_to(REPO_ROOT))
             for p in agents_dir.rglob("*.py")
             if any(
-                needle in p.read_text(encoding="utf-8", errors="replace")
+                needle in _code_only(p)
                 for needle in ("approval_gate", "agent_tool_gate")
             )
         )
@@ -251,6 +281,62 @@ class TestTheFlagAndItsPath:
             f"{offenders} now reference the in-process gates. The decision doc says "
             "the spawned CLI's tool calls are observed only by "
             ".claude/hooks/pre_tool_use.py — re-measure and update it."
+        )
+
+    def test_code_only_scan_still_catches_a_real_import(self, tmp_path):
+        """The relaxation above must not have defanged the check.
+
+        A docstring mention is invisible; an actual import is not. Without this,
+        ``_code_only`` could quietly over-strip and the invariant would pass for
+        a module that genuinely wired the gate in.
+        """
+        prose = tmp_path / "prose.py"
+        prose.write_text(
+            '"""Explains that approval_gate is not in this path."""\n'
+            "# agent_tool_gate is not called here either\n"
+            "X = 1\n",
+            encoding="utf-8",
+        )
+        assert "approval_gate" not in _code_only(prose)
+        assert "agent_tool_gate" not in _code_only(prose)
+
+        real = tmp_path / "real.py"
+        real.write_text(
+            "from tools.agent_runtime.approval_gate import classify\n"
+            "from tools.studio.executors import agent_tool_gate\n",
+            encoding="utf-8",
+        )
+        assert "approval_gate" in _code_only(real)
+        assert "agent_tool_gate" in _code_only(real)
+
+    def test_the_flag_site_points_at_the_decision(self):
+        """exa-bench-04's own premise, pinned.
+
+        The task existed because the flag was "an incidental flag rather than a
+        stated decision". A write-up nobody is routed to from the flag site
+        re-creates exactly that: the next reader edits ``build_argv`` without
+        ever learning a decision was made. Strip the pointer and this fails.
+        """
+        adapter_src = ADAPTER.read_text(encoding="utf-8")
+        # The argv literal, not the module docstring's prose mention of it.
+        flag_at = adapter_src.rindex('"--dangerously-skip-permissions"')
+        assert "D394" in adapter_src, (
+            "claude_cli.py no longer cites ADR D394 at the flag site — the flag "
+            "has decayed back into an undocumented incidental."
+        )
+        assert "agent-vendor-permission-bypass.md" in adapter_src[:flag_at], (
+            "the decision doc is not referenced above the flag in claude_cli.py"
+        )
+
+    def test_the_mirror_carries_the_same_pointer(self):
+        """``icdev/`` is the packaged copy; a pointer only in ``tools/`` is half-shipped."""
+        mirror = REPO_ROOT / "icdev" / "tools" / "agents" / "adapters" / "claude_cli.py"
+        if not mirror.exists():
+            pytest.skip("icdev/ mirror not present in this checkout")
+        text = mirror.read_text(encoding="utf-8")
+        assert "D394" in text and "agent-vendor-permission-bypass.md" in text, (
+            "icdev/ mirror of claude_cli.py lacks the decision pointer that "
+            "tools/ carries — re-sync the mirror."
         )
 
     def test_the_vendor_deny_list_is_an_inventory_not_a_control(self):
