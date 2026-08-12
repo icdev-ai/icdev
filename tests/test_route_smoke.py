@@ -30,6 +30,7 @@ from tools.testing.route_smoke import (
     API_ENDPOINTS,
     _routes_for_changed_files,
     _smoke_api_endpoint,
+    _smoke_route,
     run_api_smoke,
     run_smoke,
 )
@@ -63,6 +64,23 @@ class _SmokeHandler(BaseHTTPRequestHandler):
             self._send(404, "gone", content_type="text/plain")
         elif self.path == "/api/html":
             self._send(200, "<html><body>hello</body></html>", content_type="text/html")
+        elif self.path == "/api/prose":
+            # A real kanban payload: user-authored text that *discusses* errors.
+            self._send(200, json.dumps({"tasks": [
+                {"description": "The ImportError is swallowed by except Exception"},
+                {"description": "guard catches ImportError but not AttributeError"},
+                {"description": "the query dies with no such table: widgets"},
+            ]}))
+        elif self.path == "/api/empty-state":
+            self._send(200, json.dumps({"error": "No scan data found", "has_data": False}))
+        elif self.path == "/api/broken":
+            self._send(200, json.dumps({"error": "no such table: sbom_records"}))
+        elif self.path == "/page-traceback":
+            self._send(
+                200,
+                "<html><body>Traceback (most recent call last)</body></html>",
+                content_type="text/html",
+            )
         else:
             self._send(404, "gone", content_type="text/plain")
 
@@ -138,6 +156,42 @@ def test_non_json_body_fails_when_json_expected(smoke_base):
     result = _smoke_api_endpoint(smoke_base, {"route": "/api/html", "expect_json": True})
     assert result["ok"] is False
     assert "Non-JSON response" in str(result["error"])
+
+
+# ── Fix 4: error signals are for pages, not for API payloads ─────────────────
+#
+# ERROR_SIGNALS used to be substring-scanned across the whole body of every
+# response. /api/kanban/tasks serves kanban task descriptions, two of which
+# discuss a swallowed ImportError — so the gate failed permanently on its own
+# content. The signals now apply to rendered pages, and to the top-level
+# "error"/"traceback" field of a JSON document, but never to nested payload text.
+
+def test_api_payload_discussing_errors_is_not_a_failure(smoke_base):
+    """Task descriptions that mention ImportError are data, not defects."""
+    result = _smoke_api_endpoint(smoke_base, {"route": "/api/prose", "expect_json": True})
+    assert result["ok"] is True, result["error"]
+    assert result["error_signal"] is None
+
+
+def test_semantic_empty_state_is_not_a_failure(smoke_base):
+    """{"error": "No scan data found"} means the route served fine with no data."""
+    result = _smoke_api_endpoint(smoke_base, {"route": "/api/empty-state", "expect_json": True})
+    assert result["ok"] is True, result["error"]
+
+
+def test_json_error_envelope_naming_a_signal_still_fails(smoke_base):
+    """The narrowing must not become a rubber stamp: a real crash still trips."""
+    result = _smoke_api_endpoint(smoke_base, {"route": "/api/broken", "expect_json": True})
+    assert result["ok"] is False
+    assert result["error_signal"] == "json_error"
+    assert "no such table" in str(result["error"])
+
+
+def test_html_page_leaking_a_traceback_still_fails(smoke_base):
+    """Substring scanning is retained where it belongs — rendered pages."""
+    result = _smoke_route(smoke_base, "/page-traceback")
+    assert result["ok"] is False
+    assert result["error_signal"] == "Traceback (most recent call last)"
 
 
 # ── Fix 3: the corrected endpoint table ──────────────────────────────────────
