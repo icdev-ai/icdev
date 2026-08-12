@@ -6,19 +6,15 @@ Verifies:
 2. Rendered HTML substitutes the opportunity ID into the govconAction call.
 3. POST /api/govcon/opportunities/<id>/map-capabilities returns 200 with mapping counts.
 4. Endpoint degrades gracefully (500 + error key) when map_all_patterns raises.
+5. The endpoint is RBAC-gated: 401 unauthenticated, 403 for a non-write role.
 """
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from flask import Flask
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
-_TEMPLATES_DIR = Path(__file__).parent.parent / "tools" / "dashboard" / "templates"
-_DETAIL_TEMPLATE = _TEMPLATES_DIR / "proposals" / "detail.html"
+from tests._govcon_api_app import NON_WRITE_ROLE, WRITE_ROLE, build_govcon_api_app
+from tests._proposals_detail_render import DETAIL_TEMPLATE as _DETAIL_TEMPLATE
+from tests._proposals_detail_render import opp_stub, render_detail
 
 _OPP_ID = "opp-map-test-01"
 
@@ -84,83 +80,18 @@ class TestTemplateSourceMapCapabilities:
 # ---------------------------------------------------------------------------
 
 
-def _make_stub_opp():
-    return {
-        "id": _OPP_ID,
-        "title": "Test RFP Map",
-        "solicitation_number": "FA8650-26-R-0002",
-        "agency": "USAF",
-        "sub_agency": None,
-        "due_date": "2026-06-30",
-        "due_time": "17:00",
-        "status": "writing",
-        "proposal_type": "FFP",
-        "set_aside_type": None,
-        "naics_code": "541512",
-        "estimated_value_low": None,
-        "estimated_value_high": None,
-        "capture_manager": None,
-        "proposal_manager": None,
-        "bid_decision": None,
-        "questions_due_date": None,
-    }
-
-
 def _render_detail_template(opp=None):
-    from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, select_autoescape
+    """Render proposals/detail.html with a schema-derived opportunity row.
 
-    stub_base = (
-        "{% block title %}{% endblock %}"
-        "{% block content %}{% endblock %}"
-    )
-    env = Environment(
-        loader=ChoiceLoader([
-            DictLoader({"base.html": stub_base}),
-            FileSystemLoader(str(_TEMPLATES_DIR)),
-        ]),
-        autoescape=select_autoescape(["html"]),
-    )
-
-    tmpl = env.get_template("proposals/detail.html")
-    return tmpl.render(
-        opp=opp or _make_stub_opp(),
-        sections=[],
-        volumes=[],
-        compliance_items=[],
-        reviews=[],
-        findings=[],
-        stats={
-            "sections_total": 0,
-            "sections_complete": 0,
-            "compliance_coverage_pct": 0,
-            "open_findings": 0,
-            "critical_findings": 0,
-            "section_status_distribution": {},
-            "finding_severity_distribution": {},
-        },
-        compliance_stats={
-            "total": 0,
-            "compliant": 0,
-            "partial": 0,
-            "non_compliant": 0,
-            "not_addressed": 0,
-            "not_applicable": 0,
-            "gap_pct": 0,
-        },
-        reviews_data=[],
-        days_left=40,
-        questions=[],
-        question_stats={
-            "total": 0,
-            "high_priority": 0,
-            "draft": 0,
-            "approved": 0,
-            "submitted": 0,
-            "answered": 0,
-        },
-        questions_days_left=None,
-        amendments=[],
-        responses={},
+    The stub comes from ``tests/_proposals_detail_render`` rather than a literal
+    dict here: the route renders ``dict(row)`` of ``SELECT * FROM
+    proposal_opportunities``, so a hand-listed subset goes stale the moment a
+    column is added and the template reads it.
+    """
+    return render_detail(
+        opp if opp is not None else opp_stub(
+            _OPP_ID, title="Test RFP Map", solicitation_number="FA8650-26-R-0002"
+        )
     )
 
 
@@ -197,13 +128,17 @@ class TestRenderedHtmlMapCapabilities:
 # ---------------------------------------------------------------------------
 
 
-def _build_api_test_app() -> Flask:
-    from tools.dashboard.api.govcon import govcon_api
+_URL = "/api/govcon/opportunities/{opp_id}/map-capabilities"
 
-    flask_app = Flask(__name__)
-    flask_app.config["TESTING"] = True
-    flask_app.register_blueprint(govcon_api)
-    return flask_app
+
+def _build_api_test_app(role=WRITE_ROLE):
+    """App carrying the real blueprint, authenticated as a GovCon write role.
+
+    The endpoint is ``@require_role(*GOVCON_WRITE_ROLES)``; an app with no
+    ``g.current_user`` answers 401 to every one of these assertions. The gate is
+    exercised, not removed — see TestMapCapabilitiesRBAC below.
+    """
+    return build_govcon_api_app(role=role)
 
 
 # ---------------------------------------------------------------------------
@@ -311,3 +246,51 @@ class TestMapCapabilitiesAPIEndpoint:
                 resp = c.post("/api/govcon/opportunities/opp-err/map-capabilities")
         data = resp.get_json()
         assert data["error"], "Error message must not be empty"
+
+
+# ---------------------------------------------------------------------------
+# RBAC: the gate that made every assertion above answer 401 (prop-fix-09)
+# ---------------------------------------------------------------------------
+
+
+class TestMapCapabilitiesRBAC:
+    """map-capabilities is @require_role(*GOVCON_WRITE_ROLES).
+
+    Mapping writes icdev_capability_map, so it is a write endpoint. These
+    assertions exist so the gate can never be silently removed to make the
+    success-path tests above go green again.
+    """
+
+    def _post(self, app):
+        with patch(
+            "tools.govcon.capability_mapper.map_all_patterns",
+            return_value=_FAKE_MAP_RESULT,
+        ):
+            with app.test_client() as c:
+                return c.post(_URL.format(opp_id=_OPP_ID))
+
+    def test_write_role_is_a_govcon_write_role(self):
+        from tools.dashboard.api.govcon import GOVCON_WRITE_ROLES
+
+        assert WRITE_ROLE in GOVCON_WRITE_ROLES
+        assert NON_WRITE_ROLE not in GOVCON_WRITE_ROLES
+
+    def test_unauthenticated_is_401(self):
+        resp = self._post(build_govcon_api_app(role=None))
+        assert resp.status_code == 401, (
+            "map-capabilities must reject an unauthenticated caller with 401"
+        )
+
+    def test_non_write_role_is_403(self):
+        resp = self._post(build_govcon_api_app(role=NON_WRITE_ROLE))
+        assert resp.status_code == 403, (
+            f"map-capabilities must deny role '{NON_WRITE_ROLE}' with 403, not "
+            f"{resp.status_code}"
+        )
+
+    def test_every_write_role_is_allowed(self):
+        from tools.dashboard.api.govcon import GOVCON_WRITE_ROLES
+
+        for role in GOVCON_WRITE_ROLES:
+            resp = self._post(build_govcon_api_app(role=role))
+            assert resp.status_code == 200, f"role '{role}' should be allowed"

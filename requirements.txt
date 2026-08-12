@@ -160,6 +160,16 @@ cachetools>=5.3              # TTLCache for vault_resolver 5-min secret cache
 # cortex.extract JSON-Schema conformance validation (analysis item 4)
 jsonschema>=4.0
 
+# === TOTP MFA (G-07) ===
+# tools/saas/auth/mfa.py implements RFC 6238 TOTP for IL4+ (NIST 800-53 IA-2(1),
+# IA-2(2), IA-5(1)) and its own docstring already claimed this line existed — it
+# did not. Two consequences on a clean install: enroll()/verify() raise the
+# module's "pyotp is required for MFA" ImportError at the call site rather than
+# at install time, and tests/test_mfa.py `importorskip`s the whole file, so the
+# CI slot it holds runs zero assertions. Pure Python, no C, air-gap safe
+# (tsg-stale-04).
+pyotp>=2.9
+
 # === Performance load harness (crx-test-01) — OPTIONAL ===
 # Pure-Python load generator for tools/testing/perf_benchmark.py --load and
 # tools/testing/perf/locustfile.py. The import is guarded: the built-in latency

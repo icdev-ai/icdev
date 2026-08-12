@@ -747,3 +747,28 @@ tests/test_remediation_simulator.py
 # module that actually ships. Both are pure-Python: no DB, LLM or network.
 tests/test_remediation_nqe_layer.py
 tests/test_advisory.py
+# tsg-stale-04 -- the three suites that went stale against changes they never
+# learned about. All three now pin the change instead of merely tolerating it.
+#
+# The two proposals/detail.html suites each carried a hand-listed `opp` dict and
+# an un-authenticated Flask app. When PROPOSALS_ALTER_SQL added the capture
+# columns (win_probability, ptw_low/high, ...) and the template read them, both
+# went red on UndefinedError; when @require_role(*GOVCON_WRITE_ROLES) landed on
+# the write endpoints (prop-fix-09), every API assertion in both answered 401 and
+# read as a broken endpoint. The stub is now derived from the
+# proposal_opportunities schema the route actually queries, so a new column
+# cannot re-stale it, and each suite asserts the RBAC gate directly --
+# unauthenticated 401, non-write role 403, every write role 200 -- so the gate
+# cannot be removed to turn the success path green again.
+#
+# test_mfa.py's fixture replaced get_connection() with a bare sqlite3 connection,
+# which dropped the %s -> ? translation the real StorageConnection performs, so
+# every statement in the module under test raised `near "%": syntax error`. It
+# now goes through tests/_sql_compat (the same translate_sql the runtime uses)
+# and asserts mfa.py's SQL stays PG-native in the first place.
+#
+# ~3s combined, pure Python: no DB service, no LLM, no network. pyotp is an
+# optional dependency and test_mfa skips cleanly without it.
+tests/test_proposals_detail_extract_requirements.py
+tests/test_proposals_detail_map_capabilities.py
+tests/test_mfa.py
