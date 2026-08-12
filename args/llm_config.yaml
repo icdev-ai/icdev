@@ -1582,6 +1582,32 @@ rag:
       - ui_verification
 
 # -----------------------------------------------------------------------
+# Supplemental Prompt Layers (exa-refine-01)
+# -----------------------------------------------------------------------
+# The LLM router reads ACTIVE supplemental prompt layers from
+# `prompt_versions` (tools/llm/prompt_registry.py) and APPENDS them after the
+# base system prompt the call site supplied.
+#
+# The base system prompt is IMMUTABLE. The registry has no write path to it
+# (the reserved `base/` namespace is refused) and no read path from it (the
+# router only ever selects the `layer/` namespace). Self-modification can add
+# governed, versioned, rollback-able layers on top; it can never rewrite the
+# base. There is no toggle for that invariant — only for the feature.
+#
+# Registering a layer:
+#   python tools/llm/prompt_registry.py --register --name "layer/house-style" \
+#       --function code_generation --template-file hardprompts/house_style.md --json
+#   python tools/llm/prompt_registry.py --activate --name "layer/house-style" --version 1 --json
+#   python tools/llm/prompt_registry.py --layers --function code_generation --json
+#
+# A layer registered against function `*` applies to every llm_function.
+# With no layers registered (the default) this hook is a no-op.
+prompt_registry:
+  enabled: true
+  layer_separator: "\n\n"     # placed between the base prompt and each layer
+  max_layer_chars: 8000       # skip (and warn on) any single oversized layer; 0 = no cap
+
+# -----------------------------------------------------------------------
 # Token Budget Enforcement (Paperclip-inspired per-agent hard-stops)
 # -----------------------------------------------------------------------
 # Per-agent monthly USD caps. Warning fires at threshold; hard_stop blocks.
