@@ -36,6 +36,29 @@ class OWASPASIAssessor(BaseAssessor):
     TABLE_NAME = "owasp_asi_assessments"
     CATALOG_FILENAME = "owasp_agentic_asi.json"
 
+    @staticmethod
+    def _asi_02_status(chain_events_present: bool):
+        """ASI-02 needs BOTH halves: chain validation AND per-tool authorization.
+
+        Returns (status, detail) so the scope-out is persisted with the claim.
+        Authorization is asserted behaviourally — see
+        tools/security/mcp_authz_evidence.py — not by checking that
+        mcp_tool_authorizer.py is on disk.
+        """
+        from tools.security.mcp_authz_evidence import cached_probe, scope_note
+
+        probe = cached_probe()
+        authz_ok = probe["status"] == "satisfied"
+        detail = (
+            f"tool_chain_events={'present' if chain_events_present else 'absent'}; "
+            f"per-tool authorization={probe['status']} ({probe['reason']}). {scope_note()}"
+        )
+        if chain_events_present and authz_ok:
+            return "satisfied", detail
+        if chain_events_present or probe["status"] != "not_satisfied":
+            return "partially_satisfied", detail
+        return "not_satisfied", detail
+
     def get_automated_checks(
         self,
         project: Dict,
@@ -75,15 +98,19 @@ class OWASPASIAssessor(BaseAssessor):
                 except Exception:
                     pass
 
-                # ASI-02: Tool Abuse — tool chain validation + MCP authorization
+                # ASI-02: Tool Abuse — tool chain validation + MCP authorization.
+                # The docstring above has always claimed both halves; only the
+                # chain-event count was ever measured, so ASI-02 read
+                # "satisfied" with no per-tool authorization anywhere. Both
+                # halves are now required for "satisfied" (exa-policy-08).
                 try:
                     chain_rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM tool_chain_events
                            WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
-                    if chain_rows and chain_rows["cnt"] > 0:
-                        results["ASI-02"] = "satisfied"
+                    chain_ok = bool(chain_rows and chain_rows["cnt"] > 0)
+                    results["ASI-02"] = self._asi_02_status(chain_ok)
                 except Exception:
                     pass
 
@@ -190,6 +217,15 @@ class OWASPASIAssessor(BaseAssessor):
                             results["ASI-08"] = "satisfied"
                     except Exception:
                         pass
+
+        # ASI-02's authorization half does not depend on the DB. Assess it even
+        # when there are no tool_chain_events rows (or no DB at all) so the risk
+        # is never left silently unassessed.
+        if "ASI-02" not in results:
+            try:
+                results["ASI-02"] = self._asi_02_status(False)
+            except Exception:
+                pass
 
         return results
 
