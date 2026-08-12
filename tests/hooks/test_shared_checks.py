@@ -276,7 +276,82 @@ def test_review_loop_precommit_respects_its_off_switch(shared, monkeypatch):
     assert shared.check_review_loop_precommit("Bash", {"command": "git commit -m x"}) is None
 
 
-# ── destructive git blocklist (headless path today) ───────────────────────
+# ── redirect targets feeding the D-ORCH-8 file tiers (exa-bench-06) ───────
+#
+# `_REDIRECT_TARGET_RE` was `>\s*([^\s|;&]+)`. Against
+# `echo pubkey >> ~/.ssh/authorized_keys` the first `>` matched, `\s*` matched
+# nothing, and the capture group took the SECOND `>` — so `file_path` became the
+# literal string ">", which matches no tier pattern and the append was ALLOWED.
+# The single-`>` form of the very same command was correctly blocked.
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # The bug: append forms resolved to ">" instead of the real path.
+        ("echo k >> ~/.ssh/authorized_keys", ["~/.ssh/authorized_keys"]),
+        ("echo k>>~/.ssh/authorized_keys", ["~/.ssh/authorized_keys"]),
+        ("cmd 1>> out.log", ["out.log"]),
+        ("cmd 2>> err.log", ["err.log"]),
+        ("cmd &>> all.log", ["all.log"]),
+        # Already worked — must keep working.
+        ("echo k > ~/.ssh/authorized_keys", ["~/.ssh/authorized_keys"]),
+        ("cmd 2> err.log", ["err.log"]),
+        ("cmd &> all.log", ["all.log"]),
+        ("> fresh.txt", ["fresh.txt"]),
+        # tee writes with no redirection operator at all.
+        ("echo k | tee ~/.ssh/authorized_keys", ["~/.ssh/authorized_keys"]),
+        ("echo k | tee -a ~/.ssh/authorized_keys", ["~/.ssh/authorized_keys"]),
+        # fd duplication is NOT a write to a file named "1".
+        ("make 2>&1", []),
+        ("make 2>&1 | tee build.log", ["build.log"]),
+        # Every target, not just the first.
+        ("echo hi > notes.md 2>> ~/.ssh/err", ["notes.md", "~/.ssh/err"]),
+        # Ordinary commands name nothing.
+        ("git status", []),
+        ("python -m pytest tests/ -q", []),
+    ],
+)
+def test_bash_redirect_targets_resolve_to_the_real_path(shared, command, expected):
+    writes = [p for p, is_write, _ in shared.bash_file_targets(command) if is_write]
+    assert writes == expected
+    assert ">" not in writes, "the capture group took the operator, not the path"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo pubkey >> ~/.ssh/authorized_keys",   # the reported bypass
+        "echo pubkey > ~/.ssh/authorized_keys",
+        "echo pubkey >>~/.ssh/authorized_keys",
+        "cat id >> /home/victim/.ssh/id_rsa",
+        "echo k | tee -a ~/.ssh/authorized_keys",
+        "cmd 2>> ~/.ssh/config",
+        "echo hi > notes.md 2>> ~/.ssh/authorized_keys",  # second target counts
+    ],
+)
+def test_append_redirect_into_a_zero_access_path_is_blocked(shared, command):
+    """The acceptance criterion: `>>` reaches the tiers like `>` always did."""
+    reason = shared.check_file_access_tiers("Bash", {"command": command})
+    assert reason, f"{command!r} wrote into a zero_access path and was ALLOWED"
+    assert "zero_access" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python -m pytest tests/ -q > /tmp/out.txt",
+        "make 2>&1 | tee build.log",
+        "echo '# notes' >> README.md",
+        "git status",
+    ],
+)
+def test_ordinary_redirects_are_still_allowed(shared, command):
+    """Widening the pattern must not start blocking real work."""
+    assert shared.check_file_access_tiers("Bash", {"command": command}) is None
+
+
+# ── destructive git blocklist (both paths since exa-bench-06) ─────────────
 
 
 @pytest.mark.parametrize(
