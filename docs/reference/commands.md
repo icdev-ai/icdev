@@ -3683,6 +3683,22 @@ python tools/databridge/connectors/clawhub_connector.py --health --json
 ## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
 
 ```bash
+# Cost budget — the DOWNGRADE gate on the LLMRouter chain (exa-policy-04)
+python tools/llm/cost_budget.py --status --json                                         # Current spend vs limit, and what the router would do
+python tools/llm/cost_budget.py --function code_generation --json                       # Evaluate one function's budget
+python tools/llm/cost_budget.py --explain code_generation --json                        # Declared chain + per-model price + what it downgrades to
+python tools/llm/cost_budget.py --gate                                                  # Exit 1 only when hard_action is 'block' and the limit is reached
+# The other four budget layers all BLOCK (token_tracker per agent, module_budget_tracker
+# per module, chain_orchestration per run, proxy_budgets per key). This one ASKs at a soft
+# threshold — ONCE per threshold per period, deduped via the append-only agent_approval_log —
+# and at the hard limit DOWNGRADES: the function's declared routing.<fn>.chain is reordered
+# so the affordable tier leads and the expensive model is demoted to the tail (never dropped),
+# so a long autonomous run keeps working instead of dying at 02:00.
+# Air-gap: local models declare pricing 0.0 and downgrade.prefer_local breaks price ties
+# local-first, so the downgrade lands on Ollama. No model id in Python — the order comes from
+# the chain and the pricing: block in args/llm_config.yaml (cost_budget:).
+# Spend reads ai_telemetry; an absent table reports `unmeasurable`, never a misleading zero.
+
 # AGX reasoning-architecture benchmark + leaderboard (agx-bench-01/02)
 python tools/llm/architectures/benchmark.py --dry-run --json                            # List task suite + registered architectures (no model calls)
 python tools/llm/architectures/benchmark.py --run --json                                # Run the bench (live models if reachable) -> data/agx/benchmark_latest.json
