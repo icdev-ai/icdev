@@ -6352,6 +6352,32 @@ def _is_dangerous_task(task_id: str) -> bool:
     return any(kw.lower() in desc for kw in _DANGEROUS_DESCRIPTION_KEYWORDS)
 
 
+def _scan_result_artifact(task_id: str):
+    """The scan task's result file in ``.tmp/``, or None.
+
+    Scan-only tasks (codelens, coherence, health_check) write their report to
+    ``.tmp/`` rather than committing anything, so this file is the one durable
+    trace that the underlying command actually RAN. It survives the agent being
+    killed, which is what makes it usable as evidence at a timeout — unlike
+    stdout, which Claude CLI only writes at exit and which is therefore empty
+    for exactly the runs that need evidence most.
+
+    Extracted from the inline lookup in ``_run_verify_checks`` Fallback D so the
+    timeout path and the verification path agree on what counts as proof;
+    the globs and the id-suffix strip are unchanged.
+    """
+    tmp_dir = BASE_DIR / ".tmp"
+    id_prefix = re.sub(r"-(codelens|coherence|e2e|scan)$", "", task_id)
+    try:
+        artifacts = (
+            list(tmp_dir.glob(f"codelens-{task_id}*.json"))
+            + list(tmp_dir.glob(f"codelens-{id_prefix}*.json"))
+        )
+    except OSError:  # unreadable .tmp — absence of proof, not proof
+        return None
+    return artifacts[0] if artifacts else None
+
+
 def _dir_owns_its_repo_root(work_dir: str) -> bool:
     """True when ``work_dir`` IS a git repo/worktree root, not a dir inside one.
 
@@ -6588,11 +6614,21 @@ def _run_verify_checks(task_id, claude_output):
                 "Verified (scan-only): process exited 0 — "
                 "no git commits expected for read-only validation task"
             )
-        if _ran_long:
+        # Reached only when the process did NOT exit 0 and produced no usable
+        # output — i.e. it crashed or was killed. Duration alone used to pass
+        # here ("ran >60s without crash"), but a run that is long AND did not
+        # exit cleanly is the signature of a kill, not of success; the same
+        # reasoning that marked hgx-vv-01 done on a timeout. Require the scan's
+        # own result artifact, which the command writes and which outlives the
+        # kill. Without it, fall through to the normal verification chain —
+        # Fallback D can still accept this task on a PASS signal, so a genuine
+        # scan that printed its result is not penalised.
+        _scan_artifact = _scan_result_artifact(task_id) if _ran_long else None
+        if _scan_artifact is not None:
             return True, (
-                "Verified (scan-only): process ran >60s without crash — "
-                "accepting as successful scan (stdout lost due to kill; "
-                "no git commits expected)"
+                f"Verified (scan-only): scan artifact {_scan_artifact.name} on "
+                f"disk after a >{SCAN_MIN_RUN_SECONDS}s run (stdout lost due to "
+                f"kill; no git commits expected)"
             )
         # If scan task crashed immediately (<60s, non-zero exit), fall through
         # to the normal checks which will reject it properly.
@@ -6964,15 +7000,11 @@ def _run_verify_checks(task_id, claude_output):
         except Exception:
             pass
         if any(cmd in _scan_desc for cmd in _SCAN_CMDS):
-            # Strongest signal: result artifact file in .tmp/
-            _tmp_dir = BASE_DIR / ".tmp"
-            _id_prefix = re.sub(r"-(codelens|coherence|e2e|scan)$", "", task_id)
-            _artifacts = (
-                list(_tmp_dir.glob(f"codelens-{task_id}*.json"))
-                + list(_tmp_dir.glob(f"codelens-{_id_prefix}*.json"))
-            )
-            if _artifacts:
-                return True, f"Verified: scan artifact exists ({_artifacts[0].name})"
+            # Strongest signal: result artifact file in .tmp/. Shared with the
+            # timeout-acceptance path so both agree on what counts as proof.
+            _artifact = _scan_result_artifact(task_id)
+            if _artifact is not None:
+                return True, f"Verified: scan artifact exists ({_artifact.name})"
             # Artifact may be gone (ephemeral) — fall back to output PASS signal.
             # These strings are emitted by codelens.py / coherence_checker.py on
             # success and are specific enough to avoid false positives.
@@ -9144,10 +9176,31 @@ def _check_completed():
                 # ── SCAN-ONLY TIMEOUT ACCEPTANCE ─────────────────────
                 # Scan tasks (pytest, codelens, coherence, companion) are
                 # read-only: they produce no git commits and Claude CLI's
-                # --output-format text yields empty stdout when killed.
-                # If the task ran for >90% of its budget, the underlying
-                # command almost certainly completed — Claude was just
-                # formatting the response when killed.  Accept as done.
+                # --output-format text yields empty stdout when killed. So the
+                # usual evidence is unavailable for exactly these runs, and
+                # without some allowance a scan that really did finish gets
+                # retried forever.
+                #
+                # The old allowance was `elapsed > task_budget * 0.9`, on the
+                # reasoning that a task which burned ~all its budget had
+                # probably finished the command and died while formatting. That
+                # test could never fail: this whole block is reached ONLY from
+                # `if elapsed > task_budget`, so `elapsed > task_budget * 0.9`
+                # is a tautology. In practice the rule was "any task_type=test
+                # whose description mentions pytest/coherence/companion is DONE
+                # when it times out" — with no evidence of any kind.
+                #
+                # It fired on hgx-vv-01 (2026-08-09), HGX's end-to-end
+                # verification task: killed at 3641s of a 3600s budget, marked
+                # done, zero output, nothing on a branch, and the card read
+                # 38/38 on a proof that did not exist.
+                #
+                # Duration is not evidence — past the budget, a LONGER run means
+                # more certainly killed, not more certainly finished. Require
+                # the one durable trace a scan leaves: its result artifact in
+                # .tmp/, which is written by the command itself and survives the
+                # agent being killed. No artifact -> fall through to the
+                # timeout-retry/quarantine path below, which is what it is for.
                 _SCAN_KW_TIMEOUT = ["pytest", "codelens", "coherence",
                                     "companion", "report pass/fail", "behave"]
                 try:
@@ -9161,19 +9214,23 @@ def _check_completed():
                 except Exception:
                     _stdesc = ""
                     _sttype = ""
-                _is_scan_timeout = (
-                    _sttype == "test"
-                    and any(kw in _stdesc for kw in _SCAN_KW_TIMEOUT)
-                    and elapsed > task_budget * 0.9
+                _scan_artifact = (
+                    _scan_result_artifact(task_id)
+                    if (_sttype == "test"
+                        and any(kw in _stdesc for kw in _SCAN_KW_TIMEOUT))
+                    else None
                 )
+                _is_scan_timeout = _scan_artifact is not None
                 if _is_scan_timeout:
                     _move_task(task_id, "done", actor="scheduler",
                               reason=(f"Verified (scan-only timeout): ran {int(elapsed)}s "
-                                      f"(budget {task_budget}s) — read-only validation "
-                                      f"task accepted without git commits"))
+                                      f"(budget {task_budget}s), scan artifact "
+                                      f"{_scan_artifact.name} on disk — read-only "
+                                      f"validation task accepted without git commits"))
                     print(
                         f"  Kanban: {task_id} SCAN-ONLY ACCEPTED — "
-                        f"ran {int(elapsed)}s of {task_budget}s budget"
+                        f"ran {int(elapsed)}s of {task_budget}s budget, "
+                        f"artifact {_scan_artifact.name}"
                     )
                     del _running[task_id]
                     _dispatch_times.pop(task_id, None)
