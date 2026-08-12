@@ -63,12 +63,29 @@ def bus(tmp_path, monkeypatch):
     ``_LISTENERS`` and ``bus_subscriber._REGISTERED`` are module globals; without
     resetting both, one test's subscriptions would fire during the next test's
     publish and the run counts below would be meaningless.
+
+    The temp DB carries the studio tables as well as the bus tables, and
+    ``event_sources`` is redirected to it alongside ``event_bus``. Only
+    ``event_bus`` used to be redirected, so ``event_sources.create_event_source``
+    -- reached through ``_canvas_source`` below -- ran against the ambient
+    ``<repo>/data/icdev.db``. A long-lived checkout's copy of that DB happens to
+    carry ``studio_event_sources``, so the suite passed there while failing 9/9
+    with ``no such table: studio_event_sources`` in any fresh worktree or CI
+    checkout, where it holds 23 tables and no studio tables at all. The suite was
+    asserting against ambient host state instead of its own fixture.
+
+    The studio DDL comes from ``tools.studio.init_db.STUDIO_TABLES`` rather than
+    being restated here, so this fixture cannot drift from the real schema the
+    way a hand-copied CREATE TABLE would.
     """
     from tools.db.storage import StorageConnection
+    from tools.studio.init_db import STUDIO_TABLES
 
     db_path = tmp_path / "bus.db"
     raw = sqlite3.connect(str(db_path))
     raw.executescript(_BUS_DDL)
+    for _ddl in STUDIO_TABLES.values():
+        raw.execute(_ddl)
     raw.commit()
     raw.close()
 
@@ -82,6 +99,15 @@ def bus(tmp_path, monkeypatch):
     monkeypatch.setattr(event_bus, "get_connection", _conn, raising=True)
     monkeypatch.setattr(event_bus, "get_canvas_connection", _conn, raising=True)
     monkeypatch.setattr(bus_subscriber, "_REGISTERED", set(), raising=True)
+    # event_sources binds get_connection at import, so patch the module
+    # attribute: a string target could resolve through the `tools` shim to a
+    # different module object than the one create_event_source actually calls.
+    monkeypatch.setattr(event_sources, "get_connection", _conn, raising=True)
+    # ...and this module's own top-level import, which the _workflow() /
+    # _trigger() helpers below use. Without it they seed their rows into the
+    # ambient DB while the code under test reads the temp one, which is the
+    # same split-brain the fixture exists to prevent.
+    monkeypatch.setitem(globals(), "get_connection", _conn)
     return event_bus
 
 

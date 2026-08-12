@@ -503,3 +503,12 @@ tests/test_inbox_adapters.py
 # different depths — a path bug shows up as ZERO templates compared, which is a
 # silently-passing check rather than a failure.
 tests/test_dwo_dispatch_parity.py
+
+# test_dwo_bus_subscriber.py was never in any allowlist, so CI never ran it --
+# which is why main stayed green while it failed 9/9 in every fresh checkout.
+# It asserted against the ambient <repo>/data/icdev.db, which carries
+# studio_event_sources in a long-lived checkout and 23 tables with none of the
+# studio schema in a new one. Now hermetic (its own tmp SQLite, studio DDL from
+# tools/studio/init_db.py) and listed here so the ambient-state regression
+# cannot come back unnoticed. ~1.2s, in-tmpdir SQLite, no DB service/LLM/network.
+tests/test_dwo_bus_subscriber.py
