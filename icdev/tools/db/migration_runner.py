@@ -476,6 +476,27 @@ class MigrationRunner:
                 "INSERT OR IGNORE INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES (%s, %s, %s, %s)",
                 (version, name, migration.get("checksum", ""), elapsed_ms),
             )
+            # A version that was ROLLED BACK still owns its row, so the INSERT
+            # above is a silent no-op for it — and because get_pending_migrations
+            # counts a rolled-back version as pending (get_applied_migrations
+            # filters on rolled_back_at IS NULL), such a migration could never
+            # leave the pending list no matter how many times it succeeded. It
+            # re-ran its DDL on every pass, forever, reporting success each time.
+            #
+            # Observed on the live board: 20260808161736_sag_standing_goals was
+            # applied and rolled back 106ms apart on 2026-08-08 and had been
+            # stuck pending ever since.
+            #
+            # Clearing the marker is what "applied" means here: version is
+            # UNIQUE, so there is one row per version describing its CURRENT
+            # state, not its history. Scoped to rolled-back rows so a normally
+            # applied migration's original applied_at is never rewritten.
+            conn.execute(
+                "UPDATE schema_migrations SET rolled_back_at = NULL, name = %s, "
+                "checksum = %s, execution_time_ms = %s "
+                "WHERE version = %s AND rolled_back_at IS NOT NULL",
+                (name, migration.get("checksum", ""), elapsed_ms, version),
+            )
             conn.commit()
 
             logger.info("Migration %s applied in %dms", version, elapsed_ms)
