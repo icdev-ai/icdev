@@ -58,6 +58,19 @@ def _ago(**kw) -> str:
     return (_utcnow() - timedelta(**kw)).isoformat()
 
 
+#: When the seeded failure happened. Two tests below need this from opposite
+#: directions: the positive control asserts ``find_recent_failures(24)`` DOES
+#: return the row, and the history test asserts requeue leaves the value alone.
+#: Both hold only while the timestamp stays inside that 24h window.
+#:
+#: This was the literal "2026-08-06T09:00:00+00:00". It satisfied both when it
+#: was written and then quietly aged out, taking 5 tests across this file and
+#: test_kanban_requeue.py with it — including the positive control whose whole
+#: job is to catch a fixture that makes find_recent_failures return []. A date
+#: literal in a fixture is a scheduled failure; keep it relative to now.
+_FAILED_AT = _ago(hours=2)
+
+
 def _schema(conn):
     conn.executescript(
         """
@@ -170,7 +183,7 @@ def _insert(raw, tid, *, status="suggested", failure_count=0,
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (tid, f"title {tid}", f"desc {tid}", "build", priority, status,
          updated_at or _ago(hours=72), None, branch_name, depends_on_task_id,
-         failure_count, "2026-08-06T09:00:00+00:00", last_failure_reason),
+         failure_count, _FAILED_AT, last_failure_reason),
     )
     raw.commit()
 
@@ -256,7 +269,7 @@ def test_decay_promotion_preserves_failure_count(decay_only, db):
         "laundered and fc>=5 becomes unreachable for anything that cycles "
         "through 'suggested'"
     )
-    assert row["last_failure_at"] == "2026-08-06T09:00:00+00:00", (
+    assert row["last_failure_at"] == _FAILED_AT, (
         "last_failure_at is history too; only the *reason* describes an attempt "
         "that is no longer current"
     )
