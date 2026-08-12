@@ -512,3 +512,16 @@ tests/test_dwo_dispatch_parity.py
 # tools/studio/init_db.py) and listed here so the ambient-state regression
 # cannot come back unnoticed. ~1.2s, in-tmpdir SQLite, no DB service/LLM/network.
 tests/test_dwo_bus_subscriber.py
+
+# test_audit_row_hash.py pins the migration-149 audit hash chain to literal
+# bytes. Three parties compute that digest -- the chain writer, the online
+# verifier (blockchain/provenance_verifier.py) and the offline bundle verifier
+# (agent_case/bundle_format.py) -- and a one-field disagreement between any two
+# makes the chain report tampering on EVERY row, which is a failure mode that
+# surfaces as "all your audit evidence is invalid" rather than as a test error.
+# It also asserts no inline copy of the recipe has crept back into either
+# consumer or its icdev/ mirror. The digest literals were computed before the
+# helper was extracted, so a change of meaning fails loudly rather than
+# re-baselining itself. ~0.3s, stdlib only plus one in-memory SQLite
+# connection, no DB service/LLM/network (exa-audit-01).
+tests/test_audit_row_hash.py

@@ -12,7 +12,6 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -23,16 +22,20 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection
 
+# The ONE audit-row hash recipe. The offline verifier
+# (tools/agent_case/bundle_format.py) and the chain writer call the same helper —
+# if this file computed its own, every row would report as tampered.
+from icdev.tools.audit.row_hash import GENESIS_HASH, compute_audit_row_hash
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Optional imports
 try:
-    from tools.crypto.key_manager import verify_payload, GENESIS_HASH
+    from tools.crypto.key_manager import verify_payload
 
     HAS_DEPS = True
 except ImportError:
     HAS_DEPS = False
-    GENESIS_HASH = "0" * 64
 
 
 def _get_db(db_path: Path = None):
@@ -61,21 +64,7 @@ def verify_audit_integrity(entry_id: int, db_path: Path = None) -> dict:
         }
 
         # 1. Verify row hash
-        row_content = "|".join(
-            str(v or "")
-            for v in (
-                row["id"],
-                row["project_id"] or "",
-                row["event_type"],
-                row["actor"],
-                row["action"],
-                row["details"] or "",
-                row["classification"] or "",
-                row["ip_address"] or "",
-                row["session_id"] or "",
-            )
-        )
-        expected_hash = hashlib.sha256(row_content.encode()).hexdigest()
+        expected_hash = compute_audit_row_hash(row)
         if row["hash"] and row["hash"] == expected_hash:
             result["hash_valid"] = True
 

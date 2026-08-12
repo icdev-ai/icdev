@@ -22,9 +22,11 @@ The three recipes, and where each MUST stay in step with its writer:
    identical to ``.claude/hooks/send_event.py::compute_hmac``. That file is not
    importable (``.claude`` is not a package name), so the two lines are
    duplicated here and pinned by ``tests/test_agov_case_bundle_verifier.py``.
-3. ``compute_audit_row_hash`` — the ``audit_trail.hash`` recipe already used by
-   ``tools/blockchain/provenance_verifier.py::verify_audit_integrity`` for the
-   migration-149 chain columns.
+3. ``compute_audit_row_hash`` — the ``audit_trail.hash`` recipe for the
+   migration-149 chain columns. Unlike the two above it is NOT duplicated here:
+   it is re-exported from ``tools/audit/row_hash.py``, the single definition the
+   chain writer and ``provenance_verifier.py`` also call. That module is
+   stdlib-only and touches no database, so importing it costs this one nothing.
 
 Usage:
     from tools.agent_case.bundle_format import build_manifest, write_manifest
@@ -34,6 +36,8 @@ import hashlib
 import hmac
 import json
 from pathlib import Path
+
+from icdev.tools.audit import row_hash as _row_hash
 
 # --- Manifest --------------------------------------------------------------
 
@@ -56,21 +60,16 @@ HMAC_SECRET_ENV = "ICDEV_HOOK_HMAC_SECRET"
 DEFAULT_HOOK_HMAC_SECRET = "icdev-default-hmac-key"
 
 # --- audit_trail hash chain (migration 149) --------------------------------
+#
+# Re-exported, not redefined. tools/audit/row_hash.py is the single definition
+# the chain writer and provenance_verifier.py also call; a copy here would drift
+# and report tampering on every row. These four names stay part of this module's
+# published surface because a bundle verifier imports them from here.
 
-GENESIS_HASH = "0" * 64
-
-# Field order is load-bearing: it is the join order in provenance_verifier.py.
-AUDIT_HASH_FIELDS = (
-    "id",
-    "project_id",
-    "event_type",
-    "actor",
-    "action",
-    "details",
-    "classification",
-    "ip_address",
-    "session_id",
-)
+AUDIT_HASH_FIELDS = _row_hash.AUDIT_HASH_FIELDS
+GENESIS_HASH = _row_hash.GENESIS_HASH
+audit_row_content = _row_hash.audit_row_content
+compute_audit_row_hash = _row_hash.compute_audit_row_hash
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -95,12 +94,6 @@ def compute_event_hmac(payload: str, secret: str) -> str:
     the parsed JSON would change key order/spacing and break every signature.
     """
     return hmac.new(secret.encode(), (payload or "").encode(), hashlib.sha256).hexdigest()
-
-
-def compute_audit_row_hash(row: dict) -> str:
-    """SHA-256 of an audit_trail row, per the migration-149 chain recipe."""
-    content = "|".join(str(row.get(field) or "") for field in AUDIT_HASH_FIELDS)
-    return hashlib.sha256(content.encode()).hexdigest()
 
 
 def is_safe_member_path(member_path: str) -> bool:
