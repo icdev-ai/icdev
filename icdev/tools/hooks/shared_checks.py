@@ -378,9 +378,60 @@ _FILE_ACCESS_TIERS_CACHE: Dict[str, Optional[dict]] = {}
 _RM_TARGET_RE = re.compile(r"\brm\s+(?:-[a-z]*\s+)*([^\s|;&]+)")
 _REDIRECT_TARGET_RE = re.compile(r">\s*([^\s|;&]+)")
 
+#: Inventories a tier may pull its patterns from via ``inherits:``. One name
+#: today; a dict rather than an ``if`` so adding a second is data, not control
+#: flow.
+_INHERITABLE = ("sensitive_paths",)
+
+_SENSITIVE_PATHS_CACHE: Dict[str, Optional[object]] = {}
+
+
+def _load_sensitive_paths(root: Path):
+    """Load ``tools/security/sensitive_paths.py`` BY PATH. ``None`` if absent.
+
+    By path rather than ``from tools.security import sensitive_paths`` for the
+    same reason this module is itself loaded by path from
+    ``.claude/hooks/pre_tool_use.py``: that hook is a fresh interpreter on every
+    tool call and importing the ``tools`` package alone costs ~92ms there. The
+    inventory module has no first-party imports precisely so this works.
+    """
+    key = str(root)
+    if key in _SENSITIVE_PATHS_CACHE:
+        return _SENSITIVE_PATHS_CACHE[key]
+    module = None
+    path = root / "tools" / "security" / "sensitive_paths.py"
+    name = "icdev_shared_sensitive_paths"
+    if path.exists():
+        try:
+            import importlib.util
+
+            spec = importlib.util.spec_from_file_location(name, path)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                # Registered BEFORE exec_module, not after: @dataclass resolves
+                # sys.modules[cls.__module__] while processing the class, so a
+                # by-path module carrying a dataclass raises AttributeError on
+                # 3.12+ without this line. Measured, not defensive.
+                sys.modules[name] = module
+                try:
+                    spec.loader.exec_module(module)
+                except Exception:
+                    sys.modules.pop(name, None)
+                    raise
+        except Exception:
+            module = None
+    _SENSITIVE_PATHS_CACHE[key] = module
+    return module
+
 
 def _read_file_access_tiers(root: Path) -> Optional[dict]:
-    """Uncached read of the tier config. Returns None when absent or disabled."""
+    """Uncached read of the tier config. Returns None when absent or disabled.
+
+    Resolves each tier's ``inherits:`` against the shared inventory in
+    ``args/sensitive_paths.yaml``, so ``zero_access`` no longer keeps its own
+    hand-maintained copy of the credential globs (exa-bench-09). A tier's own
+    ``patterns:`` are kept and unioned, not replaced.
+    """
     try:
         import yaml
     except ImportError:
@@ -393,9 +444,24 @@ def _read_file_access_tiers(root: Path) -> Optional[dict]:
         tiers = (config or {}).get("file_access_tiers", {})
         if not tiers.get("enabled", False):
             return None
-        return tiers
     except Exception:
         return None
+
+    inventory = _load_sensitive_paths(root)
+    for tier in tiers.values():
+        if not isinstance(tier, dict):
+            continue
+        source = tier.get("inherits")
+        if source not in _INHERITABLE:
+            continue
+        if inventory is None:
+            # The tier DECLARED an inventory it could not load. Leaving its own
+            # (now empty) list in place would turn a missing file into a silently
+            # unguarded tier, so the config is treated as unusable instead.
+            return None
+        own = list(tier.get("patterns") or [])
+        tier["patterns"] = list(inventory.patterns()) + own
+    return tiers
 
 
 def _load_file_access_tiers(root: Path) -> Optional[dict]:
@@ -439,6 +505,33 @@ def _matches_tier(file_path: str, patterns: List[str]) -> bool:
     return False
 
 
+def _bash_read_disclosure(
+    command: str, repo_root: Optional[Path] = None
+) -> Optional[str]:
+    """Block reason when a shell command DISCLOSES credential material.
+
+    Reads only. ``touch`` and ``mkdir`` against a sensitive path are writes, and
+    a write outside the worktree is a separate, separately-measured gap
+    (exa-bench-07) — folding it in here would report that gap as closed when it
+    is not.
+    """
+    inventory = _load_sensitive_paths(_resolve_root(repo_root))
+    if inventory is None or not command:
+        return None
+    try:
+        reason = inventory.command_disclosure(command)
+    except Exception:
+        return None  # a broken guard must not be why a session cannot work
+    if not reason:
+        return None
+    return (
+        f"BLOCKED: this command reads credential material — {reason}. The "
+        "sensitive-path inventory is args/sensitive_paths.yaml (exa-bench-09); "
+        "read the credential through a broker (tools/security/credential_broker.py) "
+        "rather than off disk."
+    )
+
+
 def check_file_access_tiers(
     tool_name: str, tool_input: dict, repo_root: Optional[Path] = None
 ) -> Optional[str]:
@@ -462,6 +555,16 @@ def check_file_access_tiers(
         is_write = True
     elif tool_name == "Bash":
         command = tool_input.get("command", "")
+        # A READ of a protected path. Checked first and returned immediately,
+        # because the two shapes below are both WRITE shapes: this branch used
+        # to inspect a command only for `rm` targets and `>` redirects, so a
+        # plain `cat ~/.aws/credentials` was never examined at all — the zero
+        # tier blocks the Read TOOL and says nothing about the shell
+        # (exa-bench-09). `env | grep -i key` is caught by the same call: it
+        # discloses a credential with no path for a path list to match.
+        reason = _bash_read_disclosure(command, repo_root)
+        if reason:
+            return reason
         # Check for rm/delete commands targeting protected files
         rm_match = _RM_TARGET_RE.search(command)
         if rm_match:
