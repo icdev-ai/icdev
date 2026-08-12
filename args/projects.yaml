@@ -7824,3 +7824,60 @@ projects:
   - key: flap
     title: FLAP - Surface re-fire churn and stale rows
     priority: medium
+- key: tsg
+  name: 'TSG - Test Suite Gap Remediation'
+  description: 'CI runs 148 of 2,120 test files; the other 1,972 (93%, 19.5 MB of test
+    source) have never gated a merge. Measured 2026-08-11 by running the uncovered set
+    against a clean worktree off origin/main, then RE-running the implicated files
+    against current main (13 commits later) and finally each one ALONE in its own
+    process. Batched counts are an upper bound - a shared process carries module
+    globals, leaked monkeypatches, sys.path edits and DB state between files - so the
+    isolated run is the number that counts: 531 failure lines across 87 files, with
+    only 2 files failing solely as batch interference. Not a hypothesis: the sweep
+    already found remediation_simulator._run_nqe_layer DEAD since June (swallowed
+    ImportError returning "skipped", indistinguishable from a legitimately unreachable
+    Forward API), and 12 PRs of stale-test repairs merged the same day. The pattern in
+    almost every cluster is a deliberate CORRECT change to the code and a test that
+    never learned about it - canvas RLS accessor, a new require_role gate, nav moved
+    into a dropdown, merge=union legitimately extended. Those are cheap. The dangerous
+    minority is the reverse, where the test was right and the code is dead. MANUAL-ONLY:
+    every task is gated behind tsg-gate-00 via depends_on_task_id (the held gate row
+    alone does not hold - the dependency is what promote_backlog_to_scheduled checks),
+    and PRs open --draft because pr_watcher auto-merges any CI-green kanban/* branch.
+    Do NOT bulk-widen args/ci_test_files/*.txt: those files are ungated AND an unknown
+    number are red, so adding them wholesale turns main red. Add each file to the
+    allowlist as it is fixed, which is what #1526 and #1533 already did.'
+  task_prefix: tsg-
+  default_open: true
+  briefs:
+  - 'DEAD: the minority where the CODE is wrong and the test was correctly reporting it.
+    Highest value and the only epic that can change production behaviour. Decide
+    per-item whether to implement the missing API, retire the caller, or delete the
+    aspirational test - do not assume the test is stale just because it is old
+    (tsg-dead-01..02)'
+  - 'STALE: correct code, test never updated after a deliberate change. Mechanical, and
+    the method is proven by 12 PRs merged 2026-08-11. Fix the TEST, never weaken the
+    code - where the new behaviour is a security gate, ADD an assertion for it rather
+    than stubbing it away (tsg-stale-01..05)'
+  - 'GEN: tests/genesis_auto/, 116 generated files asserting PRIVATE module constants.
+    Their guard catches ImportError but not AttributeError, so drift surfaces as hard
+    failure rather than a skip. Policy decision, not a repair (tsg-gen-01)'
+  - 'ISO: files that pass alone and fail in a batch - leaked module state, not a broken
+    assertion. Only 2 today, but they are a worse bug class than a stale assertion
+    because they make every neighbouring result untrustworthy (tsg-iso-01)'
+  epics:
+  - key: gate
+    title: GATE - manual hold and allowlist policy
+    priority: critical
+  - key: dead
+    title: DEAD - production code the tests correctly reported as broken
+    priority: high
+  - key: stale
+    title: STALE - correct code, test never learned about the change
+    priority: medium
+  - key: gen
+    title: GEN - generated scaffolding for APIs that do not exist
+    priority: medium
+  - key: iso
+    title: ISO - test-isolation defects
+    priority: medium
