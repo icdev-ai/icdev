@@ -645,11 +645,19 @@ def authorize_tool(tool_name: str, user_role: Optional[str]) -> dict:
 def _write_authz_audit(decision: dict, tenant_id: str, user_id: str, action: str) -> None:
     """Append an authorization decision to the platform audit trail.
 
-    Mirrors ``tools/saas/auth/middleware.py::_log_auth_event`` exactly -- same
-    table, same column list -- so this cannot drift from the live schema.
-    Best-effort: an audit-trail outage must not turn into a tenant-visible
-    500 on a call the policy already allowed.
+    Same table and column list as ``tools/saas/auth/middleware.py::
+    _log_auth_event``, so this cannot drift from the live schema.
+
+    Best-effort: an audit-trail outage must not turn into a tenant-visible 500
+    on a call the policy already allowed.  But "best-effort" is only safe if
+    the failure path cleans up -- ``get_connection`` hands out PostgreSQL
+    connections from a ThreadedConnectionPool and ``close()`` is ``putconn()``,
+    so a swallowed exception that never rolls back either leaks the connection
+    until the pool is exhausted or returns it to the pool inside an aborted
+    transaction, where the next borrower sees "current transaction is aborted"
+    on unrelated queries.  Hence the rollback and the ``finally``.
     """
+    conn = None
     try:
         from tools.db.storage import get_connection
 
@@ -670,9 +678,19 @@ def _write_authz_audit(decision: dict, tenant_id: str, user_id: str, action: str
             ),
         )
         conn.commit()
-        conn.close()
-    except Exception as exc:  # pragma: no cover - audit outage must not block
+    except Exception as exc:  # audit outage must not block an allowed call
         logger.debug("Could not write MCP authz audit row: %s", exc)
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def log_authz_decision(decision: dict, tenant_id: str, user_id: str, surface: str) -> None:

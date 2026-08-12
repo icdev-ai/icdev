@@ -77,6 +77,24 @@ def client():
     return app.test_client()
 
 
+
+def _patch_get_connection(monkeypatch, factory):
+    """Patch ``get_connection`` where ``_write_authz_audit`` actually reads it.
+
+    ``tools/`` is a backward-compat shim over ``icdev.tools``, and
+    ``import tools.db.storage as st`` does NOT bind the same object as
+    ``sys.modules["tools.db.storage"]`` -- patching the former leaves the real
+    connection in place and the test silently exercises the live database.
+    ``importlib.import_module`` resolves to the sys.modules entry, which is
+    what the function-local ``from tools.db.storage import get_connection``
+    reads.
+    """
+    import importlib
+
+    module = importlib.import_module("tools.db.storage")
+    monkeypatch.setattr(module, "get_connection", factory)
+
+
 def _rpc(client, role, method, params=None, rpc_id=1):
     body = {"jsonrpc": "2.0", "id": rpc_id, "method": method}
     if params is not None:
@@ -391,6 +409,55 @@ def test_authz_audit_insert_matches_the_live_schema(monitor):
     details = row[2] if isinstance(row[2], dict) else json.loads(row[2])
     assert details["tool"] == "ssp_generate"
     assert details["surface"] == surface
+
+
+def test_failed_audit_write_rolls_back_and_returns_the_connection(monkeypatch, monitor):
+    """A swallowed audit failure must not poison the connection pool.
+
+    ``get_connection`` hands out pooled PostgreSQL connections and ``close()``
+    is ``putconn()``.  Swallowing the exception without rolling back would
+    either leak the connection until the pool is exhausted or hand it back
+    mid-abort, so the next borrower fails on unrelated queries.
+    """
+    calls = []
+
+    class _BrokenConn:
+        def execute(self, *a, **kw):
+            raise RuntimeError("audit table is gone")
+
+        def commit(self):
+            calls.append("commit")
+
+        def rollback(self):
+            calls.append("rollback")
+
+        def close(self):
+            calls.append("close")
+
+    _patch_get_connection(monkeypatch, lambda *a, **kw: _BrokenConn())
+
+    # Must not raise -- an audit outage cannot 500 a call the policy allowed.
+    mcp_http._write_authz_audit({"tool": "ssp_generate"}, "t", "u", "mcp.tool.would_deny")
+
+    assert calls == ["rollback", "close"]
+
+
+def test_audit_write_closes_the_connection_on_success(monkeypatch, monitor):
+    calls = []
+
+    class _OkConn:
+        def execute(self, *a, **kw):
+            calls.append("execute")
+
+        def commit(self):
+            calls.append("commit")
+
+        def close(self):
+            calls.append("close")
+
+    _patch_get_connection(monkeypatch, lambda *a, **kw: _OkConn())
+    mcp_http._write_authz_audit({"tool": "ssp_generate"}, "t", "u", "mcp.tool.would_deny")
+    assert calls == ["execute", "commit", "close"]
 
 
 def test_allowed_calls_are_not_audited_as_denials(monitor, audited):
