@@ -142,6 +142,13 @@ tests/test_init_goals_and_selective.py
 # instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
 tests/test_bootstrap_parity.py
 
+# test_scheduled_dispatch_reclaim.py: startup_recovery sweeps only
+# in_progress, so a dispatch that dies BEFORE the row moves there leaves it
+# in `scheduled` holding a dead pid that nothing looks at — neither running
+# nor reclaimable, and its slot never used. exa-bench-10 sat that way for 71
+# minutes with two of three slots free. <2s, fakes the connection, no DB.
+tests/test_scheduled_dispatch_reclaim.py
+
 # test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
 # objects, so a fix landed in one while the other runs is only half live and
 # the stale half fails SILENTLY. #1542 shipped that way and two tasks were
@@ -730,3 +737,26 @@ tests/test_agent_adapter_no_inert_stubs.py
 # unvendored rather than as covered. Pure YAML/file parsing plus a tmp_path
 # SQLite ACE db; ~13s, no LLM or network.
 tests/test_ski_roles_lifecycle.py
+# tsg-dead-02: the NDC remediation simulator. Was 17/18 red since the commit that
+# added it (36d611a31) — the fixture handed the module a raw sqlite3.Connection,
+# but tools/network/db/init_db.get_connection ALWAYS returns a StorageConnection,
+# which is what translates the module's PG-native %s placeholders on the SQLite
+# path. Gated here so it cannot rot again. ~1s, in-memory SQLite, no LLM or network.
+tests/test_remediation_simulator.py
+# tsg-dead-01: remediation_simulator's NQE layer (Layer 2) imported two symbols
+# from tools.network.advisory that have never existed there. The ImportError was
+# swallowed by a bare `except Exception` and returned {"verdict": "skipped"} --
+# which is ALSO the correct answer when the Forward Networks API is genuinely
+# unreachable, so a layer that had never once executed was indistinguishable from
+# normal degraded operation. It stayed that way for six weeks because the only
+# suite covering the simulator mocks _run_nqe_layer out entirely.
+# test_remediation_nqe_layer.py pins the fix from both sides: pass/warn are
+# reachable (the layer really runs), and a wiring defect -- missing symbol, wrong
+# signature -- RAISES instead of being laundered back into "skipped". Every
+# "skipped" now carries a reason, so a dead layer is legible again.
+# test_advisory.py was 24-failing since the commit that created it; it specified
+# an advisory module that was never built, against the migration-220 nc_advisories
+# shape rather than the init_db.py one the live code writes. It now specifies the
+# module that actually ships. Both are pure-Python: no DB, LLM or network.
+tests/test_remediation_nqe_layer.py
+tests/test_advisory.py
