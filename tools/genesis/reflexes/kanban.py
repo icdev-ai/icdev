@@ -2532,6 +2532,22 @@ def _get_due_tasks() -> list:
                 )
         result = filtered_result
 
+        # A `scheduled` row can hold a dispatch_pid whose process is gone: the
+        # dispatch died before the row reached in_progress, so startup_recovery
+        # — which sweeps WHERE status = 'in_progress' — never looks at it. The
+        # row is then neither running nor reclaimable and the slot it would have
+        # used is never used. Reclaim per cycle rather than at startup only,
+        # because the death happens mid-run. Conservative: a PID whose liveness
+        # cannot be determined is left alone (exa-bench-10, 2026-08-12).
+        try:
+            from tools.kanban.startup_recovery import (
+                reclaim_stale_scheduled_dispatches,
+            )
+
+            reclaim_stale_scheduled_dispatches()
+        except Exception as _rc_exc:  # noqa: BLE001 — never wedge dispatch
+            logger.warning("kanban: scheduled-dispatch reclaim skipped: %s", _rc_exc)
+
         # Rate-limit both scheduled dispatch and backlog auto-promotion.
         # Cap scheduled tasks by available slots so we never exceed MAX_IN_PROGRESS.
         current_in_progress = _count_in_progress()
