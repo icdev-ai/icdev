@@ -41,11 +41,25 @@ CREATE TABLE IF NOT EXISTS nc_remediation_actions (
 
 @pytest.fixture
 def mem_db():
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=OFF")
-    conn.executescript(_SCHEMA)
-    return conn
+    """A connection matching the contract of `tools.network.db.init_db.get_connection`.
+
+    That function ALWAYS returns a `StorageConnection` — on PostgreSQL directly,
+    and on the SQLite fallback by wrapping the raw sqlite3 connection, precisely
+    "so NC callers' PG-native %s placeholders translate to ? on the SQLite path
+    too". `remediation_simulator` is one of those callers: its SQL is authored
+    for PostgreSQL, as CLAUDE.md requires of runtime call sites.
+
+    So the fixture must wrap too. Handing the module a bare sqlite3.Connection
+    stubs out the translation layer that production always supplies, and every
+    query dies with `near "%": syntax error` — a defect in the seam, not the code.
+    """
+    from tools.db.storage import StorageConnection
+
+    raw = sqlite3.connect(":memory:")
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA foreign_keys=OFF")
+    raw.executescript(_SCHEMA)
+    return StorageConnection(raw, "sqlite")
 
 
 def _insert_action(conn, **kwargs) -> str:
@@ -311,6 +325,42 @@ class TestRollbackSteps:
                 result = simulate_remediation(row_id)
         first_step = result["rollback_steps"][0]
         assert "core-rtr-99" in first_step
+
+
+class TestConnectionSeamContract:
+    """Pin the invariant the whole file rests on.
+
+    These tests fail with `near "%": syntax error` the moment `_nc_conn` is
+    handed a connection that does not translate. There are two ways to make
+    that green, and only one is correct: fix the fixture (done), or weaken the
+    module's SQL to SQLite `?` placeholders — which CLAUDE.md forbids of runtime
+    call sites and which would break the PostgreSQL path this canvas runs on in
+    production. This test rejects the second one.
+    """
+
+    def test_module_sql_is_pg_native(self):
+        import inspect
+
+        from tools.network import remediation_simulator
+
+        src = inspect.getsource(remediation_simulator.simulate_remediation)
+        assert "WHERE id = %s" in src, (
+            "simulate_remediation must author PostgreSQL-native placeholders; "
+            "translation to SQLite is StorageConnection's job, not the call site's"
+        )
+        assert "WHERE id = ?" not in src
+
+    def test_raw_sqlite_connection_is_not_the_seam(self, mem_db):
+        """A bare sqlite3.Connection cannot satisfy the contract — prove it."""
+        row_id = _insert_action(mem_db)
+        raw = sqlite3.connect(":memory:")
+        raw.row_factory = sqlite3.Row
+        raw.executescript(_SCHEMA)
+        with patch("tools.network.remediation_simulator._nc_conn", return_value=raw):
+            with _patch_nqe_skipped():
+                from tools.network.remediation_simulator import simulate_remediation
+                result = simulate_remediation(row_id)
+        assert result["error"] == "db_error"
 
 
 class TestReturnShape:

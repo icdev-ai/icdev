@@ -716,3 +716,10 @@ tests/test_agent_policy_builtins.py
 tests/test_copilot_cli_adapter.py
 tests/test_goose_cli_adapter.py
 tests/test_agent_adapter_no_inert_stubs.py
+
+# tsg-dead-02: the NDC remediation simulator. Was 17/18 red since the commit that
+# added it (36d611a31) — the fixture handed the module a raw sqlite3.Connection,
+# but tools/network/db/init_db.get_connection ALWAYS returns a StorageConnection,
+# which is what translates the module's PG-native %s placeholders on the SQLite
+# path. Gated here so it cannot rot again. ~1s, in-memory SQLite, no LLM or network.
+tests/test_remediation_simulator.py
