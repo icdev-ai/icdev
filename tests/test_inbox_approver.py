@@ -484,7 +484,15 @@ _FROZEN_SIGNATURES = {
 _FROZEN_DATACLASS_FIELDS = {
     "ApprovalRequest": ["tool_name", "tool_input", "classification", "actor"],
     "ApprovalDecision": ["approved", "reason", "actor"],
-    "Classification": ["tool_name", "tier", "rule", "detail", "requires_approval"],
+    # `confidentiality` appended with a default by exa-bench-09 — a SECOND axis
+    # (disclosure) alongside `tier` (reversibility), not a change to any field
+    # this pin already covered. Appended, so every positional construction and
+    # every reader of the five original fields is unaffected, which is the
+    # compatibility this test exists to protect.
+    "Classification": [
+        "tool_name", "tier", "rule", "detail", "requires_approval",
+        "confidentiality",
+    ],
     "GateEvent": [
         "tool_name", "tier", "requires_approval", "allowed", "reason", "actor",
         "recorded", "extra",

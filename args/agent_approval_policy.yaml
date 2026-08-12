@@ -211,3 +211,31 @@ command_patterns:
       detail: local VCS mutation
     - pattern: 'mkdir|touch\b'
       detail: creates a local path
+
+# ---------------------------------------------------------------------------
+# CONFIDENTIALITY — the second dimension (exa-bench-09)
+#
+# Everything above answers "can this be UNDONE?". This answers "does this
+# DISCLOSE a credential?", and the two are independent: a read of ~/.netrc is
+# perfectly reversible — nothing changed — and completely unrecoverable — the
+# credential is out and cannot be called back. The four tiers have no word for
+# that, so the word is added here rather than by mis-tiering read_file as
+# irreversible (which is false, and which would make every ordinary read
+# prompt).
+#
+# Consulted INDEPENDENTLY of the tier, which is what lets it hold a tool the
+# `reversible` list exempts from content escalation. That exemption is NOT
+# removed and must not be: it is what stops read_file("how do I git push
+# safely") halting for human approval, and a gate that prompts on reads teaches
+# operators to approve reflexively.
+#
+# The path list is NOT here. It is args/sensitive_paths.yaml — one inventory,
+# also consumed by args/file_access_tiers.yaml (zero_access) and by
+# agent_workflow_tools in args/security_gates.yaml. Three copies of a
+# credential list is three lists that drift, and the drift is silent: the
+# surface that falls behind still answers "allowed".
+# ---------------------------------------------------------------------------
+confidentiality:
+  # Off makes a credential read classify exactly like a docstring again. It is
+  # a toggle so an operator can measure, not so a run can be made quieter.
+  enabled: true

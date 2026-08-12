@@ -659,6 +659,18 @@ tests/test_codex_cli_adapter.py
 # unit. Both are decided from injected report data, so no DB service, LLM or
 # network; ~3s.
 tests/test_coherence_capability_liveness.py
+# test_sensitive_paths.py is the inventory behind exa-bench-09 -- ONE credential
+# path list consumed by three gates (the zero_access file tier, approval_gate's
+# confidentiality rule, and agent_tool_gate.check_path_allowed). It earns its own
+# slot alongside test_skip_permissions_compensating_controls.py because that one
+# measures the CONSUMERS and this one measures the list, and the list can regress
+# in two directions that look nothing alike: too NARROW is how the tier came to
+# cover **/credentials.json but not ~/.aws/credentials in the first place, and
+# too BROAD would silently absorb exa-bench-07's write probes and report that gap
+# as closed. Both directions are asserted here and neither is visible from the
+# consumer side. Pure matching against one YAML -- no DB service, LLM or network;
+# ~0.7s (exa-bench-09).
+tests/test_sensitive_paths.py
 
 # test_cost_budget_downgrade.py earns a slot because the property it pins is one
 # a well-meaning edit reverses without noticing: this budget layer DOWNGRADES

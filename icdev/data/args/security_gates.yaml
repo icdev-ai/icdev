@@ -1880,9 +1880,27 @@ agent_workflow_tools:
   nist_controls: [AC-3, AC-6, AU-2, AU-12, CM-5]
   default_min_il: IL4
 
-  # Read-only inspection of the step's own worktree. Every path is resolved and
-  # traversal-guarded inside the step's work_dir by the worktree toolset, so
-  # these cannot reach the wider disk.
+  # Refuse any call whose PATH argument names credential material, whatever the
+  # tool is and whether or not it is allowlisted (exa-bench-09). Enforced by
+  # agent_tool_gate.check_path_allowed() at CALL time — at offer time there is
+  # no path to constrain, so the tool is still offered.
+  #
+  # The `allowed` list below is a NAME allowlist, and the comment on it used to
+  # rest the whole path story on one toolset's behaviour: the worktree toolset
+  # in tools/genesis/rubric_build_tools.py does traversal-guard its handlers,
+  # but that is that toolset's property, not this gate's, and this gate is what
+  # the policy claims. A name is a constant; a path is an argument.
+  #
+  # The path list is NOT here — it is args/sensitive_paths.yaml, one inventory
+  # also consumed by the zero_access tier in args/file_access_tiers.yaml and by
+  # the confidentiality rule in args/agent_approval_policy.yaml. Defaults to
+  # true when absent, so a policy that predates this key still gets the check.
+  sensitive_path_denied: true
+
+  # Read-only inspection of the step's own worktree. Paths are resolved and
+  # traversal-guarded inside the step's work_dir by the worktree toolset, and —
+  # independently of that toolset — a credential path is refused by
+  # `sensitive_path_denied` above.
   allowed:
     - read_file       # read one file inside the worktree
     - list_files      # list one directory inside the worktree
@@ -1951,12 +1969,14 @@ gates:
       Refuses a tool call from a `node_type: agent` workflow step when the tool is
       absent from agent_workflow_tools.allowed, blocks an
       agent_workflow_tools.requires_approval tool until its human gate is approved
-      in the same run, and refuses a caller whose impact level or roles do not meet
-      the limits declared for that tool. Enforced twice — at offer time, so an
-      unauthorized tool is never described to the model, and again at call time
-      before the handler runs. Policy lives in the agent_workflow_tools section of
-      this file; every decision is audited append-only to
-      studio_mcp_dispatch_audit alongside the mcp surface's.
+      in the same run, refuses a caller whose impact level or roles do not meet
+      the limits declared for that tool, and refuses any call whose path argument
+      names credential material in args/sensitive_paths.yaml. Enforced twice — at
+      offer time, so an unauthorized tool is never described to the model, and
+      again at call time before the handler runs; the path check is call-time only,
+      because at offer time there is no path to constrain. Policy lives in the
+      agent_workflow_tools section of this file; every decision is audited
+      append-only to studio_mcp_dispatch_audit alongside the mcp surface's.
     severity: HIGH
     block_on:
       - agent_tool_not_allowlisted
@@ -1965,6 +1985,8 @@ gates:
       - agent_tool_approval_gate_unavailable
       - agent_tool_exceeds_caller_il
       - agent_tool_missing_required_role
+      # The tool IS allowlisted; what was refused is its reach (exa-bench-09).
+      - agent_tool_sensitive_path
       # Fail-closed: an unreadable or non-default-deny policy blocks every tool
       # rather than falling back to an unbounded toolset.
       - agent_gate_policy_unavailable
