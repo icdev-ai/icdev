@@ -1934,6 +1934,15 @@ python tools/workflow/coherence_checker.py --tier fast --gate                   
 python tools/workflow/coherence_checker.py --tier full --gate                                       # Every check (nightly sweep / post-merge)
 python tools/workflow/coherence_checker.py --tier fast --list-tier                                  # Print the check ids a tier would run
 python tools/genesis/reflexes/coherence_sweep.py                                                    # Full-tier sweep on main + refresh the gate's baseline
+python tools/workflow/coherence_checker.py --check capability_liveness --gate                       # Declared-but-never-consumed capabilities (exa-live-02)
+
+# Capability Liveness gate (exa-live-02) — a capability that is registered, enabled and
+# catalogued but has ZERO consumption over the telemetry's LIFETIME fails the gate.
+# Measured through tools/awareness/capability_consumption.py using existing telemetry only.
+# Per-class backlog counts live in args/liveness_gate.yaml and ratchet DOWN only.
+# Deliberately not findings: a unit consumed once and idle inside the recent window
+# (low cadence is not death), and a database with no operating history (a fresh worktree
+# or ephemeral CI database makes everything look inert — the check warns instead).
 
 # Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
 # CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
