@@ -38,9 +38,15 @@ applies. "The run approved ``write_file`` once" is not the same guarantee, and
 :func:`mediation` keeps them apart rather than letting the stronger word cover
 for the weaker fact.
 
-Scope note: these probes exercise the **in-process** agent loop's gates. They are
+Scope note: :data:`PROBES` exercises the **in-process** agent loop's gates and is
 deliberately NOT a claim about the spawned CLI — ``tools/agents/`` imports
-neither gate, and :class:`TestTheFlagAndItsPath` pins that separation.
+neither gate, and :class:`TestTheFlagAndItsPath` pins that separation. The
+spawned CLI is probed separately, and by its own control: for that path the only
+ICDEV code in the tool-call path is ``.claude/hooks/pre_tool_use.py``, so
+:class:`TestSpawnedCliHookCoverage` drives the hook as a subprocess rather than
+classifying anything. Keeping the two sets apart is the point — the mediation
+vocabulary above does not apply to the hook, and the hook's exit code does not
+apply to the in-process gates.
 
 No database and no LLM: classification is pure, so this runs in a cold worktree.
 """
@@ -48,6 +54,8 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 import tokenize
 from pathlib import Path
 
@@ -476,6 +484,105 @@ class TestGapMechanisms:
         assert policy.get("default_tier") == "unknown"
         assert "unknown" in (policy.get("require_approval_tiers") or [])
         assert agent_tool_gate.load_policy().get("default") == "deny"
+
+
+# ---------------------------------------------------------------------------
+# The spawned-CLI surface — exa-bench-06, now CLOSED
+# ---------------------------------------------------------------------------
+#: For the `claude_cli` adapter's path, section 2 of the decision doc says the
+#: only ICDEV code that sees a tool call is `.claude/hooks/pre_tool_use.py`. So
+#: the hook IS the compensating control for the flag on that path, and a check it
+#: registers but never calls is a control that does not exist.
+#:
+#: These three probes were the exa-bench-06 gap. They are no longer gap-marked —
+#: they are permanent regression tests. Each was measured ALLOWED by the hook and
+#: REFUSED by the headless path, which is backwards: the Claude Code session is
+#: the one running with the vendor permission system turned off.
+#:
+#: (tool, tool_input, why)
+CLI_HOOK_PROBES: tuple[tuple[str, dict, str], ...] = (
+    (
+        "Bash", {"command": "git reset --hard origin/main"},
+        "check_git_danger was in HEADLESS_CHECKS but never called from main()",
+    ),
+    (
+        "Bash", {"command": "git clean -fdx"},
+        "same missing call — GIT_DANGER_PATTERNS already covered it",
+    ),
+    (
+        "Bash", {"command": "echo pubkey >> ~/.ssh/authorized_keys"},
+        "_REDIRECT_TARGET_RE captured the second '>' , so no tier matched",
+    ),
+)
+
+
+def _hook_refuses(tool_name: str, tool_input: dict) -> bool:
+    """Drive the hook as Claude Code does. Exit code 2 is a block."""
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py")],
+        input=json.dumps({"tool_name": tool_name, "tool_input": tool_input}),
+        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=120,
+    )
+    return proc.returncode == 2
+
+
+class TestSpawnedCliHookCoverage:
+    """The hook must actually run what it registers (exa-bench-06)."""
+
+    @pytest.mark.parametrize(
+        "tool,tool_input,why", CLI_HOOK_PROBES,
+        ids=[f"cli_hook:{p[1]['command'][:28]}" for p in CLI_HOOK_PROBES],
+    )
+    def test_the_hook_refuses_it(self, tool, tool_input, why):
+        assert _hook_refuses(tool, tool_input), (
+            f"REGRESSION — .claude/hooks/pre_tool_use.py allowed {tool_input!r}. "
+            f"This was exa-bench-06 and is recorded CLOSED in {DECISION_DOC.name}. "
+            f"Originally: {why}."
+        )
+
+    @pytest.mark.parametrize(
+        "tool,tool_input,why", CLI_HOOK_PROBES,
+        ids=[f"headless:{p[1]['command'][:28]}" for p in CLI_HOOK_PROBES],
+    )
+    def test_the_headless_path_refuses_it_too(self, tool, tool_input, why, monkeypatch):
+        """The asymmetry was the finding — assert it stays gone in both
+        directions, not just that the hook caught up."""
+        from tools.airgap import hook_compat
+
+        monkeypatch.setattr(hook_compat, "store_event", lambda *a, **k: 1)
+        assert hook_compat.run_pre_tool_check(tool, tool_input)["allowed"] is False
+
+    def test_the_single_and_double_redirect_forms_agree(self):
+        """The defect's signature: `>` blocked, `>>` allowed, same target.
+
+        Asserting the PAIR rather than just `>>` is what keeps a future rewrite
+        from reintroducing an operator form that silently drops out.
+        """
+        target = "~/.ssh/authorized_keys"
+        assert _hook_refuses("Bash", {"command": f"echo k > {target}"})
+        assert _hook_refuses("Bash", {"command": f"echo k >> {target}"}), (
+            "the append form is allowed again while the truncate form is blocked "
+            "— that is exactly the exa-bench-06 bypass"
+        )
+
+    def test_exa_bench_06_is_recorded_closed_not_open(self):
+        """A gap that closes must be moved, not just fixed.
+
+        The mirror of :class:`TestGapsAreFiled`: leaving a closed gap in the
+        open-follow-up table overstates the risk to the next reader, which the
+        module docstring calls the same failure as understating it.
+        """
+        doc = _doc_text()
+        assert "exa-bench-06" in doc, "the closed gap must still be recorded"
+        assert "### Closed" in doc, (
+            "docs/security/agent-vendor-permission-bypass.md has no Closed section "
+            "— exa-bench-06 was fixed; record it rather than deleting the row."
+        )
+        open_table, _, closed_table = doc.partition("### Closed")
+        assert "exa-bench-06" not in open_table, (
+            "exa-bench-06 is fixed but still listed as an open follow-up task."
+        )
+        assert "exa-bench-06" in closed_table
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ Pre-tool-use hook that validates tool calls before execution.
 
 Blocks:
     - Dangerous rm -rf commands
+    - Destructive git commands (reset --hard, clean -f, push --force, ...)
     - Access to .env files containing secrets
     - UPDATE/DELETE/DROP/TRUNCATE on every append-only table (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
@@ -808,6 +809,19 @@ def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+def check_git_danger(tool_name: str, tool_input: dict) -> str:
+    """Refuse a destructive git command (OPT-51).
+
+    Wired into ``main()`` by exa-bench-06. The patterns have lived in
+    shared_checks since hgx-guard-02, but only the HEADLESS path called the
+    check — so ``git reset --hard origin/main`` and ``git clean -fdx`` were
+    refused by ``hook_compat.run_pre_tool_check`` and ALLOWED here. That is the
+    wrong way round: this is the path a session running with
+    ``--dangerously-skip-permissions`` depends on (D394).
+    """
+    return shared_checks.check_git_danger(tool_name, tool_input) or ""
+
+
 def check_agent_rules(tool_name: str, tool_input: dict) -> str:
     """Refuse a call an ENFORCING agent rule matched (agov-det-06).
 
@@ -821,6 +835,44 @@ def check_agent_rules(tool_name: str, tool_input: dict) -> str:
     return shared_checks.check_agent_rules(
         tool_name, tool_input, repo_root=REPO_ROOT
     ) or ""
+
+
+#: Every blocking check ``main()`` runs, named as it is named in shared_checks,
+#: in evaluation order. Declared rather than inferred because ``main()`` calls
+#: several of them through their ``is_*`` predicate rather than their ``check_*``
+#: wrapper, so no amount of grepping the source recovers the set reliably.
+#:
+#: ``tests/hooks/test_hook_parity.py`` asserts this equals
+#: ``hook_compat.HEADLESS_CHECKS`` as a SET, and separately that each entry here
+#: is genuinely reached from ``main()`` — a declaration nothing verifies is how
+#: check_git_danger sat in shared_checks for a whole slice without ever running.
+HOOK_CHECKS = (
+    "check_env_file_access",
+    "check_dangerous_rm",
+    "check_git_danger",
+    "check_append_only_write",
+    "check_direct_sqlite_usage",
+    "check_file_access_tiers",
+    "check_branch_deletion",
+    "check_worktree_path",
+    "check_agent_rules",
+    "check_review_loop_precommit",
+)
+
+#: shared_checks name -> the identifier ``main()`` actually calls. Lets the
+#: parity test prove HOOK_CHECKS describes the code rather than trusting it.
+HOOK_CHECK_CALLSITES = {
+    "check_env_file_access": "is_env_file_access",
+    "check_dangerous_rm": "is_dangerous_rm_command",
+    "check_git_danger": "check_git_danger",
+    "check_append_only_write": "is_append_only_table_modification",
+    "check_direct_sqlite_usage": "is_direct_sqlite_usage",
+    "check_file_access_tiers": "check_file_access_tiers",
+    "check_branch_deletion": "check_branch_deletion",
+    "check_worktree_path": "check_worktree_path",
+    "check_agent_rules": "check_agent_rules",
+    "check_review_loop_precommit": "run_review_loop_precommit",
+}
 
 
 def main():
@@ -840,6 +892,14 @@ def main():
             if is_dangerous_rm_command(command):
                 print(shared_checks.DANGEROUS_RM_BLOCK_REASON, file=sys.stderr)
                 sys.exit(2)
+
+        # Block destructive git commands (OPT-51). Third, exactly where
+        # HEADLESS_CHECKS runs it — the two paths block the same set in the
+        # same order (exa-bench-06).
+        git_error = check_git_danger(tool_name, tool_input)
+        if git_error:
+            print(git_error, file=sys.stderr)
+            sys.exit(2)
 
         # Block modification of all append-only tables (NIST 800-53 AU, D6)
         if is_append_only_table_modification(tool_name, tool_input):

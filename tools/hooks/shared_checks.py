@@ -67,6 +67,7 @@ __all__ = [
     "DIRECT_SQLITE_BLOCK_REASON",
     # 5 — D-ORCH-8 file access tiers
     "check_file_access_tiers",
+    "bash_file_targets",
     # 6 — unmerged remote-branch deletion
     "check_branch_deletion",
     "remote_branch_delete_targets",
@@ -75,7 +76,7 @@ __all__ = [
     "worktree_add_target",
     # 8 — review-loop pre-commit
     "check_review_loop_precommit",
-    # 9 — destructive git blocklist (headless path today; hgx-guard-02 wires it in)
+    # 9 — destructive git blocklist (both paths since exa-bench-06)
     "GIT_DANGER_PATTERNS",
     "git_danger_reason",
     "check_git_danger",
@@ -376,7 +377,48 @@ def check_direct_sqlite_usage(tool_name: str, tool_input: dict) -> Optional[str]
 _FILE_ACCESS_TIERS_CACHE: Dict[str, Optional[dict]] = {}
 
 _RM_TARGET_RE = re.compile(r"\brm\s+(?:-[a-z]*\s+)*([^\s|;&]+)")
-_REDIRECT_TARGET_RE = re.compile(r">\s*([^\s|;&]+)")
+
+#: Write redirections, and the target each one writes to.
+#:
+#: The previous pattern was ``>\s*([^\s|;&]+)``, which read an APPEND redirect
+#: wrong in a way that silently defeated the tiers: against
+#: ``echo k >> ~/.ssh/authorized_keys`` the first ``>`` matched, ``\s*`` matched
+#: nothing, and the capture group took the SECOND ``>``. ``file_path`` became the
+#: literal string ``">"``, which matches no tier pattern, so the append was
+#: ALLOWED — while the single-``>`` form of the same command was blocked.
+#:
+#: So the operator is now matched as a unit. ``(?<!>)`` starts the match at the
+#: FIRST ``>`` of a pair and ``>{1,2}`` consumes both, which is what the old
+#: pattern got wrong. Nothing needs to be said about the fd prefix — ``1>>``,
+#: ``2>>`` and ``&>>`` all just leave their prefix before the operator, so they
+#: are handled by the same two tokens, with or without a space before the path.
+#: ``(?!&)`` keeps fd duplication (``2>&1``) from reading as a write to a file
+#: named ``1``, and excluding ``>`` from the capture class stops a stray
+#: operator character being returned as a path again.
+_REDIRECT_TARGET_RE = re.compile(r"(?<!>)>{1,2}\s*(?!&)([^\s|;&>]+)")
+
+#: ``tee`` writes its target without any redirection operator at all, so the
+#: pattern above cannot see it. ``-a`` (append) and friends are skipped the same
+#: way ``_RM_TARGET_RE`` skips ``rm``'s flags.
+_TEE_TARGET_RE = re.compile(r"\btee\s+(?:-[a-zA-Z]+\s+)*([^\s|;&>]+)")
+
+
+def bash_file_targets(command: str) -> List[Tuple[str, bool, bool]]:
+    """Every path a Bash command writes to or deletes, as ``(path, write, delete)``.
+
+    Returns ALL of them rather than the first. A command redirects to more than
+    one file often enough (``a > log 2>> err``) that stopping at the first match
+    left the rest unexamined, and the tier check has to see each one to refuse
+    the call.
+    """
+    targets: List[Tuple[str, bool, bool]] = []
+    for match in _RM_TARGET_RE.finditer(command):
+        targets.append((match.group(1), False, True))
+    for match in _REDIRECT_TARGET_RE.finditer(command):
+        targets.append((match.group(1), True, False))
+    for match in _TEE_TARGET_RE.finditer(command):
+        targets.append((match.group(1), True, False))
+    return targets
 
 
 def _read_file_access_tiers(root: Path) -> Optional[dict]:
@@ -450,46 +492,47 @@ def check_file_access_tiers(
     if not tiers:
         return None
 
-    file_path = ""
-    is_write = False
-    is_delete = False
+    # (path, is_write, is_delete) — a Bash command can name more than one.
+    targets: List[Tuple[str, bool, bool]] = []
 
     if tool_name in ("Read",):
-        file_path = tool_input.get("file_path", "")
         # Read — only blocked by zero_access
+        targets.append((tool_input.get("file_path", ""), False, False))
     elif tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
-        file_path = tool_input.get("file_path", tool_input.get("notebook_path", ""))
-        is_write = True
+        targets.append(
+            (tool_input.get("file_path", tool_input.get("notebook_path", "")), True, False)
+        )
     elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # Check for rm/delete commands targeting protected files
-        rm_match = _RM_TARGET_RE.search(command)
-        if rm_match:
-            file_path = rm_match.group(1)
-            is_delete = True
-        # Check for write redirections
-        redir_match = _REDIRECT_TARGET_RE.search(command)
-        if redir_match and not is_delete:
-            file_path = redir_match.group(1)
-            is_write = True
+        targets.extend(bash_file_targets(tool_input.get("command", "")))
 
-    if not file_path:
-        return None
-
-    # Zero access — block everything
     zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
-    if _matches_tier(file_path, zero_patterns):
-        return f"BLOCKED: File '{file_path}' is in zero_access tier (D-ORCH-8). No access allowed."
-
-    # Read only — block writes and deletes
     ro_patterns = [p for t in [tiers.get("read_only", {})] for p in t.get("patterns", [])]
-    if (is_write or is_delete) and _matches_tier(file_path, ro_patterns):
-        return f"BLOCKED: File '{file_path}' is in read_only tier (D-ORCH-8). Write/delete prohibited."
-
-    # No delete — block deletes only
     nd_patterns = [p for t in [tiers.get("no_delete", {})] for p in t.get("patterns", [])]
-    if is_delete and _matches_tier(file_path, nd_patterns):
-        return f"BLOCKED: File '{file_path}' is in no_delete tier (D-ORCH-8). Deletion prohibited."
+
+    for file_path, is_write, is_delete in targets:
+        if not file_path:
+            continue
+
+        # Zero access — block everything
+        if _matches_tier(file_path, zero_patterns):
+            return (
+                f"BLOCKED: File '{file_path}' is in zero_access tier (D-ORCH-8). "
+                "No access allowed."
+            )
+
+        # Read only — block writes and deletes
+        if (is_write or is_delete) and _matches_tier(file_path, ro_patterns):
+            return (
+                f"BLOCKED: File '{file_path}' is in read_only tier (D-ORCH-8). "
+                "Write/delete prohibited."
+            )
+
+        # No delete — block deletes only
+        if is_delete and _matches_tier(file_path, nd_patterns):
+            return (
+                f"BLOCKED: File '{file_path}' is in no_delete tier (D-ORCH-8). "
+                "Deletion prohibited."
+            )
 
     return None
 
@@ -752,9 +795,15 @@ def check_review_loop_precommit(
 # OPT-51 — adapted from mattpocock/skills/git-guardrails-claude-code (MIT). See
 # _ATTRIBUTION_REGISTRY in tools/workflow/coherence_checker.py.
 #
-# These commands can silently destroy work in a non-recoverable way. Today only
-# the headless path runs this check; hgx-guard-02 wires it into the Claude Code
-# hook too, at which point neither path is missing a rule the other has.
+# These commands can silently destroy work in a non-recoverable way.
+#
+# hgx-guard-02 moved the patterns here so both guard paths share one copy — but
+# only the HEADLESS path ever called the check. `.claude/hooks/pre_tool_use.py`
+# ::main() never did, so `git reset --hard origin/main` and `git clean -fdx` were
+# refused headlessly and ALLOWED in a Claude Code session, which is backwards:
+# the Claude Code session is the one running with the vendor permission system
+# turned off (D394). exa-bench-06 wired it into main() and added
+# tests/hooks/test_hook_parity.py, which asserts the two paths run the same set.
 
 GIT_DANGER_PATTERNS: Tuple[Tuple[str, str], ...] = (
     # Force push — direct or via shorthand
