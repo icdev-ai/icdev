@@ -797,6 +797,22 @@ def check_worktree_path(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+def check_write_outside_worktree(tool_name: str, tool_input: dict) -> str:
+    """Refuse a write whose resolved target is outside the session worktree.
+
+    The boundary D-ORCH-8's glob tiers cannot express (exa-bench-07). REPO_ROOT
+    is resolved from ``__file__``, so in a worktree it IS the worktree — which is
+    the right anchor here: ``AgentSession.working_dir`` is what ``claude_cli``
+    hands the child as cwd, and that is a worktree, not the main checkout.
+
+    Set ICDEV_WRITE_BOUNDARY_GUARD=0 to disable or =monitor to record without
+    refusing. Fails OPEN on any resolution error.
+    """
+    return shared_checks.check_write_outside_worktree(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     """Refuse to delete a remote branch that still holds unmerged commits.
 
@@ -874,6 +890,7 @@ HOOK_CHECKS = (
     "check_append_only_write",
     "check_direct_sqlite_usage",
     "check_file_access_tiers",
+    "check_write_outside_worktree",
     "check_branch_deletion",
     "check_worktree_path",
     "check_network_egress",
@@ -890,6 +907,7 @@ HOOK_CHECK_CALLSITES = {
     "check_append_only_write": "is_append_only_table_modification",
     "check_direct_sqlite_usage": "is_direct_sqlite_usage",
     "check_file_access_tiers": "check_file_access_tiers",
+    "check_write_outside_worktree": "check_write_outside_worktree",
     "check_branch_deletion": "check_branch_deletion",
     "check_worktree_path": "check_worktree_path",
     "check_network_egress": "check_network_egress",
@@ -938,6 +956,14 @@ def main():
         tier_error = check_file_access_tiers(tool_name, tool_input)
         if tier_error:
             print(tier_error, file=sys.stderr)
+            sys.exit(2)
+
+        # Keep a write inside the worktree (exa-bench-07). Runs right after the
+        # tiers because it is their complement: they say which file, this says
+        # where — a glob list cannot express "anywhere but here".
+        boundary_error = check_write_outside_worktree(tool_name, tool_input)
+        if boundary_error:
+            print(boundary_error, file=sys.stderr)
             sys.exit(2)
 
         # Never delete a remote branch that still holds unmerged work

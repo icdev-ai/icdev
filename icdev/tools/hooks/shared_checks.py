@@ -42,6 +42,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -83,7 +84,19 @@ __all__ = [
     # 10 — AGOV declarative agent rules, monitor-only by default (agov-det-06)
     "check_agent_rules",
     "reset_agent_gate",
-    # 11 — network egress, monitor-only by default (exa-bench-08)
+    # 11 — worktree write containment (exa-bench-07)
+    "check_write_outside_worktree",
+    "bash_write_targets",
+    "write_target_paths",
+    "sanctioned_write_roots",
+    "resolve_write_target",
+    "outside_write_root",
+    "reset_worktree_paths",
+    "SKIP_TARGET",
+    "UNRESOLVABLE_TARGET",
+    "WRITE_BOUNDARY_GUARD_ENV",
+    "WRITE_BOUNDARY_EXTRA_ROOTS_ENV",
+    # 12 — network egress, monitor-only by default (exa-bench-08)
     "check_network_egress",
     "egress_destinations",
     "reset_egress_policy",
@@ -936,7 +949,422 @@ def check_agent_rules(
         return None
 
 
-# ── 11. Network egress (exa-bench-08) ─────────────────────────────────────
+# ── 11. Worktree write containment (exa-bench-07) ─────────────────────────
+#
+# MEASURED before this existed: on NO surface did anything assert that a write
+# lands inside the session's worktree. ``write_file`` to ``/etc/cron.d/pwn``,
+# ``~/.bashrc`` or ``../../sibling-repo/setup.py`` was allowed by
+# ``.claude/hooks/pre_tool_use.py`` and auto-allowed by
+# ``tools/agent_runtime/approval_gate.py``.
+#
+# The root cause is a rationale that does not survive leaving the repo:
+# ``args/agent_approval_policy.yaml`` tiers ``write_file`` ``recoverable`` on the
+# grounds that git or a checkpoint restores it. Git restores paths INSIDE the
+# repo. ``/etc/cron.d/pwn`` is recoverable by nothing.
+#
+# D-ORCH-8's ``args/file_access_tiers.yaml`` is a glob allow/deny list, not a
+# boundary — it enumerates bad paths but cannot express "anywhere but here". So
+# this check is its COMPLEMENT rather than an overlap: the tiers say which file,
+# this says where. Neither subsumes the other.
+#
+# Anchored on the CONTAINING WORKTREE, not the repo root. ``AgentSession.
+# working_dir`` is what ``claude_cli`` passes as the child's cwd, and it is a
+# worktree — so the main checkout is a *second* sanctioned root here rather than
+# the anchor, and ``os.getcwd()`` is never consulted (see the module preamble).
+
+WRITE_BOUNDARY_GUARD_ENV = "ICDEV_WRITE_BOUNDARY_GUARD"
+WRITE_BOUNDARY_EXTRA_ROOTS_ENV = "ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS"
+
+#: :func:`resolve_write_target` verdicts that are not a path.
+SKIP_TARGET = "skip"                  #: not a file on disk — never a violation
+UNRESOLVABLE_TARGET = "unresolvable"  #: cannot be placed — treated as OUTSIDE
+
+#: Sinks that are not files. ``echo x > /dev/null`` is on the critical path of a
+#: great many ordinary commands and must never be read as a write to ``C:\dev``.
+_NULL_SINKS = frozenset({
+    "/dev/null", "/dev/zero", "/dev/tty", "/dev/stdin", "/dev/stdout",
+    "/dev/stderr", "/dev/fd/0", "/dev/fd/1", "/dev/fd/2",
+    "nul", "nul:", "con", "con:", "-",
+})
+
+#: ``C:\x`` / ``C:/x`` — absolute on Windows, and on POSIX a path into a
+#: filesystem this host does not have.
+_WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+#: ``C:x`` — drive-RELATIVE. Its meaning depends on the shell's per-drive cwd,
+#: which is exactly the state this module refuses to consult.
+_WINDOWS_DRIVE_RELATIVE_RE = re.compile(r"^[A-Za-z]:(?![\\/])")
+
+#: Home references a shell would expand but a raw string comparison would not.
+#: Deliberately narrow: these are the ones that reach a persistence surface
+#: (``$HOME/.bashrc``, ``%USERPROFILE%\\...``). Any OTHER unexpanded variable is
+#: left alone and therefore joins onto the worktree, i.e. resolves to ALLOWED —
+#: the fail-open direction, consistent with every neighbouring guard.
+_HOME_TOKENS = ("${HOME}", "$HOME", "%USERPROFILE%", "%HOMEPATH%")
+
+#: Tools whose input names a file they write.
+_WRITE_TOOL_NAMES = frozenset({
+    "write", "edit", "multiedit", "notebookedit",
+    "write_file", "append_file", "create_file", "patch_file", "edit_file",
+    "apply_patch", "str_replace_editor",
+})
+_WRITE_PATH_KEYS = ("file_path", "path", "notebook_path", "target_file", "filename")
+
+_SEGMENT_SPLIT_RE = re.compile(r"\|\||&&|[;|\n]")
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+#: Wrappers that precede the real verb. Stripped so ``sudo mkdir /etc/x`` is
+#: still read as a ``mkdir``.
+_COMMAND_WRAPPERS = frozenset({
+    "sudo", "doas", "env", "nohup", "time", "command", "exec", "nice", "ionice",
+})
+#: Verbs where EVERY positional argument is created.
+_CREATE_VERBS = frozenset({"touch", "mkdir", "mkfifo", "truncate", "install"})
+#: Verbs where the LAST positional is the destination.
+_DESTINATION_LAST_VERBS = frozenset({"cp", "mv", "rsync", "ln"})
+_OUTPUT_FLAGS = {
+    "curl": ("-o", "--output"),
+    "wget": ("-O", "--output-document"),
+}
+
+
+def _unquote(token: str) -> str:
+    text = (token or "").strip()
+    for quote in ('"', "'"):
+        if len(text) > 1 and text[0] == quote and text[-1] == quote:
+            text = text[1:-1]
+            break
+    return text.strip()
+
+
+def bash_write_targets(command: str) -> List[str]:
+    """Every path a Bash command CREATES or WRITES.
+
+    A superset of :func:`bash_file_targets`' write half, because that function
+    exists for the D-ORCH-8 glob tiers and only needs the redirect/``tee``
+    forms. A boundary check needs the verbs that write without an operator —
+    ``touch``, ``mkdir``, ``cp``, ``dd of=`` — which is precisely how
+    ``touch /home/victim/.ssh/authorized_keys`` and ``mkdir -p /etc/cron.d/persist``
+    reached the disk unexamined.
+
+    Deletes are NOT included: ``rm`` outside the worktree is already refused by
+    :func:`check_dangerous_rm` and the ``no_delete`` tier, and folding them in
+    here would report one violation under two names.
+    """
+    targets: List[str] = [
+        path for path, is_write, _ in bash_file_targets(command or "") if is_write
+    ]
+
+    for segment in _SEGMENT_SPLIT_RE.split(command or ""):
+        segment = segment.strip()
+        if not segment:
+            continue
+        try:
+            tokens = shlex.split(segment, posix=(os.name != "nt"))
+        except ValueError:
+            tokens = segment.split()
+        # Leading `VAR=value` assignments and wrapper commands are not the verb.
+        while tokens and (
+            _ENV_ASSIGN_RE.match(tokens[0])
+            or os.path.basename(_unquote(tokens[0])).lower().removesuffix(".exe")
+            in _COMMAND_WRAPPERS
+        ):
+            tokens = tokens[1:]
+        if not tokens:
+            continue
+
+        verb = os.path.basename(_unquote(tokens[0])).lower().removesuffix(".exe")
+        rest = tokens[1:]
+        positional = [t for t in rest if not t.startswith("-")]
+
+        if verb in _CREATE_VERBS:
+            targets.extend(positional)
+        elif verb in _DESTINATION_LAST_VERBS and len(positional) >= 2:
+            targets.append(positional[-1])
+        elif verb == "dd":
+            targets.extend(
+                t[3:] for t in rest if t.lower().startswith("of=") and len(t) > 3
+            )
+        elif verb in _OUTPUT_FLAGS:
+            flags = _OUTPUT_FLAGS[verb]
+            for i, token in enumerate(rest):
+                if token in flags and i + 1 < len(rest):
+                    targets.append(rest[i + 1])
+
+    return [t for t in targets if t and t.strip()]
+
+
+def write_target_paths(tool_name: str, tool_input: dict) -> List[str]:
+    """Every path this tool call would write to, as the caller spelled it."""
+    if not isinstance(tool_input, dict):
+        return []
+    name = (tool_name or "").lower()
+    if name in ("bash", "shell"):
+        return bash_write_targets(tool_input.get("command", "") or "")
+    if name in _WRITE_TOOL_NAMES:
+        for key in _WRITE_PATH_KEYS:
+            value = tool_input.get(key)
+            if isinstance(value, str) and value.strip():
+                return [value]
+    return []
+
+
+def _main_checkout(anchor: Path) -> Optional[Path]:
+    """The main worktree's root, read from ``<anchor>/.git`` — no subprocess.
+
+    ``tools.git.worktree_paths.canonical_repo_root`` answers the same question by
+    shelling out to ``git rev-parse --git-common-dir``. That is the right call
+    there and the wrong one here: this runs before EVERY tool call, and a git
+    subprocess per call is a cost the guard cannot justify. A linked worktree's
+    ``.git`` is a file reading ``gitdir: <main>/.git/worktrees/<name>``, which
+    carries the same answer for one read.
+    """
+    dot_git = anchor / ".git"
+    try:
+        if not dot_git.is_file():
+            return None
+        text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        gitdir = Path(text.split(":", 1)[1].strip()).expanduser()
+        if not gitdir.is_absolute():
+            gitdir = anchor / gitdir
+        gitdir = gitdir.resolve()
+        for parent in gitdir.parents:
+            if parent.name == ".git":
+                return parent.parent
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return None
+
+
+def sanctioned_write_roots(repo_root: Optional[Path] = None) -> Tuple[Path, ...]:
+    """Resolved roots a write may land in, most specific first.
+
+    * the session worktree (the anchor);
+    * the main checkout it is linked to — the same "git restores it" argument
+      that makes ``write_file`` ``recoverable`` holds there and only there;
+    * scratch: the platform temp dir, ``$TMPDIR``/``$TEMP``/``$TMP``, and the
+      literal ``/tmp`` and ``/var/tmp`` (on Windows a Git-Bash ``> /tmp/x``
+      really does land in ``C:\\tmp``, which CLAUDE.md documents);
+    * ``$ICDEV_WORKTREE_ROOT`` when an operator relocated the worktree base;
+    * ``~/.claude/projects`` — per-session agent state and memory. NOT
+      ``~/.claude`` itself: ``settings.json`` there wires the PreToolUse hook, so
+      a write to it edits this guard, which is the persistence surface the check
+      exists to refuse;
+    * anything in ``$ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS`` (``os.pathsep``-joined).
+    """
+    roots: List[Path] = []
+
+    def add(candidate) -> None:
+        if not candidate:
+            return
+        try:
+            resolved = Path(candidate).expanduser().resolve()
+        except (OSError, ValueError, RuntimeError):
+            return
+        if resolved not in roots:
+            roots.append(resolved)
+
+    anchor = _resolve_root(repo_root)
+    add(anchor)
+    add(_main_checkout(Path(anchor).resolve()))
+    add(tempfile.gettempdir())
+    for var in ("TMPDIR", "TEMP", "TMP"):
+        add(os.environ.get(var, "").strip())
+    # nosec B108 -- not a temp file this code creates or writes. These are
+    # allowlist ROOTS: a Git-Bash `> /tmp/x` on Windows resolves to C:\tmp, and
+    # refusing that would break ordinary scratch work, which is how a guard gets
+    # switched off. Nothing here opens a path.
+    add("/tmp")      # nosec B108 -- see above
+    add("/var/tmp")  # nosec B108 -- see above
+    add(os.environ.get("ICDEV_WORKTREE_ROOT", "").strip())
+    try:
+        add(Path.home() / ".claude" / "projects")
+    except RuntimeError:
+        pass
+    for part in (os.environ.get(WRITE_BOUNDARY_EXTRA_ROOTS_ENV, "") or "").split(
+        os.pathsep
+    ):
+        add(part.strip())
+    return tuple(roots)
+
+
+def resolve_write_target(raw: str, anchor: Path):
+    """Resolve *raw* to an absolute path, or a sentinel.
+
+    ``..`` and symlinks are resolved BEFORE any comparison — a containment check
+    that compares strings is defeated by ``<worktree>/../../etc/passwd``, and one
+    that ignores symlinks is defeated by a link planted inside the worktree.
+
+    Returns :data:`SKIP_TARGET` for a non-file sink, :data:`UNRESOLVABLE_TARGET`
+    for a path that cannot be placed on this host, else a resolved
+    :class:`~pathlib.Path`.
+    """
+    text = _unquote(raw)
+    if not text or text.lower() in _NULL_SINKS:
+        return SKIP_TARGET
+
+    # `~` and the home variables a shell would have expanded. Done before the
+    # absolute-path tests so `$HOME/.bashrc` is judged as the home path it is.
+    for token in _HOME_TOKENS:
+        if text.startswith(token):
+            try:
+                text = str(Path.home()) + text[len(token):]
+            except RuntimeError:
+                return UNRESOLVABLE_TARGET
+            break
+
+    # UNC (`\\server\share`) names a host this check cannot reason about, and a
+    # drive-relative `C:x` means "the cwd OF DRIVE C", which is per-process shell
+    # state. Both are outside by construction rather than by comparison.
+    if text.startswith("\\\\") or _WINDOWS_DRIVE_RELATIVE_RE.match(text):
+        return UNRESOLVABLE_TARGET
+    # A Windows-absolute path evaluated on POSIX is not relative to the worktree
+    # — joining it onto the anchor would silently make `C:/Windows/...` INSIDE.
+    if os.name != "nt" and _WINDOWS_ABS_RE.match(text):
+        return UNRESOLVABLE_TARGET
+
+    try:
+        target = Path(text).expanduser()
+        if not target.is_absolute():
+            target = Path(anchor) / target
+        return target.resolve()
+    except (OSError, ValueError, RuntimeError):
+        return UNRESOLVABLE_TARGET
+
+
+_UNSET_WORKTREE_PATHS = object()
+_WORKTREE_PATHS: object = _UNSET_WORKTREE_PATHS
+
+
+def _worktree_paths(repo_root: Optional[Path]):
+    """``tools/git/worktree_paths.py``, or None. Loaded by path when ``tools``
+    is not already imported — same reason as :func:`_agent_gate`."""
+    global _WORKTREE_PATHS
+    if _WORKTREE_PATHS is _UNSET_WORKTREE_PATHS:
+        _WORKTREE_PATHS = None
+        try:
+            if "tools" in sys.modules:
+                from tools.git import worktree_paths  # noqa: PLC0415
+
+                _WORKTREE_PATHS = worktree_paths
+            else:
+                import importlib.util  # noqa: PLC0415
+
+                path = _resolve_root(repo_root) / "tools" / "git" / "worktree_paths.py"
+                spec = importlib.util.spec_from_file_location(
+                    "icdev_hook_worktree_paths", path
+                )
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[spec.name] = module
+                spec.loader.exec_module(module)
+                _WORKTREE_PATHS = module
+        except Exception:  # noqa: BLE001 — an absent module must not stop the guard
+            _WORKTREE_PATHS = None
+    return _WORKTREE_PATHS
+
+
+def reset_worktree_paths() -> None:
+    """Drop the cached worktree_paths module. Tests only."""
+    global _WORKTREE_PATHS
+    _WORKTREE_PATHS = _UNSET_WORKTREE_PATHS
+
+
+def _is_relative_to(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+        return True
+    except ValueError:
+        return False
+
+
+def outside_write_root(
+    raw: str,
+    repo_root: Optional[Path] = None,
+    roots: Optional[Sequence[Path]] = None,
+) -> Optional[str]:
+    """The resolved target when *raw* lands outside every sanctioned root, else None."""
+    anchor = _resolve_root(repo_root)
+    target = resolve_write_target(raw, anchor)
+    if target is SKIP_TARGET:
+        return None
+    if target is UNRESOLVABLE_TARGET:
+        return raw
+    for root in roots if roots is not None else sanctioned_write_roots(repo_root):
+        if _is_relative_to(target, root):
+            return None
+    # The scratch roots tools/git/worktree_paths already sanctions — reused
+    # rather than restated, so the two cannot disagree about where a session is
+    # allowed to put things. repo_root is passed so it never shells out to git.
+    module = _worktree_paths(repo_root)
+    if module is not None:
+        try:
+            if module.is_sanctioned(target, repo_root=Path(anchor).resolve()):
+                return None
+        except Exception:  # noqa: BLE001 — a broken helper does not decide
+            pass
+    return str(target)
+
+
+def check_write_outside_worktree(
+    tool_name: str, tool_input: dict, repo_root: Optional[Path] = None
+) -> Optional[str]:
+    """Refuse a write whose RESOLVED target is outside the session worktree.
+
+    The boundary D-ORCH-8's glob list cannot express. ``args/file_access_tiers.
+    yaml`` can enumerate ``**/.ssh/*``; it cannot say "anywhere but here", so
+    every path nobody thought to enumerate — ``/etc/cron.d/pwn``, a sibling
+    checkout's ``setup.py`` — was allowed on every surface.
+
+    Sanctioned targets are the session worktree, the main checkout it is linked
+    to, the platform scratch dirs and whatever
+    :func:`tools.git.worktree_paths.is_sanctioned` already blesses; see
+    :func:`sanctioned_write_roots`.
+
+    ``ICDEV_WRITE_BOUNDARY_GUARD=0`` disables it, ``=monitor`` computes the
+    verdict and allows the call. Fails OPEN on any resolution error, like the
+    neighbouring guards — a guard that cannot resolve a path must not be the
+    reason a session cannot work.
+    """
+    if _off(WRITE_BOUNDARY_GUARD_ENV):
+        return None
+    try:
+        targets = write_target_paths(tool_name, tool_input)
+        if not targets:
+            return None
+        roots = sanctioned_write_roots(repo_root)
+        offenders = []
+        for raw in targets:
+            resolved = outside_write_root(raw, repo_root=repo_root, roots=roots)
+            if resolved is not None and (raw, resolved) not in offenders:
+                offenders.append((raw, resolved))
+        if not offenders:
+            return None
+        anchor = _resolve_root(repo_root)
+    except Exception:  # noqa: BLE001 — fail open on a broken guard, never on a match
+        return None
+
+    # Past this point the rule MATCHED, so it always blocks (or is explicitly in
+    # monitor mode). Nothing above may be allowed to throw us into the fail-open
+    # branch after a violation has been found.
+    if (os.environ.get(WRITE_BOUNDARY_GUARD_ENV, "").strip().lower()) == "monitor":
+        return None
+    detail = "\n".join(
+        f"    {raw}  ->  {resolved}" if raw != resolved else f"    {raw}"
+        for raw, resolved in offenders
+    )
+    return (
+        "BLOCKED: this write lands outside the session worktree.\n" + detail + "\n"
+        f"  worktree: {anchor}\n"
+        "  `write_file` is tiered `recoverable` in args/agent_approval_policy.yaml\n"
+        "  because git restores it — git restores paths INSIDE the repo. That is\n"
+        "  true for tools/foo.py and false for /etc/cron.d/pwn, which is\n"
+        "  recoverable by nothing.\n"
+        "  Write inside the worktree, or under a sanctioned scratch root:\n"
+        "    python -m tools.git.worktree_paths --path cli <slug>\n"
+        "  Deliberate: ICDEV_WRITE_BOUNDARY_GUARD=0 (off) or =monitor (record\n"
+        "  only); ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS sanctions additional roots."
+    )
+# ── 12. Network egress (exa-bench-08) ─────────────────────────────────────
 #
 # Until this check existed the hook had no concept of the network at all. The
 # in-process agent loop did halt the obvious exfil commands, but only
