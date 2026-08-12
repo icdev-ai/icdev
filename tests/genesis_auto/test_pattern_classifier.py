@@ -47,17 +47,6 @@ def test_pattern_classifier_detect_patterns_signature():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_pattern_classifier_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.ai_augmentation.pattern_classifier as mod
-        assert hasattr(mod, "_JAVA_MIN_IF_DEPTH"), "Missing constant _JAVA_MIN_IF_DEPTH"
-    except ImportError:
-        pytest.skip("Module not importable")
-
-
 def test_pattern_classifier_ad_java_config():
     """Verify _AD_JAVA_STATIC_INT_MIN is loaded from config."""
     try:

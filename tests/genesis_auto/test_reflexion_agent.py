@@ -15,6 +15,8 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 
@@ -24,18 +26,64 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 # ---------------------------------------------------------------------------
 
 def _seed_traces(task_type: str, n_success: int = 3, n_failure: int = 0) -> list[str]:
-    """Insert traces directly for a given task_type and close them."""
+    """Insert traces directly for a given task_type and close them.
+
+    Returns the *task* ids (not the trace ids): those are what the exa-refine-04
+    evidence gate joins on, so a caller that needs a supported proposal can feed
+    them straight to `_seed_lessons`.
+    """
     from tools.workflow.trace_logger import start_trace, close_trace
-    ids = []
+    task_ids = []
     for i in range(n_success):
-        tid = start_trace(f"task-{uuid.uuid4().hex[:6]}", task_type, "icdev-build")
-        close_trace(tid, "success", "success_first_try")
-        ids.append(tid)
+        task_id = f"task-{uuid.uuid4().hex[:6]}"
+        close_trace(start_trace(task_id, task_type, "icdev-build"), "success", "success_first_try")
+        task_ids.append(task_id)
     for i in range(n_failure):
-        tid = start_trace(f"task-{uuid.uuid4().hex[:6]}", task_type, "icdev-build")
-        close_trace(tid, "failure", "missing_dependency", "dependency not found")
-        ids.append(tid)
-    return ids
+        task_id = f"task-{uuid.uuid4().hex[:6]}"
+        close_trace(
+            start_trace(task_id, task_type, "icdev-build"),
+            "failure", "missing_dependency", "dependency not found",
+        )
+        task_ids.append(task_id)
+    return task_ids
+
+
+def _supporting_evidence(task_type: str, task_ids: list[str],
+                         pattern: str = "missing_dependency") -> dict:
+    """A `refinement_evidence/v1` bundle that the exa-refine-04 gate accepts.
+
+    `tools/workflow/refinement_evidence.py` rejects any proposal whose trajectory
+    has no `lesson_learned` rows behind it — deliberately, so a refinement
+    motivated by nothing can never reach GEPA or a review queue. Traces alone are
+    therefore NOT enough to produce a 'pending' artifact.
+
+    The lessons live in `memory_entries`, which the SQLite test backend does not
+    create, so tests that need an *accepted* proposal patch `collect_evidence`
+    with this bundle rather than seeding that table. Only collection is stubbed:
+    the real `evaluate_evidence` gate still runs and still has to pass. The
+    rejection path needs no stub at all — see
+    `test_generate_rejects_artifact_with_no_lesson_evidence`, which exercises
+    collection for real.
+    """
+    from tools.workflow.refinement_evidence import EVIDENCE_SCHEMA
+
+    lessons = [
+        {"task_id": tid, "pattern": pattern, "category": "dependency",
+         "outcome": "failure", "recurrence_score": 0.5, "is_systemic": False}
+        for tid in task_ids
+    ]
+    return {
+        "schema": EVIDENCE_SCHEMA,
+        "task_type": task_type,
+        "task_ids": list(task_ids),
+        "lessons": lessons,
+        "lesson_count": len(lessons),
+        "patterns": [{"pattern": pattern, "lesson_count": len(lessons),
+                      "recurrence_score": 0.5, "is_systemic": False}],
+        "recurrence_score": 0.5,
+        "dominant_pattern": pattern,
+        "systemic_count": 0,
+    }
 
 
 def _unique_type() -> str:
@@ -210,13 +258,18 @@ def test_generate_writes_artifact_to_db():
     ra._COLEARN_ENABLED = True
     try:
         task_type = _unique_type()
-        _seed_traces(task_type, n_success=3, n_failure=2)
+        task_ids = _seed_traces(task_type, n_success=3, n_failure=2)
+        # The evidence gate joins the trajectory to lesson_learned rows; without
+        # them the artifact is written 'rejected_no_evidence', not 'pending'.
+        evidence = _supporting_evidence(task_type, task_ids)
 
-        with patch.object(ra, "_call_llm", return_value="## Root Cause\nMissing deps.\n\n## Proposed Improvements\n1. Add dep check.\n\n## Expected Impact\nFewer failures."):
+        with patch.object(ra, "collect_evidence", return_value=evidence), \
+             patch.object(ra, "_call_llm", return_value="## Root Cause\nMissing deps.\n\n## Proposed Improvements\n1. Add dep check.\n\n## Expected Impact\nFewer failures."):
             result = ra.generate_improvement_artifact(task_type, skill_used="icdev-build", dry_run=False)
 
         assert "error" not in result
         assert result.get("dry_run") is False
+        assert result.get("evidence_rejected") is False, result.get("evidence_reason")
 
         conn = get_connection()
         row = conn.execute(
@@ -233,6 +286,51 @@ def test_generate_writes_artifact_to_db():
         else:
             assert row[3] == "pending"
             assert row[1] == 1
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+def test_generate_rejects_artifact_with_no_lesson_evidence():
+    """exa-refine-04: a proposal with no lesson_learned rows behind it is rejected.
+
+    The traces alone look like a motive; they are not one. The artifact is still
+    persisted (it is the record of the rejection) but MUST NOT carry 'pending',
+    which is the status GEPA and the review queue select on.
+    """
+    import tools.workflow.reflexion_agent as ra
+    from tools.db.storage import get_connection
+    from tools.workflow.refinement_evidence import load_config
+
+    if not load_config().get("require_evidence", True):
+        pytest.skip("deployment has turned the evidence gate off (attach-only)")
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=3, n_failure=2)  # traces but NO lessons
+
+        with patch.object(ra, "_call_llm", return_value="Improvement with no evidence."):
+            result = ra.generate_improvement_artifact(task_type, skill_used="icdev-build", dry_run=False)
+
+        assert result.get("evidence_rejected") is True
+        assert result.get("lesson_count") == 0
+        assert result.get("status") == "rejected_no_evidence"
+
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT status FROM agent_improvement_artifacts WHERE task_type = ?",
+            (task_type,),
+        ).fetchone()
+        conn.close()
+
+        assert row is not None, "Rejected artifact should still be recorded"
+        status = row["status"] if isinstance(row, dict) else row[0]
+        assert status == "rejected_no_evidence"
+        assert status != "pending", "unsupported proposal must never be queued as pending"
+
+        # ...and it must be invisible to the consumer that serves refinements.
+        assert ra.get_latest_improvement(task_type) == ""
     finally:
         ra._COLEARN_ENABLED = orig
 
@@ -299,9 +397,13 @@ def test_get_latest_improvement_returns_formatted_text():
     ra._COLEARN_ENABLED = True
     try:
         task_type = _unique_type()
-        _seed_traces(task_type, n_success=4)
+        task_ids = _seed_traces(task_type, n_success=4)
+        # get_latest_improvement selects WHERE status = 'pending', so the
+        # artifact has to clear the evidence gate to be servable at all.
+        evidence = _supporting_evidence(task_type, task_ids)
 
-        with patch.object(ra, "_call_llm", return_value="Improvement: add retry logic."):
+        with patch.object(ra, "collect_evidence", return_value=evidence), \
+             patch.object(ra, "_call_llm", return_value="Improvement: add retry logic."):
             ra.generate_improvement_artifact(task_type, skill_used="icdev-build", dry_run=False)
 
         text = ra.get_latest_improvement(task_type)

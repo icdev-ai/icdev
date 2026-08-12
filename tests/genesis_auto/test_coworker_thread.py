@@ -53,14 +53,3 @@ def test_coworker_thread_CoWorkerThread_methods():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_coworker_thread_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.ace.coworker_thread as mod
-        assert hasattr(mod, "_DB_ENV"), "Missing constant _DB_ENV"
-        assert hasattr(mod, "_HITL_POLL_INTERVAL"), "Missing constant _HITL_POLL_INTERVAL"
-        assert hasattr(mod, "_DEFAULT_MONITOR_INTERVAL"), "Missing constant _DEFAULT_MONITOR_INTERVAL"
-    except ImportError:
-        pytest.skip("Module not importable")

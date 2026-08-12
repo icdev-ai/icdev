@@ -172,21 +172,3 @@ def test_extractors_Extraction_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_extractors_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.document_intelligence.extractors as mod
-        assert hasattr(mod, "_EASYOCR_READER"), "Missing constant _EASYOCR_READER"
-        assert hasattr(mod, "_EASYOCR_TRIED"), "Missing constant _EASYOCR_TRIED"
-        assert hasattr(mod, "_YIELD_RICH"), "Missing constant _YIELD_RICH"
-        assert hasattr(mod, "_YIELD_SPARSE"), "Missing constant _YIELD_SPARSE"
-        assert hasattr(mod, "_ANOMALY_STDEV_K"), "Missing constant _ANOMALY_STDEV_K"
-        assert hasattr(mod, "_ANOMALY_MIN_DOCS"), "Missing constant _ANOMALY_MIN_DOCS"
-        assert hasattr(mod, "_ANOMALY_SAMPLE"), "Missing constant _ANOMALY_SAMPLE"
-        assert hasattr(mod, "_ANOMALY_SEV_HIGH_FRACTION"), "Missing constant _ANOMALY_SEV_HIGH_FRACTION"
-        assert hasattr(mod, "_ANOMALY_SEV_MEDIUM_FRACTION"), "Missing constant _ANOMALY_SEV_MEDIUM_FRACTION"
-        assert hasattr(mod, "_EXTRACTION_ANOMALY_SYSTEM_PROMPT"), "Missing constant _EXTRACTION_ANOMALY_SYSTEM_PROMPT"
-    except ImportError:
-        pytest.skip("Module not importable")

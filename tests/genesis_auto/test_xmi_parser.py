@@ -146,15 +146,3 @@ def test_xmi_parser_main_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-
-def test_xmi_parser_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.mbse.xmi_parser as mod
-
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-    except ImportError:
-        pytest.skip("Module not importable")

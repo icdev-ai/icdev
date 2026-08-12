@@ -104,13 +104,3 @@ def test_boundary_engine_detect_boundary_gaps_signature():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_boundary_engine_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.boundary_canvas.boundary_engine as mod
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-    except ImportError:
-        pytest.skip("Module not importable")

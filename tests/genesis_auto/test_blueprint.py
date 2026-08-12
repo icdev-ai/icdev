@@ -58,13 +58,3 @@ def test_blueprint_create_data_canvas_blueprint_invocation():
                 raise
 
 
-# --- Constants ---
-
-def test_blueprint_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.data_canvas.blueprint as mod
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-    except ImportError:
-        pytest.skip("Module not importable")

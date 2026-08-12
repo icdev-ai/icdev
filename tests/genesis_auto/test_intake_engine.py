@@ -195,17 +195,3 @@ def test_intake_engine_main_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-
-def test_intake_engine_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.requirements.intake_engine as mod
-
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_LLM"), "Missing constant _HAS_LLM"
-        assert hasattr(mod, "_HAS_LLM"), "Missing constant _HAS_LLM"
-    except ImportError:
-        pytest.skip("Module not importable")

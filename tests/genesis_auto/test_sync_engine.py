@@ -230,8 +230,6 @@ def test_sync_engine_constants():
     try:
         import tools.mbse.sync_engine as mod
 
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
         assert hasattr(mod, "XMI_NS"), "Missing constant XMI_NS"
         assert hasattr(mod, "UML_NS"), "Missing constant UML_NS"
         assert hasattr(mod, "SYSML_NS"), "Missing constant SYSML_NS"

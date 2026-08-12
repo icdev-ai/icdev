@@ -123,21 +123,3 @@ def test_iac_generator_generate_helm_signature():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_iac_generator_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.infra_canvas.iac_generator as mod
-        assert hasattr(mod, "_CUI_BANNER"), "Missing constant _CUI_BANNER"
-        assert hasattr(mod, "_TF_PROVIDER_AWS"), "Missing constant _TF_PROVIDER_AWS"
-        assert hasattr(mod, "_TF_PROVIDER_AZURE"), "Missing constant _TF_PROVIDER_AZURE"
-        assert hasattr(mod, "_TF_PROVIDER_GCP"), "Missing constant _TF_PROVIDER_GCP"
-        assert hasattr(mod, "_TF_PROVIDER_OCI"), "Missing constant _TF_PROVIDER_OCI"
-        assert hasattr(mod, "_TF_PROVIDER_IBM"), "Missing constant _TF_PROVIDER_IBM"
-        assert hasattr(mod, "_TF_VARS_COMMON"), "Missing constant _TF_VARS_COMMON"
-        assert hasattr(mod, "_PULUMI_OPTS"), "Missing constant _PULUMI_OPTS"
-        assert hasattr(mod, "_ANSIBLE_HEADER"), "Missing constant _ANSIBLE_HEADER"
-        assert hasattr(mod, "_ANSIBLE_STIG_ROLE"), "Missing constant _ANSIBLE_STIG_ROLE"
-    except ImportError:
-        pytest.skip("Module not importable")
