@@ -1624,6 +1624,21 @@ python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis 
 # Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
 python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
 
+# Refinement evidence — WHY was this refinement proposed? (exa-refine-04)
+python tools/workflow/refinement_evidence.py --task-type build --json     # Collect evidence for a task_type's traces
+python tools/workflow/refinement_evidence.py --task-type build --skill icdev-build --window-days 14
+python tools/workflow/refinement_evidence.py --artifact-id <artifact-id>  # Show evidence stored on an existing proposal
+# Joins each trace's task_id to its `lesson_learned` row in memory_entries and adds the
+# per-pattern recurrence score from lesson_learned.get_recurrence, producing a
+# `refinement_evidence/v1` bundle that is written whole into
+# agent_improvement_artifacts.evidence_traces by reflexion_agent and NOVA SELA.
+# THE GATE: a proposal with no supporting lesson rows is persisted with
+# status='rejected_no_evidence' — never 'pending' — so GEPA and the review queues
+# (which select on 'pending') cannot surface it to a human.
+# Config: args/refinement_evidence.yaml (require_evidence, min_lessons,
+# min_recurrence_score, window_days). Legacy bare trace-id lists and NOVA provenance
+# dicts still read via parse_evidence() and report zero lesson evidence honestly.
+
 # Kanban — clear a stale done-gate block without re-dispatching (kpr-rvfy-02)
 python tools/kanban/cli.py --reverify <task-id> --dry-run     # Compute the verdict, write nothing
 python tools/kanban/cli.py --reverify <task-id> --json        # Append a fresh verification row

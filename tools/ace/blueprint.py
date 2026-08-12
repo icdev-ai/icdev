@@ -1717,13 +1717,22 @@ def api_nova_state(instance_id: str):
             )
         ):
             fact_counts[r["role_id"]] = int(r["n"])
+        # exa-refine-04: surface the lesson_learned evidence that motivated each
+        # applied refinement, so the coworker card shows WHY, not just WHAT.
+        from tools.workflow.refinement_evidence import evidence_summary
+
         improvements = [
-            {"task_type": r["task_type"], "improvement_text": r["improvement_text"]}
+            {
+                "task_type": r["task_type"],
+                "improvement_text": r["improvement_text"],
+                "evidence_summary": evidence_summary(r.get("evidence_traces")),
+            }
             for r in _rows(
                 conn_nova.execute(
                     _q(
                         conn_nova,
-                        "SELECT task_type, improvement_text FROM agent_improvement_artifacts "
+                        "SELECT task_type, improvement_text, evidence_traces "
+                        "FROM agent_improvement_artifacts "
                         "WHERE status = ? ORDER BY applied_at DESC LIMIT ?",
                     ),
                     ("applied", 20),
