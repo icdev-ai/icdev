@@ -232,7 +232,10 @@ python tools/security/mcp_tool_authorizer.py --list --role pm --json
 python tools/security/mcp_tool_authorizer.py --validate --json
 ```
 
-Five roles: admin, pm, developer, isso, co. Configuration in `args/owasp_agentic_config.yaml`.
+Five roles: admin, pm, developer, isso, co. Per-tool `min_il` and `required_roles`
+are declared in `tools/mcp/tool_registry.py`; `args/owasp_agentic_config.yaml`
+carries only `enabled` and `default_policy`. See
+[docs/security/mcp-tool-authorization.md](../security/mcp-tool-authorization.md).
 
 ### OWASP Agentic Assessment
 

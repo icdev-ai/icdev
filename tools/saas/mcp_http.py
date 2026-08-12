@@ -37,18 +37,26 @@ ways and each gets a different answer:
       call, and ``_dispatch_tool`` does not run it.
 
 The decision itself is delegated to :class:`tools.security.mcp_tool_authorizer.
-MCPToolAuthorizer` (D261) reading ``args/owasp_agentic_config.yaml``.  This
-module deliberately does NOT keep its own role/tool matrix -- when the MCP
-registry grows role and IL declarations (exa-policy-07), ``SAAS_ROLE_TO_RBAC_
-ROLE`` is the one thing that goes away.
+MCPToolAuthorizer` (D261).  This module deliberately keeps NO role/tool policy
+of its own.
+
+Where that policy lives changed in exa-policy-07: ``min_il`` and
+``required_roles`` are now declared once per tool in
+``tools/mcp/tool_registry.py`` and read by all three surfaces above, so this
+one cannot be a cheaper route to a tool Studio holds at IL5.  The local role
+map this module used to carry is gone with it -- SaaS tenant roles
+(``tools/saas/models.py::UserRole``) are folded into the canonical vocabulary
+by ``tool_registry.normalize_role``, whose alias table is the only copy.
+
+``viewer`` and ``auditor`` remain outside that vocabulary on purpose.  They
+have no D261 equivalent, an unrecognised role resolves to no privileges, and
+deny is the safe direction; monitor mode is how we find out whether real tenant
+traffic depends on them before that becomes binding.
 
 Mode is read from ``ICDEV_SAAS_MCP_AUTHZ_MODE`` and defaults to ``monitor``:
 would-be denials are logged to the append-only platform audit trail and the
 call still proceeds, so the policy can be measured against real tenant traffic
 before it starts refusing.  Set it to ``enforce`` to make denials binding.
-Monitor is the shipped default because the D261 matrix predates the SaaS role
-vocabulary and does not yet cover ``viewer`` or ``auditor`` -- see
-``SAAS_ROLE_TO_RBAC_ROLE``.
 
 Single endpoint: /mcp/v1/
     POST   -- Client sends JSON-RPC request(s), server responds with JSON
@@ -552,25 +560,6 @@ DEFAULT_AUTHZ_MODE = AUTHZ_MODE_MONITOR
 #: "you may not call this at all" is not a tool result.
 JSONRPC_UNAUTHORIZED = -32003
 
-#: SaaS tenant roles (``tools/saas/models.py::UserRole``) are not the D261 role
-#: vocabulary in ``args/owasp_agentic_config.yaml::mcp_authorization``.  Map,
-#: do not fork -- a second matrix is exactly what this surface was told not to
-#: grow.  ``viewer`` and ``auditor`` have no D261 equivalent and are left
-#: unmapped on purpose: MCPToolAuthorizer treats an unknown role as
-#: ``default_policy`` (deny), which is the safe direction, and monitor mode is
-#: how we find out whether any real tenant traffic depends on them before that
-#: becomes binding.  exa-policy-07 replaces this map with registry-declared
-#: roles.
-SAAS_ROLE_TO_RBAC_ROLE = {
-    "tenant_admin": "admin",
-    "admin": "admin",
-    "developer": "developer",
-    "compliance_officer": "isso",
-    "isso": "isso",
-    "pm": "pm",
-    "co": "co",
-}
-
 _authorizer = None
 _authorizer_lock = threading.Lock()
 
@@ -620,23 +609,25 @@ def authorize_tool(tool_name: str, user_role: Optional[str]) -> dict:
             enforced  -- whether that verdict binds (False in monitor mode).
             mode      -- the active authorization mode.
             role      -- the SaaS role as presented.
-            rbac_role -- the D261 role it mapped to.
+            rbac_role -- the canonical role it normalised to, or "" when the
+                         role is outside the vocabulary entirely.
             tool      -- the tool name.
             reason    -- MCPToolAuthorizer's explanation.
     """
     saas_role = (user_role or "").strip().lower()
-    # An unmapped role is passed through verbatim so MCPToolAuthorizer reports
-    # it as unknown and applies default_policy, rather than being silently
-    # upgraded to something that happens to be in the matrix.
-    rbac_role = SAAS_ROLE_TO_RBAC_ROLE.get(saas_role, saas_role)
-    verdict = get_authorizer().authorize(rbac_role, tool_name)
+    # The SaaS role is handed to the authorizer VERBATIM.  Normalising here
+    # would put a second copy of the alias table on this surface, which is the
+    # thing exa-policy-07 removed; the authorizer normalises it against
+    # tool_registry.ROLE_ALIASES, and a role outside that vocabulary stays
+    # unrecognised rather than being silently upgraded to one that is in it.
+    verdict = get_authorizer().authorize(saas_role, tool_name)
     mode = get_authz_mode()
     return {
         "allowed": bool(verdict.get("allowed")),
         "enforced": mode == AUTHZ_MODE_ENFORCE,
         "mode": mode,
         "role": saas_role,
-        "rbac_role": rbac_role,
+        "rbac_role": verdict.get("rbac_role", ""),
         "tool": tool_name,
         "reason": verdict.get("reason", ""),
     }

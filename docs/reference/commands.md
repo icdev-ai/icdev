@@ -2392,7 +2392,8 @@ pytest tests/test_behavioral_drift.py -v             # Behavioral drift detectio
 pytest tests/test_tool_chain_validator.py -v          # Tool chain validator tests (22 tests)
 pytest tests/test_agent_output_validator.py -v        # Agent output validator tests (22 tests)
 pytest tests/test_agent_trust_scorer.py -v            # Agent trust scorer tests (22 tests)
-pytest tests/test_mcp_tool_authorizer.py -v           # MCP tool authorizer tests (28 tests)
+pytest tests/test_mcp_tool_authorizer.py -v           # MCP tool authorizer tests (23 tests)
+pytest tests/test_exa_policy_07_registry_authorization.py -v  # Per-tool min_il/required_roles declarations (111 tests)
 pytest tests/test_behavioral_red_team.py -v           # Behavioral red teaming tests (13 tests)
 pytest tests/test_owasp_agentic_assessor.py -v        # OWASP Agentic assessor tests (16 tests)
 pytest tests/test_schemas.py -v                      # Shared schema enforcement tests (29 tests)
@@ -3148,7 +3149,7 @@ python tools/security/agent_trust_scorer.py --all --json                        
 python tools/security/agent_trust_scorer.py --gate --project-id "proj-123" --json                     # Trust scoring gate
 python tools/security/mcp_tool_authorizer.py --check --role developer --tool scaffold --json          # Check tool authorization
 python tools/security/mcp_tool_authorizer.py --list --role pm --json                                  # List role permissions
-python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config
+python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config (registry-declared since exa-policy-07)
 python tools/security/mcp_authz_evidence.py --json                                                    # Is per-tool MCP authz ENFORCED? (behavioural, not file existence)
 python tools/security/mcp_authz_evidence.py --gate                                                    # Exit 1 unless a denial actually binds
 python tools/security/mcp_authz_evidence.py --gate --allow-monitor                                    # Accept monitor mode as passing

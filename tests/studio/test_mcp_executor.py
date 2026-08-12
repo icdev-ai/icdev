@@ -15,6 +15,8 @@ import pytest
 
 from tools.studio.executors import mcp_executor
 
+from .conftest import declare_stubs_read_only, reset_authorization_cache
+
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "tools" / "studio" / "executors" / "mcp_executor.py"
 
@@ -29,6 +31,12 @@ def allow_stub_tools(monkeypatch):
     the policy names it. Patching the cache (rather than the file) keeps the
     real args/security_gates.yaml as the thing under test everywhere else.
     """
+    # exa-policy-07: a stub also needs a registry authorization declaration, or
+    # it resolves restrictively (IL5 / admin) and is refused before the
+    # allowlist mechanics under test are reached.
+    declare_stubs_read_only(
+        monkeypatch, "stub_echo", "stub_boom", "stub_missing", "stub_denied"
+    )
     policy = dict(mcp_executor.load_gate_policy())
     policy["allowed"] = list(policy["allowed"]) + [
         "stub_echo", "stub_boom", "stub_missing",
@@ -36,7 +44,8 @@ def allow_stub_tools(monkeypatch):
     monkeypatch.setitem(
         mcp_executor._POLICY_CACHE, mcp_executor.GATE_POLICY_KEY, policy
     )
-    return policy
+    yield policy
+    reset_authorization_cache()
 
 
 @pytest.fixture
@@ -446,9 +455,15 @@ def test_cli_refused_tool_exits_nonzero_with_gate_reason():
 
 @pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_requires_approval_tool_without_a_run_is_blocked():
-    """No --run-id means no run to park a gate on, so nothing to approve."""
+    """No --run-id means no run to park a gate on, so nothing to approve.
+
+    The caller flags are IL5/admin because `terraform_apply` is declared at that
+    level in the MCP registry (exa-policy-07) and IL is checked before the human
+    gate -- without them the refusal under test never happens.
+    """
     rc, out = _cli("--tool", "terraform_apply",
-                   "--params", '{"terraform_dir": "."}')
+                   "--params", '{"terraform_dir": "."}',
+                   "--caller-il", "IL5", "--caller-roles", "admin")
     assert rc == 1
     assert out["error_type"] == "mcp_tool_approval_gate_unavailable"
 
@@ -456,7 +471,8 @@ def test_cli_requires_approval_tool_without_a_run_is_blocked():
 @pytest.mark.timeout(_CLI_TEST_TIMEOUT_S)
 def test_cli_gate_is_checked_after_params_so_nobody_is_woken_for_a_bad_call():
     """terraform_apply's schema requires terraform_dir; omitting it never gates."""
-    rc, out = _cli("--tool", "terraform_apply", "--params", "{}")
+    rc, out = _cli("--tool", "terraform_apply", "--params", "{}",
+                   "--caller-il", "IL5", "--caller-roles", "admin")
     assert rc == 1
     assert out["error_type"] == "invalid_params"
 
