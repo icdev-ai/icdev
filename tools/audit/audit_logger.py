@@ -69,6 +69,14 @@ VALID_EVENT_TYPES = (
     # The canvas had zero rows in audit_trail. Actions are namespaced in `action`
     # (net_session_status_changed, coa_selected, erb_submitted, …).
     "migration_canvas",
+    # Supplemental harness state (exa-refine-05). A refinement cycle snapshots
+    # the prompt/skill/goal state the harness rewrites about itself, and can be
+    # rolled back as a unit; every snapshot, applied refinement and rollback is
+    # a chained row so self-modification is verifiable rather than merely
+    # logged. Actions are namespaced in `action` (snapshot_created,
+    # refinement_applied, cycle_rolled_back) following the migration_canvas
+    # precedent above — one event type, not three.
+    "supplemental_state",
     "deployment_initiated",
     "deployment_succeeded",
     "deployment_failed",

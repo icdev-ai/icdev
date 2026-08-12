@@ -571,6 +571,15 @@ tests/test_capability_consumption.py
 # -- no DB service, LLM or network, ~15s.
 tests/test_prompt_registry_supplemental_layers.py
 
+# exa-refine-05 -- snapshot + as-a-unit rollback of the supplemental harness
+# state. Required because this is the LAST resort when a self-applied refinement
+# is wrong: if the snapshot is subtly incomplete, or "rolled back" becomes a
+# status flip somebody can UPDATE, or a mid-cycle file gets deleted without a
+# recoverable copy, the failure surfaces only at the moment someone needs to undo
+# -- when it is already too late. The chained-audit half is pinned here too, so a
+# self-modification can never look audited while nothing was written. Temp SQLite
+# + a redirected repo root -- no DB service, LLM or network, ~3s.
+tests/test_refinement_cycle.py
 # exa-refine-02 -- the three call-site prompts now READ from the registry rather
 # than being f-string literals. Required because the failure it guards is silent
 # in both directions. If the refactor drifts, the model gets a prompt nobody
