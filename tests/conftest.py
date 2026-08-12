@@ -632,6 +632,39 @@ CREATE TABLE IF NOT EXISTS audit_chain_genesis (
     classification TEXT DEFAULT 'CUI',
     recorded_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- exa-refine-05 / migration 20260812074403. The row half of a refinement-cycle
+-- snapshot: the serialised supplemental state (prompt versions, auto-skills,
+-- learned goals) plus the id of the checkpoints.py checkpoint holding the file
+-- half. Append-only; a rollback appends a pre_rollback snapshot.
+CREATE TABLE IF NOT EXISTS supplemental_state_snapshots (
+    id              TEXT PRIMARY KEY,
+    cycle_id        TEXT NOT NULL,
+    kind            TEXT NOT NULL DEFAULT 'open',
+    label           TEXT DEFAULT '',
+    actor           TEXT DEFAULT 'system',
+    checkpoint_id   TEXT,
+    state_json      TEXT NOT NULL,
+    state_hash      TEXT NOT NULL,
+    audit_entry_id  INTEGER,
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT,
+    created_at      TEXT NOT NULL
+);
+-- The refinements applied inside a cycle, same migration. A rollback is the
+-- ('cycle','rolled_back') row here, not a status flip on the snapshot.
+CREATE TABLE IF NOT EXISTS supplemental_refinements (
+    id              TEXT PRIMARY KEY,
+    cycle_id        TEXT NOT NULL,
+    provider        TEXT NOT NULL,
+    action          TEXT NOT NULL,
+    target          TEXT DEFAULT '',
+    actor           TEXT DEFAULT 'system',
+    details         TEXT DEFAULT '{}',
+    audit_entry_id  INTEGER,
+    classification  TEXT DEFAULT 'CUI',
+    tenant_id       TEXT,
+    created_at      TEXT NOT NULL
+);
 -- ars-appr-01 / migration 342. Append-only: every approval-gate verdict for an
 -- irreversible or unenumerated agent tool call, with the actor and the reason.
 CREATE TABLE IF NOT EXISTS agent_approval_log (

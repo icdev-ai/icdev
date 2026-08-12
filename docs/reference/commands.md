@@ -561,6 +561,62 @@ model on the very next turn. `ICDEV_SAG_GOALS=0` disables injection entirely.
 
 ---
 
+## Refinement Cycles — Snapshot & Rollback of Supplemental State (exa-refine-05)
+
+A *refinement cycle* is a unit of self-modification of the supplemental harness
+state — the prompt layers (`prompt_versions`), auto-generated skills
+(`sag_skill_registry` + `.agents/skills/icdev-auto-*`) and learned goals
+(`genesis_generated_goals` + `data/genesis/suggested_goals`) that ICDEV rewrites
+about itself. Snapshot before, roll the whole thing back after.
+
+```bash
+# Snapshot the supplemental state and open a cycle
+python tools/agent_runtime/refinement_cycle.py open --label "gepa pass"
+
+# Only some stores
+python tools/agent_runtime/refinement_cycle.py open --providers prompts,skills
+
+# Cycles newest first, with derived status and refinement count
+python tools/agent_runtime/refinement_cycle.py list --limit 10
+
+# What a rollback WOULD do (drifted providers, file changes, added files)
+python tools/agent_runtime/refinement_cycle.py show <cycle-id>
+
+# Roll it back. Without --yes this is a preview, same as `show`.
+python tools/agent_runtime/refinement_cycle.py rollback <cycle-id> --yes
+
+# Re-verify every chained audit row the cycle wrote
+python tools/agent_runtime/refinement_cycle.py verify <cycle-id>
+```
+
+The **file half** of a snapshot is `tools/agent_runtime/checkpoints.py` — the
+same checkpoints `/snapshot` and `/rollback` drive — so there is one checkpoint
+system, not two. The **row half** lives in the append-only
+`supplemental_state_snapshots` / `supplemental_refinements` tables (migration
+`20260812074403`).
+
+A rollback opens an *undo* cycle first, so it is itself reversible: roll the
+`undo_cycle_id` back to reinstate the refinement. That is also what makes
+removing a file that appeared mid-cycle safe — it is deleted only once the undo
+checkpoint is confirmed to hold recoverable bytes, and anything unrecoverable is
+reported under `files_not_removed` rather than dropped.
+
+Every snapshot, applied refinement and rollback writes a **chained** `audit_trail`
+row (`event_type='supplemental_state'`), so `verify` recomputes each digest and
+its link through `provenance_verifier.verify_audit_integrity`. A row whose audit
+write failed reports `unaudited` — it never reads as verified.
+
+Record a change inside a cycle from Python:
+
+```python
+from icdev.tools.agent_runtime.refinement_cycle import open_cycle, record_refinement
+
+cycle = open_cycle("nightly gepa pass", actor="gepa_optimizer")
+record_refinement(cycle["cycle_id"], "prompts", "activated", target="layer/codegen")
+```
+
+---
+
 ## Agent Approval Gate — Irreversible Action Confirmation (ars-appr-01)
 
 Classifies an agent tool call by **reversibility** and halts the irreversible

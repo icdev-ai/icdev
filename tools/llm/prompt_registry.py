@@ -134,6 +134,19 @@ def _invalidate_layer_cache() -> None:
     """Drop the layer cache after any registry mutation."""
     _LAYER_CACHE.clear()
 
+
+def invalidate_layer_cache() -> None:
+    """Public entry point for the same thing, for out-of-module mutators.
+
+    ``refinement_cycle`` restores prompt state by writing ``prompt_versions``
+    directly (archiving versions a rolled-back cycle introduced), which the
+    functions in this module cannot know about. Without a way to invalidate,
+    the composed system prompt keeps serving the rolled-back layer for the life
+    of the process — the rollback would be real in the database and invisible
+    at the read path.
+    """
+    _invalidate_layer_cache()
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------

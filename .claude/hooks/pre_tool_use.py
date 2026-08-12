@@ -88,6 +88,18 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # "it never had a hash anyway", so a re-cutover appends a second row and
         # the earliest one still wins.
         "audit_chain_genesis",
+        # Refinement-cycle snapshots of the supplemental harness state
+        # (exa-refine-05, migration 20260812074403). A snapshot is a
+        # point-in-time record of what the harness looked like before it
+        # rewrote itself; editing one rewrites the state a rollback claims to
+        # return to, which is the one thing that must not be forgeable. A
+        # rollback therefore appends a pre_rollback snapshot rather than
+        # touching the original.
+        "supplemental_state_snapshots",
+        # The applied refinements inside a cycle, same table pair. "This cycle
+        # was rolled back" is an appended ('cycle','rolled_back') row, never a
+        # status flip — cycle_status() derives the verdict at read time.
+        "supplemental_refinements",
         "hook_events",
         # Approval-gate verdicts for irreversible agent actions (ars-appr-01,
         # migration 342). A decision has no lifecycle: someone authorised an
