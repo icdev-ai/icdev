@@ -8743,6 +8743,13 @@ RESOURCE_REGISTRY = {
     },
 }
 
+# ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
+# Do not move or reword this line. `tools/mcp/generate_registry.py` REWRITES this
+# whole file, and before exa-policy-07 it wrote only the two registries above --
+# so a regeneration silently deleted READ_ONLY_DECLARATIONS (a safety flag the
+# agent loop partitions on) and the authorization declarations (which every MCP
+# gate authorizes against). The generator now splits the existing file on this
+# marker and re-emits the tail verbatim. Keep hand-maintained content BELOW it.
 
 
 # ============================================================================
@@ -8796,6 +8803,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "poam_generate":                            False,
     "stig_check":                               False,
     "sbom_generate":                            False,
+    # `record: true` persists the assessment via record_assessment(), so this
+    # is a writer even though its default invocation only grades a document.
+    "sbom_validate_minimum_elements":           False,
     "cui_mark":                                 False,
     "control_map":                              False,
     "cssp_assess":                              False,
@@ -9430,3 +9440,579 @@ def list_tools() -> list:
         if "input_schema" in entry and key not in names:
             names.append(key)
     return names
+
+
+# ============================================================================
+# AUTHORIZATION DECLARATIONS (exa-policy-07)
+# ============================================================================
+# ``min_il`` and ``required_roles`` are declared HERE, once, and every surface
+# that authorizes an MCP tool call reads THIS:
+#
+#   tools/studio/executors/mcp_executor.py     node_type: mcp    (MCP-WF-001)
+#   tools/studio/executors/agent_tool_gate.py  node_type: agent  (AGENT-WF-001)
+#   tools/security/mcp_tool_authorizer.py      SaaS MCP HTTP     (D261)
+#
+# WHY ONE DECLARATION. ``agent_tool_gate.tool_limits`` already had the
+# inheritance path -- it asks the registry what a tool's limits are and lets the
+# stricter of the two win -- but the registry declared neither field, so every
+# tool fell through to ``default_min_il`` (the CUI/IL4 platform baseline) with no
+# role limit at all. Meanwhile ``args/owasp_agentic_config.yaml`` carried a
+# separate hand-written ``role_tool_matrix`` that had gone stale in the opposite
+# direction: ``developer`` allowed 8 tools out of ~700. Two RBACs that disagree
+# are worse than one that is switched off, so the matrix is retired and this is
+# the single source. :func:`tools.security.mcp_tool_authorizer.MCPToolAuthorizer`
+# materialises the per-role view the matrix used to hold BY HAND.
+#
+# WHY DERIVED, NOT HAND-WRITTEN. Hand-writing roles for ~520 tools in one sitting
+# produces a table nobody re-reads and everybody trusts. The default is instead
+# derived from declarations that already exist and are already tested:
+#
+#   1. ``READ_ONLY_DECLARATIONS`` above -- does the handler mutate state.
+#   2. ``mutating: true`` bundle membership in ``args/agent_toolsets.yaml`` --
+#      a second, independent claim. It is not redundant: ``browser_read_state``
+#      is declared read-only (it only reads the page) yet sits in the mutating
+#      ``browser`` bundle, because reading through a DRIVEN browser is not a
+#      pure read. The stricter of the two signals wins.
+#   3. The tool's own ``category`` -- which domain it acts in, and therefore
+#      which role owns mutating it.
+#
+# Then :data:`AUTHZ_OVERRIDES` corrects the ones that matter. An override is
+# always the answer to "the derivation is wrong HERE, and here is why".
+#
+# WHY THE DEFAULT IS THE RESTRICTIVE ONE. A tool with no ``read_only``
+# declaration, an unmapped category, or no registry entry at all resolves to
+# :data:`RESTRICTED_MIN_IL` / :data:`RESTRICTED_ROLES` -- IL5, admin only. The
+# failure mode being designed out is a tool that is added, authorized by nobody,
+# and reachable by everybody. A too-strict new tool is a refusal somebody
+# reports; a too-loose one is silent.
+#
+# WHY A SIDE TABLE. Same reason as READ_ONLY_DECLARATIONS: the entries above are
+# ``generate_registry.py`` output and a hand-maintained safety field injected
+# into a generated entry is a field the next regeneration drops.
+
+#: Canonical role vocabulary (D261). ``admin`` holds every privilege; the other
+#: four are the roles the platform actually issues.
+ROLES = ("admin", "pm", "developer", "isso", "co")
+
+#: The role that is never refused. Kept as a named constant because "admin can
+#: do anything" is a policy decision, not an implementation detail -- it used to
+#: be spelled ``allow: ["*"]`` in the retired matrix.
+ADMIN_ROLE = "admin"
+
+#: Role aliases -> canonical role, in ONE place. SaaS tenant roles
+#: (``tools/saas/models.py::UserRole``) are the same vocabulary once these are
+#: folded in; ``tools/saas/mcp_http.py`` used to carry its own copy of this map.
+#:
+#: ``viewer`` and ``auditor`` are deliberately ABSENT. They have no D261
+#: equivalent, and an unrecognised role resolves to no privileges at all, which
+#: is the safe direction. Adding them is a policy change that belongs in a card
+#: with the traffic evidence to justify it, not in an alias table.
+ROLE_ALIASES = MappingProxyType({
+    "tenant_admin": "admin",
+    "compliance_officer": "isso",
+    "contracting_officer": "co",
+    "project_manager": "pm",
+})
+
+#: Platform baseline impact level (CUI / IL4).
+DEFAULT_MIN_IL = "IL4"
+
+#: Impact level for anything the derivation cannot vouch for, and for the
+#: privileged overrides below.
+RESTRICTED_MIN_IL = "IL5"
+
+#: Roles for anything the derivation cannot vouch for.
+RESTRICTED_ROLES = ("admin",)
+
+#: No role limit. Distinct from ``("admin",)``: it means "any principal this
+#: surface recognises", not "anyone at all" -- each consuming surface still
+#: decides what counts as a recognised principal.
+NO_ROLE_LIMIT = ()
+
+# Tier names. These appear in the ``source`` of a refusal and in the audit row,
+# so an operator can tell a declared limit from a derived one without re-reading
+# this file.
+TIER_DECLARED = "declared"      # AUTHZ_OVERRIDES named it
+TIER_READ = "read"              # declared read-only, in no mutating bundle
+TIER_WRITE = "write"            # mutates, or sits in a mutating bundle
+TIER_UNDECLARED = "undeclared"  # registered, but no read_only declaration
+TIER_UNKNOWN = "unknown_tool"   # not registered and not overridden
+
+#: Category -> roles that may MUTATE in that domain. Read-only tools carry no
+#: role limit regardless of category, so this table only ever narrows writes.
+#:
+#: This is what replaced the retired ``role_tool_matrix``: ~70 rows keyed by a
+#: field the generator already writes, instead of ~520 rows keyed by tool name.
+#: A tool added to an existing category inherits its roles automatically, which
+#: is the whole reason the per-tool matrix went stale.
+#:
+#: An UNMAPPED category resolves to :data:`RESTRICTED_ROLES`.
+#: ``test_exa_policy_07_registry_authorization.py`` fails when a category exists
+#: in the registry and not here, so a new category is caught at build time
+#: rather than quietly denying everyone but admin.
+CATEGORY_WRITE_ROLES = MappingProxyType({
+    # -- project, portfolio, planning: the PM owns the state ----------------
+    "core":              ("admin", "pm"),
+    "requirements":      ("admin", "pm"),
+    "simulation":        ("admin", "pm"),
+    "kanban":            ("admin", "pm", "developer"),
+    "workflow":          ("admin", "pm", "developer"),
+    "compass":           ("admin", "pm"),
+    "govcon":            ("admin", "pm"),
+    "oracle":            ("admin", "pm"),
+    "canvas":            ("admin", "pm", "developer"),
+    "mbse":              ("admin", "pm", "developer"),
+    "integration":       ("admin", "pm", "developer"),
+    # -- compliance, assurance, security posture: the ISSO owns the state ---
+    "compliance":        ("admin", "isso"),
+    "security":          ("admin", "isso"),
+    "security_agentic":  ("admin", "isso"),
+    "supply_chain":      ("admin", "isso"),
+    "integrity":         ("admin", "isso"),
+    "agent_detection":   ("admin", "isso"),
+    "redaction":         ("admin", "isso"),
+    "ai_trace":          ("admin", "isso"),
+    "dsoc":              ("admin", "isso"),
+    "network":           ("admin", "isso"),
+    "devsecops":         ("admin", "isso", "developer"),
+    # -- build, test, data, model plumbing: the developer owns the state ----
+    "builder":           ("admin", "developer"),
+    "testing":           ("admin", "developer"),
+    "translation":       ("admin", "developer"),
+    "modernization":     ("admin", "developer"),
+    "migration":         ("admin", "developer"),
+    "maintenance":       ("admin", "developer"),
+    "dx":                ("admin", "developer"),
+    "context":           ("admin", "developer"),
+    "innovation":        ("admin", "developer"),
+    "knowledge":         ("admin", "developer", "isso", "pm"),
+    "knowledge_graph":   ("admin", "developer", "isso", "pm"),
+    "ontology":          ("admin", "developer"),
+    "rag":               ("admin", "developer"),
+    "llmops":            ("admin", "developer"),
+    "cortex":            ("admin", "developer"),
+    "nova":              ("admin", "developer"),
+    "analyzers":         ("admin", "developer"),
+    "system_graph":      ("admin", "developer"),
+    "intelligence":      ("admin", "developer"),
+    "research":          ("admin", "developer"),
+    "autoresearch":      ("admin", "developer"),
+    "finetune":          ("admin", "developer"),
+    "dic":               ("admin", "developer"),
+    "docmod":            ("admin", "developer"),
+    "studio":            ("admin", "developer"),
+    "foundry":           ("admin", "developer"),
+    "pulse":             ("admin", "developer"),
+    "ace":               ("admin", "developer"),
+    "agent_case":        ("admin", "developer", "isso"),
+    "databridge":        ("admin", "developer"),
+    "fathomdesk_news":   ("admin", "developer"),
+    "browser":           ("admin", "developer"),
+    "observability":     ("admin", "developer"),
+    "sre":               ("admin", "developer"),
+    "ohc":               ("admin", "developer"),
+    "nocc":              ("admin", "developer"),
+    "ccc":               ("admin", "developer"),
+    "pmc":               ("admin", "developer"),
+    "conflict_mesh":     ("admin", "developer"),
+    # -- infrastructure, distribution, credentials: admin only -------------
+    # These mutate things outside the platform's own boundary (cloud accounts,
+    # clusters, remote agents, third-party code, key material) or rewrite the
+    # registries other authorization decisions are read from.
+    "infra":             ("admin",),
+    "cloud":             ("admin",),
+    "gateway":           ("admin",),
+    "installer":         ("admin",),
+    "marketplace":       ("admin",),
+    "agent_topology":    ("admin",),
+    "registry":          ("admin",),
+    "misc":              ("admin",),
+})
+
+#: Per-tool corrections to the derivation. ``why`` is required by
+#: ``test_exa_policy_07_registry_authorization.py``: an override with no stated
+#: reason is indistinguishable from a mistake, and this table is the one place a
+#: reviewer cannot re-derive the answer from the registry.
+AUTHZ_OVERRIDES = MappingProxyType({
+    # ---- Allowlisted for UNATTENDED workflow dispatch --------------------
+    # These three are in `mcp_workflow_tools.allowed` (args/security_gates.yaml)
+    # precisely so a workflow can run them with no human in the loop. They are
+    # declared mutating because they persist their findings, so the derivation
+    # would hand them a role floor -- and a Studio mcp step resolves a caller
+    # with NO roles by default, so that floor would deny the very scans the
+    # allowlist exists to run. Report-only writers, no role limit.
+    "stig_check": {
+        "min_il": DEFAULT_MIN_IL,
+        "required_roles": NO_ROLE_LIMIT,
+        "why": "report-only writer, allowlisted for unattended workflow dispatch",
+    },
+    "code_analyze": {
+        "min_il": DEFAULT_MIN_IL,
+        "required_roles": NO_ROLE_LIMIT,
+        "why": "report-only writer, allowlisted for unattended workflow dispatch",
+    },
+    "scan_dependencies": {
+        "min_il": DEFAULT_MIN_IL,
+        "required_roles": NO_ROLE_LIMIT,
+        "why": "report-only writer, allowlisted for unattended workflow dispatch",
+    },
+
+    # ---- Mutates infrastructure outside the platform boundary ------------
+    "terraform_apply": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "mutates live cloud infrastructure; not recoverable from inside ICDEV",
+    },
+    "k8s_deploy": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "deploys workloads to a live cluster",
+    },
+    "ansible_run": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "executes playbooks against live hosts",
+    },
+    "rollback": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "tears down or reverts a live deployment",
+    },
+
+    # ---- Executes code, or acts unattended on the platform's behalf -------
+    "sandbox_execute": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "runs caller-supplied code",
+    },
+    "runbook_execute": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "runs a stored operational procedure unattended",
+    },
+    "send_command": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "issues a command to a remote A2A agent",
+    },
+    "self_heal": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "applies unattended remediation to running systems",
+    },
+    "production_remediate": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "applies remediation in production",
+    },
+    "studio_run_start": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "spawns a graph run whose every step executes under this caller's authority",
+    },
+    "studio_run_resume": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "continues a parked graph run under this caller's authority",
+    },
+
+    # ---- Key material and brokered credentials ---------------------------
+    "proxy_key_issue": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "mints a credential",
+    },
+    "proxy_key_show": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "discloses a credential",
+    },
+    "credential_broker_request": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "brokers a credential to a caller",
+    },
+
+    # ---- Third-party code in, platform data out --------------------------
+    "install_asset": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "installs third-party marketplace code into the platform",
+    },
+    "uninstall_asset": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "removes installed marketplace code other work may depend on",
+    },
+    "publish_asset": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "publishes outward to the federated marketplace",
+    },
+    "emass_sync": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": ("admin", "isso"),
+        "why": "egresses compliance data to eMASS; the ISSO owns that submission",
+    },
+    "xacta_sync": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": ("admin", "isso"),
+        "why": "egresses compliance data to Xacta; the ISSO owns that submission",
+    },
+    "xacta_export": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": ("admin", "isso"),
+        "why": "exports the compliance package outward",
+    },
+
+    # ---- Destructive -----------------------------------------------------
+    "kanban_delete_task": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "destructive board write; the board is the delivery record",
+    },
+    "rag_delete_source": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "destructive index write",
+    },
+    "revoke_binding": {
+        "min_il": RESTRICTED_MIN_IL, "required_roles": RESTRICTED_ROLES,
+        "why": "revokes an identity binding other authorization decisions read",
+    },
+
+    # ---- Dispatched by the SaaS MCP HTTP surface, absent from the registry -
+    # tools/saas/mcp_http.py exposes three tools under names of its own that
+    # have no TOOL_REGISTRY entry. Without a declaration they would resolve to
+    # TIER_UNKNOWN (admin only) and a tenant developer would silently lose them.
+    # Declared here rather than in mcp_http.py so there is still exactly one
+    # place a reviewer has to read.
+    "sast_scan": {
+        "min_il": DEFAULT_MIN_IL, "required_roles": ("admin", "developer", "isso"),
+        "why": "SaaS-surface name for tools.security.sast_runner; no registry entry",
+    },
+    "dependency_audit": {
+        "min_il": DEFAULT_MIN_IL, "required_roles": ("admin", "developer", "isso"),
+        "why": "SaaS-surface name for tools.security.dependency_auditor; no registry entry",
+    },
+    "gao_evidence_build": {
+        "min_il": DEFAULT_MIN_IL, "required_roles": ("admin", "isso"),
+        "why": "SaaS-surface name for tools.compliance.gao_evidence_builder; no registry entry",
+    },
+})
+
+
+#: Resolved authorizations, keyed by tool name. Cleared by
+#: :func:`reset_authorization_cache`.
+_AUTHZ_CACHE: dict = {}
+
+#: Tools reachable through a ``mutating: true`` bundle, or ``None`` until read.
+_MUTATING_BUNDLE_TOOLS = None
+
+
+def _agent_toolsets_path():
+    """Locate ``args/agent_toolsets.yaml`` from the checkout or the icdev mirror.
+
+    This module lives at ``<root>/tools/mcp/`` in the checkout and at
+    ``<root>/icdev/tools/mcp/`` in the packaged mirror, so both parents are
+    probed rather than assuming one layout.
+    """
+    from pathlib import Path  # noqa: PLC0415 -- import cost stays off module load
+
+    here = Path(__file__).resolve()
+    for depth in (2, 3):
+        try:
+            candidate = here.parents[depth] / "args" / "agent_toolsets.yaml"
+        except IndexError:
+            continue
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def mutating_bundle_tools() -> frozenset:
+    """Tools named by a ``mutating: true`` bundle in ``args/agent_toolsets.yaml``.
+
+    Read lazily and cached: this module is imported for its data by code that
+    never authorizes anything, and it must not pay a YAML parse at import.
+
+    An unreadable file yields an EMPTY set, which loses the escalation signal
+    rather than denying every tool -- ``read_only`` and ``category`` still
+    decide, and ``test_exa_policy_07_registry_authorization.py`` fails if the
+    shipped file stops parsing, so the degraded path cannot ship unnoticed.
+    """
+    global _MUTATING_BUNDLE_TOOLS
+    if _MUTATING_BUNDLE_TOOLS is not None:
+        return _MUTATING_BUNDLE_TOOLS
+
+    names: set = set()
+    path = _agent_toolsets_path()
+    if path is not None:
+        try:
+            import yaml  # noqa: PLC0415 -- optional dependency, lazily imported
+
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            for bundle in (data.get("bundles") or {}).values():
+                if isinstance(bundle, dict) and bundle.get("mutating"):
+                    names.update(str(t) for t in (bundle.get("tools") or []))
+        except Exception:  # noqa: BLE001 -- see docstring: degrade, do not deny
+            names = set()
+
+    _MUTATING_BUNDLE_TOOLS = frozenset(names)
+    return _MUTATING_BUNDLE_TOOLS
+
+
+def reset_authorization_cache() -> None:
+    """Drop the resolved-authorization and bundle caches (tests, long daemons)."""
+    global _MUTATING_BUNDLE_TOOLS
+    _AUTHZ_CACHE.clear()
+    _MUTATING_BUNDLE_TOOLS = None
+
+
+def normalize_role(role) -> str:
+    """Return the canonical role name for ``role``, or ``""`` if unrecognised.
+
+    Case- and alias-insensitive. ``""`` is the answer for anything outside
+    :data:`ROLES` and :data:`ROLE_ALIASES`, including ``None`` and the empty
+    string -- an unrecognised role must never resolve to a privileged one, so
+    the caller gets a value that matches no ``required_roles`` list.
+    """
+    name = str(role or "").strip().lower()
+    if not name:
+        return ""
+    name = ROLE_ALIASES.get(name, name)
+    return name if name in ROLES else ""
+
+
+def _registered_entry(name: str):
+    """Return the registry entry for ``name``, or ``None``.
+
+    Resources without an ``input_schema`` are genuine MCP resources rather than
+    tools and are not authorized here.
+    """
+    for registry in (TOOL_REGISTRY, RESOURCE_REGISTRY):
+        entry = registry.get(name)
+        if isinstance(entry, dict) and "input_schema" in entry:
+            return entry
+    return None
+
+
+def tool_authorization(name: str, entry=None) -> dict:
+    """Return the impact level and roles ``name`` may be called under.
+
+    Resolution order, first match wins:
+
+    1. :data:`AUTHZ_OVERRIDES` -- a stated correction to the derivation.
+    2. Not registered -> :data:`TIER_UNKNOWN`, IL5 / admin. A name nobody
+       declared is never permissive.
+    3. No ``read_only`` declaration -> :data:`TIER_UNDECLARED`, IL5 / admin.
+    4. Declared read-only AND in no mutating bundle -> :data:`TIER_READ`, the
+       platform baseline with no role limit.
+    5. Otherwise -> :data:`TIER_WRITE`, the platform baseline with the roles
+       :data:`CATEGORY_WRITE_ROLES` gives its category (admin only if the
+       category is unmapped).
+
+    Args:
+        name: Tool name.
+        entry: Pre-resolved registry entry, when the caller already has one.
+            Passing it also bypasses the cache, so an injected entry is never
+            written back over the shipped answer.
+
+    Returns:
+        ``{"tool", "min_il", "required_roles", "tier", "category", "source",
+        "why"}``. ``source`` is quotable in a refusal message.
+    """
+    if entry is None and name in _AUTHZ_CACHE:
+        return _AUTHZ_CACHE[name]
+
+    override = AUTHZ_OVERRIDES.get(name)
+    if override is not None:
+        resolved = {
+            "tool": name,
+            "min_il": str(override.get("min_il") or DEFAULT_MIN_IL).upper(),
+            "required_roles": tuple(override.get("required_roles") or ()),
+            "tier": TIER_DECLARED,
+            "category": "",
+            "source": f"tool_registry.AUTHZ_OVERRIDES.{name}",
+            "why": str(override.get("why") or ""),
+        }
+    else:
+        found = entry if entry is not None else _registered_entry(name)
+        if found is None:
+            resolved = {
+                "tool": name,
+                "min_il": RESTRICTED_MIN_IL,
+                "required_roles": RESTRICTED_ROLES,
+                "tier": TIER_UNKNOWN,
+                "category": "",
+                "source": "tool_registry: not a registered tool",
+                "why": "no registry entry and no override — restrictive by default",
+            }
+        else:
+            category = str(found.get("category") or "")
+            read_only = READ_ONLY_DECLARATIONS.get(name)
+            if read_only is None:
+                resolved = {
+                    "tool": name,
+                    "min_il": RESTRICTED_MIN_IL,
+                    "required_roles": RESTRICTED_ROLES,
+                    "tier": TIER_UNDECLARED,
+                    "category": category,
+                    "source": "tool_registry: no read_only declaration",
+                    "why": "unclassified handler — restrictive by default",
+                }
+            elif read_only and name not in mutating_bundle_tools():
+                resolved = {
+                    "tool": name,
+                    "min_il": DEFAULT_MIN_IL,
+                    "required_roles": NO_ROLE_LIMIT,
+                    "tier": TIER_READ,
+                    "category": category,
+                    "source": "tool_registry: derived (read-only)",
+                    "why": "declared read-only and in no mutating bundle",
+                }
+            else:
+                roles = CATEGORY_WRITE_ROLES.get(category, RESTRICTED_ROLES)
+                escalated = bool(read_only)
+                resolved = {
+                    "tool": name,
+                    "min_il": DEFAULT_MIN_IL,
+                    "required_roles": tuple(roles),
+                    "tier": TIER_WRITE,
+                    "category": category,
+                    "source": f"tool_registry: derived (write, category={category or 'none'})",
+                    "why": (
+                        "declared read-only but reachable through a mutating bundle"
+                        if escalated
+                        else "declared mutating"
+                    ),
+                }
+
+    if entry is None:
+        _AUTHZ_CACHE[name] = resolved
+    return resolved
+
+
+def authorization_declarations() -> dict:
+    """Every registered tool (plus every override) mapped to its authorization.
+
+    This is the generated view that replaced the hand-written
+    ``role_tool_matrix``. Consumers that need a per-role list build it from
+    here rather than keeping a second copy.
+    """
+    names = set(list_tools()) | set(AUTHZ_OVERRIDES)
+    return {name: tool_authorization(name) for name in sorted(names)}
+
+
+def tools_for_role(role: str) -> list:
+    """Tool names ``role`` may call, sorted. ``admin`` gets everything.
+
+    An unrecognised role gets an EMPTY list, not the unrestricted ones: the
+    caller could not be identified, so no privilege was established.
+    """
+    canonical = normalize_role(role)
+    if not canonical:
+        return []
+    declarations = authorization_declarations()
+    if canonical == ADMIN_ROLE:
+        return sorted(declarations)
+    return sorted(
+        name
+        for name, auth in declarations.items()
+        if auth["tier"] != TIER_UNKNOWN
+        and (not auth["required_roles"] or canonical in auth["required_roles"])
+    )
+
+
+def undeclared_authorizations() -> list:
+    """Registered tools that fell through to the restrictive default.
+
+    Empty in a healthy tree. Non-empty means somebody added a tool without a
+    ``read_only`` declaration, or a category with no
+    :data:`CATEGORY_WRITE_ROLES` row -- both of which deny everyone but admin.
+    """
+    fallen = []
+    for name, auth in authorization_declarations().items():
+        if auth["tier"] == TIER_UNDECLARED:
+            fallen.append(name)
+        elif auth["tier"] == TIER_WRITE and auth["category"] not in CATEGORY_WRITE_ROLES:
+            fallen.append(name)
+    return sorted(fallen)

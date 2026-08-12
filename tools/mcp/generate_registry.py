@@ -5,6 +5,14 @@
 This script imports each server, instantiates it to capture tool/resource
 registrations, then writes the declarative registry file.
 
+It REWRITES the whole file, so everything hand-maintained in ``tool_registry.py``
+below :data:`PRESERVE_MARKER` is read back off disk and re-emitted verbatim.
+Without that, a regeneration silently deleted ``READ_ONLY_DECLARATIONS`` (the
+safety flag the agent loop partitions concurrent dispatch on) and the
+``min_il`` / ``required_roles`` declarations every MCP authorization gate reads
+— both of which fail SILENT and PERMISSIVE when absent, which is precisely the
+combination nobody notices. Added in exa-policy-07.
+
 Usage:
     python tools/mcp/generate_registry.py
 """
@@ -17,6 +25,15 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+#: Everything from this line onward in the existing ``tool_registry.py`` is
+#: hand-maintained and survives regeneration. Must match the line in
+#: ``tools/mcp/tool_registry.py`` byte for byte;
+#: ``tests/test_exa_policy_07_registry_authorization.py`` pins that.
+PRESERVE_MARKER = (
+    "# ==== END GENERATED REGISTRY — generate_registry.py PRESERVES "
+    "EVERYTHING BELOW ===="
+)
 
 # Ensure DB path is set so servers can import
 os.environ.setdefault("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db"))
@@ -861,6 +878,22 @@ def format_dict(d: dict, indent: int = 4) -> str:
     return s
 
 
+def _preserved_tail(output_path: Path) -> str:
+    """Return the hand-maintained tail of an existing ``tool_registry.py``.
+
+    Everything from :data:`PRESERVE_MARKER` to end of file, verbatim, or ``""``
+    when the file does not exist yet or carries no marker. Deliberately a plain
+    text split rather than an AST edit: the tail is arbitrary Python (constants,
+    functions, comments) and round-tripping it through a parser would reformat
+    prose that says why it exists.
+    """
+    if not output_path.exists():
+        return ""
+    existing = output_path.read_text(encoding="utf-8")
+    index = existing.find(PRESERVE_MARKER)
+    return existing[index:] if index != -1 else ""
+
+
 def main():
     all_tools = {}
     all_resources = {}
@@ -952,11 +985,22 @@ def main():
     lines.append("}")
     lines.append("")
 
+    preserved = _preserved_tail(output_path)
+    if preserved:
+        lines.append(preserved)
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
     print(f"\nGenerated: {output_path}", file=sys.stderr)
     print(f"  {len(all_tools)} tools, {len(all_resources)} resources", file=sys.stderr)
+    if preserved:
+        print(f"  preserved {preserved.count(chr(10)) + 1} hand-maintained lines",
+              file=sys.stderr)
+    elif output_path.exists():
+        print("  WARNING: no preserve marker found — hand-maintained declarations "
+              "(read_only, min_il, required_roles) were NOT carried over",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

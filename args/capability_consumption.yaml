@@ -51,8 +51,11 @@ classes:
   mcp_tool_authorization:
     enabled: true
     description: >-
-      D261 per-tool RBAC roles in args/owasp_agentic_config.yaml. Consumption
-      is an MCPToolAuthorizer verdict recorded by the MCP HTTP surface.
+      D261 per-tool RBAC roles declared in tools/mcp/tool_registry.py (ROLES).
+      Consumption is an MCPToolAuthorizer verdict recorded by the MCP HTTP
+      surface. The declaration moved out of args/owasp_agentic_config.yaml in
+      exa-policy-07; reading the retired matrix would now report zero declared
+      roles and therefore a falsely clean board.
   prompt_template:
     enabled: true
     description: >-

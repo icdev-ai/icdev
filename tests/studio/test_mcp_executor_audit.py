@@ -155,7 +155,12 @@ def test_pending_approval_is_audited_as_pending_not_refused(
     })
 
     with pytest.raises(mcp_executor.MCPWorkflowGateError) as exc:
-        mcp_executor.run(tool, {}, run_id, "", caller, approval_wait=0.0)
+        # The requires_approval tier is declared IL5 / admin (exa-policy-07),
+        # and IL is checked before the gate, so this caller has to clear it or
+        # the refusal recorded would be the wrong one.
+        mcp_executor.run(
+            tool, {}, run_id, "", dict(caller, impact_level="IL5"), approval_wait=0.0
+        )
     assert exc.value.reason == "mcp_tool_awaiting_human_approval"
 
     row = _only_row(run_id)

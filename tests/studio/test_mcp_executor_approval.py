@@ -33,6 +33,21 @@ def _schema():
     init_studio_tables()
 
 
+@pytest.fixture(autouse=True)
+def _privileged_caller(monkeypatch):
+    """Run every dispatch here as an IL5 admin.
+
+    `terraform_apply` is declared IL5 / admin in the MCP registry since
+    exa-policy-07 -- it mutates live cloud infrastructure -- and the IL and role
+    checks run BEFORE the approval gate. Without this the executor would refuse
+    at the wrong gate and these tests would silently stop covering the human
+    gate at all. Set through the caller environment rather than threaded into
+    seven `run()` calls, so the tests keep exercising the default caller path.
+    """
+    monkeypatch.setenv(mcp_executor.CALLER_IL_ENV[0], "IL5")
+    monkeypatch.setenv(mcp_executor.CALLER_ROLES_ENV, "admin")
+
+
 @pytest.fixture
 def run_id() -> str:
     """A run row the gate can hang off, so the parked-run status is observable."""
