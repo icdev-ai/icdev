@@ -1,0 +1,88 @@
+# CUI // SP-CTI
+# exa-bench-03 — DECLARED agent-adapter capabilities.
+#
+# Consumed by: tools/agents/capability_matrix.py :: load_declarations
+#
+# EVERY VALUE IN THIS FILE IS A CLAIM, NOT A MEASUREMENT.
+#
+# That is the point. This file is the hand-written parity table ICDEV has always
+# had; `python tools/agents/capability_matrix.py --json` is what checks it. The
+# probe reports each claim next to what it could actually observe at the
+# AgentAdapter seam, and the interesting rows are the ones where they disagree:
+#
+#   confirmed          declared true,  probe observed it
+#   OVERCLAIMED        declared true,  probe observed its ABSENCE  <- fix these
+#   unverified         declared true,  probe could not determine it
+#   undeclared_present declared false, probe observed it anyway    <- update this file
+#
+# Do NOT edit a value here to make the probe agree. If a row comes back
+# overclaimed, either the adapter is missing the capability (fix the adapter) or
+# the claim was never true (fix the claim, and say so in a comment). Editing the
+# claim to silence the probe reproduces exactly the failure this card is about:
+# a parity table that agrees with itself and with nothing else.
+#
+# The seven capability names are fixed by CAPABILITIES in capability_matrix.py.
+# A name not in that set is ignored — there is no probe that could measure it.
+#
+# An adapter that would rather own its claim in code can expose a `CAPABILITIES`
+# mapping on the adapter object; that wins over this file. Nothing does yet.
+
+declared:
+
+  # Backed by the Claude Code CLI, which does all seven natively. This block is
+  # the brochure claim — the probe scores the ADAPTER, not the product, because
+  # a capability the CLI has and the adapter does not surface is unreachable by
+  # everything routing through pick_default().
+  claude_cli:
+    streaming: true            # spawn() hands back the live process
+    tool_calling: true         # the CLI runs tools every session
+    sub_agents: true           # the CLI has a Task tool
+    interruption: true         # the caller owns the spawned process
+    sandbox_passthrough: true  # the CLI takes permission modes
+    context_budget: true       # --max-turns
+    structured_output: true    # --output-format json
+
+  # exa-bench-01. `codex exec --json` emits a JSONL event stream that the
+  # adapter parses into AgentResult.structured, and --sandbox is a real flag.
+  # No spawn(): nothing dispatches Codex non-blocking yet, so there is nothing
+  # to stream from and nothing to kill.
+  codex_cli:
+    streaming: true            # the CLI emits a JSONL stream during the run
+    tool_calling: true
+    sub_agents: false
+    interruption: false
+    sandbox_passthrough: true  # --sandbox, per-session via metadata
+    context_budget: false      # the CLI takes no turn/token flag
+    structured_output: true
+
+  # OPT-71. A single-shot router completion. It produces prose: no tools, no
+  # files, no stream.
+  local_llm_router:
+    streaming: false
+    tool_calling: false
+    sub_agents: false
+    interruption: false
+    sandbox_passthrough: false
+    context_budget: true       # LLMRequest(max_tokens=session.max_tokens)
+    structured_output: false
+
+  # hgx-exec-02. The owned rubric-gated loop with the worktree toolset.
+  local_agent:
+    streaming: false
+    tool_calling: true         # native tool use, or a recorded degrade
+    sub_agents: false
+    interruption: true         # metadata['stop_event']
+    sandbox_passthrough: true  # the toolset is traversal-guarded to the tree
+    context_budget: true       # max_iterations / max_tokens into the loop
+    structured_output: true    # grades + verdict on AgentResult.structured
+
+  # exa-bench-02 will implement this. A stub claims nothing; every row below is
+  # false so the probe's "absent" findings agree rather than reading as gaps.
+  copilot_cli:
+    streaming: false
+    tool_calling: false
+    sub_agents: false
+    interruption: false
+    sandbox_passthrough: false
+    context_budget: false
+    structured_output: false

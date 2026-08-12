@@ -20,3 +20,10 @@ from tools.agents.registry import (  # noqa: F401
     pick_default,
     detect_available,
 )
+from tools.agents.capability_matrix import (  # noqa: F401
+    CAPABILITIES,
+    adapters_with,
+    build_matrix,
+    capability_status,
+    supports,
+)

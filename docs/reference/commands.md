@@ -5411,6 +5411,61 @@ Corpus: `args/executor_parity_corpus.yaml`. Treat it as a frozen baseline —
 adding an entry is fine, rewording one changes what is being measured and
 requires re-running both executors.
 
+## Adapter Capability Matrix (exa-bench-03)
+
+A different question from the parity benchmark above, and the two must not be
+merged. `executor_parity` measures **outcome parity** — can an executor finish a
+job? — by replaying a corpus in worktrees and grading the trees. This probe
+measures **capability parity** — can an executor be handed a job that needs
+streaming, a sandbox mode or a cancel button at all? It runs offline in
+milliseconds: no subprocess, no socket, no model call, no corpus.
+
+```bash
+# Full matrix: every registered adapter x seven capabilities
+python tools/agents/capability_matrix.py
+python tools/agents/capability_matrix.py --json
+
+# Narrow it
+python tools/agents/capability_matrix.py --adapter claude_cli --json
+python tools/agents/capability_matrix.py --capability sandbox_passthrough
+
+# Exit 1 when a capability is DECLARED but measured absent (opt-in; wired to
+# no pipeline — it is a report you can run, not a gate that runs itself)
+python tools/agents/capability_matrix.py --gate
+```
+
+Each cell reports `declared` (the hand-written claim in
+`args/agent_capabilities.yaml`) next to `actual`, which is one of three values
+and never two:
+
+| `actual` | meaning |
+|---|---|
+| `present` | the probe observed the capability at the adapter seam |
+| `absent` | the probe observed its absence |
+| `unconfirmed` | the probe could not determine it — **not** a synonym for either |
+
+Only `behavioral` probes (adapter code executed, return value inspected) and
+`interface` probes (the live object inspected) may assert present or absent. A
+`source_evidence` probe — the module source documents a contract only a live run
+could exercise — may only ever produce `unconfirmed`.
+
+Routing consults the measurement:
+
+```python
+from tools.agents import pick_default, adapters_with
+
+adapter = pick_default("build", require=["sandbox_passthrough"])
+adapters_with("interruption")     # names measured present, nothing else
+```
+
+`require` is fail-closed: a capability that is merely declared, or that the
+probe could not confirm, does not satisfy it. Leaving `require` unset preserves
+the previous selection behaviour exactly.
+
+Claims live in `args/agent_capabilities.yaml`. When a row comes back
+`overclaimed`, fix the adapter or fix the claim — editing the claim to make the
+probe agree rebuilds the hand-written parity table this replaced.
+
 # CI test allowlist (kax-conflict-07) — the list icdev-ci.yml's `test` job runs
 python tools/ci/gated_test_list.py --check --list core       # validate: empty/short/missing/dup -> exit 1
 python tools/ci/gated_test_list.py --print --list windows    # resolved targets, one per line

@@ -8,7 +8,7 @@ from tools.logging.icdev_logger import get_logger
 
 import os
 import pathlib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import yaml
 
@@ -61,8 +61,19 @@ def _ensure_loaded() -> None:
 
 
 def reset() -> None:
-    """Clear the registry — tests use this to force re-loading."""
+    """Clear the registry — tests use this to force re-loading.
+
+    The capability matrix is memoised per adapter object, so it has to go with
+    it: a matrix describing adapters that are no longer registered is exactly
+    the kind of stale-but-plausible answer this seam keeps producing.
+    """
     _REGISTRY.clear()
+    try:
+        from tools.agents import capability_matrix  # noqa: PLC0415 — cycle
+
+        capability_matrix.reset_cache()
+    except Exception:  # noqa: BLE001 — reset must never raise
+        pass
 
 
 def list_adapters() -> List[str]:
@@ -95,9 +106,38 @@ def detect_available() -> List[str]:
     return out
 
 
+def _capability_filter(require: Optional[Sequence[str]]):
+    """Return a predicate over adapter names for the ``require`` set.
+
+    With nothing required the predicate is a constant True and selection is
+    byte-identical to what it was before exa-bench-03 — no probe runs, nothing
+    is imported, no existing caller changes behaviour.
+
+    The import is local because ``capability_matrix`` imports this module.
+    """
+    caps = [c for c in (require or []) if c]
+    if not caps:
+        return lambda _name: True
+
+    from tools.agents import capability_matrix  # noqa: PLC0415 — cycle
+
+    def _ok(name: str) -> bool:
+        try:
+            return capability_matrix.supports(name, caps)
+        except Exception as exc:  # noqa: BLE001 — a failed probe never promotes
+            logger.warning(
+                "capability probe failed for %s (%s) — treating the "
+                "requirement as unmet", name, exc,
+            )
+            return False
+
+    return _ok
+
+
 def pick_default(
     task_type: Optional[str] = None,
     config: Optional[dict] = None,
+    require: Optional[Sequence[str]] = None,
 ) -> AgentAdapter:
     """Pick the best available adapter for the given task type.
 
@@ -108,17 +148,37 @@ def pick_default(
            available() + enabled
         4. First adapter in `detect_available()` as a last resort
 
+    ``require`` is an optional list of capability names from
+    ``tools.agents.capability_matrix.CAPABILITIES``. When given, a candidate is
+    skipped unless the probe MEASURED every one of them as ``present`` — a
+    capability that is merely declared, or that the probe could not confirm,
+    does not qualify. This is what makes adapter selection consult a
+    measurement instead of an assumption; leaving it unset preserves the old
+    behaviour exactly.
+
+    ``ICDEV_AGENT_ADAPTER`` still wins over ``require``. An operator forcing an
+    adapter has said something more specific than a capability filter, and
+    silently overriding them is the "control that looks like it worked" failure
+    this codebase keeps producing. The mismatch is logged at WARNING instead.
+
     Raises NotInstalledError if nothing is available.
     """
     _ensure_loaded()
     cfg = config or _load_config()
     enabled = set(cfg.get("enabled_adapters") or list(_REGISTRY.keys()))
+    meets = _capability_filter(require)
 
     forced = os.environ.get("ICDEV_AGENT_ADAPTER", "").strip()
     if forced:
         if forced not in _REGISTRY:
             raise KeyError(
                 f"ICDEV_AGENT_ADAPTER={forced!r} is not a registered adapter"
+            )
+        if require and not meets(forced):
+            logger.warning(
+                "ICDEV_AGENT_ADAPTER=%r does not measure present for every "
+                "required capability %s — honouring the override anyway",
+                forced, list(require),
             )
         return _REGISTRY[forced]
 
@@ -127,11 +187,12 @@ def pick_default(
         candidate = per_task[task_type]
         if (candidate in _REGISTRY
                 and candidate in enabled
+                and meets(candidate)
                 and _REGISTRY[candidate].available()):
             return _REGISTRY[candidate]
 
     for name in cfg.get("fallback_order") or []:
-        if name not in _REGISTRY or name not in enabled:
+        if name not in _REGISTRY or name not in enabled or not meets(name):
             continue
         try:
             if _REGISTRY[name].available():
@@ -141,9 +202,16 @@ def pick_default(
 
     available_names = detect_available()
     for name in available_names:
-        if name in enabled:
+        if name in enabled and meets(name):
             return _REGISTRY[name]
 
+    if require:
+        raise NotInstalledError(
+            "No agent adapter on this host is both available and measured "
+            f"present for every required capability {list(require)}. Run "
+            "`python tools/agents/capability_matrix.py` to see what each "
+            "adapter actually supports."
+        )
     raise NotInstalledError(
         "No agent adapter is available on this host. Install Claude "
         "Code CLI or configure LLMRouter."
