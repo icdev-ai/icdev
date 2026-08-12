@@ -45,3 +45,8 @@ tests/kanban/test_build_mode_and_model.py
 # every template with newline="" — path separators and line endings are exactly
 # where this diverges, so it runs on BOTH OSes.
 tests/test_dwo_dispatch_parity.py
+
+# exa-bench-01 -- codex_cli resolves an executable through PATHEXT and pipes a
+# prompt past the Windows 32767-char argv limit. Both are Windows-specific
+# failure modes, so this is the OS where the claim is actually earned.
+tests/test_codex_cli_adapter.py

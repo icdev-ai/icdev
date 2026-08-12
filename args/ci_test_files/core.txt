@@ -581,3 +581,12 @@ tests/test_prompt_registry_supplemental_layers.py
 # rendered prompt, and a rollback must change it back. Temp SQLite + four short
 # CLI subprocesses -- no DB service, LLM or network, ~3s.
 tests/test_prompt_registry_call_site_prompts.py
+# exa-bench-01 -- the Codex CLI adapter. Runs on BOTH OSes (it is in windows.txt
+# too) because its acceptance criterion is a portability claim, and a portability
+# claim proven on one OS is not proven: the module resolves an executable through
+# PATHEXT, writes a temp file with newline="" and pipes it to a subprocess. The
+# Windows branch is driven by an explicit is_windows argument rather than by
+# patching os.name, so BOTH branches are exercised on the Linux runner. No CLI is
+# ever spawned -- resolution is patched and subprocess.run is a recorder -- so it
+# is hermetic and ~1s.
+tests/test_codex_cli_adapter.py
