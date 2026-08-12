@@ -332,6 +332,14 @@ python tools/security/mtls_integration.py --verify --json
 python tools/security/security_middleware.py --init-app --json
 python tools/security/audit_posture.py --json
 
+# Network-egress fire rate (exa-bench-08) — measure before enforcing
+# shared_checks.check_network_egress ships MONITOR-ONLY. Measure, then flip
+# agent_egress.enforce in args/agent_egress_policy.yaml. Baseline: 0.093% of
+# 78,903 real Bash calls (docs/security/agent-vendor-permission-bypass.md §4a).
+python tools/security/egress_fire_rate.py --json                        # what the hook has recorded
+python tools/security/egress_fire_rate.py --corpus --json               # replay ~/.claude/projects transcripts
+python tools/security/egress_fire_rate.py --corpus <dir> --top 30       # replay a specific corpus
+
 # SIPA Software Integrity PR gate (eqo-sipa) — assess only the *.py files changed on a branch
 python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
 python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)

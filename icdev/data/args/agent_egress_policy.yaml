@@ -1,0 +1,158 @@
+# [TEMPLATE: CUI // SP-CTI]
+#
+# Network-egress policy for the pre-tool-use hook (exa-bench-08).
+#
+# This is the CALL-TIME layer: it inspects a shell command before it runs and
+# asks "does this send data somewhere it should not go". It is deliberately a
+# different layer from the two that already existed, and it is worth being
+# precise about why neither of them covers this:
+#
+#   tools/security/egress_policy_manager.py
+#       DEPLOY-time. Compiles per-agent-role presets into Kubernetes
+#       NetworkPolicy manifests. It constrains a POD, so it cannot see a command
+#       and does not run on a developer workstation at all. `allowed_hosts`
+#       below is seeded from its `builder` BUILTIN_PRESET so the two layers name
+#       the same destinations rather than drifting apart.
+#
+#   tools/http/egress_guard.py
+#       SSRF guard with the OPPOSITE polarity: it refuses loopback/RFC1918 to
+#       stop a confused fetcher reaching INTO the internal network. Here those
+#       same addresses are the safe case and public ones are the risk. Its
+#       deny-beats-allow precedence is reused below; its verdict is not.
+#
+#   tools/registry/egress_monitor.py
+#       Child-app runtime telemetry, polled from `/health/egress`. Different
+#       subject entirely.
+#
+# Precedence, matching egress_guard: denied_hosts beats allowed_hosts, and both
+# are SUFFIX matches, so `github.com` covers `api.github.com`.
+
+agent_egress:
+  # Master switch. Off => check_network_egress returns None immediately.
+  enabled: true
+
+  # Monitor-only until the fire rate is known. `false` records findings and
+  # never blocks; `true` blocks a `verdict: egress` finding. The environment
+  # variable ICDEV_EGRESS_GUARD_ENFORCE=1 overrides this to true.
+  #
+  # Measured fire rate over the real command corpus before flipping this: see
+  # docs/security/agent-vendor-permission-bypass.md section 4a.
+  enforce: false
+
+  # Findings sink, relative to the repo root. `.tmp/` is gitignored.
+  # Append-only JSONL; one object per finding. Never a database — this runs in a
+  # fresh interpreter before EVERY tool call, and `import tools` alone costs
+  # ~92ms measured.
+  log_path: ".tmp/egress_findings.jsonl"
+
+  # Destinations a build session legitimately reaches.
+  #
+  # The first five are verbatim from egress_policy_manager BUILTIN_PRESETS
+  # ["builder"]["egress"]["allowed_endpoints"]; the rest are the hosts those
+  # five actually redirect to, plus the model API the agent itself speaks to.
+  # Keep this list SHORT — every entry is a destination that exfiltration is
+  # permitted to use, which is why `*.amazonaws.com` and other bucket-shaped
+  # wildcards are deliberately absent.
+  allowed_hosts:
+    # -- from egress_policy_manager "builder" preset --------------------------
+    - pypi.org
+    - files.pythonhosted.org
+    - registry.npmjs.org
+    - github.com
+    # -- what those four actually resolve/redirect to -------------------------
+    - githubusercontent.com      # raw. / objects. / codeload. are subdomains
+    - pythonhosted.org
+    - npmjs.com
+    - npmjs.org
+    # -- the agent's own control plane ---------------------------------------
+    # Listed because the session cannot function without it, NOT because it is
+    # a low-risk destination: a prompt is data leaving the host. It is in scope
+    # for the redaction stack (tools/security/), not for this check.
+    - anthropic.com
+    - claude.ai
+    # claude.com is here for a duller reason, and it is worth writing down: the
+    # `gh pr create` attribution footer this repo mandates ends with
+    # https://claude.com/claude-code, so EVERY pull request body contains it.
+    # Measured over 78,896 real Bash calls it was 1,371 of 1,440 firings — 95%
+    # of everything the check flagged. Left unlisted it would have been the
+    # reason the guard got switched off.
+    - claude.com
+
+  # Never allowed, even if a suffix above would otherwise permit it.
+  denied_hosts: []
+
+  # Programs that are recognised as performing network I/O. This list is a
+  # CONFIDENCE signal, not the definition of egress — see the evasion boundary
+  # in check_network_egress's docstring. A destination that appears without one
+  # of these is still recorded, as verdict `destination_only`; it is simply not
+  # blockable, because "an unrecognised program" is precisely the case this
+  # check cannot decide.
+  network_invokers:
+    - curl
+    - wget
+    - nc
+    - ncat
+    - netcat
+    - socat
+    - telnet
+    - ssh
+    - scp
+    - sftp
+    - rsync
+    - ftp
+    - lftp
+    - aria2c
+    - httpie
+    - http
+    - https
+    - git
+    - pip
+    - pip3
+    - npm
+    - npx
+    - yarn
+    - pnpm
+    - go
+    - cargo
+    - gem
+    - apt
+    - apt-get
+    - yum
+    - dnf
+    - brew
+    - docker
+    - kubectl
+    - helm
+    - aws
+    - az
+    - gcloud
+    - gh
+    - python
+    - python3
+    - perl
+    - ruby
+    - node
+    - deno
+    - bun
+    - php
+    - powershell
+    - pwsh
+    - invoke-webrequest
+    - invoke-restmethod
+    - iwr
+    - curl.exe
+    - bitsadmin
+    - certutil
+
+  # Tools whose payload is a shell command. Anything not listed here is skipped:
+  # this check reads COMMANDS, not file content, so a URL inside a document a
+  # session is editing is not a finding.
+  command_tools:
+    - Bash
+    - bash
+    - shell
+    - sh
+    - run_command
+    - BashOutput
+    - powershell
+    - PowerShell
