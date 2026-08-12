@@ -2063,6 +2063,11 @@ python tools/workflow/coherence_checker.py --check capability_liveness --gate   
 # Deliberately not findings: a unit consumed once and idle inside the recent window
 # (low cadence is not death), and a database with no operating history (a fresh worktree
 # or ephemeral CI database makes everything look inert — the check warns instead).
+# Runs in BOTH tiers (exa-live-03): ~0.75s of GROUP BY counts, so it is a per-task gate
+# on every commit, not a nightly-only sweep — a capability declared in a task's own diff
+# and wired to nothing is what the per-task gate should catch. A DRAINED class leaves
+# args/liveness_gate.yaml entirely rather than sitting at 0; an absent class is already
+# budgeted at 0, and a leftover zero is just a number for a future session to edit upward.
 
 # Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
 # CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
