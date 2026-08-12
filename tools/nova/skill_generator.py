@@ -153,17 +153,39 @@ def generate_skill_spec(
     return result
 
 
+# exa-refine-02: this was an f-string literal inside _llm_generate_spec. The text
+# is unchanged; the two interpolations became named placeholders so the template
+# can be versioned in the prompt registry under SPEC_PROMPT_NAME. Only the LLM
+# PROMPT is registered — the deterministic fallback spec below it stays a module
+# literal, because it is the output used when the LLM is unreachable and must not
+# depend on the database being reachable either.
+SPEC_PROMPT_NAME = "call_site/nova_skill_spec"
+SPEC_PROMPT_TEMPLATE = (
+    "Generate a concise ICDEV™ skill specification in markdown for automating:\n\n"
+    "Pattern: {pattern}\n\n"
+    "Format:\n"
+    "# {skill_name}\n"
+    "## When to use\n[1-2 sentences]\n\n"
+    "## Steps\n1. ...\n\n"
+    "## Acceptance criteria\n- [ ] ...\n"
+)
+
+
+def _build_spec_prompt(pattern: str, skill_name: str) -> str:
+    """Render the skill-spec prompt: active registry version, else the module default."""
+    from tools.llm.prompt_registry import render_prompt
+
+    return render_prompt(
+        SPEC_PROMPT_NAME,
+        SPEC_PROMPT_TEMPLATE,
+        pattern=pattern,
+        skill_name=skill_name,
+    )
+
+
 def _llm_generate_spec(pattern: str, skill_name: str) -> str:
     """Generate skill spec via scanner-tier LLM; falls back to template."""
-    prompt = (
-        f"Generate a concise ICDEV™ skill specification in markdown for automating:\n\n"
-        f"Pattern: {pattern}\n\n"
-        f"Format:\n"
-        f"# {skill_name}\n"
-        f"## When to use\n[1-2 sentences]\n\n"
-        f"## Steps\n1. ...\n\n"
-        f"## Acceptance criteria\n- [ ] ...\n"
-    )
+    prompt = _build_spec_prompt(pattern, skill_name)
     try:
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest

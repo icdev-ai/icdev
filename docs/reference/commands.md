@@ -2475,6 +2475,18 @@ python tools/audit/audit_logger.py --event-type "code.commit" --actor "builder-a
 python tools/audit/audit_query.py --project "proj-123" --format json
 python tools/audit/decision_recorder.py --project-id "proj-123" --decision "Use PostgreSQL" --rationale "RDS requirement" --actor "architect-agent"
 
+# Audit hash-chain integrity sweep (exa-audit-04) — whole table, not one row at a time.
+# Buckets every row: verified / pre-cutover (unverifiable, NOT tampered) /
+# unchained (post-cutover, writer bypassed) / BROKEN (the tamper signal).
+python tools/audit/chain_sweep.py                      # human-readable summary
+python tools/audit/chain_sweep.py --json               # full report incl. broken samples + links
+python tools/audit/chain_sweep.py --gate               # exit 1 if any link is broken
+python tools/audit/chain_sweep.py --verify-signatures  # also verify each signature (slower)
+python tools/audit/chain_sweep.py --db-path /path/to/evidence.db   # sweep an evidence copy
+# Same data on the dashboard: /provenance -> "Audit Chain Integrity",
+# API: GET /api/govchain-provenance/chain-health
+# Scheduled: rides the genesis `audit` reflex (args/genesis_config.yaml -> reflexes.audit.checks)
+
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server
@@ -3668,6 +3680,7 @@ python tools/llm/prompt_registry.py --rollback --name "layer/house-style" --to-v
 python tools/llm/prompt_registry.py --diff --name "layer/house-style" --v1 1 --v2 2 --json  # Diff two prompt versions
 python tools/llm/prompt_registry.py --layers --function code_generation --json         # Active supplemental layers the LLM router will apply (exa-refine-01)
 python tools/llm/prompt_registry.py --import-hardprompts --json                        # Import from hardprompts/ directory
+python tools/llm/prompt_registry.py --seed-call-sites --json                           # Register + activate the call-site prompt bodies at their current module text (exa-refine-02)
 python tools/llm/prompt_registry.py --start-ab --name "layer/house-style" --va 1 --vb 2 --split 0.5 --json  # Start A/B test
 python tools/llm/prompt_registry.py --gate                                             # Gate check (CI/CD)
 

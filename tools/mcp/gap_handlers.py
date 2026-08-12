@@ -567,6 +567,18 @@ def handle_detect_behavioral_drift(args: dict) -> dict:
 # ===========================================================================
 
 
+def handle_audit_chain_sweep(args: dict) -> dict:
+    """Verify the whole audit_trail hash chain (exa-audit-04)."""
+    cli_args = ["--json"]
+    if args.get("gate"):
+        cli_args.append("--gate")
+    if args.get("verify_signatures"):
+        cli_args.append("--verify-signatures")
+    if args.get("db_path"):
+        cli_args.extend(["--db-path", args["db_path"]])
+    return _run_cli("tools/audit/chain_sweep.py", cli_args, timeout=300)
+
+
 def handle_production_audit(args: dict) -> dict:
     """Run 30-check production readiness audit."""
     cli_args = []

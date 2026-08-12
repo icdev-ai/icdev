@@ -97,6 +97,56 @@ def _call_llm(prompt: str, skill_used: str) -> str:
         return ""
 
 
+# exa-refine-02: this was an f-string literal inside generate_improvement_artifact.
+# The text is unchanged; interpolations became named placeholders so the template
+# can be versioned in the prompt registry under IMPROVEMENT_PROMPT_NAME. `{x!r}`
+# and `{x:.1%}` are applied by _build_improvement_prompt before substitution,
+# because a stored template cannot carry Python conversions or format specs.
+IMPROVEMENT_PROMPT_NAME = "call_site/reflexion_improvement"
+IMPROVEMENT_PROMPT_TEMPLATE = (
+    "You are an AI improvement agent for the ICDEV™ platform.\n\n"
+    "Task type: {task_type}\n"
+    "Skill invoked: {skill_used}\n\n"
+    "Recent execution traces (last {trace_count} dispatches):\n{summary}\n\n"
+    "Failure traces ({failure_count} total):\n{failure_summary}\n\n"
+    "Current success rate: {success_rate}\n\n"
+    "Analyze the failure patterns. Propose 2–4 CONCRETE, ACTIONABLE improvements "
+    "to the skill instructions or task handling that would increase success rate. "
+    "Focus on WHY tasks fail (root cause) and HOW to prevent it. "
+    "Be specific: name files, steps, or instructions to change. "
+    "Do NOT invent new features — improve the existing skill.\n\n"
+    "Output format:\n"
+    "## Root Cause\n<1-2 sentences>\n\n"
+    "## Proposed Improvements\n<numbered list>\n\n"
+    "## Expected Impact\n<1 sentence>"
+)
+
+
+def _build_improvement_prompt(
+    task_type: str,
+    skill_used: str,
+    trace_count: int,
+    summary: str,
+    failure_count: int,
+    failure_summary: str,
+    baseline_score: float,
+) -> str:
+    """Render the Reflexion improvement prompt: active registry version, else default."""
+    from tools.llm.prompt_registry import render_prompt
+
+    return render_prompt(
+        IMPROVEMENT_PROMPT_NAME,
+        IMPROVEMENT_PROMPT_TEMPLATE,
+        task_type=repr(task_type),
+        skill_used=repr(skill_used),
+        trace_count=trace_count,
+        summary=summary,
+        failure_count=failure_count,
+        failure_summary=failure_summary,
+        success_rate=f"{baseline_score:.1%}",
+    )
+
+
 def _compute_score(traces: list[dict]) -> float:
     """Deterministic score: fraction of successful outcomes."""
     if not traces:
@@ -131,22 +181,14 @@ def generate_improvement_artifact(
     summary = _summarize_traces(traces)
     failure_summary = _summarize_traces(failures) if failures else "No failures detected."
 
-    prompt = (
-        f"You are an AI improvement agent for the ICDEV™ platform.\n\n"
-        f"Task type: {task_type!r}\n"
-        f"Skill invoked: {skill_used!r}\n\n"
-        f"Recent execution traces (last {len(traces)} dispatches):\n{summary}\n\n"
-        f"Failure traces ({len(failures)} total):\n{failure_summary}\n\n"
-        f"Current success rate: {baseline_score:.1%}\n\n"
-        "Analyze the failure patterns. Propose 2–4 CONCRETE, ACTIONABLE improvements "
-        "to the skill instructions or task handling that would increase success rate. "
-        "Focus on WHY tasks fail (root cause) and HOW to prevent it. "
-        "Be specific: name files, steps, or instructions to change. "
-        "Do NOT invent new features — improve the existing skill.\n\n"
-        "Output format:\n"
-        "## Root Cause\n<1-2 sentences>\n\n"
-        "## Proposed Improvements\n<numbered list>\n\n"
-        "## Expected Impact\n<1 sentence>"
+    prompt = _build_improvement_prompt(
+        task_type=task_type,
+        skill_used=skill_used,
+        trace_count=len(traces),
+        summary=summary,
+        failure_count=len(failures),
+        failure_summary=failure_summary,
+        baseline_score=baseline_score,
     )
 
     improvement_text = _call_llm(prompt, skill_used)

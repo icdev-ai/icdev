@@ -121,6 +121,14 @@ def _unfiltered_cursor(conn):
     return cur
 
 
+#: Public name for :mod:`tools.audit.chain_sweep` (exa-audit-04), which has to
+#: read the chain through exactly the cursor that wrote it. A sweep running under
+#: a narrower security context than the writer would not see higher-classified
+#: predecessors, compute GENESIS where a real hash belongs, and report a healthy
+#: chain as broken — see :func:`_unfiltered_cursor` for the full rationale.
+unfiltered_cursor = _unfiltered_cursor
+
+
 @contextlib.contextmanager
 def _contained(conn):
     """Run statements whose failure must not poison the caller's transaction.
