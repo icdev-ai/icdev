@@ -30,77 +30,83 @@ def _init_test_db(db_path):
         cwd=str(Path(__file__).resolve().parent.parent),
         capture_output=True,
     )
-    if not db_path.exists():
-        # Fallback: the init script may use a hardcoded path — just create
-        # the minimal tables needed for dashboard + intake.
-        conn = sqlite3.connect(str(db_path))
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS projects (
-                id TEXT PRIMARY KEY, name TEXT, description TEXT, type TEXT,
-                classification TEXT, impact_level TEXT, status TEXT,
-                tech_stack_backend TEXT, tech_stack_frontend TEXT,
-                tech_stack_database TEXT, directory_path TEXT, created_by TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS agents (
-                id TEXT PRIMARY KEY, name TEXT, status TEXT, type TEXT,
-                port INTEGER, endpoint TEXT, last_heartbeat TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS alerts (
-                id TEXT PRIMARY KEY, title TEXT, severity TEXT, source TEXT,
-                status TEXT, project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS poam_items (
-                id TEXT PRIMARY KEY, project_id TEXT, title TEXT, severity TEXT,
-                status TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS audit_trail (
-                id TEXT PRIMARY KEY, event_type TEXT, actor TEXT, action TEXT,
-                project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS stig_findings (
-                id TEXT PRIMARY KEY, project_id TEXT, severity TEXT, status TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS deployments (
-                id TEXT PRIMARY KEY, project_id TEXT, status TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS a2a_tasks (
-                id TEXT PRIMARY KEY, target_agent_id TEXT, status TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS hook_events (
-                id TEXT PRIMARY KEY, event_type TEXT, source TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS nlq_queries (
-                id TEXT PRIMARY KEY, query_text TEXT, sql_text TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS ssp_documents (
-                id TEXT PRIMARY KEY, project_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS sbom_records (
-                id TEXT PRIMARY KEY, project_id TEXT,
-                generated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS self_healing_events (
-                id TEXT PRIMARY KEY, pattern_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS knowledge_patterns (
-                id TEXT PRIMARY KEY, description TEXT
-            );
-            CREATE TABLE IF NOT EXISTS failure_log (
-                id TEXT PRIMARY KEY, resolved INTEGER DEFAULT 0
-            );
-        """)
-        conn.commit()
-        conn.close()
+    # The minimal schema below is applied UNCONDITIONALLY, not behind the
+    # `db_path.exists()` guard it used to sit behind. File existence is not a
+    # success probe: the init script connects (creating the file) before it
+    # finishes populating it, so a run that fails partway leaves a file that
+    # looks initialized. Locally this script produces all 528 tables and the
+    # guard was harmless; on the ubuntu CI runner it left a database with no
+    # `projects` table, and GET / died on `no such table: projects` — the one
+    # test in this module that renders the home page. Every statement here is
+    # CREATE TABLE IF NOT EXISTS, so it is a no-op when the real init succeeded.
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY, name TEXT, description TEXT, type TEXT,
+            classification TEXT, impact_level TEXT, status TEXT,
+            tech_stack_backend TEXT, tech_stack_frontend TEXT,
+            tech_stack_database TEXT, directory_path TEXT, created_by TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS agents (
+            id TEXT PRIMARY KEY, name TEXT, status TEXT, type TEXT,
+            port INTEGER, endpoint TEXT, last_heartbeat TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS alerts (
+            id TEXT PRIMARY KEY, title TEXT, severity TEXT, source TEXT,
+            status TEXT, project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS poam_items (
+            id TEXT PRIMARY KEY, project_id TEXT, title TEXT, severity TEXT,
+            status TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS audit_trail (
+            id TEXT PRIMARY KEY, event_type TEXT, actor TEXT, action TEXT,
+            project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS stig_findings (
+            id TEXT PRIMARY KEY, project_id TEXT, severity TEXT, status TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS deployments (
+            id TEXT PRIMARY KEY, project_id TEXT, status TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS a2a_tasks (
+            id TEXT PRIMARY KEY, target_agent_id TEXT, status TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS hook_events (
+            id TEXT PRIMARY KEY, event_type TEXT, source TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS nlq_queries (
+            id TEXT PRIMARY KEY, query_text TEXT, sql_text TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS ssp_documents (
+            id TEXT PRIMARY KEY, project_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS sbom_records (
+            id TEXT PRIMARY KEY, project_id TEXT,
+            generated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS self_healing_events (
+            id TEXT PRIMARY KEY, pattern_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS knowledge_patterns (
+            id TEXT PRIMARY KEY, description TEXT
+        );
+        CREATE TABLE IF NOT EXISTS failure_log (
+            id TEXT PRIMARY KEY, resolved INTEGER DEFAULT 0
+        );
+    """)
+    conn.commit()
+    conn.close()
 
     # Ensure dashboard auth tables exist + test user (Phase 30)
     conn = sqlite3.connect(str(db_path))
