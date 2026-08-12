@@ -3605,12 +3605,14 @@ python tools/llm/gateway.py --gate                                              
 
 # Prompt Registry
 python tools/llm/prompt_registry.py --list --json                                      # List all registered prompts
-python tools/llm/prompt_registry.py --register --name "prompt_name" --template "template text" --json  # Register new prompt
-python tools/llm/prompt_registry.py --activate --name "prompt_name" --version 2 --json # Activate specific version
-python tools/llm/prompt_registry.py --rollback --name "prompt_name" --version 1 --json # Rollback to previous version
-python tools/llm/prompt_registry.py --diff --name "prompt_name" --v1 1 --v2 2 --json   # Diff two prompt versions
+python tools/llm/prompt_registry.py --register --name "layer/house-style" --template-text "text" --function code_generation --json  # Register new version
+python tools/llm/prompt_registry.py --register --name "layer/house-style" --template-file hardprompts/house_style.md --function code_generation --json  # ...from a file
+python tools/llm/prompt_registry.py --activate --name "layer/house-style" --version 2 --json  # Activate specific version
+python tools/llm/prompt_registry.py --rollback --name "layer/house-style" --to-version 1 --json  # Rollback to previous version
+python tools/llm/prompt_registry.py --diff --name "layer/house-style" --v1 1 --v2 2 --json  # Diff two prompt versions
+python tools/llm/prompt_registry.py --layers --function code_generation --json         # Active supplemental layers the LLM router will apply (exa-refine-01)
 python tools/llm/prompt_registry.py --import-hardprompts --json                        # Import from hardprompts/ directory
-python tools/llm/prompt_registry.py --start-ab --name "prompt_name" --version-a 1 --version-b 2 --json  # Start A/B test
+python tools/llm/prompt_registry.py --start-ab --name "layer/house-style" --va 1 --vb 2 --split 0.5 --json  # Start A/B test
 python tools/llm/prompt_registry.py --gate                                             # Gate check (CI/CD)
 
 # Cost Intelligence

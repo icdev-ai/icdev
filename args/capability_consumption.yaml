@@ -98,7 +98,13 @@ known_inert_cases:
   - id: prompt_registry
     capability_class: prompt_template
     metric: events
-    note: 0 rows in prompt_versions and 0 importers of tools/llm/prompt_registry.py.
+    note: >-
+      0 rows in prompt_versions and 0 importers of tools/llm/prompt_registry.py.
+      Wired into LLMRouter by exa-refine-01 as the SUPPLEMENTAL prompt-layer read
+      path (`_apply_prompt_layers`, reserved `layer/` namespace, base prompt
+      immutable). Still counted here: a read path with no registered layers is a
+      no-op, so this stays inert until rows exist — which is the point of
+      counting it rather than declaring it done.
   - id: gepa_optimizer
     capability_class: skill_optimizer
     metric: events

@@ -36,10 +36,11 @@ import json
 import random
 import re
 import sqlite3
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from tools.db.storage import get_connection
 
@@ -47,6 +48,91 @@ logger = get_logger("icdev.llm.prompt_registry")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 HARDPROMPTS_DIR = BASE_DIR / "hardprompts"
+
+# ---------------------------------------------------------------------------
+# exa-refine-01: namespaces — the base system prompt is IMMUTABLE
+# ---------------------------------------------------------------------------
+# The registry is a store of SUPPLEMENTAL layers only. A layer is always
+# APPENDED after the base system prompt the call site supplied; the base itself
+# is never read from, nor writable through, this registry. Two mechanisms
+# enforce that, so it is a property of the code and not of the documentation:
+#
+#   1. Write guard — `register_prompt` / `activate_prompt` / `rollback_prompt` /
+#      `start_ab_test` refuse any name in the reserved base namespace, raising
+#      BasePromptImmutableError. There is no `--force`.
+#   2. Read namespace — `get_active_layers`, the only function the router calls,
+#      selects rows whose name is in the `layer/` namespace and nowhere else.
+#      Even a row inserted behind the guard's back cannot be returned as a
+#      layer, and no code path anywhere reads a BASE prompt out of the registry.
+#
+# Consequence: registry content can never occupy position 0 of a system prompt.
+LAYER_PREFIX = "layer/"
+BASE_PREFIX = "base/"
+
+# Bare names that mean "the base prompt" and are therefore also reserved.
+RESERVED_BASE_NAMES = frozenset(
+    {
+        "base",
+        "base_prompt",
+        "base_system_prompt",
+        "system",
+        "system_prompt",
+    }
+)
+
+# A layer registered against this function applies to every llm_function.
+GLOBAL_LAYER_FUNCTION = "*"
+
+# Text placed between the base prompt and each appended layer.
+LAYER_SEPARATOR = "\n\n"
+
+# Layer reads sit on the LLM invocation hot path, so they are cached. The TTL
+# bounds staleness for out-of-process edits (the CLI); in-process mutations
+# clear the cache outright so a rollback takes effect on the very next call.
+LAYER_CACHE_TTL_SECONDS = 30.0
+_LAYER_CACHE: Dict[str, tuple] = {}
+
+
+class BasePromptImmutableError(RuntimeError):
+    """Raised when something tries to write, or displace, the base system prompt.
+
+    Subclasses ``RuntimeError`` so existing ``except RuntimeError`` handlers in
+    the router keep working. This is deliberately not catchable-and-ignorable
+    inside the registry: an attempt to modify the base prompt is a governance
+    event, not a recoverable condition.
+    """
+
+
+def _normalize_prompt_name(name: str) -> str:
+    """Lower-case, trim and normalise separators so the guard cannot be dodged."""
+    return (name or "").strip().replace("\\", "/").lower()
+
+
+def is_base_prompt_name(name: str) -> bool:
+    """Return True if `name` addresses the reserved, immutable base prompt."""
+    normalized = _normalize_prompt_name(name)
+    return normalized in RESERVED_BASE_NAMES or normalized.startswith(BASE_PREFIX)
+
+
+def is_layer_name(name: str) -> bool:
+    """Return True if `name` is a supplemental layer the router may read."""
+    return _normalize_prompt_name(name).startswith(LAYER_PREFIX)
+
+
+def _guard_base_prompt(name: str, action: str) -> None:
+    """Refuse any registry write that targets the immutable base prompt."""
+    if is_base_prompt_name(name):
+        raise BasePromptImmutableError(
+            f"Refusing to {action} '{name}': the base system prompt is immutable and "
+            f"cannot be modified through the prompt registry. The registry only ever "
+            f"APPENDS supplemental layers (names under '{LAYER_PREFIX}') on top of the "
+            f"base prompt supplied by the call site."
+        )
+
+
+def _invalidate_layer_cache() -> None:
+    """Drop the layer cache after any registry mutation."""
+    _LAYER_CACHE.clear()
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -147,7 +233,11 @@ def register_prompt(
 
     Auto-increments version for the given name.  Deduplicates by hash — if the
     template text is identical to the latest version, returns the existing record.
+
+    Raises:
+        BasePromptImmutableError: if `name` addresses the reserved base prompt.
     """
+    _guard_base_prompt(name, "register")
     conn = get_connection()
     _init_tables(conn)
     try:
@@ -200,6 +290,7 @@ def register_prompt(
         )
         _audit(conn, name, next_ver, "created", created_by, {"hash": t_hash, "function_name": function_name})
         conn.commit()
+        _invalidate_layer_cache()
         return {
             "status": "ok",
             "prompt_name": name,
@@ -213,7 +304,12 @@ def register_prompt(
 
 
 def activate_prompt(name: str, version: int, actor: str = "system") -> Dict[str, Any]:
-    """Set a prompt version to active, deprecating the previously active one."""
+    """Set a prompt version to active, deprecating the previously active one.
+
+    Raises:
+        BasePromptImmutableError: if `name` addresses the reserved base prompt.
+    """
+    _guard_base_prompt(name, "activate")
     conn = get_connection()
     _init_tables(conn)
     try:
@@ -238,6 +334,7 @@ def activate_prompt(name: str, version: int, actor: str = "system") -> Dict[str,
         )
         _audit(conn, name, version, "activated", actor)
         conn.commit()
+        _invalidate_layer_cache()
         return {"status": "ok", "prompt_name": name, "version": version, "message": f"v{version} is now active"}
     finally:
         conn.close()
@@ -282,8 +379,131 @@ def get_active_prompt(name: str) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
+def _row_to_layer(row: Any) -> Dict[str, Any]:
+    """Normalise a SELECT row (sqlite3.Row / dict / tuple) to a layer dict."""
+    if isinstance(row, (sqlite3.Row, dict)):
+        return dict(row)
+    return {
+        "prompt_name": row[0],
+        "version": row[1],
+        "template_text": row[2],
+        "template_hash": row[3],
+        "function_name": row[4],
+    }
+
+
+def _read_active_layers(function_name: str) -> List[Dict[str, Any]]:
+    """SELECT the active supplemental layers for one llm_function.
+
+    Deliberately does NOT create tables: this runs on the LLM invocation hot
+    path, and an installation that has never registered a layer must pay a
+    single cheap SELECT, not DDL. A missing table therefore means "no layers",
+    which is the correct answer.
+    """
+    try:
+        conn = get_connection()
+    except Exception as exc:  # pragma: no cover — storage misconfigured
+        logger.debug("prompt_registry: no connection for layer read: %s", exc)
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT prompt_name, version, template_text, template_hash, function_name "
+            "FROM prompt_versions "
+            "WHERE status = 'active' AND prompt_name LIKE %s "
+            "  AND (function_name = %s OR function_name = %s) "
+            "ORDER BY prompt_name",
+            (LAYER_PREFIX + "%", function_name, GLOBAL_LAYER_FUNCTION),
+        ).fetchall()
+    except Exception as exc:
+        # Table absent (registry never initialised) or unreadable. An empty
+        # registry must leave LLM behaviour byte-identical, so degrade to
+        # "no layers" rather than failing every LLM call in the platform.
+        logger.debug("prompt_registry: supplemental layers unreadable: %s", exc)
+        return []
+    finally:
+        conn.close()
+
+    return [_row_to_layer(r) for r in rows or []]
+
+
+def get_active_layers(function_name: str, *, use_cache: bool = True) -> List[Dict[str, Any]]:
+    """Return the active SUPPLEMENTAL prompt layers for an llm_function.
+
+    This is the router's read path. It returns rows in the reserved
+    ``layer/`` namespace only — a layer registered against
+    ``function_name='*'`` applies to every function. Rows are ordered by
+    ``prompt_name`` so composition is deterministic.
+
+    It can never return a base prompt: no row outside the ``layer/`` namespace
+    is selectable here, and the caller appends whatever it gets AFTER the base.
+
+    Args:
+        function_name: ICDEV™ llm_function (e.g. ``code_generation``).
+        use_cache: set False to bypass the TTL cache (tests, CLI inspection).
+
+    Returns:
+        List of layer dicts. Empty when nothing is registered.
+    """
+    key = function_name or ""
+    if use_cache:
+        cached = _LAYER_CACHE.get(key)
+        if cached and cached[0] > time.monotonic():
+            return list(cached[1])
+
+    layers = _read_active_layers(key)
+    _LAYER_CACHE[key] = (time.monotonic() + LAYER_CACHE_TTL_SECONDS, layers)
+    return list(layers)
+
+
+def compose_system_prompt(
+    base: str, layers: Iterable[str], separator: str = LAYER_SEPARATOR
+) -> str:
+    """Append supplemental layers after an IMMUTABLE base system prompt.
+
+    The base is copied through byte-for-byte and always occupies position 0.
+    Layers are only ever concatenated after it — there is no substitution,
+    templating or reordering step that could consume the base.
+
+    The post-condition below is the enforcement, not a comment: if a future
+    edit to this function ever produced output that does not start with the
+    exact base text, it raises rather than returning a prompt whose base was
+    displaced.
+
+    Args:
+        base: the call site's system prompt. May be empty.
+        layers: supplemental layer texts, already ordered.
+        separator: text placed between the base and each layer.
+
+    Returns:
+        ``base`` when there are no non-empty layers, otherwise base + layers.
+
+    Raises:
+        BasePromptImmutableError: if composition did not preserve the base as
+            an exact prefix.
+    """
+    base = base or ""
+    texts = [t.strip() for t in layers if isinstance(t, str) and t.strip()]
+    if not texts:
+        return base
+
+    composed = base + (separator if base else "") + separator.join(texts)
+
+    if not composed.startswith(base):
+        raise BasePromptImmutableError(
+            "Supplemental layer composition displaced the base system prompt. "
+            "The base prompt is immutable and must remain an exact prefix of "
+            "the composed prompt; refusing to emit the composed prompt."
+        )
+    return composed
+
+
 def rollback_prompt(name: str, to_version: int, actor: str = "system") -> Dict[str, Any]:
-    """Reactivate a previous version (deprecates current active)."""
+    """Reactivate a previous version (deprecates current active).
+
+    Raises:
+        BasePromptImmutableError: if `name` addresses the reserved base prompt.
+    """
+    _guard_base_prompt(name, "roll back")
     conn = get_connection()
     _init_tables(conn)
     try:
@@ -306,6 +526,7 @@ def rollback_prompt(name: str, to_version: int, actor: str = "system") -> Dict[s
         )
         _audit(conn, name, to_version, "rolled_back", actor)
         conn.commit()
+        _invalidate_layer_cache()
         return {"status": "ok", "prompt_name": name, "version": to_version, "message": f"Rolled back to v{to_version}"}
     finally:
         conn.close()
@@ -359,7 +580,12 @@ def diff_versions(name: str, v1: int, v2: int) -> Dict[str, Any]:
 def start_ab_test(
     name: str, version_a: int, version_b: int, split: float = 0.5, actor: str = "system"
 ) -> Dict[str, Any]:
-    """Start an A/B test between two prompt versions."""
+    """Start an A/B test between two prompt versions.
+
+    Raises:
+        BasePromptImmutableError: if `name` addresses the reserved base prompt.
+    """
+    _guard_base_prompt(name, "A/B test")
     if not 0.0 <= split <= 1.0:
         return {"status": "error", "message": "split must be between 0.0 and 1.0"}
 
@@ -400,6 +626,7 @@ def start_ab_test(
             {"test_id": test_id, "variant_a": version_a, "variant_b": version_b, "split": split},
         )
         conn.commit()
+        _invalidate_layer_cache()
         return {
             "status": "ok",
             "test_id": test_id,
@@ -510,6 +737,7 @@ def complete_ab_test(test_id: str, actor: str = "system") -> Dict[str, Any]:
             },
         )
         conn.commit()
+        _invalidate_layer_cache()
         return {
             "status": "ok",
             "test_id": test_id,
@@ -564,10 +792,20 @@ def import_from_hardprompts(directory: Optional[Path] = None) -> Dict[str, Any]:
 
     imported = []
     skipped = []
+    rejected = []
     for fp in sorted(hp_dir.iterdir()):
         if fp.suffix not in (".md", ".txt", ".jinja2", ".j2"):
             continue
         name = fp.stem
+        # A hardprompt file whose stem lands in the reserved base namespace is
+        # skipped rather than raising: one badly-named file must not abort the
+        # whole import, but it must never become a registry-writable base prompt.
+        if is_base_prompt_name(name):
+            rejected.append(name)
+            logger.warning(
+                "prompt_registry: refusing to import '%s' — reserved base-prompt name", name
+            )
+            continue
         template_text = fp.read_text(encoding="utf-8")
         # Derive function name from filename (best-effort)
         fn_name = name.replace("-", "_").replace(" ", "_")
@@ -583,8 +821,10 @@ def import_from_hardprompts(directory: Optional[Path] = None) -> Dict[str, Any]:
         "status": "ok",
         "imported": imported,
         "skipped": skipped,
+        "rejected": rejected,
         "total_imported": len(imported),
         "total_skipped": len(skipped),
+        "total_rejected": len(rejected),
     }
 
 
@@ -653,6 +893,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     g = p.add_mutually_exclusive_group()
     g.add_argument("--list", action="store_true", help="List all prompts")
+    g.add_argument(
+        "--layers",
+        action="store_true",
+        help="Show the active supplemental layers the router would apply for --function",
+    )
     g.add_argument("--register", action="store_true", help="Register a new prompt version")
     g.add_argument("--activate", action="store_true", help="Activate a prompt version")
     g.add_argument("--rollback", action="store_true", help="Rollback to a previous version")
@@ -688,6 +933,26 @@ def main() -> None:
 
     elif args.list:
         result = list_prompts()
+
+    elif args.layers:
+        if not args.function_name:
+            parser.error("--layers requires --function")
+        _layers = get_active_layers(args.function_name, use_cache=False)
+        result = {
+            "status": "ok",
+            "function": args.function_name,
+            "layer_count": len(_layers),
+            "layers": [
+                {
+                    "prompt_name": ly.get("prompt_name"),
+                    "version": ly.get("version"),
+                    "function_name": ly.get("function_name"),
+                    "template_hash": ly.get("template_hash"),
+                    "chars": len(ly.get("template_text") or ""),
+                }
+                for ly in _layers
+            ],
+        }
 
     elif args.register:
         if not args.name:

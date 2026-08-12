@@ -560,3 +560,13 @@ tests/test_agent_policy_engine.py
 # does, so every zero assertion here is paired with a positive control on the
 # same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
 tests/test_capability_consumption.py
+
+# exa-refine-01 -- prompt registry as the router's SUPPLEMENTAL read path. Earns a
+# required slot because it pins a governance invariant, not a feature: the base
+# system prompt is immutable, so a regression here means self-modification can
+# rewrite the prompt it was meant to only append to -- and nothing else in the
+# suite would notice. The negative half matters just as much: with an empty
+# registry the router must return the caller's request object untouched, which is
+# what makes shipping this on by default safe. Temp SQLite + a recording provider
+# -- no DB service, LLM or network, ~15s.
+tests/test_prompt_registry_supplemental_layers.py

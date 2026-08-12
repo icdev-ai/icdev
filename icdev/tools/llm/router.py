@@ -1116,6 +1116,96 @@ class LLMRouter:
         except ImportError:
             return None
 
+    # -------------------------------------------------------------------
+    # exa-refine-01: supplemental prompt layers (prompt_registry read path)
+    # -------------------------------------------------------------------
+    def _apply_prompt_layers(self, function: str, request: LLMRequest) -> LLMRequest:
+        """Append governed supplemental prompt layers from the prompt registry.
+
+        The base system prompt — whatever the call site put in
+        ``request.system_prompt`` — is IMMUTABLE. The registry can only APPEND
+        after it. That is structural, not conventional:
+
+          * there is no code path here, or anywhere, that reads a BASE prompt
+            out of the registry — this method starts from the caller's base and
+            only ever concatenates;
+          * ``get_active_layers`` selects the reserved ``layer/`` namespace
+            only, and ``register/activate/rollback`` refuse the reserved base
+            namespace outright;
+          * the composed prompt is re-checked below and the call fails closed
+            if the base is no longer its exact prefix.
+
+        No-op when the registry is empty, unreadable or disabled: an empty
+        registry must leave behaviour byte-identical to before this hook
+        existed, so every failure mode here degrades to "return the request".
+        The one exception is a violated immutability invariant, which raises —
+        a tampered base prompt must never reach a provider.
+        """
+        cfg = self._config.get("prompt_registry", {}) or {}
+        if not cfg.get("enabled", True):
+            return request
+
+        try:
+            from tools.llm.prompt_registry import (
+                BasePromptImmutableError,
+                compose_system_prompt,
+                get_active_layers,
+            )
+        except ImportError:
+            return request
+
+        try:
+            layers = get_active_layers(function)
+        except Exception as exc:
+            logger.debug("prompt_registry: layer lookup failed for %s: %s", function, exc)
+            return request
+        if not layers:
+            return request
+
+        max_chars = int(cfg.get("max_layer_chars", 8000))
+        separator = cfg.get("layer_separator", "\n\n")
+
+        texts: list[str] = []
+        applied: list[str] = []
+        for layer in layers:
+            text = (layer.get("template_text") or "").strip()
+            if not text:
+                continue
+            if 0 < max_chars < len(text):
+                logger.warning(
+                    "prompt_registry: skipping layer %s v%s for %s — %d chars exceeds "
+                    "prompt_registry.max_layer_chars=%d",
+                    layer.get("prompt_name"),
+                    layer.get("version"),
+                    function,
+                    len(text),
+                    max_chars,
+                )
+                continue
+            texts.append(text)
+            applied.append(f"{layer.get('prompt_name')}@v{layer.get('version')}")
+
+        if not texts:
+            return request
+
+        base = request.system_prompt or ""
+        composed = compose_system_prompt(base, texts, separator=separator)
+        if not composed.startswith(base):
+            raise BasePromptImmutableError(
+                f"Supplemental layers for '{function}' displaced the base system prompt "
+                f"— refusing to invoke. Layers: {', '.join(applied)}"
+            )
+
+        req = copy.copy(request)
+        req.system_prompt = composed
+        logger.info(
+            "prompt_registry: applied %d supplemental layer(s) for %s: %s",
+            len(texts),
+            function,
+            ", ".join(applied),
+        )
+        return req
+
     def _compress_request_context(self, function: str, request: LLMRequest) -> LLMRequest:
         """Apply Headroom-style context compression before the fallback chain (adapt-hd-03).
 
@@ -2363,6 +2453,12 @@ class LLMRouter:
                 no_llm_mode=True,
             )
 
+        # exa-refine-01: append governed supplemental prompt layers. Applied here,
+        # before everything else, so redaction, the response-cache key and context
+        # compression all see the prompt that will actually be sent — a cache keyed
+        # on the pre-layer prompt would serve v1 output after a rollback to v2.
+        request = self._apply_prompt_layers(function, request)
+
         # Token budget enforcement (D-BUD-1: Paperclip-inspired per-agent hard-stops)
         if request.agent_id:
             try:
@@ -2665,6 +2761,9 @@ class LLMRouter:
                 chain=self._get_chain_for_function(function),
                 no_llm_mode=True,
             )
+
+        # exa-refine-01: supplemental prompt layers, at parity with invoke().
+        request = self._apply_prompt_layers(function, request)
 
         # D-RDT-3: Pre-invoke redaction for streaming path (parity with invoke)
         _redaction_session = self._pre_invoke_redaction(function, request)
