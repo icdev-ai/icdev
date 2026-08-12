@@ -723,3 +723,20 @@ tests/test_agent_adapter_no_inert_stubs.py
 # which is what translates the module's PG-native %s placeholders on the SQLite
 # path. Gated here so it cannot rot again. ~1s, in-memory SQLite, no LLM or network.
 tests/test_remediation_simulator.py
+# tsg-dead-01: remediation_simulator's NQE layer (Layer 2) imported two symbols
+# from tools.network.advisory that have never existed there. The ImportError was
+# swallowed by a bare `except Exception` and returned {"verdict": "skipped"} --
+# which is ALSO the correct answer when the Forward Networks API is genuinely
+# unreachable, so a layer that had never once executed was indistinguishable from
+# normal degraded operation. It stayed that way for six weeks because the only
+# suite covering the simulator mocks _run_nqe_layer out entirely.
+# test_remediation_nqe_layer.py pins the fix from both sides: pass/warn are
+# reachable (the layer really runs), and a wiring defect -- missing symbol, wrong
+# signature -- RAISES instead of being laundered back into "skipped". Every
+# "skipped" now carries a reason, so a dead layer is legible again.
+# test_advisory.py was 24-failing since the commit that created it; it specified
+# an advisory module that was never built, against the migration-220 nc_advisories
+# shape rather than the init_db.py one the live code writes. It now specifies the
+# module that actually ships. Both are pure-Python: no DB, LLM or network.
+tests/test_remediation_nqe_layer.py
+tests/test_advisory.py

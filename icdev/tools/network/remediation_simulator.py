@@ -3,8 +3,11 @@
 
 Runs a multi-layer simulation for a pending nc_remediation_actions row:
   Layer 1 — NDC Digital Twin  : intent validation + blast-radius analysis
-  Layer 2 — NQE Impact         : Forward Networks NQE reachability delta (if FWD
-                                  API is reachable); degrades gracefully to stub.
+  Layer 2 — NQE Impact         : queries the NQE snapshot via tools.network.
+                                  nqe_client and compares the device's reported
+                                  software version. Degrades to "skipped" only
+                                  for real runtime conditions, and always
+                                  reports a `reason` when it does.
 
 Public API
 ----------
@@ -96,32 +99,128 @@ def _parse_policy_violations(intent_results: list) -> list:
 # Layer 2 helpers
 # ---------------------------------------------------------------------------
 
-def _run_nqe_layer(row: dict) -> dict:
-    """Run NQE reachability check if FWD API is reachable; stub otherwise."""
-    try:
-        from tools.network.advisory import _fwd_reachable, get_nqe_client
-        if not _fwd_reachable():
-            return {"verdict": "skipped", "findings": []}
+# NQL path resolved by the mapping table in context/nql/nql_to_iqe_mapping.md to
+# "foreach d in network.devices select d.label, d.os.type, d.os.version".
+_NQE_DEVICE_NQL = "network.devices[platform.osversion]"
 
-        nqe = get_nqe_client()
-        network_id = row.get("project_id") or ""
-        device = row["device_name"]
-        query = (
-            f"SELECT devices WHERE name = '{device}' "
-            f"AND softwareVersion = '{row.get('current_version', '')}'"
-        )
-        resp = nqe.run_query(network_id=network_id, query=query)
-        items = resp.get("items", [])
-        findings = []
-        if items:
-            findings.append({
-                "check_id": "nqe-version-match",
-                "description": f"Device '{device}' still reports current_version in NQE snapshot",
-                "severity": "info",
-            })
-        return {"verdict": "pass" if not findings else "warn", "findings": findings}
+# Keys a device row may carry — local IQE returns nc_nodes columns (label,
+# object_type, config); a live Forward Networks snapshot returns its own field
+# names. Both are read tolerantly rather than assuming one shape.
+_DEVICE_NAME_KEYS = ("label", "name", "hostname", "deviceName", "device_name")
+_VERSION_KEYS = (
+    "osVersion", "softwareVersion", "os_version", "software_version",
+    "version", "osversion",
+)
+
+# A missing symbol or a wrong call signature is a wiring defect, not a runtime
+# condition to degrade over — these must surface instead of becoming "skipped".
+_WIRING_ERRORS = (ImportError, AttributeError, TypeError)
+
+
+def _skipped(reason: str, source: str | None = None, error: str | None = None) -> dict:
+    """Build a 'skipped' NQE result that always says WHY it was skipped."""
+    out: dict = {"verdict": "skipped", "findings": [], "reason": reason, "source": source}
+    if error:
+        out["_error"] = error
+    return out
+
+
+def _nqe_client():
+    """Return a live Forward Networks client when configured, else the local fallback.
+
+    ``FallbackNQEClient`` already tries the live endpoint and degrades to a local
+    IQE query against the canvas DB, so there is deliberately no separate
+    reachability pre-flight: an unreachable endpoint is reported by the client in
+    its response (``source``/``error``), not guessed at beforehand.
+
+    The import is intentionally NOT wrapped in try/except — a missing module here
+    means the simulator is mis-wired and must fail loudly.
+    """
+    import os
+
+    from tools.network.nqe_client import FallbackNQEClient, NQEClient
+
+    api_key = (os.environ.get("NQE_API_KEY") or "").strip()
+    base_url = (os.environ.get("NQE_BASE_URL") or "").strip()
+    if api_key and base_url:
+        return NQEClient(api_key=api_key, base_url=base_url)
+    return FallbackNQEClient()
+
+
+def _row_field(row: dict, keys: tuple[str, ...]) -> str:
+    """Return the first non-empty value among ``keys``, also looking inside config."""
+    for key in keys:
+        val = row.get(key)
+        if val:
+            return str(val).strip()
+    config = row.get("config")
+    if isinstance(config, dict):
+        for key in keys:
+            val = config.get(key)
+            if val:
+                return str(val).strip()
+    return ""
+
+
+def _run_nqe_layer(row: dict) -> dict:
+    """Query the NQE snapshot for the target device and compare its version.
+
+    Returns ``{"verdict", "findings", "source"}`` and, when the layer could not
+    run, a ``reason``. ``verdict`` is:
+        pass    — the device was found and no longer reports ``current_version``
+        warn    — the device still reports ``current_version``, or is absent
+        skipped — the query could not be answered (no device name, no snapshot
+                  data, or a transport error); ``reason`` says which.
+    """
+    device = (row.get("device_name") or "").strip()
+    if not device:
+        return _skipped("no_device_name")
+
+    client = _nqe_client()
+    network_id = row.get("project_id") or None
+
+    try:
+        resp = client.run_query(_NQE_DEVICE_NQL, network_id=network_id)
+    except _WIRING_ERRORS:
+        raise
     except Exception as exc:
-        return {"verdict": "skipped", "findings": [], "_error": str(exc)}
+        return _skipped("query_failed", error=str(exc))
+
+    source = resp.get("source")
+    if resp.get("error"):
+        return _skipped(str(resp["error"]), source=source)
+
+    rows = resp.get("rows") or []
+    if not rows:
+        # No snapshot rows means there is nothing to compare against. Saying
+        # "device absent" here would be a finding about the snapshot, not the device.
+        return _skipped("no_snapshot_data", source=source)
+
+    current = (row.get("current_version") or "").strip()
+    match = next(
+        (r for r in rows if _row_field(r, _DEVICE_NAME_KEYS).lower() == device.lower()),
+        None,
+    )
+
+    findings: list[dict] = []
+    if match is None:
+        findings.append({
+            "check_id": "nqe-device-absent",
+            "description": f"Device '{device}' is not present in the NQE snapshot",
+            "severity": "warning",
+        })
+    elif current and _row_field(match, _VERSION_KEYS) == current:
+        findings.append({
+            "check_id": "nqe-version-match",
+            "description": f"Device '{device}' still reports current_version '{current}' in NQE snapshot",
+            "severity": "info",
+        })
+
+    return {
+        "verdict": "pass" if not findings else "warn",
+        "findings": findings,
+        "source": source,
+    }
 
 
 # ---------------------------------------------------------------------------
