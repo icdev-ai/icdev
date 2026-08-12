@@ -79,3 +79,36 @@ excluded:
     why: >-
       The packaged copy is the project-scoped server set; the repo copy carries
       this checkout's extra development servers.
+
+# ---------------------------------------------------------------------------
+# PAYLOAD COMPLETENESS (second rule of check_bootstrap_parity)
+# ---------------------------------------------------------------------------
+# Parity is not sufficiency. A packaged file can match the repo byte-for-byte
+# and still be unusable in a scaffolded project because the module it LOADS AND
+# EXECUTES was never shipped alongside it.
+#
+# Scope is deliberately narrow: only paths passed to spec_from_file_location and
+# then exec_module. The packaged hooks also construct `.env`, `.tmp/sessions`,
+# `.tmp/worktrees`, `.tmp/dashboard_unreachable` and `data/icdev.db`, all of
+# which are runtime artifacts created on demand and correctly absent. Gating
+# those would be five false positives against one real finding, and a gate that
+# cries wolf gets switched off.
+#
+# Entries here are ACCEPTED GAPS awaiting a fix, each named by the task that
+# owns it. DELETE an entry when its fix lands — never edit it to keep the gate
+# green.
+payload_grandfathered:
+  - path: tools/hooks/shared_checks.py
+    task: exa-bench-10
+    why: >-
+      claude/hooks/pre_tool_use.py resolves REPO_ROOT/tools/hooks/shared_checks.py
+      and exec_module()s it with no try/except - by design, since "a guard that
+      cannot load must fail loudly, not silently stop guarding". The payload
+      ships no tools/ directory at all, so in a generated project the hook
+      raises on every tool call and `|| true` in settings.json.template (10
+      occurrences) is the only thing hiding it. Fixing it means deciding what a
+      generated project should actually get - the full check set with its
+      transitive args/ data, a documented subset, or a hook that degrades to a
+      named no-op - which is why it is a card and not a one-line change. Fix the
+      packaging BEFORE removing `|| true` from the template, or generated
+      projects go from "hook does nothing" to "every tool call fails".

@@ -104,3 +104,45 @@ def test_excluded_pairs_are_documented_with_a_reason():
     assert excluded, "the template-by-design exclusions must stay documented"
     for entry in excluded:
         assert entry.get("why"), f"{entry.get('target')} excluded without a reason"
+
+
+# ── payload completeness (exa-bench-10) ──────────────────────────────────────
+def test_the_known_gap_is_detected_when_not_grandfathered(monkeypatch):
+    """Parity is not sufficiency.
+
+    `claude/hooks/pre_tool_use.py` exec_module()s
+    REPO_ROOT/tools/hooks/shared_checks.py, and the payload ships no tools/ at
+    all — so in a scaffolded project the hook raises on every tool call. It
+    matched the repo byte-for-byte the whole time.
+    """
+    monkeypatch.setattr(checker, "_load_bootstrap_parity_config", lambda: {})
+    found = checker._unshipped_executed_dependencies()
+    assert any("shared_checks.py" in f for f in found), found
+
+
+def test_runtime_artifacts_are_not_flagged(monkeypatch):
+    """Five false positives against one finding is how a gate gets switched off.
+
+    The packaged hooks also build `.env`, `.tmp/sessions`, `.tmp/worktrees`,
+    `.tmp/dashboard_unreachable` and `data/icdev.db`. All are created on demand
+    and correctly absent from the payload; only EXECUTED modules are in scope.
+    """
+    monkeypatch.setattr(checker, "_load_bootstrap_parity_config", lambda: {})
+    found = " ".join(checker._unshipped_executed_dependencies())
+    for artifact in (".env", ".tmp/", "icdev.db"):
+        assert artifact not in found, f"{artifact} flagged; it is a runtime artifact"
+
+
+def test_grandfathered_entries_name_a_task_and_a_reason():
+    """An accepted gap must be attributable, or it becomes permanent."""
+    cfg = checker._load_bootstrap_parity_config()
+    entries = cfg.get("payload_grandfathered") or []
+    assert entries, "the known exa-bench-10 gap must stay declared until it is fixed"
+    for e in entries:
+        assert e.get("path"), "grandfathered entry with no path"
+        assert e.get("task"), f"{e.get('path')} grandfathered with no owning task"
+        assert e.get("why"), f"{e.get('path')} grandfathered with no reason"
+
+
+def test_check_passes_with_the_gap_grandfathered():
+    assert checker.check_bootstrap_parity().status == "pass"

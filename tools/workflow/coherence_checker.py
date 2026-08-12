@@ -8173,6 +8173,17 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
 _BOOTSTRAP_PARITY_PATH = PROJECT_ROOT / "args" / "bootstrap_parity.yaml"
 
 
+def _load_bootstrap_parity_config() -> Dict[str, Any]:
+    """Read args/bootstrap_parity.yaml whole. ``{}`` when unreadable."""
+    if not _HAS_YAML or not _BOOTSTRAP_PARITY_PATH.exists():
+        return {}
+    try:
+        data = yaml.safe_load(_BOOTSTRAP_PARITY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — a malformed gate must not crash the run
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _load_bootstrap_parity() -> List[Dict[str, str]]:
     """Read the must-match pairs from args/bootstrap_parity.yaml.
 
@@ -8180,14 +8191,59 @@ def _load_bootstrap_parity() -> List[Dict[str, str]]:
     reports ``warn`` rather than a silent ``pass``. A parity gate that vanishes
     with its config file is worse than no gate: it looks green.
     """
-    if not _HAS_YAML or not _BOOTSTRAP_PARITY_PATH.exists():
-        return []
-    try:
-        data = yaml.safe_load(_BOOTSTRAP_PARITY_PATH.read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001 — a malformed gate must not crash the run
-        return []
-    pairs = data.get("must_match") or []
+    pairs = _load_bootstrap_parity_config().get("must_match") or []
     return [p for p in pairs if isinstance(p, dict) and p.get("target") and p.get("source")]
+
+
+#: ``REPO_ROOT / "a" / "b"`` as the packaged hooks spell it.
+_BOOTSTRAP_PATH_IDIOM = re.compile(
+    r'(?:REPO_ROOT|_REPO_ROOT|BASE_DIR|PROJECT_ROOT)\s*/\s*'
+    r'((?:"[^"]+"|\'[^\']+\')(?:\s*/\s*(?:"[^"]+"|\'[^\']+\'))*)'
+)
+#: The name a hook binds a constructed path to, when it then executes it.
+_EXECUTED_PATH_RE = re.compile(r'spec_from_file_location\(\s*[^,]+,\s*([A-Za-z_][\w]*)')
+
+
+def _unshipped_executed_dependencies() -> List[str]:
+    """Modules a packaged hook ``exec_module``s that the payload does not ship.
+
+    Scoped deliberately to EXECUTED dependencies rather than every path a hook
+    constructs. The packaged hooks also build ``.env``, ``.tmp/sessions``,
+    ``.tmp/worktrees``, ``.tmp/dashboard_unreachable`` and ``data/icdev.db`` —
+    all runtime artifacts created on demand and correctly absent from the
+    payload. Flagging those would be five false positives against one real
+    finding, and a gate that cries wolf gets switched off.
+
+    A module passed to ``spec_from_file_location`` and then ``exec_module``
+    is different in kind: it must exist at import time or the hook dies.
+    """
+    root = PROJECT_ROOT / "icdev" / "data" / "claude_bootstrap"
+    if not root.is_dir():
+        return []
+    gate = _load_bootstrap_parity_config()
+    allowed = {str(e.get("path")) for e in (gate.get("payload_grandfathered") or [])}
+    shipped = {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
+
+    out: List[str] = []
+    for hook in sorted((root / "claude" / "hooks").glob("*.py")):
+        src = _read_text(hook)
+        executed = set(_EXECUTED_PATH_RE.findall(src))
+        if not executed:
+            continue
+        for name in executed:
+            for match in re.finditer(
+                rf'^{re.escape(name)}\s*=\s*' + _BOOTSTRAP_PATH_IDIOM.pattern, src, re.M
+            ):
+                rel = "/".join(
+                    p.strip("\"'") for p in re.findall(r'"[^"]+"|\'[^\']+\'', match.group(1))
+                )
+                if not rel or rel in allowed:
+                    continue
+                # the payload flattens `.claude/` to `claude/`
+                if rel in shipped or rel.replace(".claude/", "claude/") in shipped:
+                    continue
+                out.append(f"{hook.name} executes {rel} — not in the bootstrap payload")
+    return sorted(set(out))
 
 
 def check_bootstrap_parity() -> CoherenceCheck:
@@ -8256,6 +8312,30 @@ def check_bootstrap_parity() -> CoherenceCheck:
                 "regenerates the whole bootstrap from the repo, which is the "
                 "sanctioned path. Do NOT hand-copy a single file: the other "
                 "packaged files drift too and a targeted copy hides that."
+            ),
+        )
+
+    unshipped = _unshipped_executed_dependencies()
+    if unshipped:
+        return CoherenceCheck(
+            check_id="bootstrap_parity",
+            check_name="Bootstrap Parity",
+            status="fail",
+            expected=["every module a packaged hook exec_module()s ships with it"],
+            actual=[f"{len(unshipped)} executed dependency not in the payload"],
+            missing=[],
+            extra=unshipped,
+            message=(
+                f"{len(unshipped)} module(s) a packaged hook LOADS AND EXECUTES are "
+                "not in the bootstrap payload, so in a scaffolded project the hook "
+                "raises on import and exits non-zero on every tool call. Parity is "
+                "not enough: a file can match the repo byte-for-byte and still be "
+                "unusable because what it imports was never shipped. Fix by adding "
+                "the dependency to BOOTSTRAP_MAP in tools/cli/init.py — NOT by "
+                "wrapping the hook in `|| true`, which converts a loud failure into "
+                "a guard that silently does not guard. Grandfather an accepted gap "
+                "in args/bootstrap_parity.yaml under its task id, and DELETE the "
+                "entry when it is fixed rather than editing it."
             ),
         )
 
