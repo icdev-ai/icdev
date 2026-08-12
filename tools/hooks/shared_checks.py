@@ -48,6 +48,11 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "default_repo_root",
+    # 0 — shell-aware scanning, shared by every Bash-shaped check
+    "command_segments",
+    "strip_heredoc_data",
+    "command_word",
+    "shell_tokens",
     # 1 — .env access
     "is_env_file_access",
     "check_env_file_access",
@@ -126,31 +131,275 @@ def _on(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+# ── 0. Shell-aware scanning ───────────────────────────────────────────────
+#
+# Every Bash-shaped check below used to match against the WHOLE raw command
+# string. Measured over 86,475 real tool calls (exa-bench-05, see
+# ``tools/hooks/fire_rate_survey.py``) that is the single largest source of
+# false refusals, in two distinct shapes:
+#
+#   1. **Heredoc and quoted bodies scanned as if they were commands.** A PR body
+#      that quotes ``DELETE FROM audit_trail``, a commit message describing a
+#      ``.env`` fix, a grep pattern searching for the very thing being guarded —
+#      all read as the guarded action itself.
+#   2. **Cross-segment attribution.** ``rm -f x.json; grep -rln foo tests/``
+#      contains ``rm``, and later, ``-r``. The old ``\brm\s+.*-[a-z]*r`` spans
+#      the ``;`` and reads the grep's flag as the rm's, so a targeted delete of
+#      one file scored as a recursive wipe.
+#
+# Both are fixed once, here, rather than nine times. Splitting a command into
+# segments can only ever make each haystack SMALLER, so it cannot introduce a
+# false negative for a single-command pattern; the splitter is quote-aware so a
+# separator inside ``psql -c "... WHERE a|b"`` does not cut the statement in two.
+
+_HEREDOC_OPEN_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+#: A heredoc fed to one of these IS the program being run, so its body is code
+#: and must still be scanned. Fed to anything else (``cat > f``, ``git commit
+#: -F -``, ``gh pr create --body "$(cat <<EOF``) it is data.
+_INTERPRETER_RE = re.compile(
+    r"(?<![\w./-])(?:python[23]?|py|sh|bash|zsh|ksh|node|perl|ruby|psql|sqlite3|mysql)\b"
+)
+
+#: Command words that print or search text and cannot themselves perform the
+#: guarded action: a match inside their arguments is a pattern or a message.
+#: ``echo '{"command":"rm -rf /"}' | python hook.py`` — the corpus's own way of
+#: testing this very hook — is an ``echo``, not a delete.
+_PROSE_COMMAND_WORDS = frozenset({
+    "grep", "egrep", "fgrep", "rg", "ag", "ack", "findstr", "select-string",
+    "cat", "less", "more", "head", "tail", "wc", "diff", "ls", "echo", "printf",
+    "gh", "glab", "code",
+})
+
+#: Adds ``git`` for the SQL checks only. A commit message or PR body quoting
+#: ``DELETE FROM audit_trail`` executes nothing — but ``git rm -rf`` deletes, so
+#: ``git`` must NOT be excused from :func:`is_dangerous_rm_command`.
+_READ_ONLY_COMMAND_WORDS = _PROSE_COMMAND_WORDS | {"git"}
+
+_COMMAND_WORD_RE = re.compile(
+    r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"      # leading VAR=value assignments
+    r"(?:(?:sudo|command|exec|time|env|nohup)\s+)*"  # transparent prefixes
+    r"([^\s;|&<>()]+)"
+)
+
+
+def strip_heredoc_data(command: str) -> str:
+    """Drop heredoc bodies that are DATA, keep the ones that are CODE.
+
+    The opener line decides: ``python - <<'PY'`` runs its body, so the body is
+    kept; ``cat > notes.md <<'EOF'`` and ``git commit -F - <<'EOF'`` do not, so
+    theirs is dropped. An unterminated heredoc (a truncated transcript, a
+    still-open command) drops to end-of-string rather than raising.
+    """
+    if "<<" not in command:
+        return command
+    lines = command.splitlines()
+    out: List[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        match = _HEREDOC_OPEN_RE.search(line)
+        if not match:
+            continue
+        terminator = match.group(2)
+        end = i
+        while end < len(lines) and lines[end].strip() != terminator:
+            end += 1
+        if _INTERPRETER_RE.search(line):
+            out.extend(lines[i:end])
+        if end < len(lines):
+            out.append(lines[end])
+        i = end + 1
+    return "\n".join(out)
+
+
+def command_segments(command: str) -> List[str]:
+    """Split *command* into individually-executed segments, quote-aware.
+
+    Splits on ``&&``, ``||``, ``;``, ``|`` and newlines that are not inside a
+    quoted string, after :func:`strip_heredoc_data`. Returns ``[]`` for a
+    command that is entirely whitespace.
+    """
+    text = strip_heredoc_data(command or "")
+    segments: List[str] = []
+    buf: List[str] = []
+    quote: Optional[str] = None
+    i = 0
+    length = len(text)
+    while i < length:
+        ch = text[i]
+        if quote is not None:
+            buf.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < length:
+                buf.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < length:
+            buf.append(ch)
+            buf.append(text[i + 1])
+            i += 2
+            continue
+        if text[i:i + 2] in ("&&", "||"):
+            segments.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        if ch in ";|\n&":
+            segments.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    segments.append("".join(buf))
+    return [s.strip() for s in segments if s.strip()]
+
+
+def command_word(segment: str) -> str:
+    """Lowercased basename of the program a segment invokes, or ``""``.
+
+    ``VAR=1 sudo /usr/bin/grep -r x`` -> ``grep``.
+    """
+    match = _COMMAND_WORD_RE.match(segment or "")
+    if not match:
+        return ""
+    token = match.group(1).strip("\"'")
+    return os.path.basename(token.replace("\\", "/")).lower()
+
+
+def _is_read_only_segment(segment: str) -> bool:
+    """True when the segment's program cannot perform the guarded action."""
+    return command_word(segment) in _READ_ONLY_COMMAND_WORDS
+
+
 # ── 1. .env file access ───────────────────────────────────────────────────
 
 ENV_FILE_BLOCK_REASON = (
     "BLOCKED: Access to .env files is prohibited. Use AWS Secrets Manager."
 )
 
-_ENV_BASH_PATTERNS = (
-    re.compile(r"\b\.env\b(?!\.sample)"),
-    re.compile(r"cat\s+.*\.env\b(?!\.sample)"),
-    re.compile(r"echo\s+.*>\s*\.env\b(?!\.sample)"),
-)
+#: Suffixes that mark a checked-in TEMPLATE rather than a secrets file. Mirrors
+#: the ``!.env.sample`` / ``!.env.example`` exclusions already declared in
+#: ``args/file_access_tiers.yaml`` — the two must agree, or this check refuses
+#: what D-ORCH-8 explicitly permits (measured: 24 of 70 refusals).
+_ENV_TEMPLATE_SUFFIXES = (".sample", ".example", ".template", ".dist", ".tpl")
+
+#: `C:\x\.env` and `\\host\share\.env` are paths; `^\.env` is a regex.
+_WINDOWS_PATH_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
+
+
+def _is_env_template(file_path: str) -> bool:
+    name = os.path.basename(file_path.replace("\\", "/")).lower()
+    return name.endswith(_ENV_TEMPLATE_SUFFIXES)
+
+
+def shell_tokens(segment: str) -> List[str]:
+    """Best-effort argv of one shell segment. Never raises.
+
+    Falls back to a whitespace split when the segment does not lex — a
+    half-quoted fragment must still be scannable, just less precisely.
+    """
+    try:
+        tokens = shlex.split(segment, posix=(os.name != "nt"))
+    except ValueError:
+        tokens = segment.split()
+    return [
+        t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t
+        for t in tokens
+    ]
+
+
+def _is_env_path_operand(token: str) -> bool:
+    """True when *token* IS the ``.env`` file, rather than mentions it.
+
+    ``.env`` and ``$WT/.env`` are the file. ``process.env``, the regex literal
+    ``\\.env``, ``.env.example`` and a ``--body`` describing a ``.env`` change
+    are not, and each of those refused before this (measured, exa-bench-05).
+    """
+    t = token.strip("\"'").lstrip("><&")
+    if t == ".env":
+        return True
+    # A parent directory is required, so the bare escaped `\.env` of a grep
+    # pattern is not a path.
+    if t.endswith("/.env") and len(t) > 5:
+        return True
+    # A backslash is a path separator only in something already shaped like a
+    # Windows path. Otherwise `grep -n "^\.env" .gitignore` reads as one.
+    if t.endswith("\\.env") and _WINDOWS_PATH_RE.match(t):
+        return True
+    return False
+
+
+#: Programs that put a file's CONTENTS somewhere — on screen, in another file,
+#: or into the shell. This is the original check's vocabulary (``cat …​ .env``
+#: and ``echo …​ > .env``) made precise, not widened. ``ls``, ``git
+#: check-ignore`` and ``grep`` are deliberately absent: they were never blocked,
+#: they reveal nothing a directory listing does not, and inspecting which
+#: backend `.env` selects is routine work in this repo. Deletion of `.env` is
+#: not this check's business either — ``check_file_access_tiers`` governs it
+#: through the ``zero_access`` tier, with the exclusions D-ORCH-8 declares.
+#:
+#: ``source``/``.`` are absent for the same reason ``cp`` is: ``set -a && .
+#: ./.env`` is how CLAUDE.md tells a session to load platform configuration
+#: before running the kanban CLI. It puts nothing on screen.
+_ENV_CONTENT_COMMANDS = frozenset({
+    "cat", "less", "more", "bat", "head", "tail", "strings", "base64", "xxd",
+    "od", "tee",
+})
+
+_REDIRECT_TOKEN_RE = re.compile(r"^\d*>{1,2}$")
+
+
+def _bash_reads_env_file(segment: str) -> bool:
+    tokens = shell_tokens(segment)
+    if not tokens:
+        return False
+    env_operands = [i for i, t in enumerate(tokens) if _is_env_path_operand(t)]
+    if not env_operands:
+        return False
+    if command_word(segment) in _ENV_CONTENT_COMMANDS:
+        return True
+    # `> .env`, `>> .env`, `2> .env`, and the unspaced `>.env` (whose redirect
+    # chars _is_env_path_operand already strips).
+    for i in env_operands:
+        if tokens[i].lstrip("><&") != tokens[i]:
+            return True
+        if i and _REDIRECT_TOKEN_RE.match(tokens[i - 1]):
+            return True
+    return False
 
 
 def is_env_file_access(tool_name: str, tool_input: dict) -> bool:
-    """Check if a tool is trying to access .env files."""
+    """Check if a tool is trying to access .env files.
+
+    The Bash arm requires a ``.env`` **path operand** of a content-reading or
+    file-writing command, not the substring anywhere in the line. ICDEV's own
+    documented idiom is ``python -c "from dotenv import load_dotenv;
+    load_dotenv('.env')"`` — CLAUDE.md tells admins to configure the platform in
+    ``.env`` — and that reaches the shell as a single ``python -c`` argument,
+    not as a file the command opens.
+    """
     if tool_name in ("Read", "Edit", "MultiEdit", "Write"):
         file_path = tool_input.get("file_path", "")
-        if ".env" in file_path and not file_path.endswith(".env.sample"):
+        if ".env" in file_path and not _is_env_template(file_path):
             return True
 
     elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        for pattern in _ENV_BASH_PATTERNS:
-            if pattern.search(command):
-                return True
+        return any(
+            _bash_reads_env_file(seg)
+            for seg in command_segments(tool_input.get("command", ""))
+        )
 
     return False
 
@@ -164,38 +413,109 @@ def check_env_file_access(tool_name: str, tool_input: dict) -> Optional[str]:
 
 DANGEROUS_RM_BLOCK_REASON = "BLOCKED: Dangerous rm command detected and prevented"
 
+#: ``rm`` as a program name, not as the tail of a flag.
+#:
+#: ``\brm`` matches inside ``docker run --rm`` — ``-`` is a non-word character,
+#: so ``\b`` sits right before the ``r``. Every ``docker run --rm`` in the corpus
+#: therefore scored as a dangerous delete (measured: the largest single class of
+#: this check's 494 refusals). ``/bin/rm`` and ``git rm`` are still matched;
+#: ``--rm``, ``--rmdir`` and ``xyz-rm`` are not.
+_RM_WORD = r"(?<![-\w.])rm\b"
+
 _RM_FLAG_PATTERNS = tuple(
     re.compile(p) for p in (
-        r"\brm\s+.*-[a-z]*r[a-z]*f",
-        r"\brm\s+.*-[a-z]*f[a-z]*r",
-        r"\brm\s+--recursive\s+--force",
-        r"\brm\s+--force\s+--recursive",
-        r"\brm\s+-r\s+.*-f",
-        r"\brm\s+-f\s+.*-r",
+        rf"{_RM_WORD}\s+.*-[a-z]*r[a-z]*f",
+        rf"{_RM_WORD}\s+.*-[a-z]*f[a-z]*r",
+        rf"{_RM_WORD}\s+--recursive\s+--force",
+        rf"{_RM_WORD}\s+--force\s+--recursive",
+        rf"{_RM_WORD}\s+-r\s+.*-f",
+        rf"{_RM_WORD}\s+-f\s+.*-r",
     )
 )
 
-_RM_RECURSIVE_RE = re.compile(r"\brm\s+.*-[a-z]*r")
-_RM_DANGEROUS_PATH_PATTERNS = tuple(
-    re.compile(p) for p in (r"/", r"/\*", r"~", r"~/", r"\$HOME", r"\.\.", r"\*", r"\.")
-)
+_RM_RECURSIVE_RE = re.compile(rf"{_RM_WORD}\s+.*-[a-z]*r")
+
+#: Targets whose recursive deletion is unrecoverable or catastrophic.
+#:
+#: These used to be substring patterns — ``/``, ``.``, ``*`` — searched across
+#: the WHOLE command, which made every possible target dangerous: any path has a
+#: separator, any filename has a dot. Combined with the flag patterns, that made
+#: the rule "no ``rm -rf``, ever", and a rule that refuses 288 scratch-directory
+#: cleanups in 30 days is a rule that has to be left switched off. What makes
+#: ``rm -rf`` dangerous is the TARGET, so the target is what is matched — as a
+#: whole token now, not as a substring.
+_RM_WIDE_TARGETS = frozenset({
+    "", "-", "/", "/*", "~", "~/", "~/*", ".", "./", "./*", ".*",
+    "..", "../", "../*", "*", "$home", "$home/", "$home/*",
+    # A repository's history is the one thing inside a checkout that `git`
+    # cannot restore, so it is wide even though it is a relative path.
+    ".git", ".git/", ".git/*",
+})
+
+
+def _rm_targets(segment: str) -> List[str]:
+    """Positional operands of the ``rm`` in *segment*, flags removed."""
+    tokens = shell_tokens(segment)
+    for i, tok in enumerate(tokens):
+        if os.path.basename(tok.replace("\\", "/")).lower() == "rm":
+            return [t for t in tokens[i + 1:] if not t.startswith("-")]
+    return []
+
+
+def _is_wide_rm_target(target: str) -> bool:
+    """True when deleting *target* recursively is unrecoverable or catastrophic."""
+    t = target.strip("\"'").replace("\\", "/").lower().rstrip()
+    if t in _RM_WIDE_TARGETS:
+        return True
+    if t.startswith("~") or t.startswith("$home"):
+        return True
+    if t.endswith("/.git") or t.endswith("/.git/"):
+        return True
+    parts = [p for p in t.split("/") if p not in ("", ".")]
+    if ".." in parts:
+        return True
+    if t.startswith("/"):
+        # /etc, /usr, /home — a top-level system directory. /home/u/proj/build
+        # is a specific path and not this check's business.
+        return len(parts) <= 1
+    if re.match(r"^[a-z]:(/|$)", t):
+        return len(parts) <= 2   # c:, c:/, c:/users
+    return False
+
+
+def _is_dangerous_rm_segment(segment: str) -> bool:
+    if command_word(segment) in _PROSE_COMMAND_WORDS:
+        return False
+
+    normalized = " ".join(segment.lower().split())
+    recursive_force = any(p.search(normalized) for p in _RM_FLAG_PATTERNS)
+    recursive = recursive_force or bool(_RM_RECURSIVE_RE.search(normalized))
+    if not recursive:
+        return False
+
+    targets = _rm_targets(segment)
+    if not targets:
+        # A recursive rm whose target this parser cannot see is not a scoped
+        # delete as far as anything here can tell. Fail closed.
+        return True
+    return any(_is_wide_rm_target(t) for t in targets)
 
 
 def is_dangerous_rm_command(command: str) -> bool:
-    """Detect dangerous rm commands."""
-    normalized = " ".join(command.lower().split())
+    """Detect dangerous rm commands.
 
-    for pattern in _RM_FLAG_PATTERNS:
-        if pattern.search(normalized):
-            return True
+    Two changes from the flag-only form, both measured over 86,612 real tool
+    calls (exa-bench-05):
 
-    # Check for rm with recursive flag targeting dangerous paths
-    if _RM_RECURSIVE_RE.search(normalized):
-        for path in _RM_DANGEROUS_PATH_PATTERNS:
-            if path.search(normalized):
-                return True
-
-    return False
+    * **Per shell segment.** The flags of a LATER command are not the flags of
+      an earlier ``rm``. ``rm -f a.json; grep -rln foo tests/`` deletes exactly
+      one file, and refused because the grep's ``-r`` completed the ``rm``'s
+      pattern across the ``;``.
+    * **Scoped by target.** ``rm -rf /`` and ``rm -rf .tmp/probe`` differ in
+      what they destroy, not in how they are spelled. See
+      :data:`_RM_WIDE_TARGETS`.
+    """
+    return any(_is_dangerous_rm_segment(seg) for seg in command_segments(command))
 
 
 def check_dangerous_rm(tool_name: str, tool_input: dict) -> Optional[str]:
@@ -226,6 +546,24 @@ APPEND_ONLY_BLOCK_REASON = (
 # larger) alternation entirely. The overwhelming majority of Bash calls are not
 # SQL at all, and this hook is on the critical path of every single tool call.
 _SQL_MUTATION_VERB_RE = re.compile(r"\b(?:update|delete|drop|truncate)\b")
+
+#: Markers that a segment has deliberately pointed the storage layer at a
+#: disposable database.
+#:
+#: This guard protects the PLATFORM's audit tables. Every remaining refusal in
+#: the corpus was a security test building its own chain in a tempdir and then
+#: tampering with it to prove detection works — exa-audit-03 and exa-audit-04
+#: could not have been written with this enforcing. It is a mistake-preventer,
+#: not an attacker-resistant control (it string-matches a command the agent
+#: composed itself), so an explicit "this is a scratch DB" marker is a
+#: legitimate thing for it to believe. The real per-call authority over an
+#: irreversible action is ``tools/agent_runtime/approval_gate.py``.
+_THROWAWAY_DB_MARKERS = (":memory:", "tempfile", "icdev_db_path=", "mkdtemp")
+
+
+def _targets_throwaway_db(segment: str) -> bool:
+    lowered = segment.lower()
+    return any(marker in lowered for marker in _THROWAWAY_DB_MARKERS)
 
 # Compiled once per distinct table list, then reused. One alternation per SQL
 # shape instead of three regexes per table: with 350+ tables the naive form
@@ -266,12 +604,29 @@ def is_append_only_table_modification(
     validator to detect drift:
     ``python tools/testing/claude_dir_validator.py --json``
     """
-    if tool_name == "Bash":
-        command = tool_input.get("command", "").lower()
-        if not _SQL_MUTATION_VERB_RE.search(command):
-            return False
-        for pattern in _append_only_patterns(tables):
-            if pattern.search(command):
+    if tool_name != "Bash":
+        return False
+
+    command = tool_input.get("command", "") or ""
+    # Cheap pre-guard on the whole string before any segmentation work.
+    if not _SQL_MUTATION_VERB_RE.search(command.lower()):
+        return False
+
+    # Whole-command, not per segment: `export ICDEV_DB_PATH=<tmp>` and the
+    # python that uses it are two segments of one line.
+    if _targets_throwaway_db(command):
+        return False
+
+    patterns = _append_only_patterns(tables)
+    for segment in command_segments(command):
+        # `grep -n "DELETE FROM audit_trail" tests/` searches FOR the guarded
+        # statement; `gh pr create --title "... UPDATE audit_trail ..."` writes
+        # prose about it. Neither executes SQL, and both refused before this.
+        if _is_read_only_segment(segment):
+            continue
+        lowered = segment.lower()
+        for pattern in patterns:
+            if pattern.search(lowered):
                 return True
 
     return False
@@ -310,15 +665,28 @@ DIRECT_SQLITE_BLOCK_REASON = (
 
 # Files that legitimately need raw sqlite3.
 _SQLITE_EXEMPT_PATTERNS = (
-    "tools/db/storage.py",            # IS the storage layer
-    "tools/db/init_icdev_db.py",      # DDL/schema initialization
-    "tools/db/migration_runner.py",   # schema migrations
-    "tools/db/backup_manager.py",     # backup/restore with the sqlite3 API
-    "tools/db/pg_init.py",            # PG initialization
-    "tools/db/migrate_to_storage.py", # one-time migration script
-    "tools/db/migrate_add_missing_columns.py",
+    # The storage layer's own package. Seven files here were listed one by one;
+    # every module added to it since (`shadowed_migration_replay.py`, …) needs
+    # the same exemption for the same reason, and enumerating them one refusal
+    # at a time is how the list fell behind.
+    "tools/db/",
     "tools/compat/db_utils.py",       # path resolution utilities
     "tools/saas/",                    # tenant-isolated DBs (separate SQLite per tenant)
+    "tools/hooks/",                   # IS this check — its source names the pattern
+)
+
+#: Source extensions this check applies to. It exists to stop a raw
+#: ``sqlite3.connect()`` from being INTRODUCED, and only an importable module
+#: can introduce one. Documenting the pattern is not committing it: the old
+#: content-substring test refused `tools/manifest/safety-hooks.md`, which is the
+#: manifest row FOR this check, and the very file that implements it.
+_SQLITE_SOURCE_SUFFIXES = (".py", ".pyi")
+
+#: A one-liner that WRITES through a raw sqlite3 handle. See the Bash arm.
+_SQLITE_WRITE_RE = re.compile(
+    r"\b(?:insert\s+into|update\s+\w|delete\s+from|drop\s+table|create\s+table"
+    r"|alter\s+table|truncate|replace\s+into|\.commit\(|executemany\()",
+    re.IGNORECASE,
 )
 
 
@@ -340,6 +708,9 @@ def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
         if "/tools/" not in file_path and not file_path.startswith("tools/"):
             return False
 
+        if not file_path.lower().endswith(_SQLITE_SOURCE_SUFFIXES):
+            return False
+
         for exempt in _SQLITE_EXEMPT_PATTERNS:
             if exempt in file_path:
                 return False
@@ -352,13 +723,21 @@ def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
             return True
 
     elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # Block ad-hoc sqlite3.connect to icdev.db in python one-liners
-        if "sqlite3.connect" in command and "icdev.db" in command:
+        # Per segment, so the two substrings have to appear in the SAME command
+        # rather than anywhere in a compound line.
+        for segment in command_segments(tool_input.get("command", "")):
+            if "sqlite3.connect" not in segment or "icdev.db" not in segment:
+                continue
             # Allow if it's running a migration or init script
-            if any(x in command for x in
+            if any(x in segment for x in
                    ["init_icdev_db", "migration_runner", "migrate_to_storage", "backup"]):
-                return False
+                continue
+            if not _SQLITE_WRITE_RE.search(segment):
+                # The stated harm is "data written to SQLite never appears in
+                # the UI" (the storage layer routes to PostgreSQL). A read does
+                # not write anything anywhere, and read-only diagnostics were
+                # the bulk of this check's refusals.
+                continue
             return True
 
     return False
@@ -421,20 +800,24 @@ def _matches_tier(file_path: str, patterns: List[str]) -> bool:
     fp = file_path.replace("\\", "/")
     if fp.startswith("./"):
         fp = fp[2:]
+    # os.path.basename, not PurePosixPath(fp).name: fp is already
+    # forward-slashed, and the two disagree on a trailing separator.
+    base = os.path.basename(fp)
+
+    # Exclusions are matched against the SAME two candidates as inclusions.
+    # They used to be full-path only while inclusions also tried the basename,
+    # so `.env.*` caught `C:/wt/repo/.env.example` on its basename and
+    # `!.env.example` — an absolute path against a bare pattern — never fired.
+    # Every `.env.example` read and edit in the corpus refused on a tier that
+    # explicitly exempts it (measured: 24 refusals, exa-bench-05).
+    for exc in patterns:
+        if exc.startswith("!") and (fnmatch(fp, exc[1:]) or fnmatch(base, exc[1:])):
+            return False
+
     for pattern in patterns:
         if pattern.startswith("!"):
-            continue  # exclusion patterns handled separately
-        # Check exclusions first
-        excluded = False
-        for exc in patterns:
-            if exc.startswith("!") and fnmatch(fp, exc[1:]):
-                excluded = True
-                break
-        if excluded:
-            continue
-        # os.path.basename, not PurePosixPath(fp).name: fp is already
-        # forward-slashed, and the two disagree on a trailing separator.
-        if fnmatch(fp, pattern) or fnmatch(os.path.basename(fp), pattern):
+            continue  # exclusion patterns handled above
+        if fnmatch(fp, pattern) or fnmatch(base, pattern):
             return True
     return False
 
@@ -450,6 +833,20 @@ def check_file_access_tiers(
     if not tiers:
         return None
 
+    if tool_name == "Bash":
+        # Per segment: the old form took the FIRST rm target or redirect target
+        # anywhere in a compound command and attributed it to the whole call,
+        # so `cd wt && ruff check tests/x.py && rm -f .env` reported the same
+        # refusal as `rm -f .env` regardless of which part was doing what.
+        for segment in command_segments(tool_input.get("command", "")):
+            path, write, delete = _bash_tier_target(segment)
+            if not path:
+                continue
+            reason = _tier_reason(tiers, path, write, delete)
+            if reason:
+                return reason
+        return None
+
     file_path = ""
     is_write = False
     is_delete = False
@@ -460,22 +857,27 @@ def check_file_access_tiers(
     elif tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         file_path = tool_input.get("file_path", tool_input.get("notebook_path", ""))
         is_write = True
-    elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # Check for rm/delete commands targeting protected files
-        rm_match = _RM_TARGET_RE.search(command)
-        if rm_match:
-            file_path = rm_match.group(1)
-            is_delete = True
-        # Check for write redirections
-        redir_match = _REDIRECT_TARGET_RE.search(command)
-        if redir_match and not is_delete:
-            file_path = redir_match.group(1)
-            is_write = True
 
     if not file_path:
         return None
+    return _tier_reason(tiers, file_path, is_write, is_delete)
 
+
+def _bash_tier_target(segment: str) -> Tuple[str, bool, bool]:
+    """``(path, is_write, is_delete)`` a single shell segment acts on."""
+    rm_match = _RM_TARGET_RE.search(segment)
+    if rm_match:
+        return rm_match.group(1), False, True
+    redir_match = _REDIRECT_TARGET_RE.search(segment)
+    if redir_match:
+        return redir_match.group(1), True, False
+    return "", False, False
+
+
+def _tier_reason(
+    tiers: dict, file_path: str, is_write: bool, is_delete: bool
+) -> Optional[str]:
+    """The D-ORCH-8 refusal for one path, or None."""
     # Zero access — block everything
     zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
     if _matches_tier(file_path, zero_patterns):
@@ -589,6 +991,11 @@ def check_branch_deletion(
 
 # ── 7. Worktree path enforcement ──────────────────────────────────────────
 
+#: A token the shell would expand before git ever sees it. `shlex` strips the
+#: quotes but cannot resolve the value, so what reaches this parser is the
+#: literal `$P` / `${WT}` / `` `pwd` `` — never a path.
+_UNEXPANDED_RE = re.compile(r"[$`]")
+
 
 def worktree_add_target(command: str, posix: Optional[bool] = None) -> Optional[str]:
     """Target path of a ``git worktree add`` in *command*, or None.
@@ -610,6 +1017,14 @@ def worktree_add_target(command: str, posix: Optional[bool] = None) -> Optional[
         return None
     if posix is None:
         posix = os.name != "nt"
+    # Only the segment that actually runs `git worktree add`. Otherwise
+    # `cd repo && P=$(...worktree_paths...) && git worktree add --detach "$P"`
+    # is parsed as one token stream and the `cd`'s arguments can be read as the
+    # target — which is how `gh pr checks 1537` scored as a stray worktree.
+    for segment in command_segments(command):
+        if "worktree" in segment and "add" in segment:
+            command = segment
+            break
     try:
         tokens = shlex.split(command, posix=posix)
         if not posix:
@@ -636,6 +1051,16 @@ def worktree_add_target(command: str, posix: Optional[bool] = None) -> Optional[
             continue
         if tok.startswith("-"):
             continue                  # --detach, --no-checkout, --force, ...
+        if _UNEXPANDED_RE.search(tok):
+            # `git worktree add --detach "$P"` where P came from
+            # `python -m tools.git.worktree_paths --path cli <slug>`: the
+            # EXACT form CLAUDE.md prescribes. The shell expands it; this hook
+            # cannot, so the target is unknown — and an unknown target is the
+            # documented "cannot be determined with confidence" case, not a
+            # violation. Measured 2026-08-12: 640 of this check's 652 refusals
+            # over 30 days were compliant sessions blocked on `"$P"`, i.e. the
+            # guard would have refused the convention it exists to enforce.
+            return None
         return tok                    # first positional is the worktree path
     return None
 

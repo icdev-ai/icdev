@@ -55,20 +55,63 @@ So: **the two gates usually named as the compensating controls for this flag are
 not in this adapter's path.** They are real, they are default-deny, and they are
 genuinely stronger than a vendor prompt — for the in-process loop. For the
 spawned CLI the only ICDEV code that sees a tool call is the PreToolUse hook, and
-`.claude/settings.json` wires that hook as:
+until `exa-bench-05` `.claude/settings.json` wired that hook as:
 
 ```
 python $CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py || true
 ```
 
 A PreToolUse hook signals "block" with **exit code 2**. `|| true` makes the shell
-return 0 regardless. Every hard block that file advertises is therefore advisory
-in an interactive session. (The headless path,
-`tools/airgap/hook_compat.py::run_pre_tool_check`, has no such wrapper and does
-block — the unattended path is the weaker of the two.) That is filed as
-`exa-bench-05` and is **not** fixed here: deleting `|| true` converts nine
-never-load-tested checks into hard blocks for every concurrent session on the
-host at once, so per-check false-positive rates have to be surveyed first.
+return 0 regardless. Every hard block that file advertised was therefore advisory
+— in interactive sessions AND in the spawned CLI. (The headless path,
+`tools/airgap/hook_compat.py::run_pre_tool_check`, never had the wrapper and did
+block, so the unattended path was the stronger of the two.)
+
+### 2a. What `exa-bench-05` changed
+
+The wrapper is gone; the hook's exit 2 now reaches Claude Code, so this row of
+the table above is a real control rather than a nominal one. Two conditions had
+to be met first, and both are recorded rather than asserted:
+
+**The checks were surveyed against real work.** `tools/hooks/fire_rate_survey.py`
+replays the tool calls of recent sessions — 86,612 calls across 1,310 sessions in
+a 30-day window, read from the Claude Code transcripts, which are the only
+corpus that carries the operands (`hook_events` persists tool-input KEY NAMES
+only, so a replay driven from it reports zero fires for every check regardless of
+what happened). Five checks were refusing routine work and were narrowed before
+enforcement was enabled; the largest was `worktree_path`, which refused 640
+sessions doing exactly what CLAUDE.md prescribes — `git worktree add --detach
+"$P"` — because the hook cannot expand `$P` and read the unexpanded token as a
+stray path.
+
+| check | refusals /86,612 before | after | what was wrong |
+|---|---:|---:|---|
+| `worktree_path` | 652 | 265 | unexpanded `"$P"` read as a violating path; parse spanned the whole compound command |
+| `dangerous_rm` | 494 | 32 | `\brm` matched `docker run --rm`; `.*` spanned `;` so a later `grep -r` completed an earlier `rm -f`; every target counted as "dangerous" so the rule was "no `rm -rf`, ever" |
+| `direct_sqlite_usage` | 246 | 42 | matched documentation and the check's own source; refused read-only diagnostics |
+| `file_access_tiers` | 74 | 57 | `!.env.example` exclusions matched full paths only while inclusions also matched the basename |
+| `env_file_access` | 71 | 33 | `\b\.env\b` matched `process.env`, `\.env` in a grep pattern, and PR-body prose |
+| `append_only_write` | 30 | 19 | matched `grep "DELETE FROM audit_trail"` and commit messages |
+| `branch_deletion` | 37 | 37 | unchanged — already fails open unless the branch holds unmerged commits |
+| `agent_rules` | 0 | 0 | unchanged — monitor-only unless a rule is placed in `args/agent_rules_enforce/` |
+| `review_loop_precommit` | 1,382 | 1,385 | unchanged — cannot refuse unless `ICDEV_REVIEW_LOOP_BLOCK=1` |
+
+The residue is not zero and is not claimed to be. What remains matches each
+check's stated rule: `cat .env`, `rm -rf ~`, a raw `sqlite3.connect` write to
+`data/icdev.db`, a `git worktree add` into a genuinely unsanctioned root. Those
+refusals are the point of turning the hook on.
+
+**Turning it off is nameable.** `ICDEV_PRETOOLUSE_ENFORCE=0` restores advisory
+behaviour for all nine checks — every one still runs and prints, prefixed
+`ADVISORY:` — and each check has its own switch (`CHECK_KILL_SWITCHES` in the
+hook). An environment variable is auditable in a way a shell operator buried in
+a JSON string is not.
+
+**Still open.** `icdev/data/claude_bootstrap/claude/settings.json.template`, the
+copy a scaffolded project inherits, keeps its `|| true`. It ships alongside an
+older self-contained `pre_tool_use.py` that has neither the narrowed checks nor a
+kill switch, so arming it would enable unmeasured refusals in every generated
+project — the thing this task exists to prevent. Filed as `exa-bench-05-b`.
 
 ## 3. Compensating controls, and why they are defensible where they apply
 
@@ -183,7 +226,8 @@ contribution is the decision, the measurement, and the regression harness.
 
 | Task | Gap | Category |
 |---|---|---|
-| `exa-bench-05` | `\|\| true` in `.claude/settings.json` makes every `pre_tool_use.py` hard block advisory. Survey per-check false-positive rates before removing it. | (the hook itself) |
+| ~~`exa-bench-05`~~ | **CLOSED.** `\|\| true` removed after a per-check fire-rate survey over 86,612 real tool calls; five checks narrowed first, enforcement standable-down via `ICDEV_PRETOOLUSE_ENFORCE=0`. See section 2a. | (the hook itself) |
+| `exa-bench-05-b` | `icdev/data/claude_bootstrap/claude/settings.json.template` still carries `\|\| true`, so every scaffolded project inherits the neutered hook. It ships alongside an older self-contained `pre_tool_use.py` with neither the narrowed checks nor a kill switch, so the template cannot be armed until that copy is brought forward. | (generated projects) |
 | `exa-bench-06` | The Claude Code hook runs 9 of the 10 shared checks — `check_git_danger` is never called from `main()` — and `_REDIRECT_TARGET_RE` mis-captures `>>`, so an append redirect defeats the file tiers. | destructive shell / writes |
 | `exa-bench-07` | No worktree containment on any surface. The AGENT-WF-001 gate is one per `(run, tool)` and path-blind; `approval_gate` holds `write_file` / `patch_file` at `recoverable` for any path; the `touch` / `mkdir` downgrade patterns auto-allow a `run_command` write to any absolute path. | **writes outside the worktree** |
 | `exa-bench-08` | No egress concept in the hook at all, and in-process coverage rests on `default_tier: unknown` rather than on an egress rule — allowlisting one HTTP tool, or adding a `curl` downgrade pattern, removes it silently. | **network egress** |
