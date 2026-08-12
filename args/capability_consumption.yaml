@@ -1,0 +1,116 @@
+# CUI // SP-CTI
+#
+# Capability consumption measurement (#exa-live-01).
+#
+# ICDEV's signature defect is a *registered* capability with *zero*
+# consumption: the audit chain columns (schema, verifier, bundle format and
+# dashboard all shipped, writer never wired), MCPToolAuthorizer (counted as
+# compliance evidence on file existence alone), prompt_registry (0 rows, 0
+# importers), GEPA (dispatched every 24h, selection predicate can never match),
+# and three separate reflex incidents (xbm-wake-01, xbm-wake-02, hgx-obs-02)
+# where `enabled: true` + a working module + a catalogue entry produced zero
+# executions. In every case nothing went red, because nothing counted.
+#
+# This file configures the counting half. Each class names a DECLARATION source
+# (what the platform says it can do) and a CONSUMPTION source (an EXISTING
+# telemetry table that records it actually happening). No new telemetry tables
+# are introduced here — if a capability's use is not already recorded somewhere,
+# that is itself the finding, and the class reports
+# `telemetry_available: false` rather than a misleading zero.
+
+classification: CUI // SP-CTI
+
+# Default lookback for --json runs. Override per-invocation with --window-days.
+window_days: 30
+
+# A declared capability unit counts as INERT when its consumption event count
+# over the window is <= this value. 0 means "never consumed at all".
+inert_threshold: 0
+
+# Cap on how many inert unit names are enumerated per class in the JSON payload.
+# The count is always exact; only the name list is truncated.
+max_listed_units: 40
+
+classes:
+  reflex:
+    enabled: true
+    description: >-
+      Genesis reflexes that are both listed in tools.genesis.daemon.REFLEX_NAMES
+      (the only list the dispatcher iterates) and enabled in
+      args/genesis_config.yaml. Consumption is a recorded run.
+  mcp_dispatch_tool:
+    enabled: true
+    description: >-
+      MCP tools in tools.mcp.tool_registry.TOOL_REGISTRY. Consumption is a
+      gated dispatch attempt recorded by the Studio MCP tool gate.
+  agent_approval_rule:
+    enabled: true
+    description: >-
+      Tools enumerated by tier in args/agent_approval_policy.yaml. Consumption
+      is an approval-gate decision (approve OR deny) on that tool.
+  mcp_tool_authorization:
+    enabled: true
+    description: >-
+      D261 per-tool RBAC roles in args/owasp_agentic_config.yaml. Consumption
+      is an MCPToolAuthorizer verdict recorded by the MCP HTTP surface.
+  prompt_template:
+    enabled: true
+    description: >-
+      Hard-prompt templates on disk under hardprompts/. Consumption is a
+      registered, non-draft prompt_versions row for that template.
+  audit_chain:
+    enabled: true
+    description: >-
+      The migration-149 hash chain on audit_trail (hash, previous_hash,
+      signature). Consumption is an audit row actually written with a chain
+      hash.
+  skill_optimizer:
+    enabled: true
+    description: >-
+      Skills queued for GEPA optimization as pending agent_improvement_artifacts.
+      Consumption is an artifact GEPA actually applied.
+
+# The five incidents this measurement was built for. Each is asserted to be
+# measurable — `--gate` fails when a case's class cannot be measured at all,
+# because an unmeasurable capability is exactly the state that let these ship.
+# A NON-zero count here is not a failure: it means the wiring landed.
+#
+# `metric` picks what answers the case:
+#   events      — "this capability was never used at all"; still_inert when the
+#                 class recorded no consumption events in the window.
+#   inert_units — "some declared units in this class were never used"; a busy
+#                 class hides those behind a healthy total, so still_inert when
+#                 ANY declared unit sat at zero.
+known_inert_cases:
+  - id: audit_chain_writer
+    capability_class: audit_chain
+    metric: events
+    note: >-
+      Chain columns, verifier, bundle format and dashboard all shipped; the
+      audit writer never populated hash/previous_hash.
+  - id: mcp_tool_authorizer
+    capability_class: mcp_tool_authorization
+    metric: events
+    note: >-
+      Zero call sites for most of its life, while fedramp_ksi_generator counted
+      the file's existence as satisfied evidence. Wired onto the MCP HTTP
+      surface by exa-policy-05 in monitor mode.
+  - id: prompt_registry
+    capability_class: prompt_template
+    metric: events
+    note: 0 rows in prompt_versions and 0 importers of tools/llm/prompt_registry.py.
+  - id: gepa_optimizer
+    capability_class: skill_optimizer
+    metric: events
+    note: >-
+      Dispatched every 24h, but every queued artifact has
+      composite_score == baseline_score, so the >= 0.05 delta filter can never
+      select one.
+  - id: inert_reflexes
+    capability_class: reflex
+    metric: inert_units
+    note: >-
+      xbm-wake-01 (latched circuit breaker), xbm-wake-02 (eight enabled
+      reflexes absent from REFLEX_NAMES) and hgx-obs-02 — enabled, importable,
+      catalogued, never executed. Counted per-reflex: a class total stays
+      healthy while individual reflexes sit at zero.
