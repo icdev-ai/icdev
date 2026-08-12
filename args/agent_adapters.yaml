@@ -12,7 +12,12 @@ enabled_adapters:
   # consumers until one opts in via ICDEV_AGENT_ADAPTER=local_agent or a
   # per_task_type_preference entry.
   - local_agent
-  # - codex_cli     # stub — uncomment when wired
+  # exa-bench-01 — the OpenAI Codex CLI shellout, implemented against the same
+  # Protocol as claude_cli. Enabled so it is reachable via
+  # ICDEV_AGENT_ADAPTER=codex_cli, but deliberately absent from fallback_order
+  # and per_task_type_preference below: the exa-bench-03 capability probe has
+  # not measured it yet, so nothing routes to it by default.
+  - codex_cli
   # - copilot_cli   # stub — uncomment when wired
 
 # Prefer claude_cli for anything that actually needs to edit files; use
