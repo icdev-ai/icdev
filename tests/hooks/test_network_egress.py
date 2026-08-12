@@ -28,7 +28,10 @@ Two halves of this file matter equally:
 """
 from __future__ import annotations
 
+import importlib.util
+import inspect
 import json
+import sys
 
 import pytest
 
@@ -320,12 +323,24 @@ class TestBothHookPathsAreWired:
 
     def test_claude_code_hook_calls_it(self):
         """The hook is loaded by path, so assert on its source rather than
-        importing it — it calls sys.exit at module scope on bad input."""
-        source = (REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py").read_text(
-            encoding="utf-8"
-        )
-        assert "check_network_egress" in source
-        assert "egress_error = check_network_egress(tool_name, tool_input)" in source, (
+        importing it — it calls sys.exit at module scope on bad input.
+
+        Asserted against ``main()``'s source specifically, not the file's: the
+        wrapper is defined at module scope, so ``"check_network_egress" in
+        source`` is satisfied by a definition nothing calls — which IS the
+        declared-but-unconsumed shape exa-bench-06 found for check_git_danger.
+        """
+        hook_path = REPO_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+        spec = importlib.util.spec_from_file_location("icdev_hook_egress", hook_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        assert "check_network_egress" in module.HOOK_CHECKS
+        assert "network_egress" in module.CHECK_KILL_SWITCHES
+        assert "check_network_egress(tool_name, tool_input)" in inspect.getsource(
+            module.main
+        ), (
             "the wrapper exists but main() never calls it — exactly the "
             "declared-but-unconsumed shape exa-bench-06 found for check_git_danger"
         )

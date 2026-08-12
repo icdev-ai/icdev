@@ -650,6 +650,23 @@ tests/test_prompt_registry_call_site_prompts.py
 # ever spawned -- resolution is patched and subprocess.run is a recorder -- so it
 # is hermetic and ~1s.
 tests/test_codex_cli_adapter.py
+# exa-bench-05 -- the PreToolUse hook's checks, which became HARD BLOCKS in this
+# change. `.claude/settings.json` wrapped the hook in `|| true`, so nine checks
+# printed "BLOCKED:" and blocked nothing; with the wrapper gone a regression in
+# any of them now stops real tool calls in every session on the host. That makes
+# these the highest-consequence pure functions in the repo, and they were not in
+# the gate. Pins the shell-aware scanning that made enforcement affordable
+# (segments, heredoc bodies, `--rm` vs `rm`, unexpanded `"$P"` worktree targets)
+# and the .env / append-only / sqlite / tier operand rules. Pure string
+# predicates, no DB, no network, ~1s.
+tests/hooks/test_shared_checks.py
+# exa-bench-05 -- the fire-rate survey that has to run BEFORE a check is armed.
+# Guards the two properties that make its numbers mean anything: it replays a
+# corpus carrying the tool-call OPERANDS (hook_events holds key names only and
+# must report itself unusable, not a zero), and it never EXECUTES a check whose
+# evaluation would run ruff, re-stage files or write an agent_findings row.
+# Drives a synthetic transcript in tmp_path -- reads no host session data, ~1s.
+tests/hooks/test_fire_rate_survey.py
 # exa-live-02 -- capability liveness coherence gate. The enforcement half of
 # exa-live-01's measurement, and it earns a slot for the same reason the reflex
 # version did: this bug shipped three times before it had a check. The two

@@ -16,8 +16,16 @@ file_access_tiers:
     patterns:
       - ".env"
       - ".env.*"
+      # Checked-in TEMPLATES, not secrets. Kept in step with
+      # _ENV_TEMPLATE_SUFFIXES in tools/hooks/shared_checks.py — the two guards
+      # both see every `.env.*` path and must agree on which are secrets.
       - "!.env.sample"
       - "!.env.example"
+      - "!.env.template"
+      - "!.env.*.template"
+      - "!.env.*.sample"
+      - "!.env.*.example"
+      - "!.env.dist"
       - "**/*.pem"
       - "**/*.key"
       - "**/*.p12"

@@ -7,6 +7,7 @@ Pre-tool-use hook that validates tool calls before execution.
 
 Blocks:
     - Dangerous rm -rf commands
+    - Destructive git commands (reset --hard, clean -f, push --force, ...)
     - Access to .env files containing secrets
     - UPDATE/DELETE/DROP/TRUNCATE on every append-only table (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
@@ -26,10 +27,35 @@ generator and coherence_checker's autofix all read from this file.
 Exit codes:
     0 = allow tool call
     2 = block tool call (shows error to Claude)
+
+Enforcement (exa-bench-05)
+--------------------------
+Exit 2 only means anything if the shell that runs this hook propagates it.
+``.claude/settings.json`` wired it as ``python … pre_tool_use.py || true`` from
+the beginning, which made every refusal below advisory: the hook printed
+``BLOCKED: …`` and the tool call ran anyway. Because
+``tools/agents/adapters/claude_cli.py`` launches Claude Code with
+``--dangerously-skip-permissions`` (D394), this hook is the ONLY thing that
+observes a tool call inside a spawned session — so nothing did.
+
+The wrapper is gone. Turning it off again is an environment variable, not a
+shell operator, so it is visible in the audit trail:
+
+``ICDEV_PRETOOLUSE_ENFORCE=0``
+    Every check still runs and still prints, prefixed ``ADVISORY:``, but the
+    hook exits 0. This is the shape the ``|| true`` had, now nameable.
+``ICDEV_<CHECK>_GUARD=0``
+    Skip ONE check. See :data:`CHECK_KILL_SWITCHES`.
+
+The ``|| true`` was redundant for its apparent purpose anyway: :func:`main`
+already exits 0 on ``json.JSONDecodeError`` and on any unexpected exception, so
+a broken hook fails open without shell help. What the wrapper actually
+suppressed was the working case.
 """
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -770,19 +796,16 @@ def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
     )
 
 
-def run_review_loop_precommit(tool_name: str, tool_input: dict) -> None:
+def run_review_loop_precommit(tool_name: str, tool_input: dict) -> str:
     """Self-green staged changes with review_loop before a `git commit`.
 
     Warn-only by default (the commit proceeds). Set ICDEV_REVIEW_LOOP_BLOCK=1 to
     hard-block a non-green commit, or ICDEV_REVIEW_LOOP_PRECOMMIT=0 to disable.
     """
-    reason = shared_checks.check_review_loop_precommit(
+    return shared_checks.check_review_loop_precommit(
         tool_name, tool_input, repo_root=REPO_ROOT,
         notify=lambda message: print(message, file=sys.stderr),
-    )
-    if reason:
-        print(reason, file=sys.stderr)
-        sys.exit(2)
+    ) or ""
 
 
 def check_worktree_path(tool_name: str, tool_input: dict) -> str:
@@ -808,6 +831,40 @@ def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+def check_git_danger(tool_name: str, tool_input: dict) -> str:
+    """Refuse a destructive git command (OPT-51).
+
+    Wired into ``main()`` by exa-bench-06. The patterns have lived in
+    shared_checks since hgx-guard-02, but only the HEADLESS path called the
+    check — so ``git reset --hard origin/main`` and ``git clean -fdx`` were
+    refused by ``hook_compat.run_pre_tool_check`` and ALLOWED here. That is the
+    wrong way round: this is the path a session running with
+    ``--dangerously-skip-permissions`` depends on (D394).
+    """
+    return shared_checks.check_git_danger(tool_name, tool_input) or ""
+
+
+def check_network_egress(tool_name: str, tool_input: dict) -> str:
+    """Record — and, when enforcing, refuse — egress to an unapproved host.
+
+    This is the ONLY network control on the spawned-CLI surface:
+    ``tools/agents/adapters/claude_cli.py`` runs Claude Code with
+    ``--dangerously-skip-permissions`` (ADR D394), so the vendor prompt is off
+    and neither in-process gate is in that process's path.
+
+    Monitor-only by default — findings are appended to
+    ``.tmp/egress_findings.jsonl`` and the call proceeds. Flip
+    ``agent_egress.enforce`` in ``args/agent_egress_policy.yaml`` or set
+    ICDEV_EGRESS_GUARD_ENFORCE=1 to block. ICDEV_EGRESS_GUARD=0 disables it.
+    Fails OPEN on any error. See the docstring on
+    ``shared_checks.check_network_egress`` for the evasion boundary — it is a
+    tripwire with named blind spots, not a network boundary.
+    """
+    return shared_checks.check_network_egress(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def check_agent_rules(tool_name: str, tool_input: dict) -> str:
     """Refuse a call an ENFORCING agent rule matched (agov-det-06).
 
@@ -823,68 +880,152 @@ def check_agent_rules(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+#: Every blocking check ``main()`` runs, named as it is named in shared_checks,
+#: in evaluation order. Declared rather than inferred because ``main()`` calls
+#: several of them through their ``is_*`` predicate rather than their ``check_*``
+#: wrapper, so no amount of grepping the source recovers the set reliably.
+#:
+#: ``tests/hooks/test_hook_parity.py`` asserts this equals
+#: ``hook_compat.HEADLESS_CHECKS`` as a SET, and separately that each entry here
+#: is genuinely reached from ``main()`` — a declaration nothing verifies is how
+#: check_git_danger sat in shared_checks for a whole slice without ever running.
+HOOK_CHECKS = (
+    "check_env_file_access",
+    "check_dangerous_rm",
+    "check_git_danger",
+    "check_append_only_write",
+    "check_direct_sqlite_usage",
+    "check_file_access_tiers",
+    "check_branch_deletion",
+    "check_worktree_path",
+    "check_network_egress",
+    "check_agent_rules",
+    "check_review_loop_precommit",
+)
+
+#: shared_checks name -> the identifier ``main()`` actually calls. Lets the
+#: parity test prove HOOK_CHECKS describes the code rather than trusting it.
+HOOK_CHECK_CALLSITES = {
+    "check_env_file_access": "is_env_file_access",
+    "check_dangerous_rm": "is_dangerous_rm_command",
+    "check_git_danger": "check_git_danger",
+    "check_append_only_write": "is_append_only_table_modification",
+    "check_direct_sqlite_usage": "is_direct_sqlite_usage",
+    "check_file_access_tiers": "check_file_access_tiers",
+    "check_branch_deletion": "check_branch_deletion",
+    "check_worktree_path": "check_worktree_path",
+    "check_network_egress": "check_network_egress",
+    "check_agent_rules": "check_agent_rules",
+    "check_review_loop_precommit": "run_review_loop_precommit",
+}
+
+#: Global enforcement switch. ``0`` restores the pre-exa-bench-05 behaviour —
+#: every check runs and reports, nothing is refused.
+ENFORCEMENT_ENV = "ICDEV_PRETOOLUSE_ENFORCE"
+
+#: Per-check off switches, in the order :func:`main` runs the checks — one per
+#: entry in :data:`HOOK_CHECKS`, and ``tests/hooks/test_shared_checks.py`` pins
+#: that correspondence. Several predate this change and are read a second time
+#: inside the check itself, which is harmless: naming every check's switch in
+#: one table is what makes "which of these can actually refuse right now"
+#: answerable without reading the whole file.
+CHECK_KILL_SWITCHES = {
+    "env_file_access": "ICDEV_ENV_FILE_GUARD",
+    "dangerous_rm": "ICDEV_DANGEROUS_RM_GUARD",
+    "git_danger": "ICDEV_GIT_DANGER_GUARD",
+    "append_only_write": "ICDEV_APPEND_ONLY_GUARD",
+    "direct_sqlite_usage": "ICDEV_DIRECT_SQLITE_GUARD",
+    "file_access_tiers": "ICDEV_FILE_ACCESS_TIERS_GUARD",
+    "branch_deletion": "ICDEV_BRANCH_DELETE_GUARD",
+    "worktree_path": "ICDEV_WORKTREE_GUARD",
+    "network_egress": "ICDEV_EGRESS_GUARD",
+    "agent_rules": "ICDEV_AGENT_DETECT",
+    "review_loop_precommit": "ICDEV_REVIEW_LOOP_PRECOMMIT",
+}
+
+_OFF_VALUES = ("0", "false", "no", "off")
+
+
+def enforcement_enabled() -> bool:
+    return os.environ.get(ENFORCEMENT_ENV, "1").strip().lower() not in _OFF_VALUES
+
+
+def check_enabled(check: str) -> bool:
+    env = CHECK_KILL_SWITCHES.get(check)
+    if not env:
+        return True
+    return os.environ.get(env, "1").strip().lower() not in _OFF_VALUES
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
         tool_name = input_data.get("tool_name", "")
         tool_input = input_data.get("tool_input", {})
 
-        # Block .env file access
-        if is_env_file_access(tool_name, tool_input):
-            print(shared_checks.ENV_FILE_BLOCK_REASON, file=sys.stderr)
-            sys.exit(2)
+        # (check name, callable returning a refusal reason or "")
+        checks = (
+            # Block .env file access
+            ("env_file_access", lambda: (
+                shared_checks.ENV_FILE_BLOCK_REASON
+                if is_env_file_access(tool_name, tool_input) else "")),
+            # Block dangerous rm commands
+            ("dangerous_rm", lambda: (
+                shared_checks.DANGEROUS_RM_BLOCK_REASON
+                if tool_name == "Bash"
+                and is_dangerous_rm_command(tool_input.get("command", "")) else "")),
+            # Block destructive git commands (OPT-51). Third, exactly where
+            # HEADLESS_CHECKS runs it — the two paths block the same set in the
+            # same order (exa-bench-06).
+            ("git_danger", lambda: check_git_danger(tool_name, tool_input)),
+            # Block modification of all append-only tables (NIST 800-53 AU, D6)
+            ("append_only_write", lambda: (
+                shared_checks.APPEND_ONLY_BLOCK_REASON
+                if is_append_only_table_modification(tool_name, tool_input) else "")),
+            # Block direct sqlite3.connect() — use get_connection() instead
+            ("direct_sqlite_usage", lambda: (
+                shared_checks.DIRECT_SQLITE_BLOCK_REASON
+                if is_direct_sqlite_usage(tool_name, tool_input) else "")),
+            # Check tiered file access control (D-ORCH-8)
+            ("file_access_tiers", lambda: check_file_access_tiers(tool_name, tool_input)),
+            # Never delete a remote branch that still holds unmerged work
+            ("branch_deletion", lambda: check_branch_deletion(tool_name, tool_input)),
+            # Keep worktrees out of shared temp dirs where two sessions collide
+            ("worktree_path", lambda: check_worktree_path(tool_name, tool_input)),
+            # Network egress (exa-bench-08). Monitor-only by default: it records
+            # the finding and returns "" so the call proceeds. This is the only
+            # network control that reaches the
+            # --dangerously-skip-permissions session.
+            ("network_egress", lambda: check_network_egress(tool_name, tool_input)),
+            # AGOV declarative rules — LAST of the refusals, and additive only
+            # (agov-det-06). Every block above is hardcoded and stays that way;
+            # this one is the data-driven check, monitor-only unless an operator
+            # opted a rule into enforcement in args/agent_rules_enforce/. It
+            # fails open.
+            ("agent_rules", lambda: check_agent_rules(tool_name, tool_input)),
+            # Self-green staged changes before a git commit (warn-only by default)
+            ("review_loop_precommit",
+             lambda: run_review_loop_precommit(tool_name, tool_input)),
+        )
 
-        # Block dangerous rm commands
-        if tool_name == "Bash":
-            command = tool_input.get("command", "")
-            if is_dangerous_rm_command(command):
-                print(shared_checks.DANGEROUS_RM_BLOCK_REASON, file=sys.stderr)
+        for name, run in checks:
+            if not check_enabled(name):
+                continue
+            reason = run() or ""
+            if not reason:
+                continue
+            if enforcement_enabled():
+                print(reason, file=sys.stderr)
                 sys.exit(2)
-
-        # Block modification of all append-only tables (NIST 800-53 AU, D6)
-        if is_append_only_table_modification(tool_name, tool_input):
-            print(shared_checks.APPEND_ONLY_BLOCK_REASON, file=sys.stderr)
-            sys.exit(2)
-
-        # Block direct sqlite3.connect() — use get_connection() instead
-        if is_direct_sqlite_usage(tool_name, tool_input):
-            print(shared_checks.DIRECT_SQLITE_BLOCK_REASON, file=sys.stderr)
-            sys.exit(2)
-
-        # Check tiered file access control (D-ORCH-8)
-        tier_error = check_file_access_tiers(tool_name, tool_input)
-        if tier_error:
-            print(tier_error, file=sys.stderr)
-            sys.exit(2)
-
-        # Never delete a remote branch that still holds unmerged work
-        branch_error = check_branch_deletion(tool_name, tool_input)
-        if branch_error:
-            print(branch_error, file=sys.stderr)
-            sys.exit(2)
-
-        # Keep worktrees out of shared temp dirs where two sessions collide
-        worktree_error = check_worktree_path(tool_name, tool_input)
-        if worktree_error:
-            print(worktree_error, file=sys.stderr)
-            sys.exit(2)
-
-        # AGOV declarative rules — LAST, and additive only (agov-det-06).
-        # Every block above is hardcoded and stays that way; this one is the
-        # data-driven check, monitor-only unless an operator opted a rule into
-        # enforcement in args/agent_rules_enforce/. It fails open.
-        rule_error = check_agent_rules(tool_name, tool_input)
-        if rule_error:
-            print(rule_error, file=sys.stderr)
-            sys.exit(2)
-
-        # Self-green staged changes before a git commit (warn-only by default)
-        run_review_loop_precommit(tool_name, tool_input)
+            # Advisory mode: say what would have happened, allow the call.
+            print(f"ADVISORY ({ENFORCEMENT_ENV}=0): {reason}", file=sys.stderr)
 
         sys.exit(0)
 
     except json.JSONDecodeError:
         sys.exit(0)
+    except SystemExit:
+        raise
     except Exception:
         sys.exit(0)
 

