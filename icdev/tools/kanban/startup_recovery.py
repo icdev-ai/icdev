@@ -515,6 +515,97 @@ def foreign_scheduler_pid() -> int:
         return 0
 
 
+def pid_is_alive(pid: Optional[int]) -> Optional[bool]:
+    """``True``/``False`` if determinable, ``None`` if not.
+
+    ``None`` is not "dead". Callers must treat an undeterminable PID as still
+    running: clearing a dispatch stamp we cannot disprove would double-dispatch
+    a task that is quietly working.
+    """
+    if not pid or int(pid) <= 0:
+        return None
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001 — psutil optional, same as the scan above
+        return None
+    try:
+        return psutil.pid_exists(int(pid))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def reclaim_stale_scheduled_dispatches(
+    conn=None, *, dry_run: bool = False, conn_factory: Optional[Callable[[], Any]] = None
+) -> Dict[str, Any]:
+    """Clear the dispatch stamp on a ``scheduled`` row whose PID is gone.
+
+    THE GAP THIS CLOSES. ``recover_interrupted_tasks`` sweeps
+    ``WHERE status = 'in_progress'``. A dispatch that dies BEFORE the row moves
+    to ``in_progress`` leaves it in ``scheduled`` holding a dead
+    ``dispatch_pid``, which no sweep looks at — so the row is neither running
+    nor reclaimable, and the slot it was going to use is simply never used.
+
+    Measured 2026-08-12: exa-bench-10 sat in ``scheduled`` with pid 17016 dead
+    and a heartbeat 71 minutes stale while two of three dispatch slots were
+    free and the board had no other eligible work. Nothing went red; the
+    scheduler logged "idle" and the task was the only thing it could have run.
+
+    Deliberately conservative: a PID whose liveness cannot be determined
+    (psutil absent, access denied) is LEFT ALONE. PID reuse also resolves in the
+    safe direction — an unrelated process on the same number reads as alive, so
+    the row is skipped rather than double-dispatched.
+    """
+    out: Dict[str, Any] = {"scanned": 0, "reclaimed": [], "skipped": [], "dry_run": dry_run}
+    owns = conn is None
+    if conn is None:
+        if conn_factory is None:
+            from tools.db.storage import get_connection as _get_connection
+
+            conn_factory = _get_connection
+        conn = conn_factory()
+    try:
+        rows = [
+            dict(r) for r in conn.execute(
+                "SELECT id, dispatch_pid FROM kanban_tasks "
+                "WHERE status = 'scheduled' AND dispatch_pid IS NOT NULL"
+            ).fetchall()
+        ]
+        out["scanned"] = len(rows)
+        for row in rows:
+            alive = pid_is_alive(row.get("dispatch_pid"))
+            if alive is not False:
+                out["skipped"].append(
+                    {"id": row["id"], "pid": row.get("dispatch_pid"),
+                     "why": "alive" if alive else "liveness undeterminable"}
+                )
+                continue
+            out["reclaimed"].append({"id": row["id"], "pid": row.get("dispatch_pid")})
+            if dry_run:
+                continue
+            conn.execute(
+                "UPDATE kanban_tasks SET dispatch_pid = NULL, "
+                "dispatch_pid_started_at = NULL, execution_id = NULL, "
+                "last_heartbeat_at = NULL, updated_at = %s WHERE id = %s",
+                (datetime.now(timezone.utc).isoformat(), row["id"]),
+            )
+        if out["reclaimed"] and not dry_run:
+            conn.commit()
+            logger.info(
+                "startup-recovery: reclaimed %d scheduled row(s) holding a dead "
+                "dispatch pid: %s",
+                len(out["reclaimed"]), [r["id"] for r in out["reclaimed"]],
+            )
+    except Exception as exc:  # noqa: BLE001 — reclaiming must never wedge dispatch
+        logger.warning("startup-recovery: scheduled reclaim skipped: %s", exc)
+    finally:
+        if owns:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+    return out
+
+
 def recover_interrupted_tasks(
     *,
     running_ids: Iterable[str] = (),
