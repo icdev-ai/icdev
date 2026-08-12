@@ -385,16 +385,36 @@ class OutputSafetyPlugin(RedTeamPlugin):
             "agent_trust_scorer.py not found",
         )
 
-        # Check 4: MCP tool authorizer exists
-        mta = BASE_DIR / "tools" / "security" / "mcp_tool_authorizer.py"
+        # Check 4: MCP per-tool authorization is ENFORCED.
+        # Was `mcp_tool_authorizer.py exists`, which a module with zero call
+        # sites passes. A red team check that a file is on disk red-teams
+        # nothing (exa-policy-08).
+        from tools.security.mcp_authz_evidence import cached_probe
+
+        probe = cached_probe()
         self._check(
             findings,
             counters,
-            mta.exists(),
-            "RT-OS-003: MCP authorizer exists",
+            probe["status"] == "satisfied",
+            "RT-OS-003: MCP per-tool authorization enforced",
             "critical",
-            "mcp_tool_authorizer.py not found",
+            f"MCP per-tool authorization is not enforced: {probe['reason']}",
         )
+
+        # Check 5: the surfaces excluded from that claim are bounded by their
+        # stated compensating controls. A scope-out is only defensible if what
+        # it points at actually behaves.
+        for scoped in probe["scope"]["scoped_out"]:
+            for control in scoped.get("compensating_control_probes", []):
+                self._check(
+                    findings,
+                    counters,
+                    control["passed"],
+                    f"RT-OS-003b: {scoped['surface']} compensating control — {control['id']}",
+                    "high",
+                    f"{scoped['surface']} is scoped out of per-tool authorization, but its "
+                    f"compensating control {control['id']} does not hold: {control['detail']}",
+                )
 
         return self._result(findings, counters)
 

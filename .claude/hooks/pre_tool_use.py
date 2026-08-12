@@ -81,6 +81,13 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
         # Core audit
         "audit_trail",
+        # Where the audit_trail hash chain starts (exa-audit-03, migration
+        # 20260812041301). It states that rows below a given id predate the
+        # chain writer and are unverifiable rather than tampered. Moving that
+        # boundary is precisely how you would launder a removed row back into
+        # "it never had a hash anyway", so a re-cutover appends a second row and
+        # the earliest one still wins.
+        "audit_chain_genesis",
         "hook_events",
         # Approval-gate verdicts for irreversible agent actions (ars-appr-01,
         # migration 342). A decision has no lifecycle: someone authorised an

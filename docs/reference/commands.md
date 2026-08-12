@@ -599,6 +599,32 @@ Every approval **and** denial is appended to `agent_approval_log` (migration
 stored** — only argument key names and a SHA-256 of the input, because tool
 arguments can carry CUI. `dry_run` and `off` still write the audit row.
 
+### Policy chain — ALLOW / DENY / ASK (exa-policy-01)
+
+A layer **above** the reversibility gate. A policy is a function
+`PolicyEvent -> PolicyDecision` returning one of three effects plus a reason.
+`classify()` becomes one policy in the chain (`reversibility`) with its verdict
+unchanged; a **DENY short-circuits** the chain and is never offered to the
+approver.
+
+```bash
+python tools/agent_runtime/policy_engine.py --list-policies --json
+python tools/agent_runtime/policy_engine.py --evaluate git_push --json
+python tools/agent_runtime/policy_engine.py --evaluate run_command \
+    --input '{"command": "git push --force"}' --json
+```
+
+```python
+from tools.agent_runtime.policy_engine import build_policy_hook
+
+run_agent_loop(..., approval_gate=build_policy_hook())   # drop-in for the gate hook
+```
+
+Config: `args/agent_policy_chain.yaml` (`on_policy_error`, `chain`, per-event
+`floors`, `audit.log_allow`). Decisions land in the same append-only
+`agent_approval_log` through `approval_gate.record_decision()`, so the
+no-argument-values property is inherited rather than re-implemented.
+
 ---
 
 ## Normalized Agent Event View (agov-det-01)
@@ -2924,6 +2950,9 @@ python tools/security/agent_trust_scorer.py --gate --project-id "proj-123" --jso
 python tools/security/mcp_tool_authorizer.py --check --role developer --tool scaffold --json          # Check tool authorization
 python tools/security/mcp_tool_authorizer.py --list --role pm --json                                  # List role permissions
 python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config
+python tools/security/mcp_authz_evidence.py --json                                                    # Is per-tool MCP authz ENFORCED? (behavioural, not file existence)
+python tools/security/mcp_authz_evidence.py --gate                                                    # Exit 1 unless a denial actually binds
+python tools/security/mcp_authz_evidence.py --gate --allow-monitor                                    # Accept monitor mode as passing
 python tools/security/atlas_red_team.py --behavioral --json                                           # Run behavioral red team tests
 python tools/security/atlas_red_team.py --behavioral --brt-technique BRT-001 --json                   # Test specific technique
 python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --json                      # OWASP Agentic assessment

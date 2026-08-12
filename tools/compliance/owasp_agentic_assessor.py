@@ -163,22 +163,23 @@ class OWASPAgenticAssessor(BaseAssessor):
 
         return "satisfied"
 
-    def _check_mcp_rbac(self) -> str:
-        """Gap 6: Verify MCP per-tool RBAC is configured."""
-        authorizer = BASE_DIR / "tools" / "security" / "mcp_tool_authorizer.py"
-        if not authorizer.exists():
-            return "not_satisfied"
+    def _check_mcp_rbac(self):
+        """Gap 6: Verify MCP per-tool RBAC is ENFORCED, not merely present.
 
-        config = BASE_DIR / "args" / "owasp_agentic_config.yaml"
-        if not config.exists():
-            return "partially_satisfied"
-        cfg_content = config.read_text(encoding="utf-8", errors="ignore")
-        if "mcp_authorization" not in cfg_content:
-            return "partially_satisfied"
-        if "role_tool_matrix" not in cfg_content:
-            return "partially_satisfied"
+        This check used to be `mcp_tool_authorizer.py exists` plus two
+        substring greps of the config. All three passed while the authorizer
+        had zero call sites — an inert module reported as a satisfied control.
+        It now exercises the policy and the surface that has a principal, and
+        returns the scope-out alongside the status so the persisted evidence
+        says which surface the claim covers (exa-policy-08).
 
-        return "satisfied"
+        Returns:
+            (status, detail) — base_assessor records detail as automation_result.
+        """
+        from tools.security.mcp_authz_evidence import cached_probe, scope_note
+
+        probe = cached_probe()
+        return probe["status"], f"{probe['reason']}. {scope_note()}"
 
     def _check_behavioral_red_team(self) -> str:
         """Gap 7: Verify behavioral red teaming is available."""

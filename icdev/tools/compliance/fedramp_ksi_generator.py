@@ -78,6 +78,41 @@ def _file_exists(relative_path: str) -> bool:
     return (BASE_DIR / relative_path).exists()
 
 
+def _mcp_authz_evidence() -> int:
+    """1 only when per-tool MCP authorization actually binds a denial.
+
+    Behavioural, not file-existence: see tools/security/mcp_authz_evidence.py.
+    The probe is scoped to the MCP surface that has an authenticated principal;
+    the stdio scope-out and its compensating controls ride along in the result
+    and are surfaced as `scope_notes` on the generated KSI.
+    """
+    try:
+        from tools.security.mcp_authz_evidence import cached_probe
+
+        return 1 if cached_probe()["status"] == "satisfied" else 0
+    except Exception:
+        return 0
+
+
+def _scope_notes_for(sources: List[str]) -> Dict[str, str]:
+    """Scope caveats for evidence sources whose claim is narrower than the KSI.
+
+    A KSI that cites `mcp_tool_authorizer` is not claiming platform-wide
+    per-tool RBAC — the claim holds only on the MCP surface with an
+    authenticated principal. Recording that here means the scope-out and its
+    compensating controls travel with the artifact an assessor reads, rather
+    than living in a design doc.
+    """
+    if "mcp_tool_authorizer" not in sources:
+        return {}
+    try:
+        from tools.security.mcp_authz_evidence import cached_probe, scope_note
+
+        return {"mcp_tool_authorizer": f"{scope_note()} Current verdict: {cached_probe()['reason']}"}
+    except Exception:
+        return {}
+
+
 def _config_contains(config_path: str, keywords: List[str]) -> bool:
     fp = BASE_DIR / config_path
     if not fp.exists():
@@ -155,7 +190,12 @@ EVIDENCE_COLLECTORS = {
     ),
     # Config-based evidence
     "rbac_config": lambda conn, pid: 1 if _file_exists("args/owasp_agentic_config.yaml") else 0,
-    "mcp_tool_authorizer": lambda conn, pid: 1 if _file_exists("tools/security/mcp_tool_authorizer.py") else 0,
+    # NOT a file-existence check. mcp_tool_authorizer.py existing on disk says
+    # nothing about whether anything authorizes anything — the module shipped
+    # with zero call sites and this collector counted it as satisfied KSI
+    # evidence anyway. _mcp_authz_evidence() exercises the control instead, and
+    # counts 0 while a denial does not bind (exa-policy-08).
+    "mcp_tool_authorizer": lambda conn, pid: _mcp_authz_evidence(),
     "session_config": lambda conn, pid: 1 if _config_contains("args/security_gates.yaml", ["session"]) else 0,
     "network_policies": lambda conn, pid: 1 if _file_exists("k8s/network-policies.yaml") else 0,
     "append_only_tables": lambda conn, pid: 1 if _file_exists(".claude/hooks/pre_tool_use.py") else 0,
@@ -259,6 +299,7 @@ def generate_ksi(project_id: str, ksi_id: str, db_path: Path = DB_PATH) -> Dict[
                         "evidence": evidence,
                         "evidence_available": sum(1 for v in evidence.values() if v > 0),
                         "evidence_total": len(evidence),
+                        "scope_notes": _scope_notes_for(ksi.get("evidence_sources", [])),
                         "generated_at": datetime.now(timezone.utc).isoformat(),
                         "project_id": project_id,
                     }
@@ -306,6 +347,7 @@ def generate_all_ksis(project_id: str, db_path: Path = DB_PATH) -> Dict[str, Any
                         "maturity_description": maturity_desc,
                         "evidence_available": sum(1 for v in evidence.values() if v > 0),
                         "evidence_total": len(evidence),
+                        "scope_notes": _scope_notes_for(ksi.get("evidence_sources", [])),
                     }
                 )
 

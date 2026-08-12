@@ -2092,3 +2092,59 @@ by another vendor's tool.
   gains a second dialect implemented by shelling out to a real shell for
   tokenization — any of those puts execution or filesystem access back in front
   of hostile input.
+
+### Gap 62 — Agent policy chain (`tools/agent_runtime/policy_engine.py`)
+
+**Module:** `tools/agent_runtime/policy_engine.py` (exa-policy-01).
+
+**Ingress path:** Two, and the first is genuinely untrusted. (1) The **tool
+input of every agent tool call**, carried on `PolicyEvent.arguments` and handed
+to every policy in the chain — an arbitrary dict authored by an LLM. This layer
+sits in front of the same surface `approval_gate.py` does (Gap 46), so it sees
+every model-authored argument in the platform. (2) `args/agent_policy_chain.yaml`,
+a first-party config naming which registered policies run, in what order.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** Same reasoning as Gap 46, and for the same reason: neither
+  ingress reaches an execution path. The engine *routes* the event to policy
+  functions and combines their verdicts; it never invokes the tool it is
+  judging. There is no `exec`/`eval`/`compile`/`subprocess`/`os.system`/
+  `pickle`/`importlib` in the module, and it does not even pattern-match the
+  arguments itself — the one shipped policy delegates that to
+  `approval_gate.classify()`, which Gap 46 already covers. The config is parsed
+  with `yaml.safe_load` (never `yaml.load`) and supplies only **names**, which
+  are looked up in an in-process registry populated by first-party
+  `register_policy()` calls; a config file cannot introduce a callable, an
+  import path, or a code string.
+- **Guardrails:**
+  - **Fail-closed at every layer.** A policy that raises resolves to
+    `on_policy_error`, which accepts only `deny` (default) or `ask` — `allow`
+    is rejected rather than honoured, so a config typo cannot authorise an
+    irreversible action. A nonsense return value or unrecognised effect is a
+    DENY. An empty chain is an ASK. A missing or unreadable config falls back to
+    the reversibility-only chain, which is itself fail-closed.
+  - **A policy named in the config that is not registered resolves to a DENY
+    naming itself**, never a silent skip. A chain that quietly drops a policy is
+    a chain that has stopped enforcing what its own config says it enforces —
+    the declared-but-unconsumed failure the EXA card exists to close.
+  - **DENY short-circuits and is never escalated to the approver.** `dry_run`
+    and `off` apply to ASK only, so the escape hatch for an escalation is not an
+    escape hatch for a refusal.
+  - Hard blocks from `.claude/hooks/pre_tool_use.py` are consulted and win
+    before any policy runs, so this layer cannot be used to talk past the hook.
+  - A **floor** in the config can only raise the chain's answer, never lower it,
+    and an unparseable floor is treated as no floor rather than as `allow`.
+  - Argument **values never persist and never render**. The audit row is written
+    by `approval_gate.record_decision()` — reused, not reimplemented, precisely
+    so the key-names-plus-SHA-256 rule has one owner — and `PolicyEvent.__repr__`
+    elides argument values so a traceback or debug log cannot leak what the
+    audit row was designed not to hold. The `--json` CLI emits policy names,
+    effects, reasons and rules only.
+  - `tests/test_agent_policy_engine.py` pins all of the above, including that a
+    policy after a DENY is never called and that a CUI-shaped argument value
+    reaches neither the audit row nor the event repr.
+- **Revisit if:** the chain gains a policy source that is not first-party (a
+  tenant-supplied or LLM-authored policy would make the callables untrusted
+  input), the config starts naming an import path or a code string rather than a
+  registered name, or a policy is added that *acts* — remediates, notifies, or
+  mutates state — rather than returning a verdict.

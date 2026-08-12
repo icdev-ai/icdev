@@ -473,23 +473,52 @@ def check_prompt_injection_gate() -> AuditCheck:
 
 
 def check_owasp_agentic() -> AuditCheck:
-    """SEC-005: OWASP Agentic AI security tools present."""
+    """SEC-005: OWASP Agentic AI security controls.
+
+    Presence of the other three modules is still counted as presence, and is
+    reported as presence. MCP per-tool authorization is not: it is asserted
+    behaviourally, because that module shipped with zero call sites and a
+    presence check reported it as satisfied anyway (exa-policy-08).
+    """
     tools_needed = [
         "tools/security/tool_chain_validator.py",
         "tools/security/agent_output_validator.py",
         "tools/security/agent_trust_scorer.py",
-        "tools/security/mcp_tool_authorizer.py",
     ]
     present = [t for t in tools_needed if (PROJECT_ROOT / t).exists()]
-    ok = len(present) == len(tools_needed)
+
+    try:
+        from tools.security.mcp_authz_evidence import cached_probe
+
+        probe = cached_probe()
+    except Exception as exc:  # noqa: BLE001
+        probe = {
+            "status": "not_satisfied",
+            "reason": f"authorization evidence probe unavailable: {exc}",
+            "scope": {},
+        }
+    authz_ok = probe["status"] == "satisfied"
+
+    ok = len(present) == len(tools_needed) and authz_ok
     return AuditCheck(
         check_id="SEC-005",
         check_name="OWASP Agentic Security",
         category="security",
         status="pass" if ok else "warn",
         severity="warning",
-        message=f"{len(present)}/{len(tools_needed)} agentic security tools present",
-        details={"present": present, "missing": [t for t in tools_needed if t not in present]},
+        message=(
+            f"{len(present)}/{len(tools_needed)} agentic security tools present; "
+            f"MCP per-tool authorization: {probe['status']}"
+        ),
+        details={
+            "present": present,
+            "missing": [t for t in tools_needed if t not in present],
+            "mcp_per_tool_authorization": {
+                "status": probe["status"],
+                "reason": probe["reason"],
+                "scope": probe.get("scope", {}),
+            },
+        },
     )
 
 

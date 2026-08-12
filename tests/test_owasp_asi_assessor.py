@@ -169,10 +169,15 @@ class TestAutomatedChecks:
         _, project_id = icdev_db
         project = {"id": project_id}
         results = assessor.get_automated_checks(project)
-        # No data inserted, only file-based checks may pass
-        db_checks = {"ASI-01", "ASI-02", "ASI-03", "ASI-04", "ASI-06", "ASI-09", "ASI-10"}
+        # No data inserted, only file-based checks may pass.
+        # ASI-02 is the exception: its per-tool authorization half is asserted
+        # behaviourally and does not depend on the DB, so it is always
+        # assessed rather than left silently unassessed (exa-policy-08). With
+        # no tool_chain_events it can never be "satisfied".
+        db_checks = {"ASI-01", "ASI-03", "ASI-04", "ASI-06", "ASI-09", "ASI-10"}
         for check_id in db_checks:
             assert check_id not in results
+        assert results["ASI-02"][0] in ("partially_satisfied", "not_satisfied")
 
     def test_asi01_prompt_injection(self, assessor, icdev_db):
         db_path, project_id = icdev_db
@@ -196,7 +201,15 @@ class TestAutomatedChecks:
         conn.commit()
         conn.close()
         results = assessor.get_automated_checks({"id": project_id})
-        assert results.get("ASI-02") == "satisfied"
+        # ASI-02 (Tool Abuse) needs BOTH halves it has always claimed: tool
+        # chain validation AND per-tool MCP authorization. Chain events alone
+        # used to read "satisfied" with nothing authorizing anything
+        # (exa-policy-08), so they now cap the risk at partially_satisfied
+        # until authorization actually binds.
+        status, detail = results["ASI-02"]
+        assert status in ("satisfied", "partially_satisfied")
+        assert "tool_chain_events=present" in detail
+        assert "per-tool authorization=" in detail
 
     def test_asi03_identity_access(self, assessor, icdev_db):
         db_path, project_id = icdev_db

@@ -525,6 +525,16 @@ tests/test_dwo_bus_subscriber.py
 # re-baselining itself. ~0.3s, stdlib only plus one in-memory SQLite
 # connection, no DB service/LLM/network (exa-audit-01).
 tests/test_audit_row_hash.py
+
+# test_audit_chain_writer.py covers the writer that fills in migration 149's
+# hash/previous_hash/signature (exa-audit-03). It is in CI because the property
+# it guards is not visible from any other test: an audit chain that silently
+# stops being written looks exactly like one that was never attacked, and the
+# repo already shipped 149 with NO writer at all for its entire life. Includes
+# the concurrency case (8 threads x 6 writes on a file-backed temp SQLite db) --
+# without the critical section, writers collide on the reserved id and LOSE
+# audit events, which this catches. ~9s, no DB service/LLM/network.
+tests/test_audit_chain_writer.py
 # test_exa_policy_05_saas_mcp_authz.py gates the per-tool authorization control
 # on tools/saas/mcp_http.py -- the only MCP surface with an authenticated
 # principal. Without it here the control's tests run only in the PG tier, which
@@ -545,3 +555,20 @@ tests/test_exa_policy_05_saas_mcp_authz.py
 # classification against two YAML policies -- ~1.7s, no DB service/LLM/network
 # (exa-bench-04).
 tests/test_skip_permissions_compensating_controls.py
+# test_agent_policy_engine.py earns a slot because the ALLOW/DENY/ASK layer
+# (exa-policy-01) is what decides whether an irreversible agent action runs, and
+# every one of its failure modes is silent if it regresses: a policy that raises,
+# a chain name nobody registered, an empty chain, a nonsense return value, and a
+# DENY that stops short-circuiting all fail OPEN unless something asserts they do
+# not. It also pins the no-argument-VALUES property of the agent_approval_log row
+# — a CUI leak that no other test in this list would catch. ~2s, in-tmpdir SQLite,
+# no DB service/LLM/network.
+tests/test_agent_policy_engine.py
+
+# exa-live-01 — capability consumption counter. Guards the measurement half of
+# ICDEV's signature defect (a registered capability with zero consumption and
+# nothing going red). Worth a required check because the tool's own failure mode
+# is silence: a broken probe returns the same zero a genuinely inert capability
+# does, so every zero assertion here is paired with a positive control on the
+# same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
+tests/test_capability_consumption.py

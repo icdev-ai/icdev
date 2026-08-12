@@ -1,0 +1,88 @@
+# CUI // SP-CTI
+# Agent policy chain — the ALLOW / DENY / ASK layer above the reversibility gate.
+#
+# Loaded by tools/agent_runtime/policy_engine.py. Behaviour changes here, not in
+# Python — FORGE args layer.
+#
+# This file is modelled on args/heal_constitution.yaml: a reviewed YAML whose
+# scopes are stated in prose next to the rules they bound, and whose per-action
+# floors are values an operator can raise without touching code. It does NOT
+# replace args/agent_approval_policy.yaml, which still owns the reversibility
+# tiers and content patterns; the `reversibility` policy below reads that file
+# through approval_gate.classify() and its verdict is unchanged.
+#
+# EFFECTS
+#   allow  — proceed.
+#   ask    — escalate to a human approver. This is the reversibility gate's
+#            strongest verdict: "a human may still authorise this".
+#   deny   — refuse, and STOP EVALUATING. The remaining policies are never
+#            consulted, because no later policy can make a refusal not a
+#            refusal. A deny is never offered to the approver — that is the
+#            whole reason for having an effect the gate does not have.
+#
+# The chain's answer is the STRICTEST effect any policy returned, then raised to
+# the floor below if that floor is stricter. `ask` does not short-circuit, so a
+# later `deny` can still win.
+version: 1
+
+# What a policy that RAISES resolves to. `deny` | `ask` — `allow` is not an
+# accepted value and a typo resolves to `deny`. A broken policy is an
+# unanswered question, not an answer, and a config mistake must never be the
+# thing that authorises an irreversible action.
+on_policy_error: deny
+
+audit:
+  # Every decision the chain makes is appended to the append-only
+  # `agent_approval_log` through approval_gate.record_decision(), which stores
+  # argument KEY NAMES and a SHA-256 of the flattened input and never argument
+  # values (they can carry CUI, and this repo is public).
+  #
+  # `log_allow: true` is the default and is what makes "every decision is
+  # recorded" literally true. Set it false only for a high-volume unattended
+  # loop where the allow rows drown the denials — that is a deliberate,
+  # reviewable narrowing of the evidence, not a silent one. `deny` and `ask`
+  # outcomes are ALWAYS recorded and there is no switch for them.
+  log_allow: true
+
+# ---------------------------------------------------------------------------
+# The chain, in evaluation order.
+#
+# SCOPE, stated: every policy here is process-wide (it applies to every agent
+# tool call in this process). Per-session and per-agent scoping is a separate
+# composition layer and is deliberately NOT expressed in this file yet —
+# inventing a `scope:` key nothing reads is exactly the declared-but-unconsumed
+# failure this card exists to stop.
+#
+# A name listed here that is not registered in the engine does NOT get skipped:
+# it resolves to a DENY naming itself. A chain that quietly drops a policy is a
+# chain that stops enforcing what its own config says it enforces.
+# ---------------------------------------------------------------------------
+chain:
+  - name: reversibility
+    enabled: true
+    description: >-
+      approval_gate.classify() as a policy function. Reads
+      args/agent_approval_policy.yaml: a tool must be NAMED to be automatic
+      (default_tier: unknown, and unknown requires approval), irreversible
+      content patterns escalate any tool before its per-tool tier, and
+      downgrade patterns fire only for declared command_tools. Maps
+      requires_approval -> ask and everything else -> allow. It never returns
+      deny, because the gate's contract is that a human may still authorise
+      what it dislikes; a rule that must be refusable without a human belongs
+      in its own policy, not in a change to this one.
+
+# ---------------------------------------------------------------------------
+# Per-event-type floors — the minimum strictness for an event type, applied
+# AFTER the chain. A floor can only raise an answer, never lower one.
+#
+# This is the same shape as heal_constitution's per-resolution-type
+# `min_confidence`: a value an operator sets once, per action, that no
+# individual rule can undercut. `tool_call: ask` pins "every tool call goes to
+# a human" for a change-freeze window without editing any policy.
+#
+# Only event types the engine actually emits are listed. `tool_call` is the
+# only one today.
+# ---------------------------------------------------------------------------
+floors:
+  # allow = no floor; the chain's own answer stands.
+  tool_call: allow
