@@ -239,6 +239,10 @@ HEADLESS_CHECKS = (
     "check_branch_deletion",
     "check_worktree_path",
     "check_review_loop_precommit",
+    # Network egress (exa-bench-08). Monitor-only until `enforce: true` in
+    # args/agent_egress_policy.yaml — it records a finding and returns None, so
+    # in the default configuration it can only ever observe.
+    "check_network_egress",
     # LAST on purpose (agov-det-06). The AGOV rule engine is additive: the eight
     # hardcoded checks above decide first, so a data-driven rule can only add a
     # refusal to a call they already allowed — it can never wave one through.

