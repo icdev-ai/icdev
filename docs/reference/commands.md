@@ -625,6 +625,55 @@ Config: `args/agent_policy_chain.yaml` (`on_policy_error`, `chain`, per-event
 `agent_approval_log` through `approval_gate.record_decision()`, so the
 no-argument-values property is inherited rather than re-implemented.
 
+### Three-level composition + session state (exa-policy-02)
+
+Policies resolve **session** (end user) → **agent** (agent author) → **server**
+(admin baseline). A DENY at any level short-circuits the whole composition.
+Levels are **additive, never overriding**: the answer is the strictest effect any
+level returned, so a session can only ever ADD a deny — which is what makes
+evaluating the least-trusted level first safe.
+
+```bash
+python tools/agent_runtime/policy_composition.py --levels --json
+python tools/agent_runtime/policy_composition.py --evaluate git_push --json
+python tools/agent_runtime/policy_composition.py --evaluate git_push \
+    --session-policy '{"chain": [{"name": "reversibility"}]}' --json
+python tools/agent_runtime/policy_composition.py --state <session-id> --json
+python tools/agent_runtime/policy_composition.py --reset-state <session-id> --json
+```
+
+```python
+from tools.agent_runtime.policy_composition import build_composed_policy_hook
+
+run_agent_loop(..., approval_gate=build_composed_policy_hook(
+    session_id=session_id,
+    session_policy={"chain": [{"name": "max_tool_calls"}]},   # user tightening
+))
+```
+
+A stateful policy returns `state_updates` — omnigent's mechanism — and
+`SessionState` applies them as each policy returns, so a later policy reads what
+an earlier one wrote:
+
+```python
+PolicyDecision(
+    ALLOW, "under the limit", policy="max_calls",
+    state_updates=({"key": "call_count", "action": "increment", "value": 1},),
+)
+```
+
+Actions: `increment`, `decrement`, `set`, `append`, `delete`. State is keyed by
+`session_id` and persisted to `agent_session_policy_state` (migration
+`20260812054330`) so a counter is not reset by a process restart mid-session. A
+malformed update raises and resolves to DENY — a counter that silently fails to
+increment is a limit that silently never fires.
+
+Config: the top-level `chain` in `args/agent_policy_chain.yaml` is the **server**
+level; its `agent:` block is the in-repo agent default, overridden by
+`<profile_dir>/policy_chain.yaml` or `$ICDEV_AGENT_POLICY_CHAIN_AGENT`. The
+session level comes from the runtime or `$ICDEV_AGENT_POLICY_CHAIN_SESSION`.
+`audit` is server-only, and `on_policy_error: allow` is refused at every level.
+
 ---
 
 ## Normalized Agent Event View (agov-det-01)

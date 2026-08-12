@@ -47,11 +47,23 @@ audit:
 # ---------------------------------------------------------------------------
 # The chain, in evaluation order.
 #
-# SCOPE, stated: every policy here is process-wide (it applies to every agent
-# tool call in this process). Per-session and per-agent scoping is a separate
-# composition layer and is deliberately NOT expressed in this file yet —
-# inventing a `scope:` key nothing reads is exactly the declared-but-unconsumed
-# failure this card exists to stop.
+# SCOPE, stated: this top-level `chain` is the SERVER level — the org baseline,
+# set by the admin, applying to every agent tool call. It is the LAST level
+# consulted and the one nothing below it can weaken (exa-policy-02).
+#
+# The other two levels are resolved by tools/agent_runtime/policy_composition.py:
+#
+#   session  set by the end user, for one session. Passed in programmatically by
+#            the runtime, or $ICDEV_AGENT_POLICY_CHAIN_SESSION. Evaluated FIRST.
+#   agent    set by the agent author. <profile_dir>/policy_chain.yaml for the
+#            active SAG profile, or $ICDEV_AGENT_POLICY_CHAIN_AGENT, or the
+#            in-repo `agent:` block at the bottom of this file.
+#
+# Levels are ADDITIVE, not overriding: the answer is the strictest opinion any
+# level returned, so a session can only ever ADD a deny. That is what makes
+# evaluating the least-trusted level first safe, and it is structural — there is
+# no session-level syntax for removing a policy, lowering a floor, or turning a
+# deny into an allow.
 #
 # A name listed here that is not registered in the engine does NOT get skipped:
 # it resolves to a DENY naming itself. A chain that quietly drops a policy is a
@@ -86,3 +98,24 @@ chain:
 floors:
   # allow = no floor; the chain's own answer stands.
   tool_call: allow
+
+# ---------------------------------------------------------------------------
+# The AGENT level (exa-policy-02) — set by the agent author, evaluated after the
+# session level and before this file's `chain` above.
+#
+# This in-repo block is the default for the shipped agent. An agent author who
+# wants their own is expected to write <profile_dir>/policy_chain.yaml for their
+# SAG profile, which takes precedence over this block; $ICDEV_AGENT_POLICY_CHAIN_AGENT
+# takes precedence over both.
+#
+# It accepts the same `chain`, `floors` and `on_policy_error` keys as the server
+# level and NOT `audit` — whether allows are logged is the admin's call, and a
+# level that could turn logging off could turn off the record of its own denials.
+#
+# Empty by design. The reversibility policy in the server chain above already
+# applies to every call, and listing it here too would just evaluate it twice for
+# the same answer. Add a policy here when there is one that should bind this
+# agent and not the whole org.
+agent:
+  chain: []
+  floors: {}

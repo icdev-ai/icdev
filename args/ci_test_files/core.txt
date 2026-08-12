@@ -552,6 +552,19 @@ tests/test_exa_policy_05_saas_mcp_authz.py
 # — a CUI leak that no other test in this list would catch. ~2s, in-tmpdir SQLite,
 # no DB service/LLM/network.
 tests/test_agent_policy_engine.py
+# test_agent_policy_composition.py earns a slot for one reason: it is the only
+# thing asserting that a SESSION-level policy cannot weaken an agent or server
+# policy (exa-policy-02). That invariant is what makes it safe to let an end user
+# add a policy at all, and it regresses SILENTLY and CATASTROPHICALLY — if the
+# composition ever starts reading a lower level as an override, every attempted
+# loosening below (a softer floor, a disabled server policy, `on_policy_error:
+# allow`, an `audit` block, a session ALLOW against a server DENY) starts working
+# and nothing else in the repo goes red. It also pins that a DENY short-circuits
+# ACROSS levels, that a stateful counter survives the hook being rebuilt for the
+# next turn (an unbounded session otherwise), and that a malformed state update
+# denies rather than skipping — a counter that fails to increment is a limit that
+# never fires. ~1.5s, in-tmpdir SQLite, no DB service/LLM/network.
+tests/test_agent_policy_composition.py
 
 # exa-live-01 — capability consumption counter. Guards the measurement half of
 # ICDEV's signature defect (a registered capability with zero consumption and

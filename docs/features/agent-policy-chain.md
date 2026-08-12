@@ -159,9 +159,10 @@ python tools/agent_runtime/policy_engine.py --evaluate run_command \
 Named here so the next task does not have to guess, and so nothing ships as a
 declared-but-unconsumed key in the YAML:
 
-- **Three-level composition** (session → agent → server, stricter first) and
-  `state_updates` — `exa-policy-02`. There is no `scope:` key in
-  `agent_policy_chain.yaml` yet, on purpose.
+- ~~**Three-level composition** (session → agent → server, stricter first) and
+  `state_updates`~~ — **SHIPPED** in `exa-policy-02`:
+  [agent-policy-composition.md](agent-policy-composition.md). There is still no
+  `scope:` key; levels are separate chains, which is what makes them additive.
 - **Builtin policies** (per-session tool-call cap, repo/branch allowlist, risk
   accrual) — `exa-policy-03`. The registry and the `usage`/`session_state`
   fields they need are here; the policies are not.
