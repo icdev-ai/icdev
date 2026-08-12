@@ -161,9 +161,18 @@ def chat_app(tmp_path_factory):
         c.row_factory = sqlite3.Row
         return StorageConnection(c, "sqlite")
 
+    # tools/dashboard/app.py does `from tools.dashboard.config import DB_PATH`,
+    # which binds its OWN module-level name — patching the config module alone
+    # leaves app.py's closure `_get_db()` pointed at the real data/icdev.db.
+    # GET / therefore read the repo database, which passes on a developer box
+    # that has one and fails on a CI runner that does not (`no such table:
+    # projects`). Import the module up front so the attribute exists to patch.
+    import tools.dashboard.app  # noqa: F401
+
     with (
         patch.dict(os.environ, {"ICDEV_DB_PATH": str(db_path)}),
         patch("tools.dashboard.config.DB_PATH", str(db_path)),
+        patch("tools.dashboard.app.DB_PATH", str(db_path)),
         patch("tools.dashboard.auth._get_db", side_effect=lambda: _make_conn()),
         patch("tools.dashboard.api.projects._get_db", side_effect=lambda: _make_conn()),
         patch("tools.dashboard.api.intake._get_db", side_effect=lambda: _make_conn()),
