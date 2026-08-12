@@ -7471,6 +7471,37 @@ projects:
 - key: kax
   name: 'KAX - Kanban Autonomy Hardening'
   description: 'Remove the remaining reasons a human has to touch the board. Scope set from measurement 2026-08-07, not speculation. The first and largest gap is already fixed in PR #1318 (the launcher never started tools/ci/pr_watcher.py, so after its last manual start died on Aug 2 nothing merged CI-green PRs; tasks-reaching-done was 63 on Aug 1 and 121 on Aug 2, then ZERO for Aug 4-6, and it presented as "the dispatcher stopped working" while the dispatcher was idle and correct). What remains are the two failure modes that still require a person. (1) CONFLICT - a PR whose branch has drifted behind main goes DIRTY and no automation rebases it; 2 of 5 open kanban PRs were DIRTY when measured, and xbm-wake-01 sat parked 95.7 hours before escalating "resume cap reached (5/5) - manual intervention required". The escalation itself is correct behaviour; the gap is that nothing attempts the cheap recovery (rebase onto main, push, let CI re-run) before spending a resume, so branches that merge fine after a rebase burn all five attempts and land in a human queue. (2) STALL - nothing watches throughput. The four-day flatline above was found because a human noticed, not because the system said anything, even though an alerts table and a self_monitor reflex already exist. A rule of the shape "no task reached done in N hours while tasks are scheduled" would have fired on day one. Both epics are about making the pipeline notice and repair itself; neither should be built as a new subsystem when the recovery paths and the alerting table already exist - grep first.'
+  task_prefix: kax-
+  default_open: true
+  briefs:
+  - |-
+    EXEC - the executor-availability path lies about why it gave up, and one dead
+    session disables the only working executor for everything else. Traced end to end
+    2026-08-12 after two tasks (exa-policy-08, exa-live-01) were quarantined to
+    suggested within a 5-minute window and had to be rescued by hand - which is exactly
+    the "reason a human has to touch the board" this card exists to remove. Four
+    defects, in the order they fire. (1) An operator kill is classified as token
+    exhaustion: _detect_token_exhaustion returns True for exit_code < 0 or >= 128, which
+    is deliberate and right for an OOM kill (park, preserve the branch) but cannot tell
+    an OOM from a person stopping a stuck task. (2) That classification runs
+    _degraded_executors.add("claude_cli") with resume_at = now + 300s, so ONE task's
+    death removes the primary executor for EVERY other task for five minutes. (3) The
+    safety net does not fire: _build_effective_executor_chain ends "if active: return
+    active" and only falls back to the original chain when EVERY tier is degraded - but
+    nothing ever marks gitlab or ollama_local degraded, because they are never
+    successfully tried, so degrading claude_cli always yields a non-empty chain of
+    functionally dead fallbacks and quarantine becomes guaranteed rather than possible.
+    (4) The reason string is a LITERAL: kanban.py line ~6163 emits "no executor
+    available: internet=False, gitlab=unreachable, ollama=unreachable" with nothing
+    probing internet, gitlab or ollama. That is why this reads as a network outage when
+    the CLI resolves fine, and it is why the 2026-08-01 incident (25 tasks quarantined,
+    root cause PATHEXT resolution in claude_cli.py) produced the SAME message from a
+    completely different cause. Fixing the message is what makes the other three
+    diagnosable. Fifth, smaller: _degraded_executors is module-level in-memory state, so
+    with more than one scheduler process the degradation is per-process and inconsistent
+    - exa-policy-05 re-dispatched fine at 03:29:56 while exa-live-01 was quarantined 23
+    seconds earlier, inside the same window, from a different scheduler
+    (kax-exec-01..03)
   epics:
   - key: conflict
     title: CONFLICT - Auto-rebase a drifted PR before spending a resume
@@ -7486,6 +7517,9 @@ projects:
     priority: high
   - key: recover
     title: RECOVER - Autonomous recovery must not act on stale or non-code failures
+    priority: high
+  - key: exec
+    title: EXEC - Executor availability must report the truth and degrade in scope
     priority: high
 - key: agov
   name: 'AGOV - Agent Governance (detection, forensics, unattended approval)'
