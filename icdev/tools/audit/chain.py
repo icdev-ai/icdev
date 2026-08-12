@@ -57,11 +57,15 @@ Usage:
     from icdev.tools.audit.chain import chain_insert_values
 """
 
+import contextlib
 import json
 import sqlite3
 import threading
 
 from icdev.tools.audit.row_hash import GENESIS_HASH, compute_audit_row_hash
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("audit.chain")
 
 #: Lock name for the audit-chain critical section. Hashed to a bigint by
 #: dblock.lock_key so it shares the salt/namespace of every other advisory lock.
@@ -117,6 +121,47 @@ def _unfiltered_cursor(conn):
     return cur
 
 
+@contextlib.contextmanager
+def _contained(conn):
+    """Run statements whose failure must not poison the caller's transaction.
+
+    On PostgreSQL a failed statement aborts the whole transaction: every
+    later statement raises "current transaction is aborted" until someone
+    rolls back. Both places this module touches ``audit_chain_genesis`` can
+    legitimately fail — the table does not exist until migration
+    20260812041301 has run, which is the normal state of any deployment
+    between merging this code and running migrations — and neither is worth
+    breaking the caller over.
+
+    A plain ``conn.rollback()`` would clear the abort but also discard whatever
+    uncommitted work a caller-owned connection was in the middle of, so this
+    uses a SAVEPOINT and unwinds only its own statements. On SQLite a failed
+    statement does not abort the transaction, so there is nothing to contain.
+    """
+    name = "icdev_audit_chain_probe"
+    contained = _backend(conn) == "postgresql"
+    if contained:
+        try:
+            conn.cursor().execute(f"SAVEPOINT {name}")
+        except Exception:
+            contained = False
+    try:
+        yield
+    except Exception:
+        if contained:
+            try:
+                conn.cursor().execute(f"ROLLBACK TO SAVEPOINT {name}")
+            except Exception:
+                pass
+        raise
+    else:
+        if contained:
+            try:
+                conn.cursor().execute(f"RELEASE SAVEPOINT {name}")
+            except Exception:
+                pass
+
+
 def _scalar(row):
     """First column of a row, for sqlite3.Row / psycopg row / plain tuple."""
     if row is None:
@@ -141,6 +186,14 @@ def has_chain_columns(conn) -> bool:
         if key in _COLUMN_CACHE:
             return _COLUMN_CACHE[key]
     present = _probe_chain_columns(conn)
+    if present is None:
+        # The probe could not answer — on PostgreSQL an already-aborted
+        # transaction makes EVERY query fail, including one against
+        # information_schema, so a table that exists reads as missing. Caching
+        # that would silently un-chain every subsequent write on this backend
+        # for the life of the process. Degrade for this row only, and ask again
+        # next time.
+        return False
     with _COLUMN_CACHE_LOCK:
         _COLUMN_CACHE[key] = present
     return present
@@ -158,21 +211,23 @@ def _db_identity(conn) -> str:
         return "sqlite"
 
 
-def _probe_chain_columns(conn) -> bool:
+def _probe_chain_columns(conn):
+    """True/False if the probe ran; None if it could not answer at all."""
     backend = _backend(conn)
     try:
-        cur = _unfiltered_cursor(conn)
-        if backend == "postgresql":
-            row = cur.execute(
-                "SELECT COUNT(*) FROM information_schema.columns "
-                "WHERE table_name = 'audit_trail' "
-                "AND column_name IN ('hash', 'previous_hash', 'signature')"
-            ).fetchone()
-            return int(_scalar(row) or 0) == len(CHAIN_COLUMNS)
-        cols = {r[1] for r in cur.execute("PRAGMA table_info(audit_trail)").fetchall()}
-        return set(CHAIN_COLUMNS).issubset(cols)
+        with _contained(conn):
+            cur = _unfiltered_cursor(conn)
+            if backend == "postgresql":
+                row = cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_name = 'audit_trail' "
+                    "AND column_name IN ('hash', 'previous_hash', 'signature')"
+                ).fetchone()
+                return int(_scalar(row) or 0) == len(CHAIN_COLUMNS)
+            cols = {r[1] for r in cur.execute("PRAGMA table_info(audit_trail)").fetchall()}
+            return set(CHAIN_COLUMNS).issubset(cols)
     except Exception:
-        return False
+        return None
 
 
 def serialize_chain_writes(conn) -> None:
@@ -328,37 +383,40 @@ def record_chain_start(conn, entry_id: int, placeholder: str = "?") -> None:
     if _GENESIS_CACHE.get(key):
         return  # already recorded — do not re-query on every audit write
     try:
-        cur = _unfiltered_cursor(conn)
-        existing = cur.execute("SELECT COUNT(*) FROM audit_chain_genesis").fetchone()
-        if int(_scalar(existing) or 0) > 0:
-            _GENESIS_CACHE[key] = True
-            return
-        cur.execute(
-            f"INSERT INTO audit_chain_genesis (chain_start_id, hash_algorithm, note) "
-            f"VALUES ({placeholder}, {placeholder}, {placeholder})",
-            (
-                entry_id,
-                "sha256",
-                "First audit_trail row written with hash/previous_hash/signature "
-                "(exa-audit-03). Rows below this id predate the chain writer and "
-                "are unverifiable, not tampered.",
-            ),
-        )
+        with _contained(conn):
+            cur = _unfiltered_cursor(conn)
+            existing = cur.execute("SELECT COUNT(*) FROM audit_chain_genesis").fetchone()
+            if int(_scalar(existing) or 0) > 0:
+                _GENESIS_CACHE[key] = True
+                return
+            cur.execute(
+                f"INSERT INTO audit_chain_genesis (chain_start_id, hash_algorithm, note) "
+                f"VALUES ({placeholder}, {placeholder}, {placeholder})",
+                (
+                    entry_id,
+                    "sha256",
+                    "First audit_trail row written with hash/previous_hash/signature "
+                    "(exa-audit-03). Rows below this id predate the chain writer and "
+                    "are unverifiable, not tampered.",
+                ),
+            )
         _GENESIS_CACHE[key] = True
-    except Exception:
+    except Exception as exc:
         # The marker is diagnostic. A database that has not run the migration
-        # yet must still be able to write audit rows.
+        # yet must still be able to write audit rows, and the row this call
+        # follows is already committed — losing the marker costs a diagnostic,
+        # losing the caller's transaction would cost their business logic.
         #
-        # The rollback is not optional on PostgreSQL: a failed statement leaves
-        # the transaction in an aborted state where EVERY later statement fails
-        # with "current transaction is aborted". Swallowing the error without
-        # clearing it would take out the caller's next query — for a
-        # caller-owned connection, their business logic — for the sake of a
-        # marker row.
-        try:
-            conn.rollback()
-        except Exception:
-            pass
+        # Logged rather than silent: if this fails FOREVER the chain still
+        # works, but every pre-cutover row keeps reading as "chained and
+        # unverified" instead of "predates the chain", which is the confusion
+        # the marker exists to remove.
+        logger.warning(
+            "audit chain cutover marker not recorded for id %s (%s); "
+            "run migration 20260812041301 if audit_chain_genesis is missing",
+            entry_id,
+            exc,
+        )
 
 
 def chain_start_id(conn):
@@ -369,11 +427,13 @@ def chain_start_id(conn):
     then treat every unchained row as "no chain here", not as a broken one.
     """
     try:
-        cur = _unfiltered_cursor(conn)
-        row = cur.execute(
-            "SELECT MIN(chain_start_id) FROM audit_chain_genesis"
-        ).fetchone()
+        with _contained(conn):
+            row = _unfiltered_cursor(conn).execute(
+                "SELECT MIN(chain_start_id) FROM audit_chain_genesis"
+            ).fetchone()
         value = _scalar(row)
         return int(value) if value is not None else None
     except Exception:
+        # No table yet (migration not run) is the common case and reads the
+        # same as "no cutover recorded", which is the honest answer.
         return None

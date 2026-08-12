@@ -507,3 +507,59 @@ def test_chain_start_id_is_none_before_any_chained_write(tmp_path):
         assert audit_chain.chain_start_id(conn) is None
     finally:
         conn.close()
+
+
+# audit_trail has the chain columns (migration 149) but audit_chain_genesis does
+# not exist (migration 20260812041301 has not run). This is the NORMAL state of
+# any deployment between merging this code and running its migration, so every
+# path has to survive it.
+SCHEMA_NO_GENESIS_TABLE = SCHEMA.replace(
+    SCHEMA[SCHEMA.index("CREATE TABLE audit_chain_genesis") : SCHEMA.index("CREATE TABLE source_citation_registry")],
+    "",
+)
+
+
+def test_writes_and_verifies_before_the_genesis_migration_has_run(tmp_path, signing_secret):
+    """A missing audit_chain_genesis must not break writing OR verifying.
+
+    On PostgreSQL a failed statement aborts the entire transaction, so a bare
+    `SELECT ... FROM audit_chain_genesis` against a database that has not
+    migrated yet takes out every query that follows it on that connection —
+    including the rest of verify_audit_integrity. The probes are contained in a
+    SAVEPOINT for exactly this reason.
+    """
+    db = make_db(tmp_path, SCHEMA_NO_GENESIS_TABLE)
+
+    entry_id = log_event("code_generated", "tester", "no genesis table", db_path=db)
+    assert entry_id > 0
+
+    # Still chained — the marker is diagnostic, not a precondition.
+    row = read_rows(db)[0]
+    assert row["hash"] is not None
+
+    result = verify_audit_integrity(entry_id, db_path=db)
+    assert result["chain_start_id"] is None
+    assert result["hash_valid"] is True
+    assert result["chain_valid"] is True
+    assert result["signature_valid"] is True
+
+
+def test_a_failed_probe_is_not_cached_as_columns_missing(tmp_path, monkeypatch):
+    """An unanswerable probe must degrade for one row, not for the process.
+
+    Caching a False that came from an exception would silently un-chain every
+    later write on that backend for the life of the process — the failure mode
+    is a chain that just stops, with nothing in the logs saying so.
+    """
+    from tools.db.storage import get_connection
+
+    conn = get_connection(db_path=str(make_db(tmp_path)))
+    try:
+        monkeypatch.setattr(audit_chain, "_probe_chain_columns", lambda c: None)
+        assert audit_chain.has_chain_columns(conn) is False
+        assert audit_chain._COLUMN_CACHE == {}, "an unanswerable probe was cached"
+
+        monkeypatch.setattr(audit_chain, "_probe_chain_columns", lambda c: True)
+        assert audit_chain.has_chain_columns(conn) is True
+    finally:
+        conn.close()
