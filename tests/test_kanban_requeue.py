@@ -99,16 +99,27 @@ def db(tmp_path):
     raw.close()
 
 
+#: When the seeded failure happened. ``find_recent_failures`` keys recency on
+#: ``last_failure_at``, so this value decides whether triage sees the row at all,
+#: while test_requeue_does_not_rewrite_history asserts requeue leaves it alone.
+#:
+#: This was the literal "2026-08-08T09:00:00+00:00". It satisfied both when it
+#: was written and then aged out of the 24h window, failing 4 tests here and one
+#: in test_kanban_suggested_decay.py — days after the change that "passed". A
+#: date literal in a fixture is a scheduled failure; keep it relative to now.
+_FAILED_AT = (_utcnow() - timedelta(hours=2)).isoformat()
+
+
 def _insert(raw, tid, *, status, failure_reason, failure_count=3,
             updated_at=None, branch_name=None, priority="high",
-            task_type="build"):
+            task_type="build", last_failure_at=None):
     raw.execute(
         "INSERT INTO kanban_tasks (id, title, description, task_type, priority, "
         " status, updated_at, branch_name, failure_count, last_failure_at, "
         " last_failure_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (tid, f"title {tid}", f"desc {tid}", task_type, priority, status,
          updated_at or _utcnow().isoformat(), branch_name, failure_count,
-         "2026-08-08T09:00:00+00:00", failure_reason),
+         last_failure_at or _FAILED_AT, failure_reason),
     )
     raw.commit()
 
@@ -194,7 +205,7 @@ def test_requeue_preserves_failure_count(db):
 
     row = _row(db, "sbx-doc-02")
     assert row["failure_count"] == 5
-    assert row["last_failure_at"] == "2026-08-08T09:00:00+00:00", (
+    assert row["last_failure_at"] == _FAILED_AT, (
         "last_failure_at is history too — only the *reason* describes the "
         "attempt that is no longer current"
     )
@@ -361,6 +372,11 @@ def test_requeue_refuses_a_manual_gate_sentinel(db):
 # --------------------------------------------------------------------------
 
 def test_an_old_failure_is_outside_the_window(triage, db):
+    # last_failure_at is what find_recent_failures keys recency on, so an "old"
+    # row has to say so explicitly. It used to inherit the stale literal in
+    # _insert and pass for the wrong reason — this test was the control proving
+    # the predicate is exercised, and it was the literal doing the work.
+    _old = (_utcnow() - timedelta(days=7)).isoformat()
     _insert(db, "old-fail-01", status="failed", failure_reason="failed last week",
-            updated_at=(_utcnow() - timedelta(days=7)).isoformat())
+            updated_at=_old, last_failure_at=_old)
     assert "old-fail-01" not in [r["id"] for r in triage.find_recent_failures(24)]
