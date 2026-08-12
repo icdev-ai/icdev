@@ -18,6 +18,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.db.storage import StorageConnection  # noqa: E402  (needs sys.path above)
+
 
 def _init_test_db(db_path):
     """Create tables using the real init script for full schema compatibility."""
@@ -125,19 +127,33 @@ def _init_test_db(db_path):
     conn.close()
 
 
-@pytest.fixture
-def chat_app(tmp_path):
-    """Create a test Flask app with intake tables."""
-    db_path = tmp_path / "test_icdev.db"
+@pytest.fixture(scope="module")
+def chat_app(tmp_path_factory):
+    """Create a test Flask app with intake tables.
+
+    Module-scoped: create_app() mounts every blueprint in the platform, which
+    costs ~2s a call, and _init_test_db shells out to the real init script.
+    Paying that 22 times put this file at ~3.5 minutes, which is why it is a
+    single build shared by the module. Each test still creates its own intake
+    session, so they do not observe each other's rows.
+    """
+    db_path = tmp_path_factory.mktemp("intake_api") / "test_icdev.db"
     _init_test_db(db_path)
 
     # Patch _get_db in all dashboard modules to return connections to the test
     # DB.  Patching DB_PATH alone is insufficient because get_connection() may
     # resolve paths independently.
+    # The connection MUST be wrapped in a real StorageConnection. Dashboard SQL
+    # is authored PG-natively (`%s` placeholders — PG is the primary backend)
+    # and depends on StorageConnection/StorageCursor to translate for SQLite.
+    # Handing the routes a bare sqlite3.Connection made every such statement
+    # raise `near "%": syntax error`; auth's before_request hook calls
+    # get_user_by_id() on every request, so that single mismatch turned all 22
+    # tests in this module red at once.
     def _make_conn():
         c = sqlite3.connect(str(db_path))
         c.row_factory = sqlite3.Row
-        return c
+        return StorageConnection(c, "sqlite")
 
     with (
         patch.dict(os.environ, {"ICDEV_DB_PATH": str(db_path)}),
@@ -147,6 +163,11 @@ def chat_app(tmp_path):
         patch("tools.dashboard.api.intake._get_db", side_effect=lambda: _make_conn()),
         patch("tools.dashboard.api.intake.DB_PATH", db_path),
         patch("tools.requirements.intake_engine.DB_PATH", db_path),
+        # readiness_scorer resolves its own module-level DB_PATH (the repo's
+        # data/icdev.db) — without this patch /api/intake/readiness queries a
+        # database that has none of this test's sessions, and 500s on the
+        # missing/empty file rather than scoring the session just created.
+        patch("tools.requirements.readiness_scorer.DB_PATH", db_path),
         patch("tools.requirements.intake_engine._HAS_LLM", False),
     ):
         from tools.dashboard.app import create_app
@@ -156,7 +177,7 @@ def chat_app(tmp_path):
         yield app
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def client(chat_app):
     """Create authenticated test client."""
     c = chat_app.test_client()
@@ -171,12 +192,14 @@ class TestChatPages:
     def test_chat_new_page(self, client):
         resp = client.get("/chat")
         assert resp.status_code == 200
-        assert b"<h1>Chat</h1>" in resp.data
+        # Heading renamed "Chat" -> "AI Assistant" in e709aead1 (chat-ux, cu-fix).
+        assert b"<h1>AI Assistant</h1>" in resp.data
 
     def test_chat_new_with_wizard_params(self, client):
         resp = client.get("/chat?goal=build&role=developer&classification=il4")
         assert resp.status_code == 200
-        assert b"<h1>Chat</h1>" in resp.data
+        # Heading renamed "Chat" -> "AI Assistant" in e709aead1 (chat-ux, cu-fix).
+        assert b"<h1>AI Assistant</h1>" in resp.data
 
     def test_chat_session_not_found(self, client):
         resp = client.get("/chat/nonexistent-session")

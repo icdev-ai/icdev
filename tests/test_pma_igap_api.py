@@ -33,6 +33,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
 
+from tools.db.storage import StorageConnection  # noqa: E402  (needs sys.path above)
+
 
 # ---------------------------------------------------------------------------
 # Minimal schema needed by these tests
@@ -99,32 +101,6 @@ CREATE TABLE IF NOT EXISTS cpmp_collection_requirements (
 
 
 # ---------------------------------------------------------------------------
-# Thin connection wrapper matching StorageCursor's public interface
-# ---------------------------------------------------------------------------
-
-class _FakeConn:
-    """Wraps a sqlite3.Connection to satisfy cpmp.py's _get_db() interface."""
-
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._c = conn
-
-    def set_security_context(self, ctx) -> None:  # rls no-op in tests
-        pass
-
-    def execute(self, sql: str, params=()):
-        return self._c.execute(sql, params)
-
-    def executemany(self, sql: str, params):
-        return self._c.executemany(sql, params)
-
-    def commit(self) -> None:
-        self._c.commit()
-
-    def close(self) -> None:
-        self._c.close()
-
-
-# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -140,11 +116,23 @@ def db_path(tmp_path_factory):
     return str(path)
 
 
-def _open(db_path: str) -> _FakeConn:
-    """Open a new SQLite connection to the test DB."""
+def _open(db_path: str) -> StorageConnection:
+    """Open a new SQLite connection to the test DB.
+
+    This MUST be a real ``StorageConnection``, not a hand-rolled stand-in.
+    ``cpmp.py`` authors its SQL PG-natively (``%s`` placeholders, PG is the
+    primary backend) and relies on ``StorageConnection``/``StorageCursor`` to
+    translate for SQLite. The previous ``_FakeConn`` here forwarded straight to
+    ``sqlite3.Connection.execute``, so every one of those statements raised
+    ``near "%": syntax error`` and the endpoints returned 500 — a test-only
+    defect that made the whole module look broken.
+
+    No security context is attached, so no RLS predicate is injected: the
+    minimal ``_SCHEMA`` above has no ``tenant_id`` column.
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    return _FakeConn(conn)
+    return StorageConnection(conn, "sqlite")
 
 
 @pytest.fixture(scope="module")
