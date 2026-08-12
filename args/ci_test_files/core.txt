@@ -660,3 +660,16 @@ tests/test_cost_budget_downgrade.py
 # explicit DENY test. No DB service, LLM or network -- session state runs with
 # persist=False; ~1s.
 tests/test_agent_policy_builtins.py
+# exa-bench-02 -- the copilot_cli and goose_cli harness adapters. Required because
+# the thing that went wrong here is invisible to a normal run: copilot_cli's
+# available() was `return False and (shutil.which("gh") is not None)`, which
+# short-circuits, so the adapter reported absent on every host and looked exactly
+# like a correct probe on a runner that has no CLI. The AST assertions are what
+# tell those two apart, and test_agent_adapter_no_inert_stubs.py generalises it to
+# every adapter in enabled_adapters -- with positive controls, so a rule that
+# stopped catching anything goes red instead of quietly passing. No binary is ever
+# spawned: resolution is patched and subprocess.run is a recorder. ~2s, no DB, LLM
+# or network.
+tests/test_copilot_cli_adapter.py
+tests/test_goose_cli_adapter.py
+tests/test_agent_adapter_no_inert_stubs.py
