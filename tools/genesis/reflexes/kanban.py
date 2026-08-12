@@ -4436,6 +4436,15 @@ _github_actions_dispatched: set = set()
 # When degraded, the scheduler skips them in the fallback chain.
 _degraded_executors: set = set()
 _degraded_executors_probed_at: Dict[str, datetime] = {}
+
+# kax-exec-03: tiers that have actually dispatched at least once in this
+# process. Membership in the configured executor chain says only that an
+# operator listed a tier; it is not evidence the tier works on this host. Used
+# by _build_effective_executor_chain so that degrading the one tier that has
+# ever worked cannot leave a "non-empty" chain of tiers that never have.
+# Deliberately in-memory and per-process, matching _degraded_executors: a fresh
+# scheduler starts with no evidence and behaves exactly as before.
+_tiers_ever_dispatched: set = set()
 _DEGRADATION_PROBE_INTERVAL = timedelta(minutes=5)  # Default if no reset hint parsed
 
 
@@ -4493,8 +4502,33 @@ def _build_effective_executor_chain(original_chain: list) -> list:
 
     active.extend(recovered)
 
-    if active:
+    # kax-exec-03: the fallback below is documented as "if all executors are
+    # degraded, try them anyway". It never fired, because only claude_cli is
+    # ever ADDED to _degraded_executors (the single call site guards on
+    # executor_type == "claude_cli"), while gitlab and ollama_local are never
+    # marked degraded — nothing probes them, and on a host that has neither they
+    # are never successfully used either. So degrading claude_cli always left
+    # active = ["gitlab", "ollama_local"], which is non-empty, and the scheduler
+    # walked two tiers that cannot work here. Quarantine stopped being a
+    # possible outcome and became a guaranteed one.
+    #
+    # "In the configured chain" is not the same claim as "usable on this host".
+    # A tier that has never once dispatched successfully is not evidence of a
+    # working executor, so it must not suppress the last-resort fallback.
+    if active and any(tier in _tiers_ever_dispatched for tier in active):
         return active
+    if active and not _tiers_ever_dispatched:
+        # Nothing has dispatched yet this process (fresh scheduler start) — no
+        # evidence either way, so behave exactly as before rather than second-
+        # guessing a cold cache.
+        return active
+    if active:
+        logger.warning(
+            "kanban: effective chain %s contains no tier that has ever "
+            "dispatched on this host (degraded=%s) — falling back to the full "
+            "chain %s rather than walking known-dead tiers",
+            active, sorted(_degraded_executors), original_chain,
+        )
     return original_chain
 
 
@@ -6112,29 +6146,44 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     adapter_forced = bool(_agent_adapter_override())
 
     dispatched = False
+    # kax-exec-01: record why EACH tier was not used. The reason this replaces
+    # was a string literal ("internet=False, gitlab=unreachable,
+    # ollama=unreachable") that nothing measured, so two unrelated incidents —
+    # the 2026-08-01 PATHEXT resolution failure (25 tasks) and the 2026-08-12
+    # executor degrade (2 tasks) — produced the identical sentence and each
+    # needed its own investigation. A constant cannot discriminate causes.
+    tier_outcomes: List[str] = []
     for tier in effective_chain:
         if tier in _ADAPTER_TIERS:
             if chain_adapter is None:
+                tier_outcomes.append(f"{tier}=no adapter resolved")
                 continue
             # Without a forced override the adapter must be THIS tier's, or the
             # chain order would be silently reshuffled (a later adapter tier
             # jumping ahead of gitlab). With one, the operator's choice runs at
             # the first adapter position in the chain.
             if not adapter_forced and _ADAPTER_TIERS[tier] != chain_adapter.name:
+                tier_outcomes.append(
+                    f"{tier}=skipped (chain adapter is {chain_adapter.name})"
+                )
                 continue
             if _dispatch_via_agent_adapter(chain_adapter, task, prompt_path,
                                            instruction, work_dir, task_log):
                 _set_executor_type(task_id, chain_adapter.name)
+                _tiers_ever_dispatched.add(tier)
                 dispatched = True
                 break
+            tier_outcomes.append(f"{tier}=adapter declined")
         elif tier == "gitlab":
             ok = _dispatch_gitlab(task_id, task_desc, task_type)
             if ok:
                 _dispatch_times[task_id] = datetime.now(timezone.utc)
                 _set_executor_type(task_id, "gitlab")
+                _tiers_ever_dispatched.add(tier)
                 print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
                 dispatched = True
                 break
+            tier_outcomes.append("gitlab=dispatch returned False")
         elif tier == "github_actions":
             ok = _dispatch_github_actions(task_id, task_desc, task_type)
             if ok:
@@ -6145,23 +6194,36 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 _move_task(task_id, "in_progress",
                            reason="dispatched via GitHub Actions (async executor)")
                 _github_actions_dispatched.add(task_id)
+                _tiers_ever_dispatched.add(tier)
                 print(f"  Kanban: dispatched {task_id} via GitHub Actions → in_progress")
                 dispatched = True
                 break
+            tier_outcomes.append("github_actions=dispatch returned False")
         elif tier == "ollama_local":
             ok = _dispatch_ollama_local(task_id, task_desc, task_type)
             if ok:
                 _set_executor_type(task_id, "ollama_local")
                 _ollama_completed.add(task_id)
+                _tiers_ever_dispatched.add(tier)
                 print(f"  Kanban: dispatched {task_id} via Ollama local")
                 dispatched = True
                 break
+            tier_outcomes.append("ollama_local=dispatch returned False")
+        else:
+            tier_outcomes.append(f"{tier}=unknown tier")
+
+    # Tiers dropped from the configured chain before the loop even ran are part
+    # of the answer too — "claude_cli is not in effective_chain" is exactly the
+    # fact that was invisible on 2026-08-12.
+    for tier in _fallback_chain:
+        if tier not in effective_chain:
+            why = "degraded" if tier in _degraded_executors else "removed from chain"
+            tier_outcomes.append(f"{tier}={why}")
 
     if not dispatched:
         if _fallback_chain and _fallback_chain[-1] == "ollama_local":
-            _no_exec_reason = (
-                "no executor available: internet=False, "
-                "gitlab=unreachable, ollama=unreachable"
+            _no_exec_reason = "no executor available: " + ", ".join(
+                tier_outcomes or ["effective chain was empty"]
             )
             try:
                 with get_connection() as _conn:
@@ -8335,25 +8397,51 @@ def _revive_quarantined_suggested(conn: Any) -> None:
 
 
 def _unblock_dep_chain(conn: Any) -> None:
-    """Revive 'suggested' tasks that are blocking 'backlog' children.
+    """Revive 'suggested' tasks parked by a transient executor failure.
 
     When an executor is transiently unavailable (e.g., claude_cli not on PATH
     during a previous scheduler run), tasks are moved to 'suggested' with
     reason "no executor available". The standard _revive_quarantined_suggested
     only targets fc>=5 tasks, leaving these low-fc transient failures stuck.
 
-    This function finds any 'suggested' task that is the direct dependency of a
-    'backlog' task and revives it to 'backlog' unconditionally — because a child
-    waiting in backlog proves the parent is on the critical path.
+    TWO criteria, either of which revives (kax-exec-02):
+
+    1. the task is the direct dependency of a task sitting in 'backlog' — a
+       child waiting proves the parent is on the critical path;
+    2. the task carries a "no executor available" reason at all.
+
+    (2) exists because (1) alone leaves most of the board unprotected: it
+    requires BOTH a child AND that child to be in 'backlog' specifically. On
+    2026-08-12 that gap stranded two real tasks — exa-policy-08 is a leaf and
+    could never match, and exa-live-01's only child was 'scheduled' rather than
+    'backlog'. Both had to be revived by hand. Measured on the same board, 14 of
+    24 exa-* tasks were leaves, so ~58% of that card could not self-recover from
+    a five-minute executor degrade.
+
+    Selection is keyed on the reason string, so rows that legitimately sit in
+    'suggested' awaiting human triage — reflex-proposed cards, which carry a
+    NULL reason — are never touched.
+
+    Churn note: nothing increments failure_count on this quarantine path, so a
+    genuinely long executor outage will revive-and-requarantine each cycle. That
+    is deliberate — it is cheap (a status write; no branch, no PR, no merge) and
+    strictly better than a task parking silently forever. The condition that
+    used to CAUSE the outage is fixed separately at the degrade site.
     """
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
-        # Find suggested tasks that are blocking at least one backlog child
+        # Criterion 1: blocking a backlog child. Criterion 2: parked by a
+        # transient executor failure, whether or not anything depends on it.
         rows = conn.execute(
             "SELECT DISTINCT p.id, p.failure_count, p.last_failure_reason "
             "FROM kanban_tasks p "
             "JOIN kanban_tasks c ON c.depends_on_task_id = p.id "
-            "WHERE p.status = 'suggested' AND c.status = 'backlog'"
+            "WHERE p.status = 'suggested' AND c.status = 'backlog' "
+            "UNION "
+            "SELECT id, failure_count, last_failure_reason "
+            "FROM kanban_tasks "
+            "WHERE status = 'suggested' "
+            "AND last_failure_reason LIKE '%no executor available%'"
         ).fetchall()
         unblocked: list[str] = []
         unblock_reasons: dict[str, str] = {}
@@ -9484,9 +9572,30 @@ def _check_completed():
                     reset_msg = f" (reset hint: {reset_hint})" if reset_hint else ""
                     resume_local = resume_at.astimezone().strftime("%I:%M %p")
 
-                    # D-AUTO-DEGRADE: Mark claude_cli as degraded
+                    # D-AUTO-DEGRADE: Mark claude_cli as degraded.
+                    #
+                    # kax-exec-02: ONLY on evidence about the PROVIDER, never on
+                    # the bare exit-code path. _detect_token_exhaustion returns
+                    # True for any exit_code < 0 or >= 128, which is right for
+                    # parking THIS task (an interrupted session should keep its
+                    # branch) but says nothing about whether the executor still
+                    # works — an operator killing one wedged session, an OOM, and
+                    # a real quota all look identical there.
+                    #
+                    # Degrading is global and lasts 300s, so one such death used
+                    # to remove the primary executor for EVERY other task. On
+                    # 2026-08-12 a single operator kill quarantined exa-policy-08
+                    # and exa-live-01 into `suggested` that way, and neither had a
+                    # revive path (see _unblock_dep_chain). A genuine provider
+                    # outage still degrades, because _TOKEN_RE matched real
+                    # quota/rate text — and if it is genuine the very next
+                    # dispatch observes it again anyway, so nothing is lost by
+                    # requiring the stronger evidence.
                     executor_type = _get_executor_type(task_id) or "claude_cli"
-                    if executor_type == "claude_cli":
+                    _provider_evidence = bool(
+                        claude_output and _TOKEN_RE.search(claude_output[-2000:])
+                    )
+                    if executor_type == "claude_cli" and _provider_evidence:
                         _degraded_executors.add(executor_type)
                         _degraded_executors_probed_at[executor_type] = resume_at
                         logger.info(
@@ -9494,6 +9603,11 @@ def _check_completed():
                             executor_type,
                             task_id,
                             resume_local,
+                        )
+                    elif executor_type == "claude_cli":
+                        logger.info(
+                            "kanban: %s parked (abnormal exit, no provider quota "
+                            "evidence) — executor NOT degraded", task_id,
                         )
 
                     print(
