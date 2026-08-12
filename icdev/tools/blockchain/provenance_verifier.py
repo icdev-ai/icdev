@@ -27,6 +27,9 @@ from tools.db.storage import get_connection
 # if this file computed its own, every row would report as tampered.
 from icdev.tools.audit.row_hash import GENESIS_HASH, compute_audit_row_hash
 
+# Where the chain starts, so a row that predates it is not reported as broken.
+from icdev.tools.audit.chain import chain_start_id
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Optional imports
@@ -43,7 +46,22 @@ def _get_db(db_path: Path = None):
 
 
 def verify_audit_integrity(entry_id: int, db_path: Path = None) -> dict:
-    """Verify a single audit entry's hash chain and signature."""
+    """Verify a single audit entry's hash chain and signature.
+
+    ``chain_status`` separates the two ways a row can fail to verify:
+
+    ``chained``    the chain writer produced this row; the three *_valid flags
+                   are a real verdict on it.
+    ``pre_chain``  the row predates the cutover recorded in audit_chain_genesis,
+                   so it never had a hash to check. The flags are False because
+                   there is nothing to verify, NOT because anything is wrong —
+                   ``ok`` is likewise False, since an unverifiable row must not
+                   be reported as verified either.
+
+    Without that distinction every row written before exa-audit-03 reads
+    identically to a tampered one, which is what made the verifier's honest
+    fail-closed output unusable in practice.
+    """
     conn = _get_db(db_path)
     try:
         row = conn.execute(
@@ -54,6 +72,12 @@ def verify_audit_integrity(entry_id: int, db_path: Path = None) -> dict:
         if not row:
             return {"ok": False, "error": "Entry not found", "entry_id": entry_id}
 
+        # A row below the recorded cutover was written before the chain writer
+        # existed. Its NULL hash is an absence of evidence, not evidence of
+        # tampering, and the two must not render the same.
+        start_id = chain_start_id(conn)
+        pre_chain = row["hash"] is None and (start_id is None or entry_id < start_id)
+
         result = {
             "entry_id": entry_id,
             "ok": True,
@@ -61,6 +85,8 @@ def verify_audit_integrity(entry_id: int, db_path: Path = None) -> dict:
             "chain_valid": False,
             "signature_valid": False,
             "blockchain_verified": False,
+            "chain_status": "pre_chain" if pre_chain else "chained",
+            "chain_start_id": start_id,
         }
 
         # 1. Verify row hash

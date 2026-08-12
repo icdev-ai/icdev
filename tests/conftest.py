@@ -620,6 +620,18 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     previous_hash TEXT,
     signature TEXT
 );
+-- exa-audit-03 / migration 20260812041301. Where the audit_trail hash chain
+-- starts. Rows below chain_start_id predate the chain writer, so their NULL
+-- hashes mean "never chained", not "tampered with" -- without this the verifier
+-- cannot tell those two apart.
+CREATE TABLE IF NOT EXISTS audit_chain_genesis (
+    chain_start_id INTEGER PRIMARY KEY,
+    hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
+    note           TEXT,
+    tenant_id      TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    recorded_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- ars-appr-01 / migration 342. Append-only: every approval-gate verdict for an
 -- irreversible or unenumerated agent tool call, with the actor and the reason.
 CREATE TABLE IF NOT EXISTS agent_approval_log (
