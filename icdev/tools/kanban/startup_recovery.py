@@ -515,23 +515,68 @@ def foreign_scheduler_pid() -> int:
         return 0
 
 
-def pid_is_alive(pid: Optional[int]) -> Optional[bool]:
-    """``True``/``False`` if determinable, ``None`` if not.
+def dispatch_liveness(
+    pid: Optional[int], recorded_start: Optional[str] = None
+) -> Optional[bool]:
+    """``True`` still ours, ``False`` provably gone, ``None`` cannot tell.
 
-    ``None`` is not "dead". Callers must treat an undeterminable PID as still
-    running: clearing a dispatch stamp we cannot disprove would double-dispatch
-    a task that is quietly working.
+    THREE-VALUED ON PURPOSE. ``None`` is not "dead": the caller must leave the
+    row alone, because clearing a dispatch stamp we cannot disprove would
+    double-dispatch a task that is quietly working.
+
+    PID EXISTENCE ALONE IS NOT ENOUGH, and this is the Windows case. PIDs are
+    recycled, aggressively so on Windows, and a stale pid that now belongs to an
+    unrelated process reads as "alive" — so a bare ``pid_exists`` check skips the
+    stalled row forever and the slot is never reclaimed. That is the failure this
+    function exists to avoid, and it is the more likely one here: a recycled pid
+    silently perpetuates the stall, where the opposite error is caught by the
+    conservative default.
+
+    Layered so the portable path always works and the precise one is used when
+    the OS can supply it:
+
+    * ``psutil.pid_exists`` — OS-agnostic, answers "gone" unambiguously;
+    * ``dispatch_reaper.process_start_time`` — ``GetProcessTimes`` via ctypes on
+      Windows (deliberately not ``wmic``, removed on Windows 11 build 26200) and
+      ``ps -o lstart=`` on POSIX. A pid that exists but whose start time differs
+      from the recorded one is a RECYCLED pid, so the process we dispatched is
+      provably gone.
+
+    Note the polarity differs from ``dispatch_reaper.is_same_process``, which
+    fails closed toward "do not kill". Reclaiming fails closed toward "do not
+    reclaim", so an unknown cannot reuse that predicate directly.
     """
-    if not pid or int(pid) <= 0:
+    if not pid:
         return None
+    try:
+        pid_int = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid_int <= 0:
+        return None
+
     try:
         import psutil
-    except Exception:  # noqa: BLE001 — psutil optional, same as the scan above
+    except Exception:  # noqa: BLE001 — psutil optional
         return None
     try:
-        return psutil.pid_exists(int(pid))
+        if not psutil.pid_exists(pid_int):
+            return False  # unambiguous: nothing holds that pid
     except Exception:  # noqa: BLE001
         return None
+
+    # The pid exists. Is it still OUR process, or has the number been reused?
+    if not recorded_start:
+        return None  # nothing to compare against — cannot tell, so do not touch
+    try:
+        from tools.kanban.dispatch_reaper import process_start_time
+
+        current = process_start_time(pid_int)
+    except Exception:  # noqa: BLE001
+        return None
+    if not current:
+        return None  # exists but unidentifiable — cannot tell
+    return current.strip() == str(recorded_start).strip()
 
 
 def reclaim_stale_scheduled_dispatches(
@@ -566,17 +611,20 @@ def reclaim_stale_scheduled_dispatches(
     try:
         rows = [
             dict(r) for r in conn.execute(
-                "SELECT id, dispatch_pid FROM kanban_tasks "
+                "SELECT id, dispatch_pid, dispatch_pid_started_at "
+                "FROM kanban_tasks "
                 "WHERE status = 'scheduled' AND dispatch_pid IS NOT NULL"
             ).fetchall()
         ]
         out["scanned"] = len(rows)
         for row in rows:
-            alive = pid_is_alive(row.get("dispatch_pid"))
+            alive = dispatch_liveness(
+                row.get("dispatch_pid"), row.get("dispatch_pid_started_at")
+            )
             if alive is not False:
                 out["skipped"].append(
                     {"id": row["id"], "pid": row.get("dispatch_pid"),
-                     "why": "alive" if alive else "liveness undeterminable"}
+                     "why": "still ours" if alive else "liveness undeterminable"}
                 )
                 continue
             out["reclaimed"].append({"id": row["id"], "pid": row.get("dispatch_pid")})
