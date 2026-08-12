@@ -60,3 +60,12 @@ tests/pg_tier/test_sbom_component_license_pg.py
 # place), so the SQLite cases exercise none of the shipping PG code. The PG
 # case builds a throwaway schema and DROPs it, touching no live table.
 tests/test_sbom_dependency_graph.py
+# exa-policy-05: the SaaS MCP per-tool authorization audit write. audit_platform
+# is a PostgreSQL-side table and is absent from the SQLite icdev.db, so the
+# schema-parity test skips in the normal tier and only ever executes here.
+# _write_authz_audit swallows its own exceptions on purpose (an audit outage
+# must not 500 a call the policy allowed), which means a column that does not
+# exist in the live schema would make every monitor-mode row vanish silently and
+# monitor mode would report a clean board while recording nothing. This tier is
+# the only place that failure mode is visible.
+tests/test_exa_policy_05_saas_mcp_authz.py

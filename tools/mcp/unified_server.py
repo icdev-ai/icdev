@@ -27,6 +27,30 @@ Architecture Decision D301:
     tool name -> (module, handler, schema).  Handlers imported via
     importlib.import_module() on first call, cached thereafter.
     All tools inherit D284 auto-instrumentation from base_server.py.
+
+Per-tool RBAC is DELIBERATELY NOT ENFORCED here (exa-policy-05):
+    This is the stdio surface -- Claude Code and local agents.  It carries no
+    caller identity: there is no principal on a stdio pipe, so any role a
+    caller supplied would be self-asserted, and authorization built on a
+    self-asserted role is not a control.  The caller is also, concretely, the
+    developer at the keyboard, who already has shell access to the whole repo;
+    refusing them a tool they could run directly is theatre that costs a turn.
+    The shipped D261 matrix in args/owasp_agentic_config.yaml confirms the fit
+    is wrong for this surface -- 'developer' allows 8 tools out of ~700 and
+    'admin' is a bare wildcard, so a local session either denies nearly
+    everything or runs as admin, which is a no-op either way.
+
+    What actually bounds this surface, and does work:
+        - tools/agent_runtime/approval_gate.py  -- reversibility classifier
+        - .claude/hooks/pre_tool_use.py         -- hard blocks
+        - args/file_access_tiers.yaml           -- path tiers
+
+    MCPToolAuthorizer (D261) IS enforced on the one MCP surface that has an
+    authenticated principal: tools/saas/mcp_http.py, where the gateway auth
+    middleware sets g.tenant_id / g.user_id / g.user_role before the blueprint
+    runs.  Studio agent/mcp nodes are separately enforced by
+    tools/studio/executors/agent_tool_gate.py under AGENT-WF-001.  Do not add
+    a role check here without first adding a way to authenticate the caller.
 """
 
 import importlib

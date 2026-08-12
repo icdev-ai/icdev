@@ -9,6 +9,15 @@ Uses Content-Length framing (LSP-style):
 
 Reads requests from stdin, dispatches to registered handlers, writes responses to stdout.
 Notifications (methods starting with "notifications/") receive no response.
+
+No per-tool RBAC here, on purpose (exa-policy-05):
+    A stdio transport has no principal.  Nothing in this class -- and nothing
+    in the framing above it -- carries caller identity, so a role would have
+    to come from the caller's own request, which makes it an assertion rather
+    than an authentication.  Per-tool authorization is therefore enforced only
+    on tools/saas/mcp_http.py, the MCP surface whose gateway middleware has
+    already authenticated the principal.  The controls that do bound stdio are
+    listed in tools/mcp/unified_server.py's docstring.
 """
 
 import json

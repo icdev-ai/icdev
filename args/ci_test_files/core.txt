@@ -525,3 +525,11 @@ tests/test_dwo_bus_subscriber.py
 # re-baselining itself. ~0.3s, stdlib only plus one in-memory SQLite
 # connection, no DB service/LLM/network (exa-audit-01).
 tests/test_audit_row_hash.py
+# test_exa_policy_05_saas_mcp_authz.py gates the per-tool authorization control
+# on tools/saas/mcp_http.py -- the only MCP surface with an authenticated
+# principal. Without it here the control's tests run only in the PG tier, which
+# is NOT a required check, so an authorization regression could merge green.
+# The one test that needs a live audit_platform skips under the SQLite pin and
+# runs in the PG tier instead (tests/pg_tier_allowlist.txt); the other 38 are
+# pure Python plus a Flask test client -- ~1.9s, no DB service/LLM/network.
+tests/test_exa_policy_05_saas_mcp_authz.py
