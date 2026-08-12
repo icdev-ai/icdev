@@ -2924,6 +2924,9 @@ python tools/security/agent_trust_scorer.py --gate --project-id "proj-123" --jso
 python tools/security/mcp_tool_authorizer.py --check --role developer --tool scaffold --json          # Check tool authorization
 python tools/security/mcp_tool_authorizer.py --list --role pm --json                                  # List role permissions
 python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config
+python tools/security/mcp_authz_evidence.py --json                                                    # Is per-tool MCP authz ENFORCED? (behavioural, not file existence)
+python tools/security/mcp_authz_evidence.py --gate                                                    # Exit 1 unless a denial actually binds
+python tools/security/mcp_authz_evidence.py --gate --allow-monitor                                    # Accept monitor mode as passing
 python tools/security/atlas_red_team.py --behavioral --json                                           # Run behavioral red team tests
 python tools/security/atlas_red_team.py --behavioral --brt-technique BRT-001 --json                   # Test specific technique
 python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --json                      # OWASP Agentic assessment

@@ -36,3 +36,4 @@
 | NIST AI RMF Catalog | context/compliance/nist_ai_rmf.json | 12 NIST AI RMF requirements across 4 functions with NIST 800-53 crosswalk | (data) | JSON catalog |
 | ISO 42001 Catalog | context/compliance/iso42001_controls.json | 18 ISO 42001 requirements (10 clauses + 8 Annex A) with dual hub crosswalk | (data) | JSON catalog |
 
+| MCP Authz Evidence Probe | tools/security/mcp_authz_evidence.py | Behavioural evidence for MCP per-tool RBAC — exercises the D261 policy AND the surface that has a principal; never satisfied in monitor mode. Replaces file-existence checks in 4 compliance generators (exa-policy-08) | --json, --gate, --allow-monitor | Status + scope-out |

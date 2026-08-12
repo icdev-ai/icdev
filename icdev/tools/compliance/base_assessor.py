@@ -31,7 +31,7 @@ from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.compliance.base_assessor")
@@ -237,7 +237,7 @@ class BaseAssessor(ABC):
         self,
         project: Dict,
         project_dir: Optional[str] = None,
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Union[str, Tuple[str, str]]]:
         """Return automated check results for framework requirements.
 
         Args:
@@ -245,7 +245,10 @@ class BaseAssessor(ABC):
             project_dir: Optional path to project source code.
 
         Returns:
-            Dict mapping requirement_id -> status string.
+            Dict mapping requirement_id -> status string, or to a
+            ``(status, detail)`` pair when the claim needs qualifying (scope,
+            enforcement mode, compensating controls). The detail is persisted
+            in ``automation_result``.
             Only include requirements that can be auto-checked.
         """
         return {}
@@ -291,10 +294,19 @@ class BaseAssessor(ABC):
                 evidence = ""
                 automation_result = ""
 
-                # 1. Auto-check result
+                # 1. Auto-check result. A check may return a bare status, or
+                #    (status, detail) when the claim needs qualifying — e.g. a
+                #    control that only holds on one surface must say so here,
+                #    because automation_result is what an assessor reads.
                 if req_id in auto_checks:
-                    status = auto_checks[req_id]
+                    raw = auto_checks[req_id]
+                    if isinstance(raw, tuple):
+                        status, detail = raw[0], raw[1] if len(raw) > 1 else ""
+                    else:
+                        status, detail = raw, ""
                     automation_result = f"Automated check: {status}"
+                    if detail:
+                        automation_result = f"{automation_result} — {detail}"
 
                 # 2. Crosswalk inheritance
                 if status == "not_assessed":

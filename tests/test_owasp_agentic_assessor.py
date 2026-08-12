@@ -109,7 +109,10 @@ class TestOWASPAgenticAssessor:
         project = {"id": "proj-123", "name": "Test"}
         checks = a.get_automated_checks(project)
         valid = {"satisfied", "partially_satisfied", "not_satisfied", "not_assessed", "not_applicable", "risk_accepted"}
-        for tid, status in checks.items():
+        for tid, result in checks.items():
+            # A check may return a bare status or (status, detail) — see
+            # base_assessor.get_automated_checks.
+            status = result[0] if isinstance(result, tuple) else result
             assert status in valid, f"{tid} has invalid status: {status}"
 
     def test_behavioral_drift_check(self, assessor_db):
@@ -145,10 +148,31 @@ class TestOWASPAgenticAssessor:
         assert status in ("satisfied", "partially_satisfied")
 
     def test_mcp_rbac_check(self, assessor_db):
-        """Gap 6 check should return satisfied."""
+        """Gap 6 reflects whether authorization is ENFORCED (exa-policy-08).
+
+        This used to assert satisfied/partially_satisfied unconditionally,
+        which is what let an authorizer with zero call sites be reported as a
+        met control. The status now tracks enforcement, so the assertion is on
+        the shape of the answer and on the scope-out travelling with it — not
+        on the answer being favourable.
+        """
         a = OWASPAgenticAssessor(db_path=assessor_db)
-        status = a._check_mcp_rbac()
-        assert status in ("satisfied", "partially_satisfied")
+        status, detail = a._check_mcp_rbac()
+        assert status in ("satisfied", "partially_satisfied", "not_satisfied")
+        assert "OUT OF SCOPE" in detail
+        assert "saas_mcp_http" in detail
+
+    def test_mcp_rbac_check_is_not_a_file_existence_check(self, assessor_db):
+        """The authorizer source is present; that alone must not satisfy Gap 6."""
+        import importlib
+
+        authz = importlib.import_module("tools.security.mcp_authz_evidence")
+        assert (authz.BASE_DIR / "tools" / "security" / "mcp_tool_authorizer.py").exists()
+
+        a = OWASPAgenticAssessor(db_path=assessor_db)
+        status, _ = a._check_mcp_rbac()
+        if authz.cached_probe()["status"] != "satisfied":
+            assert status != "satisfied"
 
     def test_behavioral_red_team_check(self, assessor_db):
         """Gap 7 check depends on atlas_red_team.py having behavioral techniques."""
