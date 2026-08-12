@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -34,10 +35,46 @@ from tools.logging.icdev_logger import get_logger  # noqa: E402
 logger = get_logger(__name__)
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.transition_reason import (  # noqa: E402
+    resolve_transition_reason as _resolve_transition_reason,
+)
 from tools.strategos import tier_resolver  # noqa: E402
 
 PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
-WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
+
+
+def _canonical_repo_root() -> Path:
+    """The MAIN worktree's root, even when this module runs inside a linked one.
+
+    BASE_DIR comes from ``__file__``, so a dispatch triggered from inside a
+    worktree resolved WORKTREE_BASE to *that worktree* and created the next
+    worktree at ``<worktree>/.tmp/worktrees/<id>``. Nested worktrees are how the
+    leak compounded — measured 2026-08-02 at 122 registered worktrees including
+    paths three levels deep such as
+    ``.tmp/worktrees/tsh-e2e-01-d4/.tmp/worktrees/tsh-e2e-01-d4/.tmp/worktrees/tsr-gen-01-d4``.
+
+    ``git rev-parse --git-common-dir`` reports the MAIN repository's .git from
+    anywhere in the family, which is exactly the "resolve the repo root from a
+    known location, never from cwd or a linked checkout" rule in CLAUDE.md.
+    Falls back to BASE_DIR when git is unavailable, preserving today's behavior
+    rather than failing dispatch.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(BASE_DIR), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            common = Path(out.stdout.strip())
+            if not common.is_absolute():
+                common = (BASE_DIR / common).resolve()
+            return common.parent
+    except Exception as exc:  # noqa: BLE001 - git absent or not a repo
+        logger.debug("canonical repo root resolution failed (%s) — using BASE_DIR", exc)
+    return BASE_DIR
+
+
+WORKTREE_BASE = _canonical_repo_root() / ".tmp" / "worktrees"
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +280,15 @@ QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
 # PATTERNS routes `codelens|coherence|companion` to SCAN and `pytest|e2e|...` to
 # PYTEST, so a tier below the default would SHORTEN those tasks' budgets — which
 # is exactly what happened when the default was raised on its own.
+# Turn ceiling for a dispatched Claude CLI session. This is a HARD cutoff: the
+# CLI stops mid-task with "Error: Reached max turns (N)" and whatever the agent
+# had not yet committed is discarded, so the whole session is re-dispatched from
+# a cold worktree. At the previous hardcoded 50 that was firing on 14 of the 92
+# task logs written in the last two days — 15% of dispatches thrown away for
+# want of turns, not for want of time (the separate 1800s wall-clock budget
+# below is what should be bounding a runaway task).
+# Override via KANBAN_MAX_TURNS env var.
+MAX_TURNS = _int_env("KANBAN_MAX_TURNS", 200)
 MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 1800)
 MAX_EXECUTION_SECONDS_SCAN = _int_env("KANBAN_MAX_EXECUTION_SECONDS_SCAN", 1800)
 # Full-suite tasks legitimately run past an hour; they should still set
@@ -805,6 +851,33 @@ def _clear_resume_at(task_id: str):
         resume_file.unlink(missing_ok=True)
 
 
+# Backoff ladder for a token-exhaustion retry whose DISPATCH failed (as opposed
+# to a task that ran and hit the token limit again). Capped so a task that will
+# never dispatch cannot hold the single per-cycle retry slot indefinitely.
+# Override via KANBAN_TOKEN_RETRY_BACKOFF_MIN / _MAX_MIN env vars.
+TOKEN_RETRY_BACKOFF_BASE_MIN = _int_env("KANBAN_TOKEN_RETRY_BACKOFF_MIN", 5)
+TOKEN_RETRY_BACKOFF_MAX_MIN = _int_env("KANBAN_TOKEN_RETRY_BACKOFF_MAX_MIN", 60)
+
+
+def _token_retry_backoff(task_id: str, retry_count: int) -> None:
+    """Push a token-exhausted task's resume_at out after a failed dispatch.
+
+    Without this the task keeps its already-elapsed resume_at, so it is handed
+    straight back on the next 60s cycle and re-consumes the one token-retry the
+    cycle permits — starving every other parked task behind it.
+    """
+    minutes = min(
+        TOKEN_RETRY_BACKOFF_BASE_MIN * max(1, retry_count + 1),
+        TOKEN_RETRY_BACKOFF_MAX_MIN,
+    )
+    resume_at = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    _save_resume_at(task_id, resume_at)
+    print(
+        f"  Kanban: token retry dispatch failed for {task_id} "
+        f"— backing off {minutes} min (resume_at={resume_at.isoformat()})"
+    )
+
+
 def _get_retry_count(task_id: str) -> int:
     """Get the current token-exhaustion retry count for a task."""
     conn = get_connection()
@@ -832,6 +905,13 @@ def _increment_retry_count(task_id: str) -> int:
             count = 0
     count += 1
     retry_file.write_text(str(count), encoding="utf-8", newline="")
+    # The two counters are the only places the runner decides an execution gets
+    # another go, so they are where agent_execution_retried belongs. Emitting at
+    # the re-dispatch instead would conflate a retry with a first attempt, since
+    # dispatch cannot see why it was called.
+    _audit_agent_execution(
+        "agent_execution_retried", task_id, reason="token_exhaustion", attempt=count,
+    )
     return count
 
 
@@ -865,6 +945,9 @@ def _increment_timeout_count(task_id: str) -> int:
             count = 0
     count += 1
     timeout_file.write_text(str(count), encoding="utf-8", newline="")
+    _audit_agent_execution(
+        "agent_execution_retried", task_id, reason="timeout", attempt=count,
+    )
     return count
 
 
@@ -1677,8 +1760,32 @@ def _remove_worktree(path) -> bool:
     that the directory has not been touched for _WORKTREE_STALE_AGE_DAYS. A lock on a
     worktree in that state is a leftover from a run that ended days ago, not a live
     agent's claim. We do not unlock anything else.
+
+    ## A directory git has never heard of is still ours to delete
+
+    Reporting the failure fixed the lie but not the leak. ``git worktree remove`` also
+    refuses a directory that is not a registered worktree at all:
+
+        fatal: 'C:/AI/ICDev/.tmp/worktrees/foo' is not a working tree   (rc=128)
+
+    That happens whenever the registration is dropped while the directory survives — a
+    ``git worktree prune`` after a partial Windows rmtree, a repo re-clone, a crash between
+    ``add`` and first write. git will never reclaim those, so returning False left them on
+    disk to be re-attempted on the next sweep, forever. 334 of them had accumulated against
+    28 live registrations, and 13,095 log lines were this one refusal repeating.
+
+    So: when git says the path is not a working tree, there is no registration to protect
+    and nothing for git to do. Delete the directory ourselves. The caller's staleness and
+    not-in_progress checks are what make that safe, exactly as they are for the unlock above.
     """
+    import shutil as _shutil
     import subprocess as _sp
+
+    # Whether there was anything here to begin with. The orphan branch below
+    # reports success when the directory is gone afterwards — which is also true
+    # of a path that never existed, so a phantom path counted as a removal and
+    # re-inflated the sweep total this function exists to make honest.
+    _existed = Path(path).exists()
 
     result = _sp.run(
         ["git", "worktree", "remove", str(path), "--force"],
@@ -1687,7 +1794,9 @@ def _remove_worktree(path) -> bool:
     if result.returncode == 0:
         return True
 
-    if "locked" in (result.stderr or "").lower():
+    stderr = (result.stderr or "").lower()
+
+    if "locked" in stderr:
         _sp.run(["git", "worktree", "unlock", str(path)],
                 cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30)
         result = _sp.run(
@@ -1697,6 +1806,27 @@ def _remove_worktree(path) -> bool:
         if result.returncode == 0:
             logger.info("Sweep: unlocked stale worktree %s before removing it", path)
             return True
+        stderr = (result.stderr or "").lower()
+
+    # Orphan: on disk but not a registered worktree. git cannot help; we can.
+    if "is not a working tree" in stderr:
+        if not _existed:
+            # Nothing was here. Deleting nothing is not a removal — saying so
+            # would put phantom entries back into the sweep count.
+            logger.warning(
+                "Sweep: %s is neither a worktree nor a directory — nothing to remove", path,
+            )
+            return False
+        _shutil.rmtree(str(path), ignore_errors=True)
+        if not Path(path).exists():
+            logger.info(
+                "Sweep: removed orphan worktree dir %s (not registered with git)", path,
+            )
+            return True
+        logger.warning(
+            "Sweep: orphan worktree dir %s survived rmtree (file lock?) — will retry", path,
+        )
+        return False
 
     # Say what happened. The previous code's silence here is the whole bug.
     logger.warning(
@@ -3146,12 +3276,6 @@ def _record_status_transition(
     """
     try:
         import secrets as _secrets  # noqa: PLC0415
-        # Imported here, not at module scope: this mirror is divergent from the
-        # root copy, so a top-level import would widen the diff that keeps the
-        # two files out of sync.
-        from tools.kanban.transition_reason import (  # noqa: PLC0415
-            resolve_transition_reason as _resolve_transition_reason,
-        )
         # skip_frames=1 hides this function so the synthesized text names
         # _move_task and the code that called it, not this writer.
         reason = _resolve_transition_reason(
@@ -3432,8 +3556,27 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         # HITL gate: block in_progress→done when a HITL approval is pending
         if new_status == "done" and __import__("os").getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
             try:
-                from tools.workflow_hitl.gate import HITLGate
-                pending = HITLGate().get_pending(task_id)
+                from tools.workflow_hitl.gate import HITLGate, HITLGateUnavailable
+            except ImportError:
+                pass  # HITL module not installed — gate is no-op
+            else:
+                try:
+                    pending = HITLGate().get_pending(task_id)
+                except HITLGateUnavailable as exc:
+                    # exa-policy-06: the gate could not read approval state. An
+                    # undeterminable gate must BLOCK, not wave the task through —
+                    # otherwise a DB blip is a free approval.
+                    logger.error(
+                        "_move_task: HITL gate UNAVAILABLE for %s — refusing done (fail-closed): %s",
+                        task_id, exc,
+                    )
+                    conn.close()
+                    _record_status_transition(
+                        task_id, prior_status, "REFUSED_done_hitl_unavailable",
+                        actor=actor,
+                        reason=f"HITL gate unavailable (fail-closed): {exc}",
+                    )
+                    return
                 if pending:
                     logger.info(
                         "_move_task: HITL gate active for %s — not advancing to done (approval: %s)",
@@ -3446,8 +3589,6 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                         reason=f"HITL gate: approval {pending['id']} stage={pending.get('stage')} pending",
                     )
                     return
-            except ImportError:
-                pass  # HITL module not installed — gate is no-op
 
         # Merge-verify gate (2026-07-11 done-hardening): a task may only reach
         # 'done' when its work has actually landed on origin/main. If the task's
@@ -4161,11 +4302,140 @@ def _claude_code_available() -> bool:
     return _resolve_claude_cli() is not None
 
 
+# Executor-chain tiers that are served by an AgentAdapter, mapped to the
+# adapter name in tools/agents/registry.py. Tiers absent from this map
+# (gitlab, github_actions, ollama_local) are dispatched by their own helpers —
+# they are CI/queue backends, not agent sessions.
+_ADAPTER_TIERS: Dict[str, str] = {
+    "claude_cli": "claude_cli",
+    "local_agent": "local_agent",
+}
+
+
+def _agent_adapter_override() -> str:
+    """The operator's forced adapter, if any. Read fresh — it is a live switch."""
+    import os as _os  # noqa: PLC0415
+
+    return _os.environ.get("ICDEV_AGENT_ADAPTER", "").strip()
+
+
+def _pick_chain_adapter(chain: list, task_type: Optional[str] = None):
+    """Resolve the AgentAdapter serving the adapter-backed tiers of ``chain``.
+
+    Selection goes through ``tools.agents.registry.pick_default`` so
+    ``ICDEV_AGENT_ADAPTER`` overrides the chain — that env var is the only
+    supported way to force the owned executor without editing config.
+
+    The EXECUTOR CHAIN, not ``args/agent_adapters.yaml``'s per-task-type table,
+    decides the order: the config handed to ``pick_default`` sets
+    ``per_task_type_preference`` empty and derives ``fallback_order`` from the
+    chain. That keeps default resolution byte-unchanged — with the CLI present,
+    claude_cli is still picked for every task type, including the ``chore``
+    tasks the adapter config would otherwise route to ``local_llm_router``.
+
+    Returns None when no adapter is available; the caller then walks on to the
+    non-adapter tiers exactly as before.
+    """
+    names = [_ADAPTER_TIERS[t] for t in chain if t in _ADAPTER_TIERS]
+    if not names:
+        return None
+    try:
+        from tools.agents import registry as _agent_registry  # noqa: PLC0415
+
+        return _agent_registry.pick_default(
+            task_type,
+            config={
+                "enabled_adapters": names,
+                "per_task_type_preference": {},
+                "fallback_order": names,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — falling through the chain is the fallback
+        if _agent_adapter_override():
+            # A typo'd override that silently changed nothing is exactly the
+            # "control that looks like it worked" failure this codebase keeps
+            # producing — say so at WARNING, not at INFO.
+            logger.warning(
+                "kanban: ICDEV_AGENT_ADAPTER=%r could not be resolved (%s) — "
+                "the executor chain is running WITHOUT your override",
+                _agent_adapter_override(), exc,
+            )
+        else:
+            logger.info(
+                "kanban: no agent adapter available for tiers %s: %s", names, exc,
+            )
+        return None
+
+
 # Track running task handles. Claude path stores subprocess.Popen, LLMRouter
 # path stores _LLMTaskHandle — both expose .poll() / .kill() / .wait() / .pid /
 # .returncode so the rest of the reflex (timeout sweeper, completion checker)
 # can treat them uniformly.
 _running: Dict[str, Any] = {}
+
+# Open runtime_invocations handles for dispatched agents, keyed by task id.
+# Separate from _running because the invocation outlives its entry there: the
+# completion path deletes from _running while still needing to close the row.
+_agent_invocations: Dict[str, Any] = {}
+
+# Imported defensively — the reflex must still dispatch on a tree where the
+# observability package is unavailable (partial checkout, older wheel).
+try:
+    from tools.observability.invocation_recorder import SURFACE_AGENT as _SURFACE_AGENT
+    from tools.observability.invocation_recorder import (
+        close_invocation as _close_agent_invocation,
+    )
+    from tools.observability.invocation_recorder import (
+        open_invocation as _open_agent_invocation,
+    )
+except Exception:  # noqa: BLE001
+    _SURFACE_AGENT = "agent"
+
+    def _open_agent_invocation(*_a, **_kw):  # type: ignore[misc]
+        return None
+
+    def _close_agent_invocation(*_a, **_kw):  # type: ignore[misc]
+        return None
+
+
+def _audit_agent_execution(event_type: str, task_id: str, **details) -> None:
+    """Write one agent_execution_* row to the audit trail. Never raises.
+
+    VALID_EVENT_TYPES declared four agent_execution_* types and nothing in the
+    tree wrote any of them; the single agent_execution_completed row on the
+    board was hand-written in June 2026. So the CHECK constraint advertised a
+    lifecycle the code could not produce, and querying the schema read as
+    coverage.
+
+    They are wired to the same choke points as the runtime_invocations handle
+    above, and for the same reason: this subprocess IS the agent execution.
+    Attaching them to tools/agent/agent_executor.py::execute_agent would look
+    tidier and observe nothing, which is the mistake #1196 made and #1304
+    corrected.
+
+    runtime_invocations already records duration and status, so this is not a
+    duplicate for its own sake --- the audit trail is the append-only NIST AU
+    record with a retention guarantee and a hash chain, and runtime_invocations
+    is operational telemetry. An auditor asking "when did agents run and which
+    failed" has to be able to answer it from audit_trail alone.
+
+    Dispatch must survive a broken audit path, so every failure here is
+    swallowed: an agent that cannot build because the audit table is locked
+    would be a far worse outcome than a missing row.
+    """
+    try:
+        from tools.audit.audit_logger import log_event
+
+        log_event(
+            event_type=event_type,
+            actor="kanban-runner",
+            action=f"{event_type} for {task_id}",
+            details={"task_id": task_id, **details},
+            classification="CUI",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("agent execution audit failed for %s: %s", task_id, exc)
+
 
 # Semaphore counter for EXEC_OLLAMA_LOCAL concurrent dispatch limit.
 _ollama_running_count: int = 0
@@ -4183,6 +4453,15 @@ _github_actions_dispatched: set = set()
 # When degraded, the scheduler skips them in the fallback chain.
 _degraded_executors: set = set()
 _degraded_executors_probed_at: Dict[str, datetime] = {}
+
+# kax-exec-03: tiers that have actually dispatched at least once in this
+# process. Membership in the configured executor chain says only that an
+# operator listed a tier; it is not evidence the tier works on this host. Used
+# by _build_effective_executor_chain so that degrading the one tier that has
+# ever worked cannot leave a "non-empty" chain of tiers that never have.
+# Deliberately in-memory and per-process, matching _degraded_executors: a fresh
+# scheduler starts with no evidence and behaves exactly as before.
+_tiers_ever_dispatched: set = set()
 _DEGRADATION_PROBE_INTERVAL = timedelta(minutes=5)  # Default if no reset hint parsed
 
 
@@ -4240,8 +4519,33 @@ def _build_effective_executor_chain(original_chain: list) -> list:
 
     active.extend(recovered)
 
-    if active:
+    # kax-exec-03: the fallback below is documented as "if all executors are
+    # degraded, try them anyway". It never fired, because only claude_cli is
+    # ever ADDED to _degraded_executors (the single call site guards on
+    # executor_type == "claude_cli"), while gitlab and ollama_local are never
+    # marked degraded — nothing probes them, and on a host that has neither they
+    # are never successfully used either. So degrading claude_cli always left
+    # active = ["gitlab", "ollama_local"], which is non-empty, and the scheduler
+    # walked two tiers that cannot work here. Quarantine stopped being a
+    # possible outcome and became a guaranteed one.
+    #
+    # "In the configured chain" is not the same claim as "usable on this host".
+    # A tier that has never once dispatched successfully is not evidence of a
+    # working executor, so it must not suppress the last-resort fallback.
+    if active and any(tier in _tiers_ever_dispatched for tier in active):
         return active
+    if active and not _tiers_ever_dispatched:
+        # Nothing has dispatched yet this process (fresh scheduler start) — no
+        # evidence either way, so behave exactly as before rather than second-
+        # guessing a cold cache.
+        return active
+    if active:
+        logger.warning(
+            "kanban: effective chain %s contains no tier that has ever "
+            "dispatched on this host (degraded=%s) — falling back to the full "
+            "chain %s rather than walking known-dead tiers",
+            active, sorted(_degraded_executors), original_chain,
+        )
     return original_chain
 
 
@@ -4542,6 +4846,9 @@ def _agent_session(task: dict, instruction: str, work_dir: str,
         logger.info("kanban: dispatching %s on model %s (%s)",
                     task_id, _model["name"], _model["model_id"])
 
+    # The SAME budget the reaper uses to kill this task, so a blocking adapter
+    # stops itself just before the kill timer rather than being killed from
+    # outside with no result. An unreachable board must not stop a dispatch.
     try:
         timeout_seconds = int(_get_task_timeout(task_id))
     except Exception as exc:  # noqa: BLE001
@@ -4552,44 +4859,138 @@ def _agent_session(task: dict, instruction: str, work_dir: str,
         task_id=task_id,
         prompt=instruction,
         working_dir=work_dir,
-        max_turns=50,
+        max_turns=MAX_TURNS,
         timeout_seconds=timeout_seconds,
         metadata=metadata,
     )
 
 
 def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
-                             work_dir: str, task_log: Path) -> None:
+                             work_dir: str, task_log: Path, adapter=None) -> None:
     """ClaudeCodeTaskExecutor — the bookkeeping around the ONE claude shellout.
 
     The shellout itself (argv, env tagging, the stdin temp-file that dodges the
     Windows 32767-char command-line limit, the model override) lives in
     ``tools/agents/adapters/claude_cli.py`` so exactly one implementation
-    exists.
+    exists. What stays here is what is genuinely kanban's: the task-source tag,
+    the ``_running`` handle the poll/timeout loop reaps, the agent-surface
+    invocation and the audit row.
     """
     task_id = task["id"]
-    if not _claude_code_available():
+    if adapter is None:
+        adapter = _pick_chain_adapter(["claude_cli"], task.get("task_type"))
+    if adapter is None or not _claude_code_available():
         print("  Kanban: claude CLI not found — should have routed to LLM executor")
         return
     try:
-        from tools.agents.adapters.claude_cli import ADAPTER as _claude_adapter
-
         log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
         _tag_task_source(task_id, "genesis_scheduler")
 
-        proc = _claude_adapter.spawn(
+        proc = adapter.spawn(
             _agent_session(task, instruction, work_dir),
             stdout=log_fh,
             stderr=subprocess.STDOUT,
         )
 
         _running[task_id] = proc
+
+        _record_dispatch_pid(task_id, proc)
         _dispatch_times[task_id] = datetime.now(timezone.utc)
+        # THE agent surface. Not agent_executor.execute_agent — this runner
+        # never calls it. Instrumenting that function left `agent` with zero
+        # rows for its entire existence while the real build path, this
+        # subprocess, went unobserved. Opened here and closed in
+        # _check_completed when proc.poll() returns, so the recorded duration is
+        # the agent's actual wall-clock rather than a scheduler cycle.
+        # Supersede any handle this task left open. A task can be re-dispatched
+        # without its previous invocation ever being closed, and #1188 was
+        # exactly this bug in kanban_executions: the stranded rows sat in
+        # 'running' forever and "what is running now" drifted from the truth.
+        _close_agent_invocation(
+            _agent_invocations.pop(task_id, None), status="superseded",
+        )
+        _agent_invocations[task_id] = _open_agent_invocation(
+            _SURFACE_AGENT, task_id,
+            project_id=str(task.get("project_id") or ""),
+        )
+        _audit_agent_execution(
+            "agent_execution_started", task_id,
+            pid=proc.pid,
+            executor="claude-cli",
+            project_id=str(task.get("project_id") or ""),
+        )
         print(f"  Kanban: dispatched {task_id} to claude CLI (PID {proc.pid})")
     except FileNotFoundError as e:
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
     except Exception as e:
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
+
+
+def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
+                                instruction: str, work_dir: str,
+                                task_log: Path) -> bool:
+    """Dispatch through an AgentAdapter. Returns True if a handle is running.
+
+    Two shapes of adapter, one entry point:
+
+    * an adapter that can ``spawn`` (claude_cli) hands back a real process, so
+      the runner keeps its own poll/kill/timeout loop and the hardened
+      bookkeeping in ``_dispatch_via_claude_cli``;
+    * an adapter that only implements the protocol's blocking ``invoke``
+      (``local_agent``, ``local_llm_router``) runs on a thread behind
+      ``_LLMTaskHandle``, which is Popen-compatible — so everything downstream
+      (timeout sweeper, completion checker, verification) is unchanged.
+    """
+    task_id = task["id"]
+    if getattr(adapter, "name", "") == "claude_cli":
+        _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir,
+                                 task_log, adapter=adapter)
+        # Reaching the CLI executor counts as dispatched even when the spawn
+        # itself failed — unchanged from before hgx-exec-03. Walking on to
+        # gitlab/ollama after a transient claude error would put two competing
+        # implementations of the same task in flight.
+        return True
+
+    session = _agent_session(task, instruction, work_dir)
+    adapter_name = getattr(adapter, "name", "agent-adapter")
+
+    def _runner():
+        with open(task_log, "w", encoding="utf-8", newline="",
+                  errors="replace") as fh:
+            fh.write(f"[{adapter_name} dispatch — task {task_id}]\n")
+            fh.write(f"[work_dir {work_dir}]\n\n")
+            result = adapter.invoke(session)
+            fh.write(result.output or "")
+            if result.error:
+                fh.write(f"\n[error] {result.error}\n")
+            fh.flush()
+            if not result.completed:
+                # Signal failure (returncode 1) so the task is NOT marked done;
+                # the standard verify/remediation/lesson chain still runs.
+                raise RuntimeError(
+                    f"{adapter_name} did not complete {task_id}"
+                    + (f": {result.error}" if result.error else "")
+                )
+
+    handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
+    handle.start(_runner)
+    _running[task_id] = handle
+    _record_dispatch_pid(task_id, handle)
+    _dispatch_times[task_id] = datetime.now(timezone.utc)
+    _close_agent_invocation(
+        _agent_invocations.pop(task_id, None), status="superseded",
+    )
+    _agent_invocations[task_id] = _open_agent_invocation(
+        _SURFACE_AGENT, task_id,
+        project_id=str(task.get("project_id") or ""),
+    )
+    _audit_agent_execution(
+        "agent_execution_started", task_id,
+        executor=adapter_name,
+        project_id=str(task.get("project_id") or ""),
+    )
+    print(f"  Kanban: dispatched {task_id} via agent adapter {adapter_name}")
+    return True
 
 
 def _rubric_loop_enabled() -> bool:
@@ -4642,11 +5043,21 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
             fh.write(f"[work_dir {work_dir}]\n\n")
 
             tools_schema, tool_handlers = build_worktree_toolset(work_dir)
+            _task_budget = _get_task_timeout(task_id)
             # Cap one gate sweep at a quarter of the task's dispatch budget.
             # The rubric loop grades up to max_grading_iterations times before
             # post-task validation runs again, so an ungoverned gate could (and
             # did) spend the whole dispatch window judging instead of building.
-            _gate_budget = max(60.0, _get_task_timeout(task_id) * 0.25)
+            _gate_budget = max(60.0, _task_budget * 0.25)
+            # Session wall-clock ceiling (ars-wall-01). _get_task_timeout is the
+            # SAME number the reaper uses to kill this task — and it already
+            # honours kanban_tasks.max_runtime_seconds ahead of every heuristic,
+            # so the loop-level and task-level ceilings derive from one source
+            # instead of racing. Held slightly under the kill timer so the loop
+            # stops itself and returns a real result with
+            # truncation_reason="max_wall_clock_seconds"; being killed from
+            # outside yields no result and no reason at all.
+            _wall_budget = max(60.0, _task_budget * 0.9)
             grader = make_pipeline_grader(
                 cwd=work_dir,
                 task_id=task_id,
@@ -4688,6 +5099,8 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 llm_function="code_generation",
                 max_iterations=12,
                 stop_event=stop_event,
+                # Budget for the WHOLE rubric run (all rounds + grading).
+                max_wall_clock_seconds=_wall_budget,
                 # Continuous Harness: key the recorded codegen decision on the
                 # kanban task id so record_outcome() (fired on the task's status
                 # transition) attaches to a real decision row.
@@ -4699,7 +5112,9 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
                 f"\n[rubric-loop done] satisfied={result.satisfied} "
                 f"grading_attempts={result.grading_attempts} "
                 f"loop_done={getattr(ar, 'done', None)} "
-                f"cost_usd={getattr(ar, 'total_cost_usd', 0)}\n"
+                f"cost_usd={getattr(ar, 'total_cost_usd', 0)} "
+                f"elapsed_s={getattr(ar, 'elapsed_seconds', 0):.0f}/{_wall_budget:.0f} "
+                f"truncation_reason={getattr(ar, 'truncation_reason', '')}\n"
             )
             if not result.satisfied:
                 # In-session revision exhausted without passing the gates. Signal
@@ -4713,6 +5128,7 @@ def _dispatch_via_rubric_loop(task: dict, prompt_path: str, instruction: str,
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
     _running[task_id] = handle
+    _record_dispatch_pid(task_id, handle)
     _dispatch_times[task_id] = datetime.now(timezone.utc)
     print(f"  Kanban: dispatched {task_id} via rubric-gated agent loop (Phase 3b)")
 
@@ -4858,6 +5274,7 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
     _running[task_id] = handle
+    _record_dispatch_pid(task_id, handle)
     _dispatch_times[task_id] = datetime.now(timezone.utc)
     print(f"  Kanban: dispatched {task_id} via LLMRouter (no Claude CLI)")
 
@@ -5093,12 +5510,17 @@ def _poll_github_actions_completions() -> None:
                 _conclusion = _data.get("conclusion", "")
                 if _conclusion == "success":
                     logger.info("kanban: GA run %s for %s succeeded → done", run_id, task_id)
-                    _move_task(task_id, "done")
+                    _move_task(task_id, "done",
+                               reason=f"GitHub Actions run {run_id} concluded 'success'")
                 else:
                     logger.warning(
                         "kanban: GA run %s for %s conclusion=%s → backlog", run_id, task_id, _conclusion
                     )
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=f"GitHub Actions run {run_id} concluded "
+                               f"'{_conclusion or 'unknown'}'",
+                    )
                 _ga_last_polled.pop(task_id, None)
         except Exception as _exc:
             logger.warning("kanban: GA poll error for %s: %s", task_id, _exc)
@@ -5395,7 +5817,13 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
 
 
 def _set_executor_type(task_id: str, executor_type: str) -> None:
-    """Stamp executor_type on the task row so the UI badge is accurate."""
+    """Stamp executor_type on the task row so the UI badge is accurate.
+
+    Also opens the task's kanban_executions row. This is the one place every
+    executor tier passes through exactly once on a successful dispatch, so it is
+    where "a dispatch started, at this time, via this executor" is true for all
+    of them — rather than four call sites that would drift apart.
+    """
     try:
         with get_connection() as conn:
             conn.execute(
@@ -5404,6 +5832,100 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
             )
     except Exception as exc:
         logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
+
+    _open_execution(task_id, executor_type)
+
+
+def _open_execution(task_id: str, executor_type: str) -> Optional[str]:
+    """Open a kanban_executions row for this dispatch. Returns its id, or None.
+
+    ``kanban_executions`` has had exactly the columns needed to answer "how long
+    does a task actually take" since migration 010, and zero rows for its entire
+    existence — nothing ever wrote to it. That is why ``execution_seconds`` is
+    populated on 7 of 2,586 tasks and ``_detect_execution_anomalies`` has been
+    falling back to the static timeout constants instead of adapting.
+
+    Columns here are the LIVE ones (migration 010 + later additions), not the
+    stale set in tools/kanban/init_db.py — an INSERT naming a column that only
+    exists in some DDL fails at runtime and gets swallowed by the except below,
+    which is precisely how a table ends up with no rows and nobody notices.
+    """
+    execution_id = f"exec-{task_id}-{uuid.uuid4().hex[:8]}"
+    try:
+        with get_connection() as conn:
+            # Close any row this task left open. A task can be re-dispatched
+            # without its previous execution ever being closed — the scheduler
+            # restarts, or startup recovery resets it to backlog and it is
+            # promoted again — and _close_execution only ever closes the MOST
+            # RECENT open row. Without this, every such re-dispatch strands a
+            # row in 'running' forever, so "what is running now" drifts further
+            # from the truth the longer the board runs. Observed immediately
+            # after the first restart that enabled this telemetry: two tasks
+            # each had two rows in 'running'.
+            conn.execute(
+                "UPDATE kanban_executions SET status = %s, completed_at = %s "
+                "WHERE task_id = %s AND completed_at IS NULL",
+                ("superseded", _utcnow_iso(), task_id),
+            )
+            conn.execute(
+                "INSERT INTO kanban_executions "
+                "(id, task_id, executor_type, execution_id, started_at, status) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (execution_id, task_id, executor_type, execution_id,
+                 _utcnow_iso(), "running"),
+            )
+            conn.execute(
+                "UPDATE kanban_tasks SET execution_id = %s WHERE id = %s",
+                (execution_id, task_id),
+            )
+        return execution_id
+    except Exception as exc:  # noqa: BLE001 — telemetry must never block dispatch
+        logger.warning("kanban: could not open execution row for %s: %s", task_id, exc)
+        return None
+
+
+def _close_execution(task_id: str, status: str, exit_code: Optional[int] = None,
+                     output_summary: str = "") -> None:
+    """Close the task's open execution row and stamp kanban_tasks.execution_seconds.
+
+    Best-effort and idempotent-ish: if no open row exists (scheduler restarted
+    mid-task, telemetry insert failed) this is a no-op rather than an error.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, started_at FROM kanban_executions "
+                "WHERE task_id = %s AND completed_at IS NULL "
+                "ORDER BY started_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return
+            d = dict(row)
+            conn.execute(
+                "UPDATE kanban_executions SET completed_at = %s, status = %s, "
+                "exit_code = %s, output_summary = %s WHERE id = %s",
+                (now.isoformat(), status, exit_code,
+                 (output_summary or "")[:2000], d["id"]),
+            )
+
+            started = d.get("started_at")
+            if started:
+                try:
+                    text = str(started).replace("Z", "+00:00")
+                    start_dt = datetime.fromisoformat(text)
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    seconds = max(0.0, (now - start_dt).total_seconds())
+                    conn.execute(
+                        "UPDATE kanban_tasks SET execution_seconds = %s WHERE id = %s",
+                        (seconds, task_id),
+                    )
+                except (ValueError, TypeError) as exc:
+                    logger.debug("kanban: unparseable started_at for %s: %s", task_id, exc)
+    except Exception as exc:  # noqa: BLE001 — telemetry must never block completion
+        logger.warning("kanban: could not close execution row for %s: %s", task_id, exc)
 
 
 def _get_executor_type(task_id: str) -> str | None:
@@ -5538,7 +6060,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         logger.info("kanban: %s auto-resolved pre-dispatch: %s", task_id, resolution_reason)
         _write_verification_log(task_id, True, f"AUTO-RESOLVED (pre-dispatch): {resolution_reason}")
         try:
-            _move_task(task_id, "done")
+            _move_task(task_id, "done",
+                       reason=f"auto-resolved pre-dispatch: {resolution_reason}")
         except Exception:
             pass
         return  # No notification — false-positive resolves are scheduler noise
@@ -5632,22 +6155,52 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     # If all executors are degraded, fall back to the full chain anyway.
     effective_chain = _build_effective_executor_chain(_fallback_chain)
 
+    # Adapter-backed tiers (claude_cli, local_agent) resolve ONCE, through
+    # tools/agents/registry.pick_default(), so ICDEV_AGENT_ADAPTER is honoured
+    # here and not only by whatever else happens to call the registry. Order
+    # still comes from the executor chain, so the default is unchanged.
+    chain_adapter = _pick_chain_adapter(effective_chain, task_type)
+    adapter_forced = bool(_agent_adapter_override())
+
     dispatched = False
+    # kax-exec-01: record why EACH tier was not used. The reason this replaces
+    # was a string literal ("internet=False, gitlab=unreachable,
+    # ollama=unreachable") that nothing measured, so two unrelated incidents —
+    # the 2026-08-01 PATHEXT resolution failure (25 tasks) and the 2026-08-12
+    # executor degrade (2 tasks) — produced the identical sentence and each
+    # needed its own investigation. A constant cannot discriminate causes.
+    tier_outcomes: List[str] = []
     for tier in effective_chain:
-        if tier == "claude_cli":
-            if _claude_code_available():
-                _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
-                _set_executor_type(task_id, "claude_cli")
+        if tier in _ADAPTER_TIERS:
+            if chain_adapter is None:
+                tier_outcomes.append(f"{tier}=no adapter resolved")
+                continue
+            # Without a forced override the adapter must be THIS tier's, or the
+            # chain order would be silently reshuffled (a later adapter tier
+            # jumping ahead of gitlab). With one, the operator's choice runs at
+            # the first adapter position in the chain.
+            if not adapter_forced and _ADAPTER_TIERS[tier] != chain_adapter.name:
+                tier_outcomes.append(
+                    f"{tier}=skipped (chain adapter is {chain_adapter.name})"
+                )
+                continue
+            if _dispatch_via_agent_adapter(chain_adapter, task, prompt_path,
+                                           instruction, work_dir, task_log):
+                _set_executor_type(task_id, chain_adapter.name)
+                _tiers_ever_dispatched.add(tier)
                 dispatched = True
                 break
+            tier_outcomes.append(f"{tier}=adapter declined")
         elif tier == "gitlab":
             ok = _dispatch_gitlab(task_id, task_desc, task_type)
             if ok:
                 _dispatch_times[task_id] = datetime.now(timezone.utc)
                 _set_executor_type(task_id, "gitlab")
+                _tiers_ever_dispatched.add(tier)
                 print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
                 dispatched = True
                 break
+            tier_outcomes.append("gitlab=dispatch returned False")
         elif tier == "github_actions":
             ok = _dispatch_github_actions(task_id, task_desc, task_type)
             if ok:
@@ -5655,25 +6208,39 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 _set_executor_type(task_id, "github_actions")
                 # Move to in_progress immediately — GA is async and the
                 # _github_actions_dispatched in-memory set is lost on restart.
-                _move_task(task_id, "in_progress")
+                _move_task(task_id, "in_progress",
+                           reason="dispatched via GitHub Actions (async executor)")
                 _github_actions_dispatched.add(task_id)
+                _tiers_ever_dispatched.add(tier)
                 print(f"  Kanban: dispatched {task_id} via GitHub Actions → in_progress")
                 dispatched = True
                 break
+            tier_outcomes.append("github_actions=dispatch returned False")
         elif tier == "ollama_local":
             ok = _dispatch_ollama_local(task_id, task_desc, task_type)
             if ok:
                 _set_executor_type(task_id, "ollama_local")
                 _ollama_completed.add(task_id)
+                _tiers_ever_dispatched.add(tier)
                 print(f"  Kanban: dispatched {task_id} via Ollama local")
                 dispatched = True
                 break
+            tier_outcomes.append("ollama_local=dispatch returned False")
+        else:
+            tier_outcomes.append(f"{tier}=unknown tier")
+
+    # Tiers dropped from the configured chain before the loop even ran are part
+    # of the answer too — "claude_cli is not in effective_chain" is exactly the
+    # fact that was invisible on 2026-08-12.
+    for tier in _fallback_chain:
+        if tier not in effective_chain:
+            why = "degraded" if tier in _degraded_executors else "removed from chain"
+            tier_outcomes.append(f"{tier}={why}")
 
     if not dispatched:
         if _fallback_chain and _fallback_chain[-1] == "ollama_local":
-            _no_exec_reason = (
-                "no executor available: internet=False, "
-                "gitlab=unreachable, ollama=unreachable"
+            _no_exec_reason = "no executor available: " + ", ".join(
+                tier_outcomes or ["effective chain was empty"]
             )
             try:
                 with get_connection() as _conn:
@@ -5864,6 +6431,69 @@ def _is_dangerous_task(task_id: str) -> bool:
     return any(kw.lower() in desc for kw in _DANGEROUS_DESCRIPTION_KEYWORDS)
 
 
+def _scan_result_artifact(task_id: str):
+    """The scan task's result file in ``.tmp/``, or None.
+
+    Scan-only tasks (codelens, coherence, health_check) write their report to
+    ``.tmp/`` rather than committing anything, so this file is the one durable
+    trace that the underlying command actually RAN. It survives the agent being
+    killed, which is what makes it usable as evidence at a timeout — unlike
+    stdout, which Claude CLI only writes at exit and which is therefore empty
+    for exactly the runs that need evidence most.
+
+    Extracted from the inline lookup in ``_run_verify_checks`` Fallback D so the
+    timeout path and the verification path agree on what counts as proof;
+    the globs and the id-suffix strip are unchanged.
+    """
+    tmp_dir = BASE_DIR / ".tmp"
+    id_prefix = re.sub(r"-(codelens|coherence|e2e|scan)$", "", task_id)
+    try:
+        artifacts = (
+            list(tmp_dir.glob(f"codelens-{task_id}*.json"))
+            + list(tmp_dir.glob(f"codelens-{id_prefix}*.json"))
+        )
+    except OSError:  # unreadable .tmp — absence of proof, not proof
+        return None
+    return artifacts[0] if artifacts else None
+
+
+def _dir_owns_its_repo_root(work_dir: str) -> bool:
+    """True when ``work_dir`` IS a git repo/worktree root, not a dir inside one.
+
+    git has no "this must be a worktree" assertion. A worktree that is pruned or
+    removed mid-run leaves its files behind as an ordinary directory, and because
+    the kanban worktree base lives under gitignored ``.tmp/``, git does not error
+    there — it walks UP to the parent repo and answers for the SHARED CHECKOUT.
+    Any ``git status`` run in such a directory describes BASE_DIR's dirty state
+    while looking exactly like the task's own output.
+
+    Comparing ``rev-parse --show-toplevel`` to the directory itself is what tells
+    the two apart: a real worktree reports itself, a fallen-through leftover
+    reports its parent repo. Resolved on both sides so a symlinked or
+    differently-cased temp path does not read as a mismatch.
+    """
+    import subprocess as _sp
+
+    if not work_dir:
+        return False
+    try:
+        r = _sp.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=work_dir, timeout=10,
+        )
+    except Exception:  # noqa: BLE001 — git missing/timeout: cannot prove it, so don't
+        return False
+    top = (r.stdout or "").strip()
+    if r.returncode != 0 or not top:
+        return False
+    try:
+        return Path(top).resolve() == Path(work_dir).resolve()
+    except Exception:  # noqa: BLE001 — unresolvable path is not a worktree root
+        return False
+
+
 def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
     """Fast-path: did the agent actually touch the filesystem / commit work?
 
@@ -5911,7 +6541,23 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
     # 2. uncommitted changes in the worktree — only valid when the task has
     # an actual registered worktree; checking BASE_DIR's dirty state would
     # produce false positives from unrelated in-progress work.
-    if task_id in _worktrees:
+    #
+    # `task_id in _worktrees` does not establish that on its own. It proves the
+    # runner RECORDED a path, not that the path is still its own worktree — and
+    # a leftover under gitignored `.tmp/` answers for the SHARED CHECKOUT rather
+    # than failing (see _dir_owns_its_repo_root). That is the same false
+    # positive the note above intends to prevent, arriving through a door the
+    # membership test does not cover.
+    #
+    # Observed 2026-08-11 (hgx-vv-01): the gate accepted "8 uncommitted
+    # change(s) in worktree" where all 8 were BASE_DIR's companion-sync files
+    # (.amazonq/mcp.json, .cline/mcp_settings.json, …) — dirty for hours before
+    # that task was dispatched and belonging to no task. It was marked done on
+    # work that never reached a branch, and its card read 100%.
+    #
+    # Asserted HERE, at use, rather than at dispatch: removal happens mid-run,
+    # so a start-of-task check would have passed and still let this through.
+    if task_id in _worktrees and _dir_owns_its_repo_root(work_dir):
         try:
             r = _sp.run(
                 ["git", "status", "--porcelain"],
@@ -6047,11 +6693,21 @@ def _run_verify_checks(task_id, claude_output):
                 "Verified (scan-only): process exited 0 — "
                 "no git commits expected for read-only validation task"
             )
-        if _ran_long:
+        # Reached only when the process did NOT exit 0 and produced no usable
+        # output — i.e. it crashed or was killed. Duration alone used to pass
+        # here ("ran >60s without crash"), but a run that is long AND did not
+        # exit cleanly is the signature of a kill, not of success; the same
+        # reasoning that marked hgx-vv-01 done on a timeout. Require the scan's
+        # own result artifact, which the command writes and which outlives the
+        # kill. Without it, fall through to the normal verification chain —
+        # Fallback D can still accept this task on a PASS signal, so a genuine
+        # scan that printed its result is not penalised.
+        _scan_artifact = _scan_result_artifact(task_id) if _ran_long else None
+        if _scan_artifact is not None:
             return True, (
-                "Verified (scan-only): process ran >60s without crash — "
-                "accepting as successful scan (stdout lost due to kill; "
-                "no git commits expected)"
+                f"Verified (scan-only): scan artifact {_scan_artifact.name} on "
+                f"disk after a >{SCAN_MIN_RUN_SECONDS}s run (stdout lost due to "
+                f"kill; no git commits expected)"
             )
         # If scan task crashed immediately (<60s, non-zero exit), fall through
         # to the normal checks which will reject it properly.
@@ -6423,15 +7079,11 @@ def _run_verify_checks(task_id, claude_output):
         except Exception:
             pass
         if any(cmd in _scan_desc for cmd in _SCAN_CMDS):
-            # Strongest signal: result artifact file in .tmp/
-            _tmp_dir = BASE_DIR / ".tmp"
-            _id_prefix = re.sub(r"-(codelens|coherence|e2e|scan)$", "", task_id)
-            _artifacts = (
-                list(_tmp_dir.glob(f"codelens-{task_id}*.json"))
-                + list(_tmp_dir.glob(f"codelens-{_id_prefix}*.json"))
-            )
-            if _artifacts:
-                return True, f"Verified: scan artifact exists ({_artifacts[0].name})"
+            # Strongest signal: result artifact file in .tmp/. Shared with the
+            # timeout-acceptance path so both agree on what counts as proof.
+            _artifact = _scan_result_artifact(task_id)
+            if _artifact is not None:
+                return True, f"Verified: scan artifact exists ({_artifact.name})"
             # Artifact may be gone (ephemeral) — fall back to output PASS signal.
             # These strings are emitted by codelens.py / coherence_checker.py on
             # success and are specific enough to avoid false positives.
@@ -7762,25 +8414,51 @@ def _revive_quarantined_suggested(conn: Any) -> None:
 
 
 def _unblock_dep_chain(conn: Any) -> None:
-    """Revive 'suggested' tasks that are blocking 'backlog' children.
+    """Revive 'suggested' tasks parked by a transient executor failure.
 
     When an executor is transiently unavailable (e.g., claude_cli not on PATH
     during a previous scheduler run), tasks are moved to 'suggested' with
     reason "no executor available". The standard _revive_quarantined_suggested
     only targets fc>=5 tasks, leaving these low-fc transient failures stuck.
 
-    This function finds any 'suggested' task that is the direct dependency of a
-    'backlog' task and revives it to 'backlog' unconditionally — because a child
-    waiting in backlog proves the parent is on the critical path.
+    TWO criteria, either of which revives (kax-exec-02):
+
+    1. the task is the direct dependency of a task sitting in 'backlog' — a
+       child waiting proves the parent is on the critical path;
+    2. the task carries a "no executor available" reason at all.
+
+    (2) exists because (1) alone leaves most of the board unprotected: it
+    requires BOTH a child AND that child to be in 'backlog' specifically. On
+    2026-08-12 that gap stranded two real tasks — exa-policy-08 is a leaf and
+    could never match, and exa-live-01's only child was 'scheduled' rather than
+    'backlog'. Both had to be revived by hand. Measured on the same board, 14 of
+    24 exa-* tasks were leaves, so ~58% of that card could not self-recover from
+    a five-minute executor degrade.
+
+    Selection is keyed on the reason string, so rows that legitimately sit in
+    'suggested' awaiting human triage — reflex-proposed cards, which carry a
+    NULL reason — are never touched.
+
+    Churn note: nothing increments failure_count on this quarantine path, so a
+    genuinely long executor outage will revive-and-requarantine each cycle. That
+    is deliberate — it is cheap (a status write; no branch, no PR, no merge) and
+    strictly better than a task parking silently forever. The condition that
+    used to CAUSE the outage is fixed separately at the degrade site.
     """
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
-        # Find suggested tasks that are blocking at least one backlog child
+        # Criterion 1: blocking a backlog child. Criterion 2: parked by a
+        # transient executor failure, whether or not anything depends on it.
         rows = conn.execute(
             "SELECT DISTINCT p.id, p.failure_count, p.last_failure_reason "
             "FROM kanban_tasks p "
             "JOIN kanban_tasks c ON c.depends_on_task_id = p.id "
-            "WHERE p.status = 'suggested' AND c.status = 'backlog'"
+            "WHERE p.status = 'suggested' AND c.status = 'backlog' "
+            "UNION "
+            "SELECT id, failure_count, last_failure_reason "
+            "FROM kanban_tasks "
+            "WHERE status = 'suggested' "
+            "AND last_failure_reason LIKE '%no executor available%'"
         ).fetchall()
         unblocked: list[str] = []
         unblock_reasons: dict[str, str] = {}
@@ -8055,7 +8733,9 @@ def _reclaim_zombie_tasks() -> None:
                 task_id, silence_hours,
             )
             try:
-                _move_task(task_id, "token_exhausted")
+                _move_task(task_id, "token_exhausted",
+                           reason=(f"zombie reclaim: heartbeat silent >{silence_hours}h "
+                                   f"— demoted for retry"))
                 conn.execute(
                     "UPDATE kanban_tasks "
                     "SET failure_count = failure_count + 1, "
@@ -8255,6 +8935,30 @@ def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
             conn.close()
 
 
+def _record_dispatch_pid(task_id: str, handle) -> None:
+    """Persist the dispatched pid so a LATER scheduler can still clean it up.
+
+    _running is in-memory: it does not survive a restart, and it never existed
+    for a task dispatched by a previous instance. That is exactly when a reap
+    orphans a live process tree, so the durable record is the point.
+    """
+    pid = getattr(handle, "pid", None)
+    if not pid:
+        return
+    try:
+        from tools.kanban.dispatch_reaper import record_dispatch
+        conn = get_connection()
+        try:
+            record_dispatch(conn, task_id, pid)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:  # noqa: BLE001 — never fail a dispatch over bookkeeping
+        logger.debug("could not record dispatch pid for %s: %s", task_id, exc)
+
+
 def _reap_stale_in_progress() -> None:
     """Periodic reaper: reset in_progress tasks not tracked in _running.
 
@@ -8401,6 +9105,21 @@ def _reap_stale_in_progress() -> None:
             if age_seconds < threshold:
                 continue  # task is recent enough — let it run
 
+            # Kill what we are reaping. Without this the reap only flips a
+            # status: the tree keeps running, the scheduler re-dispatches, and
+            # the orphan wedges forever holding its worktree and its port. That
+            # is how one dead launcher became three reap/re-dispatch cycles on
+            # task-e2e-ebf5ab21. Declines unless the pid is provably still the
+            # process we dispatched — pids are reused.
+            try:
+                from tools.kanban.dispatch_reaper import kill_recorded_dispatch
+                _kill = kill_recorded_dispatch(conn, tid)
+                if _kill.get("killed"):
+                    logger.warning(
+                        "stale-reaper: killed orphaned process tree for %s", tid)
+            except Exception as _exc:  # noqa: BLE001 — cleanup must not block the reap
+                logger.debug("stale-reaper: cleanup failed for %s: %s", tid, _exc)
+
             now_iso = now.isoformat()
             # Check current failure count before incrementing — if this
             # reap would bring fc to ≥5, escalate to 'suggested' for HITL
@@ -8524,6 +9243,19 @@ def _check_completed():
     Also enforces MAX_EXECUTION_SECONDS timeout — kills hung processes
     and returns them to backlog.
     """
+    # Reconcile agent invocations against reality before doing anything else.
+    # Eight different paths remove a task from _running (timeout kill, stale
+    # cleanup, zombie reclaim, ...), and instrumenting each one would be a
+    # standing invitation to miss the ninth. Closing whatever no longer has a
+    # live process is one rule that covers all of them, and it runs every cycle.
+    for _stale_id in [t for t in _agent_invocations if t not in _running]:
+        _close_agent_invocation(
+            _agent_invocations.pop(_stale_id, None),
+            status="error",
+            error_class="abandoned",
+            error_message="process left _running without the completion path closing it",
+        )
+
     completed = []
 
     # ── TIMEOUT CHECK: kill hung processes ─────────────────────────
@@ -8549,10 +9281,31 @@ def _check_completed():
                 # ── SCAN-ONLY TIMEOUT ACCEPTANCE ─────────────────────
                 # Scan tasks (pytest, codelens, coherence, companion) are
                 # read-only: they produce no git commits and Claude CLI's
-                # --output-format text yields empty stdout when killed.
-                # If the task ran for >90% of its budget, the underlying
-                # command almost certainly completed — Claude was just
-                # formatting the response when killed.  Accept as done.
+                # --output-format text yields empty stdout when killed. So the
+                # usual evidence is unavailable for exactly these runs, and
+                # without some allowance a scan that really did finish gets
+                # retried forever.
+                #
+                # The old allowance was `elapsed > task_budget * 0.9`, on the
+                # reasoning that a task which burned ~all its budget had
+                # probably finished the command and died while formatting. That
+                # test could never fail: this whole block is reached ONLY from
+                # `if elapsed > task_budget`, so `elapsed > task_budget * 0.9`
+                # is a tautology. In practice the rule was "any task_type=test
+                # whose description mentions pytest/coherence/companion is DONE
+                # when it times out" — with no evidence of any kind.
+                #
+                # It fired on hgx-vv-01 (2026-08-09), HGX's end-to-end
+                # verification task: killed at 3641s of a 3600s budget, marked
+                # done, zero output, nothing on a branch, and the card read
+                # 38/38 on a proof that did not exist.
+                #
+                # Duration is not evidence — past the budget, a LONGER run means
+                # more certainly killed, not more certainly finished. Require
+                # the one durable trace a scan leaves: its result artifact in
+                # .tmp/, which is written by the command itself and survives the
+                # agent being killed. No artifact -> fall through to the
+                # timeout-retry/quarantine path below, which is what it is for.
                 _SCAN_KW_TIMEOUT = ["pytest", "codelens", "coherence",
                                     "companion", "report pass/fail", "behave"]
                 try:
@@ -8566,19 +9319,23 @@ def _check_completed():
                 except Exception:
                     _stdesc = ""
                     _sttype = ""
-                _is_scan_timeout = (
-                    _sttype == "test"
-                    and any(kw in _stdesc for kw in _SCAN_KW_TIMEOUT)
-                    and elapsed > task_budget * 0.9
+                _scan_artifact = (
+                    _scan_result_artifact(task_id)
+                    if (_sttype == "test"
+                        and any(kw in _stdesc for kw in _SCAN_KW_TIMEOUT))
+                    else None
                 )
+                _is_scan_timeout = _scan_artifact is not None
                 if _is_scan_timeout:
                     _move_task(task_id, "done", actor="scheduler",
                               reason=(f"Verified (scan-only timeout): ran {int(elapsed)}s "
-                                      f"(budget {task_budget}s) — read-only validation "
-                                      f"task accepted without git commits"))
+                                      f"(budget {task_budget}s), scan artifact "
+                                      f"{_scan_artifact.name} on disk — read-only "
+                                      f"validation task accepted without git commits"))
                     print(
                         f"  Kanban: {task_id} SCAN-ONLY ACCEPTED — "
-                        f"ran {int(elapsed)}s of {task_budget}s budget"
+                        f"ran {int(elapsed)}s of {task_budget}s budget, "
+                        f"artifact {_scan_artifact.name}"
                     )
                     del _running[task_id]
                     _dispatch_times.pop(task_id, None)
@@ -8650,7 +9407,11 @@ def _check_completed():
                         f"moved to suggested"
                     )
                 else:
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=f"timeout {_tout_count}/{MAX_TIMEOUT_RETRIES} — "
+                               + _timeout_reason,
+                    )
                     # Backoff delay: 5 min × retry count before next dispatch.
                     # Prevents a structurally-slow task from immediately burning
                     # another 900 s slot on the very next scheduler cycle.
@@ -8714,6 +9475,21 @@ def _check_completed():
     for task_id, proc in list(_running.items()):
         ret = proc.poll()
         if ret is not None:
+            # Close the agent invocation opened at dispatch. Done FIRST, before
+            # verification/remediation/merge, so duration_ms is the agent's own
+            # wall-clock and not the pipeline's — the same reason
+            # _close_execution is called early below.
+            _close_agent_invocation(
+                _agent_invocations.pop(task_id, None),
+                status="ok" if ret == 0 else "error",
+                error_class=None if ret == 0 else f"exit_{ret}",
+            )
+            _audit_agent_execution(
+                "agent_execution_completed" if ret == 0 else "agent_execution_failed",
+                task_id,
+                exit_code=ret,
+                executor="claude-cli",
+            )
             # Continuous Harness feed — the claude-cli executor is the PRIMARY
             # build path but records nothing at dispatch, so its later
             # record_outcome() would attach to no decision row and codegen
@@ -8751,6 +9527,19 @@ def _check_completed():
             except Exception:
                 pass
 
+            # Close the execution row here, at the point the subprocess exits —
+            # before verification, remediation or merge, which can each take
+            # minutes and are not the agent's build time. This is what makes
+            # execution_seconds mean "how long the agent ran" and lets
+            # _detect_execution_anomalies adapt timeouts instead of falling back
+            # to the static constants.
+            _close_execution(
+                task_id,
+                status="completed" if ret == 0 else "failed",
+                exit_code=ret,
+                output_summary=claude_output[-2000:] if claude_output else "",
+            )
+
             # Build task dict with title from DB or fallback
             task_dict = {"id": task_id, "title": task_id}
             try:
@@ -8775,7 +9564,11 @@ def _check_completed():
                 retry_count = _increment_retry_count(task_id)
                 if retry_count >= TOKEN_MAX_RETRY_COUNT:
                     # Exceeded max retries — move to backlog, give up
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=f"token exhaustion: gave up after {retry_count} "
+                               f"retries (max {TOKEN_MAX_RETRY_COUNT})",
+                    )
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
                     _send_notification(task_dict, event="failed")
@@ -8786,7 +9579,9 @@ def _check_completed():
                     )
                 else:
                     # Park in token_exhausted — scheduler will retry at resume_at
-                    _move_task(task_id, "token_exhausted")
+                    _move_task(task_id, "token_exhausted",
+                               reason=(f"token exhaustion: parked for retry "
+                                       f"{retry_count + 1}/{TOKEN_MAX_RETRY_COUNT}"))
                     resume_at = _parse_resume_at(reset_hint)
                     _save_resume_at(task_id, resume_at)
                     wait_seconds = max(0, (resume_at - datetime.now(timezone.utc)).total_seconds())
@@ -8794,9 +9589,30 @@ def _check_completed():
                     reset_msg = f" (reset hint: {reset_hint})" if reset_hint else ""
                     resume_local = resume_at.astimezone().strftime("%I:%M %p")
 
-                    # D-AUTO-DEGRADE: Mark claude_cli as degraded
+                    # D-AUTO-DEGRADE: Mark claude_cli as degraded.
+                    #
+                    # kax-exec-02: ONLY on evidence about the PROVIDER, never on
+                    # the bare exit-code path. _detect_token_exhaustion returns
+                    # True for any exit_code < 0 or >= 128, which is right for
+                    # parking THIS task (an interrupted session should keep its
+                    # branch) but says nothing about whether the executor still
+                    # works — an operator killing one wedged session, an OOM, and
+                    # a real quota all look identical there.
+                    #
+                    # Degrading is global and lasts 300s, so one such death used
+                    # to remove the primary executor for EVERY other task. On
+                    # 2026-08-12 a single operator kill quarantined exa-policy-08
+                    # and exa-live-01 into `suggested` that way, and neither had a
+                    # revive path (see _unblock_dep_chain). A genuine provider
+                    # outage still degrades, because _TOKEN_RE matched real
+                    # quota/rate text — and if it is genuine the very next
+                    # dispatch observes it again anyway, so nothing is lost by
+                    # requiring the stronger evidence.
                     executor_type = _get_executor_type(task_id) or "claude_cli"
-                    if executor_type == "claude_cli":
+                    _provider_evidence = bool(
+                        claude_output and _TOKEN_RE.search(claude_output[-2000:])
+                    )
+                    if executor_type == "claude_cli" and _provider_evidence:
                         _degraded_executors.add(executor_type)
                         _degraded_executors_probed_at[executor_type] = resume_at
                         logger.info(
@@ -8804,6 +9620,11 @@ def _check_completed():
                             executor_type,
                             task_id,
                             resume_local,
+                        )
+                    elif executor_type == "claude_cli":
+                        logger.info(
+                            "kanban: %s parked (abnormal exit, no provider quota "
+                            "evidence) — executor NOT degraded", task_id,
                         )
 
                     print(
@@ -9126,7 +9947,11 @@ def _check_completed():
                 if task_id in _worktrees:
                     print(f"  Kanban: preserving worktree for failed task {task_id}")
                 try:
-                    _move_task(task_id, "backlog")
+                    _move_task(
+                        task_id, "backlog", actor="scheduler",
+                        reason=(f"claude CLI exited {ret}"
+                                + (f": {error_tail.strip()[:300]}" if error_tail.strip() else "")),
+                    )
                     _send_notification(task_dict, event="failed")
                 except Exception as _ll_exc:
                     logger.warning("lesson_learned hook failed: %s", _ll_exc)
@@ -9206,7 +10031,9 @@ def _check_token_exhausted_tasks() -> list:
                     "Task %s circuit-broken (fc=%d >= max=%d) — parking in 'suggested' for HITL",
                     task_id, _task_failures, _task_max_retries,
                 )
-                _move_task(task_id, "suggested")
+                _move_task(task_id, "suggested",
+                           reason=(f"circuit-broken: fc={_task_failures} >= max="
+                                   f"{_task_max_retries} — parked for HITL review"))
                 _clear_retry_count(task_id)
                 _clear_resume_at(task_id)
                 _send_notification(task, event="circuit_broken")
@@ -9220,7 +10047,11 @@ def _check_token_exhausted_tasks() -> list:
                     task_id,
                     TOKEN_MAX_RETRY_COUNT,
                 )
-                _move_task(task_id, "backlog")
+                _move_task(
+                    task_id, "backlog", actor="scheduler",
+                    reason=f"token-retry budget exhausted: {retry_count} retries "
+                           f"(max {TOKEN_MAX_RETRY_COUNT})",
+                )
                 _clear_retry_count(task_id)
                 _clear_resume_at(task_id)
                 _send_notification(task, event="retry_exhausted")
@@ -10015,22 +10846,24 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 except Exception as _ll_exc:
                     logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
-        # Stale cleanup happened — defer promotion to the next cycle so the
-        # quarantine state written by check_and_diagnose has time to settle
-        # before the scheduler considers the task eligible for re-dispatch.
+        # Stale cleanup happened. This used to `return` here, deferring ALL
+        # promotion to the next cycle so the quarantine state written by
+        # check_and_diagnose could settle before the cleaned task was eligible
+        # for re-dispatch again.
+        #
+        # The settling is already guaranteed, and more precisely, by the backlog
+        # cooldown in _get_due_tasks: a task whose updated_at is within the last
+        # 2 minutes is not selectable, and a task that was just cleaned always
+        # is. (Verified against the live PostgreSQL board — the predicate
+        # discriminates correctly rather than being a SQLite-ism that no-ops.)
+        #
+        # So the return bought nothing for the cleaned task and cost a full 60s
+        # dispatch slot for every OTHER task on the board — which is the wrong
+        # trade on a queue that is already idle 75% of the time. Cleanup is
+        # reported; the cycle continues.
         if stale_info:
-            print(f"  Kanban: stale-cleanup finished ({len(stale_info)} task(s)) "
-                  f"— deferring promotion to next cycle")
-            return {
-                "success": True,
-                "metric_value": len(completed),
-                "details": {
-                    "status": "stale_cleanup",
-                    "cleaned": [t for t, _ in stale_info],
-                    "completed_this_cycle": completed,
-                    "telegram_commands": len(tg_results),
-                },
-            }
+            print(f"  Kanban: stale-cleanup finished ({len(stale_info)} task(s)): "
+                  f"{', '.join(t for t, _ in stale_info)} — continuing this cycle")
 
     # 3b. Concurrency gate — only block when we are at MAX_IN_PROGRESS.
     # With worktree isolation, multiple Claude CLI subprocesses can run
@@ -10071,13 +10904,25 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 prompt_path = str(prompt_path)
             _dispatch_to_claude(task, prompt_path)
             if task["id"] in _running:
-                _move_task(task["id"], "in_progress")
+                _move_task(task["id"], "in_progress",
+                           reason="token-retry: resume_at reached, re-dispatched to claude CLI")
                 _send_notification(task, event="in_progress")
                 token_retry_dispatched = True
             else:
-                print(f"  Kanban: token retry dispatch failed for {task['id']}")
+                # A failed dispatch used to change nothing at all: the task
+                # stayed token_exhausted with its resume_at already in the past,
+                # so _check_token_exhausted_tasks handed back the SAME task on
+                # the very next cycle, and the one token-retry this cycle allows
+                # was spent on it again. One task did that 212 times in the
+                # current log while every other parked task waited behind it.
+                # Push resume_at out so the retry backs off and the queue moves.
+                _token_retry_backoff(task["id"], retry_count)
         except Exception as e:
             print(f"  Kanban: token retry error for {task['id']}: {e}")
+            try:
+                _token_retry_backoff(task["id"], retry_count)
+            except Exception:  # noqa: BLE001 — backoff must never break the cycle
+                pass
 
     # If a token retry consumed the last available slot, skip normal promotion.
     if len(_running) >= MAX_IN_PROGRESS:
@@ -10230,7 +11075,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if task["id"] in _ollama_completed:
                 # Synchronous Ollama dispatch — completed immediately, mark done
                 _ollama_completed.discard(task["id"])
-                _move_task(task["id"], "done")
+                _move_task(task["id"], "done",
+                           reason="Ollama synchronous dispatch completed in-cycle")
                 _send_notification(task, event="done")
                 processed.append(
                     {
@@ -10244,7 +11090,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # Async GitHub Actions dispatch — move to in_progress;
                 # completion is tracked externally (GitHub Actions run).
                 _github_actions_dispatched.discard(task["id"])
-                _move_task(task["id"], "in_progress")
+                _move_task(task["id"], "in_progress",
+                           reason="dispatched via GitHub Actions (completion tracked externally)")
                 _send_notification(task)
                 processed.append(
                     {
@@ -10256,7 +11103,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress (GitHub Actions)")
             elif task["id"] in _running:
                 # Async Claude/LLM subprocess launched — move to in_progress
-                _move_task(task["id"], "in_progress")
+                _move_task(task["id"], "in_progress",
+                           reason="dispatched: agent subprocess launched")
                 _send_notification(task)
                 processed.append(
                     {
