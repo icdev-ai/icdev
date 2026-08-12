@@ -533,3 +533,12 @@ tests/test_audit_row_hash.py
 # runs in the PG tier instead (tests/pg_tier_allowlist.txt); the other 38 are
 # pure Python plus a Flask test client -- ~1.9s, no DB service/LLM/network.
 tests/test_exa_policy_05_saas_mcp_authz.py
+
+# test_skip_permissions_compensating_controls.py is the standing evidence behind
+# D394: claude_cli.py runs Claude Code with --dangerously-skip-permissions, so
+# these probes ARE the permission gate. It asserts in both directions -- a
+# working control that stops working, and a recorded gap that gets closed
+# without being promoted out of the gap list. Pure Python against
+# shared_checks/approval_gate/agent_tool_gate plus two file reads: ~1.2s, no DB,
+# no LLM, no network.
+tests/test_skip_permissions_compensating_controls.py
