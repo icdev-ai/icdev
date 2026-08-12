@@ -700,7 +700,60 @@ def log_authz_decision(decision: dict, tenant_id: str, user_id: str, surface: st
     _write_authz_audit(dict(decision, surface=surface), tenant_id, user_id, action)
 
 
-def authorized_tools(user_role: Optional[str], tenant_id: str = "", user_id: str = "") -> list:
+def log_list_authz_decision(
+    withheld: list,
+    user_role: Optional[str],
+    tenant_id: str,
+    user_id: str,
+    surface: str,
+) -> None:
+    """Record a ``tools/list`` filter as ONE row naming every withheld tool.
+
+    Deliberately not one row per withheld tool.  A deny-all role listing this
+    registry would otherwise emit an audit row -- and a DB round-trip -- for
+    every tool on every list call, which is both a latency cost on a read and
+    an audit trail so noisy the ``tools/call`` denials that actually matter get
+    buried in it.  A list filter is one decision about a set; record it that
+    way.
+    """
+    if not withheld:
+        return
+    mode = get_authz_mode()
+    enforced = mode == AUTHZ_MODE_ENFORCE
+    action = "mcp.tools_list.filtered" if enforced else "mcp.tools_list.would_filter"
+    logger.warning(
+        "MCP authz %s [%s] tenant=%s role=%s surface=%s withheld=%d/%d %s",
+        "FILTER" if enforced else "WOULD-FILTER",
+        mode,
+        tenant_id or "-",
+        user_role or "-",
+        surface,
+        len(withheld),
+        len(TOOL_REGISTRY),
+        ",".join(withheld),
+    )
+    _write_authz_audit(
+        {
+            "mode": mode,
+            "enforced": enforced,
+            "role": (user_role or "").strip().lower(),
+            "surface": surface,
+            "withheld": withheld,
+            "withheld_count": len(withheld),
+            "registry_size": len(TOOL_REGISTRY),
+        },
+        tenant_id,
+        user_id,
+        action,
+    )
+
+
+def authorized_tools(
+    user_role: Optional[str],
+    tenant_id: str = "",
+    user_id: str = "",
+    surface: str = "tools/list",
+) -> list:
     """Return the registry entries ``user_role`` may be offered.
 
     Offer-time half of the check.  A tool the caller cannot use is not named
@@ -710,14 +763,16 @@ def authorized_tools(user_role: Optional[str], tenant_id: str = "", user_id: str
     the behaviour change we are trying to measure first.
     """
     offered = []
+    withheld = []
     for entry in TOOL_REGISTRY:
         decision = authorize_tool(entry["name"], user_role)
         if decision["allowed"]:
             offered.append(entry)
             continue
-        log_authz_decision(decision, tenant_id, user_id, "tools/list")
+        withheld.append(entry["name"])
         if not decision["enforced"]:
             offered.append(entry)
+    log_list_authz_decision(withheld, user_role, tenant_id, user_id, surface)
     return offered
 
 
@@ -1433,7 +1488,7 @@ def mcp_list_tools():
     user_id = getattr(g, "user_id", None) or ""
     user_role = getattr(g, "user_role", None) or ""
     tools = []
-    for t in authorized_tools(user_role, tenant_id, user_id):
+    for t in authorized_tools(user_role, tenant_id, user_id, surface="GET /mcp/v1/tools"):
         tools.append(
             {
                 "name": t["name"],

@@ -104,17 +104,41 @@ Monitor is the shipped default because the table above shows the D261 matrix
 does not yet fit this surface: `developer` would lose every tool and
 `viewer`/`auditor` would lose all access on the day enforcement flipped.
 
-**Before flipping to `enforce`, read the evidence:**
+**Before flipping to `enforce`, read the evidence.** All rows carry
+`event_type = 'mcp.authz'`; the `action` distinguishes the surface and the mode:
+
+| `action` | Meaning |
+|---|---|
+| `mcp.tool.would_deny` | monitor: a `tools/call` that enforce would refuse |
+| `mcp.tool.denied` | enforce: a `tools/call` that was refused |
+| `mcp.tools_list.would_filter` | monitor: tools enforce would have hidden |
+| `mcp.tools_list.filtered` | enforce: tools that were hidden |
+
+The `tools/call` denials are the ones that matter — they are calls a real
+client actually tried to make:
 
 ```sql
-SELECT details->>'role'  AS role,
-       details->>'tool'  AS tool,
-       details->>'surface' AS surface,
+SELECT details->>'role'    AS role,
+       details->>'tool'    AS tool,
        count(*)
 FROM audit_platform
 WHERE event_type = 'mcp.authz' AND action = 'mcp.tool.would_deny'
-GROUP BY 1, 2, 3
+GROUP BY 1, 2
 ORDER BY count(*) DESC;
+```
+
+A list filter is recorded as **one row naming every withheld tool**, not one
+row per tool. A deny-all role listing this registry would otherwise emit 19
+rows and 19 DB round-trips on every read, burying the call denials above.
+
+```sql
+SELECT details->>'role' AS role,
+       details->>'surface' AS surface,
+       max((details->>'withheld_count')::int) AS withheld,
+       count(*) AS list_calls
+FROM audit_platform
+WHERE event_type = 'mcp.authz' AND action LIKE 'mcp.tools_list.%'
+GROUP BY 1, 2;
 ```
 
 Rows whose `surface` starts with `tests/` are test residue, not findings — the
@@ -128,10 +152,14 @@ and IL declarations into the MCP registry; when it lands,
 
 ## Tests
 
-`tests/test_exa_policy_05_saas_mcp_authz.py` — 39 tests, including a DENY case
+`tests/test_exa_policy_05_saas_mcp_authz.py` — 41 tests, including a DENY case
 for every SaaS role that can be denied. `tenant_admin` has none because `admin`
 is a wildcard; `test_tenant_admin_is_allowed_by_wildcard` pins that as a
 deliberate policy outcome rather than a gap in the table.
+
+Listed in `args/ci_test_files/core.txt` so the required `Test` job runs it —
+the PG tier is not a required check, so registering there alone would have let
+an authorization regression merge green.
 
 The file is also on `tests/pg_tier_allowlist.txt`: `audit_platform` is a
 PostgreSQL-side table absent from the SQLite `icdev.db`, so the audit-write

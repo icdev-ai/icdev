@@ -244,10 +244,51 @@ def test_convenience_tools_endpoint_is_filtered_too(client, enforce, audited):
     resp = client.get("/mcp/v1/tools", headers={"X-Test-Role": "developer"})
     names = [t["name"] for t in json.loads(resp.data)["tools"]]
     assert "ssp_generate" not in names
+    # Audited under its own surface label, so the two discovery paths stay
+    # distinguishable in the evidence used to decide when to flip to enforce.
+    assert [r["decision"]["surface"] for r in audited] == ["GET /mcp/v1/tools"]
 
     resp = client.get("/mcp/v1/tools", headers={"X-Test-Role": "tenant_admin"})
     names = [t["name"] for t in json.loads(resp.data)["tools"]]
     assert len(names) == len(mcp_http.TOOL_REGISTRY)
+
+
+def test_list_filter_is_audited_as_one_row_not_one_per_tool(client, enforce, audited):
+    """A deny-all role must not emit an audit row per tool on every list call.
+
+    ``viewer`` is denied all 19 registry tools.  One row per withheld tool
+    would be 19 DB round-trips on a read, and would bury the ``tools/call``
+    denials that actually matter.
+    """
+    session_id = _session(client, "viewer")
+    headers = dict(MCP_HEADERS)
+    headers["X-Test-Role"] = "viewer"
+    headers["Mcp-Session-Id"] = session_id
+    resp = client.post(
+        "/mcp/v1/",
+        data=json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/list"}),
+        headers=headers,
+    )
+    assert json.loads(resp.data)["result"]["tools"] == []
+    assert len(audited) == 1, audited
+    row = audited[0]
+    assert row["action"] == "mcp.tools_list.filtered"
+    assert row["decision"]["withheld_count"] == len(mcp_http.TOOL_REGISTRY)
+    assert len(row["decision"]["withheld"]) == len(mcp_http.TOOL_REGISTRY)
+
+
+def test_admin_list_writes_no_audit_row(client, enforce, audited):
+    """Nothing withheld means nothing to record."""
+    session_id = _session(client, "tenant_admin")
+    headers = dict(MCP_HEADERS)
+    headers["X-Test-Role"] = "tenant_admin"
+    headers["Mcp-Session-Id"] = session_id
+    client.post(
+        "/mcp/v1/",
+        data=json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/list"}),
+        headers=headers,
+    )
+    assert audited == []
 
 
 # ---------------------------------------------------------------------------
@@ -292,9 +333,12 @@ def test_monitor_mode_does_not_hide_tools(client, monitor, audited):
     )
     names = [t["name"] for t in json.loads(resp.data)["result"]["tools"]]
     assert len(names) == len(mcp_http.TOOL_REGISTRY)
-    # ...but every omission it *would* have made is on the record.
-    assert audited
-    assert all(r["action"] == "mcp.tool.would_deny" for r in audited)
+    # ...but every omission it *would* have made is on the record, as ONE row
+    # naming them all rather than a row (and a DB round-trip) per tool.
+    assert len(audited) == 1
+    assert audited[0]["action"] == "mcp.tools_list.would_filter"
+    assert "ssp_generate" in audited[0]["decision"]["withheld"]
+    assert audited[0]["decision"]["surface"] == "tools/list"
 
 
 def test_authz_audit_insert_matches_the_live_schema(monitor):
