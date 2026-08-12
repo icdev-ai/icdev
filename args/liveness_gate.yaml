@@ -1,0 +1,101 @@
+# CUI // SP-CTI
+# ---------------------------------------------------------------------------
+# Capability liveness gate  (exa-live-02)
+# ---------------------------------------------------------------------------
+# Consumed by: tools/workflow/coherence_checker.py :: _load_liveness_gate
+# Gate source: tools/workflow/coherence_checker.py :: check_capability_liveness
+# Measurement:  tools/awareness/capability_consumption.py :: collect
+#
+# ICDEV's signature defect is not a capability that breaks. It is one that is
+# registered, importable, catalogued, enabled — and never consumed, while
+# nothing goes red. The reflex version of it shipped three times (xbm-wake-01,
+# xbm-wake-02, hgx-obs-02) before it got a check of its own; the audit hash
+# chain, MCPToolAuthorizer, the prompt registry and GEPA are the same defect
+# wearing different clothes. This gate generalises the reflex-shaped check to
+# every capability class capability_consumption.py can measure.
+#
+# WHAT FAILS THE GATE
+#   A declared capability unit with ZERO consumption over the telemetry's whole
+#   LIFETIME — never dispatched, never decided, never registered, never run.
+#   Per class, the number of such units may not exceed the count below.
+#
+# WHAT DOES NOT FAIL THE GATE
+#   A unit consumed at some point but idle inside the recent window. A reflex on
+#   a quarterly schedule is not the same defect as a reflex that has never run,
+#   and conflating the two makes the gate cry wolf until someone silences it.
+#   Those units are reported as `idle_this_window` and counted separately.
+#
+#   A database with no operating history. Counts here are evidence only when the
+#   platform has actually been running: on a fresh worktree, an ephemeral CI
+#   database or an unreachable backend, every declared unit looks inert because
+#   NOTHING has been recorded, not because nothing is wired. The check reports
+#   `warn` in that case rather than a fabricated failure — the same rule
+#   capability_consumption.py applies to an absent telemetry table ("unmeasurable
+#   is never reported as zero"). `evidence_anchor` is what draws that line.
+#
+# THE COUNTS ARE A RATCHET
+#   Lower a count when you wire a capability up. NEVER raise one to get a commit
+#   through — raising it is how the backlog this gate exists to drain grows
+#   instead. If a new capability genuinely cannot be consumed yet, that is a
+#   reason to not declare it yet.
+#
+#   A capability class absent from `grandfathered` gets a budget of 0. That is
+#   deliberate: a NEW class of declared-but-unconsumed capability is exactly the
+#   thing this gate is for, and it should have to argue its way in.
+# ---------------------------------------------------------------------------
+
+classification: CUI // SP-CTI
+
+# Recent-activity window, in days. Only used to split never-consumed units from
+# consumed-but-idle ones; the pass/fail decision reads the lifetime pass.
+window_days: 30
+
+# The "lifetime" lookback. Large enough to predate any row in this platform's
+# telemetry — a unit inert across this window has genuinely never been consumed.
+lifetime_days: 36500
+
+# Proof that the database being measured has an operating history at all.
+# Below `min_rows` the whole check degrades to `warn`, because a count of zero
+# from an empty database says nothing about the tree.
+evidence_anchor:
+  table: audit_trail
+  min_rows: 1000
+
+# Allowed count of declared-but-never-consumed units, per capability class.
+# Baseline measured 2026-08-12 against the live PostgreSQL platform database
+# (audit_trail: 80,322 rows): 627 declared units, 547 never consumed.
+grandfathered:
+  # 74 enabled reflexes, all of which have run. This is what a healthy class
+  # looks like, and it only got here because the reflex-specific checks
+  # (check_reflex_registry, tests/test_reflex_dispatch_parity.py) drained it.
+  reflex: 0
+
+  # 470 tools in TOOL_REGISTRY, 4 ever dispatched through the Studio MCP tool
+  # gate. The bulk of these are reachable only from surfaces that do not route
+  # through the gate, so the honest reading is "the dispatch audit does not see
+  # most of the registry" as much as "the registry is inert" — both are the same
+  # class of finding: a declared capability nothing can prove is used.
+  mcp_dispatch_tool: 466
+
+  # args/agent_approval_policy.yaml enumerates 62 tools across its tiers and
+  # agent_approval_log holds not one decision for any of them. A gate whose
+  # decision log is empty has never gated anything.
+  agent_approval_rule: 62
+
+  # 5 RBAC roles in the D261 role_tool_matrix, 1 seen in an MCPToolAuthorizer
+  # verdict. All 8 verdicts recorded so far are monitor-only (exa-policy-05
+  # landed the enforcement seam in monitor mode first, by design).
+  mcp_tool_authorization: 4
+
+  # 14 templates under hardprompts/, 0 non-draft prompt_versions rows. The
+  # registry has held zero rows since it shipped.
+  prompt_template: 14
+
+  # The migration-149 hash chain, now written by audit_logger.log_event (#1549).
+  # Unit-level it is consumed; coverage is another matter and is reported in the
+  # check's detail lines rather than gated here.
+  audit_chain: 0
+
+  # GEPA. 122 pending artifacts, 0 applied, and 0 that even satisfy its own
+  # selection predicate — it cannot act, so it never has.
+  skill_optimizer: 1

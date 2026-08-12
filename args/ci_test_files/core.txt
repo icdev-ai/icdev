@@ -624,3 +624,12 @@ tests/test_prompt_registry_call_site_prompts.py
 # ever spawned -- resolution is patched and subprocess.run is a recorder -- so it
 # is hermetic and ~1s.
 tests/test_codex_cli_adapter.py
+# exa-live-02 -- capability liveness coherence gate. The enforcement half of
+# exa-live-01's measurement, and it earns a slot for the same reason the reflex
+# version did: this bug shipped three times before it had a check. The two
+# properties most likely to be broken by a well-meaning edit are pinned here --
+# that a low-cadence unit (consumed once, idle this window) is NOT a finding, and
+# that an unpopulated database warns instead of fabricating one per declared
+# unit. Both are decided from injected report data, so no DB service, LLM or
+# network; ~3s.
+tests/test_coherence_capability_liveness.py
