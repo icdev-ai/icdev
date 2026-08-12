@@ -2160,3 +2160,31 @@ constitution:
       principle: >-
         Absolute or superlative claims ("guaranteed", "the only", "always")
         must be evidenced or softened; unsupported superlatives are flagged.
+
+# Agent detection rule pack gate (agov-det-07)
+#
+# An invalid rule is INERT, not match-all: tools/agent_detect/rules.py skips the
+# whole rule into RuleSet.errors rather than degrading it into a partial matcher
+# (dropping the offending clause would loosen the surviving AND into a
+# match-everything rule). The consequence is that a typo in an ENFORCEMENT rule
+# produces a directory that enforces nothing and reports nothing, and no runtime
+# error ever surfaces. The exit code of --check is the only signal there is.
+# Run: python tools/agent_detect/cli.py --check --rules-dir args/agent_rules_enforce --json
+#      python tools/agent_detect/cli.py --check --json
+#      python tools/agent_detect/cli.py --test --json
+agent_detection_rules:
+  blocking:
+    - invalid_enforcement_rule   # a rule under args/agent_rules_enforce/ does not compile
+    - rule_fixture_regression    # --test: a rule stopped firing on the case it was written for
+  warning:
+    - invalid_monitor_rule       # a rule under args/agent_rules/ does not compile
+    - enforce_declared_in_shipped_pack  # `enforce: true` in args/agent_rules/ — inert, and a sign of a bad merge
+  note: >
+    Detected by tools/agent_detect/cli.py --check / --test. Enforcement
+    authority is the DIRECTORY, not the field: a rule blocks only when it sets
+    enforce: true AND lives in args/agent_rules_enforce/
+    (ICDEV_AGENT_ENFORCE_RULES_DIR), so enforce_declared_in_shipped_pack is a
+    warning rather than a block — it cannot block a tool call, but it means
+    someone believes it does. A finding is a RULE MATCH AND NOT PROOF OF
+    EXECUTION; see docs/features/agov-det-coverage-and-limits.md for what the
+    detector does not see before treating a clean run as evidence.
