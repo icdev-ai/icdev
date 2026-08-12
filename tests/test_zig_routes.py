@@ -9,18 +9,25 @@ This suite covers the *functional* behavior of the ZIG read endpoints, mutation
 happy paths, bad-input 4xx branches, and page rendering that those suites do not.
 
 Fixture pattern mirrors test_zig_ingest_route: a Flask test client against
-``create_security_blueprint()`` with ICDEV_AUTH_BYPASS. The canvas DB is
+``create_security_blueprint()`` with ICDEV_AUTH_BYPASS, plus an authenticated
+principal in ``g.current_user`` — ICDEV_AUTH_BYPASS alone only satisfies
+``sc_login_required``; the ZIG *mutation* routes are additionally gated by
+``@require_role(*_ZIG_MUTATION_ROLES)`` (nav-sec-05), which reads
+``g.current_user`` and is normally populated by the dashboard's before_request
+hook that this bare test app does not install. The gate itself is asserted in
+section 4 rather than merely satisfied. The canvas DB is
 redirected to a per-test scratch SQLite file (conftest forces sqlite), seeded by
 ``init_db()``. ``init_db()``'s SCHEMA does not create ``zig_targets`` (that table
 ships only in the canvas migration 001_security_canvas_core.sql), so the fixture
 creates it explicitly for the targets happy-path test.
 
-Two behaviors are *locked in as observed*, not asserted as desirable — see the
-tests and the PR body:
-  * PATCH /api/zig/capabilities/<unknown-id> returns 200 ok=True (the handler
-    issues an UPDATE and never checks rowcount).
-  * POST /api/zig/assess returns 500 — the route calls
-    ``run_zig_assessment(target_id=...)`` but that function takes no arguments.
+Two behaviors were originally *locked in as observed* rather than asserted as
+desirable. Both have since been fixed by shx-hyg-08 and are now asserted as
+correct, not merely recorded:
+  * PATCH /api/zig/capabilities/<unknown-id> checks rowcount and returns
+    404 ok=False (it used to return a silent 200 ok=True).
+  * POST /api/zig/assess runs the GLOBAL assessment and returns 200 (it used to
+    500, calling ``run_zig_assessment(target_id=...)`` with an arg it lacks).
 """
 from __future__ import annotations
 
@@ -85,10 +92,46 @@ def _bypass_auth(monkeypatch):
     monkeypatch.delenv("ICDEV_DASHBOARD_API_KEY", raising=False)
 
 
+def _login_as(flask_app, role="admin", user_id="u-test"):
+    """Install the authenticated principal the dashboard normally supplies.
+
+    ``require_role`` (nav-sec-05) reads ``g.current_user``, which the dashboard's
+    before_request hook sets. This bare test app registers only the canvas
+    blueprint, so without this the gated routes 401 on every caller. Pass
+    ``role=None`` to stay anonymous and exercise the 401 branch.
+
+    Returns the mutable principal dict so a test can switch roles on one app
+    without registering a second before_request handler (whose effect would
+    otherwise depend on registration order).
+    """
+    from flask import g
+
+    principal = {"id": user_id, "role": role}
+
+    @flask_app.before_request
+    def _set_current_user():  # pragma: no cover - trivial fixture wiring
+        if principal["role"] is not None:
+            g.current_user = {"id": principal["id"], "role": principal["role"]}
+
+    return principal
+
+
 @pytest.fixture()
 def client(app):
+    # "admin" is in _ZIG_MUTATION_ROLES; the gate is asserted in section 4.
+    _login_as(app, role="admin")
     with app.test_client() as c:
         yield c
+
+
+@pytest.fixture()
+def client_as(app):
+    """Factory for a client bound to a specific role (or anonymous, role=None)."""
+    def _make(role):
+        _login_as(app, role=role)
+        return app.test_client()
+
+    return _make
 
 
 @pytest.fixture()
@@ -512,3 +555,72 @@ def test_zig_page_routes_render_200(client, path):
 def test_zig_pillar_detail_page_renders_200(client, seed):
     resp = client.get(f"/security/zig/pillar/{seed['cap_pillar']}")
     assert resp.status_code == 200
+
+
+# ── 5. RBAC: ZIG mutation routes are role-gated (nav-sec-05) ────────────────
+#
+# The happy-path tests above authenticate as "admin", which SATISFIES this gate.
+# Satisfying a gate does not prove it exists, so these assert it directly: the
+# mutating endpoints must reject an anonymous caller and an authenticated but
+# unauthorized one. Without these, dropping @require_role would leave the whole
+# suite green.
+
+def _mutation_calls(client, cap_id):
+    """The two @require_role-gated ZIG endpoints, as (label, response) pairs."""
+    return [
+        (
+            "PATCH capability status",
+            client.patch(
+                f"/security/api/zig/capabilities/{cap_id}",
+                json={"implementation_status": "planned"},
+            ),
+        ),
+        (
+            "POST global assess",
+            client.post("/security/api/zig/assess", json={}),
+        ),
+    ]
+
+
+def test_zig_mutation_routes_reject_anonymous_401(client_as, seed):
+    """No g.current_user at all -> 401, even though ICDEV_AUTH_BYPASS is set.
+
+    ICDEV_AUTH_BYPASS only clears sc_login_required; require_role is a second,
+    independent gate and must not be satisfied by the bypass.
+    """
+    anon = client_as(role=None)
+    for label, resp in _mutation_calls(anon, seed["cap_id"]):
+        assert resp.status_code == 401, f"{label} did not 401 for anonymous"
+
+
+def test_zig_mutation_routes_reject_unauthorized_role_403(client_as, seed):
+    """Authenticated but not a security-officer role -> 403."""
+    from tools.security_canvas.blueprint import _ZIG_MUTATION_ROLES
+
+    assert "developer" not in _ZIG_MUTATION_ROLES  # premise of this test
+    dev = client_as(role="developer")
+    for label, resp in _mutation_calls(dev, seed["cap_id"]):
+        assert resp.status_code == 403, f"{label} did not 403 for role=developer"
+
+
+def test_zig_mutation_routes_allow_every_declared_role(app, seed):
+    """Each role in _ZIG_MUTATION_ROLES is actually accepted.
+
+    Derived from the constant rather than hardcoded, so adding a role to the
+    tuple without wiring it up fails here instead of silently passing.
+    """
+    from tools.security_canvas.blueprint import _ZIG_MUTATION_ROLES
+
+    assert _ZIG_MUTATION_ROLES, "gate declares no authorized roles"
+    principal = _login_as(app, role=_ZIG_MUTATION_ROLES[0])
+    client = app.test_client()
+    for role in _ZIG_MUTATION_ROLES:
+        principal.update(role=role, id=f"u-{role}")
+        resp = client.patch(
+            f"/security/api/zig/capabilities/{seed['cap_id']}",
+            json={"implementation_status": "planned"},
+        )
+        assert resp.status_code not in (401, 403), (
+            f"role {role!r} is declared authorized but was rejected "
+            f"with {resp.status_code}"
+        )

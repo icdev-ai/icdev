@@ -27,60 +27,35 @@ import pytest
 
 
 @pytest.fixture
-def gated_kanban_client(tmp_path, monkeypatch):
-    """Flask client with a fresh SQLite DB that includes kanban_verifications."""
+def gated_kanban_client(icdev_db, monkeypatch):
+    """Flask client over the canonical kanban schema, via the storage layer.
+
+    Two things here are deliberate, and both are why this suite went red:
+
+    1. The schema comes from conftest's MINIMAL_ICDEV_SCHEMA (the ``icdev_db``
+       fixture), not from a CREATE TABLE pasted into this file. The private copy
+       listed 15 columns; production ``create_task`` had since grown
+       ``start_date``/``target_date`` and a ``kanban_task_deps`` junction table,
+       and the fixture never learned — so every request 500'd against a table
+       shape that no longer exists anywhere but in this file.
+
+    2. ``get_connection`` is stubbed with a StorageConnection, not a bare
+       sqlite3.Connection. Runtime SQL in tools/dashboard/api/kanban.py is
+       authored for PostgreSQL (``%s`` placeholders) and relies on
+       StorageConnection's cursor running translate_sql to rewrite them to ``?``
+       on SQLite. Talking straight to sqlite3 skips that and every statement
+       raises ``near "%": syntax error``.
+    """
     from flask import Flask
 
-    db_path = tmp_path / "icdev.db"
-    conn = sqlite3.connect(str(db_path))
-    conn.executescript(
-        """
-        CREATE TABLE kanban_tasks (
-            id                   TEXT PRIMARY KEY,
-            title                TEXT NOT NULL,
-            description          TEXT,
-            task_type            TEXT DEFAULT 'build',
-            priority             TEXT DEFAULT 'medium',
-            status               TEXT DEFAULT 'backlog',
-            scheduled_at         TEXT,
-            created_at           TEXT,
-            updated_at           TEXT,
-            completed_at         TEXT,
-            executor_type        TEXT,
-            execution_id         TEXT,
-            executor_url         TEXT,
-            source_prediction_id TEXT,
-            depends_on_task_id   TEXT,
-            completed_via_bypass INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE oracle_predictions (
-            id              TEXT PRIMARY KEY,
-            confidence      REAL,
-            prediction_text TEXT,
-            lens_name       TEXT,
-            prediction_type TEXT
-        );
-        CREATE TABLE kanban_verifications (
-            id                 TEXT PRIMARY KEY,
-            task_id            TEXT NOT NULL,
-            verified_at        TEXT NOT NULL,
-            result             TEXT NOT NULL,
-            reason             TEXT,
-            codelens_passed    INTEGER,
-            coherence_passed   INTEGER,
-            e2e_ran            INTEGER,
-            e2e_passed         INTEGER,
-            companion_synced   INTEGER
-        );
-        """
-    )
-    conn.commit()
-    conn.close()
+    from tools.db.storage import StorageConnection
+
+    db_path = icdev_db
 
     def _fake_conn():
         c = sqlite3.connect(str(db_path))
         c.row_factory = sqlite3.Row
-        return c
+        return StorageConnection(c, "sqlite")
 
     from tools.dashboard.api import kanban as kanban_mod
 
