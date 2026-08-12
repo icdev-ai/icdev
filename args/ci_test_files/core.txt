@@ -525,6 +525,16 @@ tests/test_dwo_bus_subscriber.py
 # re-baselining itself. ~0.3s, stdlib only plus one in-memory SQLite
 # connection, no DB service/LLM/network (exa-audit-01).
 tests/test_audit_row_hash.py
+
+# test_audit_chain_writer.py covers the writer that fills in migration 149's
+# hash/previous_hash/signature (exa-audit-03). It is in CI because the property
+# it guards is not visible from any other test: an audit chain that silently
+# stops being written looks exactly like one that was never attacked, and the
+# repo already shipped 149 with NO writer at all for its entire life. Includes
+# the concurrency case (8 threads x 6 writes on a file-backed temp SQLite db) --
+# without the critical section, writers collide on the reserved id and LOSE
+# audit events, which this catches. ~9s, no DB service/LLM/network.
+tests/test_audit_chain_writer.py
 # test_exa_policy_05_saas_mcp_authz.py gates the per-tool authorization control
 # on tools/saas/mcp_http.py -- the only MCP surface with an authenticated
 # principal. Without it here the control's tests run only in the PG tier, which

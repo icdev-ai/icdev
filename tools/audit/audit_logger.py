@@ -19,6 +19,13 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
+
+# The hash-chain half of the writer: id reservation, the critical section, the
+# digest and signature, and the cutover marker.
+from icdev.tools.audit import chain as _chain
+
+logger = get_logger("audit.audit_logger")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -422,6 +429,35 @@ def rebuild_event_type_constraint(conn) -> bool:
     return True
 
 
+def _chain_columns(conn, row_values: dict, placeholder: str):
+    """Reserve an id and compute this row's chain columns, or degrade to none.
+
+    Returns ``(reserved_id, (hash, previous_hash, signature))`` when the row can
+    be chained, or ``(None, None)`` when it cannot — a database that never ran
+    migration 149, or a signing/hashing failure. See log_event's docstring for
+    why that degrades instead of raising.
+    """
+    try:
+        if not _chain.has_chain_columns(conn):
+            return None, None
+        # Reserve, read-back and INSERT are one critical section: two writers
+        # that both chained off the same predecessor would fork the chain.
+        _chain.serialize_chain_writes(conn)
+        reserved_id = _chain.reserve_entry_id(conn, placeholder)
+        if reserved_id is None:
+            return None, None
+        return reserved_id, _chain.chain_insert_values(
+            conn, reserved_id, row_values, placeholder
+        )
+    except Exception as exc:
+        logger.warning(
+            "audit chain columns unavailable for this row (%s); writing it "
+            "unchained rather than dropping the event",
+            exc,
+        )
+        return None, None
+
+
 def log_event(
     event_type: str,
     actor: str,
@@ -436,7 +472,33 @@ def log_event(
     conn=None,
     raise_on_error: bool = False,
 ) -> int:
-    """Write an immutable audit trail entry. Returns the entry ID.
+    """Write an immutable audit trail entry, hash-chained. Returns the entry ID.
+
+    The row is linked into the audit hash chain: ``hash`` over the
+    migration-149 field recipe, ``previous_hash`` pointing at the row before it,
+    and ``signature`` over the hash. See :mod:`tools.audit.chain` for the
+    mechanics — id reservation, the critical section that keeps two concurrent
+    writers from forking the chain, and the cutover marker.
+
+    **A chain failure is NOT fatal, and that is a deliberate choice.** If the
+    hash or signature cannot be computed, the row is still written, with NULL
+    chain columns, and the failure is logged. The alternative — refusing the
+    write — trades a *detectable* problem for an *undetectable* one: an
+    unchained row is visible to ``provenance_verifier`` and is exactly what
+    ``chain_anchor.periodic_anchor`` already scans for, whereas an audit event
+    that was never recorded leaves nothing behind to notice. NIST AU-2/AU-12
+    want the event captured; the chain is how it is corroborated, not a
+    precondition for capturing it. ``raise_on_error=True`` overrides this for
+    critical-path callers, as it does for every other failure here.
+
+    A swallowed write burns its reserved id and leaves a GAP. That is handled
+    rather than prevented: ``previous_hash`` is defined as the hash of the row
+    at ``id - 1``, the same rule the verifier applies, so at a gap both sides
+    independently fall back to ``GENESIS_HASH`` and the chain restarts instead
+    of falsely reporting tampering.
+
+    Databases that have not run migration 149 keep the original 9-column
+    INSERT — the columns are feature-detected, never assumed.
 
     Args:
         conn: Optional existing DB connection. When provided, the connection
@@ -474,27 +536,43 @@ def log_event(
         from tools.db.storage import sql_placeholder as _ph
         placeholder = _ph(conn)
 
+    # The nine columns the audit row itself is made of. `details` is serialised
+    # here, not at hash time, because the verifier hashes the string it reads
+    # back out of the column — the two must be the same bytes.
+    row_values = {
+        "project_id": project_id,
+        "event_type": event_type,
+        "actor": actor,
+        "action": action,
+        "details": json.dumps(details) if details else None,
+        "affected_files": json.dumps(affected_files) if affected_files else None,
+        "classification": classification,
+        "ip_address": ip_address,
+        "session_id": session_id,
+    }
+    columns = list(row_values)
+    params = [row_values[k] for k in columns]
+    reserved_id = None
+
     c = conn.cursor()
     try:
+        reserved_id, chain_values = _chain_columns(conn, row_values, placeholder)
+        if chain_values is not None:
+            # Explicit id: the id is the first field of the hash recipe, and an
+            # append-only table gives no second chance to fill the hash in.
+            columns = ["id"] + columns + list(_chain.CHAIN_COLUMNS)
+            params = [reserved_id] + params + list(chain_values)
+
         c.execute(
-            f"""INSERT INTO audit_trail
-               (project_id, event_type, actor, action, details, affected_files,
-                classification, ip_address, session_id)
-               VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})""",
-            (
-                project_id,
-                event_type,
-                actor,
-                action,
-                json.dumps(details) if details else None,
-                json.dumps(affected_files) if affected_files else None,
-                classification,
-                ip_address,
-                session_id,
-            ),
+            f"""INSERT INTO audit_trail ({", ".join(columns)})
+               VALUES ({", ".join([placeholder] * len(columns))})""",
+            tuple(params),
         )
         conn.commit()
-        entry_id = c.lastrowid
+        entry_id = reserved_id if chain_values is not None else c.lastrowid
+        if chain_values is not None:
+            _chain.record_chain_start(conn, entry_id, placeholder)
+            conn.commit()
     except Exception:
         # Audit logging is non-fatal by default — never let an audit write
         # failure break business logic (e.g. FK violation when project_id not
