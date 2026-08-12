@@ -640,3 +640,13 @@ tests/test_codex_cli_adapter.py
 # unit. Both are decided from injected report data, so no DB service, LLM or
 # network; ~3s.
 tests/test_coherence_capability_liveness.py
+
+# test_cost_budget_downgrade.py earns a slot because the property it pins is one
+# a well-meaning edit reverses without noticing: this budget layer DOWNGRADES
+# where the other four BLOCK, and "make it consistent with the others" turns it
+# back into a fifth hard stop. It also pins the two properties that make the
+# downgrade air-gap correct — local wins the tie against an equally-priced cloud
+# model, and an UNPRICED model is not treated as free — plus the once-per-
+# threshold ASK, which reverts to once-per-call the moment the dedupe is dropped.
+# Fully injected config and spend; no DB, LLM or network; ~0.7s (exa-policy-04).
+tests/test_cost_budget_downgrade.py

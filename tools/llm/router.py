@@ -27,6 +27,7 @@ except ImportError:
     yaml = None
 
 from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
+from tools.llm import cost_budget
 
 try:
     from tools.llm.response_cache import LLMResponseCache, canonical_key
@@ -2552,8 +2553,22 @@ class LLMRouter:
         # adapt-hd-03: Context compression — apply before fallback chain
         request = self._compress_request_context(function, request)
 
+        # exa-policy-04: cost budget as a DOWNGRADE gate. Evaluated here, before
+        # two-tier and before the chain is routed, because a hard limit must be
+        # able to suppress the tier-2 escalation as well — two_tier bypasses the
+        # chain entirely to reach the expensive planner, so a downgrade that only
+        # reordered the chain would leave the costliest path in the router wide
+        # open. Returns the chain unchanged on every failure path.
+        _budget_chain, _budget_verdict = cost_budget.apply_to_chain(function, chain)
+        if _budget_verdict.action == cost_budget.ACTION_BLOCK:
+            raise cost_budget.CostBudgetExceededError(_budget_verdict)
+
         # Two-tier routing: qwen3 worker → Claude planner/reviewer
-        two_tier_result = self._maybe_invoke_two_tier(function, request)
+        two_tier_result = (
+            None
+            if _budget_verdict.downgraded
+            else self._maybe_invoke_two_tier(function, request)
+        )
         if two_tier_result is not None:
             # D-CACHE-4: Store two-tier results too
             self._cache_store(function, request, two_tier_result, two_tier_result.model_id)
@@ -2565,9 +2580,22 @@ class LLMRouter:
         if request.chain_mode == "cod":
             return self.invoke_chain_of_debate(function, request)
 
-        chain = self._get_chain_for_function(function)
+        chain = _budget_chain
         # RL routing: reorder chain by learned Q-values (epsilon-greedy)
         chain = self._get_rl_router().rank_models(function, chain)
+
+        # exa-policy-04: the budget order is re-applied AFTER RL re-ranking and
+        # is the last word. RL reorders by learned Q-value with no notion of
+        # price, so it would happily promote the model the budget just demoted
+        # straight back to the head — the same way it can undo force_local. The
+        # config is already in memory, so this costs no file or DB read.
+        if _budget_verdict.action == cost_budget.ACTION_DOWNGRADE:
+            chain = cost_budget.downgrade_chain(
+                chain,
+                self._config.get("models", {}),
+                self._config.get("providers", {}),
+                settings=cost_budget.settings_for(function, self._config),
+            )
 
         # Graceful degradation: retry the full chain on transient infrastructure failures
         # (timeouts, 503s, rate limits). Non-transient errors (auth, config) raise immediately.

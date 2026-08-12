@@ -1687,6 +1687,66 @@ module_budgets:
       monthly_operations: 500      # simulation scenario runs
 
 # -----------------------------------------------------------------------
+# Cost Budget — the DOWNGRADE gate (exa-policy-04)
+# -----------------------------------------------------------------------
+# The four budget layers above all BLOCK: token_budgets (per agent),
+# module_budgets (per module), chain_orchestration.cost_cap_usd (per chain run)
+# and proxy budgets (per virtual key). A hard stop is the wrong shape for a long
+# autonomous run — hitting a ceiling unattended kills the run.
+#
+# This layer instead ASKs at soft thresholds and DOWNGRADES at the hard limit:
+# the expensive model is demoted to the tail of the function's declared chain
+# and work continues on the cheap tier. Enforced by tools/llm/cost_budget.py,
+# consumed in tools/llm/router.py::invoke.
+#
+# There is no model id anywhere in that module. The downgrade is computed from
+# routing.<function>.chain and the pricing: block declared on each model above,
+# which is what makes it air-gap correct: local Ollama models declare
+# input_per_1k/output_per_1k 0.0, so they sort under any ceiling and
+# prefer_local puts them ahead of an equally-priced cloud model.
+cost_budget:
+  enabled: true
+
+  # global = one budget across every function (matches how an autonomous run
+  # actually overspends). function = each function gets its own limit_usd.
+  scope: global
+  period: monthly               # monthly | daily
+  limit_usd: 200.00
+
+  # Fractions of limit_usd. Crossing one raises an ASK — once per threshold per
+  # period, deduped through agent_approval_log, NOT once per call.
+  soft_thresholds: [0.50, 0.80, 0.95]
+
+  # What reaching limit_usd does. 'downgrade' is the point of this layer;
+  # 'block' exists for operators who genuinely want the old hard stop.
+  hard_action: downgrade
+
+  downgrade:
+    # A model whose declared input_per_1k + output_per_1k exceeds this is
+    # demoted to the tail of the chain — never dropped, so a budget event can
+    # never become an outage when the cheap tier is down. 0.0 means "free and
+    # local tiers only" while the budget is exhausted.
+    max_blended_per_1k: 0.0
+    # Tie-break equally-priced models local-first. This is what guarantees the
+    # downgrade lands on Ollama rather than on a zero-priced cloud entry.
+    prefer_local: true
+
+  ask:
+    # record  — log + append to agent_approval_log, keep working (autonomous default)
+    # console — prompt the operator; denies on EOF
+    # deny    — fail closed; combine with on_denied to downgrade early
+    approver: record
+    # What a DENIED soft ASK does: downgrade early, or block.
+    on_denied: downgrade
+
+  # Optional per-function overrides; keys merge over the block above.
+  #   per_function:
+  #     code_generation:
+  #       limit_usd: 50.00
+  #       downgrade: { max_blended_per_1k: 0.005 }
+  per_function: {}
+
+# -----------------------------------------------------------------------
 # Chain Orchestration (CoT / CoD)
 # -----------------------------------------------------------------------
 chain_orchestration:
