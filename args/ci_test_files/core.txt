@@ -533,3 +533,12 @@ tests/test_audit_row_hash.py
 # runs in the PG tier instead (tests/pg_tier_allowlist.txt); the other 38 are
 # pure Python plus a Flask test client -- ~1.9s, no DB service/LLM/network.
 tests/test_exa_policy_05_saas_mcp_authz.py
+# test_agent_policy_engine.py earns a slot because the ALLOW/DENY/ASK layer
+# (exa-policy-01) is what decides whether an irreversible agent action runs, and
+# every one of its failure modes is silent if it regresses: a policy that raises,
+# a chain name nobody registered, an empty chain, a nonsense return value, and a
+# DENY that stops short-circuiting all fail OPEN unless something asserts they do
+# not. It also pins the no-argument-VALUES property of the agent_approval_log row
+# — a CUI leak that no other test in this list would catch. ~2s, in-tmpdir SQLite,
+# no DB service/LLM/network.
+tests/test_agent_policy_engine.py
