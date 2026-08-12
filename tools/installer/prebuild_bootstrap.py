@@ -46,6 +46,15 @@ SOURCES: list[tuple[str, str, str]] = [
     (".env.sample", ".env.sample", "file"),
     (".claude/commands", "claude/commands", "dir"),
     (".claude/hooks", "claude/hooks", "dir"),
+    # The hooks' implementation, shipped BESIDE them (exa-bench-10). A project
+    # scaffolded by `icdev init` has no tools/ tree, so a hook that resolves
+    # `<root>/tools/hooks/shared_checks.py` raised FileNotFoundError on every
+    # tool call there — silently, because the generated settings.json wraps
+    # each hook in `|| true`. Must stay AFTER the .claude/hooks dir copy, which
+    # would otherwise not know about a file that is not in that directory.
+    # coherence_checker.py::check_bootstrap_parity reads PAYLOAD_MODULES out of
+    # each packaged hook and fails if a named module did not ship.
+    ("tools/hooks/shared_checks.py", "claude/hooks/shared_checks.py", "file"),
     (".claude/settings.json", "claude/settings.json.template", "file"),
     (".agents/skills", "claude/skills", "dir"),
     (".claude/agents", "claude/agents", "dir"),

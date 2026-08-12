@@ -2147,6 +2147,22 @@ python tools/workflow/coherence_checker.py --check insert_schema_parity --gate  
 python tools/workflow/coherence_checker.py --check vendor_parity --json                             # Report copies lagging canonical
 python tools/workflow/coherence_checker.py --check vendor_parity --changed-files "tools/cortex/client.py" --gate   # Fail when a changed source outruns a copy
 
+# Bootstrap parity — what `icdev init` scaffolds must be what this repo runs on. Two rules:
+#   1. must_match pairs (args/bootstrap_parity.yaml) are byte-identical, both directions.
+#   2. payload completeness (exa-bench-10) — every module a PACKAGED HOOK loads by path
+#      ships beside it and is not stale. Derived from each hook's own PAYLOAD_MODULES
+#      tuple, not from a list in the YAML, so there is nothing to keep in sync.
+# The packaged pre_tool_use.py exec_module'd tools/hooks/shared_checks.py, which the
+# payload did not ship — so the hook raised on EVERY tool call in EVERY generated
+# project, silenced by the `|| true` in the generated settings.json.
+python tools/workflow/coherence_checker.py --check bootstrap_parity --json
+python tools/workflow/coherence_checker.py --check bootstrap_parity --gate
+python tools/installer/prebuild_bootstrap.py                          # Regenerate the whole payload (the sanctioned fix)
+# Which checks can actually run where the hook is installed, and why the rest cannot.
+# Run it from a scaffolded project: 8 of 11 checks are active there; the 3 that need
+# ICDEV's own tools/ modules are NAMED rather than silently failing open.
+python .claude/hooks/pre_tool_use.py --self-test
+
 # Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
 python tools/quality/completion_auditor.py                                                           # Human table to stdout
 python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
