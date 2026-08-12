@@ -52,7 +52,8 @@ grandfathered:
   # tools/genesis/reflexes/kanban.py (now zero, and NOT listed here).
   tools/ace/blueprint.py: 1
   tools/ai_augmentation/pattern_classifier.py: 1
-  tools/skills/gepa_optimizer.py: 1
+  # tools/skills/gepa_optimizer.py — FIXED by exa-refine-03: the pin is gone and
+  # the call routes through llm_function `gepa_skill_patch` (args/llm_config.yaml).
   # Fallback-config dicts whose "model" key is read back into an LLM call.
   tools/genesis/reflexes/cato_monitor.py: 1
   tools/genesis/reflexes/comply.py: 1

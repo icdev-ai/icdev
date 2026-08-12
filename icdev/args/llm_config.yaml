@@ -1320,6 +1320,17 @@ routing:
   pmo_recommendations:
     chain: [kimi-cloud, qwen3-local, claude-sonnet]
     effort: medium
+
+  # GEPA Skill Optimizer (tools/skills/gepa_optimizer.py) — rewrites a
+  # .agents/skills/*/SKILL.md from a reflexion improvement artifact. This used
+  # to be pinned to a literal Anthropic model id on the LLMRequest, which both
+  # violates the repo's no-hardcoded-model-ids rule and (because the call site
+  # swallows exceptions) degraded silently on a non-Anthropic deployment.
+  # Declared here so the chain is configuration: local-first, haiku as the
+  # cloud fallback. Low effort — this is a targeted file edit, not reasoning.
+  gepa_skill_patch:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
 agent_effort_defaults:
   orchestrator-agent: high
   architect-agent: max

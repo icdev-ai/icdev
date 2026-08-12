@@ -14,6 +14,7 @@ ICDEV™ to create a truly autonomous, self-learning digital coworker platform.
 | `trace_logger` | `tools/workflow/trace_logger.py` | Open/log/close structured execution traces for kanban task dispatches. Tables: `agent_execution_traces` (append-only). |
 | `reflexion_agent` | `tools/workflow/reflexion_agent.py` | Post-completion improvement generator. Reads traces + lesson_learned outcomes → generates `agent_improvement_artifacts`. Gated by `ICDEV_HARNESS_COLEARN=true`. |
 | `reflexion_loop reflex` | `tools/genesis/reflexes/reflexion_loop.py` | Weekly Genesis reflex. Runs batch reflexion pass → creates amendment kanban cards for low-success-rate task_types. |
+| `improvement_fitness` | `tools/workflow/improvement_fitness.py` | Shared deterministic fitness rubric for `agent_improvement_artifacts`. `score_improvement()` scores a CANDIDATE improvement (→ `composite_score`); `score_traces()` scores the STATUS QUO from traces (→ `baseline_score`). Library — no CLI. Used by `reflexion_agent` and NOVA SELA so GEPA compares like with like. |
 
 **CLI:**
 ```bash

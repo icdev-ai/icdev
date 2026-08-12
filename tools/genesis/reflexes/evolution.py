@@ -198,43 +198,16 @@ def _score_mutation(
 ) -> Dict[str, Any]:
     """Score a mutation text deterministically.
 
-    Uses heuristics to estimate correctness, procedure, and conciseness,
-    then applies the weighted fitness function.
+    Delegates to the shared rubric in tools/workflow/improvement_fitness.py so
+    SELA and the Reflexion agent produce comparable composite_score values —
+    GEPA compares them against the same _MIN_COMPOSITE_SCORE floor.
 
     Returns {"mutation": str, "correctness": float, "procedure": float,
              "conciseness": float, "composite_score": float}.
     """
-    text = mutation.strip()
-    word_count = len(text.split())
+    from tools.workflow.improvement_fitness import score_improvement
 
-    # Conciseness: shorter is better, 50-word sweet-spot
-    conciseness = max(0.0, min(1.0, 1.0 - max(0, word_count - 50) / 100))
-
-    # Procedure: penalise vague/generic mutations
-    generic_terms = {"improve", "better", "enhance", "fix", "update", "change", "modify"}
-    specific_words = set(text.lower().split()) - generic_terms
-    procedure = min(1.0, len(specific_words) / max(1, word_count) * 3)
-
-    # Correctness: favour mutations that explicitly reference the skill name or
-    # concrete action words
-    action_words = {"add", "remove", "replace", "validate", "retry", "cache",
-                    "log", "check", "verify", "handle", "skip", "limit", "timeout"}
-    action_hits = sum(1 for w in text.lower().split() if w in action_words)
-    skill_mention = 1.0 if skill.lower() in text.lower() else 0.0
-    correctness = min(1.0, (action_hits * 0.2 + skill_mention * 0.3 + 0.5))
-
-    w_c = fitness_weights.get("correctness", 0.5)
-    w_p = fitness_weights.get("procedure", 0.3)
-    w_n = fitness_weights.get("conciseness", 0.2)
-    composite = round(w_c * correctness + w_p * procedure + w_n * conciseness, 4)
-
-    return {
-        "mutation": text,
-        "correctness": round(correctness, 4),
-        "procedure": round(procedure, 4),
-        "conciseness": round(conciseness, 4),
-        "composite_score": composite,
-    }
+    return score_improvement(mutation, skill, fitness_weights)
 
 
 def _insert_artifact(conn, skill: str, best: Dict[str, Any], baseline_score: float) -> str:

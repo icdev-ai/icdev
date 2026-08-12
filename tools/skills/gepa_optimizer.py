@@ -40,18 +40,36 @@ _MIN_LENGTH_RATIO = 0.80
 _SKILLS_ROOT = _BASE / ".agents" / "skills"
 
 
+def _skill_dir_candidates(skill_used: str) -> list[str]:
+    """Directory names to try under _SKILLS_ROOT for a given ``skill_used``.
+
+    Writers are inconsistent about the prefix: NOVA's skill_generator stores
+    ``icdev-<slug>`` while the Reflexion agent may store a bare ``<slug>``.
+    Prefixing unconditionally (as this used to) turns the former into
+    ``icdev-icdev-<slug>``, so only prefix a name that is not already prefixed.
+    Underscores are normalised because skill directories use hyphens.
+    """
+    raw = (skill_used or "").strip().strip("/\\")
+    if not raw:
+        return []
+    names: list[str] = []
+    for base in (raw, raw.replace("_", "-")):
+        names.append(base)
+        if not base.startswith("icdev-"):
+            names.append(f"icdev-{base}")
+        else:
+            # Tolerate an already-double-prefixed value written by an older run.
+            names.append(base[len("icdev-"):])
+    # Dedupe, preserving order.
+    return list(dict.fromkeys(names))
+
+
 def _find_skill_file(skill_used: str) -> Path | None:
-    """Map skill_used → .agents/skills/icdev-{skill_used}/SKILL.md (or variants)."""
-    if not skill_used:
-        return None
-    candidates = [
-        _SKILLS_ROOT / f"icdev-{skill_used}" / "SKILL.md",
-        _SKILLS_ROOT / skill_used / "SKILL.md",
-        _SKILLS_ROOT / f"icdev-{skill_used.replace('_', '-')}" / "SKILL.md",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
+    """Map skill_used → .agents/skills/<dir>/SKILL.md, or None if no dir matches."""
+    for name in _skill_dir_candidates(skill_used):
+        candidate = _SKILLS_ROOT / name / "SKILL.md"
+        if candidate.exists():
+            return candidate
     return None
 
 
@@ -84,7 +102,9 @@ def _generate_patch(current_content: str, improvement_text: str,
                 "You are a precise skill file editor. Return only the updated file content."
             ),
             messages=[{"role": "user", "content": prompt}],
-            model="claude-haiku-4-5-20251001",
+            # No `model=` pin: the chain for `gepa_skill_patch` is declared in
+            # args/llm_config.yaml so an air-gapped or non-Anthropic deployment
+            # routes this itself. LLMRouter resolves the model from that entry.
             max_tokens=4096,
             temperature=0.2,
             skip_injection_scan=True,

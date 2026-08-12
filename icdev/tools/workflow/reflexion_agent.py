@@ -98,11 +98,45 @@ def _call_llm(prompt: str, skill_used: str) -> str:
 
 
 def _compute_score(traces: list[dict]) -> float:
-    """Deterministic score: fraction of successful outcomes."""
-    if not traces:
-        return 0.0
-    successes = sum(1 for t in traces if t.get("outcome") == "success")
-    return round(successes / len(traces), 3)
+    """Baseline fitness of the status quo, from execution traces.
+
+    Outcome-weighted mean (`partial` earns half credit) rather than a bare
+    success tally — see tools/workflow/improvement_fitness.py::OUTCOME_WEIGHTS.
+    """
+    from tools.workflow.improvement_fitness import score_traces
+
+    return score_traces(traces)
+
+
+def _compute_composite_score(improvement_text: str, skill_used: str) -> float:
+    """Fitness of the CANDIDATE improvement text, scored independently.
+
+    This must NOT be the baseline. GEPA (tools/skills/gepa_optimizer.py) only
+    promotes an artifact when ``composite_score - baseline_score >= 0.05``, so
+    writing the baseline into both columns — which is what this module used to
+    do — left every artifact ever written with a delta of exactly 0.0 and made
+    the optimizer structurally incapable of selecting anything.
+    """
+    from tools.workflow.improvement_fitness import score_improvement
+
+    scored = score_improvement(improvement_text, skill_used)
+    return float(scored["composite_score"])
+
+
+def _resolve_skill_used(explicit: str, traces: list[dict]) -> str:
+    """Resolve the skill this artifact is about, falling back to the traces.
+
+    `run_batch_reflexion` discovers task_types and cannot supply a skill name,
+    so an artifact written from it used to land with ``skill_used=''`` — and
+    GEPA skips any artifact whose skill file it cannot locate. The traces
+    already carry the skill, so infer it rather than persisting a blank.
+    """
+    from tools.workflow.improvement_fitness import dominant_skill
+
+    explicit = (explicit or "").strip()
+    if explicit:
+        return explicit
+    return dominant_skill(traces)
 
 
 def generate_improvement_artifact(
@@ -125,6 +159,7 @@ def generate_improvement_artifact(
         return {"skipped": True, "reason": f"insufficient traces ({len(traces)} < 3)"}
 
     baseline_score = _compute_score(traces)
+    skill_used = _resolve_skill_used(skill_used, traces)
 
     # Build improvement prompt (Reflexion-style: summarize failures → propose fixes)
     failures = [t for t in traces if t.get("outcome") not in ("success",)]
@@ -157,6 +192,8 @@ def generate_improvement_artifact(
             f"Common patterns: {', '.join(set(t.get('lesson_pattern','') for t in failures if t.get('lesson_pattern')))}"
         )
 
+    composite_score = _compute_composite_score(improvement_text, skill_used)
+
     artifact_id = f"impr-{task_type[:8]}-{uuid.uuid4().hex[:8]}"
     trace_ids = [t["trace_id"] for t in traces[:5]]
 
@@ -179,7 +216,7 @@ def generate_improvement_artifact(
                     skill_used,
                     gen_n,
                     improvement_text,
-                    baseline_score,
+                    composite_score,
                     baseline_score,
                     json.dumps(trace_ids),
                 ),
@@ -195,6 +232,7 @@ def generate_improvement_artifact(
         "task_type": task_type,
         "skill_used": skill_used,
         "baseline_score": baseline_score,
+        "composite_score": composite_score,
         "improvement_text": improvement_text[:500],
         "traces_analyzed": len(traces),
         "failures_found": len(failures),

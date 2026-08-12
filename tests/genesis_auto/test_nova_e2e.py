@@ -203,7 +203,9 @@ def test_e2e_step6_identity_preamble_has_accumulated_knowledge():
 
 def test_e2e_full_nova_loop():
     """Full ECHO→SOUL→TRUST loop runs without error and produces expected state."""
-    from tools.workflow.trace_logger import start_trace, close_trace, get_recent_traces
+    from tools.workflow.trace_logger import (
+        start_trace, close_trace, get_recent_traces, get_traces_for_task_type,
+    )
     from tools.workflow.reflexion_agent import run_batch_reflexion
     from icdev.tools.ace.soul_manager import (
         extract_learnings_from_trace, build_identity_preamble, record_learning,
@@ -220,8 +222,14 @@ def test_e2e_full_nova_loop():
     tid = start_trace("e2e-fl-001", task_type, "icdev-build")
     close_trace(tid, "success", "success_first_try", "Full loop E2E verification")
 
-    traces = get_recent_traces(limit=5, outcome_filter="success")
-    assert any(t["trace_id"] == tid for t in traces), "Trace not found in recent traces"
+    # Scope the lookup to this run's unique task_type. `get_recent_traces(limit=5)`
+    # orders by completed_at, which close_trace writes at SECOND resolution, so
+    # any success trace another test seeded in the same second can tie-break the
+    # e2e trace out of the top 5 — a flake that fired ~5 runs in 6 against the
+    # shared ambient DB.
+    assert any(t["trace_id"] == tid for t in get_traces_for_task_type(task_type)), \
+        "Trace not found for task_type"
+    assert isinstance(get_recent_traces(limit=5, outcome_filter="success"), list)
 
     # ── ECHO: reflexion dry_run ────────────────────────────────────────────
     reflex_result = run_batch_reflexion([task_type], dry_run=True)
