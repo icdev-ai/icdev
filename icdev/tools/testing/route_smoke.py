@@ -144,7 +144,14 @@ NAV_ROUTES: List[str] = [
     "/dashboard/pm-view",
 ]
 
-# Body text that indicates a broken response (even with 200 status)
+# Body text that indicates a broken response (even with 200 status).
+#
+# These are signals for a *rendered page* that leaked a Python error. They are
+# applied to HTML/text responses only. JSON responses are checked structurally
+# by _json_error() instead, because an API payload legitimately carries
+# user-authored prose — kanban task descriptions, findings, log excerpts — that
+# routinely mentions "ImportError", "no such table", "404 Not Found" and the
+# rest. Substring-scanning those bodies fails the gate on data, not on defects.
 ERROR_SIGNALS = [
     "Internal Server Error",
     "Traceback (most recent call last)",
@@ -157,6 +164,43 @@ ERROR_SIGNALS = [
     "404 Not Found",
     "Page not found",
 ]
+
+
+# JSON bodies must be read whole to parse. HTML only needs a prefix, since a
+# leaked traceback appears near the top of the rendered page.
+HTML_READ_LIMIT = 32768
+JSON_READ_LIMIT = 8 * 1024 * 1024
+
+
+def _json_error(body: str) -> Optional[str]:
+    """Structurally check a JSON response for a server-side *crash*.
+
+    Only the top-level "error"/"traceback" field is examined, and only for the
+    ERROR_SIGNALS this gate exists to catch (import errors, missing templates,
+    missing tables). Two things are deliberately NOT failures:
+
+      - Nested payload text. An API legitimately returns prose that mentions
+        these words; scanning it fails the gate on data, not on defects.
+      - A semantic empty-state such as {"error": "No scan data found"}. The
+        route served fine, it just has nothing to report.
+
+    A truncated or unparseable body yields None: the status code already
+    passed, so there is nothing to justify inventing a failure.
+    """
+    try:
+        payload = json.loads(body)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    for key in ("error", "traceback"):
+        value = payload.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        for signal in ERROR_SIGNALS:
+            if signal.lower() in value.lower():
+                return value.strip()[:200]
+    return None
 
 
 def _server_up(base: str, timeout: float = 3.0) -> bool:
@@ -184,7 +228,9 @@ def _smoke_route(
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-RouteSmoker/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read(32768).decode("utf-8", errors="replace")
+            is_json = "json" in (resp.headers.get("Content-Type") or "").lower()
+            limit = JSON_READ_LIMIT if is_json else HTML_READ_LIMIT
+            body = resp.read(limit).decode("utf-8", errors="replace")
             status = resp.status
     except urllib.error.HTTPError as e:
         result["status"] = e.code
@@ -203,12 +249,21 @@ def _smoke_route(
         result["error"] = f"HTTP {status}"
         return result
 
-    # Scan body for runtime error signals
-    for signal in ERROR_SIGNALS:
-        if signal.lower() in body.lower():
-            result["error"] = f"Body contains error signal: '{signal}'"
-            result["error_signal"] = signal
+    if is_json:
+        # Structural check — never substring-scan an API payload (see
+        # ERROR_SIGNALS note).
+        err = _json_error(body)
+        if err:
+            result["error"] = f"JSON error payload: {err}"
+            result["error_signal"] = "json_error"
             return result
+    else:
+        # Scan body for runtime error signals
+        for signal in ERROR_SIGNALS:
+            if signal.lower() in body.lower():
+                result["error"] = f"Body contains error signal: '{signal}'"
+                result["error_signal"] = signal
+                return result
 
     result["ok"] = True
     return result
