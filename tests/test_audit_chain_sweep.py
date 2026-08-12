@@ -418,6 +418,32 @@ def _run_cli(db: Path, *extra):
     )
 
 
+def test_db_path_is_honoured_on_a_postgresql_primary(tmp_path, signing_secret, monkeypatch):
+    """--db-path must open the file it names, not the ambient database.
+
+    Regression: `get_connection` reads ICDEV_STORAGE_BACKEND and only honours
+    db_path on SQLite. On this repo's PostgreSQL-primary install the sweep
+    therefore connected to PostgreSQL and reported a clean chain for a tampered
+    file it had never opened. The rest of the suite could not catch it because
+    conftest pins the backend to sqlite, which is exactly what masked the bug.
+    """
+    db = make_db(tmp_path)
+    entry_id = log_event("code_generated", "tester", "a", db_path=db)
+    conn = sqlite3.connect(str(db))
+    conn.execute("UPDATE audit_trail SET action = ? WHERE id = ?", ("edited", entry_id))
+    conn.commit()
+    conn.close()
+
+    # Simulate the real deployment: PostgreSQL is the configured primary.
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "postgresql")
+
+    report = sweep_chain(db_path=db)
+
+    assert counts(report)[STATUS_BROKEN] == 1, f"swept the ambient DB, not --db-path: {report}"
+    # And the ambient setting is left exactly as it was found.
+    assert __import__("os").environ["ICDEV_STORAGE_BACKEND"] == "postgresql"
+
+
 def test_cli_json_reports_the_three_required_counts(tmp_path, signing_secret):
     db = make_db(tmp_path)
     legacy_rows(db, 3)

@@ -257,6 +257,37 @@ def _classify_chained(row, prev_id, prev_hash) -> tuple:
     return STATUS_VERIFIED, None, expected_hash, stored_hash
 
 
+def _open(db_path=None):
+    """Open the connection to sweep.
+
+    ``get_connection`` reads ``ICDEV_STORAGE_BACKEND`` from the environment and
+    only honours ``db_path`` on SQLite, so on a PostgreSQL-primary install (the
+    normal case here) passing ``--db-path`` would connect to PostgreSQL anyway
+    and silently sweep the wrong database — reporting a clean chain for a file it
+    never opened. An explicit path names a SQLite file, so the backend is pinned
+    for the duration of the connect and restored immediately after.
+
+    The env is only touched when a path was explicitly given; the dashboard and
+    the reflex pass none, so the ambient backend is never disturbed for them.
+    """
+    from tools.db.storage import get_connection
+
+    if not db_path:
+        return get_connection()
+
+    import os
+
+    previous = os.environ.get("ICDEV_STORAGE_BACKEND")
+    os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
+    try:
+        return get_connection(db_path=str(db_path))
+    finally:
+        if previous is None:
+            os.environ.pop("ICDEV_STORAGE_BACKEND", None)
+        else:
+            os.environ["ICDEV_STORAGE_BACKEND"] = previous
+
+
 def sweep_chain(
     conn=None,
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -274,9 +305,7 @@ def sweep_chain(
     """
     owns_conn = conn is None
     if owns_conn:
-        from tools.db.storage import get_connection
-
-        conn = get_connection(db_path=str(db_path)) if db_path else get_connection()
+        conn = _open(db_path)
 
     try:
         return _sweep(conn, batch_size, max_broken_samples, max_links, verify_signatures)
