@@ -684,6 +684,22 @@ CREATE TABLE IF NOT EXISTS agent_approval_log (
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- exa-policy-02 / migration 20260812054330. Session-scoped state that stateful
+-- policies count against (max_tool_calls_per_session and friends). MUTABLE and
+-- deliberately NOT append-only: a counter IS its current value, written with an
+-- UPSERT on (session_id, state_key). The permanent decision record is the
+-- append-only agent_approval_log above. Keep this in step with
+-- tools/db/migrations/20260812054330_agent_session_policy_state/up.py.
+CREATE TABLE IF NOT EXISTS agent_session_policy_state (
+    session_id TEXT NOT NULL,
+    state_key TEXT NOT NULL,
+    state_value TEXT,
+    updated_at TEXT,
+    tenant_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, state_key)
+);
 -- agov-det-05 / migration 20260809201320. Append-only: one row per detection
 -- rule match, citing the ordered event ids that made it fire. Keep this in step
 -- with tools/db/migrations/20260809201320_agov_agent_findings/up.py — a fixture

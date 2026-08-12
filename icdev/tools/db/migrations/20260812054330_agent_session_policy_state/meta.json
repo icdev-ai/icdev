@@ -1,0 +1,7 @@
+{
+  "description": "agent_session_policy_state",
+  "date": "2026-08-12",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

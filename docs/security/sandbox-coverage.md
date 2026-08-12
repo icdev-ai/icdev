@@ -2148,3 +2148,92 @@ a first-party config naming which registered policies run, in what order.
   input), the config starts naming an import path or a code string rather than a
   registered name, or a policy is added that *acts* — remediates, notifies, or
   mutates state — rather than returning a verdict.
+
+### Gap 63 — Three-level policy composition and session state (`tools/agent_runtime/policy_composition.py`)
+
+**Module:** `tools/agent_runtime/policy_composition.py` (exa-policy-02).
+
+**Ingress path:** Three. (1) The **tool input of every agent tool call**, as in
+Gap 62 — unchanged, and covered there. (2) A **session-level policy config set
+by the END USER**, passed in as a dict by the runtime or read from
+`$ICDEV_AGENT_POLICY_CHAIN_SESSION`. (3) An **agent-level policy config set by
+the agent author**, from `<profile_dir>/policy_chain.yaml` or
+`$ICDEV_AGENT_POLICY_CHAIN_AGENT`.
+
+Ingress (2) is the one Gap 62's "revisit if" named in advance — *"the chain gains
+a policy source that is not first-party"* — so it is answered explicitly below
+rather than by analogy. So is the second trigger, *"a policy is added that
+mutates state rather than returning a verdict"*: `state_updates` does exactly
+that.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** A session config is lower-trust than the server config, and the
+  composition treats it as such — but it still cannot reach an execution path,
+  for the same structural reason Gap 62 gives and one more.
+  - **A config supplies only NAMES, and cannot introduce a callable.** A session
+    or agent config names policies that must already be in the in-process
+    registry, populated exclusively by first-party `register_policy()` calls at
+    import time. There is no import path, no code string, no `exec`/`eval`/
+    `compile`/`subprocess`/`pickle`/`importlib` in the module. A name the
+    registry does not hold resolves to a **DENY that names itself**, per level —
+    not a skip, and not an attempt to resolve it some other way. So the
+    end-user-controlled surface is "which of the admin's policies also run
+    against me", which is a request for *more* scrutiny.
+  - **Levels are additive, so a lower-trust level can only tighten.** The
+    composed answer is the strictest effect any level returned. There is no
+    session-level syntax for removing a policy from the agent or server chain,
+    for lowering a floor, or for turning a DENY into an ALLOW — not because a
+    check rejects those, but because composition never reads a lower level as an
+    override. A session ALLOW is indistinguishable from a session abstention.
+    That is what makes evaluating the least-trusted level FIRST safe.
+  - **State is data written by policies, not by callers.** `state_updates` is a
+    closed vocabulary of five actions (`increment`, `decrement`, `set`, `append`,
+    `delete`) applied to a JSON-serialisable value; there is no action that
+    executes, no key that is interpreted as a path or a name, and the composition
+    never copies `PolicyEvent.arguments` into state. So the "policy that acts"
+    trigger resolves to "a policy that counts", which is not an execution path.
+  - Config files are parsed with `yaml.safe_load` (never `yaml.load`), and an
+    unreadable one yields an **empty level** rather than an exception or a
+    permissive default.
+- **Guardrails:**
+  - **The level ORDER is a module constant (`LEVELS`), not a config key.** A
+    config that could reorder the levels could put the session level last, so it
+    is kept out of reach rather than validated.
+  - **Server-only keys are server-only.** `audit` below the server level is
+    ignored, so a session cannot stop its own denials being logged. An attempted
+    lowering — a softer floor, a disabled policy a stricter level enables, a
+    server-only key — is **reported** as a `Relaxation` and logged at WARNING,
+    never silently dropped: a key ignored in silence is a key somebody keeps
+    writing.
+  - **`on_policy_error: allow` is refused at every level, including server.** A
+    broken policy is an unanswered question, not an answer.
+  - **A malformed `state_update` raises rather than being skipped**, and the
+    chain resolves that to `on_policy_error` (DENY). A counter that silently
+    fails to increment is a limit that silently never fires — precisely the
+    declared-but-unconsumed failure the EXA card exists to close.
+  - **A policy cannot mutate state by writing to the event it was handed** —
+    `PolicyEvent.session_state` is a snapshot, and `apply_updates` is the only
+    writer. Updates apply as each policy returns, so a later policy reads what an
+    earlier one wrote within the same call.
+  - Hard blocks from `.claude/hooks/pre_tool_use.py` still win before any policy,
+    and DENY still short-circuits and is never escalated to the approver.
+  - Argument **values never persist and never render**: the audit row is written
+    by `approval_gate.record_decision()` (reused, not reimplemented) and the
+    `--json` CLI emits levels, policy names, effects, reasons and rules only.
+  - Persisted session state (`agent_session_policy_state`, migration
+    `20260812054330`) holds only what a policy put there, under `classification
+    'CUI'` and the platform RLS predicate, and a missing table degrades to
+    in-process state with a WARNING naming the migration — never to an absent
+    limit reported as a satisfied one.
+  - `tests/test_agent_policy_composition.py` pins all of the above, including
+    every attempted-loosening case as its own test, that a session DENY means the
+    server level is never consulted, that a rebuilt hook counts against the same
+    session, and that a CUI-shaped argument value reaches neither the audit
+    detail nor the reason.
+- **Revisit if:** a policy config becomes **tenant-supplied or LLM-authored**
+  (an end user at the keyboard already has shell access to the repo and the
+  reversibility gate in front of them; a policy synthesised by a model is a
+  different trust question), a level gains the ability to name an import path or
+  a code string rather than a registered name, `state_updates` gains an action
+  that does anything other than store a value, or a fourth level is added that is
+  evaluated after `server`.

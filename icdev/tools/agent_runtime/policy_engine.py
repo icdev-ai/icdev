@@ -165,6 +165,15 @@ class PolicyDecision:
     ``reason`` is required in spirit and enforced in practice: a decision with
     no reason is unreviewable, and a DENY nobody can explain is a bug report
     waiting to be filed against the wrong component.
+
+    ``state_updates`` is how a *stateful* policy writes back — a tuple of
+    ``{"key": ..., "action": ..., "value": ...}`` mappings, omnigent's
+    mechanism. This module only carries them; applying them (and persisting the
+    result for a session) is
+    :func:`tools.agent_runtime.policy_composition.apply_state_updates`, because
+    the state that a counter counts against is session-scoped and this layer is
+    process-wide. A single-level chain with no session therefore ignores them,
+    which is why the field is a plain default rather than a required argument.
     """
 
     effect: str
@@ -173,6 +182,7 @@ class PolicyDecision:
     tier: str = ""      # carried through from the reversibility gate, if any
     rule: str = ""      # which rule inside the policy decided
     detail: str = ""
+    state_updates: tuple[dict[str, Any], ...] = ()
 
     def summary(self) -> str:
         head = f"[{self.effect.upper()}] {self.policy or 'policy'}"
@@ -375,6 +385,43 @@ register_policy("reversibility", reversibility_policy, replace=True)
 # ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
+def _normalize_state_updates(raw: Any) -> tuple[dict[str, Any], ...]:
+    """Structurally validate a policy's ``state_updates``, or raise.
+
+    Raising is the point. A malformed update dropped quietly is a counter that
+    never increments, which is a limit that never fires — the
+    declared-but-unconsumed failure this card exists to stop, in miniature. The
+    raise is caught by :func:`evaluate` and resolved to ``on_policy_error``
+    (DENY by default), so a policy that cannot express its own state change does
+    not get to authorise anything.
+
+    Only *structure* is checked here — a non-empty ``key`` and a non-empty
+    ``action``. The action VOCABULARY belongs to
+    :mod:`tools.agent_runtime.policy_composition`, which owns the state, and a
+    second copy of it here is a copy that drifts.
+    """
+    if not raw:
+        return ()
+    if isinstance(raw, dict):  # a single update, unwrapped — accept it
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError(f"state_updates must be a sequence, got {type(raw).__name__}")
+    updates: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError(
+                f"each state update must be a mapping, got {type(item).__name__}"
+            )
+        key = str(item.get("key") or "").strip()
+        action = str(item.get("action") or "").strip().lower()
+        if not key:
+            raise ValueError("a state update needs a non-empty 'key'")
+        if not action:
+            raise ValueError(f"state update for {key!r} needs a non-empty 'action'")
+        updates.append({"key": key, "action": action, "value": item.get("value")})
+    return tuple(updates)
+
+
 def _normalize(result: Any, name: str) -> PolicyDecision:
     """Coerce whatever a policy returned into a PolicyDecision. Fail closed."""
     if result is None:
@@ -395,6 +442,7 @@ def _normalize(result: Any, name: str) -> PolicyDecision:
             tier=result.tier,
             rule=result.rule,
             detail=result.detail,
+            state_updates=_normalize_state_updates(result.state_updates),
         )
     if isinstance(result, str):
         effect = result.strip().lower()
