@@ -469,8 +469,11 @@ class TestGEPAOptimizer:
             lambda dry_run=False: {"applied": [], "skipped": [], "errors": []},
         )
         result = reflex_mod.run({}, None)
-        assert result["status"] == "ok"
-        assert result["applied"] == 0
+        # hgx-obs-02 moved this reflex to the daemon envelope
+        # {success, metric_value, details}; status/applied moved under details.
+        assert result["success"] is True
+        assert result["details"]["status"] == "ok"
+        assert result["details"]["applied"] == 0
 
     def test_gepa_reflex_reports_partial_on_errors(self, monkeypatch):
         import tools.genesis.reflexes.gepa_optimizer as reflex_mod
@@ -483,9 +486,10 @@ class TestGEPAOptimizer:
             },
         )
         result = reflex_mod.run({}, None)
-        assert result["status"] == "partial"
-        assert result["applied"] == 1
-        assert result["errors"] == 1
+        assert result["success"] is False
+        assert result["details"]["status"] == "partial"
+        assert result["details"]["applied"] == 1
+        assert result["details"]["errors"] == 1
 
     def test_gepa_reflex_handles_import_error(self, monkeypatch):
         import tools.genesis.reflexes.gepa_optimizer as reflex_mod
@@ -494,5 +498,6 @@ class TestGEPAOptimizer:
             MagicMock(side_effect=ImportError("LLMRouter not available")),
         )
         result = reflex_mod.run({}, None)
-        assert result["status"] == "error"
-        assert "error" in result
+        assert result["success"] is False
+        assert result["details"]["status"] == "error"
+        assert "error" in result["details"]
