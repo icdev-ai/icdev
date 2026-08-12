@@ -202,6 +202,41 @@ def _check_coherence() -> Dict[str, Any]:
         return {"check": "coherence", "status": "failed", "error": str(e)}
 
 
+def _check_chain_integrity() -> Dict[str, Any]:
+    """Sweep the audit_trail hash chain (exa-audit-04).
+
+    Rides this reflex's existing daily cadence rather than adding a scheduler:
+    the daemon already dispatches ``audit`` from ``REFLEX_NAMES``, so a check
+    registered here actually runs, whereas a new entry in ``reflex_registry.py``
+    would schedule nothing.
+
+    ``broken`` is the only field that means tampering. ``pre_cutover`` and
+    ``unchained`` are reported so the anomaly detector can see the ratio, but a
+    non-zero count in either is the expected steady state on this deployment and
+    must not read as a finding.
+    """
+    print("  Audit: audit-chain integrity sweep...")
+    try:
+        from tools.audit.chain_sweep import sweep_chain
+
+        report = sweep_chain()
+        counts = report.get("counts", {})
+        return {
+            "check": "chain_integrity",
+            "status": "completed",
+            "findings": {
+                "chain_health": report.get("chain_health", "unknown"),
+                "broken": counts.get("broken", 0),
+                "verified": counts.get("verified", 0),
+                "pre_cutover": counts.get("pre_cutover", 0),
+                "unchained": counts.get("unchained", 0),
+                "cutover_authoritative": (report.get("cutover") or {}).get("authoritative", False),
+            },
+        }
+    except Exception as e:
+        return {"check": "chain_integrity", "status": "failed", "error": str(e)}
+
+
 _ANOMALY_PROMPT = """\
 You are an expert code-quality and security analyst reviewing an automated
 self-audit of the ICDEV™ platform codebase.
@@ -402,6 +437,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "secret_detection": _check_secret_detection,
         "dependency_audit": _check_dependency_audit,
         "coherence": _check_coherence,
+        "chain_integrity": _check_chain_integrity,
     }
 
     checks = []

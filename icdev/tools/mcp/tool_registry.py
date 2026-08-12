@@ -4336,6 +4336,25 @@ TOOL_REGISTRY = {
     # ============================================================
     # TESTING (6 tools)
     # ============================================================
+    "audit_chain_sweep": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_audit_chain_sweep",
+        "description": (
+            "Verify the whole audit_trail hash chain (NIST AU-9). Buckets every row as "
+            "verified / pre_cutover (unverifiable, NOT tampered) / unchained (post-cutover, "
+            "writer bypassed) / broken. Only 'broken' indicates tampering; signatures are "
+            "reported separately and never counted broken."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "gate": {"type": "boolean", "default": False},
+                "verify_signatures": {"type": "boolean", "default": False},
+                "db_path": {"type": "string"},
+            },
+        },
+    },
     "production_audit": {
         "category": "testing",
         "module": "tools.mcp.gap_handlers",
@@ -8965,6 +8984,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "finding_replay":                           False,
     "finding_enforce_reproduction":             False,
     "finding_verify_discrimination":            False,
+    # The sweep issues SELECTs only — it never writes, and must not, since the
+    # table it verifies is append-only.
+    "audit_chain_sweep":                        True,
     # -- testing -----------------------------------------------------------
     "production_audit":                         False,
     "production_remediate":                     False,

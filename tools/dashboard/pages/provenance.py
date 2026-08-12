@@ -196,6 +196,39 @@ def verify_entry():
         return jsonify({"error": str(e)}), 500
 
 
+@provenance_api.route("/chain-health", methods=["GET"])
+def chain_health():
+    """GET /api/govchain-provenance/chain-health — whole-of-table audit chain sweep.
+
+    Backs the Audit Chain Integrity panel. The panel's job is to state which of
+    four things is true of each row rather than showing one green tick, so this
+    returns the sweep verbatim: ``verified`` / ``pre_cutover`` / ``unchained`` /
+    ``broken`` counts, the cutover boundary and whether it is authoritative, and
+    the most recent real links for the table.
+
+    Errors are reported as ``chain_health: "unavailable"`` rather than a 500 with
+    an empty body — a panel that silently renders zeros would read as "nothing is
+    broken", which is the one thing it must never say without having looked.
+    """
+    try:
+        from tools.audit.chain_sweep import sweep_chain
+
+        report = sweep_chain(
+            verify_signatures=request.args.get("verify_signatures") == "1",
+        )
+        return jsonify(report)
+    except Exception as e:
+        return jsonify(
+            {
+                "ok": False,
+                "chain_health": "unavailable",
+                "error": str(e),
+                "counts": {"verified": 0, "pre_cutover": 0, "unchained": 0, "broken": 0},
+                "links": [],
+            }
+        ), 200
+
+
 @provenance_api.route("/blockchain-status", methods=["GET"])
 def blockchain_status():
     """GET /api/govchain-provenance/blockchain-status — GovChain queue depth and anchor stats."""

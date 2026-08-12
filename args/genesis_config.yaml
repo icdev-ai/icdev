@@ -240,6 +240,11 @@ reflexes:
       - compliance_check
       - stig_check
       - sbd_assessment
+      # exa-audit-04: whole-of-table audit_trail hash chain sweep. Listed HERE and
+      # not only in audit.py's check_map default — reflexes/audit.py reads
+      # config["checks"] and only falls back to its own list when this key is
+      # absent, so a check that is not named here never runs.
+      - chain_integrity
 
   comply:
     enabled: true

@@ -7,6 +7,86 @@
     <h1>Provenance Graph</h1>
     <p class="text-muted">W3C PROV-AGENT artifact lineage — tracks what produced what across agent operations (Phase 46).</p>
 
+    <!-- ==================== Audit Chain Integrity (exa-audit-04) ====================
+         Placed first: this is the tamper-evidence surface. A broken link must be the
+         first thing on the page, not something found by scrolling.
+
+         The four states are distinguished by border STYLE and explicit label text as
+         well as colour — a compliance reviewer reading this in greyscale, or with a
+         colour vision deficiency, still has to be able to tell "broken" from
+         "pre-cutover". That distinction is the entire point of the panel: conflating
+         them is how a real tamper event gets dismissed as legacy data. -->
+    <style>
+        /* A broken row is rendered on a pale red background so it is unmissable,
+           but the dark theme's inherited light text made those rows the LEAST
+           readable on the page — the opposite of the intent. Pin the foreground
+           for the row and everything nested in it. */
+        #cs-links-body tr[data-state="broken"],
+        #cs-links-body tr[data-state="broken"] td,
+        #cs-links-body tr[data-state="broken"] code {
+            color: #4a0d0d !important;
+            font-weight: 600;
+        }
+    </style>
+    <h2 style="margin-top:2rem;">Audit Chain Integrity</h2>
+    <p class="text-muted">
+        Whole-of-table sweep of the <code>audit_trail</code> hash chain — every row is
+        recomputed and every link re-checked. Run it yourself with
+        <code>python tools/audit/chain_sweep.py --json</code>.
+    </p>
+
+    <div id="cs-banner" role="status" style="display:none;padding:0.7rem 1rem;border-radius:6px;margin-bottom:1rem;font-weight:700;"></div>
+
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin:1rem 0 1.5rem;">
+        <div class="cs-state cs-state-verified" data-state="verified"
+             style="padding:1rem;border:2px solid #2e7d32;border-left-width:10px;border-radius:8px;background:#f1f8f2;">
+            <div id="cs-verified" style="font-size:2rem;font-weight:bold;color:#2e7d32;">--</div>
+            <div style="font-weight:700;color:#2e7d32;letter-spacing:0.02em;">&#10003; VERIFIED</div>
+            <div style="color:#555;font-size:0.82rem;margin-top:0.25rem;">Hash and link both recompute.</div>
+        </div>
+        <div class="cs-state cs-state-pre-cutover" data-state="pre_cutover"
+             style="padding:1rem;border:2px dashed #757575;border-left-width:10px;border-radius:8px;background:#fafafa;">
+            <div id="cs-pre-cutover" style="font-size:2rem;font-weight:bold;color:#555;">--</div>
+            <div style="font-weight:700;color:#555;letter-spacing:0.02em;">&#8212; PRE-CUTOVER</div>
+            <div style="color:#555;font-size:0.82rem;margin-top:0.25rem;">Written before the chain writer existed. Honestly <strong>unverifiable</strong> &mdash; not tampered.</div>
+        </div>
+        <div class="cs-state cs-state-unchained" data-state="unchained"
+             style="padding:1rem;border:2px dotted #ef6c00;border-left-width:10px;border-radius:8px;background:#fff8ef;">
+            <div id="cs-unchained" style="font-size:2rem;font-weight:bold;color:#ef6c00;">--</div>
+            <div style="font-weight:700;color:#ef6c00;letter-spacing:0.02em;">&#9888; UNCHAINED</div>
+            <div style="color:#555;font-size:0.82rem;margin-top:0.25rem;">Written after cutover by a call site that bypasses the writer. A known gap, not tampering.</div>
+        </div>
+        <div class="cs-state cs-state-broken" data-state="broken"
+             style="padding:1rem;border:4px solid #b71c1c;border-left-width:12px;border-radius:8px;background:#ffebee;">
+            <div id="cs-broken" style="font-size:2rem;font-weight:bold;color:#b71c1c;">--</div>
+            <div style="font-weight:800;color:#b71c1c;letter-spacing:0.03em;">&#10007; BROKEN</div>
+            <div style="color:#555;font-size:0.82rem;margin-top:0.25rem;">Chained, but the digest or the link does not hold. <strong>Investigate.</strong></div>
+        </div>
+    </div>
+
+    <p id="cs-cutover-note" class="text-muted" style="font-size:0.85rem;"></p>
+
+    <h3>Chain Links</h3>
+    <div class="table-container">
+        <table id="cs-links-table" aria-label="Audit chain links">
+            <thead>
+                <tr>
+                    <th>Row ID</th>
+                    <th>Event</th>
+                    <th>Previous Hash</th>
+                    <th>Row Hash</th>
+                    <th>Signature</th>
+                    <th>State</th>
+                </tr>
+            </thead>
+            <tbody id="cs-links-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <hr style="margin:2.5rem 0;">
+
     <!-- Stat grid -->
     <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
         <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
@@ -232,6 +312,131 @@
                 a.click();
             }).catch(() => {});
     };
+
+    // ---- Audit chain integrity sweep (exa-audit-04) ----
+    // Badge styling per state. Each carries a distinct glyph and word as well as
+    // a colour, so the states stay distinguishable in greyscale or print.
+    var CS_STATES = {
+        verified:    {label: '✓ VERIFIED',  fg: '#2e7d32', bg: '#e8f5e9', border: '1px solid #2e7d32'},
+        broken:      {label: '✗ BROKEN',    fg: '#b71c1c', bg: '#ffcdd2', border: '3px solid #b71c1c'},
+        pre_cutover: {label: '— PRE-CUTOVER', fg: '#555',  bg: '#f5f5f5', border: '1px dashed #757575'},
+        unchained:   {label: '⚠ UNCHAINED', fg: '#ef6c00', bg: '#fff3e0', border: '1px dotted #ef6c00'}
+    };
+
+    function csBadge(state, reason) {
+        var s = CS_STATES[state] || CS_STATES.pre_cutover;
+        var title = reason ? ' title="' + reason + '"' : '';
+        return '<span' + title + ' style="display:inline-block;padding:0.15rem 0.5rem;border-radius:4px;'
+             + 'font-weight:700;font-size:0.78rem;color:' + s.fg + ';background:' + s.bg
+             + ';border:' + s.border + ';">' + s.label + (reason ? ' (' + reason + ')' : '') + '</span>';
+    }
+
+    function csShort(h) {
+        if (!h) return '<span style="color:#999;">none</span>';
+        // A run that restarts at genesis is expected on a sparse chain, so it is
+        // named rather than shown as 64 zeros the reader has to decode.
+        if (/^0{64}$/.test(h)) return '<span style="color:#777;">GENESIS</span>';
+        return '<code title="' + h + '">' + h.substring(0, 16) + '…</code>';
+    }
+
+    function loadChainHealth() {
+        fetch('/api/govchain-provenance/chain-health')
+            .then(r => r.json())
+            .then(data => {
+                var c = data.counts || {};
+                document.getElementById('cs-verified').textContent = c.verified ?? 0;
+                document.getElementById('cs-pre-cutover').textContent = c.pre_cutover ?? 0;
+                document.getElementById('cs-unchained').textContent = c.unchained ?? 0;
+                document.getElementById('cs-broken').textContent = c.broken ?? 0;
+
+                var banner = document.getElementById('cs-banner');
+                banner.style.display = 'block';
+                if (data.chain_health === 'broken') {
+                    banner.style.background = '#b71c1c';
+                    banner.style.color = '#fff';
+                    banner.textContent = 'CHAIN INTEGRITY FAILURE — ' + (c.broken || 0)
+                        + ' chained row(s) no longer match their recorded hash or link. This is a tamper signal, not legacy data.';
+                } else if (data.chain_health === 'unavailable') {
+                    banner.style.background = '#fff3e0';
+                    banner.style.color = '#e65100';
+                    banner.textContent = 'Chain could not be swept: ' + (data.error || 'unknown error')
+                        + ' — this is not a clean bill of health.';
+                } else if (data.chain_health === 'no_chain') {
+                    banner.style.background = '#f5f5f5';
+                    banner.style.color = '#555';
+                    banner.textContent = 'No chained rows yet — nothing to verify. Every row predates the chain writer.';
+                } else {
+                    banner.style.background = '#e8f5e9';
+                    banner.style.color = '#1b5e20';
+                    banner.textContent = 'Chain verified — all ' + (c.verified || 0)
+                        + ' chained link(s) recompute. ' + (c.pre_cutover || 0)
+                        + ' row(s) predate the chain and are unverifiable by design.';
+                }
+
+                // Say where the cutover boundary came from. A derived boundary is a
+                // best guess that would shift if the first chained row were removed,
+                // so it must not be presented with the same confidence as the marker.
+                var cut = data.cutover || {};
+                var note = document.getElementById('cs-cutover-note');
+                if (cut.source === 'marker') {
+                    note.textContent = 'Cutover recorded at audit_trail id ' + cut.boundary_id
+                        + ' (authoritative, from audit_chain_genesis). Hash: ' + (data.hash_algorithm || 'sha256') + '.';
+                } else if (cut.source === 'derived') {
+                    note.innerHTML = '<strong>Cutover derived, not recorded:</strong> boundary inferred as id '
+                        + cut.boundary_id + ' because audit_chain_genesis is empty or absent '
+                        + '(run migration 20260812041301). The split between pre-cutover and unchained '
+                        + 'is a best estimate until the marker exists.';
+                } else {
+                    note.textContent = 'No cutover boundary — nothing has been chained in this database yet.';
+                }
+
+                var sig = data.signatures || {};
+                if (sig.unsigned) {
+                    note.innerHTML += '<br>' + sig.signed + ' link(s) signed, ' + sig.unsigned
+                        + ' unsigned (no signing key configured). An unsigned link is still hash-verified — '
+                        + 'signatures are reported separately and never counted as broken.';
+                }
+
+                var tbody = document.getElementById('cs-links-body');
+                var links = data.links || [];
+                if (links.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">'
+                        + 'No chained links yet — every audit row predates the chain writer.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = links.slice().reverse().map(function(l) {
+                    // Set the foreground explicitly, not just the background: the
+                    // dark theme's inherited light text on a pale red row left the
+                    // BROKEN rows the least readable ones on the page.
+                    var rowStyle = l.status === 'broken'
+                        ? ' style="background:#ffebee;color:#4a0d0d;font-weight:600;"'
+                        : '';
+                    return '<tr' + rowStyle + ' data-state="' + l.status + '">'
+                        + '<td><code>' + l.id + '</code></td>'
+                        + '<td>' + (l.event_type || '') + '</td>'
+                        + '<td>' + csShort(l.previous_hash) + '</td>'
+                        + '<td>' + csShort(l.hash) + '</td>'
+                        + '<td>' + (l.signature_algorithm === 'none'
+                            ? '<span style="color:#777;">unsigned</span>'
+                            : '<span style="color:#2e7d32;">' + l.signature_algorithm + '</span>') + '</td>'
+                        + '<td>' + csBadge(l.status, l.reason) + '</td>'
+                        + '</tr>';
+                }).join('');
+            })
+            .catch(e => {
+                // Never leave the panel showing zeros on failure — zeros read as
+                // "nothing is broken", which is a claim we have not earned.
+                var banner = document.getElementById('cs-banner');
+                banner.style.display = 'block';
+                banner.style.background = '#fff3e0';
+                banner.style.color = '#e65100';
+                banner.textContent = 'Chain sweep request failed: ' + e + ' — this is not a clean bill of health.';
+                document.getElementById('cs-links-body').innerHTML =
+                    '<tr><td colspan="6" style="text-align:center;color:#c62828;">Failed to load chain health.</td></tr>';
+            });
+    }
+
+    loadChainHealth();
 
     // GovChain status
     function loadGovchainStatus() {
