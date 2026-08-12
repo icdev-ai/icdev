@@ -994,8 +994,11 @@
     var imps = (cw.recent_improvements || []).slice(0, 3);
     var impHtml = imps.length
       ? imps.map(function (i) {
+          var ev = i.evidence_summary || "No lesson_learned evidence attached.";
           return '<div class="ni-item" title="' + escHtml(i.improvement_text || "") + '">' +
                    escHtml((i.task_type || "improvement") + ": " + (i.improvement_text || "").slice(0, 80)) +
+                   '<div class="ni-evidence" style="font-size:11px;color:var(--text-secondary,#666);margin-top:2px;" ' +
+                     'title="' + escHtml(ev) + '">evidence: ' + escHtml(ev) + '</div>' +
                  '</div>';
         }).join("")
       : '<div class="ni-item" style="color:var(--text-secondary,#555);">No improvement artifacts yet.</div>';

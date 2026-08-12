@@ -135,6 +135,13 @@ tests/test_context_budget.py
 # prebuild run. ~13s, pure Python, no DB/LLM/network.
 tests/test_init_goals_and_selective.py
 
+# test_bootstrap_parity.py is the generalisation of the line above: the same
+# drift hit AGENTS.md with nothing watching it, shipping a scaffolded project a
+# guardrail doc missing the mandatory project-cards section. Declares the pairs
+# in args/bootstrap_parity.yaml and fails naming prebuild_bootstrap as the fix,
+# instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
+tests/test_bootstrap_parity.py
+
 tests/test_coherence_swallowed_persistence.py
 tests/test_analyzer_contract.py
 tests/test_agent_approval_gate.py
@@ -641,3 +648,12 @@ tests/hooks/test_shared_checks.py
 # evaluation would run ruff, re-stage files or write an agent_findings row.
 # Drives a synthetic transcript in tmp_path -- reads no host session data, ~1s.
 tests/hooks/test_fire_rate_survey.py
+# exa-live-02 -- capability liveness coherence gate. The enforcement half of
+# exa-live-01's measurement, and it earns a slot for the same reason the reflex
+# version did: this bug shipped three times before it had a check. The two
+# properties most likely to be broken by a well-meaning edit are pinned here --
+# that a low-cadence unit (consumed once, idle this window) is NOT a finding, and
+# that an unpopulated database warns instead of fabricating one per declared
+# unit. Both are decided from injected report data, so no DB service, LLM or
+# network; ~3s.
+tests/test_coherence_capability_liveness.py

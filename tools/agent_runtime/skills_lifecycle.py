@@ -228,6 +228,26 @@ def _stamp_provenance(artifact_id: str, *, session_id: str, model: str, conn=Non
         logger.debug("skills_lifecycle: stamp provenance failed: %s", exc)
 
 
+def _parse_evidence(raw: Any) -> dict[str, Any]:
+    """Lesson-backed evidence bundle for a proposal (exa-refine-04)."""
+    try:
+        from tools.workflow.refinement_evidence import parse_evidence
+
+        return parse_evidence(raw)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("skills_lifecycle: evidence parse failed: %s", exc)
+        return {}
+
+
+def _evidence_summary(raw: Any) -> str:
+    try:
+        from tools.workflow.refinement_evidence import evidence_summary
+
+        return evidence_summary(raw)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def list_proposals(status: str = "pending", *, limit: int = 50, conn=None) -> list[dict[str, Any]]:
     """List skill proposals in the NOVA queue (``task_type='skill_generation'``)."""
     try:
@@ -248,6 +268,10 @@ def list_proposals(status: str = "pending", *, limit: int = 50, conn=None) -> li
             out.append({
                 "artifact_id": r[0], "skill_name": r[1],
                 "spec": r[2], "provenance": ev, "status": r[4], "created_at": str(r[5]),
+                # exa-refine-04: a reviewer sees the lesson rows and recurrence
+                # score behind the proposal, not just its provenance.
+                "evidence": _parse_evidence(r[3]),
+                "evidence_summary": _evidence_summary(r[3]),
             })
         return out
     except Exception as exc:  # noqa: BLE001
@@ -269,7 +293,11 @@ def _get_proposal(artifact_id: str, *, conn=None) -> Optional[dict[str, Any]]:
         ev = json.loads(r[3]) if r[3] else {}
     except Exception:  # noqa: BLE001
         ev = {}
-    return {"artifact_id": r[0], "skill_name": r[1], "spec": r[2], "provenance": ev, "status": r[4]}
+    return {
+        "artifact_id": r[0], "skill_name": r[1], "spec": r[2], "provenance": ev,
+        "status": r[4], "evidence": _parse_evidence(r[3]),
+        "evidence_summary": _evidence_summary(r[3]),
+    }
 
 
 def _set_proposal_status(artifact_id: str, status: str, *, conn=None) -> None:

@@ -13,6 +13,10 @@ if str(HOOKS_DIR) not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Tools the awareness subscriber actually handles — must stay in sync with
+# _TRACKED_TOOLS in tools/awareness/hooks.py.
+_AWARENESS_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit"})
+
 
 def dispatch_extension_hook(tool_name: str, tool_input: dict, tool_output: str):
     """Best-effort dispatch of TOOL_EXECUTE_AFTER extension point (Phase 44 Feature 2).
@@ -24,10 +28,16 @@ def dispatch_extension_hook(tool_name: str, tool_input: dict, tool_output: str):
     context dict including the full tool_input so subscribers (like
     the awareness component indexer) can extract file paths.
     """
-    try:
-        import tools.awareness.hooks  # noqa: F401  — registers subscriber on first import
-    except Exception:
-        pass  # Awareness hook optional
+    # Only import the awareness subscriber for the tools it actually handles.
+    # ``tools/awareness/hooks.py`` filters on _TRACKED_TOOLS = {Edit, Write,
+    # NotebookEdit, MultiEdit}, so importing it for a Read or a Bash call paid
+    # ~90 ms of import cost — on every tool call — to register a handler that
+    # would immediately filter the event out.
+    if tool_name in _AWARENESS_TOOLS:
+        try:
+            import tools.awareness.hooks  # noqa: F401  — registers subscriber on first import
+        except Exception:
+            pass  # Awareness hook optional
 
     try:
         from tools.extensions.extension_manager import extension_manager, ExtensionPoint
@@ -61,7 +71,16 @@ def main():
         # Import here to avoid issues if DB doesn't exist yet
         from send_event import get_session_id, store_event
 
-        session_id = get_session_id()
+        # The session id Claude Code passes on stdin wins. get_session_id()
+        # falls back to a fresh uuid4 when CLAUDE_SESSION_ID is unset, and this
+        # hook runs as a new interpreter per tool call — so calling it directly
+        # minted a NEW session for every event. Measured 2026-08-11: 9,803 of
+        # 9,816 sessions in hook_events held exactly one event, which silently
+        # disables anything keyed on a session (AGOV sequence rules need >=2
+        # events in one session to fire; the CASE timeline/bundle is per
+        # session). Same `payload or get_session_id()` order stop.py,
+        # subagent_stop.py, pre_compact.py and user_prompt_submit.py already use.
+        session_id = input_data.get("session_id") or get_session_id()
         # Truncate large outputs to prevent DB bloat
         output_summary = str(tool_output)[:2000] if tool_output else ""
 

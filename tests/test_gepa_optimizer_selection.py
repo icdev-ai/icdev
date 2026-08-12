@@ -57,6 +57,36 @@ def nova_conn(tmp_path, monkeypatch):
             pass
 
 
+def _stub_lesson_evidence(monkeypatch, task_ids):
+    """Stand in for the lesson_learned rows the evidence bundle joins against.
+
+    exa-refine-04 made a proposal carry the lessons that motivated it and
+    rejects one that has none, so a fixture with no lesson rows now (correctly)
+    produces a rejected artifact. `nova_conn` holds NOVA's DDL only — the
+    lessons live in `memory_entries` — so the lookup is stubbed rather than
+    dragging the whole memory schema into this file's fixture.
+    """
+    import tools.workflow.refinement_evidence as re_mod
+
+    lessons = [
+        {"task_id": t, "pattern": "timeout_quarantine", "outcome": "failure",
+         "category": "Timeout quarantine", "is_systemic": True,
+         "last_failure_reason": "timeout on dispatch",
+         "recommendation": "add timeout handling", "memory_entry_id": f"m-{t}"}
+        for t in task_ids
+    ]
+    monkeypatch.setattr(
+        re_mod, "lessons_for_task_ids", lambda ids, days=7, conn=None: lessons
+    )
+    monkeypatch.setattr(
+        re_mod, "_recurrence_for",
+        lambda pattern, ids, tt, days: {
+            "pattern": pattern, "prefix": "t", "total_similar": len(task_ids),
+            "total_in_window": 10, "recurrence_score": 0.4,
+        },
+    )
+
+
 def _insert_artifact(conn, artifact_id, skill_used, composite, baseline,
                      status="pending", task_type="build"):
     conn.execute(
@@ -179,6 +209,7 @@ def test_reflexion_artifact_persists_skill_and_a_real_delta(nova_conn, monkeypat
         for i, outcome in enumerate(["success", "failure", "success", "partial", "failure"])
     ]
     monkeypatch.setattr(ra, "get_traces_for_task_type", lambda tt, limit=20: traces)
+    _stub_lesson_evidence(monkeypatch, ["t1", "t4"])
 
     # NOTE: skill_used is deliberately NOT passed — run_batch_reflexion cannot
     # supply it, which is exactly how 68 rows landed with skill_used = ''.
