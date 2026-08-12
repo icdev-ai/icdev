@@ -7987,17 +7987,34 @@ projects:
     cost_budget as a DOWNGRADE gate that blocks expensive models until the caller drops
     tier, where the four ICDEV budget layers only block outright. Model the config on
     args/heal_constitution.yaml - a reviewed YAML with stated scopes and per-action
-    floors is the right shape and is already established here. ALSO IN THIS EPIC, three
-    enforcement gaps found during the analysis. (a) tools/security/mcp_tool_authorizer.py
-    is deny-first and config-driven but grep for is_authorized returns ZERO call sites -
-    the unified MCP server never consults it, so nothing prevents any caller invoking
-    any of roughly 700 tools, while every other reference is a file-existence check
-    inside a FedRAMP or OWASP evidence generator. Land it MONITOR-ONLY first, measure
-    the breakage, then flip. (b) workflow_hitl/gate.py HITLGate.get_pending wraps
-    everything in except Exception return None, so a DB error means no pending approval
-    and the kanban in_progress to done transition proceeds - it must fail CLOSED. (c)
-    llm/gateway.py _check_cost_cap catches all exceptions and returns allowed true. Test
-    the DENY case, not the allow case (exa-policy-01..06)
+    floors is the right shape and is already established here. ALSO IN THIS EPIC, the
+    enforcement gaps found during the analysis. (a) workflow_hitl/gate.py
+    HITLGate.get_pending wraps everything in except Exception return None, so a DB error
+    means no pending approval and the kanban in_progress to done transition proceeds -
+    it must fail CLOSED. (b) llm/gateway.py _check_cost_cap catches all exceptions and
+    returns allowed true - same shape, same fix. Test the DENY case, not the allow case.
+    (c) MCP per-tool RBAC. tools/security/mcp_tool_authorizer.py is deny-first and
+    config-driven with ZERO enforcement call sites, while being counted as FedRAMP KSI
+    and OWASP-ASI-02 evidence through file-existence checks. RE-SCOPED 2026-08-12 after
+    investigation - do NOT "enforce it at MCP dispatch", which is a category error.
+    Authorization needs a principal, and tools/mcp/unified_server.py and base_server.py
+    carry NO caller identity at all, so a role supplied on the stdio surface would be
+    self-asserted by the caller, which is not authentication. The shipped role matrix
+    confirms it: developer allows 8 tools of roughly 700 and admin is a bare wildcard, so
+    a local session either denies essentially everything or runs as admin, a no-op.
+    Three surfaces, three answers. stdio is NOT enforced - the caller is the developer at
+    the keyboard who already has shell access to the repo, and the real controls there
+    are the reversibility gate, the pre_tool_use hard blocks and file_access_tiers.yaml.
+    Studio agent and mcp nodes are ALREADY enforced by agent_tool_gate.py under
+    AGENT-WF-001, so do not add a second gate beside it. tools/saas/mcp_http.py IS the
+    target, because its auth middleware sets g.user_role, g.tenant_id and g.user_id yet
+    _dispatch_tool and _handle_request never receive the role (exa-policy-05). Declare
+    min_il and required_roles ONCE per tool in the MCP registry so agent_tool_gate's
+    existing inheritance has data and both gates read one source instead of two
+    disagreeing ones (exa-policy-07). And fix the evidence claim regardless of whether
+    enforcement ships, because overstated evidence is the larger compliance risk - an
+    assessor relies on it, and a missing control is at least discoverable
+    (exa-policy-08). Epic is exa-policy-01..08
   - |-
     REFINE - the prime-agent /refine command reviews the current trajectory and applies
     small, evidence-backed updates to supplemental harness state, never rewrites the
