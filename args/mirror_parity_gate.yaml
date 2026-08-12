@@ -1,0 +1,79 @@
+# CUI // SP-CTI
+#
+# Budget for tools/ <-> icdev/tools/ content drift.
+# Read by tools/workflow/coherence_checker.py::check_mirror_parity.
+#
+# THE BUG THIS EXISTS FOR
+# =======================
+# `tools/` and `icdev/tools/` are two copies of the same module, and they are
+# SEPARATE module objects - not a shim onto one file:
+#
+#     import tools.genesis.reflexes.kanban        -> tools/...
+#     import icdev.tools.genesis.reflexes.kanban  -> icdev/tools/...
+#     a is b  ->  False
+#
+# So a fix applied to one copy while the other still runs is a fix that is only
+# half live, and the half that is stale fails SILENTLY - it does not ImportError,
+# it just behaves like the old code.
+#
+# Measured 2026-08-12: PR #1542 fixed the kanban executor degrade in `tools/`
+# and did not mirror it. Three and a half hours after that fix "deployed",
+# exa-policy-07 and exa-bench-02 were quarantined carrying the exact hardcoded
+# error string #1542 had deleted, and the widened auto-revive never fired for
+# them. The mirror was 43 KB behind. Verifying the process had restarted on new
+# code proved nothing, because only one of the two copies was new.
+#
+# tools/dx/mirror_parity.py already computed all of this, already had --gate,
+# and was wired into nothing - the same declared-but-unconsumed shape this
+# platform ships most (see args/liveness_gate.yaml).
+#
+# HOW THE RATCHET WORKS
+# =====================
+# Two rules, and the second is the one that matters:
+#
+#   1. Total drift across the tree must not exceed `budget`. Lower it as files
+#      are reconciled; NEVER raise it to get a commit through.
+#   2. A file YOU changed must never be drifted, whatever the budget says. The
+#      budget grandfathers a pre-existing backlog; it is not permission to add
+#      to it. This is the rule that would have caught #1542.
+#
+# Reconcile with:  python tools/dx/mirror_parity.py --paths <pkg> --fix
+# Verify with:     python tools/dx/mirror_parity.py --all --gate
+version: 1
+
+# Extensions that EXECUTE. A stale .py behaves like old code with no error,
+# which is the failure this gate is for.
+extensions:
+  - .py
+
+# Total .py content drift tolerated across tools/ <-> icdev/tools/.
+# Baseline measured 2026-08-12 at fddce49d2 with `mirror_parity.py --all`:
+# 19 drifted .py files out of ~2519 in parity across 29 mirrored packages.
+# Immediately 18: writing this gate surfaced that coherence_checker.py was
+# ITSELF drifted (#1552 added check_capability_liveness to tools/ only), so
+# mirroring it reconciled one file and the budget came down with it. That is
+# the intended workflow — reconcile, then LOWER. Never raise.
+budget: 18
+
+# Not counted, with the reason. A gate that fires on a difference which is
+# correct gets switched off, so exclusions are declared rather than discovered.
+excluded_extensions:
+  - ext: .md
+    why: >-
+      35 of the 55 drifted files are manifest shards. tools/manifest*.md is
+      declared merge=union in .gitattributes (kax-conflict-03) precisely so two
+      branches can append without a human, which makes transient divergence
+      between the copies normal. They are documentation tables, not executing
+      code - a stale row misleads a reader, it does not change behaviour.
+  - ext: .css
+    why: Presentation only; a stale stylesheet cannot silently alter logic.
+  - ext: .html
+    why: >-
+      Templates are rendered by the live `tools/` blueprint, so the mirrored
+      copy is not what serves a request. Covered instead by the dashboard page
+      completeness gate in CLAUDE.md.
+
+# `missing_from_mirror` is deliberately NOT gated here. A module absent from
+# icdev/ raises ImportError - loud, immediate, and nothing like the silent
+# wrong-behaviour this gate targets. The backlog is 299 files and folding it in
+# would bury the signal. Track it separately if it ever starts biting.

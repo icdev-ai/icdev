@@ -142,6 +142,14 @@ tests/test_init_goals_and_selective.py
 # instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
 tests/test_bootstrap_parity.py
 
+# test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
+# objects, so a fix landed in one while the other runs is only half live and
+# the stale half fails SILENTLY. #1542 shipped that way and two tasks were
+# quarantined 3.5h later carrying the error string it had deleted. The audit
+# (tools/dx/mirror_parity.py) already existed with --gate and ran nowhere.
+# ~2s, pure filesystem SHA256, no DB/LLM/network.
+tests/test_mirror_parity_gate.py
+
 tests/test_coherence_swallowed_persistence.py
 tests/test_analyzer_contract.py
 tests/test_agent_approval_gate.py
