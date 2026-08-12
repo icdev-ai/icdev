@@ -86,6 +86,17 @@ python -c "from tools.genesis.reflexes.awareness import run; run({}, None)"  # F
 # UI: http://localhost:5050/components-map (visual map) + /ask-icdev (Q&A chat)
 # Config: args/awareness_config.yaml — 3h cadence, 7 gap rules, 0.7 threshold
 
+# Capability consumption — is a DECLARED capability actually being used? (#exa-live-01)
+python tools/awareness/capability_consumption.py --json                  # all classes, 30d window
+python tools/awareness/capability_consumption.py --window-days 7         # configurable window
+python tools/awareness/capability_consumption.py --class reflex --json   # one class
+python tools/awareness/capability_consumption.py --known-inert --json    # the 5 known-inert cases
+python tools/awareness/capability_consumption.py --gate                  # exit 1 if a class is UNMEASURABLE
+# Reuses existing telemetry only (genesis_reflex_state, studio_mcp_dispatch_audit,
+# agent_approval_log, audit_platform, prompt_versions, audit_trail, agent_improvement_artifacts).
+# A missing table reports telemetry_available:false — never a misleading zero.
+# Config: args/capability_consumption.yaml
+
 # GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
 python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)
 python tools/skills/gepa_optimizer.py --dry-run --json # Scan without writing changes
