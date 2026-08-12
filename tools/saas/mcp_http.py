@@ -14,6 +14,42 @@ through a single endpoint that supports POST, GET, and DELETE.
 Auth is handled by the gateway middleware -- by the time a request reaches
 this blueprint, g.tenant_id, g.user_id, and g.user_role are already set.
 
+Per-tool authorization (exa-policy-05)
+--------------------------------------
+This is the only MCP surface in the tree with a real authenticated principal,
+so it is the only one that enforces per-tool RBAC.  ICDEV™ exposes MCP three
+ways and each gets a different answer:
+
+  stdio (``tools/mcp/unified_server.py``)
+      DELIBERATELY UNENFORCED.  Those servers carry no caller identity at all,
+      so any role supplied over stdio would be self-asserted by the caller --
+      that is not authentication, and a check built on it is theatre.  The
+      caller is the developer at the keyboard, who already has shell access to
+      the whole repo.  What actually bounds that surface is the reversibility
+      classifier in ``tools/agent_runtime/approval_gate.py``, the hard blocks
+      in ``.claude/hooks/pre_tool_use.py``, and ``args/file_access_tiers.yaml``.
+  Studio ``agent`` / ``mcp`` nodes
+      ALREADY ENFORCED by ``tools/studio/executors/agent_tool_gate.py`` under
+      gate AGENT-WF-001.  No second gate is added beside it.
+  this module (MCP over HTTP for tenants)
+      ENFORCED HERE, because the middleware has already authenticated the
+      principal.  ``tools/list`` does not advertise what the caller may not
+      call, and ``_dispatch_tool`` does not run it.
+
+The decision itself is delegated to :class:`tools.security.mcp_tool_authorizer.
+MCPToolAuthorizer` (D261) reading ``args/owasp_agentic_config.yaml``.  This
+module deliberately does NOT keep its own role/tool matrix -- when the MCP
+registry grows role and IL declarations (exa-policy-07), ``SAAS_ROLE_TO_RBAC_
+ROLE`` is the one thing that goes away.
+
+Mode is read from ``ICDEV_SAAS_MCP_AUTHZ_MODE`` and defaults to ``monitor``:
+would-be denials are logged to the append-only platform audit trail and the
+call still proceeds, so the policy can be measured against real tenant traffic
+before it starts refusing.  Set it to ``enforce`` to make denials binding.
+Monitor is the shipped default because the D261 matrix predates the SaaS role
+vocabulary and does not yet cover ``viewer`` or ``auditor`` -- see
+``SAAS_ROLE_TO_RBAC_ROLE``.
+
 Single endpoint: /mcp/v1/
     POST   -- Client sends JSON-RPC request(s), server responds with JSON
               or SSE stream.  Notification-only bodies receive 202 Accepted.
@@ -496,6 +532,196 @@ _TOOL_MAP: Dict[str, dict] = {t["name"]: t for t in TOOL_REGISTRY}
 
 
 # ---------------------------------------------------------------------------
+# Per-tool authorization -- exa-policy-05, consuming MCPToolAuthorizer (D261)
+# ---------------------------------------------------------------------------
+#: Env var selecting the authorization mode.
+AUTHZ_MODE_ENV = "ICDEV_SAAS_MCP_AUTHZ_MODE"
+
+#: Log the decision, then do what the caller asked anyway.
+AUTHZ_MODE_MONITOR = "monitor"
+
+#: Log the decision and refuse when it is a deny.
+AUTHZ_MODE_ENFORCE = "enforce"
+
+#: Shipped default. See the module docstring for why this is not ``enforce``.
+DEFAULT_AUTHZ_MODE = AUTHZ_MODE_MONITOR
+
+#: JSON-RPC error code for an authorization refusal.  The reserved range stops
+#: at -32600, so this is in the implementation-defined server-error band.  It is
+#: deliberately a protocol error rather than an ``isError: true`` content blob:
+#: "you may not call this at all" is not a tool result.
+JSONRPC_UNAUTHORIZED = -32003
+
+#: SaaS tenant roles (``tools/saas/models.py::UserRole``) are not the D261 role
+#: vocabulary in ``args/owasp_agentic_config.yaml::mcp_authorization``.  Map,
+#: do not fork -- a second matrix is exactly what this surface was told not to
+#: grow.  ``viewer`` and ``auditor`` have no D261 equivalent and are left
+#: unmapped on purpose: MCPToolAuthorizer treats an unknown role as
+#: ``default_policy`` (deny), which is the safe direction, and monitor mode is
+#: how we find out whether any real tenant traffic depends on them before that
+#: becomes binding.  exa-policy-07 replaces this map with registry-declared
+#: roles.
+SAAS_ROLE_TO_RBAC_ROLE = {
+    "tenant_admin": "admin",
+    "admin": "admin",
+    "developer": "developer",
+    "compliance_officer": "isso",
+    "isso": "isso",
+    "pm": "pm",
+    "co": "co",
+}
+
+_authorizer = None
+_authorizer_lock = threading.Lock()
+
+
+class MCPAuthorizationError(PermissionError):
+    """Raised when an authenticated caller may not use the requested tool."""
+
+    def __init__(self, decision: dict):
+        self.decision = decision
+        super().__init__(decision.get("reason", "Tool not authorized for role"))
+
+
+def get_authz_mode() -> str:
+    """Return the active authorization mode.
+
+    Read per call rather than cached at import so an operator can flip the
+    mode without a restart, and so tests can exercise both paths.
+    """
+    mode = (os.environ.get(AUTHZ_MODE_ENV) or DEFAULT_AUTHZ_MODE).strip().lower()
+    return mode if mode in (AUTHZ_MODE_MONITOR, AUTHZ_MODE_ENFORCE) else DEFAULT_AUTHZ_MODE
+
+
+def get_authorizer():
+    """Lazy-init the shared MCPToolAuthorizer singleton."""
+    global _authorizer
+    if _authorizer is None:
+        with _authorizer_lock:
+            if _authorizer is None:
+                from tools.security.mcp_tool_authorizer import MCPToolAuthorizer
+
+                _authorizer = MCPToolAuthorizer()
+    return _authorizer
+
+
+def authorize_tool(tool_name: str, user_role: Optional[str]) -> dict:
+    """Decide whether ``user_role`` may use ``tool_name`` on this surface.
+
+    Args:
+        tool_name: MCP tool name from the registry.
+        user_role: SaaS tenant role, as set on ``g.user_role`` by the auth
+            middleware.  An empty/None role is treated as an unknown role and
+            gets the configured default policy -- it is never treated as admin.
+
+    Returns:
+        Decision dict with:
+            allowed   -- what the policy says.
+            enforced  -- whether that verdict binds (False in monitor mode).
+            mode      -- the active authorization mode.
+            role      -- the SaaS role as presented.
+            rbac_role -- the D261 role it mapped to.
+            tool      -- the tool name.
+            reason    -- MCPToolAuthorizer's explanation.
+    """
+    saas_role = (user_role or "").strip().lower()
+    # An unmapped role is passed through verbatim so MCPToolAuthorizer reports
+    # it as unknown and applies default_policy, rather than being silently
+    # upgraded to something that happens to be in the matrix.
+    rbac_role = SAAS_ROLE_TO_RBAC_ROLE.get(saas_role, saas_role)
+    verdict = get_authorizer().authorize(rbac_role, tool_name)
+    mode = get_authz_mode()
+    return {
+        "allowed": bool(verdict.get("allowed")),
+        "enforced": mode == AUTHZ_MODE_ENFORCE,
+        "mode": mode,
+        "role": saas_role,
+        "rbac_role": rbac_role,
+        "tool": tool_name,
+        "reason": verdict.get("reason", ""),
+    }
+
+
+def _write_authz_audit(decision: dict, tenant_id: str, user_id: str, action: str) -> None:
+    """Append an authorization decision to the platform audit trail.
+
+    Mirrors ``tools/saas/auth/middleware.py::_log_auth_event`` exactly -- same
+    table, same column list -- so this cannot drift from the live schema.
+    Best-effort: an audit-trail outage must not turn into a tenant-visible
+    500 on a call the policy already allowed.
+    """
+    try:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+        conn.execute(
+            """
+            INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details, ip_address, recorded_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                tenant_id or None,
+                user_id or None,
+                "mcp.authz",
+                action,
+                json.dumps(decision),
+                (request.remote_addr or "unknown") if request else "unknown",
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:  # pragma: no cover - audit outage must not block
+        logger.debug("Could not write MCP authz audit row: %s", exc)
+
+
+def log_authz_decision(decision: dict, tenant_id: str, user_id: str, surface: str) -> None:
+    """Log an authorization decision. Denials are recorded in both modes.
+
+    In monitor mode the denial is a *would-be* denial: it is logged and
+    audited, and the caller is let through anyway.  That record is the whole
+    point of monitor mode -- it is the evidence used to decide whether the
+    matrix is right before ``enforce`` makes it binding.
+    """
+    if decision.get("allowed"):
+        return
+    action = "mcp.tool.denied" if decision.get("enforced") else "mcp.tool.would_deny"
+    logger.warning(
+        "MCP authz %s [%s] tenant=%s role=%s->%s tool=%s surface=%s reason=%s",
+        "DENY" if decision.get("enforced") else "WOULD-DENY",
+        decision.get("mode"),
+        tenant_id or "-",
+        decision.get("role") or "-",
+        decision.get("rbac_role") or "-",
+        decision.get("tool"),
+        surface,
+        decision.get("reason"),
+    )
+    _write_authz_audit(dict(decision, surface=surface), tenant_id, user_id, action)
+
+
+def authorized_tools(user_role: Optional[str], tenant_id: str = "", user_id: str = "") -> list:
+    """Return the registry entries ``user_role`` may be offered.
+
+    Offer-time half of the check.  A tool the caller cannot use is not named
+    in ``tools/list``, so a client never builds a call it will only be refused
+    for.  In monitor mode nothing is hidden -- the would-be omissions are
+    logged instead, because silently shrinking a tenant's tool list is itself
+    the behaviour change we are trying to measure first.
+    """
+    offered = []
+    for entry in TOOL_REGISTRY:
+        decision = authorize_tool(entry["name"], user_role)
+        if decision["allowed"]:
+            offered.append(entry)
+            continue
+        log_authz_decision(decision, tenant_id, user_id, "tools/list")
+        if not decision["enforced"]:
+            offered.append(entry)
+    return offered
+
+
+# ---------------------------------------------------------------------------
 # Tool dispatch
 # ---------------------------------------------------------------------------
 def _load_tool_func(tool_entry: dict) -> Callable:
@@ -506,25 +732,45 @@ def _load_tool_func(tool_entry: dict) -> Callable:
     return getattr(mod, tool_entry["function"])
 
 
-def _dispatch_tool(name: str, arguments: dict, tenant_id: str) -> Any:
+def _dispatch_tool(
+    name: str,
+    arguments: dict,
+    tenant_id: str,
+    user_role: Optional[str] = None,
+    user_id: str = "",
+) -> Any:
     """Route an MCP tool call to the corresponding Python function.
 
     Injects db_path for tenant isolation via the tenant_db_adapter.
+
+    Authorization is checked here rather than at the call site because this is
+    the single chokepoint through which a tool actually executes -- a future
+    caller that forgets to pre-check still cannot dispatch past it.
 
     Args:
         name: MCP tool name from the registry.
         arguments: Tool arguments from the JSON-RPC params.
         tenant_id: Authenticated tenant ID.
+        user_role: Authenticated caller role (``g.user_role``).
+        user_id: Authenticated user ID, for the audit row.
 
     Returns:
         Tool result (dict or list).
 
     Raises:
         ValueError: If the tool is not found.
+        MCPAuthorizationError: If the caller's role may not use the tool and
+            the surface is in ``enforce`` mode.
     """
     entry = _TOOL_MAP.get(name)
     if not entry:
         raise ValueError("Unknown tool: {}".format(name))
+
+    decision = authorize_tool(name, user_role)
+    if not decision["allowed"]:
+        log_authz_decision(decision, tenant_id, user_id, "tools/call")
+        if decision["enforced"]:
+            raise MCPAuthorizationError(decision)
 
     tool_func = _load_tool_func(entry)
 
@@ -574,19 +820,27 @@ def _is_response(msg: dict) -> bool:
 # ---------------------------------------------------------------------------
 # JSON-RPC method handler
 # ---------------------------------------------------------------------------
-def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
+def _handle_request(
+    rpc_msg: dict,
+    tenant_id: str,
+    session_id: str,
+    user_role: Optional[str] = None,
+    user_id: str = "",
+) -> dict:
     """Process a single JSON-RPC 2.0 request and return a response.
 
     Supported methods:
         initialize      -- MCP handshake, creates session
         ping            -- Health check
-        tools/list      -- List available tools
-        tools/call      -- Execute a tool
+        tools/list      -- List available tools (filtered by role)
+        tools/call      -- Execute a tool (authorized by role)
 
     Args:
         rpc_msg: Parsed JSON-RPC request body.
         tenant_id: Authenticated tenant ID.
         session_id: Current MCP session ID (empty for initialize).
+        user_role: Authenticated caller role (``g.user_role``).
+        user_id: Authenticated user ID, for authorization audit rows.
 
     Returns:
         JSON-RPC 2.0 response dict.
@@ -618,7 +872,7 @@ def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
     # ----- tools/list -----
     if method == "tools/list":
         tools = []
-        for t in TOOL_REGISTRY:
+        for t in authorized_tools(user_role, tenant_id, user_id):
             tools.append(
                 {
                     "name": t["name"],
@@ -636,7 +890,7 @@ def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
             return _jsonrpc_error(rpc_id, -32602, "Missing required param: name")
 
         try:
-            result = _dispatch_tool(tool_name, arguments, tenant_id)
+            result = _dispatch_tool(tool_name, arguments, tenant_id, user_role, user_id)
             # Broadcast completion event to notification streams
             if session_id:
                 broadcast_event(
@@ -666,6 +920,20 @@ def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
                     }
                 )
             return _jsonrpc_success(rpc_id, {"content": content, "isError": False})
+        except MCPAuthorizationError as exc:
+            # A refusal, not a tool failure -- surfaced as a JSON-RPC error so a
+            # client can tell "you may not" apart from "it broke", and so the
+            # refusal is not mistaken for a result the tool produced.
+            return _jsonrpc_error(
+                rpc_id,
+                JSONRPC_UNAUTHORIZED,
+                "Tool not authorized for role: {}".format(tool_name),
+                {
+                    "tool": tool_name,
+                    "role": exc.decision.get("role"),
+                    "reason": exc.decision.get("reason"),
+                },
+            )
         except Exception as exc:
             logger.error("Tool %s failed: %s", tool_name, exc)
             if session_id:
@@ -830,6 +1098,7 @@ def mcp_post():
 
     tenant_id = getattr(g, "tenant_id", None) or ""
     user_id = getattr(g, "user_id", None) or ""
+    user_role = getattr(g, "user_role", None) or ""
     session_id = request.headers.get("Mcp-Session-Id", "")
 
     # Determine if single message or batch
@@ -900,7 +1169,7 @@ def mcp_post():
         # Handle initialize: create session
         if method == "initialize":
             new_session_id = _create_session(tenant_id, user_id)
-            result = _handle_request(rpc_msg, tenant_id, new_session_id)
+            result = _handle_request(rpc_msg, tenant_id, new_session_id, user_role, user_id)
             responses.append(result)
             continue
 
@@ -916,7 +1185,7 @@ def mcp_post():
             )
             continue
 
-        result = _handle_request(rpc_msg, tenant_id, effective_session)
+        result = _handle_request(rpc_msg, tenant_id, effective_session, user_role, user_id)
         responses.append(result)
 
     # Build response
@@ -1156,10 +1425,15 @@ def mcp_list_tools():
     """GET /mcp/v1/tools -- List available MCP tools (convenience endpoint).
 
     Not part of the Streamable HTTP spec, but useful for tool discovery
-    without a full MCP session.
+    without a full MCP session.  Filtered by role for the same reason
+    ``tools/list`` is: a discovery endpoint that advertises what the caller
+    may not call would just route around the ``tools/list`` filter.
     """
+    tenant_id = getattr(g, "tenant_id", None) or ""
+    user_id = getattr(g, "user_id", None) or ""
+    user_role = getattr(g, "user_role", None) or ""
     tools = []
-    for t in TOOL_REGISTRY:
+    for t in authorized_tools(user_role, tenant_id, user_id):
         tools.append(
             {
                 "name": t["name"],
