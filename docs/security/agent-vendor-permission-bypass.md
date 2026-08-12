@@ -163,6 +163,17 @@ Neither is fixed here. Fixing them means adding a **path** dimension to a
 classifier that is currently name-and-content only, which is a design change, not
 a policy edit — and `exa-bench-04` is a decision-and-evidence task.
 
+There is now a plausible home for that change. `tools/agent_runtime/policy_engine.py`
+(exa-policy-01) adds an ALLOW/DENY/ASK layer above the reversibility gate,
+explicitly to express what "a regex over one tool name" cannot — including an
+outright **DENY**, which the gate's auto-allow/ask vocabulary has no word for.
+Both gaps here want exactly that: a write outside the worktree and a read of a
+credential path should not be answerable by a tired operator at 3am. As of this
+write-up the module has **no consumer** in either the agent-loop or the Studio
+executor path, so it changes none of the verdicts measured above — but
+`exa-bench-07` and `exa-bench-09` should be built on it rather than by bolting a
+path regex onto `classify()`.
+
 ## 5. Follow-up tasks — filed, not quietly accepted
 
 All five were already on the board when this write-up landed — they cite "ADR
