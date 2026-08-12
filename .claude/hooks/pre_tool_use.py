@@ -7,6 +7,7 @@ Pre-tool-use hook that validates tool calls before execution.
 
 Blocks:
     - Dangerous rm -rf commands
+    - Destructive git commands (reset --hard, clean -f, push --force, ...)
     - Access to .env files containing secrets
     - UPDATE/DELETE/DROP/TRUNCATE on every append-only table (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
@@ -796,6 +797,22 @@ def check_worktree_path(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+def check_write_outside_worktree(tool_name: str, tool_input: dict) -> str:
+    """Refuse a write whose resolved target is outside the session worktree.
+
+    The boundary D-ORCH-8's glob tiers cannot express (exa-bench-07). REPO_ROOT
+    is resolved from ``__file__``, so in a worktree it IS the worktree — which is
+    the right anchor here: ``AgentSession.working_dir`` is what ``claude_cli``
+    hands the child as cwd, and that is a worktree, not the main checkout.
+
+    Set ICDEV_WRITE_BOUNDARY_GUARD=0 to disable or =monitor to record without
+    refusing. Fails OPEN on any resolution error.
+    """
+    return shared_checks.check_write_outside_worktree(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     """Refuse to delete a remote branch that still holds unmerged commits.
 
@@ -804,6 +821,40 @@ def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     ICDEV_BRANCH_DELETE_GUARD=0 to disable. Fails OPEN on any error.
     """
     return shared_checks.check_branch_deletion(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
+def check_git_danger(tool_name: str, tool_input: dict) -> str:
+    """Refuse a destructive git command (OPT-51).
+
+    Wired into ``main()`` by exa-bench-06. The patterns have lived in
+    shared_checks since hgx-guard-02, but only the HEADLESS path called the
+    check — so ``git reset --hard origin/main`` and ``git clean -fdx`` were
+    refused by ``hook_compat.run_pre_tool_check`` and ALLOWED here. That is the
+    wrong way round: this is the path a session running with
+    ``--dangerously-skip-permissions`` depends on (D394).
+    """
+    return shared_checks.check_git_danger(tool_name, tool_input) or ""
+
+
+def check_network_egress(tool_name: str, tool_input: dict) -> str:
+    """Record — and, when enforcing, refuse — egress to an unapproved host.
+
+    This is the ONLY network control on the spawned-CLI surface:
+    ``tools/agents/adapters/claude_cli.py`` runs Claude Code with
+    ``--dangerously-skip-permissions`` (ADR D394), so the vendor prompt is off
+    and neither in-process gate is in that process's path.
+
+    Monitor-only by default — findings are appended to
+    ``.tmp/egress_findings.jsonl`` and the call proceeds. Flip
+    ``agent_egress.enforce`` in ``args/agent_egress_policy.yaml`` or set
+    ICDEV_EGRESS_GUARD_ENFORCE=1 to block. ICDEV_EGRESS_GUARD=0 disables it.
+    Fails OPEN on any error. See the docstring on
+    ``shared_checks.check_network_egress`` for the evasion boundary — it is a
+    tripwire with named blind spots, not a network boundary.
+    """
+    return shared_checks.check_network_egress(
         tool_name, tool_input, repo_root=REPO_ROOT
     ) or ""
 
@@ -821,6 +872,48 @@ def check_agent_rules(tool_name: str, tool_input: dict) -> str:
     return shared_checks.check_agent_rules(
         tool_name, tool_input, repo_root=REPO_ROOT
     ) or ""
+
+
+#: Every blocking check ``main()`` runs, named as it is named in shared_checks,
+#: in evaluation order. Declared rather than inferred because ``main()`` calls
+#: several of them through their ``is_*`` predicate rather than their ``check_*``
+#: wrapper, so no amount of grepping the source recovers the set reliably.
+#:
+#: ``tests/hooks/test_hook_parity.py`` asserts this equals
+#: ``hook_compat.HEADLESS_CHECKS`` as a SET, and separately that each entry here
+#: is genuinely reached from ``main()`` — a declaration nothing verifies is how
+#: check_git_danger sat in shared_checks for a whole slice without ever running.
+HOOK_CHECKS = (
+    "check_env_file_access",
+    "check_dangerous_rm",
+    "check_git_danger",
+    "check_append_only_write",
+    "check_direct_sqlite_usage",
+    "check_file_access_tiers",
+    "check_write_outside_worktree",
+    "check_branch_deletion",
+    "check_worktree_path",
+    "check_network_egress",
+    "check_agent_rules",
+    "check_review_loop_precommit",
+)
+
+#: shared_checks name -> the identifier ``main()`` actually calls. Lets the
+#: parity test prove HOOK_CHECKS describes the code rather than trusting it.
+HOOK_CHECK_CALLSITES = {
+    "check_env_file_access": "is_env_file_access",
+    "check_dangerous_rm": "is_dangerous_rm_command",
+    "check_git_danger": "check_git_danger",
+    "check_append_only_write": "is_append_only_table_modification",
+    "check_direct_sqlite_usage": "is_direct_sqlite_usage",
+    "check_file_access_tiers": "check_file_access_tiers",
+    "check_write_outside_worktree": "check_write_outside_worktree",
+    "check_branch_deletion": "check_branch_deletion",
+    "check_worktree_path": "check_worktree_path",
+    "check_network_egress": "check_network_egress",
+    "check_agent_rules": "check_agent_rules",
+    "check_review_loop_precommit": "run_review_loop_precommit",
+}
 
 
 def main():
@@ -841,6 +934,14 @@ def main():
                 print(shared_checks.DANGEROUS_RM_BLOCK_REASON, file=sys.stderr)
                 sys.exit(2)
 
+        # Block destructive git commands (OPT-51). Third, exactly where
+        # HEADLESS_CHECKS runs it — the two paths block the same set in the
+        # same order (exa-bench-06).
+        git_error = check_git_danger(tool_name, tool_input)
+        if git_error:
+            print(git_error, file=sys.stderr)
+            sys.exit(2)
+
         # Block modification of all append-only tables (NIST 800-53 AU, D6)
         if is_append_only_table_modification(tool_name, tool_input):
             print(shared_checks.APPEND_ONLY_BLOCK_REASON, file=sys.stderr)
@@ -857,6 +958,14 @@ def main():
             print(tier_error, file=sys.stderr)
             sys.exit(2)
 
+        # Keep a write inside the worktree (exa-bench-07). Runs right after the
+        # tiers because it is their complement: they say which file, this says
+        # where — a glob list cannot express "anywhere but here".
+        boundary_error = check_write_outside_worktree(tool_name, tool_input)
+        if boundary_error:
+            print(boundary_error, file=sys.stderr)
+            sys.exit(2)
+
         # Never delete a remote branch that still holds unmerged work
         branch_error = check_branch_deletion(tool_name, tool_input)
         if branch_error:
@@ -867,6 +976,14 @@ def main():
         worktree_error = check_worktree_path(tool_name, tool_input)
         if worktree_error:
             print(worktree_error, file=sys.stderr)
+            sys.exit(2)
+
+        # Network egress (exa-bench-08). Monitor-only by default: it records the
+        # finding and returns "" so the call proceeds. This is the only network
+        # control that reaches the --dangerously-skip-permissions session.
+        egress_error = check_network_egress(tool_name, tool_input)
+        if egress_error:
+            print(egress_error, file=sys.stderr)
             sys.exit(2)
 
         # AGOV declarative rules — LAST, and additive only (agov-det-06).

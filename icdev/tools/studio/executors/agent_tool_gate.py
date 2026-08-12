@@ -300,12 +300,23 @@ _INHERITED_CACHE: dict[str, dict | None] = {}
 
 
 def _inherited_limits(tool: str, registry=None) -> dict | None:
-    """Limits ``tool`` inherits from the registry component owning its handler.
+    """Limits ``tool`` inherits from the MCP registry.
 
-    ``None`` when the tool is not an MCP registry tool, which is the normal case:
-    the worktree toolset's tools have no owning component, which is exactly why
-    ``tool_limits`` exists. Consulted anyway so that a tool reachable from BOTH
-    surfaces cannot be called at a lower impact level through this one.
+    Two things are inherited (see ``mcp_executor.tool_requirements``): the
+    tool's OWN ``min_il`` / ``required_roles`` declared in
+    ``tools/mcp/tool_registry.py``, and those of the component registry
+    component owning its handler module.
+
+    ``None`` when the tool is not an MCP registry tool AND has no declaration —
+    the normal case for the worktree toolset (``read_file``, ``write_file``,
+    ``run_command``), which is exactly why ``tool_limits`` and the
+    ``agent_workflow_tools`` policy exist. Consulted for everything else so that
+    a tool reachable from BOTH surfaces cannot be called at a lower impact level
+    or by a role the mcp surface refuses through this one.
+
+    Before exa-policy-07 the registry declared neither field, so this returned a
+    component-shaped answer for the handful of canvas-owned tools and nothing
+    usable for the rest; every agent tool fell through to ``default_min_il``.
     """
     if registry is None and tool in _INHERITED_CACHE:
         return _INHERITED_CACHE[tool]
@@ -349,14 +360,18 @@ def tool_limits(tool: str, policy: dict | None = None, registry=None) -> dict:
     component = component_name = ""
 
     inherited = _inherited_limits(tool, registry)
-    if inherited and inherited.get("component"):
+    # exa-policy-07: inherit whenever the MCP registry has ANY opinion, not only
+    # when a component owns the handler. Gating on `component` was why the
+    # inheritance path had no data — most registry tools are owned by no
+    # component, so their declarations were discarded before being read.
+    if inherited:
         order = mcp_executor._il_order()
         inherited_il = str(inherited["min_il"]).upper()
         if order.get(inherited_il, -1) > order.get(min_il, -1):
             min_il = inherited_il
-            source = f"component_registry:{inherited['component']}"
+            source = inherited.get("source") or "tool_registry"
         roles = roles or tuple(inherited.get("required_roles") or ())
-        component = inherited["component"]
+        component = inherited.get("component") or ""
         component_name = inherited.get("component_name") or component
 
     return {

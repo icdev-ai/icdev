@@ -821,31 +821,87 @@ def _owning_component(module_path: str, registry=None):
     return best
 
 
+def _registry_authorization(tool: str, entry: dict | None) -> dict:
+    """The tool's own declaration in ``tools/mcp/tool_registry.py`` (exa-policy-07).
+
+    Fail-CLOSED on an unimportable registry: this is the layer that used to
+    contribute nothing, and silently reverting to "no limits" the day the import
+    breaks would reintroduce exactly the hole the declarations closed.
+    """
+    from tools.mcp import tool_registry  # noqa: PLC0415 -- keeps import cost off load
+
+    return tool_registry.tool_authorization(tool, entry=entry)
+
+
 def tool_requirements(tool: str, entry: dict | None = None, registry=None) -> dict:
     """Return the IL and role limits ``tool`` is dispatched under.
 
-    Limits come from ``args/component_registry.yaml`` — the same ``min_il`` and
-    ``default_roles`` the HTTP canvas gate enforces — resolved through the
-    component that owns the tool's handler module. A tool no component owns runs
-    at the platform baseline (:data:`DEFAULT_TOOL_MIN_IL`) with no role limit.
+    Two declarations are combined, and neither is optional:
+
+    ``tools/mcp/tool_registry.py`` (exa-policy-07)
+        The tool's OWN ``min_il`` and ``required_roles``, derived from its
+        ``read_only`` flag, its mutating-bundle membership and its category,
+        with per-tool overrides. Every MCP authorization surface reads this same
+        declaration, so a tool cannot be cheaper through one surface than
+        another. A tool with no declaration at all resolves restrictively
+        (IL5 / admin) rather than to the baseline.
+
+    ``args/component_registry.yaml``
+        The ``min_il`` and ``default_roles`` of the component that OWNS the
+        tool's handler module — the same limits the HTTP canvas gate enforces.
+
+    The STRICTER impact level of the two wins. Roles do NOT merge: a component's
+    ``default_roles`` REPLACES the registry declaration, because "hold any one of
+    these" gets weaker as the set grows, and the component is the more specific
+    claim (it names a canvas a principal can also be granted access to).
 
     Returns:
-        ``{"min_il", "required_roles", "component", "component_name"}``.
+        ``{"min_il", "required_roles", "component", "component_name", "source",
+        "roles_source", "tier"}``. ``source`` names where ``min_il`` was decided
+        and ``roles_source`` where the roles were, so a refusal can say which
+        declaration to go and edit.
     """
     entry = entry if entry is not None else resolve_entry(tool)
+    declared = _registry_authorization(tool, entry)
+
+    min_il = str(declared["min_il"]).upper()
+    roles = tuple(declared["required_roles"])
+    source = roles_source = declared["source"]
+
     component = _owning_component(str(entry.get("module", "") or ""), registry)
     if component is None:
         return {
-            "min_il": DEFAULT_TOOL_MIN_IL,
-            "required_roles": (),
+            "min_il": min_il,
+            "required_roles": roles,
             "component": "",
             "component_name": "",
+            "source": source,
+            "roles_source": roles_source,
+            "tier": declared["tier"],
         }
+
+    order = _il_order()
+    component_il = (component.min_il or DEFAULT_TOOL_MIN_IL).strip().upper()
+    # An UNRECOGNISED component level is adopted rather than compared away.
+    # `order.get(x, -1)` would rank a typo below every real level and silently
+    # keep the registry's, so a component declaring `min_il: IL7` would be
+    # dispatched at IL4 instead of being refused. Carry it forward and let
+    # check_caller_authorized refuse it — the gate does not guess.
+    if component_il not in order or order[component_il] > order.get(min_il, -1):
+        min_il = component_il
+        source = f"component_registry:{component.key}"
+    if component.default_roles:
+        roles = tuple(component.default_roles)
+        roles_source = f"component_registry:{component.key}"
+
     return {
-        "min_il": (component.min_il or DEFAULT_TOOL_MIN_IL).strip().upper(),
-        "required_roles": tuple(component.default_roles or ()),
+        "min_il": min_il,
+        "required_roles": roles,
         "component": component.key,
         "component_name": component.display_name or component.key,
+        "source": source,
+        "roles_source": roles_source,
+        "tier": declared["tier"],
     }
 
 
@@ -911,9 +967,8 @@ def check_caller_authorized(
 
     if required_rank is None:
         raise MCPWorkflowGateError(
-            f"MCP tool '{tool}' is owned by component "
-            f"'{requirements['component'] or '(none)'}', whose min_il "
-            f"{required_il!r} is not a known impact level "
+            f"MCP tool '{tool}' declares min_il {required_il!r} "
+            f"({requirements['source']}), which is not a known impact level "
             f"({', '.join(sorted(order))}). Refusing to dispatch — the gate "
             f"will not guess what an unrecognized level permits.",
             tool=tool,
@@ -923,7 +978,7 @@ def check_caller_authorized(
         owner = (
             f" (owned by {requirements['component_name']})"
             if requirements["component"]
-            else " (platform baseline — no component owns it)"
+            else f" (declared in {requirements['source']}; no component owns it)"
         )
         detail = (
             f"caller impact level {caller_il!r} is not a known level "
@@ -946,15 +1001,26 @@ def check_caller_authorized(
         if not held & set(required_roles) and not _has_canvas_grant(
             caller, requirements["component"]
         ):
+            # The canvas-grant escape hatch only exists when a component owns
+            # the tool; a registry-declared role has no canvas to be granted on,
+            # so the message must not send an operator looking for one.
+            remedy = (
+                f"Grant the principal access to '{requirements['component']}' or "
+                f"run the step as a principal that holds one of those roles."
+                if requirements["component"]
+                else "Run the step as a principal that holds one of those roles."
+            )
             raise MCPWorkflowGateError(
-                f"MCP tool '{tool}' is owned by "
-                f"{requirements['component_name']} ({requirements['component']}), "
-                f"which requires one of these roles: "
-                f"{', '.join(sorted(required_roles))}. The caller holds "
-                f"{', '.join(sorted(held)) or '(no roles)'} and has no explicit "
-                f"canvas_access grant. Grant the principal access to "
-                f"'{requirements['component']}' or run the step as a principal "
-                f"that holds one of those roles.",
+                f"MCP tool '{tool}' requires one of these roles: "
+                f"{', '.join(sorted(required_roles))} (declared in "
+                f"{requirements['roles_source']}). The caller holds "
+                f"{', '.join(sorted(held)) or '(no roles)'}"
+                + (
+                    " and has no explicit canvas_access grant. "
+                    if requirements["component"]
+                    else ". "
+                )
+                + remedy,
                 tool=tool,
                 reason="mcp_tool_missing_required_role",
             )

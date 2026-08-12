@@ -246,8 +246,19 @@ class TestReversibilityIsOnePolicy:
         assert decision.rule == "reversible_tool"
 
     def test_the_shipped_config_chains_it(self):
+        """It is chained, and chained FIRST.
+
+        This asserted the shipped chain was exactly ``["reversibility"]`` until
+        exa-policy-03 added three builtins to it. The claim worth keeping is not
+        that it is alone — it was never going to stay alone, that is what a
+        chain is for — but that it is still there and still runs before the
+        policies layered on top of it, so its verdict is established before
+        anything else has an opinion. The builtins have their own coverage in
+        test_agent_policy_builtins.py.
+        """
         config = pe.load_config(refresh=True)
-        assert [name for name, _ in pe.resolve_chain(config)] == ["reversibility"]
+        names = [name for name, _ in pe.resolve_chain(config)]
+        assert names[0] == "reversibility"
 
 
 # ---------------------------------------------------------------------------

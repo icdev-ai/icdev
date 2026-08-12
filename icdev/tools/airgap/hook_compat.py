@@ -236,9 +236,17 @@ HEADLESS_CHECKS = (
     "check_append_only_write",
     "check_direct_sqlite_usage",
     "check_file_access_tiers",
+    # Immediately after the tiers, because it is their complement (exa-bench-07):
+    # the glob list says WHICH file, this says WHERE. A glob can enumerate
+    # `**/.ssh/*`; it cannot express "anywhere but this worktree".
+    "check_write_outside_worktree",
     "check_branch_deletion",
     "check_worktree_path",
     "check_review_loop_precommit",
+    # Network egress (exa-bench-08). Monitor-only until `enforce: true` in
+    # args/agent_egress_policy.yaml — it records a finding and returns None, so
+    # in the default configuration it can only ever observe.
+    "check_network_egress",
     # LAST on purpose (agov-det-06). The AGOV rule engine is additive: the eight
     # hardcoded checks above decide first, so a data-driven rule can only add a
     # refusal to a call they already allowed — it can never wave one through.
