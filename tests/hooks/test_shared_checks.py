@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -461,9 +462,10 @@ def test_git_danger(shared, command, blocked):
 
 # ── exa-bench-05: shell-aware scanning ────────────────────────────────────
 #
-# These checks are about to become hard blocks, so what they read as "the
-# command" has to be right. Measured over 86,612 real tool calls, whole-string
-# matching was the single largest source of false refusals.
+# These checks became hard blocks when the `|| true` came out of
+# .claude/settings.json, so what they read as "the command" has to be right.
+# Measured over 96,649 real tool calls, whole-string matching was the single
+# largest source of false refusals.
 
 
 @pytest.mark.parametrize(
@@ -620,3 +622,201 @@ def test_tier_exclusions_match_the_same_candidates_as_inclusions(shared):
     assert shared._matches_tier("C:/wt/repo/.env", patterns)
     assert not shared._matches_tier("C:/wt/repo/.env.example", patterns)
     assert not shared._matches_tier(".env.sample", patterns)
+
+
+# ── worktree write containment (exa-bench-07) ─────────────────────────────
+#
+# The unit-level half. The end-to-end half — both guard paths refusing the same
+# writes — lives in tests/test_skip_permissions_compensating_controls.py, which
+# is where the decision doc's coverage matrix is measured.
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # Verbs that write with no redirection operator, which is exactly why
+        # the tier extractor (redirect + tee only) never saw these at all.
+        ("touch /home/victim/.ssh/authorized_keys",
+         ["/home/victim/.ssh/authorized_keys"]),
+        ("mkdir -p /etc/cron.d/persist", ["/etc/cron.d/persist"]),
+        ("sudo mkdir /etc/evil", ["/etc/evil"]),          # wrapper stripped
+        ("ICDEV_X=1 touch /etc/evil", ["/etc/evil"]),     # env assignment stripped
+        ("cp payload.sh /usr/local/bin/pwn", ["/usr/local/bin/pwn"]),  # dest is last
+        ("mv a.txt b.txt", ["b.txt"]),
+        ("dd if=/dev/zero of=/etc/shadow", ["/etc/shadow"]),
+        ("curl https://x/y -o /usr/local/bin/pwn", ["/usr/local/bin/pwn"]),
+        ("wget https://x/y -O /tmp/z", ["/tmp/z"]),
+        # A read is not a write, and a source is not a destination.
+        ("cat /etc/passwd", []),
+        ("git status", []),
+    ],
+)
+def test_bash_write_targets(shared, command, expected):
+    assert shared.bash_write_targets(command) == expected
+
+
+def test_bash_write_targets_includes_the_redirect_forms(shared):
+    """Superset of bash_file_targets' write half, not a replacement for it."""
+    targets = shared.bash_write_targets("echo k >> ~/.ssh/authorized_keys")
+    assert "~/.ssh/authorized_keys" in targets
+
+
+@pytest.mark.parametrize(
+    "raw,outside",
+    [
+        ("/etc/cron.d/pwn", True),
+        ("~/.bashrc", True),
+        ("$HOME/.bashrc", True),                 # a shell would have expanded it
+        ("C:/Windows/System32/drivers/etc/hosts", True),  # true on POSIX too
+        (r"\attacker\share\payload", True),     # UNC — a host we cannot judge
+        ("C:notes.txt", True),                   # drive-RELATIVE — per-drive cwd
+        ("tools/foo.py", False),
+        (".tmp/scratch/report.json", False),
+        ("/dev/null", False),                    # not a file; a very common sink
+        ("2>&1", False),                         # never a path
+    ],
+)
+def test_outside_write_root(shared, raw, outside):
+    assert bool(shared.outside_write_root(raw, repo_root=REPO_ROOT)) is outside
+
+
+def test_the_boundary_check_is_writes_only(shared):
+    """Reads are exa-bench-09's territory. Refusing one here would look like
+    coverage of a gap this check does not close."""
+    assert shared.check_write_outside_worktree(
+        "Read", {"file_path": "/home/victim/.ssh/id_rsa"}, repo_root=REPO_ROOT
+    ) is None
+
+
+def test_the_boundary_check_is_disablable_and_has_a_monitor_mode(shared, monkeypatch):
+    call = ("Write", {"file_path": "/etc/cron.d/pwn", "content": "x"})
+    assert shared.check_write_outside_worktree(*call, repo_root=REPO_ROOT)
+
+    monkeypatch.setenv(shared.WRITE_BOUNDARY_GUARD_ENV, "0")
+    assert shared.check_write_outside_worktree(*call, repo_root=REPO_ROOT) is None
+
+    monkeypatch.setenv(shared.WRITE_BOUNDARY_GUARD_ENV, "monitor")
+    assert shared.check_write_outside_worktree(*call, repo_root=REPO_ROOT) is None
+
+
+def test_extra_roots_can_sanction_a_path(shared, monkeypatch, tmp_path):
+    """The operator escape hatch, so the answer to a false positive is a root
+    rather than turning the guard off."""
+    target = tmp_path / "elsewhere" / "out.json"
+    monkeypatch.setenv(shared.WRITE_BOUNDARY_EXTRA_ROOTS_ENV, str(tmp_path / "elsewhere"))
+    assert shared.outside_write_root(str(target), repo_root=REPO_ROOT) is None
+
+
+def test_the_main_checkout_is_sanctioned_from_a_linked_worktree(shared, tmp_path):
+    """A worktree's anchor is itself; the checkout it is linked to is the second
+    root. Read from `<anchor>/.git` — no `git rev-parse` on the per-call path."""
+    main = tmp_path / "repo"
+    (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (worktree / ".git").write_text(
+        f"gitdir: {main / '.git' / 'worktrees' / 'wt'}\n", encoding="utf-8"
+    )
+    roots = shared.sanctioned_write_roots(worktree)
+    assert main.resolve() in roots
+    assert worktree.resolve() in roots
+
+
+# ── exa-bench-05: what the write-boundary survey narrowed ─────────────────
+#
+# `check_write_outside_worktree` shipped ENFORCING (exa-bench-07) at a time when
+# `|| true` in .claude/settings.json was discarding every refusal, so it had
+# never actually refused anything and its rate had never been measured. Removing
+# that wrapper is what makes the rate matter. Measured first: 2,526 of 96,799
+# real tool calls, 2.61% — and every class of it was a PARSE defect. Each test
+# below pins one of those classes, with the count it was worth. Together they
+# take the check to 850 (0.878%), whose residue is writes into the
+# `C:\AI\.worktrees` / `C:\AI\.wt*` sprawl that `check_worktree_path` already
+# refuses to create — i.e. the finding, which is why the check stays enforcing.
+
+
+def test_the_check_is_enforcing_by_default(shared):
+    """The property exa-bench-07 shipped and the survey had to justify keeping.
+
+    Standing a check down because its rate is inconvenient is how the hook came
+    to be advisory in the first place. If this constant is ever flipped, the
+    survey has to say why.
+    """
+    assert shared.WRITE_BOUNDARY_DEFAULT_MODE == "enforce"
+
+
+def test_a_redirect_inside_a_quoted_string_is_not_a_redirect(shared):
+    """370 fires. `--jq '"#\\(.n) -> \\(.state)"'` has a `>` in it and redirects
+    nothing; the regex this replaced returned `\\(.state)"'` as a path."""
+    command = "gh pr view 1563 --json state --jq '\"1563 -> \\(.state)\"'"
+    assert shared.bash_write_targets(command) == []
+    assert shared.check_write_outside_worktree(
+        "Bash", {"command": command}, repo_root=REPO_ROOT
+    ) is None
+
+
+def test_a_command_substitution_does_not_glue_its_paren_to_the_target(shared):
+    """641 fires. `$(… 2>/dev/null)` left `/dev/null)` on the token, which misses
+    `_NULL_SINKS` and reads as a write to `C:\\dev`."""
+    command = 'm=$(git log origin/main --format=%H -1 2>/dev/null)'
+    assert shared.bash_write_targets(command) == ["/dev/null"]
+    assert shared.check_write_outside_worktree(
+        "Bash", {"command": command}, repo_root=REPO_ROOT
+    ) is None
+
+
+def test_a_heredoc_body_contributes_no_write_targets(shared):
+    """758 fires — the largest single class. `cat > .tmp/prbody.md <<'EOF'`
+    followed by a PR body that names a path is a write to the FILE, not to the
+    paths the prose mentions."""
+    command = (
+        "cat > .tmp/prbody.md <<'EOF'\n"
+        "The packaged hook resolved /tools/hooks/shared_checks.py wrongly.\n"
+        "EOF"
+    )
+    assert shared.bash_write_targets(command) == [".tmp/prbody.md"]
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # A quoted target with a space is a target, and used to be invisible.
+        ('echo hi > "out file.txt"', ["out file.txt"]),
+        # 38 fires: `\` is a path separator here, not an escape. The double-quote
+        # escape rule applies to `" \ $ \`` and to nothing else.
+        (r'python x.py > "C:\Users\schuo\AppData\Local\Temp\r.json"',
+         [r"C:\Users\schuo\AppData\Local\Temp\r.json"]),
+        (r'echo hi > "say \"hi\".txt"', ['say "hi".txt']),
+    ],
+)
+def test_a_quoted_redirect_target_survives_its_quotes(shared, command, expected):
+    assert shared.bash_write_targets(command) == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="MSYS drive spelling is Windows-only")
+def test_the_msys_spelling_of_this_worktree_is_inside_it(shared):
+    """539 fires. Git Bash spells `C:\\AI\\ICDev` as `/c/AI/ICDev`, and the Bash
+    tool IS Git Bash here — so these were sessions writing into their OWN
+    worktree, refused because `/c/...` resolved to `C:\\c\\...`."""
+    drive = REPO_ROOT.drive.rstrip(":").lower()
+    inside = "/" + drive + "/" + str(REPO_ROOT)[3:].replace("\\", "/") + "/.tmp/coh.json"
+    assert shared.outside_write_root(inside, repo_root=REPO_ROOT) is None
+    # The translation must not turn an outside path into an inside one.
+    assert shared.outside_write_root("/" + drive + "/Windows/System32/x",
+                                     repo_root=REPO_ROOT)
+
+
+def test_the_harness_own_claude_dirs_are_sanctioned_but_its_config_is_not(shared):
+    """371 fires were `~/.claude/plans`: plan mode writes the plan file and no
+    session names it, so refusing it refuses plan mode. `~/.claude` itself stays
+    outside — `settings.json` there wires this hook and `hooks/` implements it,
+    and a guard that permits writes to its own configuration is not a guard."""
+    home = Path.home() / ".claude"
+    for name in shared._CLAUDE_HARNESS_DIRS:
+        assert shared.outside_write_root(
+            str(home / name / "x.md"), repo_root=REPO_ROOT
+        ) is None, f"~/.claude/{name} is harness scratch and was refused"
+    for denied in ("settings.json", "hooks/pre_tool_use.py", "CLAUDE.md"):
+        assert shared.outside_write_root(
+            str(home / denied), repo_root=REPO_ROOT
+        ), f"~/.claude/{denied} configures the guard and must stay outside it"

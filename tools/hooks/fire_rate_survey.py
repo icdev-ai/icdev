@@ -4,9 +4,9 @@
 
 ``.claude/settings.json`` wired the PreToolUse hook as ``python ... || true``, so
 its exit-2 refusals never reached Claude Code. Removing that wrapper converts
-nine advisory checks into hard blocks for every session on the host at once.
-Three of them (``direct_sqlite_usage``, ``file_access_tiers``,
-``review_loop_precommit``) had never been under load as blocks.
+every advisory check into a hard block for every session on the host at once,
+and several of them (``direct_sqlite_usage``, ``file_access_tiers``,
+``write_outside_worktree``) had never been under load as blocks.
 
 This module is the measurement that has to come first: replay the tool calls
 real sessions actually made through the real checks, and count what each one
@@ -31,10 +31,16 @@ than letting it contribute a misleading zero.
 
 Replayable vs trigger-only
 --------------------------
-Six checks are pure predicates over ``(tool_name, tool_input)`` and are replayed
-for real: their ``fired`` counts are measurements.
+Most checks are pure predicates over ``(tool_name, tool_input)`` and are
+replayed for real: their ``fired`` counts are measurements. Two
+(``network_egress``, ``write_outside_worktree``) are replayed with their
+enforcement switch forced on, so that measuring a check never depends on which
+way that check's own default happens to be set — ``network_egress`` ships
+monitor-only and at its default refuses nothing, which would read as a 0% and
+therefore as "safe to arm".
 
-Three are not, and are reported as ``trigger_only`` with the condition stated:
+Three cannot be replayed at all, and are reported as ``trigger_only`` with the
+condition stated:
 
 ``branch_deletion``
     Fires only when the targeted remote branch still holds unmerged commits — a
@@ -113,6 +119,11 @@ class Check:
     predicate: Optional[Callable[[str, dict], Optional[str]]] = None
     #: Pure predicate for "the call reached this check's expensive part".
     trigger: Optional[Callable[[str, dict], Optional[str]]] = None
+    #: True when the verdict depends on WHERE the call ran, so the replay must
+    #: anchor on the transcript's own ``cwd`` instead of this checkout. Without
+    #: it `write_outside_worktree` scores every call made from another worktree
+    #: as an escape: 3,029 fires (3.1%) against 2,526 (2.61%) anchored correctly.
+    needs_cwd: bool = False
     blocks_when: str = "the predicate matches"
     note: str = ""
 
@@ -157,6 +168,25 @@ def build_checks(repo_root: Path, live_git: bool = False) -> List[Check]:
 
     def _worktree(tool: str, ti: dict) -> Optional[str]:
         return hook.check_worktree_path(tool, ti) or None
+
+    def _write_boundary(tool: str, ti: dict, anchor: Path) -> Optional[str]:
+        # Anchor on the worktree the call was MADE from, not on this checkout:
+        # the check asks "is this write inside the SESSION's worktree", and
+        # every corpus session had a different one.
+        #
+        # Enforcing mode is forced rather than assumed, so that measuring this
+        # check never depends on which way WRITE_BOUNDARY_DEFAULT_MODE happens
+        # to be set — a survey that reports 0% because the thing it is measuring
+        # is switched off is the `hook_events` failure mode one layer down.
+        prior = os.environ.get(sc.WRITE_BOUNDARY_GUARD_ENV)
+        os.environ[sc.WRITE_BOUNDARY_GUARD_ENV] = "enforce"
+        try:
+            return sc.check_write_outside_worktree(tool, ti, repo_root=anchor) or None
+        finally:
+            if prior is None:
+                os.environ.pop(sc.WRITE_BOUNDARY_GUARD_ENV, None)
+            else:
+                os.environ[sc.WRITE_BOUNDARY_GUARD_ENV] = prior
 
     def _branch_trigger(tool: str, ti: dict) -> Optional[str]:
         if tool != "Bash":
@@ -206,6 +236,13 @@ def build_checks(repo_root: Path, live_git: bool = False) -> List[Check]:
                           "Bash one-liner opens icdev.db directly"),
         Check("file_access_tiers", predicate=_tiers,
               blocks_when="the path is in a D-ORCH-8 zero_access/read_only/no_delete tier"),
+        Check("write_outside_worktree", predicate=_write_boundary, needs_cwd=True,
+              blocks_when="a write resolves outside the session worktree, the main "
+                          "checkout and the sanctioned scratch roots",
+              note="anchored on the worktree containing each transcript's cwd, not "
+                   "on this checkout; where that worktree no longer exists the "
+                   "verdict is not reproducible and the call counts as a fire, so "
+                   "this is an UPPER bound"),
         Check("branch_deletion",
               predicate=_branch_live if live_git else None,
               trigger=_branch_trigger,
@@ -235,6 +272,13 @@ class ToolCall:
     session: str
     tool_name: str
     tool_input: dict
+    #: The directory the call was actually made from, as the transcript records
+    #: it. Load-bearing for any check whose verdict depends on WHERE it runs:
+    #: `write_outside_worktree` judges a path against the session's worktree, so
+    #: replaying another worktree's calls against this checkout scores every one
+    #: of them as an escape: 3,029 fires (3.1%) against 2,526 (2.61%) anchored
+    #: on the worktree that actually contained each call.
+    cwd: str = ""
 
 
 def transcript_root() -> Path:
@@ -296,6 +340,7 @@ def iter_tool_calls(paths: Sequence[Path]) -> Iterator[ToolCall]:
                 content = (record.get("message") or {}).get("content")
                 if not isinstance(content, list):
                     continue
+                cwd = str(record.get("cwd") or "")
                 for block in content:
                     if not isinstance(block, dict) or block.get("type") != "tool_use":
                         continue
@@ -304,6 +349,7 @@ def iter_tool_calls(paths: Sequence[Path]) -> Iterator[ToolCall]:
                         session=session,
                         tool_name=block.get("name") or "",
                         tool_input=tool_input if isinstance(tool_input, dict) else {},
+                        cwd=cwd,
                     )
 
 
@@ -403,6 +449,36 @@ class CheckResult:
         return round(self.fired / total, 6) if total else 0.0
 
 
+_ANCHOR_CACHE: Dict[str, Optional[Path]] = {}
+
+
+def _worktree_anchor(cwd: str) -> Optional[Path]:
+    """The worktree root containing *cwd*, or None.
+
+    The live hook anchors on ``Path(__file__).parents[2]`` — the root of the
+    worktree holding ``.claude/hooks/`` — not on the process's cwd. A session
+    that ran from ``<wt>/tools/db/migrations/x`` was still judged against
+    ``<wt>``, so a replay that anchors on the raw cwd invents violations the
+    hook never saw (115 of them, all writes from a session into its OWN
+    worktree). Walk up to the ``.git`` that makes it a checkout.
+    """
+    if not cwd:
+        return None
+    if cwd in _ANCHOR_CACHE:
+        return _ANCHOR_CACHE[cwd]
+    found: Optional[Path] = None
+    try:
+        here = Path(cwd)
+        for candidate in (here, *here.parents):
+            if (candidate / ".git").exists():
+                found = candidate
+                break
+    except OSError:
+        found = None
+    _ANCHOR_CACHE[cwd] = found
+    return found
+
+
 def survey(
     repo_root: Optional[Path] = None,
     since_days: Optional[float] = 30.0,
@@ -444,7 +520,11 @@ def survey(
             if fn is None:
                 continue
             try:
-                reason = fn(call.tool_name, call.tool_input)
+                if check.needs_cwd:
+                    reason = fn(call.tool_name, call.tool_input,
+                               _worktree_anchor(call.cwd) or root)
+                else:
+                    reason = fn(call.tool_name, call.tool_input)
             except Exception:  # noqa: BLE001 — a check that raises is itself a finding
                 reason = None
             if not reason:

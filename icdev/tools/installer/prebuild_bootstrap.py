@@ -103,9 +103,43 @@ def _should_exclude(path: Path) -> bool:
     return False
 
 
+#: The PreToolUse entry, as this repo runs it (exa-bench-05 removed `|| true`)
+#: and as a SCAFFOLDED project must still run it.
+_PRETOOLUSE_REPO = "python $CLAUDE_PROJECT_DIR/.claude/hooks/pre_tool_use.py"
+_PRETOOLUSE_SCAFFOLD = _PRETOOLUSE_REPO + " || true"
+
+
+def _settings_template_text(text: str) -> str:
+    """The one deliberate divergence between this repo's settings and the template.
+
+    exa-bench-05 removed ``|| true`` from ``.claude/settings.json``, because a
+    PreToolUse hook signals "block" with exit 2 and the wrapper discarded it. It
+    is NOT removed from the scaffold template, and not for symmetry: ``icdev
+    init`` ships ``.claude/hooks/`` but no ``tools/`` at all (``BOOTSTRAP_MAP``,
+    ``tools/cli/init.py``), and the hook's first act is to load
+    ``<project>/tools/hooks/shared_checks.py`` by path. In a scaffolded project
+    that file does not exist, so the hook raises ``FileNotFoundError`` and exits
+    **1 on every tool call** — measured. ``|| true`` is currently the only thing
+    converting that into silence.
+
+    So propagating the repo's entry verbatim would trade an invisible dead guard
+    for a visibly broken project. Filed as ``exa-bench-05-b``: fix the packaging
+    first (ship ``tools/hooks/``, or vendor the checks into the packaged hook),
+    then delete this function and let the copy be verbatim.
+    ``tests/test_skip_permissions_compensating_controls.py`` pins both halves.
+    """
+    return text.replace(f'"{_PRETOOLUSE_REPO}"', f'"{_PRETOOLUSE_SCAFFOLD}"')
+
+
 def _copy_file(src: Path, dst: Path) -> dict:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
+    if dst.name == "settings.json.template":
+        dst.write_text(
+            _settings_template_text(src.read_text(encoding="utf-8")),
+            encoding="utf-8", newline="",
+        )
+    else:
+        shutil.copy2(src, dst)
     return {"src": str(src.relative_to(REPO_ROOT)), "dst": str(dst.relative_to(REPO_ROOT)),
             "size": dst.stat().st_size}
 

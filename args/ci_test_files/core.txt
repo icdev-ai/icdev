@@ -651,14 +651,14 @@ tests/test_prompt_registry_call_site_prompts.py
 # is hermetic and ~1s.
 tests/test_codex_cli_adapter.py
 # exa-bench-05 -- the PreToolUse hook's checks, which became HARD BLOCKS in this
-# change. `.claude/settings.json` wrapped the hook in `|| true`, so nine checks
-# printed "BLOCKED:" and blocked nothing; with the wrapper gone a regression in
-# any of them now stops real tool calls in every session on the host. That makes
-# these the highest-consequence pure functions in the repo, and they were not in
-# the gate. Pins the shell-aware scanning that made enforcement affordable
-# (segments, heredoc bodies, `--rm` vs `rm`, unexpanded `"$P"` worktree targets)
-# and the .env / append-only / sqlite / tier operand rules. Pure string
-# predicates, no DB, no network, ~1s.
+# change. `.claude/settings.json` wrapped the hook in `|| true`, so all twelve
+# checks printed "BLOCKED:" and blocked nothing; with the wrapper gone a
+# regression in any of them now stops real tool calls in every session on the
+# host. That makes these the highest-consequence pure functions in the repo, and
+# they were not in the gate. Pins the shell-aware scanning that made enforcement
+# affordable (segments, heredoc bodies, quoted `>`, the MSYS drive prefix,
+# `--rm` vs `rm`, unexpanded `"$P"` worktree targets) and the .env / append-only
+# / sqlite / tier operand rules. Pure string predicates, no DB, no network, ~1s.
 tests/hooks/test_shared_checks.py
 # exa-bench-05 -- the fire-rate survey that has to run BEFORE a check is armed.
 # Guards the two properties that make its numbers mean anything: it replays a
@@ -686,6 +686,18 @@ tests/test_coherence_capability_liveness.py
 # threshold ASK, which reverts to once-per-call the moment the dedupe is dropped.
 # Fully injected config and spend; no DB, LLM or network; ~0.7s (exa-policy-04).
 tests/test_cost_budget_downgrade.py
+
+# tests/hooks/test_hook_parity.py earns a slot because it is the only thing that
+# asserts .claude/hooks/pre_tool_use.py and hook_compat.HEADLESS_CHECKS run the
+# SAME set — and it was not gated, so it never ran in CI. That is the exact
+# failure it was written to catch, one level up: exa-bench-06 found
+# check_git_danger sitting in shared_checks and in HEADLESS_CHECKS while main()
+# never called it, so `git reset --hard` was refused headlessly and ALLOWED in the
+# Claude Code session that runs with --dangerously-skip-permissions (D394).
+# exa-bench-07 adds check_write_outside_worktree to both lists and depends on the
+# same property. Drives the hook as a subprocess reading JSON on stdin; no DB,
+# LLM or network; ~2s.
+tests/hooks/test_hook_parity.py
 # exa-policy-03 -- the three builtin policies. Earns a slot because it is the
 # only place the ALLOW/DENY/ASK chain and the session state are exercised by a
 # policy that actually USES them, and because the two properties most likely to
