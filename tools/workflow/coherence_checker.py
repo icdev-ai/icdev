@@ -8354,6 +8354,18 @@ TIERS = ("fast", "full")
 #
 # NOTE: direct_anthropic_import and provider_bypass used to belong here too;
 # they are now diff-scoped via _scan_targets() and cheap enough to always run.
+#
+# capability_liveness (exa-live-02/03) deliberately stays OUT of this map, i.e.
+# it runs in BOTH tiers. It looks like a heavy — it imports TOOL_REGISTRY, the
+# genesis daemon and the approval gate — but the work is a handful of GROUP BY
+# counts and it measures at ~0.75s, well inside the fast tier's budget. Tier
+# assignment here is about COST, and the cost is not there. Demoting it to the
+# nightly sweep would also defeat the point: a capability declared in a task's
+# own diff and wired to nothing is exactly what the per-task gate should catch,
+# and catching it a day later is how the backlog in args/liveness_gate.yaml grew
+# in the first place. It cannot fire spuriously on a checkout with no operating
+# history — the evidence anchor degrades it to `warn` instead. Asserted by
+# tests/test_coherence_capability_liveness.py::test_runs_in_the_fast_tier.
 HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
     "blueprint_imports": (
         "tools/dashboard/",

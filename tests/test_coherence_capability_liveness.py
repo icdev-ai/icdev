@@ -248,13 +248,49 @@ def test_gate_file_budgets_are_non_negative_integers():
         assert isinstance(allowed, int) and allowed >= 0, f"{name}: {allowed!r}"
 
 
-def test_gate_file_covers_every_measurable_capability_class():
-    """A class with no entry gets a budget of 0 — fine for a new class, wrong for
-    one whose backlog was measured. Keep the two in sync deliberately."""
+def test_gate_file_declares_no_class_that_cannot_be_measured():
+    """Every budget must name a class some probe actually measures.
+
+    The reverse containment is deliberately NOT asserted. exa-live-02 pinned
+    every class, including the ones already at zero; exa-live-03 removed those
+    (reflex, audit_chain, prompt_template) because a drained class must leave the
+    allowlist rather than sit at ``0``. An absent class already gets a budget of
+    0 from ``_load_liveness_gate``, so keeping a zero entry buys nothing and
+    leaves a number for a future session to edit upward. What a stale budget for
+    a class NOBODY measures would buy is a silent no-op, so that stays an error.
+    """
     from tools.awareness.capability_consumption import PROBES
 
     budgets = yaml.safe_load(_GATE_PATH.read_text(encoding="utf-8"))["grandfathered"]
-    assert set(PROBES) == set(budgets)
+    assert set(budgets) <= set(PROBES), f"unknown class(es): {set(budgets) - set(PROBES)}"
+
+
+def test_drained_classes_are_absent_and_still_gated_at_zero():
+    """A class this card drained must be gone from the file AND budgeted at 0."""
+    raw = yaml.safe_load(_GATE_PATH.read_text(encoding="utf-8"))["grandfathered"]
+    gate = _load_liveness_gate()
+    for drained in ("reflex", "audit_chain", "prompt_template"):
+        assert drained not in raw, f"{drained} was drained — remove it, do not pin it at 0"
+        assert gate["grandfathered"].get(drained, 0) == 0
+        report = _report(_cls(drained, 10, 1))
+        verdict = _evaluate_capability_liveness(report, report, _POPULATED, gate)["verdict"]
+        assert verdict == "fail", f"{drained} regressing to 1 inert unit must fail the gate"
+
+
+def test_gate_file_gives_a_reason_for_every_remaining_budget():
+    """Each surviving entry needs the comment that lets a future session fix it
+    rather than rediscover it. Enforced structurally: a commented line directly
+    above the key."""
+    lines = _GATE_PATH.read_text(encoding="utf-8").splitlines()
+    budgets = yaml.safe_load("\n".join(lines))["grandfathered"]
+    for name in budgets:
+        idx = next(
+            i for i, line in enumerate(lines) if line.strip().startswith(f"{name}:")
+        )
+        preceding = [line.strip() for line in lines[:idx] if line.strip()]
+        assert preceding and preceding[-1].startswith("#"), (
+            f"{name} carries no reason — name the capability and why it is inert"
+        )
 
 
 def test_missing_gate_file_fails_closed(monkeypatch, tmp_path):
@@ -274,7 +310,7 @@ def test_real_gate_file_loads():
     assert gate["window_days"] > 0
     assert gate["lifetime_days"] >= 3650
     assert gate["evidence_anchor"]["table"] == "audit_trail"
-    assert gate["grandfathered"]["reflex"] == 0
+    assert gate["grandfathered"], "the gate file must carry the measured backlog"
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +320,24 @@ def test_real_gate_file_loads():
 
 def test_check_is_registered():
     assert CHECK_REGISTRY["capability_liveness"] is check_capability_liveness
+
+
+def test_runs_in_the_fast_tier():
+    """exa-live-03: the per-task gate, not only the nightly sweep.
+
+    ``validated_commit.py`` runs ``--tier fast --gate`` on every commit and the
+    sweep runs ``--tier full``. A capability declared in a task's own diff and
+    wired to nothing is what the per-task gate should catch; catching it a day
+    later is how the backlog in args/liveness_gate.yaml accumulated. The fast
+    tier is a denylist (HEAVY_CHECKS), so this asserts the ABSENCE that keeps it
+    there — with no diff, which is the weakest case the fast tier has.
+    """
+    from tools.workflow.coherence_checker import HEAVY_CHECKS, select_checks
+
+    assert "capability_liveness" not in HEAVY_CHECKS
+    assert "capability_liveness" in select_checks("fast", [])
+    assert "capability_liveness" in select_checks("fast", ["tools/unrelated/thing.py"])
+    assert "capability_liveness" in select_checks("full")
 
 
 def test_check_never_fails_on_this_tree():

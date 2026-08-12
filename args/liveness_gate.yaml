@@ -62,40 +62,75 @@ evidence_anchor:
   min_rows: 1000
 
 # Allowed count of declared-but-never-consumed units, per capability class.
-# Baseline measured 2026-08-12 against the live PostgreSQL platform database
-# (audit_trail: 80,322 rows): 627 declared units, 547 never consumed.
+#
+# Backlog re-measured 2026-08-12 (exa-live-03) against the live PostgreSQL
+# platform database — audit_trail: 82,355 rows, well clear of the evidence
+# anchor — with `python tools/awareness/capability_consumption.py --json`.
+# 628 declared units across the seven measurable classes, 534 never consumed.
+#
+# Three classes were DRAINED and are therefore ABSENT rather than pinned at 0
+# (an absent class already gets a budget of 0; keeping a 0 entry only invites a
+# future session to edit it upward). They are recorded here so the next session
+# reads "fixed" instead of rediscovering them:
+#
+#   reflex          74 declared, 74 consumed. Drained by the reflex-specific
+#                   checks that predate this gate — check_reflex_registry and
+#                   tests/test_reflex_dispatch_parity.py — after the same bug
+#                   shipped three times (xbm-wake-01/02, hgx-obs-02).
+#   audit_chain     1 declared, consumed. The migration-149 hash chain is now
+#                   written by audit_logger.log_event (#1549) and swept by
+#                   tools/audit/chain_sweep.py (exa-audit-04). Unit-level it is
+#                   live; per-row CHAIN COVERAGE is a different question and is
+#                   reported in the check's detail lines, not gated here.
+#   prompt_template 14 templates under hardprompts/, 14 consumed — 17 rows in
+#                   prompt_versions. Drained by exa-refine-01 (LLMRouter reads
+#                   the registry as a supplemental prompt layer) and
+#                   exa-refine-02 (--import-hardprompts / --seed-call-sites gave
+#                   it rows). Note the class is still listed in
+#                   args/capability_consumption.yaml::known_inert_cases on
+#                   purpose: a wired read path against an UNSEEDED registry is
+#                   still a no-op, so a fresh install must be able to see it.
+#
+# What remains below is the real backlog.
 grandfathered:
-  # 74 enabled reflexes, all of which have run. This is what a healthy class
-  # looks like, and it only got here because the reflex-specific checks
-  # (check_reflex_registry, tests/test_reflex_dispatch_parity.py) drained it.
-  reflex: 0
-
-  # 470 tools in TOOL_REGISTRY, 4 ever dispatched through the Studio MCP tool
-  # gate. The bulk of these are reachable only from surfaces that do not route
-  # through the gate, so the honest reading is "the dispatch audit does not see
-  # most of the registry" as much as "the registry is inert" — both are the same
-  # class of finding: a declared capability nothing can prove is used.
-  mcp_dispatch_tool: 466
+  # 471 tools in TOOL_REGISTRY; 4 ever dispatched through the Studio MCP tool
+  # gate (health_check, nist_lookup, studio_run_start, studio_run_status) across
+  # 19 recorded dispatches. The bulk of the registry is reachable only from
+  # surfaces that do not route through that gate, so the honest reading is "the
+  # dispatch audit does not see most of the registry" as much as "the registry
+  # is inert" — both are the same class of finding: a declared capability
+  # nothing can prove is used. Draining this means routing the other MCP entry
+  # points through the same audit, not dispatching 467 tools by hand.
+  #
+  # 466 -> 467 is a BASELINE CORRECTION, not an accommodation. TOOL_REGISTRY has
+  # held 471 entries since before c83261305 (the exa-live-02 commit that wrote
+  # 466) and `git diff c83261305..HEAD -- tools/mcp/` is empty, so the declared
+  # set has not grown; the 470 in the previous comment was simply one short and
+  # the gate has been red on main ever since. Verified 2026-08-12:
+  # `python -c "from tools.mcp.tool_registry import TOOL_REGISTRY; print(len(TOOL_REGISTRY))"` -> 471.
+  #
+  # Consequence to know before you register a new MCP tool: this budget is
+  # coupled to the registry SIZE, so a tool added without a gated dispatch trips
+  # the check by +1. That is the gate working — a newly declared tool nothing
+  # dispatches is precisely the defect. Wire it, or do not register it yet.
+  mcp_dispatch_tool: 467
 
   # args/agent_approval_policy.yaml enumerates 62 tools across its tiers and
-  # agent_approval_log holds not one decision for any of them. A gate whose
-  # decision log is empty has never gated anything.
+  # agent_approval_log holds not one decision for any of them — 0 rows, whole
+  # table, whole lifetime. A gate whose decision log is empty has never gated
+  # anything. The policy file is read; nothing writes the verdict.
   agent_approval_rule: 62
 
   # 5 RBAC roles in the D261 role_tool_matrix, 1 seen in an MCPToolAuthorizer
-  # verdict. All 8 verdicts recorded so far are monitor-only (exa-policy-05
-  # landed the enforcement seam in monitor mode first, by design).
+  # verdict. exa-policy-05 landed the enforcement seam MONITOR-ONLY by design,
+  # so the other 4 roles cannot appear in a verdict until it flips to blocking
+  # and real traffic arrives under those roles. Expect this to drain on its own
+  # once enforcement is on; lower it then rather than waiting for a task.
   mcp_tool_authorization: 4
 
-  # 14 templates under hardprompts/, 0 non-draft prompt_versions rows. The
-  # registry has held zero rows since it shipped.
-  prompt_template: 14
-
-  # The migration-149 hash chain, now written by audit_logger.log_event (#1549).
-  # Unit-level it is consumed; coverage is another matter and is reported in the
-  # check's detail lines rather than gated here.
-  audit_chain: 0
-
-  # GEPA. 122 pending artifacts, 0 applied, and 0 that even satisfy its own
-  # selection predicate — it cannot act, so it never has.
+  # GEPA. 124 pending agent_improvement_artifacts, 0 applied, and 0 that satisfy
+  # its own selection predicate — every queued artifact has
+  # composite_score == baseline_score, so the >= 0.05 delta filter can never
+  # select one. It is dispatched every 24h and cannot act, which is why it reads
+  # as scheduled-and-healthy while doing nothing.
   skill_optimizer: 1
