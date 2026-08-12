@@ -7881,3 +7881,200 @@ projects:
   - key: iso
     title: ISO - test-isolation defects
     priority: medium
+- key: exa
+  name: EXA - External Adoption (buzz / omnigent / prime-agent)
+  description: |-
+    Adoption pass over three external agent projects - block/buzz (Nostr relay where
+    agents hold their own keys and a hash-chain audit log), omnigent-ai/omnigent
+    (meta-harness with an ALLOW/DENY/ASK policy engine composed at server/agent/session
+    levels), and PrimeIntellect-ai/prime-agent (RLM agent with a "continual harness" of
+    durable prompts/memories/skills refined by small evidence-backed updates). FINDING:
+    ICDEV already has the hard half of all three - per-agent mTLS certs for 16 agents, a
+    default-deny fail-closed tool gate enforced at offer AND call time, an
+    unknown-halts-by-default reversibility classifier, four blocking budget layers,
+    standing goals, cron, checkpoints, and a skills lifecycle with HITL approval. What
+    reading these projects surfaced is not an architecture gap but one repeated bug:
+    ICDEV builds the schema, the verifier, the dashboard and the CLI, then never wires
+    the single call that makes it live - and the inert version gets counted as
+    compliance evidence. Four instances found. (1) Migration 149 added hash /
+    previous_hash / signature to 15 audit tables and provenance_verifier.py verifies
+    them, but audit_logger.log_event never populates them, so EVERY audit row fails
+    verification. (2) MCPToolAuthorizer is deny-first and config-driven with ZERO call
+    sites while being counted as FedRAMP KSI and OWASP-ASI-02 evidence. (3)
+    tools/llm/prompt_registry.py has versioning, rollback, A/B and an append-only audit
+    log, with 0 rows and 0 importers. (4) GEPA is scheduled and dispatched but all 122
+    artifacts have composite_score equal to baseline_score, so the 0.05 delta floor
+    filters every one, permanently. ICDEV own code names this failure mode at
+    tools/genesis/reflex_registry.py lines 18-23, rewritten after three separate
+    incidents (xbm-wake-01, xbm-wake-02, hgx-obs-02) of enabled true plus working module
+    plus catalogued plus zero executions, with nothing going red. So this card is mostly
+    COMPLETION work against infrastructure that already exists, plus one new gate that
+    makes the pattern detectable. SCOPE BOUNDARY - prior art is closed and must not be
+    reopened. HGX (Harness Agent Parity and Graph Runtime) is DONE, all 38 tasks, gates
+    released 2026-08-09. Do NOT rebuild the AgentAdapter seam, the external MCP client,
+    Studio parallel/conditional DAG, per-node tool scoping (AGENT-WF-001), standing
+    goals, cron, checkpoints, or the skills lifecycle. Do NOT rebuild
+    tools/workflow/executor_parity.py. Do NOT touch
+    plans/agent-runtime-implementation-plan.md or
+    plans/hierarchical-planning-harness-gap-research.md - both are untracked, dated
+    2026-08-08, may belong to a concurrent session, and are STALE, listing standing
+    goals, cron, checkpoints and session search as Major gaps while tools/agent_runtime/
+    already ships modules for all four. REJECTED from the source projects, do not
+    propose them - buzz Nostr relay, Rust crates and Flutter mobile (wrong stack, and a
+    public-relay protocol is a non-starter air-gapped); omnigent cloud sandboxes
+    Modal/E2B/Daytona/Blaxel/CoreWeave (air-gap incompatible, SandboxExecutor on
+    Docker/K8s/Podman is the correct surface); omnigent device-sync and mobile session
+    continuity (large surface, low mission value); and the prime-agent RLM execution
+    model where the agent writes arbitrary Python in a persistent IPython REPL, which
+    directly contradicts the FORGE thesis that AI orchestrates and deterministic tools
+    execute - a REPL is a command_tool whose every call is content-escalated by
+    args/agent_approval_policy.yaml, and arbitrary Python defeats the regex matching
+    that gate depends on. tools/mcp/toolset_profiles.py already solves the
+    tool-surface-bloat problem RLM targets, with a CUI-egress gate attached.
+  task_prefix: exa-
+  default_open: true
+  policy: |-
+    Card: EXA - External Adoption. NO manual gate; this card dispatches autonomously.
+    Open PRs NORMALLY, not --draft - pr_watcher auto-merges green kanban/* and cannot
+    touch a draft, so a draft stalls the pipeline at its last step and waits for a
+    human. What sequences the work is depends_on_task_id, not a draft flag and not a
+    gate. Within AUDIT the shared-hash-recipe task must land before the writer, and the
+    concurrency test must land before the writer merges. Within POLICY the policy layer
+    must land before the builtins, and MCPToolAuthorizer enforcement lands monitor-only
+    before it flips to blocking. Within BENCH the two stub adapters must be implemented
+    before the capability probe has anything to measure. This block is generated from
+    the card - do not edit it on the task row, edit the card.
+  briefs:
+  - |-
+    AUDIT - write the hash chain that everything downstream already expects. Migration
+    149 added hash / previous_hash / signature plus indexes to 15 audit tables including
+    audit_trail. Every consumer is built: provenance_verifier.py verify_audit_integrity
+    recomputes the row hash from a pipe-joined field list and checks previous_hash
+    against the predecessor (genesis is 64 zeros); agent_case/bundle_format.py
+    compute_audit_row_hash uses the same recipe for portable forensic bundles;
+    dashboard/pages/provenance.py renders the chain. audit_logger.py log_event around
+    line 478 inserts exactly 9 columns and computes no hash, despite its own docstring
+    at line 406 calling this a hash-chained table. Consequence: verify_audit_integrity
+    returns hash_valid false, chain_valid false and signature_valid false for every real
+    row (it is honestly fail-closed, so it does not lie, it just always fails), and
+    chain_anchor.py periodic_anchor selects WHERE hash IS NULL OR signature IS NULL so
+    its unanchored query matches every row forever. Extract the hash recipe into ONE
+    shared helper so the writer, provenance_verifier and bundle_format cannot drift -
+    all three must agree byte for byte on field order. Sign via the existing
+    tools/crypto/key_manager.py (ECDSA-P256 then Ed25519 then HMAC, already used by
+    attestation_signer.py and sbom_signer.py). Backfill is OUT OF SCOPE - chain from a
+    genesis marker at cutover and record where the chain starts. THE DESIGN RISK - a
+    hash chain needs a total order, and concurrent inserts on PostgreSQL (the primary
+    backend) fork the chain unless read-predecessor-then-insert is serialized. Use a
+    per-table advisory lock or SERIALIZABLE with retry. A chain that forks under
+    concurrency is WORSE than no chain, because the verifier reports tampering that did
+    not happen, so an explicit concurrency test must land before the writer merges. Also
+    note log_event swallows exceptions and returns -1 unless raise_on_error is true, and
+    a swallowed write is a chain gap. Compliance: NIST 800-53 AU-9 Protection of Audit
+    Information and AU-10 Non-repudiation (exa-audit-01..04)
+  - |-
+    POLICY - a pluggable, stateful policy layer over the existing reversibility gate,
+    then enforce the gates ICDEV already declares. KEEP approval_gate.py and
+    args/agent_approval_policy.yaml. default_tier unknown with unknown in
+    require_approval_tiers means a tool must be NAMED to be automatic, content patterns
+    escalate before the per-tool tier, and downgrade patterns apply only to
+    command_tools. That is stronger than omnigent on the reversibility axis. It becomes
+    one policy among several, not a thing to replace. What it cannot express, being
+    single-level, pattern-only and stateless: policy FUNCTIONS returning ALLOW, DENY or
+    ASK plus a reason; three-level composition (session then agent then server, stricter
+    first, first DENY short-circuits); state_updates for session counters such as
+    max_tool_calls_per_session; factory_params for repo and branch allowlists; and
+    cost_budget as a DOWNGRADE gate that blocks expensive models until the caller drops
+    tier, where the four ICDEV budget layers only block outright. Model the config on
+    args/heal_constitution.yaml - a reviewed YAML with stated scopes and per-action
+    floors is the right shape and is already established here. ALSO IN THIS EPIC, three
+    enforcement gaps found during the analysis. (a) tools/security/mcp_tool_authorizer.py
+    is deny-first and config-driven but grep for is_authorized returns ZERO call sites -
+    the unified MCP server never consults it, so nothing prevents any caller invoking
+    any of roughly 700 tools, while every other reference is a file-existence check
+    inside a FedRAMP or OWASP evidence generator. Land it MONITOR-ONLY first, measure
+    the breakage, then flip. (b) workflow_hitl/gate.py HITLGate.get_pending wraps
+    everything in except Exception return None, so a DB error means no pending approval
+    and the kanban in_progress to done transition proceeds - it must fail CLOSED. (c)
+    llm/gateway.py _check_cost_cap catches all exceptions and returns allowed true. Test
+    the DENY case, not the allow case (exa-policy-01..06)
+  - |-
+    REFINE - the prime-agent /refine command reviews the current trajectory and applies
+    small, evidence-backed updates to supplemental harness state, never rewrites the
+    immutable base system prompt, and keeps snapshots for rollback. ICDEV has every
+    piece of this, disconnected. tools/llm/prompt_registry.py already has monotonic
+    versions, SHA-256 content hashing, activate and deprecate, rollback to a version,
+    diff, A/B split and an append-only prompt_audit_log - and it has 0 rows and 0
+    importers, router.py never reads it, and prompts remain f-string literals at call
+    sites. Wire it as the read path for supplemental prompts and make the base system
+    prompt explicitly immutable, so the registry only ever appends supplemental layers.
+    For the evidence half, tools/workflow/lesson_learned.py is the one self-improvement
+    loop in ICDEV that unambiguously works - a 24-pattern deterministic taxonomy with
+    recurrence scoring and systemic escalation, 14514 rows and 13 or more live call
+    sites - so attach lesson rows as the evidence on each proposed refinement and
+    populate agent_improvement_artifacts.evidence_traces with real recurrence data
+    instead of empty. Then fix GEPA so the loop can select anything at all: today all
+    122 artifacts have composite_score equal to baseline_score giving a delta of 0.0
+    against a 0.05 floor, skill_used is empty so _find_skill_file misses, and NOVA specs
+    double-prefix to icdev-icdev-slug. Snapshot before and after so any refinement is
+    revertable, and make each refinement a chained audit row from the AUDIT epic. DO NOT
+    build a scheduler - reflex dispatch, circuit breakers and health alerting already
+    exist and work, the heal reflex has 7260 runs (exa-refine-01..05)
+  - |-
+    BENCH - the omnigent value proposition is many harnesses behind one seam. ICDEV
+    already HAS the seam: tools/agents/adapter_base.py is a clean 5-method Protocol with
+    a registry, args/agent_adapters.yaml, and real consumers in
+    genesis/reflexes/kanban.py. What it lacks is harnesses. Real today: claude_cli
+    (spawn plus invoke, JSON envelope parsed), local_agent (rubric-gated, edits files,
+    but deliberately absent from fallback_order and reachable only via
+    ICDEV_AGENT_ADAPTER equals local_agent), and local_llm_router (prose-only,
+    single-shot, cannot edit files). Stubs: codex_cli whose invoke raises
+    NotInstalledError, and copilot_cli whose available is literally return False and
+    shutil.which gh - both commented out of enabled_adapters. No Goose, Cursor or Aider
+    adapter exists anywhere. So implement the two stubs against the existing Protocol
+    first, and add Goose if the CLI is available; only THEN does a capability probe have
+    anything to measure. The probe reports declared-versus-actual per adapter -
+    streaming, tool-calling, sub-agents, interruption, sandbox passthrough, context
+    budget - emitting a matrix tools/agents/pick_default can consult, so parity becomes
+    a test result rather than a table someone typed, and the hand-written parity tables
+    in the untracked plan docs are already wrong. DO NOT rebuild
+    tools/workflow/executor_parity.py - it is an OUTCOME benchmark that replays a task
+    corpus in worktrees and grades results, a different question from a capability
+    matrix, and it is itself a standalone CLI wired into no pipeline. SEPARATE and
+    important: claude_cli.py invokes Claude Code with --dangerously-skip-permissions, so
+    the primary ICDEV adapter runs with the vendor permission system disabled and every
+    guarantee rests on the ICDEV reversibility gate plus agent_tool_gate.py. That is
+    defensible, since the gate is default-deny and enforced at offer and call time, but
+    it must be an explicit documented decision with a test proving the ICDEV gate
+    catches what the vendor gate would have, not an incidental flag (exa-bench-01..04)
+  - |-
+    LIVE - every other finding on this card is the same bug: a registered capability
+    with zero consumption, and nothing goes red. ICDEV has shipped it at least five
+    times (audit chain, MCP RBAC, prompt registry, GEPA, and three separate reflex
+    incidents), and in three of those the inert version is counted as compliance
+    evidence. tests/test_reflex_dispatch_parity.py and coherence_checker.py
+    check_reflex_registry exist ONLY because the reflex version shipped three times.
+    Generalize that shape into a coherence check asserting that a declared or registered
+    item has a non-zero consumption count in a recent window - registered MCP tools
+    never dispatched, registry rows never read, gates whose decision log is empty,
+    reflexes with 0 runs. Grandfather the existing backlog in an args/ gate file the way
+    insert_schema_gate.yaml and model_id_gate.yaml do, so the check lands green and
+    ratchets, and do not add new entries to get a commit through. This is the item that
+    stops a sixth occurrence, and it is cheap because both the pattern and the
+    enforcement surface already exist (exa-live-01..03)
+  epics:
+  - key: audit
+    title: AUDIT - write the audit hash chain the verifier and dashboard already expect
+    priority: critical
+  - key: policy
+    title: POLICY - pluggable policy layer and enforce the gates already declared
+    priority: critical
+  - key: refine
+    title: REFINE - evidence-backed refinement on the inert prompt registry
+    priority: high
+  - key: live
+    title: LIVE - liveness gate for declared-but-unconsumed capabilities
+    priority: high
+  - key: bench
+    title: BENCH - real harness adapters, then a capability matrix
+    priority: medium
