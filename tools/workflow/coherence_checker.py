@@ -59,7 +59,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -8276,12 +8276,158 @@ def check_bootstrap_parity() -> CoherenceCheck:
     )
 
 
+_MIRROR_GATE_PATH = PROJECT_ROOT / "args" / "mirror_parity_gate.yaml"
+
+
+def _load_mirror_gate() -> Optional[Dict[str, Any]]:
+    """Read args/mirror_parity_gate.yaml. ``None`` when unreadable.
+
+    ``None`` makes the check report ``warn``, never ``pass``: a drift gate that
+    disappears with its config file is the failure it exists to catch.
+    """
+    if not _HAS_YAML or not _MIRROR_GATE_PATH.exists():
+        return None
+    try:
+        data = yaml.safe_load(_MIRROR_GATE_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — a malformed gate must not crash the run
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
+    """Drifted ``tools/<pkg>/<rel>`` paths, restricted to executing extensions.
+
+    Delegates to tools/dx/mirror_parity.py — the audit already existed and
+    already had ``--gate``; it was simply wired into nothing.
+    """
+    try:
+        from tools.dx.mirror_parity import audit_all
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        result = audit_all(fix=False)
+    except Exception:  # noqa: BLE001
+        return []
+    exts = tuple(extensions)
+    out: List[str] = []
+    for report in result.get("reports") or []:
+        pkg = report.get("path") or ""
+        for rel in report.get("content_drift") or []:
+            if str(rel).endswith(exts):
+                out.append(f"tools/{pkg}/{rel}".replace("\\", "/"))
+    return sorted(out)
+
+
+def check_mirror_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """`tools/` and `icdev/tools/` are two modules; a stale mirror runs old code.
+
+    They are separate module objects, not a shim onto one file, so a fix landed
+    in one copy while the other still executes is a fix that is only HALF LIVE —
+    and the stale half fails silently rather than raising.
+
+    PR #1542 fixed the kanban executor degrade in ``tools/`` and did not mirror
+    it. Three and a half hours later two tasks were quarantined carrying the
+    exact error string that fix had deleted. Verifying the process had restarted
+    on new code proved nothing, because only one of the two copies was new.
+
+    TWO RULES, and the second is the one that matters:
+
+    1. total drift must not exceed ``budget`` — a grandfathered backlog that
+       ratchets DOWN;
+    2. a file in ``changed_files`` must never be drifted, whatever the budget
+       says. The budget forgives what was already broken; it is never
+       permission to add more. This is the rule that catches a #1542.
+    """
+    gate = _load_mirror_gate()
+    if gate is None:
+        return CoherenceCheck(
+            check_id="mirror_parity",
+            check_name="Mirror Parity",
+            status="warn",
+            expected=["args/mirror_parity_gate.yaml declares the drift budget"],
+            actual=["declaration missing or unreadable"],
+            missing=[],
+            extra=[],
+            message=(
+                "args/mirror_parity_gate.yaml is absent or unparseable, so "
+                "tools/ <-> icdev/tools/ drift was not checked. A stale mirror "
+                "runs old code silently."
+            ),
+        )
+
+    extensions = [str(e) for e in (gate.get("extensions") or [".py"])]
+    budget = int(gate.get("budget") or 0)
+    drifted = _mirror_drifted_files(extensions)
+
+    # Rule 2 first: your own change is never grandfathered.
+    yours: List[str] = []
+    if changed_files:
+        changed = {str(p).replace("\\", "/").lstrip("./") for p in changed_files}
+        yours = [d for d in drifted if any(c.endswith(d) or d.endswith(c) for c in changed)]
+
+    if yours:
+        return CoherenceCheck(
+            check_id="mirror_parity",
+            check_name="Mirror Parity",
+            status="fail",
+            expected=["files you changed are mirrored to icdev/tools/"],
+            actual=[f"{len(yours)} changed file(s) drifted"],
+            missing=[],
+            extra=yours,
+            message=(
+                f"{len(yours)} file(s) you changed differ from their icdev/ "
+                "mirror. They are separate modules, so whichever copy is stale "
+                "will run OLD code silently — that is #1542, where a fix looked "
+                "deployed for three and a half hours while the other copy still "
+                "ran. Fix: `python tools/dx/mirror_parity.py --paths "
+                "<pkg> --fix`. The budget does not forgive new drift."
+            ),
+        )
+
+    if len(drifted) > budget:
+        return CoherenceCheck(
+            check_id="mirror_parity",
+            check_name="Mirror Parity",
+            status="fail",
+            expected=[f"at most {budget} drifted {'/'.join(extensions)} file(s)"],
+            actual=[f"{len(drifted)} drifted"],
+            missing=[],
+            extra=drifted[:20],
+            message=(
+                f"{len(drifted)} mirrored file(s) drifted against a budget of "
+                f"{budget}. Reconcile with `python tools/dx/mirror_parity.py "
+                "--paths <pkg> --fix`, then LOWER the budget in "
+                "args/mirror_parity_gate.yaml. Never raise it."
+            ),
+        )
+
+    lowerable = budget - len(drifted)
+    return CoherenceCheck(
+        check_id="mirror_parity",
+        check_name="Mirror Parity",
+        status="pass",
+        expected=[f"at most {budget} drifted {'/'.join(extensions)} file(s)"],
+        actual=[f"{len(drifted)} drifted"],
+        missing=[],
+        extra=drifted[:20],
+        message=(
+            f"{len(drifted)} mirrored file(s) drifted, within the budget of {budget}"
+            + (
+                f" — the budget can be LOWERED to {len(drifted)}."
+                if lowerable > 0
+                else "."
+            )
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
 CHECK_REGISTRY = {
     "bootstrap_parity": check_bootstrap_parity,
+    "mirror_parity": check_mirror_parity,
     "schema_code": check_schema_code,
     "config_code": check_config_code,
     "signature_call": check_signature_call,
