@@ -60,6 +60,10 @@ tests/test_idp_scorecard.py
 tests/test_idp_catalog_scorecards.py
 tests/test_migration_version_uniqueness.py
 tests/test_script_bootstrap_import_order.py
+tests/test_kanban_adapter_routing.py
+tests/test_kanban_policy_drift.py
+tests/test_sbom_metadata_2026.py
+tests/test_documented_clis_have_a_bootstrap.py
 tests/test_sbom_coverage_resolution.py
 tests/test_icdev_comply_sbom_step.py
 
@@ -131,6 +135,21 @@ tests/test_context_budget.py
 # prebuild run. ~13s, pure Python, no DB/LLM/network.
 tests/test_init_goals_and_selective.py
 
+# test_bootstrap_parity.py is the generalisation of the line above: the same
+# drift hit AGENTS.md with nothing watching it, shipping a scaffolded project a
+# guardrail doc missing the mandatory project-cards section. Declares the pairs
+# in args/bootstrap_parity.yaml and fails naming prebuild_bootstrap as the fix,
+# instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
+tests/test_bootstrap_parity.py
+
+# test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
+# objects, so a fix landed in one while the other runs is only half live and
+# the stale half fails SILENTLY. #1542 shipped that way and two tasks were
+# quarantined 3.5h later carrying the error string it had deleted. The audit
+# (tools/dx/mirror_parity.py) already existed with --gate and ran nowhere.
+# ~2s, pure filesystem SHA256, no DB/LLM/network.
+tests/test_mirror_parity_gate.py
+
 tests/test_coherence_swallowed_persistence.py
 tests/test_analyzer_contract.py
 tests/test_agent_approval_gate.py
@@ -158,6 +177,21 @@ tests/innovation/test_innovation_kanban_promoter.py
 tests/test_sbom_component_producer.py
 tests/test_sbom_component_license.py
 tests/test_sbom_conformance_gate.py
+# test_sbom_component_identifiers.py earns a slot because CPE is the NVD lookup
+# key: lose it and tools/supply_chain/cve_triager.py silently joins nothing —
+# an SBOM that still validates and still looks complete. ~1s, pure Python plus
+# an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-05).
+tests/test_sbom_component_identifiers.py
+
+# test_sbom_distribution.py earns a slot because it is the only place the RBAC
+# DENY case on SBOM retrieval is asserted (sbx-gov-02). The 2026 revision folded
+# Access Control into Distribution and Delivery in both directions, and a
+# regression in either one is silent: a decorator dropped from the route serves
+# a CUI component inventory to any authenticated caller, and an over-tight role
+# list blocks the authorized sharing the standard requires. It also pins the
+# exact-bytes contract — a re-serialization would invalidate the sbx-sig-01
+# author signature computed over the artifact. ~1.3s, SQLite only, no network.
+tests/test_sbom_distribution.py
 
 # test_pr_watcher_heartbeat.py earns a slot because the bug it pins makes every
 # daemon's log silence meaningless. get_logger(__name__) resolves to "__main__"
@@ -216,6 +250,207 @@ tests/test_pytest_timeout_declared.py
 # re-inlined list in the YAML. ~1s, pure Python, no DB/LLM/network
 # (kax-conflict-07).
 tests/ci/test_gated_test_list.py
+
+# test_approval_inbox.py earns a slot because all four invariants it pins fail
+# SILENTLY. (1) approval_items is mutable ON PURPOSE — adding it to
+# APPEND_ONLY_TABLES would make the pending -> resolved UPDATE, the one
+# transition the table exists for, a hook violation, and the symptom is a
+# feature that simply stops resolving. (2) Its rows are mirrored out to
+# Slack/Teams/Telegram/email, so an argument VALUE reaching `body` leaks CUI to
+# a chat channel with nothing failing anywhere; the test seeds a bearer token
+# into the tool input and scans every cell of BOTH tables. (3) `is_approved`
+# means resolved-and-approved, not "not denied" — regress that and an expiry
+# reads as consent, which turns the inbox into the auto-approver it exists to
+# replace. (4) Resolving must write the agent_approval_log row through the
+# existing record_decision(), so a settled item can be pruned without losing the
+# decision. Both tables are built from their own migrations' DDL, so a column
+# added to one and not the other fails here rather than at runtime inside a
+# swallowed exception. ~1s, pure Python plus an in-tmpdir SQLite file, no DB
+# service/LLM/network (agov-inbox-01).
+tests/test_approval_inbox.py
+
+# test_inbox_approver.py earns a slot because the failure it guards is
+# INVISIBLE: every regression here still returns a decision, and three of them
+# return the WRONG one silently. (1) The load-bearing invariant of the whole
+# INBOX epic is that unattended routes the ask without widening what the agent
+# may do -- the test drives the REAL build_approval_hook and asserts an
+# irreversible call queues a pending item and BLOCKS, so a refactor that lets
+# it through is a red run rather than an auto-approver nobody notices until an
+# overnight session force-pushes. (2) A timeout must DENY and name the expiry;
+# an approver that allowed on timeout would auto-approve exactly the calls that
+# reach an approver at all. (3) The cross-process wake must work through the DB
+# POLL, not only the in-process threading.Event -- the process that answers is
+# usually not the one that asked, and the Event path passing alone would hide a
+# broken poll until a real Slack reply was ignored for an hour. The test
+# substitutes an Event that counts its own set() calls and asserts zero. (4) The
+# gate's public signature is frozen here, because the premise of the card is
+# that Approver was ALREADY an injectable seam. ~3s, pure Python plus an
+# in-tmpdir SQLite file and two short-lived threads, no DB service/LLM/network
+# (agov-inbox-02).
+tests/test_inbox_approver.py
+
+# test_unattended_flag.py earns a slot because the invariant it pins is the
+# entire premise of the flag and it fails INVISIBLY in the direction that looks
+# like success. (1) With unattended set, an irreversible call must still queue a
+# pending approval_items row and BLOCK -- the test drives the real
+# build_approval_hook AND the real dispatch handler with an execution sentinel,
+# so a regression that let the call through is a red run rather than an
+# auto-approver nobody notices until an overnight session force-pushes. Both
+# mutations were checked: returning an auto-approver reddens five tests, and
+# leaking "unattended implies mode=off" reddens three. (2) The approval surface
+# -- policy tiers, per-tool classification AND the resolved gate mode -- must be
+# byte-identical with the flag True and False; the mode is in there because
+# "unattended implies mode=off" would not show up in the policy file at all.
+# (3) The flag must survive a restart (asserted against a second, independent
+# module instance and against the bytes on disk) and must NEVER be inferred from
+# a non-TTY stdin -- which is true of CI, cron, Docker and pytest, so an
+# inference would silently re-route exactly the contexts nobody is watching. A
+# source-level assertion backs that one, because a TTY branch would pass every
+# behavioural test by construction. ~2s, pure Python plus an in-tmpdir SQLite
+# file and two short-lived threads, no DB service/LLM/network (agov-inbox-04).
+tests/test_unattended_flag.py
+# test_sbom_component_names.py earns a slot because the two defects it pins are
+# both INVISIBLE to a per-parser test and both silently drop data: `_adopt_declared`
+# rebuilt every declared component from a fixed field list, flattening the Maven
+# `version-managed-by-parent` reason to "nobody pinned one", and `_parse_csproj`
+# dropped a versionless PackageReference outright — the component vanished from the
+# SBOM rather than appearing with its version unknown. It also pins that no parser
+# reintroduces a pre-2026 "unspecified"/"managed" version literal. ~1.5s, pure
+# Python plus an in-tmpdir SQLite file, no DB service/LLM/network (sbx-fld-06).
+tests/test_sbom_component_names.py
+# agov-inbox-03 — channel delivery + reply resolution. In the core gate because
+# the correlation token is the ONLY thing standing between a chat reply and the
+# wrong irreversible action being approved, and every one of those properties is
+# a negative: a reply with no token resolves NOTHING (asserted with two pending
+# items on the board, so "it picked the most recent one" fails here), a token
+# naming a settled item writes no second decision row, a failing or raising
+# adapter leaves the item pending, and the seeded CUI marker is redacted by
+# response_filter while the token survives the redaction. Also pins that no new
+# HTTP client crept in, against the module source. ~2s, pure Python plus an
+# in-tmpdir SQLite file, no DB service/LLM/network (agov-inbox-03).
+tests/test_inbox_channel.py
+# test_agov_events.py earns a slot because both invariants it pins fail SILENTLY.
+# The normalized agent event view is what every AGOV detection rule will read, and
+# the two ways it can lie are invisible from the outside: classify from free text
+# and a command merely QUOTED in tool output becomes evidence the command ran;
+# promote without the operand and `command.exec` fires with command=None, which a
+# rule matcher reads as "no match" rather than "broken". Neither shows up as a
+# failure anywhere else — a green suite and a detection layer that indicts the
+# wrong session are the same object. Also pins mutual exclusivity (one source row
+# → at most one event) and that the module creates NO table. ~1s, pure Python plus
+# a tmp_path SQLite file, no DB service/LLM/network (agov-det-01).
+tests/test_agov_events.py
+# test_agent_wake_store.py earns a slot because the invariant it pins is a
+# CONCURRENCY invariant, which no other gate in this repo can catch. ICDEV runs
+# many sessions against one database and the wake tick (agov-wake-03) can overlap
+# with itself, so a read-then-write mark_fired lets two ticks both observe `due`
+# and both resume the same agent from one suspension -- and a double resume does
+# not raise, it just does the work twice. The file asserts exactly one transition
+# under two hand-interleaved connections AND under two real threads through a
+# barrier, plus the three quieter failure modes: due() must never return a wake
+# whose condition is unmet (an agent resumed early does the wrong work silently),
+# nothing may take a wake from fired back to due, and a cancelled timer must stay
+# cancelled once its fire_at elapses. The table is built from the migration's own
+# up.sql and compared against wake._ensure_schema's DDL, so the un-migrated and
+# migrated checkouts cannot disagree about what columns exist. ~1.5s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-01).
+tests/test_agent_wake_store.py
+# test_agov_rule_pack.py earns a slot because the invariant it pins is one
+# boolean wide and catastrophic in exactly one direction. Every rule shipped
+# under args/agent_rules/ must set `enforce: false`; a rule that flips to true
+# starts BLOCKING live tool calls for every session on the next pull, and the
+# first thing it blocks is whatever it is wrong about. Nothing else notices —
+# a detection pack is silent when it is behaving and silent when it is not, so
+# the failure surfaces as sessions mysteriously refusing work. It also compiles
+# every regex and rejects a matcher key outside the loader's vocabulary, which
+# is the other silent half: the loader SKIPS an unknown key rather than failing
+# open, so a typo is a rule that never fires and looks like a clean environment.
+# ~1s, pure Python, no DB service/LLM/network (agov-det-05).
+tests/test_agov_rule_pack.py
+
+# test_agov_agent_findings.py earns a slot for the append-only registration.
+# Adding a table to APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py is a
+# one-line edit that nothing else verifies, and an unregistered audit table is
+# indistinguishable from a registered one until someone edits a row that was
+# supposed to be evidence. It also pins the INSERT column list against the
+# migration DDL and the conftest fixture — the drift that made module_budget_usage
+# report success while persisting nothing, because CREATE TABLE IF NOT EXISTS
+# never alters an existing table and the failed INSERT was swallowed. ~1s, pure
+# Python plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-det-05).
+tests/test_agov_agent_findings.py
+# test_agov_sequence.py earns a slot because it pins the one correctness property
+# a chain evaluator cannot be allowed to lose: candidate events never leave their
+# (session_id, agent, project_id, source) partition. ICDEV runs many concurrent
+# sessions against one database, so a regression that let a chain span two of them
+# would not be a subtle miss — it would report session A's `.env` read plus session
+# B's outbound POST as exfiltration, continuously, and the whole rule pack would be
+# discredited on its first day. The out-of-order, window-expiry and max_matches
+# cases pin the rest of the semantics. ~0.6s, pure Python, no DB/LLM/network
+# (agov-det-04).
+tests/test_agov_sequence.py
+
+# agov-case-02 — the portable case bundle and its SHA-256 manifest. Guards four
+# properties that each fail silently on the machine the evidence is carried to:
+# manifest completeness (every member hashed), determinism (identical input ->
+# identical manifest, and a time-free bundle_digest), no raw transcript in the
+# bundle bytes with one planted in the DB, and a classification banner resolved
+# through classification_manager rather than written down. ~1.4s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-case-02).
+tests/test_agov_case_bundle.py
+# test_agov_rules.py earns a slot because the AGOV rule engine is a security
+# control whose failure mode is silent breadth: an unknown matcher key, a bad
+# regex or a rule carrying both `expr` and `sequence` must SKIP the whole rule,
+# because dropping only the offending clause loosens the surviving AND until a
+# targeted rule matches every event. Nothing else asserts that, and once
+# agov-det-06 wires the evaluator into pre_tool_use.py the same loosening turns
+# an `enforce: true` rule into a blanket block on live sessions. Also pins
+# `enforce` defaulting to False — monitor-only-by-default is the entire safety
+# story of the design. ~1s, pure Python, rules written to tmp_path, no
+# DB/LLM/network (agov-det-03).
+tests/test_agov_rules.py
+
+# test_agov_gate.py earns a slot because it guards the one property that makes
+# shipping a rule pack safe at all: enforcement authority is the DIRECTORY a rule
+# file sits in, not the `enforce` field inside it. If that inverts, an
+# `enforce: true` landing in args/agent_rules/ — by a bad merge, a rogue edit, or
+# a PR nobody read — turns the shipped pack into a live blocklist in every
+# session, and pr_watcher.py auto-merges any CI-green kanban/* branch, so review
+# is not the control. Also pins that the gate runs LAST (the scope fence over the
+# eight hardcoded blocks), that it fails OPEN, and structurally that the hot path
+# never imports the `tools` shim or the NDJSON logger — 92ms and 43ms that would
+# land before every single tool call. ~2s, pure Python, rules written to
+# tmp_path, SQLite only via the migration's own DDL, no LLM/network
+# (agov-det-06).
+tests/test_agov_gate.py
+# test_agov_shell_parse.py earns a slot because the parsed shell view is the
+# cause-level fix for a documented fail-open (agent_approval_policy.yaml:107-126:
+# a git_push carrying {"note": "mkdir logs"} matched the mkdir DOWNGRADE pattern
+# because patterns ran against a flattened string). Its failure mode is silent
+# in both directions: a parser that gets LOOSER invents a command name nobody
+# ran, and one that gets STRICTER stops firing rules with no error anywhere. The
+# named regression plus the refusal set are the only things pinning either. ~1s,
+# pure Python, stdlib-only module, no DB/LLM/network (agov-det-02).
+tests/test_agov_shell_parse.py
+# test_agov_cli.py earns a slot because it pins the bridge whose absence was
+# invisible: sequence.py binds rules.match_event by NAME and falls back SILENTLY
+# to a built-in whose command_name/argv_contains handlers read attributes an
+# AgentEvent does not carry, so the whole shipped chains/ family could not fire
+# while the pack loaded, the evaluator ran and zero matches came out. Renaming
+# match_event would re-break it with no failure anywhere else. It also pins the
+# --check exit code, which is the ONLY signal an operator gets that an
+# enforcement directory is inert (an invalid rule is skipped, not match-all), and
+# that a recorded scan writes decision="observed" rather than a denial it is in
+# no position to claim. ~1s, pure Python, DB read monkeypatched, no DB
+# service/LLM/network (agov-det-07).
+tests/test_agov_cli.py
+
+# test_sbom_dependency_graph.py earns a slot because Component Dependency
+# Relationship is the element that was entirely ABSENT — a flat component list
+# with no `dependencies` array — and the failure it guards is silent: an edge
+# whose dependsOn resolves to nothing still looks like a dependency graph to
+# anything that only checks the array is present, which is what the gate did
+# before this task. It also pins the bom-ref uniqueness the whole graph rests on.
+tests/test_sbom_dependency_graph.py
 # test_agent_wake_tools.py earns a slot because the failure it pins is silent and
 # unrecoverable: a wake tool that returns "suspended: wake-abc" while persisting
 # nothing leaves an agent that has stopped working and will never be resumed, and
@@ -225,3 +460,276 @@ tests/ci/test_gated_test_list.py
 # for approval. ~1.5s, pure Python plus an in-tmpdir SQLite file built from the
 # migration's own up.sql, no DB service/LLM/network (agov-wake-02).
 tests/test_agent_wake_tools.py
+
+# agov-case-03 — case-bundle verification. Guards the three forensic layers and,
+# more importantly, the honest-degradation rule: an unset/default/rotated HMAC
+# secret must report NOT VERIFIED, never "passed". Also pins the HMAC recipe to
+# .claude/hooks/send_event.py::compute_hmac, which cannot be imported normally.
+# Fast (<1s) and DB-free: it builds real bundles under tmp_path.
+tests/test_agov_case_bundle_verifier.py
+# AGOV CASE — the timeline/bundler/CLI operator surface (agov-case-04). The
+# load-bearing case is the ROUND TRIP: a bundle written by case_bundler must
+# verify clean under bundle_verifier, which is a separate module with its own
+# digest code path. A per-module test would pass while the two disagreed about
+# member paths, JSON canonicalization or line endings — the exact drift that
+# makes a bundle worthless on the machine it is carried to. Also pins the
+# unjoinable-table disclosure and that no dashboard template ships here.
+# ~1.1s, pure Python plus a three-table in-tmpdir SQLite file, no DB
+# service/LLM/network (agov-case-04).
+tests/test_agov_case_cli.py
+# test_agent_wake_tick.py earns a slot because it pins two things no other gate
+# in this repo can see. (1) The tick resumes a suspension EXACTLY ONCE across two
+# consecutive ticks -- a second delivery does not raise, it silently makes an
+# agent resume twice from one suspension, and the claim-before-deliver ordering
+# that prevents it is invisible to a reader who does not know why. (2) The
+# producers are actually wired: it mutation-proofs that pr_watcher's poll loop
+# reaches the emitter and that state_machine.transition emits, so the event keys
+# an agent subscribes to cannot quietly stop being fired. It also asserts the
+# structural constraint the task was given -- NO new daemon entrypoint appeared
+# under tools/, and wakes did not get a reflex of their own -- and that the
+# reflex's tools/ and icdev/ copies are byte-identical, since a stale mirror is a
+# known way for a reflex change to look applied and do nothing. ~2s, pure Python
+# plus an in-tmpdir SQLite file, no DB service/LLM/network (agov-wake-03).
+tests/test_agent_wake_tick.py
+tests/test_agov_case_timeline.py
+tests/test_redaction_secret_patterns.py
+# test_inbox_adapters.py earns a slot because the failure it pins is silent and
+# strictly worse than not having the feature: a mirrored ask that collects an
+# answer nobody acts on leaves the operator believing the agent was unblocked
+# while the CoWorkerThread is still parked. It parks a REAL thread in the real
+# _wait_for_hitl_resolution and asserts the release actually wakes it, rather
+# than asserting a row was written. Three more invariants, each failing quietly:
+# resolving through the existing POST /api/ace/<id>/hitl must settle the mirror
+# (or the queue shows an ask that is already decided); ace_audit_log must stay
+# append-only, asserted over every statement the flow issues and not just the
+# end state, because an UPDATE that leaves the same values is invisible in the
+# rows; and an unmigrated inbox must leave the ACE gate behaving exactly as it
+# does today -- failing it closed makes an optional delivery channel
+# load-bearing, failing it open turns a missing table into an approval. Tables
+# are built from the DDL the runtime ships (the migration's own up.sql,
+# tools/ace/db/init_db.py). ~1.5s, pure Python plus two in-tmpdir SQLite files,
+# no DB service/LLM/network (agov-inbox-05).
+tests/test_inbox_adapters.py
+
+# test_dwo_dispatch_parity.py pins the hgx-par-01 backward-compatibility claim:
+# at max_parallel == 1 the wave-parallel loop must dispatch in the pre-parallel
+# _resolve_dag order for every template on disk. It is here AND in windows.txt
+# because it resolves its template roots from __file__ across two copies at
+# different depths — a path bug shows up as ZERO templates compared, which is a
+# silently-passing check rather than a failure.
+tests/test_dwo_dispatch_parity.py
+
+# test_dwo_bus_subscriber.py was never in any allowlist, so CI never ran it --
+# which is why main stayed green while it failed 9/9 in every fresh checkout.
+# It asserted against the ambient <repo>/data/icdev.db, which carries
+# studio_event_sources in a long-lived checkout and 23 tables with none of the
+# studio schema in a new one. Now hermetic (its own tmp SQLite, studio DDL from
+# tools/studio/init_db.py) and listed here so the ambient-state regression
+# cannot come back unnoticed. ~1.2s, in-tmpdir SQLite, no DB service/LLM/network.
+tests/test_dwo_bus_subscriber.py
+
+# test_audit_row_hash.py pins the migration-149 audit hash chain to literal
+# bytes. Three parties compute that digest -- the chain writer, the online
+# verifier (blockchain/provenance_verifier.py) and the offline bundle verifier
+# (agent_case/bundle_format.py) -- and a one-field disagreement between any two
+# makes the chain report tampering on EVERY row, which is a failure mode that
+# surfaces as "all your audit evidence is invalid" rather than as a test error.
+# It also asserts no inline copy of the recipe has crept back into either
+# consumer or its icdev/ mirror. The digest literals were computed before the
+# helper was extracted, so a change of meaning fails loudly rather than
+# re-baselining itself. ~0.3s, stdlib only plus one in-memory SQLite
+# connection, no DB service/LLM/network (exa-audit-01).
+tests/test_audit_row_hash.py
+
+# test_audit_chain_writer.py covers the writer that fills in migration 149's
+# hash/previous_hash/signature (exa-audit-03). It is in CI because the property
+# it guards is not visible from any other test: an audit chain that silently
+# stops being written looks exactly like one that was never attacked, and the
+# repo already shipped 149 with NO writer at all for its entire life. Includes
+# the concurrency case (8 threads x 6 writes on a file-backed temp SQLite db) --
+# without the critical section, writers collide on the reserved id and LOSE
+# audit events, which this catches. ~9s, no DB service/LLM/network.
+tests/test_audit_chain_writer.py
+# test_exa_policy_05_saas_mcp_authz.py gates the per-tool authorization control
+# on tools/saas/mcp_http.py -- the only MCP surface with an authenticated
+# principal. Without it here the control's tests run only in the PG tier, which
+# is NOT a required check, so an authorization regression could merge green.
+# The one test that needs a live audit_platform skips under the SQLite pin and
+# runs in the PG tier instead (tests/pg_tier_allowlist.txt); the other 38 are
+# pure Python plus a Flask test client -- ~1.9s, no DB service/LLM/network.
+tests/test_exa_policy_05_saas_mcp_authz.py
+# test_skip_permissions_compensating_controls.py is the evidence behind D394/D395:
+# tools/agents/adapters/claude_cli.py runs Claude Code with
+# --dangerously-skip-permissions on every autonomous build, and this pins the
+# MEASURED coverage of the compensating controls over the four categories a
+# vendor prompt interposes on. It has to be a required check specifically because
+# it fails in BOTH directions -- on a regression, and on a gap closed without
+# docs/security/agent-vendor-permission-bypass.md being updated. Left out of the
+# gate it would be a test nobody runs guarding a control nobody checks, which is
+# the exact declared-but-unconsumed shape the EXA card exists to find. Pure
+# classification against two YAML policies -- ~1.7s, no DB service/LLM/network
+# (exa-bench-04).
+tests/test_skip_permissions_compensating_controls.py
+# test_exa_policy_07_registry_authorization.py guards the DECLARATIONS the three
+# MCP surfaces above now share. It earns a slot because every regression here is
+# silent and permissive: a new tool with no read_only declaration, or a new
+# category with no CATEGORY_WRITE_ROLES row, resolves to admin-only -- safe, but
+# invisible until someone reports the refusal -- while re-adding role_tool_matrix
+# to args/owasp_agentic_config.yaml flips MCPToolAuthorizer back into matrix mode
+# and the registry declarations stop being read AT ALL, with no error anywhere.
+# It also pins that the icdev/ mirror carries the declarations, since a
+# pip-installed deployment enforces that copy and not tools/. ~1s pure Python,
+# no DB service/LLM/network.
+tests/test_exa_policy_07_registry_authorization.py
+# test_agent_policy_engine.py earns a slot because the ALLOW/DENY/ASK layer
+# (exa-policy-01) is what decides whether an irreversible agent action runs, and
+# every one of its failure modes is silent if it regresses: a policy that raises,
+# a chain name nobody registered, an empty chain, a nonsense return value, and a
+# DENY that stops short-circuiting all fail OPEN unless something asserts they do
+# not. It also pins the no-argument-VALUES property of the agent_approval_log row
+# — a CUI leak that no other test in this list would catch. ~2s, in-tmpdir SQLite,
+# no DB service/LLM/network.
+tests/test_agent_policy_engine.py
+# test_agent_policy_composition.py earns a slot for one reason: it is the only
+# thing asserting that a SESSION-level policy cannot weaken an agent or server
+# policy (exa-policy-02). That invariant is what makes it safe to let an end user
+# add a policy at all, and it regresses SILENTLY and CATASTROPHICALLY — if the
+# composition ever starts reading a lower level as an override, every attempted
+# loosening below (a softer floor, a disabled server policy, `on_policy_error:
+# allow`, an `audit` block, a session ALLOW against a server DENY) starts working
+# and nothing else in the repo goes red. It also pins that a DENY short-circuits
+# ACROSS levels, that a stateful counter survives the hook being rebuilt for the
+# next turn (an unbounded session otherwise), and that a malformed state update
+# denies rather than skipping — a counter that fails to increment is a limit that
+# never fires. ~1.5s, in-tmpdir SQLite, no DB service/LLM/network.
+tests/test_agent_policy_composition.py
+
+# exa-live-01 — capability consumption counter. Guards the measurement half of
+# ICDEV's signature defect (a registered capability with zero consumption and
+# nothing going red). Worth a required check because the tool's own failure mode
+# is silence: a broken probe returns the same zero a genuinely inert capability
+# does, so every zero assertion here is paired with a positive control on the
+# same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
+tests/test_capability_consumption.py
+
+# exa-refine-01 -- prompt registry as the router's SUPPLEMENTAL read path. Earns a
+# required slot because it pins a governance invariant, not a feature: the base
+# system prompt is immutable, so a regression here means self-modification can
+# rewrite the prompt it was meant to only append to -- and nothing else in the
+# suite would notice. The negative half matters just as much: with an empty
+# registry the router must return the caller's request object untouched, which is
+# what makes shipping this on by default safe. Temp SQLite + a recording provider
+# -- no DB service, LLM or network, ~15s.
+tests/test_prompt_registry_supplemental_layers.py
+
+# exa-refine-05 -- snapshot + as-a-unit rollback of the supplemental harness
+# state. Required because this is the LAST resort when a self-applied refinement
+# is wrong: if the snapshot is subtly incomplete, or "rolled back" becomes a
+# status flip somebody can UPDATE, or a mid-cycle file gets deleted without a
+# recoverable copy, the failure surfaces only at the moment someone needs to undo
+# -- when it is already too late. The chained-audit half is pinned here too, so a
+# self-modification can never look audited while nothing was written. Temp SQLite
+# + a redirected repo root -- no DB service, LLM or network, ~3s.
+tests/test_refinement_cycle.py
+# exa-refine-02 -- the three call-site prompts now READ from the registry rather
+# than being f-string literals. Required because the failure it guards is silent
+# in both directions. If the refactor drifts, the model gets a prompt nobody
+# reviewed -- so each test holds a VERBATIM second copy of the pre-refactor
+# f-string and asserts byte-identity, unseeded and seeded. And if the read goes
+# inert (the exact defect this card exists to close), byte-identity would still
+# pass, so the inverse is asserted too: registering a new version must change the
+# rendered prompt, and a rollback must change it back. Temp SQLite + four short
+# CLI subprocesses -- no DB service, LLM or network, ~3s.
+tests/test_prompt_registry_call_site_prompts.py
+# exa-bench-01 -- the Codex CLI adapter. Runs on BOTH OSes (it is in windows.txt
+# too) because its acceptance criterion is a portability claim, and a portability
+# claim proven on one OS is not proven: the module resolves an executable through
+# PATHEXT, writes a temp file with newline="" and pipes it to a subprocess. The
+# Windows branch is driven by an explicit is_windows argument rather than by
+# patching os.name, so BOTH branches are exercised on the Linux runner. No CLI is
+# ever spawned -- resolution is patched and subprocess.run is a recorder -- so it
+# is hermetic and ~1s.
+tests/test_codex_cli_adapter.py
+# exa-bench-05 -- the PreToolUse hook's checks, which became HARD BLOCKS in this
+# change. `.claude/settings.json` wrapped the hook in `|| true`, so all twelve
+# checks printed "BLOCKED:" and blocked nothing; with the wrapper gone a
+# regression in any of them now stops real tool calls in every session on the
+# host. That makes these the highest-consequence pure functions in the repo, and
+# they were not in the gate. Pins the shell-aware scanning that made enforcement
+# affordable (segments, heredoc bodies, quoted `>`, the MSYS drive prefix,
+# `--rm` vs `rm`, unexpanded `"$P"` worktree targets) and the .env / append-only
+# / sqlite / tier operand rules. Pure string predicates, no DB, no network, ~1s.
+tests/hooks/test_shared_checks.py
+# exa-bench-05 -- the fire-rate survey that has to run BEFORE a check is armed.
+# Guards the two properties that make its numbers mean anything: it replays a
+# corpus carrying the tool-call OPERANDS (hook_events holds key names only and
+# must report itself unusable, not a zero), and it never EXECUTES a check whose
+# evaluation would run ruff, re-stage files or write an agent_findings row.
+# Drives a synthetic transcript in tmp_path -- reads no host session data, ~1s.
+tests/hooks/test_fire_rate_survey.py
+# exa-live-02 -- capability liveness coherence gate. The enforcement half of
+# exa-live-01's measurement, and it earns a slot for the same reason the reflex
+# version did: this bug shipped three times before it had a check. The two
+# properties most likely to be broken by a well-meaning edit are pinned here --
+# that a low-cadence unit (consumed once, idle this window) is NOT a finding, and
+# that an unpopulated database warns instead of fabricating one per declared
+# unit. Both are decided from injected report data, so no DB service, LLM or
+# network; ~3s.
+tests/test_coherence_capability_liveness.py
+# test_sensitive_paths.py is the inventory behind exa-bench-09 -- ONE credential
+# path list consumed by three gates (the zero_access file tier, approval_gate's
+# confidentiality rule, and agent_tool_gate.check_path_allowed). It earns its own
+# slot alongside test_skip_permissions_compensating_controls.py because that one
+# measures the CONSUMERS and this one measures the list, and the list can regress
+# in two directions that look nothing alike: too NARROW is how the tier came to
+# cover **/credentials.json but not ~/.aws/credentials in the first place, and
+# too BROAD would silently absorb exa-bench-07's write probes and report that gap
+# as closed. Both directions are asserted here and neither is visible from the
+# consumer side. Pure matching against one YAML -- no DB service, LLM or network;
+# ~0.7s (exa-bench-09).
+tests/test_sensitive_paths.py
+
+# test_cost_budget_downgrade.py earns a slot because the property it pins is one
+# a well-meaning edit reverses without noticing: this budget layer DOWNGRADES
+# where the other four BLOCK, and "make it consistent with the others" turns it
+# back into a fifth hard stop. It also pins the two properties that make the
+# downgrade air-gap correct — local wins the tie against an equally-priced cloud
+# model, and an UNPRICED model is not treated as free — plus the once-per-
+# threshold ASK, which reverts to once-per-call the moment the dedupe is dropped.
+# Fully injected config and spend; no DB, LLM or network; ~0.7s (exa-policy-04).
+tests/test_cost_budget_downgrade.py
+
+# tests/hooks/test_hook_parity.py earns a slot because it is the only thing that
+# asserts .claude/hooks/pre_tool_use.py and hook_compat.HEADLESS_CHECKS run the
+# SAME set — and it was not gated, so it never ran in CI. That is the exact
+# failure it was written to catch, one level up: exa-bench-06 found
+# check_git_danger sitting in shared_checks and in HEADLESS_CHECKS while main()
+# never called it, so `git reset --hard` was refused headlessly and ALLOWED in the
+# Claude Code session that runs with --dangerously-skip-permissions (D394).
+# exa-bench-07 adds check_write_outside_worktree to both lists and depends on the
+# same property. Drives the hook as a subprocess reading JSON on stdin; no DB,
+# LLM or network; ~2s.
+tests/hooks/test_hook_parity.py
+# exa-policy-03 -- the three builtin policies. Earns a slot because it is the
+# only place the ALLOW/DENY/ASK chain and the session state are exercised by a
+# policy that actually USES them, and because the two properties most likely to
+# be undone by a well-meaning edit are pinned here: that no threshold has a
+# Python default (a missing limit/ask_at/deny_at DENYs naming the error instead
+# of quietly defaulting), and that the counters really accrue through the
+# composed runtime path rather than a hand-fed state dict. Every policy has an
+# explicit DENY test. No DB service, LLM or network -- session state runs with
+# persist=False; ~1s.
+tests/test_agent_policy_builtins.py
+# exa-bench-02 -- the copilot_cli and goose_cli harness adapters. Required because
+# the thing that went wrong here is invisible to a normal run: copilot_cli's
+# available() was `return False and (shutil.which("gh") is not None)`, which
+# short-circuits, so the adapter reported absent on every host and looked exactly
+# like a correct probe on a runner that has no CLI. The AST assertions are what
+# tell those two apart, and test_agent_adapter_no_inert_stubs.py generalises it to
+# every adapter in enabled_adapters -- with positive controls, so a rule that
+# stopped catching anything goes red instead of quietly passing. No binary is ever
+# spawned: resolution is patched and subprocess.run is a recorder. ~2s, no DB, LLM
+# or network.
+tests/test_copilot_cli_adapter.py
+tests/test_goose_cli_adapter.py
+tests/test_agent_adapter_no_inert_stubs.py

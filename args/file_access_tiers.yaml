@@ -13,32 +13,22 @@ file_access_tiers:
 
   zero_access:
     description: "Complete access prohibition — secrets and sensitive credentials"
-    patterns:
-      - ".env"
-      - ".env.*"
-      # Checked-in TEMPLATES, not secrets. Kept in step with
-      # _ENV_TEMPLATE_SUFFIXES in tools/hooks/shared_checks.py — the two guards
-      # both see every `.env.*` path and must agree on which are secrets.
-      - "!.env.sample"
-      - "!.env.example"
-      - "!.env.template"
-      - "!.env.*.template"
-      - "!.env.*.sample"
-      - "!.env.*.example"
-      - "!.env.dist"
-      - "**/*.pem"
-      - "**/*.key"
-      - "**/*.p12"
-      - "**/*.pfx"
-      - "**/*.jks"
-      - "**/credentials.json"
-      - "**/service-account*.json"
-      - "**/.ssh/*"
-      - "**/.gnupg/*"
-      - "**/*.tfstate"
-      - "**/*.tfstate.backup"
-      - "**/secrets.yaml"
-      - "**/secrets.yml"
+    # The pattern list IS the shared sensitive-path inventory — see
+    # args/sensitive_paths.yaml, resolved by tools/hooks/shared_checks.py via
+    # tools/security/sensitive_paths.py.
+    #
+    # It used to be spelled out here, and that hand-maintained copy is exactly
+    # how this tier came to cover `**/credentials.json` but not
+    # `~/.aws/credentials` (no extension), nor `~/.config/gh/hosts.yml`, nor
+    # `~/.kube/config`, `~/.docker/config.json` or `~/.netrc` — while the
+    # approval gate and the agent tool gate had no path concept at all
+    # (exa-bench-09). Do NOT re-list credential globs here: add them to the
+    # inventory, so all three surfaces gain them in the same commit.
+    inherits: sensitive_paths
+    # Extras that are zero-access for THIS surface only — a path an editor must
+    # not touch, but which is not credential material and so does not belong in
+    # the shared inventory. Empty today; the list above is the whole tier.
+    patterns: []
 
   read_only:
     description: "Read allowed, write blocked — compliance catalogs and lockfiles"

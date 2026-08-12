@@ -1,0 +1,207 @@
+# CUI // SP-CTI
+# Sensitive-path inventory — ONE list, three consumers (exa-bench-09).
+#
+# Loaded by tools/security/sensitive_paths.py. Behaviour changes here, not in
+# Python — FORGE args layer.
+#
+# WHO CONSUMES THIS
+#   1. args/file_access_tiers.yaml -> zero_access `inherits: sensitive_paths`,
+#      resolved by tools/hooks/shared_checks.py. Guards the spawned vendor CLI,
+#      whose ONLY observer is .claude/hooks/pre_tool_use.py.
+#   2. tools/agent_runtime/approval_gate.py -> the `sensitive_path`
+#      confidentiality rule, consulted BEFORE the reversibility tier. Guards the
+#      in-process agent loop.
+#   3. tools/studio/executors/agent_tool_gate.py -> check_path_allowed().
+#      Guards a Studio `node_type: agent` step's read-only toolset, whose
+#      allowlist is by NAME and therefore says nothing about a path.
+#
+# It is deliberately ONE file. The three surfaces previously disagreed: the tier
+# list covered `**/credentials.json` but not `~/.aws/credentials`, the approval
+# gate had no path concept at all, and the agent gate had no path concept at
+# all. A per-surface list is a list that drifts, and the drift is silent.
+#
+# NOT the same thing as tools/security/secret_detector.py. That module detects
+# credential *content* (BUILTIN_PATTERNS: AKIA…, `-----BEGIN … PRIVATE KEY-----`,
+# `ghp_…`) inside files it is already allowed to read. This file names the paths
+# that must not be read in the first place. Checked for a reusable path
+# inventory before authoring this one: it has none.
+#
+# WHAT BELONGS HERE
+#   A path whose CONTENT is a credential, at rest, on the host. The axis is
+#   DISCLOSURE, not reversibility and not writability — a read of ~/.netrc is
+#   perfectly reversible and completely unrecoverable at the same time.
+#
+# WHAT DOES NOT
+#   Paths that are merely dangerous to WRITE (~/.bashrc, /etc/cron.d,
+#   ~/.ssh/authorized_keys as a write target). That is worktree containment —
+#   exa-bench-07 — and mixing the two would make this list mean two things.
+version: 1
+
+sensitive_paths:
+  enabled: true
+
+  # Glob-style, matched against the forward-slashed path AND its basename, so
+  # `.env` catches /home/x/.env and `**/.aws/credentials` catches
+  # ~/.aws/credentials. `*` crosses separators (fnmatch semantics), which is why
+  # `**/` prefixes work for both absolute and `~/`-relative spellings.
+  entries:
+    - label: dotenv
+      detail: process environment file — the platform's own secret store
+      patterns:
+        - ".env"
+        - ".env.*"
+
+    - label: ssh_material
+      detail: SSH private keys, agent sockets and authorized-key material
+      patterns:
+        - "**/.ssh/*"
+        - "**/*.pem"
+        - "**/*.p12"
+        - "**/*.pfx"
+        - "**/*.jks"
+        - "**/*.key"
+        - "**/id_rsa"
+        - "**/id_ed25519"
+        - "**/id_ecdsa"
+
+    - label: gpg_material
+      detail: GnuPG keyring — signing and decryption keys
+      patterns:
+        - "**/.gnupg/*"
+
+    # ── The five the tier list missed, measured in exa-bench-09 ────────────
+    - label: aws_credentials
+      detail: AWS CLI credential store — long-lived access keys, no extension
+      patterns:
+        - "**/.aws/credentials"
+        - "**/.aws/config"
+        - "**/.aws/sso/cache/*"
+
+    - label: gh_token_store
+      detail: GitHub CLI OAuth token store — grants repo and workflow scope
+      patterns:
+        - "**/.config/gh/hosts.yml"
+        - "**/.config/gh/hosts.yaml"
+        - "**/AppData/Roaming/GitHub CLI/hosts.yml"
+
+    - label: docker_registry_auth
+      detail: Docker registry auth — base64 registry credentials and cred helpers
+      patterns:
+        - "**/.docker/config.json"
+
+    - label: kubeconfig
+      detail: Kubernetes cluster credentials — client certs and bearer tokens
+      patterns:
+        - "**/.kube/config"
+        - "**/kubeconfig"
+
+    - label: netrc
+      detail: netrc — plaintext host/login/password consulted by curl, git, wget
+      patterns:
+        - "**/.netrc"
+        - "**/_netrc"
+    # ── end of the five ────────────────────────────────────────────────────
+
+    - label: git_credentials
+      detail: git credential-store file — plaintext https remotes with tokens
+      patterns:
+        - "**/.git-credentials"
+
+    - label: cloud_sdk_credentials
+      detail: cloud SDK credential caches — refresh tokens and service accounts
+      patterns:
+        - "**/.config/gcloud/*"
+        - "**/gcloud/credentials.db"
+        - "**/.azure/*"
+        - "**/credentials.json"
+        - "**/service-account*.json"
+
+    - label: package_registry_tokens
+      detail: package registry auth — publish tokens for npm and PyPI
+      patterns:
+        - "**/.npmrc"
+        - "**/.pypirc"
+
+    - label: declared_secret_files
+      detail: files a project itself declares as secret material
+      patterns:
+        - "**/secrets.yaml"
+        - "**/secrets.yml"
+        - "**/*.tfstate"
+        - "**/*.tfstate.backup"
+
+  # Carve-outs, applied to every entry above. A committed template is not a
+  # secret, and blocking it makes the guard look broken rather than strict.
+  #
+  # Kept in step with `_ENV_TEMPLATE_SUFFIXES` in tools/hooks/shared_checks.py:
+  # `check_env_file_access` and `check_file_access_tiers` both see every
+  # `.env.*` path and must agree on which of them are secrets. The forms below
+  # `.env.example` were measured refusing real work before enforcement was
+  # turned on (exa-bench-05) — `file_access_tiers` fell 99 → 72 with them.
+  exclusions:
+    - ".env.sample"
+    - ".env.example"
+    - ".env.template"
+    - ".env.dist"
+    - ".env.*.sample"
+    - ".env.*.example"
+    - ".env.*.template"
+    - "**/.env.sample"
+    - "**/.env.example"
+    - "**/.env.template"
+    - "**/.env.dist"
+    - "**/.env.*.sample"
+    - "**/.env.*.example"
+    - "**/.env.*.template"
+
+  # Shell verbs that DISCLOSE a file's contents. Used to decide whether a Bash
+  # command is reading a sensitive path — `cat ~/.aws/credentials` is, and
+  # `touch ~/.ssh/authorized_keys` is not (that is a write, and it belongs to
+  # exa-bench-07's worktree-containment gap, not to this one).
+  #
+  # Keeping this list to genuine readers is load-bearing: a verb added here
+  # starts escalating `run_command` calls that exa-bench-07's probes measure as
+  # per-run-approval-only, which would silently overstate that gap as fixed.
+  read_commands:
+    - cat
+    - tac
+    - nl
+    - head
+    - tail
+    - more
+    - less
+    - strings
+    - xxd
+    - od
+    - hexdump
+    - base64
+    - grep
+    - egrep
+    - fgrep
+    - rg
+    - ripgrep
+    - awk
+    - sort
+    - cut
+    - type          # cmd.exe
+    - findstr       # cmd.exe
+    - get-content   # PowerShell
+    - gc            # PowerShell alias
+    - select-string # PowerShell
+
+  # Command shapes that disclose credentials with NO path at all. The measured
+  # case is `env | grep -i key`: the tier list is a path list, so it cannot see
+  # a secret that never touches the filesystem.
+  disclosure_commands:
+    - pattern: '\b(env|printenv|set)\b[^|;&]*\|[^|;&]*\b(grep|findstr|select-string|rg)\b'
+      detail: filters the process environment for secrets — no path is involved
+    - pattern: '\bprintenv\s+\S*(key|token|secret|password|passwd|credential)'
+      detail: prints a named secret environment variable
+    - pattern: '\bget-childitem\s+env:|\bgci\s+env:|\$env:\w*(key|token|secret|password)'
+      detail: enumerates the PowerShell environment provider for secrets
+    - pattern: '\baws\s+configure\s+get\s+aws_secret_access_key'
+      detail: reads the AWS secret key through the CLI rather than from the file
+    - pattern: '\bgh\s+auth\s+token\b'
+      detail: prints the GitHub CLI OAuth token
+    - pattern: '\bsecurity\s+find-(generic|internet)-password\b'
+      detail: reads a macOS keychain item
