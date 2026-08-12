@@ -740,6 +740,51 @@ session level comes from the runtime or `$ICDEV_AGENT_POLICY_CHAIN_SESSION`.
 
 ---
 
+## Builtin Agent Policies (exa-policy-03)
+
+The three policies that actually *use* the chain and the session state above.
+Each is a **factory**: a chain entry carries `params:` and the factory builds one
+configured instance (omnigent's `factory_params` shape), so an instance is
+configured rather than copied — and configured per level for free.
+
+```bash
+python tools/agent_runtime/policy_builtins.py --list --json
+python tools/agent_runtime/policy_builtins.py --describe risk_score --json
+python tools/agent_runtime/policy_builtins.py --check max_tool_calls_per_session \
+    --params '{"limit": 500}' --json
+```
+
+| Policy | What it holds that a regex cannot | Required params |
+|--------|-----------------------------------|-----------------|
+| `max_tool_calls_per_session` | How many calls this session has already made | `limit` |
+| `git_write_allowlist` | Which **branch** in which **repo** a push may write | `allow_branches` and/or `deny_branches` |
+| `risk_score` | Risk accrued across a long chain of individually benign calls | `ask_at`, `deny_at` |
+
+```yaml
+# args/agent_policy_chain.yaml
+chain:
+  - name: git_write_allowlist
+    enabled: true            # <- how one is switched off, per level
+    params:
+      repos: ["*"]
+      deny_branches: [main, master, "release/*"]   # checked first, case-INSENSITIVE
+      allow_branches: ["feat/*", "kanban/*"]       # allowlist, case-SENSITIVE
+      on_violation: deny
+      on_unknown: ask        # a bare `git push` does not name its branch
+```
+
+**No threshold has a Python default.** A missing `limit` / `ask_at` / `deny_at`
+is a config error that resolves to a DENY naming it — never a number nobody
+chose. An unknown param key, and `params` given to a policy that cannot take
+them, are errors for the same reason: accepted-and-ignored is a rule the operator
+believes is in force and which is not.
+
+A call a policy **refuses** does not accrue — it never ran. The stateful two
+require a `session_id` (`require_session: true`), because without one there is no
+session to count against and a per-session limit would silently become no limit.
+
+---
+
 ## Normalized Agent Event View (agov-det-01)
 
 A **read-only** projection of the agent activity ICDEV already stores into one

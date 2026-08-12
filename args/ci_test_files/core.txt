@@ -650,3 +650,13 @@ tests/test_coherence_capability_liveness.py
 # threshold ASK, which reverts to once-per-call the moment the dedupe is dropped.
 # Fully injected config and spend; no DB, LLM or network; ~0.7s (exa-policy-04).
 tests/test_cost_budget_downgrade.py
+# exa-policy-03 -- the three builtin policies. Earns a slot because it is the
+# only place the ALLOW/DENY/ASK chain and the session state are exercised by a
+# policy that actually USES them, and because the two properties most likely to
+# be undone by a well-meaning edit are pinned here: that no threshold has a
+# Python default (a missing limit/ask_at/deny_at DENYs naming the error instead
+# of quietly defaulting), and that the counters really accrue through the
+# composed runtime path rather than a hand-fed state dict. Every policy has an
+# explicit DENY test. No DB service, LLM or network -- session state runs with
+# persist=False; ~1s.
+tests/test_agent_policy_builtins.py
