@@ -102,9 +102,14 @@ known_inert_cases:
       0 rows in prompt_versions and 0 importers of tools/llm/prompt_registry.py.
       Wired into LLMRouter by exa-refine-01 as the SUPPLEMENTAL prompt-layer read
       path (`_apply_prompt_layers`, reserved `layer/` namespace, base prompt
-      immutable). Still counted here: a read path with no registered layers is a
-      no-op, so this stays inert until rows exist — which is the point of
-      counting it rather than declaring it done.
+      immutable), then given rows by exa-refine-02: `--import-hardprompts` seeds
+      hardprompts/, `--seed-call-sites` seeds the `call_site/` bodies, and three
+      call sites (gepa_optimizer, reflexion_agent, nova/skill_generator) read
+      their prompt through `render_prompt` instead of an f-string literal. Stays
+      listed rather than declared done, because the thing worth counting is
+      whether rows and reads exist on a given INSTALL — a wired read path with an
+      unseeded registry is still a no-op, and that is exactly the state this
+      entry is here to make visible.
   - id: gepa_optimizer
     capability_class: skill_optimizer
     metric: events

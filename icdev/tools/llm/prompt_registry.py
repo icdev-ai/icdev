@@ -25,6 +25,7 @@ Usage:
     python tools/llm/prompt_registry.py --rollback --name "code_gen" --to-version 1 --json
     python tools/llm/prompt_registry.py --diff --name "code_gen" --v1 1 --v2 2 --json
     python tools/llm/prompt_registry.py --import-hardprompts --json
+    python tools/llm/prompt_registry.py --seed-call-sites --json
     python tools/llm/prompt_registry.py --gate
     python tools/llm/prompt_registry.py --start-ab --name "code_gen" --va 1 --vb 2 --split 0.5 --json
 """
@@ -69,6 +70,25 @@ HARDPROMPTS_DIR = BASE_DIR / "hardprompts"
 LAYER_PREFIX = "layer/"
 BASE_PREFIX = "base/"
 
+# ---------------------------------------------------------------------------
+# exa-refine-02: the call-site namespace
+# ---------------------------------------------------------------------------
+# `call_site/` holds the USER-message prompt bodies that used to be f-string
+# literals inside a tool. It is deliberately a THIRD namespace, distinct from
+# both of the above:
+#
+#   * not `base/`   — these are not the router's system prompt, and the base
+#                     system prompt remains unwritable through this registry.
+#   * not `layer/`  — the router must NOT append them to every call; they are
+#                     read by name, by the one call site that owns each.
+#
+# Scope note: only the user-message body is registered. Where a call site also
+# passes an `LLMRequest.system_prompt` (gepa_optimizer does), that literal stays
+# in the module. Moving it here would let registry content occupy position 0 of
+# a system prompt, which is exactly what exa-refine-01 made structurally
+# impossible — so it is left alone rather than guarded again.
+CALL_SITE_PREFIX = "call_site/"
+
 # Bare names that mean "the base prompt" and are therefore also reserved.
 RESERVED_BASE_NAMES = frozenset(
     {
@@ -91,6 +111,9 @@ LAYER_SEPARATOR = "\n\n"
 # clear the cache outright so a rollback takes effect on the very next call.
 LAYER_CACHE_TTL_SECONDS = 30.0
 _LAYER_CACHE: Dict[str, tuple] = {}
+
+# Call-site template reads are cached on the same terms, keyed by prompt name.
+_TEMPLATE_CACHE: Dict[str, tuple] = {}
 
 
 class BasePromptImmutableError(RuntimeError):
@@ -119,6 +142,11 @@ def is_layer_name(name: str) -> bool:
     return _normalize_prompt_name(name).startswith(LAYER_PREFIX)
 
 
+def is_call_site_name(name: str) -> bool:
+    """Return True if `name` is a call-site prompt body (not a base, not a layer)."""
+    return _normalize_prompt_name(name).startswith(CALL_SITE_PREFIX)
+
+
 def _guard_base_prompt(name: str, action: str) -> None:
     """Refuse any registry write that targets the immutable base prompt."""
     if is_base_prompt_name(name):
@@ -131,8 +159,9 @@ def _guard_base_prompt(name: str, action: str) -> None:
 
 
 def _invalidate_layer_cache() -> None:
-    """Drop the layer cache after any registry mutation."""
+    """Drop the layer and call-site caches after any registry mutation."""
     _LAYER_CACHE.clear()
+    _TEMPLATE_CACHE.clear()
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -495,6 +524,171 @@ def compose_system_prompt(
             "the composed prompt; refusing to emit the composed prompt."
         )
     return composed
+
+
+# ---------------------------------------------------------------------------
+# Call-site prompt bodies (exa-refine-02)
+# ---------------------------------------------------------------------------
+
+
+def _read_active_template(name: str) -> Optional[str]:
+    """SELECT the active template text for one prompt name, or None.
+
+    Like ``_read_active_layers`` this deliberately creates no tables: a call
+    site whose registry has never been seeded must fall back to its own
+    module-level default, not pay DDL on the LLM path. A missing table, an
+    unreachable database and "nothing registered" therefore all read as None,
+    which is the same answer and the correct one.
+    """
+    try:
+        conn = get_connection()
+    except Exception as exc:  # pragma: no cover — storage misconfigured
+        logger.debug("prompt_registry: no connection for template read: %s", exc)
+        return None
+    try:
+        row = conn.execute(
+            "SELECT template_text FROM prompt_versions "
+            "WHERE prompt_name = %s AND status = 'active' "
+            "ORDER BY version DESC LIMIT 1",
+            (name,),
+        ).fetchone()
+    except Exception as exc:
+        logger.debug("prompt_registry: template %r unreadable: %s", name, exc)
+        return None
+    finally:
+        conn.close()
+
+    if not row:
+        return None
+    if isinstance(row, (sqlite3.Row, dict)):
+        return dict(row).get("template_text")
+    return row[0]
+
+
+def get_active_template(name: str, *, use_cache: bool = True) -> Optional[str]:
+    """Return the active template text registered under `name`, or None.
+
+    Args:
+        name: registry prompt name, conventionally in the ``call_site/``
+            namespace.
+        use_cache: set False to bypass the TTL cache (tests, CLI inspection).
+    """
+    key = name or ""
+    if use_cache:
+        cached = _TEMPLATE_CACHE.get(key)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+
+    template = _read_active_template(key)
+    _TEMPLATE_CACHE[key] = (time.monotonic() + LAYER_CACHE_TTL_SECONDS, template)
+    return template
+
+
+def render_prompt(name: str, default_template: str, /, **variables: Any) -> str:
+    """Render the registered template for `name`, falling back to the call site's.
+
+    This is the read path that makes a call site's prompt versionable: the
+    module keeps its own template as ``default_template`` so an unseeded
+    installation is byte-identical to the pre-registry f-string, and a seeded
+    one renders whatever version is currently active.
+
+    A registered template that fails to render — a stray brace, a placeholder
+    the call site does not supply — is a bad *registry* row, not a bad call
+    site, so it degrades to the default with a warning rather than taking down
+    the caller. A `default_template` that fails to render is a programming
+    error and is allowed to raise.
+
+    Args:
+        name: registry prompt name (positional-only, so any variable may be
+            named ``name``).
+        default_template: the call site's own template (positional-only).
+        **variables: substituted into whichever template is used.
+    """
+    template = get_active_template(name)
+    if template is not None:
+        try:
+            return template.format(**variables)
+        except Exception as exc:
+            logger.warning(
+                "prompt_registry: registered template %r failed to render (%s); "
+                "falling back to the call-site default",
+                name,
+                exc,
+            )
+    return default_template.format(**variables)
+
+
+# Call-site prompt bodies that ship as module constants, seeded by
+# `--seed-call-sites`. Modules are imported lazily by the seeder only, so
+# declaring one here costs nothing at import time and creates no cycle.
+# (prompt_name, module path, template attribute, llm_function)
+CALL_SITE_PROMPTS: tuple = (
+    (
+        "call_site/gepa_skill_patch",
+        "tools.skills.gepa_optimizer",
+        "PATCH_PROMPT_TEMPLATE",
+        "gepa_skill_patch",
+    ),
+    (
+        "call_site/reflexion_improvement",
+        "tools.workflow.reflexion_agent",
+        "IMPROVEMENT_PROMPT_TEMPLATE",
+        "code_generation",
+    ),
+    (
+        "call_site/nova_skill_spec",
+        "tools.nova.skill_generator",
+        "SPEC_PROMPT_TEMPLATE",
+        "memory_consolidation",
+    ),
+)
+
+
+def seed_call_site_prompts() -> Dict[str, Any]:
+    """Register + activate each declared call-site template at its current text.
+
+    Idempotent: `register_prompt` deduplicates by hash, so re-running against an
+    unchanged tree reports every prompt as ``skipped`` and writes no row.
+    """
+    import importlib
+
+    imported: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+    errors: List[Dict[str, str]] = []
+
+    for name, module_path, attr, function_name in CALL_SITE_PROMPTS:
+        if not is_call_site_name(name):
+            # A call-site prompt outside its namespace would either be
+            # unreachable (mis-typed) or, worse, land in `layer/` and be
+            # appended to every LLM call in the platform.
+            errors.append({"name": name, "error": f"not in the '{CALL_SITE_PREFIX}' namespace"})
+            continue
+        try:
+            module = importlib.import_module(module_path)
+            template = getattr(module, attr)
+        except Exception as exc:
+            errors.append({"name": name, "error": f"{module_path}.{attr}: {exc}"})
+            continue
+        if not isinstance(template, str) or not template.strip():
+            errors.append({"name": name, "error": f"{module_path}.{attr} is not a non-empty string"})
+            continue
+
+        result = register_prompt(name, template, function_name)
+        if result.get("status") == "duplicate":
+            skipped.append(name)
+            continue
+        activate_prompt(name, result["version"])
+        imported.append({"name": name, "version": result["version"], "function_name": function_name})
+
+    return {
+        "status": "error" if errors else "ok",
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "total_imported": len(imported),
+        "total_skipped": len(skipped),
+        "total_errors": len(errors),
+    }
 
 
 def rollback_prompt(name: str, to_version: int, actor: str = "system") -> Dict[str, Any]:
@@ -903,6 +1097,11 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--rollback", action="store_true", help="Rollback to a previous version")
     g.add_argument("--diff", action="store_true", help="Diff two prompt versions")
     g.add_argument("--import-hardprompts", action="store_true", help="Import templates from hardprompts/ directory")
+    g.add_argument(
+        "--seed-call-sites",
+        action="store_true",
+        help="Register + activate the call-site prompt bodies at their current module text",
+    )
     g.add_argument("--start-ab", action="store_true", help="Start an A/B test")
 
     p.add_argument("--name", help="Prompt name")
@@ -989,6 +1188,11 @@ def main() -> None:
 
     elif args.import_hardprompts:
         result = import_from_hardprompts()
+
+    elif args.seed_call_sites:
+        result = seed_call_site_prompts()
+        if result.get("status") == "error":
+            exit_code = 1
 
     elif args.start_ab:
         if not args.name or args.va is None or args.vb is None:
