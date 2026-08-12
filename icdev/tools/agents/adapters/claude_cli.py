@@ -187,9 +187,27 @@ class ClaudeCliAdapter:
         The caller owns the decision of WHICH model — a model the CLI cannot
         serve must never reach here (kanban drops claude_cli from the executor
         chain in that case rather than quietly ignoring the operator's choice).
+
+        ``--dangerously-skip-permissions`` below is a STATED decision, not an
+        incidental flag — see ADR D394/D395 and
+        ``docs/security/agent-vendor-permission-bypass.md``. Read that before
+        changing this list; the short version is that it is kept because the
+        adapter's whole purpose is non-interactive dispatch (a permission prompt
+        here does not make the build safer, it hangs the build until the runner's
+        timeout kills it), and that the two gates usually named as its
+        compensating controls — ``agent_runtime/approval_gate.py`` and
+        ``studio/executors/agent_tool_gate.py`` — are **not in this adapter's
+        path**: ``spawn()`` starts a SEPARATE process that imports no ICDEV
+        module. Of the four categories a vendor prompt would have interposed on,
+        destructive shell and network egress are covered in-process while writes
+        outside the worktree (exa-bench-07) and credential reads (exa-bench-09)
+        are open findings. ``tests/test_skip_permissions_compensating_controls.py``
+        pins all of that and fails if this flag is removed without the write-up
+        being updated.
         """
         argv = [
             self.resolve(),
+            # Deliberate — ADR D394. See the docstring above.
             "--dangerously-skip-permissions",
             "--max-turns",
             str(session.max_turns),
