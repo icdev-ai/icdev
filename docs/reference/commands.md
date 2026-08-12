@@ -332,6 +332,14 @@ python tools/security/mtls_integration.py --verify --json
 python tools/security/security_middleware.py --init-app --json
 python tools/security/audit_posture.py --json
 
+# Network-egress fire rate (exa-bench-08) — measure before enforcing
+# shared_checks.check_network_egress ships MONITOR-ONLY. Measure, then flip
+# agent_egress.enforce in args/agent_egress_policy.yaml. Baseline: 0.093% of
+# 78,903 real Bash calls (docs/security/agent-vendor-permission-bypass.md §4a).
+python tools/security/egress_fire_rate.py --json                        # what the hook has recorded
+python tools/security/egress_fire_rate.py --corpus --json               # replay ~/.claude/projects transcripts
+python tools/security/egress_fire_rate.py --corpus <dir> --top 30       # replay a specific corpus
+
 # SIPA Software Integrity PR gate (eqo-sipa) — assess only the *.py files changed on a branch
 python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
 python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
@@ -729,6 +737,51 @@ level; its `agent:` block is the in-repo agent default, overridden by
 `<profile_dir>/policy_chain.yaml` or `$ICDEV_AGENT_POLICY_CHAIN_AGENT`. The
 session level comes from the runtime or `$ICDEV_AGENT_POLICY_CHAIN_SESSION`.
 `audit` is server-only, and `on_policy_error: allow` is refused at every level.
+
+---
+
+## Builtin Agent Policies (exa-policy-03)
+
+The three policies that actually *use* the chain and the session state above.
+Each is a **factory**: a chain entry carries `params:` and the factory builds one
+configured instance (omnigent's `factory_params` shape), so an instance is
+configured rather than copied — and configured per level for free.
+
+```bash
+python tools/agent_runtime/policy_builtins.py --list --json
+python tools/agent_runtime/policy_builtins.py --describe risk_score --json
+python tools/agent_runtime/policy_builtins.py --check max_tool_calls_per_session \
+    --params '{"limit": 500}' --json
+```
+
+| Policy | What it holds that a regex cannot | Required params |
+|--------|-----------------------------------|-----------------|
+| `max_tool_calls_per_session` | How many calls this session has already made | `limit` |
+| `git_write_allowlist` | Which **branch** in which **repo** a push may write | `allow_branches` and/or `deny_branches` |
+| `risk_score` | Risk accrued across a long chain of individually benign calls | `ask_at`, `deny_at` |
+
+```yaml
+# args/agent_policy_chain.yaml
+chain:
+  - name: git_write_allowlist
+    enabled: true            # <- how one is switched off, per level
+    params:
+      repos: ["*"]
+      deny_branches: [main, master, "release/*"]   # checked first, case-INSENSITIVE
+      allow_branches: ["feat/*", "kanban/*"]       # allowlist, case-SENSITIVE
+      on_violation: deny
+      on_unknown: ask        # a bare `git push` does not name its branch
+```
+
+**No threshold has a Python default.** A missing `limit` / `ask_at` / `deny_at`
+is a config error that resolves to a DENY naming it — never a number nobody
+chose. An unknown param key, and `params` given to a policy that cannot take
+them, are errors for the same reason: accepted-and-ignored is a rule the operator
+believes is in force and which is not.
+
+A call a policy **refuses** does not accrue — it never ran. The stateful two
+require a `session_id` (`require_session: true`), because without one there is no
+session to count against and a per-session limit would silently become no limit.
 
 ---
 
@@ -2063,6 +2116,11 @@ python tools/workflow/coherence_checker.py --check capability_liveness --gate   
 # Deliberately not findings: a unit consumed once and idle inside the recent window
 # (low cadence is not death), and a database with no operating history (a fresh worktree
 # or ephemeral CI database makes everything look inert — the check warns instead).
+# Runs in BOTH tiers (exa-live-03): ~0.75s of GROUP BY counts, so it is a per-task gate
+# on every commit, not a nightly-only sweep — a capability declared in a task's own diff
+# and wired to nothing is what the per-task gate should catch. A DRAINED class leaves
+# args/liveness_gate.yaml entirely rather than sitting at 0; an absent class is already
+# budgeted at 0, and a leftover zero is just a number for a future session to edit upward.
 
 # Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
 # CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
@@ -2334,7 +2392,8 @@ pytest tests/test_behavioral_drift.py -v             # Behavioral drift detectio
 pytest tests/test_tool_chain_validator.py -v          # Tool chain validator tests (22 tests)
 pytest tests/test_agent_output_validator.py -v        # Agent output validator tests (22 tests)
 pytest tests/test_agent_trust_scorer.py -v            # Agent trust scorer tests (22 tests)
-pytest tests/test_mcp_tool_authorizer.py -v           # MCP tool authorizer tests (28 tests)
+pytest tests/test_mcp_tool_authorizer.py -v           # MCP tool authorizer tests (23 tests)
+pytest tests/test_exa_policy_07_registry_authorization.py -v  # Per-tool min_il/required_roles declarations (111 tests)
 pytest tests/test_behavioral_red_team.py -v           # Behavioral red teaming tests (13 tests)
 pytest tests/test_owasp_agentic_assessor.py -v        # OWASP Agentic assessor tests (16 tests)
 pytest tests/test_schemas.py -v                      # Shared schema enforcement tests (29 tests)
@@ -3090,7 +3149,7 @@ python tools/security/agent_trust_scorer.py --all --json                        
 python tools/security/agent_trust_scorer.py --gate --project-id "proj-123" --json                     # Trust scoring gate
 python tools/security/mcp_tool_authorizer.py --check --role developer --tool scaffold --json          # Check tool authorization
 python tools/security/mcp_tool_authorizer.py --list --role pm --json                                  # List role permissions
-python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config
+python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config (registry-declared since exa-policy-07)
 python tools/security/mcp_authz_evidence.py --json                                                    # Is per-tool MCP authz ENFORCED? (behavioural, not file existence)
 python tools/security/mcp_authz_evidence.py --gate                                                    # Exit 1 unless a denial actually binds
 python tools/security/mcp_authz_evidence.py --gate --allow-monitor                                    # Accept monitor mode as passing

@@ -50,3 +50,13 @@ tests/test_dwo_dispatch_parity.py
 # prompt past the Windows 32767-char argv limit. Both are Windows-specific
 # failure modes, so this is the OS where the claim is actually earned.
 tests/test_codex_cli_adapter.py
+# exa-bench-02 -- copilot_cli / goose_cli. These belong in the portability subset
+# for the reason the whole family does: they resolve executables through PATHEXT
+# (the suffix-less ~/.local/bin name never exists on Windows -- 25 kanban tasks
+# were quarantined as "no executor available" before that was traced), pipe the
+# prompt from a temp file opened with newline="" to dodge the 32767-char argv
+# limit, and assert on both platform branches through an explicit is_windows
+# parameter. A portability claim proven on one OS is not proven.
+tests/test_copilot_cli_adapter.py
+tests/test_goose_cli_adapter.py
+tests/test_agent_adapter_no_inert_stubs.py

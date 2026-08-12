@@ -106,66 +106,36 @@ trust_scoring:
     normal: 0.70                       # Normal operation
 
 # Gap 6: MCP Per-Tool Authorization (D261)
+#
+# The hand-written `role_tool_matrix` that used to live here is RETIRED
+# (exa-policy-07). `min_il` and `required_roles` are now declared ONCE PER TOOL
+# in tools/mcp/tool_registry.py, and every surface that authorizes an MCP call
+# reads that one declaration:
+#
+#   tools/studio/executors/mcp_executor.py     node_type: mcp    (MCP-WF-001)
+#   tools/studio/executors/agent_tool_gate.py  node_type: agent  (AGENT-WF-001)
+#   tools/security/mcp_tool_authorizer.py      SaaS MCP HTTP     (D261)
+#
+# WHY. The matrix here and the limits the Studio gates read were two different
+# RBACs, and they disagreed. This one had gone stale in the way hand-written
+# per-tool lists do -- `developer` allowed 8 tools out of roughly 700 -- while
+# the registry declared neither field, so the gates' inheritance path had no
+# data and every tool fell through to the IL4 platform baseline with no role
+# limit. Two RBACs that disagree are worse than one that is switched off.
+#
+# To inspect the policy that replaced it:
+#   python tools/security/mcp_tool_authorizer.py --validate --json
+#   python tools/security/mcp_tool_authorizer.py --list --role developer --json
+#
+# To CHANGE it, edit tools/mcp/tool_registry.py: CATEGORY_WRITE_ROLES for a
+# whole domain, AUTHZ_OVERRIDES for one tool. Do not reintroduce a matrix here.
+# Setting `role_tool_matrix` back puts MCPToolAuthorizer into matrix mode and
+# the two sources diverge again.
+#
+# `default_policy` still applies: it is what an unrecognised role and an
+# undeclared tool resolve to.
 mcp_authorization:
   enabled: true
   default_policy: "deny"
-  role_tool_matrix:
-    admin:
-      allow: ["*"]
-    pm:
-      allow:
-        - "project_*"
-        - "task_*"
-        - "agent_status"
-        - "ssp_generate"
-        - "poam_generate"
-        - "search_*"
-      deny:
-        - "terraform_apply"
-        - "k8s_deploy"
-        - "rollback"
-    developer:
-      allow:
-        - "scaffold"
-        - "generate_code"
-        - "write_tests"
-        - "run_tests"
-        - "lint"
-        - "format"
-        - "search_knowledge"
-        - "add_pattern"
-      deny:
-        - "terraform_apply"
-        - "k8s_deploy"
-        - "ssp_generate"
-        - "stig_check"
-    isso:
-      allow:
-        - "ssp_generate"
-        - "poam_generate"
-        - "stig_check"
-        - "sbom_generate"
-        - "cui_mark"
-        - "control_map"
-        - "nist_lookup"
-        - "fedramp_*"
-        - "cmmc_*"
-        - "zta_*"
-        - "mosa_*"
-        - "search_*"
-      deny:
-        - "generate_code"
-        - "scaffold"
-        - "terraform_apply"
-    co:
-      allow:
-        - "project_status"
-        - "project_list"
-        - "agent_status"
-        - "ssp_generate"
-        - "poam_generate"
-      deny:
-        - "generate_code"
-        - "terraform_apply"
-        - "k8s_deploy"
-        - "rollback"
+  source: "mcp_registry"        # tools/mcp/tool_registry.py — see above
+  declaration_module: "tools/mcp/tool_registry.py"

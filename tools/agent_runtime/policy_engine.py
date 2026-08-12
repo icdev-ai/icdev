@@ -88,6 +88,21 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# Run by path, this module is `__main__`, and `tools.agent_runtime.policy_engine`
+# is a SECOND, distinct module object. That matters now that policies live in
+# another module (exa-policy-03): `policy_builtins` imports the canonical copy,
+# so it would build `PolicyDecision` instances of the canonical class while
+# `_normalize` here checks `isinstance` against `__main__`'s class. The check
+# fails, and a perfectly good decision is normalised to "returned something that
+# is not a PolicyDecision" — a DENY. Silently, and only via the CLI.
+#
+# Publishing this module under its canonical name BEFORE the first-party imports
+# below means `policy_builtins` binds to this object and there is only ever one
+# set of dataclasses. `setdefault`, so an ordinary import never disturbs a real
+# entry.
+if __name__ == "__main__":  # pragma: no cover — the by-path CLI path
+    sys.modules.setdefault("tools.agent_runtime.policy_engine", sys.modules[__name__])
+
 from tools.agent_runtime import approval_gate as gate
 from tools.logging.icdev_logger import get_logger
 
@@ -193,6 +208,12 @@ class PolicyDecision:
 # "no opinion" and is normalised to ALLOW with an abstain reason — an abstention
 # is not an authorisation, it simply lets the next policy speak.
 PolicyFunction = Callable[[PolicyEvent], Optional[PolicyDecision]]
+
+# A policy FACTORY builds one configured policy instance from a chain entry's
+# ``params`` (exa-policy-03; omnigent's ``factory_params`` shape). It is how a
+# policy is *configured* rather than *copied*: two instances with different
+# limits are two config entries, not two functions.
+PolicyFactory = Callable[[dict[str, Any]], PolicyFunction]
 
 
 @dataclass(frozen=True)
@@ -320,6 +341,31 @@ def _log_allow(config: dict[str, Any]) -> bool:
 # Registry
 # ---------------------------------------------------------------------------
 _REGISTRY: dict[str, PolicyFunction] = {}
+_FACTORIES: dict[str, PolicyFactory] = {}
+
+# The builtins (exa-policy-03) live in a module that imports THIS one, so they
+# cannot be imported at the top of this file. They are imported on first use
+# instead, which is enough because every path that could ask for one —
+# `resolve_chain`, `get_policy`, `get_policy_factory`, `list_policies` — goes
+# through `_ensure_builtins()` below. Registering them lazily but *always* is
+# what keeps "a name in the config always resolves to something" true; leaving
+# it to the caller to import the module first would make a configured policy
+# silently missing depending on import order.
+_BUILTINS_LOADED = False
+
+
+def _ensure_builtins() -> None:
+    global _BUILTINS_LOADED
+    if _BUILTINS_LOADED:
+        return
+    _BUILTINS_LOADED = True  # set first: a failed import must not retry per call
+    try:
+        from tools.agent_runtime import policy_builtins  # noqa: F401 — registers
+    except Exception as exc:  # noqa: BLE001 — a chain naming one still DENYs
+        logger.warning(
+            "policy_engine: could not load the builtin policies (%s); a chain "
+            "naming one will resolve to a DENY rather than be skipped", exc,
+        )
 
 
 def register_policy(name: str, fn: PolicyFunction, *, replace: bool = False) -> None:
@@ -337,12 +383,43 @@ def register_policy(name: str, fn: PolicyFunction, *, replace: bool = False) -> 
     _REGISTRY[key] = fn
 
 
+def register_policy_factory(
+    name: str, factory: PolicyFactory, *, replace: bool = False
+) -> None:
+    """Register a policy *factory* under ``name`` (exa-policy-03).
+
+    A factory is called once per chain entry, at resolution time, with that
+    entry's ``params``. It returns the configured policy function. Same
+    anti-shadowing rule as :func:`register_policy`, and for the same reason.
+    """
+    key = str(name).strip().lower()
+    if not key:
+        raise ValueError("a policy factory needs a name")
+    if key in _FACTORIES and not replace:
+        raise ValueError(
+            f"policy factory {key!r} is already registered (pass replace=True)"
+        )
+    _FACTORIES[key] = factory
+
+
 def get_policy(name: str) -> Optional[PolicyFunction]:
+    _ensure_builtins()
     return _REGISTRY.get(str(name).strip().lower())
 
 
+def get_policy_factory(name: str) -> Optional[PolicyFactory]:
+    _ensure_builtins()
+    return _FACTORIES.get(str(name).strip().lower())
+
+
 def list_policies() -> list[str]:
+    _ensure_builtins()
     return sorted(_REGISTRY)
+
+
+def list_policy_factories() -> list[str]:
+    _ensure_builtins()
+    return sorted(_FACTORIES)
 
 
 # ---------------------------------------------------------------------------
@@ -469,26 +546,71 @@ def resolve_chain(
     declared-but-unconsumed failure this repo keeps shipping. It resolves to a
     policy that DENYs with a reason saying so, which is loud, safe, and fixed by
     either registering the policy or removing the line.
+
+    An entry may carry ``params`` (exa-policy-03). If the name is a registered
+    **factory**, the factory is called with those params and its return is the
+    configured instance; a factory that raises resolves to a DENY naming the
+    error, so a mistyped threshold refuses rather than defaulting. If the name
+    is a plain policy function, ``params`` are meaningless to it — and that is
+    also a DENY rather than a shrug, because parameters accepted and ignored are
+    a limit the operator believes is in force and which is not.
     """
     config = config if config is not None else load_config()
     entries = config.get("chain") or []
     resolved: list[tuple[str, PolicyFunction]] = []
     for entry in entries:
+        params: dict[str, Any] = {}
         if isinstance(entry, str):
             name, enabled = entry, True
         elif isinstance(entry, dict):
             name = str(entry.get("name") or "")
             enabled = bool(entry.get("enabled", True))
+            raw_params = entry.get("params")
+            if raw_params is not None and not isinstance(raw_params, dict):
+                resolved.append((
+                    name or "?",
+                    _config_error_policy(
+                        name or "?",
+                        f"params must be a mapping, got {type(raw_params).__name__}",
+                    ),
+                ))
+                continue
+            params = dict(raw_params or {})
         else:
             continue
         if not name or not enabled:
             continue
+
+        key = name.strip().lower()
+        factory = get_policy_factory(name)
+        if factory is not None:
+            try:
+                resolved.append((key, factory(params)))
+            except Exception as exc:  # noqa: BLE001 — a bad config is not a yes
+                logger.error(
+                    "policy_engine: policy %r could not be built from its "
+                    "params: %s", name, exc,
+                )
+                resolved.append((key, _config_error_policy(name, str(exc))))
+            continue
+
         fn = get_policy(name)
         if fn is None:
             logger.error("policy_engine: chain names unregistered policy %r", name)
             resolved.append((name, _missing_policy(name)))
             continue
-        resolved.append((name.strip().lower(), fn))
+        if params:
+            logger.error(
+                "policy_engine: policy %r takes no params but the chain gave it "
+                "%s", name, ", ".join(sorted(params)),
+            )
+            resolved.append((key, _config_error_policy(
+                name,
+                f"it is not a configurable policy, but the chain passed params "
+                f"({', '.join(sorted(params))}) which would be ignored",
+            )))
+            continue
+        resolved.append((key, fn))
     return resolved
 
 
@@ -499,6 +621,27 @@ def _missing_policy(name: str) -> PolicyFunction:
             f"policy {name!r} is named in {CONFIG_FILENAME} but is not registered",
             policy=name,
             rule="unregistered_policy",
+        )
+
+    return _deny
+
+
+def _config_error_policy(name: str, error: str) -> PolicyFunction:
+    """A policy that DENYs because its own configuration could not be used.
+
+    The alternative — falling back to a default limit, or dropping the entry —
+    is how a threshold nobody chose ends up in force, or how a rule the operator
+    wrote ends up enforcing nothing. Neither is quiet in the way it needs to be
+    loud, so a broken instance refuses and says why.
+    """
+
+    def _deny(_event: PolicyEvent) -> PolicyDecision:
+        return PolicyDecision(
+            DENY,
+            f"policy {name!r} is misconfigured in {CONFIG_FILENAME}: {error}",
+            policy=name,
+            rule="policy_config_error",
+            detail=error,
         )
 
     return _deny
@@ -817,6 +960,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "on_policy_error": _on_policy_error(config),
             "floors": config.get("floors") or {},
             "registered": list_policies(),
+            "registered_factories": list_policy_factories(),
             "chain": [name for name, _ in resolve_chain(config)],
         }
         print(json.dumps(payload, indent=2) if args.json else payload)

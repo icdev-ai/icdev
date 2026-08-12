@@ -18,6 +18,8 @@ import pytest
 
 from tools.studio.executors import mcp_executor
 
+from .conftest import declare_stubs_read_only, reset_authorization_cache
+
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "tools" / "studio" / "executors" / "mcp_executor.py"
 
@@ -82,7 +84,16 @@ def stub_tools(monkeypatch):
         "description": "Owned by no component.",
         "input_schema": {"type": "object", "properties": {}},
     })
-    return calls
+
+    # exa-policy-07: a tool now also carries its OWN registry declaration, and a
+    # tool with no `read_only` declaration resolves restrictively (IL5 / admin).
+    # These stubs are declared read-only so the tests below keep measuring what
+    # they were written to measure -- what COMPONENT OWNERSHIP contributes --
+    # rather than the undeclared-tool fallback, which
+    # test_exa_policy_07_registry_authorization.py covers directly.
+    declare_stubs_read_only(monkeypatch, *STUB_TOOLS)
+    yield calls
+    reset_authorization_cache()
 
 
 @pytest.fixture

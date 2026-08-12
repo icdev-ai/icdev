@@ -1,13 +1,97 @@
-# MCP Per-Tool Authorization — Three Surfaces, Three Answers
+# MCP Per-Tool Authorization — One Declaration, Three Surfaces
 
 CUI // SP-CTI
 
-**Task:** exa-policy-05 · **Control:** AC-3 / AC-6 · **ADR:** D261
+**Tasks:** exa-policy-05, exa-policy-07 · **Control:** AC-3 / AC-6 · **ADR:** D261
 
 ICDEV™ exposes MCP three ways. "Enforce `MCPToolAuthorizer` at MCP dispatch"
 is not a single change, because only one of the three surfaces has a principal
 to authorize. This document records which is which and why, so the question
 does not get re-litigated from scratch.
+
+## 0. Where the policy lives (exa-policy-07)
+
+`min_il` and `required_roles` are declared **once per tool**, in
+`tools/mcp/tool_registry.py`, and every surface below reads that one
+declaration.
+
+Before exa-policy-07 there were two, and they disagreed.
+`agent_tool_gate.tool_limits` already had the inheritance path — it asks the
+registry what a tool's limits are and lets the stricter of the two win — but the
+registry declared *neither* field, so every tool fell through to
+`default_min_il` (the CUI/IL4 platform baseline) with no role limit at all.
+Meanwhile `args/owasp_agentic_config.yaml` carried a hand-written
+`role_tool_matrix` that had gone stale in the opposite direction: `developer`
+allowed 8 tools out of roughly 700. Two RBACs that disagree are worse than one
+that is switched off, so the matrix is retired and the registry is the source.
+
+### How a tool's declaration is decided
+
+Resolution order, first match wins (`tool_registry.tool_authorization`):
+
+| # | Condition | `min_il` | `required_roles` |
+|---|---|---|---|
+| 1 | named in `AUTHZ_OVERRIDES` | as declared | as declared |
+| 2 | not a registered tool | IL5 | `admin` |
+| 3 | no `read_only` declaration | IL5 | `admin` |
+| 4 | `read_only: True`, in no mutating bundle | IL4 | *(none)* |
+| 5 | otherwise | IL4 | `CATEGORY_WRITE_ROLES[category]` |
+
+Three declarations that already exist feed the derivation, so nobody hand-wrote
+roles for ~520 tools:
+
+- **`READ_ONLY_DECLARATIONS`** — does the handler mutate state.
+- **`mutating: true` bundle membership** in `args/agent_toolsets.yaml` — an
+  independent second claim. It is not redundant: `browser_read_state` is
+  declared read-only (it only reads the page) yet sits in the mutating `browser`
+  bundle, because reading through a *driven* browser is not a pure read. The
+  stricter signal wins.
+- **`category`** — which domain the tool acts in, and therefore which role owns
+  mutating it. `CATEGORY_WRITE_ROLES` is ~70 rows keyed by a field the generator
+  already writes, instead of ~520 rows keyed by tool name. A tool added to an
+  existing category inherits its roles automatically, which is exactly what the
+  per-tool matrix could not do.
+
+**Restrictive by default.** An unmapped category, a missing `read_only`
+declaration, or no registry entry at all resolves to IL5 / admin-only. A
+too-strict new tool is a refusal somebody reports; a too-loose one is silent.
+`mcp_tool_authorizer.py --validate` warns when any tool has fallen through, and
+`tests/test_exa_policy_07_registry_authorization.py` fails when a category
+exists in the registry and not in `CATEGORY_WRITE_ROLES`.
+
+### What this tightened
+
+Two behaviour changes worth knowing about, both deliberate:
+
+- A Studio `mcp` step resolves a caller with **no roles** unless the run or
+  `ICDEV_MCP_CALLER_ROLES` declares them. Registry-declared roles therefore bind
+  on that surface too. The 17 read-only tools in
+  `mcp_workflow_tools.allowed` carry no role limit and are unaffected; the three
+  report-only *writers* in that list (`stig_check`, `code_analyze`,
+  `scan_dependencies`) are declared `required_roles: ()` in `AUTHZ_OVERRIDES`
+  for exactly this reason. The `requires_approval` tier does now require a role
+  — those calls already needed a human gate, and the declaration now says *who*.
+- The infrastructure, credential and marketplace tools moved from IL4 to
+  **IL5**. `terraform_apply`, `k8s_deploy`, `ansible_run`, `rollback`,
+  `sandbox_execute`, `send_command`, `self_heal`, `install_asset`,
+  `proxy_key_issue`, `studio_run_start` and the rest of `AUTHZ_OVERRIDES` are
+  refused to an IL4 run. No shipped workflow template dispatches them through an
+  `mcp` node (they run as `node_type: tool`), so the blast radius is a
+  deployment that had wired one up itself.
+
+### Changing the policy
+
+```bash
+python tools/security/mcp_tool_authorizer.py --validate --json
+python tools/security/mcp_tool_authorizer.py --list --role developer --json
+python tools/security/mcp_tool_authorizer.py --check --role developer --tool terraform_apply --json
+```
+
+Edit `CATEGORY_WRITE_ROLES` for a whole domain, `AUTHZ_OVERRIDES` for one tool.
+Every override carries a `why`; the test suite fails an override without one.
+Do **not** reintroduce `role_tool_matrix` in `args/owasp_agentic_config.yaml` —
+setting that key puts `MCPToolAuthorizer` back into matrix mode and the two
+sources diverge again.
 
 ## 1. stdio — `tools/mcp/unified_server.py` — NOT ENFORCED (deliberate)
 
@@ -21,10 +105,11 @@ The caller is also, concretely, the developer at the keyboard, who already has
 shell access to the whole repo. Refusing them a tool they can invoke directly
 costs a turn and buys nothing.
 
-The shipped D261 matrix confirms the fit is wrong here independently: `developer`
-allows 8 tools out of roughly 700, and `admin` is a bare wildcard. A local
-session would either deny essentially everything or run as admin. Both are
-useless.
+The registry declarations confirm the fit is wrong here independently: `admin`
+reaches everything and every other role is bounded by domain, so a local session
+would either self-assert `admin` (and the check buys nothing) or self-assert
+something narrower (and the check buys nothing, because it could have said
+`admin`).
 
 What actually bounds this surface, and does work:
 
@@ -42,6 +127,14 @@ caller.**
 `tools/studio/executors/agent_tool_gate.py`, gate AGENT-WF-001: default-deny,
 checked at offer time *and* call time, per-tool `min_il` and `required_roles`,
 every decision written to the append-only `studio_mcp_dispatch_audit`.
+
+Those per-tool limits are read from the registry declarations in §0 via
+`mcp_executor.tool_requirements`, combined with the owning component's
+`min_il` / `default_roles` in `args/component_registry.yaml`. The stricter
+impact level of the two wins; roles do **not** merge — a component's
+`default_roles` replaces the registry declaration, because "hold any one of
+these" gets weaker as the set grows, and the component is the more specific
+claim (it names a canvas a principal can also be granted access to).
 
 **No second gate is added beside it.** `tests/test_exa_policy_05_saas_mcp_authz.py
 ::test_no_second_gate_beside_agent_tool_gate` pins that.
@@ -65,27 +158,39 @@ A refusal is a JSON-RPC error (`-32003`), not an `isError: true` content blob:
 "you may not call this at all" is not a tool result.
 
 The decision itself is delegated to `MCPToolAuthorizer`
-(`tools/security/mcp_tool_authorizer.py`) reading
-`args/owasp_agentic_config.yaml::mcp_authorization`. `mcp_http.py` keeps **no**
-role/tool matrix of its own.
+(`tools/security/mcp_tool_authorizer.py`) reading the registry declarations in
+§0. `mcp_http.py` keeps **no** role/tool policy of its own.
+
+Impact level is **not** evaluated on this surface. The declaration carries
+`min_il`, but the gateway middleware authenticates a *role*, not an impact
+level; §2 is where `min_il` binds.
 
 ### Role mapping
 
-SaaS tenant roles (`tools/saas/models.py::UserRole`) are not the D261 role
-vocabulary. `SAAS_ROLE_TO_RBAC_ROLE` maps them rather than forking a second
-matrix:
+SaaS tenant roles (`tools/saas/models.py::UserRole`) are folded into the
+canonical vocabulary by `tool_registry.normalize_role`, whose `ROLE_ALIASES`
+table is the only copy. `mcp_http.py` used to carry a local
+`SAAS_ROLE_TO_RBAC_ROLE`; exa-policy-07 removed it, and `mcp_http.py` now passes
+the role through verbatim so a role outside the vocabulary stays unrecognised
+rather than being silently upgraded to one that is in it.
 
-| SaaS role | D261 role | Effect |
+| SaaS role | Canonical role | Effect on the 19 tools this surface exposes |
 |---|---|---|
-| `tenant_admin` | `admin` | wildcard — allowed everything |
-| `developer` | `developer` | 0 of the 19 registry tools |
-| `compliance_officer` | `isso` | ssp/poam/stig/sbom/nist_lookup |
-| `viewer` | *(unmapped)* | unknown role → `default_policy` → deny |
-| `auditor` | *(unmapped)* | unknown role → `default_policy` → deny |
+| `tenant_admin` | `admin` | all 19 |
+| `developer` | `developer` | read tiers + `sast_scan`, `dependency_audit` |
+| `compliance_officer` | `isso` | read tiers + ssp/poam/stig/sbom/cards/fairness/GAO |
+| `viewer` | *(unmapped)* | unrecognised role → `default_policy` → deny |
+| `auditor` | *(unmapped)* | unrecognised role → `default_policy` → deny |
 
 `viewer` and `auditor` are left unmapped **on purpose**. They have no D261
 equivalent, and deny is the safe direction; monitor mode is how we find out
 whether real tenant traffic depends on them before that becomes binding.
+
+Three of the 19 tools this surface exposes (`sast_scan`, `dependency_audit`,
+`gao_evidence_build`) are surface-local names with no `TOOL_REGISTRY` entry.
+Without a declaration they would resolve to the restrictive default and a tenant
+`developer` would silently lose them, so they are declared in `AUTHZ_OVERRIDES`
+— in the registry, not here, so there is still exactly one place to read.
 
 ## Monitor → enforce
 
@@ -100,9 +205,10 @@ ICDEV_SAAS_MCP_AUTHZ_MODE=enforce
 An unrecognised value falls back to `monitor` — a typo must not silently
 disable the audit trail.
 
-Monitor is the shipped default because the table above shows the D261 matrix
-does not yet fit this surface: `developer` would lose every tool and
-`viewer`/`auditor` would lose all access on the day enforcement flipped.
+Monitor is still the shipped default. exa-policy-07 fixed the worst of what the
+old matrix got wrong here — `developer` no longer loses every tool — but
+`viewer` and `auditor` still lose all access on the day enforcement flips, and
+that is a decision to make against real traffic, not against this table.
 
 **Before flipping to `enforce`, read the evidence.** All rows carry
 `event_type = 'mcp.authz'`; the `action` distinguishes the surface and the mode:
@@ -146,16 +252,24 @@ audit trail is append-only, so the schema-parity test names itself there rather
 than cleaning up after itself.
 
 If that query returns tools real tenants depend on, the fix is to correct the
-role declarations, **not** to widen the mapping here. exa-policy-07 moves role
-and IL declarations into the MCP registry; when it lands,
-`SAAS_ROLE_TO_RBAC_ROLE` is the one thing that goes away.
+role declarations in `tools/mcp/tool_registry.py`, **not** to widen the alias
+table. Widening the alias table hands a role every privilege the role it aliases
+to has, across all three surfaces; correcting a declaration changes one tool.
 
 ## Tests
 
+`tests/test_exa_policy_07_registry_authorization.py` — the declarations
+themselves: every tool resolves, an undeclared tool is restrictive, every
+override states a reason, every registry category is mapped, and the three
+surfaces agree on one answer.
+
 `tests/test_exa_policy_05_saas_mcp_authz.py` — 41 tests, including a DENY case
 for every SaaS role that can be denied. `tenant_admin` has none because `admin`
-is a wildcard; `test_tenant_admin_is_allowed_by_wildcard` pins that as a
+reaches every tool; `test_tenant_admin_is_allowed_by_wildcard` pins that as a
 deliberate policy outcome rather than a gap in the table.
+
+`tests/studio/test_mcp_executor_rbac.py` — what component ownership contributes
+on top of the registry declaration, and which of the two wins.
 
 Listed in `args/ci_test_files/core.txt` so the required `Test` job runs it —
 the PG tier is not a required check, so registering there alone would have let

@@ -142,6 +142,14 @@ tests/test_init_goals_and_selective.py
 # instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
 tests/test_bootstrap_parity.py
 
+# test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
+# objects, so a fix landed in one while the other runs is only half live and
+# the stale half fails SILENTLY. #1542 shipped that way and two tasks were
+# quarantined 3.5h later carrying the error string it had deleted. The audit
+# (tools/dx/mirror_parity.py) already existed with --gate and ran nowhere.
+# ~2s, pure filesystem SHA256, no DB/LLM/network.
+tests/test_mirror_parity_gate.py
+
 tests/test_coherence_swallowed_persistence.py
 tests/test_analyzer_contract.py
 tests/test_agent_approval_gate.py
@@ -562,6 +570,17 @@ tests/test_exa_policy_05_saas_mcp_authz.py
 # classification against two YAML policies -- ~1.7s, no DB service/LLM/network
 # (exa-bench-04).
 tests/test_skip_permissions_compensating_controls.py
+# test_exa_policy_07_registry_authorization.py guards the DECLARATIONS the three
+# MCP surfaces above now share. It earns a slot because every regression here is
+# silent and permissive: a new tool with no read_only declaration, or a new
+# category with no CATEGORY_WRITE_ROLES row, resolves to admin-only -- safe, but
+# invisible until someone reports the refusal -- while re-adding role_tool_matrix
+# to args/owasp_agentic_config.yaml flips MCPToolAuthorizer back into matrix mode
+# and the registry declarations stop being read AT ALL, with no error anywhere.
+# It also pins that the icdev/ mirror carries the declarations, since a
+# pip-installed deployment enforces that copy and not tools/. ~1s pure Python,
+# no DB service/LLM/network.
+tests/test_exa_policy_07_registry_authorization.py
 # test_agent_policy_engine.py earns a slot because the ALLOW/DENY/ASK layer
 # (exa-policy-01) is what decides whether an irreversible agent action runs, and
 # every one of its failure modes is silent if it regresses: a policy that raises,
@@ -662,3 +681,26 @@ tests/test_cost_budget_downgrade.py
 # same property. Drives the hook as a subprocess reading JSON on stdin; no DB,
 # LLM or network; ~2s.
 tests/hooks/test_hook_parity.py
+# exa-policy-03 -- the three builtin policies. Earns a slot because it is the
+# only place the ALLOW/DENY/ASK chain and the session state are exercised by a
+# policy that actually USES them, and because the two properties most likely to
+# be undone by a well-meaning edit are pinned here: that no threshold has a
+# Python default (a missing limit/ask_at/deny_at DENYs naming the error instead
+# of quietly defaulting), and that the counters really accrue through the
+# composed runtime path rather than a hand-fed state dict. Every policy has an
+# explicit DENY test. No DB service, LLM or network -- session state runs with
+# persist=False; ~1s.
+tests/test_agent_policy_builtins.py
+# exa-bench-02 -- the copilot_cli and goose_cli harness adapters. Required because
+# the thing that went wrong here is invisible to a normal run: copilot_cli's
+# available() was `return False and (shutil.which("gh") is not None)`, which
+# short-circuits, so the adapter reported absent on every host and looked exactly
+# like a correct probe on a runner that has no CLI. The AST assertions are what
+# tell those two apart, and test_agent_adapter_no_inert_stubs.py generalises it to
+# every adapter in enabled_adapters -- with positive controls, so a rule that
+# stopped catching anything goes red instead of quietly passing. No binary is ever
+# spawned: resolution is patched and subprocess.run is a recorder. ~2s, no DB, LLM
+# or network.
+tests/test_copilot_cli_adapter.py
+tests/test_goose_cli_adapter.py
+tests/test_agent_adapter_no_inert_stubs.py

@@ -485,23 +485,25 @@ def probe_mcp_tool_authorization(
 ) -> ClassResult:
     """D261 RBAC roles vs. MCPToolAuthorizer verdicts the HTTP surface recorded.
 
+    The declared roles come from ``tools/mcp/tool_registry.py`` since
+    exa-policy-07 retired the hand-written matrix in
+    ``args/owasp_agentic_config.yaml``. Reading the YAML would now report zero
+    declared roles and therefore a falsely clean "nothing declared, nothing
+    unconsumed" -- the exact laundering this module exists to prevent.
+
     The verdict payload is a JSON blob in ``audit_platform.details``. It is read
     raw and parsed in Python rather than picked apart with json_extract, which
     is SQLite-only dialect and does not survive on the PostgreSQL primary.
     """
     res = ClassResult(
         capability_class="mcp_tool_authorization",
-        declaration_source="args/owasp_agentic_config.yaml (mcp_authorization.role_tool_matrix)",
+        declaration_source="tools/mcp/tool_registry.py (ROLES)",
         telemetry_table="audit_platform (event_type='mcp.authz')",
     )
     try:
-        import yaml
+        from tools.mcp.tool_registry import ROLES
 
-        cfg = yaml.safe_load(
-            _repo_file("args/owasp_agentic_config.yaml").read_text(encoding="utf-8")
-        ) or {}
-        matrix = (cfg.get("mcp_authorization") or {}).get("role_tool_matrix") or {}
-        declared = sorted(str(r).lower() for r in matrix)
+        declared = sorted(str(r).lower() for r in ROLES)
     except Exception as exc:  # noqa: BLE001
         return _unmeasured(
             "mcp_tool_authorization", res.declaration_source, res.telemetry_table,

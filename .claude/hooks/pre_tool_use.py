@@ -838,6 +838,27 @@ def check_git_danger(tool_name: str, tool_input: dict) -> str:
     return shared_checks.check_git_danger(tool_name, tool_input) or ""
 
 
+def check_network_egress(tool_name: str, tool_input: dict) -> str:
+    """Record — and, when enforcing, refuse — egress to an unapproved host.
+
+    This is the ONLY network control on the spawned-CLI surface:
+    ``tools/agents/adapters/claude_cli.py`` runs Claude Code with
+    ``--dangerously-skip-permissions`` (ADR D394), so the vendor prompt is off
+    and neither in-process gate is in that process's path.
+
+    Monitor-only by default — findings are appended to
+    ``.tmp/egress_findings.jsonl`` and the call proceeds. Flip
+    ``agent_egress.enforce`` in ``args/agent_egress_policy.yaml`` or set
+    ICDEV_EGRESS_GUARD_ENFORCE=1 to block. ICDEV_EGRESS_GUARD=0 disables it.
+    Fails OPEN on any error. See the docstring on
+    ``shared_checks.check_network_egress`` for the evasion boundary — it is a
+    tripwire with named blind spots, not a network boundary.
+    """
+    return shared_checks.check_network_egress(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def check_agent_rules(tool_name: str, tool_input: dict) -> str:
     """Refuse a call an ENFORCING agent rule matched (agov-det-06).
 
@@ -872,6 +893,7 @@ HOOK_CHECKS = (
     "check_write_outside_worktree",
     "check_branch_deletion",
     "check_worktree_path",
+    "check_network_egress",
     "check_agent_rules",
     "check_review_loop_precommit",
 )
@@ -888,6 +910,7 @@ HOOK_CHECK_CALLSITES = {
     "check_write_outside_worktree": "check_write_outside_worktree",
     "check_branch_deletion": "check_branch_deletion",
     "check_worktree_path": "check_worktree_path",
+    "check_network_egress": "check_network_egress",
     "check_agent_rules": "check_agent_rules",
     "check_review_loop_precommit": "run_review_loop_precommit",
 }
@@ -953,6 +976,14 @@ def main():
         worktree_error = check_worktree_path(tool_name, tool_input)
         if worktree_error:
             print(worktree_error, file=sys.stderr)
+            sys.exit(2)
+
+        # Network egress (exa-bench-08). Monitor-only by default: it records the
+        # finding and returns "" so the call proceeds. This is the only network
+        # control that reaches the --dangerously-skip-permissions session.
+        egress_error = check_network_egress(tool_name, tool_input)
+        if egress_error:
+            print(egress_error, file=sys.stderr)
             sys.exit(2)
 
         # AGOV declarative rules — LAST, and additive only (agov-det-06).
