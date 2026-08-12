@@ -543,6 +543,18 @@ tests/test_audit_chain_writer.py
 # runs in the PG tier instead (tests/pg_tier_allowlist.txt); the other 38 are
 # pure Python plus a Flask test client -- ~1.9s, no DB service/LLM/network.
 tests/test_exa_policy_05_saas_mcp_authz.py
+# test_skip_permissions_compensating_controls.py is the evidence behind D394/D395:
+# tools/agents/adapters/claude_cli.py runs Claude Code with
+# --dangerously-skip-permissions on every autonomous build, and this pins the
+# MEASURED coverage of the compensating controls over the four categories a
+# vendor prompt interposes on. It has to be a required check specifically because
+# it fails in BOTH directions -- on a regression, and on a gap closed without
+# docs/security/agent-vendor-permission-bypass.md being updated. Left out of the
+# gate it would be a test nobody runs guarding a control nobody checks, which is
+# the exact declared-but-unconsumed shape the EXA card exists to find. Pure
+# classification against two YAML policies -- ~1.7s, no DB service/LLM/network
+# (exa-bench-04).
+tests/test_skip_permissions_compensating_controls.py
 # test_agent_policy_engine.py earns a slot because the ALLOW/DENY/ASK layer
 # (exa-policy-01) is what decides whether an irreversible agent action runs, and
 # every one of its failure modes is silent if it regresses: a policy that raises,
