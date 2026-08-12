@@ -25,6 +25,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.logging.icdev_logger import get_logger
+from tools.workflow.refinement_evidence import (
+    collect_evidence,
+    evaluate_evidence,
+    evidence_summary,
+)
 from tools.workflow.trace_logger import get_traces_for_task_type
 
 logger = get_logger(__name__)
@@ -237,7 +242,16 @@ def generate_improvement_artifact(
     composite_score = _compute_composite_score(improvement_text, skill_used)
 
     artifact_id = f"impr-{task_type[:8]}-{uuid.uuid4().hex[:8]}"
-    trace_ids = [t["trace_id"] for t in traces[:5]]
+
+    # exa-refine-04: the proposal carries the lesson_learned rows and recurrence
+    # score that motivated it, not a bare list of opaque trace ids. A proposal
+    # the evidence does not support is written with a non-'pending' status, so
+    # it is rejected before it can reach GEPA or a human review queue.
+    evidence = collect_evidence(
+        task_type=task_type, skill_used=skill_used, traces=traces
+    )
+    verdict = evaluate_evidence(evidence)
+    status = "pending" if verdict["supported"] else verdict["rejected_status"]
 
     if not dry_run:
         try:
@@ -250,7 +264,7 @@ def generate_improvement_artifact(
                     (artifact_id, task_type, skill_used, generation_n,
                      improvement_text, composite_score, baseline_score,
                      evidence_traces, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending')
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     artifact_id,
@@ -260,11 +274,15 @@ def generate_improvement_artifact(
                     improvement_text,
                     composite_score,
                     baseline_score,
-                    json.dumps(trace_ids),
+                    json.dumps(evidence),
+                    status,
                 ),
             )
             conn.commit()
-            logger.info("[reflexion] artifact %s created for %s (gen %d)", artifact_id, task_type, gen_n)
+            logger.info(
+                "[reflexion] artifact %s created for %s (gen %d, status=%s, %s)",
+                artifact_id, task_type, gen_n, status, verdict["reason"],
+            )
         except Exception as exc:
             logger.warning("[reflexion] failed to persist artifact: %s", exc)
             return {"error": str(exc)}
@@ -278,6 +296,12 @@ def generate_improvement_artifact(
         "improvement_text": improvement_text[:500],
         "traces_analyzed": len(traces),
         "failures_found": len(failures),
+        "status": status,
+        "evidence_rejected": not verdict["supported"],
+        "evidence_reason": verdict["reason"],
+        "evidence_summary": evidence_summary(evidence),
+        "lesson_count": verdict["lesson_count"],
+        "recurrence_score": verdict["recurrence_score"],
         "dry_run": dry_run,
     }
 

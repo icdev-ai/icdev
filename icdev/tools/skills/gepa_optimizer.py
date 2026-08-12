@@ -180,16 +180,29 @@ def _get_pending_artifacts(conn) -> list[dict]:
             d = dict(r)
             delta = (d.get("composite_score") or 0) - (d.get("baseline_score") or 0)
             if delta >= _MIN_SCORE_DELTA:
-                try:
-                    traces = json.loads(d.get("evidence_traces") or "[]")
-                    d["n_traces"] = len(traces)
-                except Exception:
-                    d["n_traces"] = 0
+                # exa-refine-04: evidence_traces is a lesson-backed bundle now.
+                # parse_evidence also reads the legacy bare trace-id list and
+                # NOVA's provenance dict, so n_traces stays meaningful for the
+                # artifacts written before the bundle existed.
+                from tools.workflow.refinement_evidence import parse_evidence
+                evidence = parse_evidence(d.get("evidence_traces"))
+                d["evidence"] = evidence
+                d["n_traces"] = len(evidence.get("trace_ids") or [])
+                d["n_lessons"] = int(evidence.get("lesson_count") or 0)
                 result.append(d)
         return result
     except Exception as exc:
         logger.warning("gepa_optimizer: failed to fetch artifacts: %s", exc)
         return []
+
+
+def _evidence_summary(evidence) -> str:
+    """One-line lesson-evidence summary; never raises inside the report path."""
+    try:
+        from tools.workflow.refinement_evidence import evidence_summary
+        return evidence_summary(evidence)
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _mark_applied(conn, artifact_id: str) -> None:
@@ -203,10 +216,20 @@ def _mark_applied(conn, artifact_id: str) -> None:
     conn.commit()
 
 
-def _seed_review_card(skill_name: str, skill_file: str) -> None:
-    """Create a low-priority kanban card for human review of the GEPA update."""
+def _seed_review_card(skill_name: str, skill_file: str, evidence: dict | None = None) -> None:
+    """Create a low-priority kanban card for human review of the GEPA update.
+
+    This card is the human review surface for an applied refinement, so it
+    carries the lesson_learned rows and recurrence score that motivated it
+    (exa-refine-04) — a reviewer should not have to go query the DB to find out
+    why a skill file changed under them.
+    """
     try:
         from tools.kanban.task_factory import create_tasks
+        from tools.workflow.refinement_evidence import (
+            evidence_summary,
+            render_evidence_markdown,
+        )
         task_id = f"gepa-review-{skill_name}-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
         create_tasks([{
             "id": task_id,
@@ -214,6 +237,8 @@ def _seed_review_card(skill_name: str, skill_file: str) -> None:
             "description": (
                 f"The GEPA optimizer automatically updated the skill file at:\n"
                 f"{skill_file}\n\n"
+                f"Motivating evidence: {evidence_summary(evidence)}\n\n"
+                f"{render_evidence_markdown(evidence)}\n\n"
                 f"Review the changes to confirm they improve task execution quality. "
                 f"Accept by closing this card or revert with `git diff {skill_file}`."
             ),
@@ -286,12 +311,15 @@ def run(dry_run: bool = False) -> dict:
 
             if dry_run:
                 logger.info(
-                    "gepa_optimizer [dry-run]: would patch %s (delta=%.2f, traces=%d)",
+                    "gepa_optimizer [dry-run]: would patch %s (delta=%.2f, traces=%d, %s)",
                     skill_file.name, composite_score - baseline_score, n_traces,
+                    _evidence_summary(artifact.get("evidence")),
                 )
                 summary["applied"].append({
                     "artifact_id": artifact_id,
                     "skill_file": str(skill_file),
+                    "n_lessons": artifact.get("n_lessons", 0),
+                    "evidence_summary": _evidence_summary(artifact.get("evidence")),
                     "dry_run": True,
                 })
                 continue
@@ -323,13 +351,15 @@ def run(dry_run: bool = False) -> dict:
             )
 
             _mark_applied(conn, artifact_id)
-            _seed_review_card(skill_used, str(skill_file))
+            _seed_review_card(skill_used, str(skill_file), artifact.get("evidence"))
 
             summary["applied"].append({
                 "artifact_id": artifact_id,
                 "skill_file": str(skill_file),
                 "score_delta": round(composite_score - baseline_score, 3),
                 "n_traces": n_traces,
+                "n_lessons": artifact.get("n_lessons", 0),
+                "evidence_summary": _evidence_summary(artifact.get("evidence")),
             })
 
     except Exception as exc:

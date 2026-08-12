@@ -29,6 +29,7 @@ Checks:
  19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
  20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
  21. vendor_parity   — declared stdlib-only modules stay a subset of their OUT-OF-REPO vendored copies (cxo-doc-03)
+ 22. capability_liveness — a declared capability with ZERO lifetime consumption fails; budgets in args/liveness_gate.yaml (exa-live-02)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -788,6 +789,42 @@ def check_fixture_schema(changed_files: Optional[List[Path]] = None) -> Coherenc
 # ---------------------------------------------------------------------------
 
 
+_MD_SEPARATOR_RE = re.compile(r"^\|[\s:\-|]+\|$")
+
+
+def _duplicate_manifest_rows(shard: Path) -> List[str]:
+    """Byte-identical duplicate data rows in a manifest shard.
+
+    `tools/manifest*` is merged with `merge=union` (see `.gitattributes`,
+    kax-conflict-03) so two branches can append a row to the same table without
+    a human resolving a conflict. Union takes the superset, which leaves an
+    exact duplicate behind whenever both sides added the same row — the one
+    failure mode the strategy introduces, so it is reported rather than trusted.
+    Header rows repeat legitimately (a shard may hold several tables) and are
+    identified by the separator row that follows them.
+    """
+    lines = _read_text(shard).splitlines()
+    seen: Dict[str, int] = {}
+    dupes: List[str] = []
+    for i, line in enumerate(lines):
+        row = line.strip()
+        if not (row.startswith("|") and row.endswith("|")):
+            continue
+        if _MD_SEPARATOR_RE.match(row):
+            continue
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        if _MD_SEPARATOR_RE.match(nxt):  # header row
+            continue
+        if row in seen:
+            first_cell = row.strip("|").split("|")[0].strip()[:60]
+            dupes.append(
+                f"{shard.name}:{i + 1} duplicate of line {seen[row]}: {first_cell}"
+            )
+        else:
+            seen[row] = i + 1
+    return dupes
+
+
 def check_manifest() -> CoherenceCheck:
     """Verify tool Python files are documented in tools/manifest.md."""
     manifest_path = PROJECT_ROOT / "tools" / "manifest.md"
@@ -807,9 +844,12 @@ def check_manifest() -> CoherenceCheck:
     # Manifest was split into shards (2026-04-14). Concatenate shards so tool
     # filename lookups span the whole documented surface, not just the index.
     shard_dir = PROJECT_ROOT / "tools" / "manifest"
+    duplicate_rows: List[str] = []
     if shard_dir.is_dir():
-        for shard in shard_dir.glob("*.md"):
+        for shard in sorted(shard_dir.glob("*.md")):
             manifest_text += "\n" + _read_text(shard).lower()
+            duplicate_rows.extend(_duplicate_manifest_rows(shard))
+    duplicate_rows.extend(_duplicate_manifest_rows(manifest_path))
 
     # Find tool directories with Python files
     config = _load_config()
@@ -834,23 +874,41 @@ def check_manifest() -> CoherenceCheck:
         if py.stem.lower() not in manifest_text:
             undocumented.append(str(rel))
 
-    if undocumented and len(undocumented) < checked * 0.5:  # Only flag if < 50% missing
+    # Only flag undocumented tools if < 50% missing (a larger gap means the
+    # scan, not the manifest, is wrong).
+    flag_undocumented = bool(undocumented) and len(undocumented) < checked * 0.5
+
+    if flag_undocumented or duplicate_rows:
+        parts = []
+        if flag_undocumented:
+            parts.append(f"{len(undocumented)} tool(s) not found in manifest.md")
+        if duplicate_rows:
+            parts.append(
+                f"{len(duplicate_rows)} duplicate manifest row(s) "
+                "(union-merge residue — delete the repeat)"
+            )
         return CoherenceCheck(
             check_id="manifest",
             check_name="Manifest Coherence",
             status="warn",
-            expected=[f"All {checked} tools documented in manifest"],
-            actual=[f"{len(undocumented)} undocumented"],
-            missing=undocumented[:20],  # Cap output
-            extra=[],
-            message=f"{len(undocumented)} tool(s) not found in manifest.md",
+            expected=[
+                f"All {checked} tools documented in manifest",
+                "No duplicate manifest rows",
+            ],
+            actual=[
+                f"{len(undocumented) if flag_undocumented else 0} undocumented",
+                f"{len(duplicate_rows)} duplicate rows",
+            ],
+            missing=undocumented[:20] if flag_undocumented else [],  # Cap output
+            extra=duplicate_rows[:20],
+            message="; ".join(parts),
         )
 
     return CoherenceCheck(
         check_id="manifest",
         check_name="Manifest Coherence",
         status="pass",
-        expected=["Tool files documented in manifest"],
+        expected=["Tool files documented in manifest", "No duplicate manifest rows"],
         actual=[f"Checked {checked} files"],
         missing=[],
         extra=[],
@@ -2820,6 +2878,339 @@ def check_reflex_registry() -> CoherenceCheck:
         extra=[],
         message=f"all {len(REFLEX_NAMES)} REFLEX_NAMES entries resolve to a reflex with run()",
     )
+
+
+_LIVENESS_GATE_PATH = PROJECT_ROOT / "args" / "liveness_gate.yaml"
+_LIVENESS_CHECK_ID = "capability_liveness"
+_LIVENESS_CHECK_NAME = "Capability Liveness"
+_LIVENESS_EXPECTED = [
+    "every declared capability unit has at least one recorded consumption in the "
+    "telemetry's lifetime, or is grandfathered in args/liveness_gate.yaml"
+]
+
+
+def _load_liveness_gate() -> Dict[str, Any]:
+    """Load args/liveness_gate.yaml, falling back to a strict built-in default.
+
+    An unreadable or absent gate file yields an EMPTY grandfather map, which
+    gives every capability class a budget of zero — fail-safe CLOSED, the same
+    direction ``_load_insert_schema_gate`` fails in. A missing allowlist must
+    never be the thing that lets an inert capability through.
+    """
+    gate: Dict[str, Any] = {
+        "window_days": 30,
+        "lifetime_days": 36500,
+        "evidence_anchor": {"table": "audit_trail", "min_rows": 1000},
+        "grandfathered": {},
+    }
+    if not _HAS_YAML or not _LIVENESS_GATE_PATH.exists():
+        return gate
+    try:
+        raw = yaml.safe_load(_LIVENESS_GATE_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — an unparseable gate file must not crash the sweep
+        return gate
+    if not isinstance(raw, dict):
+        return gate
+
+    for key in ("window_days", "lifetime_days"):
+        try:
+            value = int(raw[key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if value > 0:
+            gate[key] = value
+
+    anchor = raw.get("evidence_anchor")
+    if isinstance(anchor, dict):
+        table = str(anchor.get("table") or "").strip()
+        if table:
+            gate["evidence_anchor"]["table"] = table
+        try:
+            gate["evidence_anchor"]["min_rows"] = max(0, int(anchor.get("min_rows")))
+        except (TypeError, ValueError):
+            pass
+
+    budgets: Dict[str, int] = {}
+    for name, allowed in (raw.get("grandfathered") or {}).items():
+        try:
+            budgets[str(name)] = max(0, int(allowed))
+        except (TypeError, ValueError):
+            continue
+    gate["grandfathered"] = budgets
+    return gate
+
+
+def _liveness_corpus_rows(conn, table: str) -> Optional[int]:
+    """Rows in the evidence-anchor table, or None when it cannot be counted.
+
+    None and 0 mean different things here and must not be collapsed: 0 is an
+    initialised database nobody has used, None is a database we could not ask.
+    Both stop the gate from failing, but only one of them is a real reading.
+    """
+    try:
+        from tools.db.storage import table_exists
+
+        if not table_exists(conn, table):
+            return None
+        row = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()  # noqa: S608 — literal from gate config
+        return int(dict(row).get("n") or 0)
+    except Exception:  # noqa: BLE001
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
+def _evaluate_capability_liveness(
+    window_report: Dict[str, Any],
+    lifetime_report: Dict[str, Any],
+    corpus_rows: Optional[int],
+    gate: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Fold a windowed and a lifetime consumption report into a gate verdict.
+
+    Split out from :func:`check_capability_liveness` so the decision is testable
+    without a populated database — the database being populated is precisely
+    what the decision is conditioned on.
+
+    Everything is decided on COUNTS, never on the ``inert_units`` name lists:
+    those are truncated to ``max_listed_units`` per class, so a set difference
+    over them would silently under-report the 466-unit classes. A unit inert
+    across the lifetime window is necessarily inert across any sub-window, so
+    ``window_inert - lifetime_inert`` is an exact count of the units that were
+    consumed at some point and merely went quiet.
+    """
+    anchor = gate.get("evidence_anchor") or {}
+    min_rows = int(anchor.get("min_rows") or 0)
+    budgets: Dict[str, int] = gate.get("grandfathered") or {}
+
+    if corpus_rows is None or corpus_rows < min_rows:
+        return {
+            "verdict": "no_history",
+            "corpus_rows": corpus_rows,
+            "corpus_min_rows": min_rows,
+            "corpus_table": str(anchor.get("table") or ""),
+            "classes": [],
+            "over_budget": [],
+            "unmeasurable": [],
+            "lowerable": [],
+        }
+
+    window_inert = {
+        str(c.get("capability_class")): int(c.get("inert") or 0)
+        for c in window_report.get("classes") or []
+        if c.get("telemetry_available")
+    }
+
+    classes: List[Dict[str, Any]] = []
+    over_budget: List[Dict[str, Any]] = []
+    unmeasurable: List[str] = []
+    lowerable: List[Dict[str, Any]] = []
+
+    for entry in lifetime_report.get("classes") or []:
+        name = str(entry.get("capability_class"))
+        if not entry.get("telemetry_available"):
+            unmeasurable.append(f"{name}: {entry.get('unmeasured_reason') or 'no telemetry'}")
+            continue
+        never = int(entry.get("inert") or 0)
+        # Clamp: the two passes are taken moments apart, and a class whose
+        # declaration source is itself a table (skill_optimizer) can gain a unit
+        # between them. A negative "idle" count would be an artefact of that
+        # race, not a reading.
+        idle = max(0, window_inert.get(name, never) - never)
+        allowed = int(budgets.get(name, 0))
+        record = {
+            "capability_class": name,
+            "declared": int(entry.get("declared") or 0),
+            "never_consumed": never,
+            "idle_this_window": idle,
+            "allowed": allowed,
+            "telemetry_table": str(entry.get("telemetry_table") or ""),
+        }
+        classes.append(record)
+        if never > allowed:
+            over_budget.append(record)
+        elif never < allowed:
+            lowerable.append(record)
+
+    return {
+        "verdict": "fail" if over_budget else ("warn" if unmeasurable else "pass"),
+        "corpus_rows": corpus_rows,
+        "corpus_min_rows": min_rows,
+        "corpus_table": str(anchor.get("table") or ""),
+        "classes": classes,
+        "over_budget": over_budget,
+        "unmeasurable": unmeasurable,
+        "lowerable": lowerable,
+    }
+
+
+def _liveness_check_result(evaluation: Dict[str, Any], window_days: int) -> CoherenceCheck:
+    """Render an evaluation from :func:`_evaluate_capability_liveness`."""
+    if evaluation["verdict"] == "no_history":
+        rows = evaluation["corpus_rows"]
+        seen = "could not be counted" if rows is None else f"holds {rows} row(s)"
+        return CoherenceCheck(
+            check_id=_LIVENESS_CHECK_ID,
+            check_name=_LIVENESS_CHECK_NAME,
+            status="warn",
+            expected=_LIVENESS_EXPECTED,
+            actual=[f"evidence anchor {evaluation['corpus_table']} {seen}"],
+            missing=[],
+            extra=[],
+            message=(
+                f"Capability liveness NOT verified: the evidence anchor "
+                f"'{evaluation['corpus_table']}' {seen}, below the "
+                f"{evaluation['corpus_min_rows']}-row floor in args/liveness_gate.yaml. "
+                "On a fresh worktree, an ephemeral CI database or an unreachable "
+                "backend every declared capability looks inert because nothing has "
+                "been recorded — that is a fact about the database, not the tree. "
+                "Point ICDEV_STORAGE_BACKEND at the operating platform database to "
+                "enable this gate."
+            ),
+        )
+
+    detail = [
+        f"{c['capability_class']}: {c['declared']} declared, {c['never_consumed']} never consumed "
+        f"(budget {c['allowed']}), {c['idle_this_window']} idle in last {window_days}d"
+        for c in evaluation["classes"]
+    ]
+    idle_total = sum(c["idle_this_window"] for c in evaluation["classes"])
+
+    if evaluation["over_budget"]:
+        offenders = [
+            f"{c['capability_class']}: {c['never_consumed']} never-consumed unit(s) "
+            f"exceeds the grandfathered budget of {c['allowed']}"
+            for c in evaluation["over_budget"]
+        ]
+        return CoherenceCheck(
+            check_id=_LIVENESS_CHECK_ID,
+            check_name=_LIVENESS_CHECK_NAME,
+            status="fail",
+            expected=_LIVENESS_EXPECTED,
+            actual=detail,
+            missing=offenders,
+            extra=evaluation["unmeasurable"],
+            message=(
+                f"{len(evaluation['over_budget'])} capability class(es) declare more "
+                "never-consumed units than args/liveness_gate.yaml allows: "
+                f"{'; '.join(offenders)}. A capability that is registered, enabled and "
+                "catalogued but has NEVER been dispatched, decided, registered or run is "
+                "ICDEV's signature defect — wire it to a consumer or stop declaring it. "
+                "Do not raise the budget to get this commit through. "
+                f"({idle_total} other unit(s) were consumed at some point and are merely "
+                f"idle this window — those are not counted here.)"
+            ),
+        )
+
+    if evaluation["unmeasurable"]:
+        return CoherenceCheck(
+            check_id=_LIVENESS_CHECK_ID,
+            check_name=_LIVENESS_CHECK_NAME,
+            status="warn",
+            expected=_LIVENESS_EXPECTED,
+            actual=detail,
+            missing=[],
+            extra=evaluation["unmeasurable"],
+            message=(
+                f"{len(evaluation['unmeasurable'])} capability class(es) could not be "
+                f"measured at all: {'; '.join(evaluation['unmeasurable'])}. An unmeasurable "
+                "capability is the state that let every instance of this bug ship, so it is "
+                "reported rather than counted as zero. Every measured class is within budget."
+            ),
+        )
+
+    lowerable = [
+        f"{c['capability_class']}: budget {c['allowed']} can be lowered to {c['never_consumed']}"
+        for c in evaluation["lowerable"]
+    ]
+    return CoherenceCheck(
+        check_id=_LIVENESS_CHECK_ID,
+        check_name=_LIVENESS_CHECK_NAME,
+        status="pass",
+        expected=_LIVENESS_EXPECTED,
+        actual=detail,
+        missing=[],
+        extra=lowerable,
+        message=(
+            f"{len(evaluation['classes'])} capability class(es) within their liveness budget; "
+            f"{idle_total} unit(s) consumed previously but idle in the last {window_days}d "
+            "(not a defect)."
+            + (f" Ratchet available — {'; '.join(lowerable)}." if lowerable else "")
+        ),
+    )
+
+
+def check_capability_liveness() -> CoherenceCheck:
+    """cl — a declared capability with zero lifetime consumption fails the gate.
+
+    ``check_reflex_registry`` and ``tests/test_reflex_dispatch_parity.py`` exist
+    because the reflex version of this bug shipped three times: a capability
+    that is registered, enabled, importable and catalogued, and never actually
+    runs, while nothing goes red. That shape is not specific to reflexes — the
+    migration-149 audit hash chain, ``MCPToolAuthorizer``, the prompt registry
+    and GEPA are all the same defect. This check generalises it to every class
+    ``tools/awareness/capability_consumption.py`` can measure: MCP tools never
+    dispatched, approval rules whose decision log is empty, registry rows never
+    written, reflexes with zero runs.
+
+    Two readings are taken. The LIFETIME pass decides the gate — a unit with no
+    consumption event in the telemetry's entire history has never been consumed.
+    The WINDOW pass only classifies the remainder: a unit consumed once and quiet
+    since is a low-cadence capability, not a dead one, and is reported without
+    being counted. Conflating the two is how a gate like this earns its way into
+    being ignored.
+
+    Per-class counts of the pre-existing backlog are grandfathered in
+    args/liveness_gate.yaml and ratchet downward only.
+    """
+    gate = _load_liveness_gate()
+    try:
+        from tools.awareness.capability_consumption import collect
+        from tools.db.storage import get_connection
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id=_LIVENESS_CHECK_ID,
+            check_name=_LIVENESS_CHECK_NAME,
+            status="warn",
+            expected=_LIVENESS_EXPECTED,
+            actual=[f"import failed: {exc}"],
+            missing=[],
+            extra=[],
+            message=f"capability_consumption unavailable ({exc}) — liveness NOT verified",
+        )
+
+    conn = None
+    try:
+        conn = get_connection()
+        corpus_rows = _liveness_corpus_rows(conn, str((gate["evidence_anchor"] or {}).get("table") or ""))
+        window_report = collect(window_days=int(gate["window_days"]), conn=conn)
+        lifetime_report = collect(window_days=int(gate["lifetime_days"]), conn=conn)
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id=_LIVENESS_CHECK_ID,
+            check_name=_LIVENESS_CHECK_NAME,
+            status="warn",
+            expected=_LIVENESS_EXPECTED,
+            actual=[f"measurement failed: {exc}"],
+            missing=[],
+            extra=[],
+            message=(
+                f"Consumption telemetry unreachable ({exc}) — liveness NOT verified. "
+                "Reported as warn, not pass: an unmeasurable capability is exactly the "
+                "state this gate exists to surface."
+            ),
+        )
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    evaluation = _evaluate_capability_liveness(window_report, lifetime_report, corpus_rows, gate)
+    return _liveness_check_result(evaluation, int(gate["window_days"]))
 
 
 def check_sandbox_coverage() -> CoherenceCheck:
@@ -7779,11 +8170,118 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
     )
 
 
+_BOOTSTRAP_PARITY_PATH = PROJECT_ROOT / "args" / "bootstrap_parity.yaml"
+
+
+def _load_bootstrap_parity() -> List[Dict[str, str]]:
+    """Read the must-match pairs from args/bootstrap_parity.yaml.
+
+    An unreadable or absent declaration yields an EMPTY pair list, so the check
+    reports ``warn`` rather than a silent ``pass``. A parity gate that vanishes
+    with its config file is worse than no gate: it looks green.
+    """
+    if not _HAS_YAML or not _BOOTSTRAP_PARITY_PATH.exists():
+        return []
+    try:
+        data = yaml.safe_load(_BOOTSTRAP_PARITY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — a malformed gate must not crash the run
+        return []
+    pairs = data.get("must_match") or []
+    return [p for p in pairs if isinstance(p, dict) and p.get("target") and p.get("source")]
+
+
+def check_bootstrap_parity() -> CoherenceCheck:
+    """`icdev init` must scaffold the instruction files this repo actually runs on.
+
+    ``icdev init`` copies ``icdev/data/claude_bootstrap/<x>``, NOT the repo file
+    of the same name (BOOTSTRAP_MAP, tools/cli/init.py). Editing one without the
+    other hands a scaffolded project different rules than the project develops
+    against — the exact thing
+    ``test_packaged_claude_md_is_not_a_stripped_template`` was written to stop.
+
+    That test only covers CLAUDE.md, runs in CI after the push, and fails with a
+    raw byte-compare of two 40 KB blobs whose offset markers read like CRLF
+    drift. This check runs locally, covers every pair declared in
+    args/bootstrap_parity.yaml, and names the file and the fix.
+    """
+    pairs = _load_bootstrap_parity()
+    if not pairs:
+        return CoherenceCheck(
+            check_id="bootstrap_parity",
+            check_name="Bootstrap Parity",
+            status="warn",
+            expected=["args/bootstrap_parity.yaml declares the must-match pairs"],
+            actual=["declaration missing or unreadable"],
+            missing=[],
+            extra=[],
+            message=(
+                "args/bootstrap_parity.yaml is absent or unparseable, so no "
+                "bootstrap pair was checked. `icdev init` ships packaged copies "
+                "of CLAUDE.md and AGENTS.md; without this declaration nothing "
+                "notices when they drift from the repo files."
+            ),
+        )
+
+    drift: List[str] = []
+    missing: List[str] = []
+    checked = 0
+    for pair in pairs:
+        target = PROJECT_ROOT / str(pair["target"])
+        source = PROJECT_ROOT / "icdev" / str(pair["source"])
+        if not target.is_file() or not source.is_file():
+            absent = target if not target.is_file() else source
+            missing.append(f"{pair['target']}: {absent.relative_to(PROJECT_ROOT)} not found")
+            continue
+        checked += 1
+        if target.read_bytes() != source.read_bytes():
+            drift.append(
+                f"{pair['target']} != icdev/{pair['source']} "
+                f"({target.stat().st_size} vs {source.stat().st_size} bytes)"
+            )
+
+    if drift:
+        return CoherenceCheck(
+            check_id="bootstrap_parity",
+            check_name="Bootstrap Parity",
+            status="fail",
+            expected=[f"{len(pairs)} bootstrap pair(s) byte-identical"],
+            actual=[f"{len(drift)} drifted"],
+            missing=missing,
+            extra=drift,
+            message=(
+                f"{len(drift)} packaged bootstrap file(s) differ from the repo "
+                f"file they scaffold, so `icdev init` would hand a new project "
+                f"different instructions than this repo runs on (that is #960). "
+                "Fix: `python tools/installer/prebuild_bootstrap.py` — it "
+                "regenerates the whole bootstrap from the repo, which is the "
+                "sanctioned path. Do NOT hand-copy a single file: the other "
+                "packaged files drift too and a targeted copy hides that."
+            ),
+        )
+
+    note = f"{checked} bootstrap pair(s) byte-identical"
+    return CoherenceCheck(
+        check_id="bootstrap_parity",
+        check_name="Bootstrap Parity",
+        status="warn" if missing else "pass",
+        expected=[f"{len(pairs)} bootstrap pair(s) byte-identical"],
+        actual=[note],
+        missing=missing,
+        extra=[],
+        message=(
+            f"{note}; {len(missing)} pair(s) unresolved: {'; '.join(missing)}"
+            if missing
+            else f"`icdev init` scaffolds what this repo runs on — {note}."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
 CHECK_REGISTRY = {
+    "bootstrap_parity": check_bootstrap_parity,
     "schema_code": check_schema_code,
     "config_code": check_config_code,
     "signature_call": check_signature_call,
@@ -7801,6 +8299,7 @@ CHECK_REGISTRY = {
     "sandbox_coverage": check_sandbox_coverage,
     "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
+    "capability_liveness": check_capability_liveness,
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,
     "architecture_agnosticism": check_architecture_agnosticism,
@@ -7960,6 +8459,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "mirror_drift": "skip",  # WARN-only; reconciling twins requires human judgment (which side is canonical)
     "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
     "insert_schema_parity": "skip",  # drop the column or write a migration — the choice is the fix
+    "capability_liveness": "skip",  # wiring a capability to a consumer is the fix; a budget bump is not
 }
 
 
@@ -8021,7 +8521,15 @@ def _autofix_append_only(check: CoherenceCheck) -> List[str]:
 
 
 def _autofix_manifest(check: CoherenceCheck) -> List[str]:
-    """Auto-append missing tools to tools/manifest.md."""
+    """Auto-append missing tools to tools/manifest.md.
+
+    Re-reads the manifest surface immediately before writing rather than
+    trusting `check.missing`, which was computed earlier: `tools/manifest*` is
+    merged with `merge=union` (kax-conflict-03), so a row another branch added
+    can arrive between the scan and the fix. Appending it again produced the
+    two duplicated "Auto-Registered (Coherence Fix)" sections this guard now
+    reports.
+    """
     missing = check.missing
     if not missing:
         return []
@@ -8030,22 +8538,37 @@ def _autofix_manifest(check: CoherenceCheck) -> List[str]:
     if not manifest_path.exists():
         return []
 
+    documented = _read_text(manifest_path).lower()
+    shard_dir = PROJECT_ROOT / "tools" / "manifest"
+    if shard_dir.is_dir():
+        for shard in shard_dir.glob("*.md"):
+            documented += "\n" + _read_text(shard).lower()
+
     lines = []
+    skipped = 0
     for tool_path in missing:
         p = Path(tool_path)
+        if p.stem.lower() in documented:
+            skipped += 1  # landed from another branch since the scan
+            continue
         name = p.stem.replace("_", " ").title()
         desc = f"Auto-registered: {p.parent.name}/{p.name}"
         lines.append(f"| {name} | {tool_path} | {desc} | --json | JSON |")
 
-    if lines:
-        with open(manifest_path, "a", encoding="utf-8") as f:
-            f.write("\n\n## Auto-Registered (Coherence Fix)\n")
-            f.write("| Tool | File | Description | Input | Output |\n")
-            f.write("|------|------|-------------|-------|--------|\n")
-            for line in lines:
-                f.write(line + "\n")
+    if not lines:
+        return [f"No manifest rows appended ({skipped} already documented)"]
 
-    return [f"Appended {len(lines)} tools to manifest.md"]
+    with open(manifest_path, "a", encoding="utf-8") as f:
+        f.write("\n\n## Auto-Registered (Coherence Fix)\n")
+        f.write("| Tool | File | Description | Input | Output |\n")
+        f.write("|------|------|-------------|-------|--------|\n")
+        for line in lines:
+            f.write(line + "\n")
+
+    note = f"Appended {len(lines)} tools to manifest.md"
+    if skipped:
+        note += f" ({skipped} already documented, skipped)"
+    return [note]
 
 
 _AUTOFIX_HANDLERS: Dict[str, Any] = {

@@ -1,0 +1,81 @@
+# CUI // SP-CTI
+#
+# Which `icdev init` bootstrap sources must be BYTE-IDENTICAL to the repo file
+# they scaffold. Read by tools/workflow/coherence_checker.py::check_bootstrap_parity.
+#
+# THE BUG THIS EXISTS FOR
+# =======================
+# `icdev init` does not copy the repo's CLAUDE.md. It copies
+# icdev/data/claude_bootstrap/CLAUDE.md (BOOTSTRAP_MAP, tools/cli/init.py). Edit
+# one without the other and a scaffolded project receives DIFFERENT instructions
+# than the project develops against.
+#
+# On 2026-08-12 that shipped twice in one night:
+#   * PR #1552 edited CLAUDE.md and not its packaged copy. The only thing that
+#     noticed was test_packaged_claude_md_is_not_a_stripped_template, in CI,
+#     AFTER the push, reporting a raw `assert b'...' == b'...'` over two 40 KB
+#     blobs whose `?  ++++++` offset markers read exactly like CRLF drift. It
+#     cost a full investigation to find one stale file.
+#   * AGENTS.md had drifted silently and nothing checked it at all: the packaged
+#     copy was missing the "Project Cards - Mandatory for Every Multi-Task Build"
+#     section, so every scaffolded project got a weaker guardrail doc than this
+#     repo runs on. Same defect the CLAUDE.md test was written to prevent, one
+#     file over, with no test.
+#
+# So: identity is declared HERE, once, and checked before the push rather than
+# discovered from a byte diff after it.
+#
+# THE FIX IS NEVER A HAND-COPY. `python tools/installer/prebuild_bootstrap.py`
+# regenerates the whole of icdev/data/claude_bootstrap/ from the repo root and
+# is what the PyPI deploy pipeline runs. Copying one file green-lights this gate
+# while leaving the rest stale - when the check was written, a prebuild run also
+# refreshed 10 other packaged files, including .claude/hooks/ and
+# .claude/commands/start.md, so `icdev init` had been shipping stale hooks.
+# The same trap shipped before as #960.
+#
+# WHY THIS IS AN ALLOWLIST AND NOT "EVERYTHING IN BOOTSTRAP_MAP"
+# ==============================================================
+# Most bootstrap sources are TEMPLATES and are supposed to differ. Asserting
+# parity across the whole map would fail on three files that are correct, and a
+# gate that cries wolf gets switched off. The excluded ones are listed below
+# with the reason, so the next person does not "fix" a difference that is the
+# design.
+version: 1
+
+# Byte-identical, both directions. The repo file is the authority; reconcile by
+# copying repo -> packaged.
+must_match:
+  - target: CLAUDE.md
+    source: data/claude_bootstrap/CLAUDE.md
+    why: >-
+      The master instruction file. A scaffolder that hands users a stripped or
+      stale CLAUDE.md gives them weaker rules than the project develops against
+      - which is the whole premise of shipping it. Also asserted by
+      tests/test_init_goals_and_selective.py::test_packaged_claude_md_is_not_a_stripped_template.
+  - target: AGENTS.md
+    source: data/claude_bootstrap/platforms/AGENTS.md
+    why: >-
+      The same guardrails as CLAUDE.md, published for non-Claude tools. If it
+      may drift then the LLM-agnostic claim is false exactly where it matters -
+      in the user's project. NOTE: `companion.py --sync` regenerates AGENTS.md
+      and drops hand-authored sections, which is how this drifted; re-run this
+      check after any companion sync.
+
+# Deliberately NOT compared. Each is a template by design - a difference here is
+# correct, and asserting parity would produce a false failure.
+excluded:
+  - target: .env.template
+    source: data/claude_bootstrap/.env.template
+    why: >-
+      The packaged template is the full scaffold surface (22 KB) while the repo
+      copy is this checkout's own trimmed file (3 KB). Different artifacts.
+  - target: .claude/settings.json
+    source: data/claude_bootstrap/claude/settings.json.template
+    why: >-
+      Source is named `.template`. A live settings.json carries this machine's
+      permissions and hook wiring and must not be shipped verbatim.
+  - target: .mcp.json
+    source: data/claude_bootstrap/mcp.json
+    why: >-
+      The packaged copy is the project-scoped server set; the repo copy carries
+      this checkout's extra development servers.

@@ -9,8 +9,11 @@ Weekly reflex that:
      (0.5 * correctness + 0.3 * procedure + 0.2 * conciseness).
   4. Inserts the top-scoring mutation into agent_improvement_artifacts
      (status='pending') if composite_score >= 0.75.
+  5. Attaches the lesson_learned rows + recurrence score that motivated the
+     mutation to `evidence_traces`, and rejects a mutation with no supporting
+     evidence before it reaches GEPA or a human (exa-refine-04).
 
-Config: args/nova_sela_config.yaml
+Config: args/nova_sela_config.yaml, args/refinement_evidence.yaml
 """
 from __future__ import annotations
 
@@ -93,6 +96,37 @@ def _query_low_performing_skills(
                 }
             )
     return skills
+
+
+def _skill_traces(conn, skill: str, window_days: int, limit: int = 20) -> List[Dict[str, Any]]:
+    """Recent traces for a skill — the trajectory a mutation is proposed from.
+
+    exa-refine-04: `_query_low_performing_skills` aggregates away the task ids,
+    but the lesson_learned rows that justify a mutation are keyed by task id, so
+    the trajectory has to be re-read before an artifact can carry its evidence.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat(timespec="seconds")
+    try:
+        rows = conn.execute(
+            """
+            SELECT trace_id, task_id, task_type, outcome, lesson_pattern
+            FROM agent_execution_traces
+            WHERE skill_used = %s
+              AND created_at >= %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (skill, cutoff, limit),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        log.debug("[sela] trace lookup failed for '%s': %s", skill, exc)
+        return []
+
+    cols = ["trace_id", "task_id", "task_type", "outcome", "lesson_pattern"]
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append(dict(row) if hasattr(row, "keys") else dict(zip(cols, row)))
+    return out
 
 
 def _get_failure_examples(conn, skill: str, window_days: int, limit: int = 5) -> List[str]:
@@ -210,19 +244,43 @@ def _score_mutation(
     return score_improvement(mutation, skill, fitness_weights)
 
 
-def _insert_artifact(conn, skill: str, best: Dict[str, Any], baseline_score: float) -> str:
+def _insert_artifact(
+    conn,
+    skill: str,
+    best: Dict[str, Any],
+    baseline_score: float,
+    traces: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Insert the top mutation into agent_improvement_artifacts.
 
-    Returns the new artifact_id.
+    exa-refine-04: ``evidence_traces`` used to be the literal ``'[]'`` — a
+    mutation arrived at a human with no statement of what motivated it. It now
+    carries the lesson_learned rows and recurrence score for the trajectory,
+    and a mutation the evidence does not support is written with a non-'pending'
+    status so GEPA and the review queues never select it.
+
+    Returns ``{"artifact_id", "status", "rejected", "reason", "summary"}``.
     """
+    from tools.workflow.refinement_evidence import (  # noqa: PLC0415
+        collect_evidence,
+        evaluate_evidence,
+        evidence_summary,
+    )
+
     artifact_id = str(uuid.uuid4())
+    evidence = collect_evidence(
+        task_type="sela_mutation", skill_used=skill, traces=traces or [], conn=conn
+    )
+    verdict = evaluate_evidence(evidence)
+    status = "pending" if verdict["supported"] else verdict["rejected_status"]
+
     conn.execute(
         """
         INSERT INTO agent_improvement_artifacts
             (artifact_id, task_type, skill_used, generation_n,
              improvement_text, composite_score, baseline_score,
              evidence_traces, applied_count, status, created_at)
-        VALUES (%s, %s, %s, 1, %s, %s, %s, '[]', 0, 'pending', %s)
+        VALUES (%s, %s, %s, 1, %s, %s, %s, %s, 0, %s, %s)
         """,
         (
             artifact_id,
@@ -231,11 +289,19 @@ def _insert_artifact(conn, skill: str, best: Dict[str, Any], baseline_score: flo
             best["mutation"],
             best["composite_score"],
             round(baseline_score, 4),
+            json.dumps(evidence),
+            status,
             _utcnow(),
         ),
     )
     conn.commit()
-    return artifact_id
+    return {
+        "artifact_id": artifact_id,
+        "status": status,
+        "rejected": not verdict["supported"],
+        "reason": verdict["reason"],
+        "summary": evidence_summary(evidence),
+    }
 
 
 def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -275,12 +341,14 @@ def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         log.info("[sela] %d under-performing skill(s) found", len(skills))
 
         artifacts_created: List[Dict[str, Any]] = []
+        rejected_artifacts: List[Dict[str, Any]] = []
         skipped_skills: List[str] = []
 
         for skill_info in skills:
             skill = skill_info["skill_used"]
             baseline_score = skill_info["success_rate"]
 
+            skill_traces = _skill_traces(conn, skill, window_days)
             failure_examples = _get_failure_examples(conn, skill, window_days)
 
             candidates = _generate_mutations(
@@ -303,11 +371,26 @@ def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             )
 
             if best["composite_score"] >= artifact_min_score:
-                artifact_id = _insert_artifact(conn, skill, best, baseline_score)
-                artifacts_created.append(
-                    {"skill": skill, "artifact_id": artifact_id, "score": best["composite_score"]}
-                )
-                log.info("[sela] artifact %s created for skill '%s'", artifact_id, skill)
+                inserted = _insert_artifact(conn, skill, best, baseline_score, skill_traces)
+                record = {
+                    "skill": skill,
+                    "artifact_id": inserted["artifact_id"],
+                    "score": best["composite_score"],
+                    "status": inserted["status"],
+                    "evidence_summary": inserted["summary"],
+                }
+                if inserted["rejected"]:
+                    rejected_artifacts.append({**record, "reason": inserted["reason"]})
+                    log.info(
+                        "[sela] artifact %s for skill '%s' REJECTED — %s",
+                        inserted["artifact_id"], skill, inserted["reason"],
+                    )
+                else:
+                    artifacts_created.append(record)
+                    log.info(
+                        "[sela] artifact %s created for skill '%s' (%s)",
+                        inserted["artifact_id"], skill, inserted["summary"],
+                    )
             else:
                 skipped_skills.append(skill)
 
@@ -315,6 +398,8 @@ def run_evolution(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             "skills_evaluated": len(skills),
             "artifacts_created": len(artifacts_created),
             "artifacts": artifacts_created,
+            "artifacts_rejected_no_evidence": len(rejected_artifacts),
+            "rejected_artifacts": rejected_artifacts,
             "skipped_skills": skipped_skills,
         }
     finally:
