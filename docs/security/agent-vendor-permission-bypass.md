@@ -107,11 +107,34 @@ behaviour for all nine checks — every one still runs and prints, prefixed
 hook). An environment variable is auditable in a way a shell operator buried in
 a JSON string is not.
 
-**Still open.** `icdev/data/claude_bootstrap/claude/settings.json.template`, the
-copy a scaffolded project inherits, keeps its `|| true`. It ships alongside an
-older self-contained `pre_tool_use.py` that has neither the narrowed checks nor a
-kill switch, so arming it would enable unmeasured refusals in every generated
-project — the thing this task exists to prevent. Filed as `exa-bench-05-b`.
+**Still open, and it turns out to be a bigger finding than "one more `|| true`."**
+`icdev/data/claude_bootstrap/claude/settings.json.template`, the copy a
+scaffolded project inherits, keeps its wrapper. Not for symmetry — because
+without it a scaffolded project would error on **every tool call**.
+
+`BOOTSTRAP_MAP` in `tools/cli/init.py` ships `data/claude_bootstrap/claude/hooks`
+to `.claude/hooks`, and ships no `tools/` at all. The hook's first act is to load
+`<project>/tools/hooks/shared_checks.py` by path — deliberately not wrapped in
+`try`, because "a guard that cannot load must fail loudly, not silently stop
+guarding". In a scaffolded project that file does not exist. Measured 2026-08-12
+against the packaged hook in a synthetic `icdev init` layout:
+
+```
+scaffolded project has tools/hooks/shared_checks.py: False
+exit: 1
+FileNotFoundError: ...\myproj\tools\hooks\shared_checks.py
+```
+
+So `icdev init` currently ships a PreToolUse hook that cannot run at all, and
+`|| true` is the only reason nobody has noticed — it converts a hard failure on
+every tool call into silence. Removing the wrapper without fixing the packaging
+would trade an invisible dead guard for a visibly broken project.
+
+`exa-bench-05-b` is therefore the packaging fix first (ship `tools/hooks/`, or
+vendor the checks into the packaged hook), and only then the wrapper. The
+enforcement machinery is already in the packaged hook, refreshed here by
+`python tools/installer/prebuild_bootstrap.py`, so the template flips in one
+line once the import resolves.
 
 ## 3. Compensating controls, and why they are defensible where they apply
 
@@ -227,7 +250,7 @@ contribution is the decision, the measurement, and the regression harness.
 | Task | Gap | Category |
 |---|---|---|
 | ~~`exa-bench-05`~~ | **CLOSED.** `\|\| true` removed after a per-check fire-rate survey over 86,612 real tool calls; five checks narrowed first, enforcement standable-down via `ICDEV_PRETOOLUSE_ENFORCE=0`. See section 2a. | (the hook itself) |
-| `exa-bench-05-b` | `icdev/data/claude_bootstrap/claude/settings.json.template` still carries `\|\| true`, so every scaffolded project inherits the neutered hook. It ships alongside an older self-contained `pre_tool_use.py` with neither the narrowed checks nor a kill switch, so the template cannot be armed until that copy is brought forward. | (generated projects) |
+| `exa-bench-05-b` | `icdev init` ships `.claude/hooks/pre_tool_use.py` but no `tools/hooks/shared_checks.py` (`BOOTSTRAP_MAP`, `tools/cli/init.py`), so the packaged hook raises `FileNotFoundError` and exits 1 on **every** tool call — measured. `\|\| true` in `settings.json.template` is the only thing hiding it. Fix the packaging first, then the wrapper. | (generated projects) |
 | `exa-bench-06` | The Claude Code hook runs 9 of the 10 shared checks — `check_git_danger` is never called from `main()` — and `_REDIRECT_TARGET_RE` mis-captures `>>`, so an append redirect defeats the file tiers. | destructive shell / writes |
 | `exa-bench-07` | No worktree containment on any surface. The AGENT-WF-001 gate is one per `(run, tool)` and path-blind; `approval_gate` holds `write_file` / `patch_file` at `recoverable` for any path; the `touch` / `mkdir` downgrade patterns auto-allow a `run_command` write to any absolute path. | **writes outside the worktree** |
 | `exa-bench-08` | No egress concept in the hook at all, and in-process coverage rests on `default_tier: unknown` rather than on an egress rule — allowlisting one HTTP tool, or adding a `curl` downgrade pattern, removes it silently. | **network egress** |
