@@ -74,11 +74,34 @@ def test_repo_gitattributes_marks_manifest_union():
         assert pattern in directives, f"missing .gitattributes directive: {pattern}"
 
 
+#: Paths that have earned ``merge=union``. Union takes the SUPERSET of both
+#: sides, which is safe only for flat, line-oriented files whose lines are
+#: independent records — never for YAML/JSON/Python, where it yields duplicate
+#: keys or broken code. Adding an entry is a deliberate act; justify it here.
+_UNION_SAFE_PATHS = frozenset({
+    "tools/manifest.md",
+    "tools/manifest/*.md",
+    "icdev/tools/manifest.md",
+    "icdev/tools/manifest/*.md",
+    # The gated CI test list: one test path per line, appended by concurrent
+    # branches for exactly the reason the manifest shards are. That it is
+    # append-only is pinned separately by tests/ci/test_gated_test_list.py,
+    # which asserts this very directive must be present — so a bare
+    # "must contain 'manifest'" rule put these two suites in direct conflict.
+    "args/ci_test_files/*.txt",
+    "icdev/data/args/ci_test_files/*.txt",
+})
+
+
 def test_union_is_not_applied_to_structured_config():
     """Union on YAML/JSON/Python would produce duplicate keys or broken code.
 
-    The manifest is safe because its rows are independent lines; nothing else
-    in the repo has earned that treatment.
+    Checked against an explicit allowlist rather than a substring. The old rule
+    was ``"manifest" in pattern``, which is both too narrow and too loose: it
+    rejected args/ci_test_files/*.txt (flat, line-oriented, deliberately union —
+    and required by another test), while it would have happily accepted
+    ``config/manifest.yaml merge=union``, which is precisely the structured-config
+    case this test exists to prevent.
     """
     text = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
     for line in text.splitlines():
@@ -86,9 +109,11 @@ def test_union_is_not_applied_to_structured_config():
         if stripped.startswith("#") or "merge=union" not in stripped:
             continue
         pattern = stripped.split()[0]
-        assert "manifest" in pattern, (
-            f"merge=union applied to non-manifest path {pattern!r}; union is only "
-            "safe for flat, line-oriented tables"
+        assert pattern in _UNION_SAFE_PATHS, (
+            f"merge=union applied to {pattern!r}, which is not in the union-safe "
+            "allowlist. Union is only safe for flat, line-oriented files whose "
+            "lines are independent records. If this path really qualifies, add it "
+            "to _UNION_SAFE_PATHS with a note saying why."
         )
 
 
