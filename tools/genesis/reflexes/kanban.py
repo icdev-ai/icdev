@@ -3556,8 +3556,27 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         # HITL gate: block in_progress→done when a HITL approval is pending
         if new_status == "done" and __import__("os").getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
             try:
-                from tools.workflow_hitl.gate import HITLGate
-                pending = HITLGate().get_pending(task_id)
+                from tools.workflow_hitl.gate import HITLGate, HITLGateUnavailable
+            except ImportError:
+                pass  # HITL module not installed — gate is no-op
+            else:
+                try:
+                    pending = HITLGate().get_pending(task_id)
+                except HITLGateUnavailable as exc:
+                    # exa-policy-06: the gate could not read approval state. An
+                    # undeterminable gate must BLOCK, not wave the task through —
+                    # otherwise a DB blip is a free approval.
+                    logger.error(
+                        "_move_task: HITL gate UNAVAILABLE for %s — refusing done (fail-closed): %s",
+                        task_id, exc,
+                    )
+                    conn.close()
+                    _record_status_transition(
+                        task_id, prior_status, "REFUSED_done_hitl_unavailable",
+                        actor=actor,
+                        reason=f"HITL gate unavailable (fail-closed): {exc}",
+                    )
+                    return
                 if pending:
                     logger.info(
                         "_move_task: HITL gate active for %s — not advancing to done (approval: %s)",
@@ -3570,8 +3589,6 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                         reason=f"HITL gate: approval {pending['id']} stage={pending.get('stage')} pending",
                     )
                     return
-            except ImportError:
-                pass  # HITL module not installed — gate is no-op
 
         # Merge-verify gate (2026-07-11 done-hardening): a task may only reach
         # 'done' when its work has actually landed on origin/main. If the task's

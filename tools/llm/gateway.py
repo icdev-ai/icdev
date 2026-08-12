@@ -346,8 +346,31 @@ def _check_rate_limit(agent_id: str, function_name: str, cfg: Dict) -> Dict:
     return {"allowed": True, "reason": None}
 
 
+def _cost_cap_fail_open() -> bool:
+    """True when the operator has explicitly opted back into legacy fail-open."""
+    import os
+
+    return os.getenv("ICDEV_COST_CAP_FAIL_OPEN", "").strip().lower() in ("1", "true", "yes")
+
+
 def _check_cost_cap(agent_id: str, cfg: Dict) -> Dict:
-    """Pre-check cost budget via token_tracker. Returns {allowed, reason}."""
+    """Pre-check cost budget via token_tracker. Returns {allowed, reason}.
+
+    Fail-closed (exa-policy-06): when the cost cap is enabled but the budget
+    backend raises, the request is DENIED. Previously any exception was
+    swallowed and the call returned ``allowed: True``, so a DB outage or a
+    corrupt ``token_budgets`` block silently lifted every spend cap — exactly
+    when you can least afford it.
+
+    Two states remain "allowed" by design and are not errors:
+      * the cap is switched off in ``llm_gateway_config.yaml``;
+      * ``token_tracker`` is not installed at all (ImportError) — documented in
+        that config as "ignored gracefully", i.e. a deployment that never ships
+        the budget module, not one whose module is broken.
+
+    ``ICDEV_COST_CAP_FAIL_OPEN=1`` restores the legacy behaviour for a staged
+    rollout; it logs at ERROR on every use so it cannot be left on quietly.
+    """
     if not cfg.get("pre_invoke", {}).get("cost_cap", {}).get("enabled", True):
         return {"allowed": True, "reason": None}
 
@@ -356,16 +379,30 @@ def _check_cost_cap(agent_id: str, cfg: Dict) -> Dict:
 
     try:
         from tools.agent.token_tracker import check_budget
-
-        budget = check_budget(agent_id)
-        if budget["action"] == "block":
-            return {"allowed": False, "reason": f"Budget exceeded for agent {agent_id}: {budget.get('message', '')}"}
-        if budget["action"] == "warn":
-            return {"allowed": True, "reason": f"Budget warning: {budget.get('message', '')}"}
     except ImportError:
-        pass  # token_tracker not available
+        return {"allowed": True, "reason": None}  # budget module not shipped
+
+    try:
+        budget = check_budget(agent_id)
     except Exception as exc:
-        logger.debug("Cost cap check failed (non-blocking): %s", exc)
+        if _cost_cap_fail_open():
+            logger.error(
+                "Cost cap FAILING OPEN for %s (ICDEV_COST_CAP_FAIL_OPEN=1) — check failed: %s",
+                agent_id, exc,
+            )
+            return {"allowed": True, "reason": f"Cost cap unenforceable (fail-open override): {exc}"}
+        logger.error(
+            "Cost cap check failed for %s — denying (fail-closed): %s", agent_id, exc,
+        )
+        return {
+            "allowed": False,
+            "reason": f"Cost cap unenforceable for agent {agent_id} ({type(exc).__name__}: {exc}) — denied fail-closed",
+        }
+
+    if budget["action"] == "block":
+        return {"allowed": False, "reason": f"Budget exceeded for agent {agent_id}: {budget.get('message', '')}"}
+    if budget["action"] == "warn":
+        return {"allowed": True, "reason": f"Budget warning: {budget.get('message', '')}"}
 
     return {"allowed": True, "reason": None}
 
