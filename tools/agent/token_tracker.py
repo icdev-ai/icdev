@@ -352,8 +352,30 @@ def estimate_cost(model_id: str, input_tokens: int, output_tokens: int) -> float
 _budget_config_cache: Optional[Dict] = None
 
 
+class BudgetConfigError(RuntimeError):
+    """The token-budget config exists but could not be read.
+
+    Distinct from "no budget config" (see :func:`_load_budget_config`): a file
+    that is present but corrupt means the operator intended a cap and we cannot
+    tell what it is. Callers must fail closed rather than treat it as
+    unconfigured.
+    """
+
+
 def _load_budget_config() -> Dict:
-    """Load token budget config from llm_config.yaml."""
+    """Load token budget config from llm_config.yaml.
+
+    Returns ``{}`` for the two genuinely-unconfigured cases — no config file,
+    or PyYAML not installed (it is an optional dependency).
+
+    Raises:
+        BudgetConfigError: the file is present but unreadable/unparseable. Prior
+            to exa-policy-06 this was swallowed into ``{}``, which
+            :func:`_get_agent_budget` reads as ``enabled: False`` and
+            :func:`check_budget` reads as ``allow`` — a corrupt config silently
+            removed every spend cap. The failure is not cached, so fixing the
+            file recovers without a restart.
+    """
     global _budget_config_cache
     if _budget_config_cache is not None:
         return _budget_config_cache
@@ -365,14 +387,20 @@ def _load_budget_config() -> Dict:
 
     try:
         import yaml
-
-        with open(config_path, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh) or {}
-        _budget_config_cache = data.get("token_budgets", {})
-        return _budget_config_cache
-    except (ImportError, Exception):
+    except ImportError:
+        # PyYAML is optional; without it there is no config to enforce at all.
         _budget_config_cache = {}
         return _budget_config_cache
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except Exception as exc:
+        logger.error("Token budget config at %s is unreadable: %s", config_path, exc)
+        raise BudgetConfigError(f"cannot read {config_path}: {exc}") from exc
+
+    _budget_config_cache = data.get("token_budgets", {})
+    return _budget_config_cache
 
 
 def _current_month() -> str:
