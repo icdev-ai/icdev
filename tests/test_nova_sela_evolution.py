@@ -7,6 +7,7 @@ Acceptance criteria:
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 import uuid
@@ -52,6 +53,15 @@ CREATE TABLE IF NOT EXISTS agent_improvement_artifacts (
     created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     applied_at       TEXT
 );
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    type TEXT DEFAULT 'event',
+    importance INTEGER DEFAULT 5,
+    created_at TEXT DEFAULT (datetime('now')),
+    source TEXT DEFAULT 'manual',
+    classification TEXT DEFAULT 'CUI'
+);
 """
 
 
@@ -86,8 +96,45 @@ def _past(days: int = 1) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
 
 
-def _seed_traces(db, skill: str, count: int, outcome: str = "failure") -> None:
-    for _ in range(count):
+def _seed_lessons(db, task_ids) -> None:
+    """Seed the lesson_learned rows a mutation's evidence bundle joins against.
+
+    exa-refine-04 made an artifact carry the lessons that motivated it and
+    rejects one that has none, so a fixture that seeds only traces now
+    (correctly) produces a rejected artifact rather than a pending one.
+    """
+    for task_id in task_ids:
+        db.execute(
+            "INSERT INTO memory_entries (content, type, importance, created_at, source) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                json.dumps({
+                    "task_id": task_id,
+                    "task_title": f"Title for {task_id}",
+                    "outcome": "failure",
+                    "pattern": "timeout_quarantine",
+                    "category": "Timeout quarantine",
+                    "failure_count": 2,
+                    "last_failure_reason": "timeout on dispatch",
+                    "transitions_count": 3,
+                    "recurrence_score": 0.4,
+                    "is_systemic": True,
+                    "recommendation": "reduce retries or add timeout handling",
+                    "timestamp": _past(1),
+                }, sort_keys=True),
+                "lesson_learned", 8, _past(1), "auto",
+            ),
+        )
+    db.commit()
+
+
+def _seed_traces(db, skill: str, count: int, outcome: str = "failure",
+                 task_id_prefix: str | None = None) -> list[str]:
+    """Seed traces; returns the task ids so lessons can be attached to them."""
+    task_ids: list[str] = []
+    for i in range(count):
+        task_id = f"{task_id_prefix}-{i}" if task_id_prefix else str(uuid.uuid4())
+        task_ids.append(task_id)
         db.execute(
             """
             INSERT INTO agent_execution_traces
@@ -98,7 +145,7 @@ def _seed_traces(db, skill: str, count: int, outcome: str = "failure") -> None:
             """,
             (
                 str(uuid.uuid4()),
-                str(uuid.uuid4()),
+                task_id,
                 "test_task",
                 skill,
                 outcome,
@@ -110,6 +157,7 @@ def _seed_traces(db, skill: str, count: int, outcome: str = "failure") -> None:
             ),
         )
     db.commit()
+    return task_ids
 
 
 def _count_artifacts(db, skill: str) -> int:
@@ -222,7 +270,9 @@ def test_run_evolution_produces_artifact(conn):
     from tools.genesis.reflexes import evolution
 
     skill = "test_skill_sela"
-    _seed_traces(conn, skill, 10, outcome="failure")
+    task_ids = _seed_traces(conn, skill, 10, outcome="failure", task_id_prefix="sela-task")
+    # exa-refine-04: an artifact must carry the lessons that motivated it.
+    _seed_lessons(conn, task_ids)
 
     with patch("tools.genesis.reflexes.evolution._generate_mutations",
                return_value=_GOOD_MUTATIONS), \
@@ -244,6 +294,52 @@ def test_run_evolution_produces_artifact(conn):
 
     artifact_count = _count_artifacts(conn, skill)
     assert artifact_count >= 1, f"Expected row in agent_improvement_artifacts, got {artifact_count}"
+
+    # ...and it is 'pending' (selectable), carrying its motivating lesson rows.
+    row = conn.execute(
+        "SELECT status, evidence_traces FROM agent_improvement_artifacts "
+        "WHERE skill_used = ?",
+        (skill,),
+    ).fetchone()
+    assert row[0] == "pending"
+    evidence = json.loads(row[1])
+    assert evidence["lesson_count"] >= 1
+    assert evidence["dominant_pattern"] == "timeout_quarantine"
+
+
+def test_run_evolution_rejects_a_mutation_with_no_lesson_evidence(conn):
+    """No lesson_learned rows behind a skill → the mutation never goes 'pending'.
+
+    'pending' is what GEPA selects on, so a non-'pending' status is what keeps an
+    unmotivated refinement away from a human reviewer (exa-refine-04).
+    """
+    from tools.genesis.reflexes import evolution
+
+    skill = "unmotivated_skill"
+    _seed_traces(conn, skill, 10, outcome="failure", task_id_prefix="no-lesson")
+    # deliberately NO _seed_lessons
+
+    with patch("tools.genesis.reflexes.evolution._generate_mutations",
+               return_value=_GOOD_MUTATIONS), \
+         patch("tools.db.storage.get_connection", return_value=conn):
+        result = evolution.run_evolution(config={
+            "trace_window_days": 7,
+            "success_rate_threshold": 0.75,
+            "min_trace_count": 3,
+            "skill_limit": 10,
+            "mutation_count": 4,
+            "artifact_min_score": 0.5,
+            "fitness": {"correctness": 0.5, "procedure": 0.3, "conciseness": 0.2},
+            "mutation_function": "skill_mutation",
+        })
+
+    assert result["artifacts_created"] == 0
+    assert result["artifacts_rejected_no_evidence"] >= 1
+    row = conn.execute(
+        "SELECT status FROM agent_improvement_artifacts WHERE skill_used = ?",
+        (skill,),
+    ).fetchone()
+    assert row[0] != "pending"
 
 
 def test_run_evolution_skips_when_no_mutations(conn):
