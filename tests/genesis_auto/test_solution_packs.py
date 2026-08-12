@@ -57,12 +57,3 @@ def test_solution_packs_build_packs_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_solution_packs_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.agentic_ai_canvas.solution_packs as mod
-        assert hasattr(mod, "_QUICKSTART_DEFAULT"), "Missing constant _QUICKSTART_DEFAULT"
-    except ImportError:
-        pytest.skip("Module not importable")

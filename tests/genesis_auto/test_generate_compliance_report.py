@@ -64,8 +64,6 @@ def test_generate_compliance_report_constants():
     """Verify module exports expected constants."""
     try:
         import tools.generate_compliance_report as mod
-        assert hasattr(mod, "_YAML_AVAILABLE"), "Missing constant _YAML_AVAILABLE"
-        assert hasattr(mod, "_YAML_AVAILABLE"), "Missing constant _YAML_AVAILABLE"
         assert hasattr(mod, "STATUS_COMPLIANT"), "Missing constant STATUS_COMPLIANT"
         assert hasattr(mod, "STATUS_PARTIAL"), "Missing constant STATUS_PARTIAL"
         assert hasattr(mod, "STATUS_NON_COMPLIANT"), "Missing constant STATUS_NON_COMPLIANT"

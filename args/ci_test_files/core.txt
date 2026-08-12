@@ -854,3 +854,19 @@ tests/test_event_bus_security.py
 tests/test_metrics.py
 tests/test_nc_simulation_schema.py
 tests/test_xai_assessor.py
+# tsg-gen-01: the two tests/genesis_auto/ files whose failures were real behaviour
+# the generated tests never learned about, now repaired and asserting that
+# behaviour on purpose.
+#   test_reflexion_agent.py — the exa-refine-04 evidence gate. A refinement with
+#     no lesson_learned rows behind it is written 'rejected_no_evidence', never
+#     'pending'; the generated test still asserted 'pending' and a second one
+#     asserted get_latest_improvement() returned text for it. Both now seed
+#     supporting evidence for the accepted path, and a NEW test pins the
+#     rejection: unsupported proposals stay out of the queue GEPA selects on.
+#   test_pain_extractor.py — main() reports a DB failure as exit 1. The generated
+#     test patched tools.db.storage.get_connection, which the module never looks
+#     at (it binds the name at import), and its tolerate-the-error fallback could
+#     not catch SystemExit anyway. Now asserts the exit code both ways.
+# ~3s combined, SQLite only, LLM calls patched, no network.
+tests/genesis_auto/test_reflexion_agent.py
+tests/genesis_auto/test_pain_extractor.py

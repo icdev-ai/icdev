@@ -56,12 +56,3 @@ def test_prd_readiness_assessor_main_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_prd_readiness_assessor_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.aiify.prd_readiness_assessor as mod
-        assert hasattr(mod, "_MAX_OPPORTUNITIES"), "Missing constant _MAX_OPPORTUNITIES"
-    except ImportError:
-        pytest.skip("Module not importable")

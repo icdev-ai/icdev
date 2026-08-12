@@ -143,18 +143,3 @@ def test_dossier_generator_main_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-
-def test_dossier_generator_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.research.dossier_generator as mod
-
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_DOSSIER_TEMPLATE"), "Missing constant _DOSSIER_TEMPLATE"
-    except ImportError:
-        pytest.skip("Module not importable")

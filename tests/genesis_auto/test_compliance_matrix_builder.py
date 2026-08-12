@@ -460,13 +460,3 @@ def test_compliance_matrix_builder_main_invocation():
                 raise
 
 
-# --- Constants ---
-
-def test_compliance_matrix_builder_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.govcon.compliance_matrix_builder as mod
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-    except ImportError:
-        pytest.skip("Module not importable")

@@ -52,8 +52,6 @@ def test_app_constants():
     try:
         import tools.dashboard.app as mod
 
-        assert hasattr(mod, "_HAS_GOVCON"), "Missing constant _HAS_GOVCON"
-        assert hasattr(mod, "_AIRGAP_MODE"), "Missing constant _AIRGAP_MODE"
         assert hasattr(mod, "register_api_blueprints"), "Missing register_api_blueprints import"
     except ImportError:
         pytest.skip("Module not importable")

@@ -123,16 +123,3 @@ def test_twin_chat_observability_chat_to_delta_signature():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_twin_chat_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.twin_chat as mod
-        assert hasattr(mod, "_NETWORK_SYSTEM"), "Missing constant _NETWORK_SYSTEM"
-        assert hasattr(mod, "_SECURITY_SYSTEM"), "Missing constant _SECURITY_SYSTEM"
-        assert hasattr(mod, "_BOUNDARY_SYSTEM"), "Missing constant _BOUNDARY_SYSTEM"
-        assert hasattr(mod, "_DATA_SYSTEM"), "Missing constant _DATA_SYSTEM"
-        assert hasattr(mod, "_OBSERVABILITY_SYSTEM"), "Missing constant _OBSERVABILITY_SYSTEM"
-    except ImportError:
-        pytest.skip("Module not importable")

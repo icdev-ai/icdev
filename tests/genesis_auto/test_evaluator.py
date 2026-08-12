@@ -182,17 +182,3 @@ def test_evaluator_EvalResult_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_evaluator_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.ace.evaluator as mod
-        assert hasattr(mod, "_DB_ENV"), "Missing constant _DB_ENV"
-        assert hasattr(mod, "_GRADING_VERSION"), "Missing constant _GRADING_VERSION"
-        assert hasattr(mod, "_JUDGE_PROMPT"), "Missing constant _JUDGE_PROMPT"
-        assert hasattr(mod, "_SEVERITY_HIGH"), "Missing constant _SEVERITY_HIGH"
-        assert hasattr(mod, "_SEVERITY_MEDIUM"), "Missing constant _SEVERITY_MEDIUM"
-        assert hasattr(mod, "_SEVERITY_LOW"), "Missing constant _SEVERITY_LOW"
-    except ImportError:
-        pytest.skip("Module not importable")

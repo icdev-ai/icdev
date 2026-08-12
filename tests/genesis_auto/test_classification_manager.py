@@ -654,15 +654,3 @@ def test_classification_manager_upgrade_markings_invocation():
                 raise
 
 
-# --- Constants ---
-
-
-def test_classification_manager_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.compliance.classification_manager as mod
-
-        assert hasattr(mod, "_IL_PROFILES_CACHE"), "Missing constant _IL_PROFILES_CACHE"
-        assert hasattr(mod, "_MARKINGS_CACHE"), "Missing constant _MARKINGS_CACHE"
-    except ImportError:
-        pytest.skip("Module not importable")

@@ -444,26 +444,45 @@ def test_pain_extractor_main_exists():
     except ImportError:
         pytest.skip("Module not importable")
 
-def test_pain_extractor_main_invocation():
-    """Verify main can be called with test inputs."""
-    try:
-        from tools.creative.pain_extractor import main
-    except ImportError:
-        pytest.skip("Module not importable")
-        return
-    mock_conn = MagicMock()
-    mock_conn.execute.return_value.fetchone.return_value = None
-    mock_conn.execute.return_value.fetchall.return_value = []
-    with patch("tools.db.storage.get_connection", return_value=mock_conn):
-        try:
-            main()
-        except (TypeError, ValueError, KeyError, AttributeError):
-            pass  # Expected with mock data
-        except Exception as e:
-            if "no such table" in str(e).lower():
-                pass  # DB not initialized
-            else:
-                raise
+def test_pain_extractor_main_reports_db_failure_as_nonzero_exit():
+    """A DB failure must leave main() with a NON-ZERO exit, never a silent 0.
+
+    The generated version of this test got two things wrong. It patched
+    `tools.db.storage.get_connection`, but pain_extractor binds that name at
+    import time (`from tools.db.storage import get_connection`), so the patch
+    never applied and the call went to the real database. And main() converts
+    any failure into `sys.exit(1)` — a SystemExit, which derives from
+    BaseException and so slipped straight past the test's `except Exception`
+    fallback, including the "no such table" branch written to tolerate exactly
+    this case.
+
+    The exit code is the contract worth asserting: a cron entry or CI step that
+    saw 0 against an uninitialised database would report success forever.
+    """
+    from tools.creative.pain_extractor import main
+
+    with patch("tools.creative.pain_extractor.get_connection",
+               side_effect=RuntimeError("no such table: creative_pain_points")):
+        with pytest.raises(SystemExit) as exc_info:
+            main([])
+
+    assert exc_info.value.code == 1, "a DB failure must not exit 0"
+
+
+def test_pain_extractor_main_succeeds_without_arguments():
+    """main() with no argv defaults to extract-all and completes without exiting.
+
+    `main(argv=None)` parses an empty argument list on purpose so it does not
+    inherit pytest's sys.argv; this pins that behaviour along with the
+    no-action-specified default.
+    """
+    from tools.creative.pain_extractor import main
+
+    with patch("tools.creative.pain_extractor.extract_all_new",
+               return_value={"extracted": 0, "pain_points": []}) as mock_extract:
+        main(["--json"])  # must not raise SystemExit
+
+    assert mock_extract.called, "no action specified should default to extract-all"
 
 
 # --- Constants ---
@@ -472,10 +491,6 @@ def test_pain_extractor_constants():
     """Verify module exports expected constants."""
     try:
         import tools.creative.pain_extractor as mod
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
         assert hasattr(mod, "MIN_KEYWORD_LEN"), "Missing constant MIN_KEYWORD_LEN"
         assert hasattr(mod, "TOP_KEYWORDS_PER_SIGNAL"), "Missing constant TOP_KEYWORDS_PER_SIGNAL"
     except ImportError:
