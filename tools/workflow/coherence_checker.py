@@ -7836,11 +7836,118 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
     )
 
 
+_BOOTSTRAP_PARITY_PATH = PROJECT_ROOT / "args" / "bootstrap_parity.yaml"
+
+
+def _load_bootstrap_parity() -> List[Dict[str, str]]:
+    """Read the must-match pairs from args/bootstrap_parity.yaml.
+
+    An unreadable or absent declaration yields an EMPTY pair list, so the check
+    reports ``warn`` rather than a silent ``pass``. A parity gate that vanishes
+    with its config file is worse than no gate: it looks green.
+    """
+    if not _HAS_YAML or not _BOOTSTRAP_PARITY_PATH.exists():
+        return []
+    try:
+        data = yaml.safe_load(_BOOTSTRAP_PARITY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — a malformed gate must not crash the run
+        return []
+    pairs = data.get("must_match") or []
+    return [p for p in pairs if isinstance(p, dict) and p.get("target") and p.get("source")]
+
+
+def check_bootstrap_parity() -> CoherenceCheck:
+    """`icdev init` must scaffold the instruction files this repo actually runs on.
+
+    ``icdev init`` copies ``icdev/data/claude_bootstrap/<x>``, NOT the repo file
+    of the same name (BOOTSTRAP_MAP, tools/cli/init.py). Editing one without the
+    other hands a scaffolded project different rules than the project develops
+    against — the exact thing
+    ``test_packaged_claude_md_is_not_a_stripped_template`` was written to stop.
+
+    That test only covers CLAUDE.md, runs in CI after the push, and fails with a
+    raw byte-compare of two 40 KB blobs whose offset markers read like CRLF
+    drift. This check runs locally, covers every pair declared in
+    args/bootstrap_parity.yaml, and names the file and the fix.
+    """
+    pairs = _load_bootstrap_parity()
+    if not pairs:
+        return CoherenceCheck(
+            check_id="bootstrap_parity",
+            check_name="Bootstrap Parity",
+            status="warn",
+            expected=["args/bootstrap_parity.yaml declares the must-match pairs"],
+            actual=["declaration missing or unreadable"],
+            missing=[],
+            extra=[],
+            message=(
+                "args/bootstrap_parity.yaml is absent or unparseable, so no "
+                "bootstrap pair was checked. `icdev init` ships packaged copies "
+                "of CLAUDE.md and AGENTS.md; without this declaration nothing "
+                "notices when they drift from the repo files."
+            ),
+        )
+
+    drift: List[str] = []
+    missing: List[str] = []
+    checked = 0
+    for pair in pairs:
+        target = PROJECT_ROOT / str(pair["target"])
+        source = PROJECT_ROOT / "icdev" / str(pair["source"])
+        if not target.is_file() or not source.is_file():
+            absent = target if not target.is_file() else source
+            missing.append(f"{pair['target']}: {absent.relative_to(PROJECT_ROOT)} not found")
+            continue
+        checked += 1
+        if target.read_bytes() != source.read_bytes():
+            drift.append(
+                f"{pair['target']} != icdev/{pair['source']} "
+                f"({target.stat().st_size} vs {source.stat().st_size} bytes)"
+            )
+
+    if drift:
+        return CoherenceCheck(
+            check_id="bootstrap_parity",
+            check_name="Bootstrap Parity",
+            status="fail",
+            expected=[f"{len(pairs)} bootstrap pair(s) byte-identical"],
+            actual=[f"{len(drift)} drifted"],
+            missing=missing,
+            extra=drift,
+            message=(
+                f"{len(drift)} packaged bootstrap file(s) differ from the repo "
+                f"file they scaffold, so `icdev init` would hand a new project "
+                f"different instructions than this repo runs on (that is #960). "
+                "Fix: `python tools/installer/prebuild_bootstrap.py` — it "
+                "regenerates the whole bootstrap from the repo, which is the "
+                "sanctioned path. Do NOT hand-copy a single file: the other "
+                "packaged files drift too and a targeted copy hides that."
+            ),
+        )
+
+    note = f"{checked} bootstrap pair(s) byte-identical"
+    return CoherenceCheck(
+        check_id="bootstrap_parity",
+        check_name="Bootstrap Parity",
+        status="warn" if missing else "pass",
+        expected=[f"{len(pairs)} bootstrap pair(s) byte-identical"],
+        actual=[note],
+        missing=missing,
+        extra=[],
+        message=(
+            f"{note}; {len(missing)} pair(s) unresolved: {'; '.join(missing)}"
+            if missing
+            else f"`icdev init` scaffolds what this repo runs on — {note}."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
 CHECK_REGISTRY = {
+    "bootstrap_parity": check_bootstrap_parity,
     "schema_code": check_schema_code,
     "config_code": check_config_code,
     "signature_call": check_signature_call,

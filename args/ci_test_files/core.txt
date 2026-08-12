@@ -135,6 +135,13 @@ tests/test_context_budget.py
 # prebuild run. ~13s, pure Python, no DB/LLM/network.
 tests/test_init_goals_and_selective.py
 
+# test_bootstrap_parity.py is the generalisation of the line above: the same
+# drift hit AGENTS.md with nothing watching it, shipping a scaffolded project a
+# guardrail doc missing the mandatory project-cards section. Declares the pairs
+# in args/bootstrap_parity.yaml and fails naming prebuild_bootstrap as the fix,
+# instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
+tests/test_bootstrap_parity.py
+
 tests/test_coherence_swallowed_persistence.py
 tests/test_analyzer_contract.py
 tests/test_agent_approval_gate.py
