@@ -55,6 +55,47 @@ def _find_skill_file(skill_used: str) -> Path | None:
     return None
 
 
+# exa-refine-02: this was an f-string literal inside _generate_patch. The text is
+# unchanged; the interpolations became named placeholders so the template can be
+# versioned in the prompt registry under PATCH_PROMPT_NAME. The two float format
+# specs (:.2f) are applied by _build_patch_prompt before substitution, because a
+# stored template cannot carry Python format specs.
+PATCH_PROMPT_NAME = "call_site/gepa_skill_patch"
+PATCH_PROMPT_TEMPLATE = (
+    "You are a skill optimizer for the ICDEV AI platform.\n\n"
+    "SKILL FILE: {skill_name}\n\n"
+    "CURRENT SKILL CONTENT:\n{current_content}\n\n"
+    "IMPROVEMENT SUGGESTION (from {n_traces} execution traces, "
+    "composite_score={composite_score} vs baseline {baseline_score}):\n"
+    "{improvement_text}\n\n"
+    "Generate the updated skill file content. Rules:\n"
+    "- Keep ALL YAML frontmatter unchanged (everything between --- markers)\n"
+    "- Make targeted improvements to steps/instructions based on the suggestion\n"
+    "- Do not remove existing steps unless they are clearly incorrect\n"
+    "- Do not add padding or unnecessary content\n"
+    "- Keep total length within 20% of the original\n\n"
+    "Return ONLY the updated skill file content. No explanation, no markdown fences."
+)
+
+
+def _build_patch_prompt(current_content: str, improvement_text: str,
+                        skill_name: str, composite_score: float,
+                        baseline_score: float, n_traces: int) -> str:
+    """Render the skill-patch prompt: active registry version, else the module default."""
+    from tools.llm.prompt_registry import render_prompt
+
+    return render_prompt(
+        PATCH_PROMPT_NAME,
+        PATCH_PROMPT_TEMPLATE,
+        skill_name=skill_name,
+        current_content=current_content,
+        n_traces=n_traces,
+        composite_score=f"{composite_score:.2f}",
+        baseline_score=f"{baseline_score:.2f}",
+        improvement_text=improvement_text,
+    )
+
+
 def _generate_patch(current_content: str, improvement_text: str,
                     skill_name: str, composite_score: float,
                     baseline_score: float, n_traces: int) -> str | None:
@@ -63,20 +104,9 @@ def _generate_patch(current_content: str, improvement_text: str,
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
 
-        prompt = (
-            f"You are a skill optimizer for the ICDEV AI platform.\n\n"
-            f"SKILL FILE: {skill_name}\n\n"
-            f"CURRENT SKILL CONTENT:\n{current_content}\n\n"
-            f"IMPROVEMENT SUGGESTION (from {n_traces} execution traces, "
-            f"composite_score={composite_score:.2f} vs baseline {baseline_score:.2f}):\n"
-            f"{improvement_text}\n\n"
-            f"Generate the updated skill file content. Rules:\n"
-            f"- Keep ALL YAML frontmatter unchanged (everything between --- markers)\n"
-            f"- Make targeted improvements to steps/instructions based on the suggestion\n"
-            f"- Do not remove existing steps unless they are clearly incorrect\n"
-            f"- Do not add padding or unnecessary content\n"
-            f"- Keep total length within 20% of the original\n\n"
-            f"Return ONLY the updated skill file content. No explanation, no markdown fences."
+        prompt = _build_patch_prompt(
+            current_content, improvement_text, skill_name,
+            composite_score, baseline_score, n_traces,
         )
 
         req = LLMRequest(
