@@ -80,6 +80,44 @@ When the body exceeds this limit, split it:
 
 ---
 
+## Capability Scoping — `paths:` and `tools:` (optional)
+
+A skill card may declare the filesystem region it acts **on** and the tool modules it acts **with**. Both fields are optional; omitting them leaves the skill's behaviour exactly as it is today. Declaring one can only ever *narrow* what the skill may do — never widen it.
+
+```markdown
+---
+name: icdev-example
+description: "..."
+allowed-tools: Bash, Read, Grep
+paths:
+  - tools/security/
+  - docs/security/
+tools:
+  - tools/security/
+  - tools/testing/health_check.py
+---
+```
+
+Both YAML list styles work, as does a comma-separated string (`paths: a/, b/`).
+
+| Field | Constrains | Matched against |
+|-------|-----------|-----------------|
+| `paths:` | What the skill acts **on** | Every path-like *operand* of a documented command, after `$ARGUMENTS` substitution. Repo-relative or absolute; `../` traversal out of a declared root is a violation. The command's own script path is exempt — otherwise every scoped skill would have to declare `tools/`, which scopes nothing. |
+| `tools:` | What the skill acts **with** | The tool module a command executes — the script path, the `-m` module, or any `tools.x.y` import inside `python -c`. Accepts `tools/db/`, `tools/db/storage.py`, `tools.db`, or a glob. |
+
+`tools:` is **not** `allowed-tools:`. `allowed-tools:` remains the Claude Code agent tool list (Bash, Read, Edit, …) and is unchanged.
+
+**Enforcement is a hard failure, not a warning.** `tools/skills/invoke.py` checks scope at the same seam as its command-prefix allowlist, *before* anything is executed. A command that reaches outside the declaration is blocked, the rest of the invocation is abandoned (even under `--keep-going`), and the process exits non-zero. Because the check runs after `$ARGUMENTS` substitution, a caller cannot widen a skill's scope through its arguments. Under `tools:` scoping a command whose target cannot be resolved is also blocked — it cannot be shown to be inside the declaration.
+
+`--dry-run` performs the same check without executing, so it doubles as a static scope audit:
+
+```bash
+python tools/skills/invoke.py --dry-run icdev-secure --json   # exits 1 on a scope violation
+python tools/skills/invoke.py --show icdev-secure             # prints the declared scope
+```
+
+---
+
 ## Deterministic Operations
 
 If a skill requires deterministic operations (file transforms, DB queries, report generation), place the logic in `scripts/` as standalone Python scripts rather than embedding shell commands inline. This makes the skill testable and keeps SKILL.md concise.
