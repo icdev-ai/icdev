@@ -102,6 +102,48 @@ def client(tmp_path, monkeypatch):
     return app.test_client()
 
 
+@pytest.fixture
+def authorized_client(tmp_path, monkeypatch):
+    """Like ``client``, but past the admin/pm role gate on the write endpoint.
+
+    ``nav-sec-06`` restricted POST /api/foundry/run to admin/pm because it kicks
+    off a harvest→synth→score→seed cycle; the reads stayed open. That is why the
+    GET tests never noticed — only the two POST tests started returning 401
+    while still asserting 200/503.
+
+    ``require_role`` is applied as a DECORATOR when the blueprint is built, so
+    the stub must be installed on the blueprint module BEFORE
+    ``create_foundry_blueprint()`` runs. Patching it afterwards leaves the real
+    decorator already wrapped around the view and changes nothing.
+
+    Deliberately a separate fixture rather than a change to ``client``: the
+    unauthenticated client is what proves the gate still bites, in
+    ``test_api_run_requires_a_privileged_role``.
+    """
+    path = str(tmp_path / "foundry_bp_auth.db")
+    _seed(path)
+
+    monkeypatch.setenv("ICDEV_FOUNDRY_ENABLED", "1")
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+
+    storage = importlib.import_module("tools.db.storage")
+    monkeypatch.setattr(storage, "get_connection", lambda *a, **k: _new_conn(path))
+
+    init_db_mod = importlib.import_module("tools.foundry.db.init_db")
+    monkeypatch.setattr(init_db_mod, "init_db", lambda *a, **k: True)
+
+    bp_mod = importlib.import_module("tools.foundry.blueprint")
+    monkeypatch.setattr(bp_mod, "require_role", lambda *roles: (lambda fn: fn))
+
+    bp = bp_mod.create_foundry_blueprint()
+    assert bp is not None
+
+    app = Flask(__name__)
+    app.register_blueprint(bp)
+    app.config.update(TESTING=True)
+    return app.test_client()
+
+
 # --------------------------------------------------------------------------- #
 # Factory / feature flag
 # --------------------------------------------------------------------------- #
@@ -194,7 +236,21 @@ def test_api_concept_detail_miss(client):
 # --------------------------------------------------------------------------- #
 # JSON API — run one cycle (engine delegation)
 # --------------------------------------------------------------------------- #
-def test_api_run_delegates_to_engine(client, monkeypatch):
+def test_api_run_requires_a_privileged_role(client):
+    """nav-sec-06: the compute trigger is admin/pm only.
+
+    Uses the UNAUTHENTICATED client on purpose. Without this, the two tests
+    below could be made to pass by stubbing the gate everywhere, and the
+    restriction would be free to regress unnoticed.
+    """
+    resp = client.post("/api/foundry/run", json={"dry_run": True})
+    assert resp.status_code == 401, (
+        "POST /api/foundry/run must stay gated on admin/pm — it starts a "
+        f"harvest→synth→score→seed cycle. Got {resp.status_code}."
+    )
+
+
+def test_api_run_delegates_to_engine(authorized_client, monkeypatch):
     captured = {}
 
     def fake_run_cycle(*, dry_run=False, **kwargs):
@@ -204,14 +260,14 @@ def test_api_run_delegates_to_engine(client, monkeypatch):
     engine = importlib.import_module("tools.foundry.engine")
     monkeypatch.setattr(engine, "run_cycle", fake_run_cycle)
 
-    resp = client.post("/api/foundry/run", json={"dry_run": True})
+    resp = authorized_client.post("/api/foundry/run", json={"dry_run": True})
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["run_id"] == 99
     assert captured["dry_run"] is True
 
 
-def test_api_run_503_when_engine_absent(client, monkeypatch):
+def test_api_run_503_when_engine_absent(authorized_client, monkeypatch):
     import builtins
 
     real_import = builtins.__import__
@@ -222,7 +278,7 @@ def test_api_run_503_when_engine_absent(client, monkeypatch):
         return real_import(name, *a, **k)
 
     monkeypatch.setattr(builtins, "__import__", blocking_import)
-    resp = client.post("/api/foundry/run", json={})
+    resp = authorized_client.post("/api/foundry/run", json={})
     assert resp.status_code == 503
 
 
