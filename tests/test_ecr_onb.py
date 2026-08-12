@@ -32,7 +32,15 @@ def _make_db(tmp_path):
 
 
 def _make_cursor_wrapper(conn):
-    """Return a context-manager that mimics get_connection()."""
+    """Return a context-manager that mimics get_canvas_connection().
+
+    tools/auth/onboarding.py uses get_canvas_connection, not get_connection:
+    user_preferences is a canvas table with no classification/tenant_id
+    columns, so the global RLS predicate get_connection attaches would raise
+    UndefinedColumn on every query (CLAUDE.md canvas rule). These tests kept
+    patching the old name and every one of them errored at patch time with
+    AttributeError before reaching an assertion.
+    """
     class _CM:
         def __enter__(self):
             return conn
@@ -53,7 +61,7 @@ def test_get_onboarding_state_defaults(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         import tools.auth.onboarding as mod
         state = mod.get_onboarding_state("user-unknown")
 
@@ -72,7 +80,7 @@ def test_state_persists(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         import tools.auth.onboarding as mod
 
         uid = f"user-{uuid.uuid4()}"
@@ -90,7 +98,7 @@ def test_update_onboarding_state_merges(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         import tools.auth.onboarding as mod
 
         uid = f"user-{uuid.uuid4()}"
@@ -109,7 +117,7 @@ def test_update_ignores_unknown_keys(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         import tools.auth.onboarding as mod
 
         uid = f"user-{uuid.uuid4()}"
@@ -124,7 +132,7 @@ def test_mark_onboarding_complete(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         import tools.auth.onboarding as mod
 
         uid = f"user-{uuid.uuid4()}"
@@ -140,7 +148,7 @@ def test_completed_user_flag(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         import tools.auth.onboarding as mod
 
         uid = f"user-{uuid.uuid4()}"
@@ -156,7 +164,7 @@ def test_patch_updates_individual_fields(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         import tools.auth.onboarding as mod
 
         uid = f"user-{uuid.uuid4()}"
@@ -188,7 +196,7 @@ def flask_app(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         yield app, conn
 
     conn.close()
@@ -231,7 +239,7 @@ def test_route_patch_persists_for_get(tmp_path):
     conn = _make_db(tmp_path)
     cm = _make_cursor_wrapper(conn)
 
-    with patch("tools.auth.onboarding.get_connection", return_value=cm):
+    with patch("tools.auth.onboarding.get_canvas_connection", return_value=cm):
         with app.test_client() as client:
             with client.session_transaction() as sess:
                 sess["user_id"] = "route-test-user"
