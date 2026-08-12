@@ -2419,6 +2419,18 @@ python tools/audit/audit_logger.py --event-type "code.commit" --actor "builder-a
 python tools/audit/audit_query.py --project "proj-123" --format json
 python tools/audit/decision_recorder.py --project-id "proj-123" --decision "Use PostgreSQL" --rationale "RDS requirement" --actor "architect-agent"
 
+# Audit hash-chain integrity sweep (exa-audit-04) — whole table, not one row at a time.
+# Buckets every row: verified / pre-cutover (unverifiable, NOT tampered) /
+# unchained (post-cutover, writer bypassed) / BROKEN (the tamper signal).
+python tools/audit/chain_sweep.py                      # human-readable summary
+python tools/audit/chain_sweep.py --json               # full report incl. broken samples + links
+python tools/audit/chain_sweep.py --gate               # exit 1 if any link is broken
+python tools/audit/chain_sweep.py --verify-signatures  # also verify each signature (slower)
+python tools/audit/chain_sweep.py --db-path /path/to/evidence.db   # sweep an evidence copy
+# Same data on the dashboard: /provenance -> "Audit Chain Integrity",
+# API: GET /api/govchain-provenance/chain-health
+# Scheduled: rides the genesis `audit` reflex (args/genesis_config.yaml -> reflexes.audit.checks)
+
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server
