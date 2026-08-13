@@ -892,3 +892,11 @@ tests/genesis_auto/test_pain_extractor.py
 # which is the declared-but-unconsumed failure mode it exists to prevent.
 # ~1s, no DB, no network, no LLM.
 tests/test_genesis_test_reflex_policy.py
+
+# tsg-policy-01 -- the test-gating RATCHET's own regression pin. It asserts the
+# live tree has zero test files gated by nothing, that a new ungated file goes
+# RED naming the file, that the backlog census only shrinks, and that the census
+# step is actually wired into this job. A gate whose own test is ungated is the
+# joke this task exists to stop, so it goes here in the same commit that adds it
+# -- which is also the policy it enforces, demonstrated.
+tests/ci/test_test_gating_census.py

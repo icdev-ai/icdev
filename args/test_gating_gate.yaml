@@ -1,0 +1,93 @@
+# CUI // SP-CTI
+# CI Test Gating Gate (tsg-policy-01)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# A test file that CI never runs has never gated a merge. It can be wrong from
+# its first commit and nothing goes red — which is how tsg-dead-01 sat undetected
+# for six weeks while `remediation_simulator._run_nqe_layer` was dead, and how 87
+# files accumulated 531 failure lines that no pipeline ever saw.
+#
+# Measured 2026-08-12: 2,149 collectible test modules under tests/, 187 in the CI
+# allowlists, 134 excluded by the rules below, 1,828 ungated.
+#
+# The policy is a RATCHET, not a sweep:
+#
+#   1. A test file is gated by ADDING it to args/ci_test_files/core.txt in the
+#      SAME PR that makes it pass. That is the only sanctioned way to widen the
+#      allowlist (what #1526 and #1533 did).
+#   2. The 1,828 pre-existing ungated files are grandfathered by NAME in
+#      args/ci_test_backlog.txt. They are debt, enumerated so it is countable.
+#   3. A test file that is NEW — in neither allowlist, no exclusion below, and not
+#      in the backlog census — FAILS the Test job. The gap cannot silently regrow.
+#
+# Bulk-widening the allowlist is explicitly NOT the policy. Those 1,828 files are
+# ungated AND an unknown number are red; adding them wholesale turns main red, the
+# gate gets disabled, and that is a worse outcome than the debt.
+#
+# Full rationale: docs/ci/test-gating-policy.md
+#
+# Consumed by: tools/ci/gated_test_list.py :: census
+# Gate source:  tools/ci/gated_test_list.py --check-coverage  (the `test` job)
+
+# --------------------------------------------------------------------------- #
+# SCOPE — which files the census considers a "test file"
+# --------------------------------------------------------------------------- #
+# Deliberately identical to what pytest itself collects under `testpaths`
+# (pyproject.toml -> [tool.pytest.ini_options] testpaths = ["tests"], default
+# python_files = test_*.py *_test.py). A census that scoped differently from the
+# runner would report coverage over a set nobody runs.
+scope:
+  roots:
+    - tests/
+  patterns:
+    - "test_*.py"
+    - "*_test.py"
+
+# --------------------------------------------------------------------------- #
+# EXCLUSIONS — structurally not gateable, and saying so out loud
+# --------------------------------------------------------------------------- #
+# An exclusion is NOT a backlog entry. The backlog says "should be gated, is not
+# yet". An exclusion says "gating this file would not buy a signal". Every entry
+# carries the reason, and `--check-coverage` reports an exclusion that matches
+# nothing in the tree as STALE — a pattern that has quietly stopped matching is
+# how a gate shrinks without anyone deciding to shrink it.
+exclusions:
+  - pattern: "tests/e2e_selenium/**"
+    reason: >-
+      Requires a live dashboard at ICDEV_DASHBOARD_URL and a Selenium driver.
+      tests/e2e_selenium/conftest.py has a session-scoped autouse fixture that
+      SKIPS the whole module when the port does not answer, so on a CI runner
+      every one of these reports green by skipping. Adding them would grow the
+      allowlist by 28 entries and buy exactly zero signal — file existence
+      counted as evidence, which is the failure mode this project exists to
+      close. They are run deliberately by tools/testing/e2e_runner.py against a
+      started server, not by the merge gate.
+
+  - pattern: "tests/genesis_auto/**"
+    reason: >-
+      Generated, not hand-written: the file SET is controlled by the generator,
+      not by a human opening a PR, so a per-file human allowlist is the wrong
+      instrument. The right gate for generated tests is a gate on the GENERATOR
+      — one that fails when it emits a test asserting a private constant that
+      has drifted, instead of emitting 106 files whose ImportError guard catches
+      ImportError but not AttributeError.
+    review: tsg-gen-02
+
+# --------------------------------------------------------------------------- #
+# BACKLOG — the grandfathered census
+# --------------------------------------------------------------------------- #
+# The file is enumerated rather than counted on purpose. A bare count can be held
+# constant while the set churns: fix one file, add one ungated file, count
+# unchanged, gate green, gap silently regrown. That is precisely the regression
+# this task exists to prevent, so identity is what gets tracked.
+backlog_file: args/ci_test_backlog.txt
+
+# Ceiling on the EFFECTIVE backlog (census entries still ungated). It equals the
+# count at adoption — no headroom, deliberately, because headroom is room for the
+# gap to regrow unobserved.
+#
+# THIS NUMBER MAY ONLY GO DOWN. Lower it when you gate files; never raise it to
+# get a commit through. Raising it is the visible, reviewable act of deciding to
+# take on more untested-in-CI surface, and it should be argued for in the PR.
+backlog_max: 1828

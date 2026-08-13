@@ -5660,6 +5660,16 @@ python tools/git/ci_test_list_merge_rehearsal.py             # inline vs externa
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
 
+# CI test gating ratchet (tsg-policy-01) — the gap cannot silently REGROW.
+# --check above proves the allowlist did not shrink; this proves no test file is
+# gated by nothing. Every collectible module under tests/ must be in an allowlist,
+# in a documented exclusion (args/test_gating_gate.yaml), or in the grandfathered
+# census (args/ci_test_backlog.txt, shrink-only). Anything else fails the `test` job.
+# Policy: docs/ci/test-gating-policy.md
+python tools/ci/gated_test_list.py --check-coverage          # exit 1 on an ungated new test file
+python tools/ci/gated_test_list.py --check-coverage --json   # total/gated/excluded/backlog/unlisted
+python tools/ci/gated_test_list.py --prune-backlog           # drop census lines now gated or gone
+
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
 # all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored
