@@ -156,6 +156,14 @@ tests/test_bootstrap_hook_payload.py
 # minutes with two of three slots free. <2s, fakes the connection, no DB.
 tests/test_scheduled_dispatch_reclaim.py
 
+# test_kanban_gate_sentinel_seeding.py arrived with kax-exec-04 (#1598) and was
+# gated by nothing, which turned main red on the census. It pins that create_tasks
+# refuses WORK carrying a '-gate-' sentinel id while still accepting a genuine
+# gate — the bug that made tsg-gate-01 permanently undispatchable while the board
+# idled with free slots. Ungated it could regress in silence, which is the exact
+# shape it exists to prevent. 46 tests, ~3s, no DB/network.
+tests/test_kanban_gate_sentinel_seeding.py
+
 # test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
 # objects, so a fix landed in one while the other runs is only half live and
 # the stale half fails SILENTLY. #1542 shipped that way and two tasks were
