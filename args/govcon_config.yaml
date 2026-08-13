@@ -267,11 +267,16 @@ cpmp:
     terminated: [closed]
 
   # Deliverable status transitions (state machine)
+  # Every pre-delivery state must list 'overdue': compute_overdue_deliverables()
+  # drives that transition, and a state missing it is one transition_deliverable()
+  # would reject as invalid. Delivered states (submitted onward) deliberately do
+  # NOT list it — the contractor met the date and the artifact is in the
+  # government's review queue. Pinned by tests/test_govcon_overdue_deliverable_marking.py.
   deliverable_transitions:
-    not_started: [in_progress]
+    not_started: [in_progress, overdue]
     in_progress: [draft_complete, overdue]
-    draft_complete: [internal_review]
-    internal_review: [submitted, in_progress]
+    draft_complete: [internal_review, overdue]
+    internal_review: [submitted, in_progress, overdue]
     submitted: [government_review]
     government_review: [accepted, rejected]
     accepted: []

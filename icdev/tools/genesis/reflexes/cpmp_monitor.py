@@ -111,6 +111,7 @@ def run(trigger_data=None, context=None):
         "cpars_alerts": 0,
         "subcon_alerts": 0,
         "cdrl_generated": 0,
+        "deliverables_marked_overdue": 0,
         "errors": [],
     }
 
@@ -297,8 +298,25 @@ def run(trigger_data=None, context=None):
             except Exception as e:
                 results["errors"].append(f"Subcon scan {cnum}: {e}")
 
-        # ── Pass 4: Deliverable 14-Day Auto-Generation ─────────────────
+        # ── Pass 4: Deliverable State Maintenance + 14-Day Auto-Generation ──
         if pass_type in ("full", "deliverables"):
+            # Mark past-due CDRLs 'overdue' and refresh days_overdue. This is
+            # the consumer compute_overdue_deliverables() never had: it was
+            # reachable only through its own --compute-overdue CLI flag, which
+            # no scheduler, route or goal invokes, so on 2026-08-13 all 26
+            # past-due deliverables on the board were still not_started or
+            # in_progress with days_overdue = 0. Cards kept reporting "N CDRL(s)
+            # past due" the whole time because pmo_ai_advisor counts by date
+            # rather than by status — the finding was visible, the state it
+            # describes was never written, and negative_event_tracker's
+            # delinquent-delivery arm (days_overdue > 0) could never fire.
+            try:
+                from tools.govcon.contract_manager import compute_overdue_deliverables
+                od = compute_overdue_deliverables(cid)
+                results["deliverables_marked_overdue"] += od.get("overdue_count", 0)
+            except Exception as e:
+                results["errors"].append(f"Overdue marking {cnum}: {e}")
+
             try:
                 from tools.govcon.cdrl_generator import generate_all_due
                 gen_result = generate_all_due(cid, days_ahead=14)

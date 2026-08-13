@@ -979,3 +979,14 @@ tests/test_cpmp_update_subcontractor_requires_name.py
 # which runs on SQLite where a bool IS an int. Asserts on the params handed to
 # execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
 tests/test_cpmp_subcontractor_flag_coercion.py
+tests/test_ndc_graph_json_type_guard.py
+
+# Overdue-CDRL marking. compute_overdue_deliverables() is the only writer of
+# cpmp_deliverables.status='overdue' and days_overdue, and it had no caller but
+# its own --compute-overdue CLI flag: on 2026-08-13 the live board held 26
+# past-due deliverables, none marked, all with days_overdue=0, while cpmp_monitor
+# kept filing "N CDRL(s) past due" cards off date arithmetic. Gated because the
+# regression is silent by construction -- the board looks correct while
+# negative_event_tracker's delinquent-delivery arm (days_overdue > 0) can never
+# fire. New file, passes (21 tests), 9 of which fail against the old code.
+tests/test_govcon_overdue_deliverable_marking.py
