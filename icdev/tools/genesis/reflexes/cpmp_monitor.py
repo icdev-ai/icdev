@@ -1,16 +1,18 @@
 # CUI // SP-CTI
 """Genesis Reflex: CPMP Monitor — proactive contract health surveillance.
 
-Runs every 3 hours via Genesis daemon. One state refresh, then four passes:
-  0. Overdue Sweep   — compute_overdue_deliverables() → maintain status/days_overdue
+Runs every 3 hours via Genesis daemon. One state pass, then four detection passes:
+  0. Overdue Sweep   — compute_overdue_deliverables() → the only thing that ever
+                       moves a CDRL to status 'overdue' and fills days_overdue
   1. PMO AI Issues   — auto_detect_issues() → kanban cards for critical/high findings
   2. CPARS Trajectory — predicted score declining toward Marginal → CAT2 alert
   3. Subcontractor Noncompliance — detect_noncompliance() → kanban high-priority
   4. Deliverable Auto-Generation — generate CDRLs due in 14 days
 
 Pass type controlled by trigger_data['pass_type']:
-  'full' (default) — all four passes
-  'deliverables'   — only deliverable auto-generation pass (lightweight, every 3h)
+  'full' (default) — all passes
+  'deliverables'   — only the overdue sweep + deliverable auto-generation
+                     (lightweight, every 3h)
 """
 
 import hashlib
@@ -158,8 +160,58 @@ def run(trigger_data=None, context=None):
         "cpars_alerts": 0,
         "subcon_alerts": 0,
         "cdrl_generated": 0,
+        "deliverables_marked_overdue": 0,
         "errors": [],
     }
+
+    # ── Pass 0: drive the overdue state machine ───────────────────────
+    #
+    # contract_manager.compute_overdue_deliverables() is what moves a CDRL to
+    # status 'overdue' and fills days_overdue. Until now NOTHING called it
+    # outside its own argparse block, so on the live board no deliverable had
+    # ever reached that state and days_overdue was 0 on every row — including
+    # rows 44 days past due.
+    #
+    # That is not cosmetic, because 'overdue' is the ONLY thing four separate
+    # consumers look at, and all four therefore read a permanent zero:
+    #
+    #   contract_manager.get_contract()      -> overdue_count on the contract page
+    #   portfolio_manager                    -> per-contract count AND the
+    #                                           portfolio-wide overdue list
+    #   cpars_predictor                      -> overdue count feeds the predicted
+    #                                           CPARS score, so the predictor is
+    #                                           blind to schedule slip
+    #   negative_event_tracker               -> gated on days_overdue > 0, so a
+    #                                           late CDRL has never once been
+    #                                           recorded as a negative event
+    #
+    # Meanwhile pmo_ai_advisor derives overdue LIVE from due_date, which is why
+    # this reflex files a high-severity "N CDRL(s) are past due" card while the
+    # contract page next to it says 0 overdue. Same table, two definitions, and
+    # only one of them had anything driving it.
+    #
+    # Runs before the contract loop and unscoped: one query covers deliverables
+    # on non-active contracts too (the loop only walks active ones), and one
+    # audit row per cycle instead of one per contract. Guarded, because a sweep
+    # that raises must not take the surveillance passes below down with it.
+    # MERGE NOTE: main fixed this same defect independently (#1618) with a second
+    # sweep further down, so merging the two branches textually produced TWO
+    # calls — git saw no conflict, and only the count assertions here caught it.
+    # Kept as ONE call at this position because the tests pin three things the
+    # other placement cannot satisfy: it must run on the 'deliverables' pass as
+    # well as 'full', it must precede the issue-detection pass, and it must be
+    # unscoped. Both result-key sets are reported so neither side's consumers
+    # break — `deliverables_marked_overdue` and main's `overdue_marked` /
+    # `overdue_refreshed` describe the same sweep.
+    if pass_type in ("full", "deliverables"):
+        try:
+            from tools.govcon.contract_manager import compute_overdue_deliverables
+            swept = compute_overdue_deliverables()
+            results["deliverables_marked_overdue"] = swept.get("overdue_count", 0)
+            results["overdue_marked"] = swept.get("overdue_count", 0)
+            results["overdue_refreshed"] = swept.get("days_refreshed", 0)
+        except Exception as e:
+            results["errors"].append(f"Overdue sweep: {e}")
 
     try:
         from tools.db.storage import get_connection
@@ -175,29 +227,12 @@ def run(trigger_data=None, context=None):
 
     results["contracts_scanned"] = len(active)
 
-    # ── Pass 0: refresh the overdue state the other passes are read from ──
-    #
-    # compute_overdue_deliverables() is the only writer of
-    # cpmp_deliverables.status='overdue' and days_overdue, and until this call
-    # it had no caller but its own CLI flag. Contract health, the CPARS
-    # schedule dimension, the portfolio rollup and negative_event_tracker all
-    # READ those two fields, so on 2026-08-13 every one of them reported 0
-    # overdue and green health on a board carrying 26 CDRLs 44 days past due —
-    # while this reflex filed high-priority cards saying "5 CDRL(s) are past
-    # due" off pmo_ai_advisor's separate date-based count. Refreshing the state
-    # BEFORE the passes that consume it is what makes the two agree.
-    #
-    # Swept portfolio-wide rather than per-contract: the loop below visits only
-    # status='active' contracts, but portfolio_manager counts overdue CDRLs
-    # across ('active', 'option_pending'), and an option-pending contract's
-    # deliverables are no less late.
-    try:
-        from tools.govcon.contract_manager import compute_overdue_deliverables
-        swept = compute_overdue_deliverables()
-        results["overdue_marked"] = swept.get("overdue_count", 0)
-        results["overdue_refreshed"] = swept.get("days_refreshed", 0)
-    except Exception as e:
-        results["errors"].append(f"Overdue sweep: {e}")
+    # (main's duplicate Pass-0 sweep was folded into the single call above during
+    # the merge — see the MERGE NOTE there. Its portfolio-wide rationale still
+    # holds and is why that call passes no contract_id: the loop below visits
+    # only status='active' contracts, while portfolio_manager counts overdue
+    # CDRLs across ('active', 'option_pending'), and an option-pending
+    # contract's deliverables are no less late.)
 
     for contract in active:
         cid = contract["id"]
@@ -524,7 +559,8 @@ def _write_memory_log(results: Dict):
                 f"{results['cards_created']} cards, "
                 f"{results.get('cards_relabeled', 0)} relabeled, "
                 f"{results['cpars_alerts']} CPARS alerts, "
-                f"{results['cdrl_generated']} CDRLs generated."
+                f"{results['cdrl_generated']} CDRLs generated, "
+                f"{results['deliverables_marked_overdue']} newly overdue."
             ),
             entry_type="event",
             source="cpmp_monitor",
