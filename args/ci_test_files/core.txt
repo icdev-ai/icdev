@@ -991,3 +991,14 @@ tests/test_integrity_monitor_reflex.py
 # so an ungated test for it would have been the same defect one layer up.
 # Pure (no scanner shell-out, no optional third-party tool) — gateable as-is.
 tests/test_integrity_persistence_allowlist.py
+# cpmp-d70a553747. cpmp_deliverables.status='overdue' and days_overdue have five
+# readers (contract health, CPARS schedule dimension, portfolio rollup, portfolio
+# summary, negative_event_tracker) and one writer, and the writer had no caller
+# but its own CLI flag -- so on the live board 26 CDRLs were 44 days past due
+# with 0 rows marked overdue and green health everywhere, while the reflex filed
+# high-priority cards off pmo_ai_advisor's separate date-based count. Pins that
+# the reflex runs the sweep, that both counts share one predicate, that
+# days_overdue is refreshed rather than frozen at 1, and that one unparseable
+# due_date cannot silently undo the sweep. 18 tests, ~1s, in-memory sqlite, no
+# network/LLM. Gated in the PR that makes it pass.
+tests/test_cpmp_overdue_deliverable_state.py
