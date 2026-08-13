@@ -8,20 +8,20 @@
 # for six weeks while `remediation_simulator._run_nqe_layer` was dead, and how 87
 # files accumulated 531 failure lines that no pipeline ever saw.
 #
-# Measured 2026-08-12: 2,149 collectible test modules under tests/, 187 in the CI
-# allowlists, 134 excluded by the rules below, 1,828 ungated.
+# Measured 2026-08-12: 2,150 collectible test modules under tests/, 192 in the CI
+# allowlists, 132 excluded by the rules below, 1,826 ungated.
 #
 # The policy is a RATCHET, not a sweep:
 #
 #   1. A test file is gated by ADDING it to args/ci_test_files/core.txt in the
 #      SAME PR that makes it pass. That is the only sanctioned way to widen the
 #      allowlist (what #1526 and #1533 did).
-#   2. The 1,828 pre-existing ungated files are grandfathered by NAME in
+#   2. The 1,826 pre-existing ungated files are grandfathered by NAME in
 #      args/ci_test_backlog.txt. They are debt, enumerated so it is countable.
 #   3. A test file that is NEW — in neither allowlist, no exclusion below, and not
 #      in the backlog census — FAILS the Test job. The gap cannot silently regrow.
 #
-# Bulk-widening the allowlist is explicitly NOT the policy. Those 1,828 files are
+# Bulk-widening the allowlist is explicitly NOT the policy. Those 1,826 files are
 # ungated AND an unknown number are red; adding them wholesale turns main red, the
 # gate gets disabled, and that is a worse outcome than the debt.
 #
@@ -52,6 +52,10 @@ scope:
 # carries the reason, and `--check-coverage` reports an exclusion that matches
 # nothing in the tree as STALE — a pattern that has quietly stopped matching is
 # how a gate shrinks without anyone deciding to shrink it.
+#
+# An exclusion is a DEFAULT, not a veto: naming a file in an allowlist gates it
+# whatever glob covers it. tsg-gen-01 did exactly that for the two
+# tests/genesis_auto/ files whose failures turned out to be real behaviour.
 exclusions:
   - pattern: "tests/e2e_selenium/**"
     reason: >-
@@ -90,4 +94,4 @@ backlog_file: args/ci_test_backlog.txt
 # THIS NUMBER MAY ONLY GO DOWN. Lower it when you gate files; never raise it to
 # get a commit through. Raising it is the visible, reviewable act of deciding to
 # take on more untested-in-CI surface, and it should be argued for in the PR.
-backlog_max: 1828
+backlog_max: 1826

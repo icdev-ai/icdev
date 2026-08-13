@@ -29,12 +29,12 @@ only as prose in a kanban card. It is now a CLAUDE.md guardrail, a policy doc, a
 **2. Yes, the `test` job now fails — but as a ratchet, not a sweep.**
 
 The literal form of the question ("fail when a test file is outside the allowlist") would
-fail on 1,828 files today. That is not a gate anyone can ship: it reddens `main`
+fail on 1,826 files today. That is not a gate anyone can ship: it reddens `main`
 immediately and gets disabled within a day, which is strictly worse than the debt,
 because the debt at least stays visible. Same argument the task itself makes against
 bulk-widening.
 
-So the enforced rule is the *derivative*, not the level: the pre-existing 1,828 are
+So the enforced rule is the *derivative*, not the level: the pre-existing 1,826 are
 grandfathered **by name**, and what fails is a test file that is **new** — in no
 allowlist, matching no documented exclusion, and not in the census.
 
@@ -42,11 +42,11 @@ allowlist, matching no documented exclusion, and not in the census.
 
 | | count | |
 |---|---:|---|
-| Collectible test modules under `tests/` | 2,149 | matches pytest's own `testpaths` + default `python_files` |
-| `args/ci_test_files/core.txt` | 167 | the required `test` job |
+| Collectible test modules under `tests/` | 2,150 | matches pytest's own `testpaths` + default `python_files` |
+| `args/ci_test_files/core.txt` | 172 | the required `test` job |
 | `args/ci_test_files/windows.txt` (adds) | 20 | `Test (Windows)`, not a required check |
-| Documented exclusions | 134 | `tests/e2e_selenium/**` (28) + `tests/genesis_auto/**` (106) |
-| **Ungated backlog** | **1,828** | grandfathered by name |
+| Documented exclusions | 132 | `tests/e2e_selenium/**` (28) + `tests/genesis_auto/**` (104 of 106; tsg-gen-01 gated 2 by name) |
+| **Ungated backlog** | **1,826** | grandfathered by name |
 
 The task card said "148 of 2,120". Both numbers moved during the TSG epics: the allowlist
 grew as files were fixed, and the census here counts `*_test.py` as well as `test_*.py`
@@ -57,7 +57,7 @@ because pytest does.
 | File | Change |
 |---|---|
 | `args/test_gating_gate.yaml` | **new** — scope, exclusions (pattern + reason), backlog pointer, `backlog_max` ceiling |
-| `args/ci_test_backlog.txt` | **new** — the 1,828 grandfathered paths, enumerated, shrink-only |
+| `args/ci_test_backlog.txt` | **new** — the 1,826 grandfathered paths, enumerated, shrink-only |
 | `tools/ci/gated_test_list.py` | `census()`, `prune_backlog()`, `--check-coverage`, `--prune-backlog` |
 | `.github/workflows/icdev-ci.yml` | new **Test gating census** step in the required `test` job |
 | `tests/ci/test_test_gating_census.py` | 20 tests; added to `core.txt` in this same PR |
@@ -79,7 +79,7 @@ Union is right for `args/ci_test_files/*.txt` because they are append-only, and 
 cost — a line deleted on one branch is resurrected when the hunk collides — is harmless
 there. For a **shrink-only** file that cost is the whole behaviour: a file you just fixed
 and removed would come back. So the census lives outside `args/ci_test_files/` and takes
-a normal three-way merge. Two PRs deleting different lines from a sorted 1,828-line file
+a normal three-way merge. Two PRs deleting different lines from a sorted 1,826-line file
 merge cleanly on their own, and forgetting the deletion is already non-fatal (reported as
 stale, swept by `--prune-backlog`).
 
@@ -94,8 +94,8 @@ platform's signature bug.
 
 ```
 $ python tools/ci/gated_test_list.py --check-coverage
-Test gating census: 2149 collectible test modules — 187 gated, 134 excluded,
-1828 grandfathered (ceiling 1828), 0 unlisted.
+Test gating census: 2150 collectible test modules — 192 gated, 132 excluded,
+1826 grandfathered (ceiling 1826), 0 unlisted.
 
 # The gate can fail — a gate that cannot go red is decoration:
 $ printf 'def test_x():\n    assert True\n' > tests/test_zz_probe.py && git add -N tests/test_zz_probe.py
@@ -111,8 +111,8 @@ $ python -m pytest tests/ci/test_test_gating_census.py tests/ci/test_gated_test_
 
 ## What this does not claim
 
-187 files gating a merge is 8.7% of the suite. This stops the number falling and makes
-every increment permanent; it does not make the number adequate — paying down the 1,828
+192 files gating a merge is 8.9% of the suite. This stops the number falling and makes
+every increment permanent; it does not make the number adequate — paying down the 1,826
 is the rest of the TSG epics. And the census counts *files*, not assertions: a gated file
 full of `assert True` passes it. That is a different gate's job.
 

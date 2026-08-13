@@ -16,11 +16,11 @@ CI runs an explicit per-file allowlist. Measured on 2026-08-12:
 
 | | count |
 |---|---|
-| Collectible test modules under `tests/` | **2,149** |
-| In `args/ci_test_files/core.txt` (required `test` job) | 167 |
+| Collectible test modules under `tests/` | **2,150** |
+| In `args/ci_test_files/core.txt` (required `test` job) | 172 |
 | Additionally in `args/ci_test_files/windows.txt` (non-required) | 20 |
-| Documented exclusions | 134 |
-| **Ungated — never gated a merge** | **1,828** |
+| Documented exclusions | 132 |
+| **Ungated — never gated a merge** | **1,826** |
 
 A test file CI never runs has never gated anything. It can be wrong from its very first
 commit and no pipeline will ever say so. That is not hypothetical:
@@ -45,12 +45,12 @@ That is the *only* sanctioned way to widen the allowlist.
 
 **2. Do not bulk-widen. Ever.**
 
-Adding the 1,828 wholesale turns `main` red — an unknown number of them fail — and a
+Adding the 1,826 wholesale turns `main` red — an unknown number of them fail — and a
 gate that reddens `main` gets disabled within a day. A disabled gate is strictly worse
 than the debt it was meant to measure, because the debt at least stays visible. The same
 argument rules out globbing `tests/**`: it would run everything and fail immediately.
 
-**3. Grandfather the existing 1,828 by name, and let the census only shrink.**
+**3. Grandfather the existing 1,826 by name, and let the census only shrink.**
 
 [`args/ci_test_backlog.txt`](../../args/ci_test_backlog.txt) enumerates them. Enumerated
 and not counted, deliberately: a bare number can be held constant while the set churns —
@@ -73,7 +73,7 @@ An exclusion says "gating this would buy no signal". Two exist today:
 | Pattern | Why |
 |---|---|
 | `tests/e2e_selenium/**` (28) | `conftest.py` has an autouse fixture that **skips the whole module** when the dashboard port does not answer. On a CI runner every one reports green by skipping — file existence counted as evidence, which is the failure mode this project exists to close. Run deliberately by `tools/testing/e2e_runner.py` against a started server. |
-| `tests/genesis_auto/**` (106) | Generated: the file *set* is controlled by the generator, not by a human opening a PR, so a per-file human allowlist is the wrong instrument. The right gate is on the **generator** — owned by `tsg-gen-02`. |
+| `tests/genesis_auto/**` (104 of 106) | Generated: the file *set* is controlled by the generator, not by a human opening a PR, so a per-file human allowlist is the wrong instrument. The right gate is on the **generator** — owned by `tsg-gen-02`. |
 
 ## How to work with it
 
@@ -112,14 +112,14 @@ branch's edit.
 For a **shrink-only** file that cost is the entire behaviour. A file you just fixed and
 removed from the census would come back. So `args/ci_test_backlog.txt` lives outside the
 `args/ci_test_files/` directory and is a normal three-way merge — two PRs deleting
-different lines from a 1,828-line sorted file merge cleanly on their own, and forgetting
+different lines from a 1,826-line sorted file merge cleanly on their own, and forgetting
 a deletion is already non-fatal.
 
 ## What this does not claim
 
-- **Gated ≠ good.** 187 files gating a merge is still 8.7% of the suite. This policy
+- **Gated ≠ good.** 192 files gating a merge is still 8.9% of the suite. This policy
   stops the number falling and makes every increment permanent; it does not make the
-  number adequate. Paying down the 1,828 is the rest of the TSG epics.
+  number adequate. Paying down the 1,826 is the rest of the TSG epics.
 - **Green ≠ meaningful.** The census counts files, not assertions. A gated file full of
   `assert True` passes it. That is a different gate's job.
 - **The Windows job is still not required.** `args/ci_test_files/windows.txt` counts

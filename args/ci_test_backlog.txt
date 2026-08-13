@@ -1105,7 +1105,6 @@ tests/test_insert_column_schema_parity.py
 tests/test_installer.py
 tests/test_instruction_generator.py
 tests/test_instrumentation.py
-tests/test_intake_api.py
 tests/test_integrity_blueprint.py
 tests/test_integrity_capabilities.py
 tests/test_integrity_claim_parser.py
@@ -1517,7 +1516,6 @@ tests/test_platform_connectors.py
 tests/test_platform_db.py
 tests/test_pma_credential_reflex.py
 tests/test_pma_e2e_vv.py
-tests/test_pma_igap_api.py
 tests/test_pma_igap_reflex.py
 tests/test_pma_personnel_api.py
 tests/test_pmc_ccc_dsoc_templates.py

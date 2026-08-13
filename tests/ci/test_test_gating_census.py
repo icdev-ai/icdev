@@ -193,6 +193,23 @@ def test_exclusion_pattern_covers_a_subtree(tmp_path):
     assert report["excluded"] == 2
 
 
+def test_an_allowlisted_file_beats_the_exclusion_covering_it(tmp_path):
+    """An exclusion is a DEFAULT, not a veto. tsg-gen-01 gated two files inside
+    tests/genesis_auto/ because their failures were real behaviour; those must
+    count as gated, not silently drop out of the numbers as excluded."""
+    root = _fake_root(
+        tmp_path,
+        tests=["tests/genesis_auto/test_real.py", "tests/genesis_auto/test_rot.py"],
+        core=["tests/genesis_auto/test_real.py"],
+        backlog=[],
+        exclusions=[{"pattern": "tests/genesis_auto/**", "reason": "z" * 50}],
+    )
+    report = census(root)
+    assert report["ok"], report["errors"]
+    assert report["gated"] == 1
+    assert report["excluded"] == 1
+
+
 def test_exclusion_that_matches_nothing_is_reported_stale(tmp_path):
     root = _fake_root(
         tmp_path,

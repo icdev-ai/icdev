@@ -49,7 +49,7 @@ step with a named cause rather than a green run over three tests.
 
 THE GATE CANNOT SILENTLY REGROW EITHER (tsg-policy-01)
 -----------------------------------------------------
-`--check` proves the list did not shrink. It says nothing about the 1,828 test
+`--check` proves the list did not shrink. It says nothing about the 1,826 test
 modules that were never on it — which is the bigger hole: a test file CI never
 runs has never gated a merge, so it can be wrong from its first commit and
 nothing goes red. That is how `remediation_simulator._run_nqe_layer` stayed dead
@@ -336,7 +336,7 @@ def census(root: Optional[Path] = None) -> Dict[str, object]:
     root = root or repo_root()
 
     # No tests/ tree means an installed wheel, where args/ is mirrored but the
-    # suite is not shipped. Report NOT RUN rather than flagging all 2,149 files
+    # suite is not shipped. Report NOT RUN rather than flagging all 2,150 files
     # as missing — a check that cries wolf gets a `|| true` bolted onto it.
     #
     # Checked BEFORE the config is loaded, on purpose. The policy files are
