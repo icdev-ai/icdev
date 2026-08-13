@@ -3213,6 +3213,172 @@ def check_capability_liveness() -> CoherenceCheck:
     return _liveness_check_result(evaluation, int(gate["window_days"]))
 
 
+_SENTINEL_CHECK_ID = "gate_sentinel_shape"
+_SENTINEL_CHECK_NAME = "Gate Sentinel Shape (kax-exec-04)"
+_SENTINEL_EXPECTED = [
+    "every task whose id is `<card>-gate-<n>` is actually a gate: held in_progress, "
+    "or something declares depends_on it"
+]
+#: A released gate is ``done`` and holds nothing — it is not the defect. Neither is
+#: a cancelled one. Only a LIVE row that can never be dispatched is.
+_SENTINEL_TERMINAL_STATUSES = frozenset({"done", "cancelled", "decomposed", "archived"})
+
+
+def _sentinel_dependents(conn) -> set:
+    """Ids that something on the board waits behind — scalar deps and junction."""
+    held: set = set()
+    # A failure here is a board this check cannot read — the caller turns that
+    # into a warn rather than a clean bill of health, so let it propagate.
+    for row in conn.execute(
+        "SELECT DISTINCT depends_on_task_id FROM kanban_tasks "
+        "WHERE depends_on_task_id IS NOT NULL"
+    ).fetchall():
+        held.add(dict(row)["depends_on_task_id"])
+    try:
+        for row in conn.execute(
+            "SELECT DISTINCT depends_on_id FROM kanban_task_deps "
+            "WHERE depends_on_id IS NOT NULL"
+        ).fetchall():
+            held.add(dict(row)["depends_on_id"])
+    except Exception:  # noqa: BLE001 - junction table is optional
+        pass
+    return held
+
+
+def check_gate_sentinel_shape() -> CoherenceCheck:
+    """kax-exec-04 — a task wearing a gate sentinel's id that gates nothing.
+
+    ``is_manual_gate`` returns True for any ``<card>-gate-<n>`` id, and it must:
+    ``hgx-gate-01`` was a card's SECOND gate, and matching only the ``-gate-00``
+    seeding convention got it promoted and dispatched to an unattended session
+    holding a prompt that told it to mark ITSELF done. Recognition stays wide.
+
+    The cost of that width is that a WORK task with a gate-shaped id is filtered
+    out of ``promote_backlog_to_scheduled`` forever, and nothing reports it:
+    ``tsg-gate-01`` ("decide the CI allowlist policy") sat in backlog while the
+    board idled with three free dispatch slots, because a task nobody can dispatch
+    looks exactly like a task nobody has got to yet.
+
+    ``task_factory.create_tasks`` now refuses to seed that shape. This is the
+    other half — the rows already on the board, and the ones written by anything
+    that bypasses the factory. It is a query, not an inference: a live task whose
+    id is sentinel-shaped, which is NOT held ``in_progress`` and which nothing
+    declares ``depends_on``, is holding nothing and cannot be dispatched.
+
+    Reported as ``warn``: the finding is board DATA, so failing a per-task code
+    gate on it would block commits that have nothing to do with it.
+    """
+    try:
+        from tools.db.storage import get_connection
+        from tools.kanban.gates import has_gate_id
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id=_SENTINEL_CHECK_ID,
+            check_name=_SENTINEL_CHECK_NAME,
+            status="warn",
+            expected=_SENTINEL_EXPECTED,
+            actual=[f"import failed: {exc}"],
+            missing=[],
+            extra=[],
+            message=f"kanban board unreachable ({exc}) — sentinel shape NOT verified",
+        )
+
+    conn = None
+    try:
+        conn = get_connection()
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, title, status FROM kanban_tasks"
+            ).fetchall()
+        ]
+        depended_upon = _sentinel_dependents(conn)
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id=_SENTINEL_CHECK_ID,
+            check_name=_SENTINEL_CHECK_NAME,
+            status="warn",
+            expected=_SENTINEL_EXPECTED,
+            actual=[f"query failed: {exc}"],
+            missing=[],
+            extra=[],
+            message=(
+                f"kanban board unreachable ({exc}) — sentinel shape NOT verified. "
+                "A fresh worktree or an empty CI database reaches this branch; it "
+                "reports warn rather than fabricating a clean result."
+            ),
+        )
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    if not rows:
+        return CoherenceCheck(
+            check_id=_SENTINEL_CHECK_ID,
+            check_name=_SENTINEL_CHECK_NAME,
+            status="warn",
+            expected=_SENTINEL_EXPECTED,
+            actual=["kanban_tasks is empty"],
+            missing=[],
+            extra=[],
+            message=(
+                "kanban_tasks has no rows — sentinel shape NOT verified. An empty "
+                "board cannot show an undispatchable task, so 'no findings' here "
+                "would mean nothing."
+            ),
+        )
+
+    stranded = []
+    for row in rows:
+        task_id = str(row.get("id") or "")
+        if not has_gate_id(task_id):
+            continue
+        status = str(row.get("status") or "").strip().lower()
+        if status == "in_progress" or status in _SENTINEL_TERMINAL_STATUSES:
+            continue
+        if task_id in depended_upon:
+            continue
+        stranded.append(
+            f"{task_id} [{status or 'unknown'}] {str(row.get('title') or '')[:70]}"
+        )
+
+    gate_rows = [r for r in rows if has_gate_id(str(r.get("id") or ""))]
+    if stranded:
+        return CoherenceCheck(
+            check_id=_SENTINEL_CHECK_ID,
+            check_name=_SENTINEL_CHECK_NAME,
+            status="warn",
+            expected=_SENTINEL_EXPECTED,
+            actual=[f"{len(gate_rows)} sentinel-shaped ids on the board"],
+            missing=[],
+            extra=sorted(stranded),
+            message=(
+                f"{len(stranded)} sentinel-shaped task(s) are neither held "
+                "in_progress nor depended upon: is_manual_gate filters them out of "
+                "promote_backlog_to_scheduled, so they can never be dispatched, and "
+                "they hold nothing. Rename to a work id, or make it a real gate "
+                "(hold it in_progress and point its dependents at it)."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id=_SENTINEL_CHECK_ID,
+        check_name=_SENTINEL_CHECK_NAME,
+        status="pass",
+        expected=_SENTINEL_EXPECTED,
+        actual=[f"{len(gate_rows)} sentinel-shaped ids, all held or depended upon"],
+        missing=[],
+        extra=[],
+        message=(
+            f"{len(gate_rows)} of {len(rows)} board tasks carry a gate-shaped id and "
+            "every one of them is doing a gate's job"
+        ),
+    )
+
+
 def check_sandbox_coverage() -> CoherenceCheck:
     """OPT-58 — verify docs/security/sandbox-coverage.md exists and
     documents all 4 tracked ingress-point gap files.
@@ -8555,6 +8721,7 @@ CHECK_REGISTRY = {
     "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
     "capability_liveness": check_capability_liveness,
+    "gate_sentinel_shape": check_gate_sentinel_shape,
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,
     "architecture_agnosticism": check_architecture_agnosticism,
@@ -8638,6 +8805,19 @@ HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
         "tools/llm/",
         "icdev/tools/llm/",
         "args/llm_config.yaml",
+    ),
+    # The criterion here is SCOPE, not cost — two queries, well under a second.
+    # gate_sentinel_shape reads the live board, and board rows do not change
+    # because a diff touched an unrelated module, so running it on every per-task
+    # gate would re-report the same rows to sessions that cannot act on them. The
+    # full tier (nightly sweep, post-merge reflex) always runs it, and the fast
+    # tier re-adds it exactly when the diff touches the seeding path that creates
+    # the shape in the first place.
+    "gate_sentinel_shape": (
+        "tools/kanban/",
+        "icdev/tools/kanban/",
+        "task_factory",
+        "seed_",
     ),
 }
 
@@ -8727,6 +8907,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
     "insert_schema_parity": "skip",  # drop the column or write a migration — the choice is the fix
     "capability_liveness": "skip",  # wiring a capability to a consumer is the fix; a budget bump is not
+    "gate_sentinel_shape": "skip",  # rename the task or make it a real gate — both are decisions
 }
 
 

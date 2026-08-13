@@ -2122,6 +2122,15 @@ python tools/workflow/coherence_checker.py --check capability_liveness --gate   
 # args/liveness_gate.yaml entirely rather than sitting at 0; an absent class is already
 # budgeted at 0, and a leftover zero is just a number for a future session to edit upward.
 
+# Gate Sentinel Shape (kax-exec-04) — a task whose id is `<card>-gate-<n>` is filtered
+# out of promote_backlog_to_scheduled by tools/kanban/gates.py::is_manual_gate, so work
+# wearing that id is UNDISPATCHABLE and nothing goes red (tsg-gate-01 sat in backlog
+# while the board idled). task_factory.create_tasks now REFUSES to seed that shape unless
+# the task also declares itself a gate — 'MANUAL-MODE GATE' in the title, or a 'RISK:'
+# line. This check is the other half: rows already on the board, or written around the
+# factory. WARN, never fail — the finding is board data, not the diff under review.
+python tools/workflow/coherence_checker.py --check gate_sentinel_shape --json                        # Sentinel-shaped ids that are neither held nor depended upon
+
 # Documented Command Paths gate (oss-fix-02) — every `python tools/...` command in
 # CLAUDE.md and this file must resolve to a real file. Pre-existing breakage is
 # grandfathered in args/doc_command_gate.yaml; NEW broken references fail the gate.

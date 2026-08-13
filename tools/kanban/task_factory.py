@@ -21,6 +21,13 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from tools.kanban.gates import (
+    GATE_ID_SEPARATOR,
+    GATE_TITLE_MARKER,
+    RISK_MARKER,
+    declares_gate,
+    has_gate_id,
+)
 from tools.logging.icdev_logger import get_logger
 from datetime import datetime, timezone
 
@@ -78,12 +85,39 @@ def _assert_real_board(conn) -> None:
     )
 
 
+def _work_id_suggestion(task_id: str) -> str:
+    """The id this task should have carried — ``tsg-gate-01`` -> ``tsg-<epic>-01``.
+
+    Named in the refusal so the message ends in an edit rather than a puzzle.
+    ``<epic>`` is left for the seeder to fill because only it knows the epic;
+    tsg-gate-01 became tsg-policy-01 under a new ``policy`` epic.
+    """
+    prefix, _, number = task_id.rpartition(GATE_ID_SEPARATOR)
+    return f"{prefix}-<epic>-{number}"
+
+
+def _sentinel_shaped_work(task_specs: list[dict]) -> list[str]:
+    """Ids that claim to be manual-mode gates while carrying work.
+
+    Not a narrowing of ``is_manual_gate`` — that predicate stays wide on purpose,
+    and a card's SECOND gate (``hgx-gate-01``) has to keep matching it. This asks
+    the seed-time question instead: does anything except the id say "gate"?
+    """
+    impostors: list[str] = []
+    for t in task_specs:
+        task_id = str(t.get("id") or "").strip()
+        if has_gate_id(task_id) and not declares_gate(t.get("title"), t.get("description")):
+            impostors.append(task_id)
+    return impostors
+
+
 def create_tasks(task_specs: list[dict]) -> list[str]:
     """Insert tasks that don't already exist. Returns list of inserted IDs.
 
-    Raises ``ValueError`` for a ``task_type`` the DB forbids, and
-    ``BoardBackendError`` when the write would land in a throwaway local
-    database — both BEFORE anything is inserted, so a batch never half-lands.
+    Raises ``ValueError`` for a ``task_type`` the DB forbids and for a work task
+    wearing a gate sentinel's id, and ``BoardBackendError`` when the write would
+    land in a throwaway local database — all BEFORE anything is inserted, so a
+    batch never half-lands.
     """
     if not task_specs:
         return []
@@ -99,6 +133,28 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
             f"task_type {', '.join(repr(b) for b in bad_types)} violates "
             f"kanban_tasks_task_type_check; allowed: {sorted(VALID_TASK_TYPES)}. "
             "(There is no 'bug' — use 'fix'.)"
+        )
+
+    # kax-exec-04: a gate-shaped id on a work task is undispatchable, silently.
+    # `is_manual_gate` returns True for ANY `<card>-gate-<n>` id, so
+    # promote_backlog_to_scheduled filters the task out forever — and nothing
+    # goes red, because a task nobody can dispatch looks exactly like a task
+    # nobody has got to yet. tsg-gate-01 ("decide the CI allowlist policy") sat in
+    # backlog from 02:22 while the board idled with three free dispatch slots.
+    # Refuse at SEEDING time, where the id is still a keystroke rather than a row.
+    impostors = _sentinel_shaped_work(task_specs)
+    if impostors:
+        named = ", ".join(
+            f"{i!r} (use e.g. {_work_id_suggestion(i)!r})" for i in impostors
+        )
+        raise ValueError(
+            f"refusing to seed work with a gate-shaped id: {named}. Any id ending "
+            f"{GATE_ID_SEPARATOR}<number> makes tools/kanban/gates.py::is_manual_gate "
+            "return True, so promote_backlog_to_scheduled will never dispatch it and "
+            "nothing will report it as stuck. Rename it, or — if it really is a "
+            f"manual-mode gate — say so: put {GATE_TITLE_MARKER!r} in the title, or a "
+            f"{RISK_MARKER!r} line in the description stating what goes wrong if the "
+            "runner builds the card unattended."
         )
 
     from tools.db.storage import get_connection

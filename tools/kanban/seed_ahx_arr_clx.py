@@ -32,6 +32,8 @@ GATES: list[dict] = [
         "id": "ahx-gate-00",
         "title": "AHX gate — held (human-driven worktree build)",
         "description": (
+            "RISK: AHX is built by a human in a driven worktree session; dispatching it "
+            "unattended edits the harness's own evaluation loop with nobody watching.\n"
             "MANUAL GATE. Held in_progress so promote_backlog_to_scheduled never dispatches "
             "the ahx- tasks behind it. AHX is implemented by a human-driven Claude Code session "
             "in an isolated worktree, not by the kanban runner. Close this gate only when every "
@@ -43,6 +45,8 @@ GATES: list[dict] = [
         "id": "arr-gate-00",
         "title": "ARR gate — held pending AHX",
         "description": (
+            "RISK: until AHX closes the harness_eval outcome loop there is no signal to judge "
+            "ARR by, so an unattended build produces agent-loop changes nobody can evaluate.\n"
             "MANUAL GATE. Held in_progress. ARR adds an error taxonomy and structured tool results "
             "to the agent loop; its effect on loop quality is unmeasurable until AHX closes the "
             "harness_eval outcome loop. Do not open this gate until ahx-eval-02 is done and "
@@ -56,6 +60,9 @@ GATES: list[dict] = [
         "id": "clx-gate-00",
         "title": "CLX gate — held pending AHX",
         "description": (
+            "RISK: a control loop built before AHX supplies a sensor and an outcome signal is "
+            "tuned against noise, and an unattended session here rebuilds review_loop.py and "
+            "re-proposes the LangGraph orchestration ADR D391 rejected.\n"
             "MANUAL GATE. Held in_progress. A control loop cannot be tuned without a working sensor "
             "and a working outcome signal; AHX supplies both. Do not open until AHX has merged. "
             "When opening, read tools/quality/review_loop.py first — it is already the deterministic "
