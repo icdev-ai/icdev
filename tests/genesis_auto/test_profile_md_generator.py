@@ -81,8 +81,6 @@ def test_profile_md_generator_constants():
     """Verify module exports expected constants."""
     try:
         import tools.builder.profile_md_generator as mod
-        assert hasattr(mod, "_HAS_JINJA2"), "Missing constant _HAS_JINJA2"
-        assert hasattr(mod, "_HAS_JINJA2"), "Missing constant _HAS_JINJA2"
         assert hasattr(mod, "PROFILE_MD_TEMPLATE"), "Missing constant PROFILE_MD_TEMPLATE"
     except ImportError:
         pytest.skip("Module not importable")

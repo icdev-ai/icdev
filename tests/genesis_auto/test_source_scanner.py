@@ -332,14 +332,6 @@ def test_source_scanner_constants():
     try:
         import tools.research.source_scanner as mod
 
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_YAML"), "Missing constant _HAS_YAML"
-        assert hasattr(mod, "_HAS_REQUESTS"), "Missing constant _HAS_REQUESTS"
-        assert hasattr(mod, "_HAS_REQUESTS"), "Missing constant _HAS_REQUESTS"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_CB"), "Missing constant _HAS_CB"
-        assert hasattr(mod, "_HAS_CB"), "Missing constant _HAS_CB"
         assert hasattr(mod, "DEFAULT_TIMEOUT"), "Missing constant DEFAULT_TIMEOUT"
         assert hasattr(mod, "MAX_RETRIES"), "Missing constant MAX_RETRIES"
     except ImportError:

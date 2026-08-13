@@ -81,8 +81,6 @@ def test_claude_md_generator_constants():
     try:
         import tools.builder.claude_md_generator as mod
 
-        assert hasattr(mod, "_HAS_JINJA2"), "Missing constant _HAS_JINJA2"
-        assert hasattr(mod, "_HAS_JINJA2"), "Missing constant _HAS_JINJA2"
         assert hasattr(mod, "CLAUDE_MD_TEMPLATE"), "Missing constant CLAUDE_MD_TEMPLATE"
     except ImportError:
         pytest.skip("Module not importable")

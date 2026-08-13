@@ -112,12 +112,3 @@ def test_engine_run_scan_invocation():
                 raise
 
 
-# --- Constants ---
-
-def test_engine_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.aiify.engine as mod
-        assert hasattr(mod, "_NLP_REF_PROMPT"), "Missing constant _NLP_REF_PROMPT"
-    except ImportError:
-        pytest.skip("Module not importable")

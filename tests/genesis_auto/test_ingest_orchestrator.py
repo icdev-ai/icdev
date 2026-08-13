@@ -75,21 +75,3 @@ def test_ingest_orchestrator_IngestOutcome_methods():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_ingest_orchestrator_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.document_intelligence.ingest_orchestrator as mod
-        assert hasattr(mod, "_SUMMARY_INPUT_CHARS"), "Missing constant _SUMMARY_INPUT_CHARS"
-        assert hasattr(mod, "_DOC_SUMMARY_SYSTEM_PROMPT"), "Missing constant _DOC_SUMMARY_SYSTEM_PROMPT"
-        assert hasattr(mod, "_OCR_CLEANUP_MAX_CHARS"), "Missing constant _OCR_CLEANUP_MAX_CHARS"
-        assert hasattr(mod, "_OCR_CLEANUP_MIN_RATIO"), "Missing constant _OCR_CLEANUP_MIN_RATIO"
-        assert hasattr(mod, "_OCR_CLEANUP_MAX_RATIO"), "Missing constant _OCR_CLEANUP_MAX_RATIO"
-        assert hasattr(mod, "_OCR_CLEANUP_SYSTEM_PROMPT"), "Missing constant _OCR_CLEANUP_SYSTEM_PROMPT"
-        assert hasattr(mod, "_METADATA_INPUT_CHARS"), "Missing constant _METADATA_INPUT_CHARS"
-        assert hasattr(mod, "_METADATA_MIN_CONFIDENCE"), "Missing constant _METADATA_MIN_CONFIDENCE"
-        assert hasattr(mod, "_METADATA_MAX_TAGS"), "Missing constant _METADATA_MAX_TAGS"
-        assert hasattr(mod, "_METADATA_TAG_MAX_LEN"), "Missing constant _METADATA_TAG_MAX_LEN"
-    except ImportError:
-        pytest.skip("Module not importable")

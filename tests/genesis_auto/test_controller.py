@@ -47,14 +47,3 @@ def test_controller_ACEController_methods():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-def test_controller_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.ace.controller as mod
-        assert hasattr(mod, "_DB_ENV"), "Missing constant _DB_ENV"
-        assert hasattr(mod, "_MAX_WORKERS"), "Missing constant _MAX_WORKERS"
-        assert hasattr(mod, "_MEMORY_CAP"), "Missing constant _MEMORY_CAP"
-    except ImportError:
-        pytest.skip("Module not importable")

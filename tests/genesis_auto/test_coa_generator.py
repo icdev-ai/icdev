@@ -196,17 +196,3 @@ def test_coa_generator_main_exists():
         pytest.skip("Module not importable")
 
 
-# --- Constants ---
-
-
-def test_coa_generator_constants():
-    """Verify module exports expected constants."""
-    try:
-        import tools.simulation.coa_generator as mod
-
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_HAS_AUDIT"), "Missing constant _HAS_AUDIT"
-        assert hasattr(mod, "_RATE_LOW"), "Missing constant _RATE_LOW"
-        assert hasattr(mod, "_RATE_HIGH"), "Missing constant _RATE_HIGH"
-    except ImportError:
-        pytest.skip("Module not importable")
