@@ -300,6 +300,28 @@ def test_own_offender_blocks_even_when_others_are_red_too(
     assert "tests/test_mine.py" in out
 
 
+def test_hiding_the_new_file_in_the_backlog_still_blocks(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """"Do NOT add it to args/ci_test_backlog.txt" — the census says so; enforce it.
+
+    Appending the new file to the closed census empties `unlisted`, so attributing
+    on that list alone would wave through the exact move the message forbids. The
+    ceiling is what catches it, and the hook reads it.
+    """
+    _write(repo / "tests" / "test_brand_new.py", "def test_x():\n    assert True\n")
+    _write(repo / "args" / "ci_test_backlog.txt", "tests/test_old_debt.py\ntests/test_brand_new.py\n")
+    _git(repo, "add", "-A")
+
+    report = census_mod.census(repo)
+    assert report["unlisted"] == []          # hidden...
+    assert report["ok"] is False             # ...but the ceiling caught it
+
+    new_tests = pre_commit_check._staged_new_test_files(_name_status(repo), root=repo)
+    assert pre_commit_check._run_test_gating_census(new_tests, root=repo) is False
+    assert "BLOCKED" in capsys.readouterr().out
+
+
 def test_documented_exclusion_also_passes(repo: Path) -> None:
     """An exclusion WITH A REASON is the other sanctioned answer."""
     _write(repo / "tests" / "generated" / "test_made.py", "def test_x():\n    assert True\n")

@@ -194,12 +194,20 @@ def _run_test_gating_census(new_tests: list[str], root: Path = BASE_DIR) -> bool
     # that provoked it adds a test file.
     import json  # noqa: PLC0415 — only on the failure path, never on a clean commit
 
+    over_ceiling = True
     try:
-        unlisted = set(json.loads(result.stdout).get("unlisted") or [])
+        report = json.loads(result.stdout)
+        unlisted = set(report.get("unlisted") or [])
         mine = [f for f in new_tests if f in unlisted]
         theirs = sorted(unlisted - set(new_tests))
+        # The census's OTHER failure mode: the grandfathered census grew past its
+        # ceiling. `unlisted` is empty in that case — appending a new test file to
+        # args/ci_test_backlog.txt is precisely how you make it empty — so
+        # attributing on `unlisted` alone would wave through the one move the
+        # census message explicitly forbids.
+        over_ceiling = int(report.get("backlog", 0)) > int(report.get("backlog_max", 0))
         attributed = True
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         mine, theirs, attributed = list(new_tests), [], False
 
     if theirs:
@@ -208,13 +216,16 @@ def _run_test_gating_census(new_tests: list[str], root: Path = BASE_DIR) -> bool
             "by nothing — CI is red on them independently of this commit: "
             + ", ".join(theirs)
         )
-    if attributed and not mine:
+    if attributed and not mine and not over_ceiling:
         print("[pre-commit] Test gating census: OK — every test file this commit adds is gated")
         return True
 
-    print("[pre-commit] BLOCKED: this commit adds a test file that CI would never run:")
-    for path in mine:
-        print(f"  {path}")
+    if mine:
+        print("[pre-commit] BLOCKED: this commit adds a test file that CI would never run:")
+        for path in mine:
+            print(f"  {path}")
+    else:
+        print("[pre-commit] BLOCKED: the grandfathered test backlog grew past its ceiling.")
     # The census message names every offending file AND the file to append it to;
     # printed verbatim so a local failure reads identically to the CI one.
     if result.stderr and result.stderr.strip():

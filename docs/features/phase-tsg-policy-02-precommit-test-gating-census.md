@@ -69,6 +69,10 @@ over three runs on this repo: **0.17s**.
   offenders already in the tree print as a `NOTE` and are left to CI. This was not
   theoretical — `main` was red on two other people's files while this was being written,
   and a hook that refuses commits the author cannot fix gets `--no-verify`d permanently.
+- Attribution reads the **backlog ceiling** as well as `unlisted`. The census's other
+  failure mode has an empty `unlisted` — and appending your new test file to
+  `args/ci_test_backlog.txt` is precisely how you empty it. Attributing on `unlisted`
+  alone would have waved through the one move the census message explicitly forbids.
 
 **`.githooks/pre-commit`** — comment only; the driver it already called does the work.
 
@@ -95,9 +99,10 @@ over three runs on this repo: **0.17s**.
 | `core.txt` after that refusal | **byte-identical** |
 | Commit adding the test *and* its `core.txt` line | **allowed** |
 | Commit adding a registered test while the tree is red on someone else's | **allowed**, other file reported |
+| Commit adding a test and hiding it in `args/ci_test_backlog.txt` | **refused** — the ceiling catches what `unlisted` cannot |
 
 The first four were verified through a real `git commit` in a throwaway repository with
-the real hook installed; all five are pinned as 16 tests in
+the real hook installed; all five are pinned as 17 tests in
 `tests/ci/test_precommit_test_gating.py` — each
 against a real git index, because the load-bearing assumption is that `git ls-files`
 inside a pre-commit hook already sees a file that is staged but not committed. A test that
