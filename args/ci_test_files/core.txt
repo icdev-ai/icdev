@@ -956,6 +956,14 @@ tests/ci/test_precommit_test_gating.py
 # 14 tests, ~1s, no DB/network. Registered here in the PR that makes the same
 # mistake harder to repeat.
 tests/test_ndc_graph_json_type_guard.py
+# test_ndc_graph_json_type_guard.py was gated HERE too, by #1605 and this
+# branch concurrently -- the same collision its own comment above warned about
+# for test_kanban_gate_sentinel_seeding.py, one file later. Both landed, and
+# `--check` rejects a name listed twice, so main went red. The surviving entry
+# is the one near the other recent gates; this one is removed rather than
+# merged, because the check counts NAMES, not blocks. Unlike tools/manifest/*,
+# this file is not merge=union: an append here needs a rebase, not a superset.
+
 # Guards the other half of the write path that #1520 closed: create rejects a
 # nameless subcontractor, update blanked the name right back. Gated in the PR
 # that makes it pass, per docs/ci/test-gating-policy.md.
