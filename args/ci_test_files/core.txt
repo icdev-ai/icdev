@@ -939,4 +939,19 @@ tests/test_genesis_reflex_cpmp_monitor_card_identity.py
 # tests), so it is gated here rather than added to the closed census.
 # (test_kanban_gate_sentinel_seeding.py was the same gap; #1601 gated it above
 # while this branch was in flight, so it is deliberately not repeated here.)
-tests/test_ndc_graph_json_type_guard.py
+# tsg-policy-02 -- the census at COMMIT time. tsg-policy-01's CI step caught two
+# unregistered test files within two hours, but in the wrong place: each turned
+# main RED (blocking every open PR) for a one-line fix. The same census now runs
+# from .githooks/pre-commit when a commit ADDS or RENAMES a test file. This pins
+# both halves against a real throwaway git repo with a real staged index: the add
+# case is refused naming the file, the touch-nothing case never loads the census,
+# and the hook never edits this file itself.
+# ~4s, no DB, no network, no LLM.
+tests/ci/test_precommit_test_gating.py
+
+# test_ndc_graph_json_type_guard.py arrived with #1599 and was gated by nothing,
+# which is the second time in two days the census caught a new test file only
+# after it had already turned main red -- the observation that motivated
+# tsg-policy-02. It pins that one malformed graph_json row cannot 500 /network/.
+# 14 tests, ~1s, no DB/network. Registered here in the PR that makes the same
+# mistake harder to repeat.
