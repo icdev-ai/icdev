@@ -40,6 +40,23 @@
 # gate that cries wolf gets switched off. The excluded ones are listed below
 # with the reason, so the next person does not "fix" a difference that is the
 # design.
+#
+# THE SECOND RULE: PAYLOAD COMPLETENESS (exa-bench-10) - NOT DECLARED HERE
+# =======================================================================
+# `check_bootstrap_parity` also asserts that every module a PACKAGED HOOK loads
+# by path ships beside it, and is not stale. That rule has NO entry in this file
+# on purpose: it is derived from the hooks themselves, each of which declares a
+# module-level `PAYLOAD_MODULES` tuple that its own loader iterates. A list here
+# would be a second place to keep in sync, and this whole file exists because a
+# second copy goes stale.
+#
+# It exists because `claude/hooks/pre_tool_use.py` resolved its implementation
+# as <root>/tools/hooks/shared_checks.py and the payload shipped no tools/ tree
+# at all - so the hook raised FileNotFoundError on EVERY tool call in EVERY
+# project `icdev init` created, while the generated settings.json's `|| true`
+# turned the non-zero exit into a 0. A guard that fails loudly, wrapped in a
+# thing that swallows the noise, is a guard that is not there. There is no
+# grandfather list for this rule; there is nothing to grandfather.
 version: 1
 
 # Byte-identical, both directions. The repo file is the authority; reconcile by

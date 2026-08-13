@@ -24,6 +24,22 @@ paths cannot drift apart (hgx-guard-01). What still lives here is DATA: the
 canonical APPEND_ONLY_TABLES list, which CLAUDE.md's guardrail, the child-app
 generator and coherence_checker's autofix all read from this file.
 
+Scaffolded projects (exa-bench-10)
+----------------------------------
+This same file is packaged and copied into every project `icdev init` creates,
+and such a project has NO ``tools/`` tree — so resolving the implementation as
+``<root>/tools/hooks/shared_checks.py`` raised ``FileNotFoundError`` on every
+tool call there, silenced by the ``|| true`` in the generated settings.json.
+``shared_checks.py`` therefore ships BESIDE this file (see PAYLOAD_MODULES) and
+is looked up in both places.
+
+What a scaffolded project gets is the DOCUMENTED SUBSET, not the full set: the
+checks whose dependency is this file, stdlib, git or ``args/`` all run; the
+three that need ICDEV's own ``tools/`` modules cannot and are named as inert by
+:func:`payload_status` rather than being silently skipped. Rationale and the
+options considered: docs/features/exa-bench-10-packaged-hook-payload.md.
+Run ``python .claude/hooks/pre_tool_use.py --self-test`` to see which is which.
+
 Exit codes:
     0 = allow tool call
     2 = block tool call (shows error to Claude)
@@ -37,11 +53,30 @@ from pathlib import Path
 # rls-bypass: repo root resolved from __file__, never os.getcwd() — this hook
 # runs from whichever worktree invoked it, so cwd is not the repository root.
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SHARED_CHECKS_PATH = REPO_ROOT / "tools" / "hooks" / "shared_checks.py"
+HOOK_DIR = Path(__file__).resolve().parent
+
+#: Implementation modules this hook loads by path — and therefore the modules
+#: `icdev init` MUST ship beside it, or the hook cannot load at all.
+#: ``tools/installer/prebuild_bootstrap.py`` packages each one into
+#: ``icdev/data/claude_bootstrap/claude/hooks/``, and
+#: ``coherence_checker.py::check_bootstrap_parity`` reads THIS tuple out of the
+#: packaged hook to prove each named module actually shipped with it.
+PAYLOAD_MODULES = ("shared_checks.py",)
 
 
-def _load_shared_checks():
-    """Load tools/hooks/shared_checks.py by file path.
+def _payload_module_candidates(filename: str) -> tuple:
+    """Where *filename* may live, most authoritative first.
+
+    ``tools/hooks/`` is the canonical copy in THIS repo and stays first so a
+    checkout always runs the tree's own code. A project scaffolded by
+    `icdev init` has no ``tools/`` tree, so the packaged copy beside this hook
+    is the one that resolves there.
+    """
+    return (REPO_ROOT / "tools" / "hooks" / filename, HOOK_DIR / filename)
+
+
+def _load_payload_module(filename: str):
+    """Load one PAYLOAD_MODULES entry by file path.
 
     By path rather than ``from tools.hooks import shared_checks`` because
     importing the ``tools`` package executes its compatibility shim, which pulls
@@ -49,19 +84,32 @@ def _load_shared_checks():
     tool call, so that cost would land on every one of them.
 
     Deliberately not wrapped in try/except: a guard that cannot load must fail
-    loudly, not silently stop guarding.
+    loudly, not silently stop guarding. It names both candidates it tried,
+    because the failure that hid here for a whole release looked like a bare
+    ``FileNotFoundError`` on a path nobody expected the hook to want.
     """
-    spec = importlib.util.spec_from_file_location(
-        "icdev_hook_shared_checks", SHARED_CHECKS_PATH
+    for candidate in _payload_module_candidates(filename):
+        if candidate.is_file():
+            spec = importlib.util.spec_from_file_location(
+                f"icdev_hook_{Path(filename).stem}", candidate
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    tried = "\n  ".join(str(c) for c in _payload_module_candidates(filename))
+    raise FileNotFoundError(
+        f"pre_tool_use hook cannot load its implementation '{filename}'. "
+        f"Tried:\n  {tried}\n"
+        "In this repo it lives in tools/hooks/; in a project scaffolded by "
+        "`icdev init` it ships beside this hook. Re-run "
+        "`python tools/installer/prebuild_bootstrap.py` if the packaged copy "
+        "is missing."
     )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 # Every check below is implemented once, in shared_checks, so this hook and
 # tools/airgap/hook_compat.py (the headless path) cannot drift apart again.
-shared_checks = _load_shared_checks()
+shared_checks = _load_payload_module(PAYLOAD_MODULES[0])
 
 is_dangerous_rm_command = shared_checks.is_dangerous_rm_command
 is_env_file_access = shared_checks.is_env_file_access
@@ -915,8 +963,75 @@ HOOK_CHECK_CALLSITES = {
     "check_review_loop_precommit": "run_review_loop_precommit",
 }
 
+#: What each check in HOOK_CHECKS needs on disk, relative to REPO_ROOT, beyond
+#: this file and the stdlib. ``None`` means "nothing" — it runs anywhere.
+#:
+#: This is what makes the scaffolded-project subset MEASURED rather than
+#: claimed. `icdev init` copies args/ but no tools/, so the three checks that
+#: reach into ICDEV's own modules cannot run in a generated project; each one
+#: fails OPEN inside shared_checks, which is correct behaviour and completely
+#: invisible. :func:`payload_status` names them instead.
+HOOK_CHECK_REQUIREMENTS = {
+    "check_env_file_access": None,
+    "check_dangerous_rm": None,
+    "check_git_danger": None,
+    "check_append_only_write": None,
+    "check_direct_sqlite_usage": None,
+    "check_branch_deletion": None,
+    "check_file_access_tiers": "args/file_access_tiers.yaml",
+    "check_network_egress": "args/agent_egress_policy.yaml",
+    "check_worktree_path": "tools/git/worktree_paths.py",
+    "check_agent_rules": "tools/agent_detect/gate.py",
+    "check_review_loop_precommit": "tools/quality/review_loop.py",
+}
+
+
+def payload_status() -> dict:
+    """Which checks can run where this hook is installed, and why the rest cannot.
+
+    Existence of the dependency only — whether an operator then switched a
+    check off through its YAML or an env toggle is runtime policy, not a
+    packaging fact, and this reports packaging facts.
+    """
+    active, inert = [], []
+    for check in HOOK_CHECKS:
+        requirement = HOOK_CHECK_REQUIREMENTS.get(check)
+        if requirement is None or (REPO_ROOT / requirement).exists():
+            active.append(check)
+        else:
+            inert.append({"check": check, "missing": requirement})
+    return {
+        "root": str(REPO_ROOT),
+        "implementation": str(
+            next(
+                (c for c in _payload_module_candidates(PAYLOAD_MODULES[0])
+                 if c.is_file()),
+                "",
+            )
+        ),
+        "active": active,
+        "inert": inert,
+    }
+
+
+def _self_test() -> int:
+    """Print the payload status. Exit 0 — the hook loaded, which is the point."""
+    status = payload_status()
+    print(json.dumps(status, indent=2))
+    if status["inert"]:
+        names = ", ".join(i["check"] for i in status["inert"])
+        print(
+            f"\n{len(status['inert'])} check(s) inert here (dependency absent): "
+            f"{names}.\nThis is expected in a project scaffolded by `icdev init` "
+            "— see docs/features/exa-bench-10-packaged-hook-payload.md.",
+            file=sys.stderr,
+        )
+    return 0
+
 
 def main():
+    if "--self-test" in sys.argv[1:]:
+        sys.exit(_self_test())
     try:
         input_data = json.load(sys.stdin)
         tool_name = input_data.get("tool_name", "")

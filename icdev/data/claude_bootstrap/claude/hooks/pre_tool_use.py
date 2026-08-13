@@ -7,6 +7,7 @@ Pre-tool-use hook that validates tool calls before execution.
 
 Blocks:
     - Dangerous rm -rf commands
+    - Destructive git commands (reset --hard, clean -f, push --force, ...)
     - Access to .env files containing secrets
     - UPDATE/DELETE/DROP/TRUNCATE on every append-only table (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
@@ -23,6 +24,22 @@ paths cannot drift apart (hgx-guard-01). What still lives here is DATA: the
 canonical APPEND_ONLY_TABLES list, which CLAUDE.md's guardrail, the child-app
 generator and coherence_checker's autofix all read from this file.
 
+Scaffolded projects (exa-bench-10)
+----------------------------------
+This same file is packaged and copied into every project `icdev init` creates,
+and such a project has NO ``tools/`` tree — so resolving the implementation as
+``<root>/tools/hooks/shared_checks.py`` raised ``FileNotFoundError`` on every
+tool call there, silenced by the ``|| true`` in the generated settings.json.
+``shared_checks.py`` therefore ships BESIDE this file (see PAYLOAD_MODULES) and
+is looked up in both places.
+
+What a scaffolded project gets is the DOCUMENTED SUBSET, not the full set: the
+checks whose dependency is this file, stdlib, git or ``args/`` all run; the
+three that need ICDEV's own ``tools/`` modules cannot and are named as inert by
+:func:`payload_status` rather than being silently skipped. Rationale and the
+options considered: docs/features/exa-bench-10-packaged-hook-payload.md.
+Run ``python .claude/hooks/pre_tool_use.py --self-test`` to see which is which.
+
 Exit codes:
     0 = allow tool call
     2 = block tool call (shows error to Claude)
@@ -36,11 +53,30 @@ from pathlib import Path
 # rls-bypass: repo root resolved from __file__, never os.getcwd() — this hook
 # runs from whichever worktree invoked it, so cwd is not the repository root.
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SHARED_CHECKS_PATH = REPO_ROOT / "tools" / "hooks" / "shared_checks.py"
+HOOK_DIR = Path(__file__).resolve().parent
+
+#: Implementation modules this hook loads by path — and therefore the modules
+#: `icdev init` MUST ship beside it, or the hook cannot load at all.
+#: ``tools/installer/prebuild_bootstrap.py`` packages each one into
+#: ``icdev/data/claude_bootstrap/claude/hooks/``, and
+#: ``coherence_checker.py::check_bootstrap_parity`` reads THIS tuple out of the
+#: packaged hook to prove each named module actually shipped with it.
+PAYLOAD_MODULES = ("shared_checks.py",)
 
 
-def _load_shared_checks():
-    """Load tools/hooks/shared_checks.py by file path.
+def _payload_module_candidates(filename: str) -> tuple:
+    """Where *filename* may live, most authoritative first.
+
+    ``tools/hooks/`` is the canonical copy in THIS repo and stays first so a
+    checkout always runs the tree's own code. A project scaffolded by
+    `icdev init` has no ``tools/`` tree, so the packaged copy beside this hook
+    is the one that resolves there.
+    """
+    return (REPO_ROOT / "tools" / "hooks" / filename, HOOK_DIR / filename)
+
+
+def _load_payload_module(filename: str):
+    """Load one PAYLOAD_MODULES entry by file path.
 
     By path rather than ``from tools.hooks import shared_checks`` because
     importing the ``tools`` package executes its compatibility shim, which pulls
@@ -48,19 +84,32 @@ def _load_shared_checks():
     tool call, so that cost would land on every one of them.
 
     Deliberately not wrapped in try/except: a guard that cannot load must fail
-    loudly, not silently stop guarding.
+    loudly, not silently stop guarding. It names both candidates it tried,
+    because the failure that hid here for a whole release looked like a bare
+    ``FileNotFoundError`` on a path nobody expected the hook to want.
     """
-    spec = importlib.util.spec_from_file_location(
-        "icdev_hook_shared_checks", SHARED_CHECKS_PATH
+    for candidate in _payload_module_candidates(filename):
+        if candidate.is_file():
+            spec = importlib.util.spec_from_file_location(
+                f"icdev_hook_{Path(filename).stem}", candidate
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    tried = "\n  ".join(str(c) for c in _payload_module_candidates(filename))
+    raise FileNotFoundError(
+        f"pre_tool_use hook cannot load its implementation '{filename}'. "
+        f"Tried:\n  {tried}\n"
+        "In this repo it lives in tools/hooks/; in a project scaffolded by "
+        "`icdev init` it ships beside this hook. Re-run "
+        "`python tools/installer/prebuild_bootstrap.py` if the packaged copy "
+        "is missing."
     )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 # Every check below is implemented once, in shared_checks, so this hook and
 # tools/airgap/hook_compat.py (the headless path) cannot drift apart again.
-shared_checks = _load_shared_checks()
+shared_checks = _load_payload_module(PAYLOAD_MODULES[0])
 
 is_dangerous_rm_command = shared_checks.is_dangerous_rm_command
 is_env_file_access = shared_checks.is_env_file_access
@@ -796,6 +845,22 @@ def check_worktree_path(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+def check_write_outside_worktree(tool_name: str, tool_input: dict) -> str:
+    """Refuse a write whose resolved target is outside the session worktree.
+
+    The boundary D-ORCH-8's glob tiers cannot express (exa-bench-07). REPO_ROOT
+    is resolved from ``__file__``, so in a worktree it IS the worktree — which is
+    the right anchor here: ``AgentSession.working_dir`` is what ``claude_cli``
+    hands the child as cwd, and that is a worktree, not the main checkout.
+
+    Set ICDEV_WRITE_BOUNDARY_GUARD=0 to disable or =monitor to record without
+    refusing. Fails OPEN on any resolution error.
+    """
+    return shared_checks.check_write_outside_worktree(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
 def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     """Refuse to delete a remote branch that still holds unmerged commits.
 
@@ -804,6 +869,40 @@ def check_branch_deletion(tool_name: str, tool_input: dict) -> str:
     ICDEV_BRANCH_DELETE_GUARD=0 to disable. Fails OPEN on any error.
     """
     return shared_checks.check_branch_deletion(
+        tool_name, tool_input, repo_root=REPO_ROOT
+    ) or ""
+
+
+def check_git_danger(tool_name: str, tool_input: dict) -> str:
+    """Refuse a destructive git command (OPT-51).
+
+    Wired into ``main()`` by exa-bench-06. The patterns have lived in
+    shared_checks since hgx-guard-02, but only the HEADLESS path called the
+    check — so ``git reset --hard origin/main`` and ``git clean -fdx`` were
+    refused by ``hook_compat.run_pre_tool_check`` and ALLOWED here. That is the
+    wrong way round: this is the path a session running with
+    ``--dangerously-skip-permissions`` depends on (D394).
+    """
+    return shared_checks.check_git_danger(tool_name, tool_input) or ""
+
+
+def check_network_egress(tool_name: str, tool_input: dict) -> str:
+    """Record — and, when enforcing, refuse — egress to an unapproved host.
+
+    This is the ONLY network control on the spawned-CLI surface:
+    ``tools/agents/adapters/claude_cli.py`` runs Claude Code with
+    ``--dangerously-skip-permissions`` (ADR D394), so the vendor prompt is off
+    and neither in-process gate is in that process's path.
+
+    Monitor-only by default — findings are appended to
+    ``.tmp/egress_findings.jsonl`` and the call proceeds. Flip
+    ``agent_egress.enforce`` in ``args/agent_egress_policy.yaml`` or set
+    ICDEV_EGRESS_GUARD_ENFORCE=1 to block. ICDEV_EGRESS_GUARD=0 disables it.
+    Fails OPEN on any error. See the docstring on
+    ``shared_checks.check_network_egress`` for the evasion boundary — it is a
+    tripwire with named blind spots, not a network boundary.
+    """
+    return shared_checks.check_network_egress(
         tool_name, tool_input, repo_root=REPO_ROOT
     ) or ""
 
@@ -823,7 +922,116 @@ def check_agent_rules(tool_name: str, tool_input: dict) -> str:
     ) or ""
 
 
+#: Every blocking check ``main()`` runs, named as it is named in shared_checks,
+#: in evaluation order. Declared rather than inferred because ``main()`` calls
+#: several of them through their ``is_*`` predicate rather than their ``check_*``
+#: wrapper, so no amount of grepping the source recovers the set reliably.
+#:
+#: ``tests/hooks/test_hook_parity.py`` asserts this equals
+#: ``hook_compat.HEADLESS_CHECKS`` as a SET, and separately that each entry here
+#: is genuinely reached from ``main()`` — a declaration nothing verifies is how
+#: check_git_danger sat in shared_checks for a whole slice without ever running.
+HOOK_CHECKS = (
+    "check_env_file_access",
+    "check_dangerous_rm",
+    "check_git_danger",
+    "check_append_only_write",
+    "check_direct_sqlite_usage",
+    "check_file_access_tiers",
+    "check_write_outside_worktree",
+    "check_branch_deletion",
+    "check_worktree_path",
+    "check_network_egress",
+    "check_agent_rules",
+    "check_review_loop_precommit",
+)
+
+#: shared_checks name -> the identifier ``main()`` actually calls. Lets the
+#: parity test prove HOOK_CHECKS describes the code rather than trusting it.
+HOOK_CHECK_CALLSITES = {
+    "check_env_file_access": "is_env_file_access",
+    "check_dangerous_rm": "is_dangerous_rm_command",
+    "check_git_danger": "check_git_danger",
+    "check_append_only_write": "is_append_only_table_modification",
+    "check_direct_sqlite_usage": "is_direct_sqlite_usage",
+    "check_file_access_tiers": "check_file_access_tiers",
+    "check_write_outside_worktree": "check_write_outside_worktree",
+    "check_branch_deletion": "check_branch_deletion",
+    "check_worktree_path": "check_worktree_path",
+    "check_network_egress": "check_network_egress",
+    "check_agent_rules": "check_agent_rules",
+    "check_review_loop_precommit": "run_review_loop_precommit",
+}
+
+#: What each check in HOOK_CHECKS needs on disk, relative to REPO_ROOT, beyond
+#: this file and the stdlib. ``None`` means "nothing" — it runs anywhere.
+#:
+#: This is what makes the scaffolded-project subset MEASURED rather than
+#: claimed. `icdev init` copies args/ but no tools/, so the three checks that
+#: reach into ICDEV's own modules cannot run in a generated project; each one
+#: fails OPEN inside shared_checks, which is correct behaviour and completely
+#: invisible. :func:`payload_status` names them instead.
+HOOK_CHECK_REQUIREMENTS = {
+    "check_env_file_access": None,
+    "check_dangerous_rm": None,
+    "check_git_danger": None,
+    "check_append_only_write": None,
+    "check_direct_sqlite_usage": None,
+    "check_branch_deletion": None,
+    "check_file_access_tiers": "args/file_access_tiers.yaml",
+    "check_network_egress": "args/agent_egress_policy.yaml",
+    "check_worktree_path": "tools/git/worktree_paths.py",
+    "check_agent_rules": "tools/agent_detect/gate.py",
+    "check_review_loop_precommit": "tools/quality/review_loop.py",
+}
+
+
+def payload_status() -> dict:
+    """Which checks can run where this hook is installed, and why the rest cannot.
+
+    Existence of the dependency only — whether an operator then switched a
+    check off through its YAML or an env toggle is runtime policy, not a
+    packaging fact, and this reports packaging facts.
+    """
+    active, inert = [], []
+    for check in HOOK_CHECKS:
+        requirement = HOOK_CHECK_REQUIREMENTS.get(check)
+        if requirement is None or (REPO_ROOT / requirement).exists():
+            active.append(check)
+        else:
+            inert.append({"check": check, "missing": requirement})
+    return {
+        "root": str(REPO_ROOT),
+        "implementation": str(
+            next(
+                (c for c in _payload_module_candidates(PAYLOAD_MODULES[0])
+                 if c.is_file()),
+                "",
+            )
+        ),
+        "active": active,
+        "inert": inert,
+    }
+
+
+def _self_test() -> int:
+    """Print the payload status. Exit 0 — the hook loaded, which is the point."""
+    status = payload_status()
+    print(json.dumps(status, indent=2))
+    if status["inert"]:
+        names = ", ".join(i["check"] for i in status["inert"])
+        print(
+            f"\n{len(status['inert'])} check(s) inert here (dependency absent): "
+            f"{names}.\nThis is expected in a project scaffolded by `icdev init` "
+            "— see docs/features/exa-bench-10-packaged-hook-payload.md.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def main():
+    if "--self-test" in sys.argv[1:]:
+        sys.exit(_self_test())
     try:
         input_data = json.load(sys.stdin)
         tool_name = input_data.get("tool_name", "")
@@ -841,6 +1049,14 @@ def main():
                 print(shared_checks.DANGEROUS_RM_BLOCK_REASON, file=sys.stderr)
                 sys.exit(2)
 
+        # Block destructive git commands (OPT-51). Third, exactly where
+        # HEADLESS_CHECKS runs it — the two paths block the same set in the
+        # same order (exa-bench-06).
+        git_error = check_git_danger(tool_name, tool_input)
+        if git_error:
+            print(git_error, file=sys.stderr)
+            sys.exit(2)
+
         # Block modification of all append-only tables (NIST 800-53 AU, D6)
         if is_append_only_table_modification(tool_name, tool_input):
             print(shared_checks.APPEND_ONLY_BLOCK_REASON, file=sys.stderr)
@@ -857,6 +1073,14 @@ def main():
             print(tier_error, file=sys.stderr)
             sys.exit(2)
 
+        # Keep a write inside the worktree (exa-bench-07). Runs right after the
+        # tiers because it is their complement: they say which file, this says
+        # where — a glob list cannot express "anywhere but here".
+        boundary_error = check_write_outside_worktree(tool_name, tool_input)
+        if boundary_error:
+            print(boundary_error, file=sys.stderr)
+            sys.exit(2)
+
         # Never delete a remote branch that still holds unmerged work
         branch_error = check_branch_deletion(tool_name, tool_input)
         if branch_error:
@@ -867,6 +1091,14 @@ def main():
         worktree_error = check_worktree_path(tool_name, tool_input)
         if worktree_error:
             print(worktree_error, file=sys.stderr)
+            sys.exit(2)
+
+        # Network egress (exa-bench-08). Monitor-only by default: it records the
+        # finding and returns "" so the call proceeds. This is the only network
+        # control that reaches the --dangerously-skip-permissions session.
+        egress_error = check_network_egress(tool_name, tool_input)
+        if egress_error:
+            print(egress_error, file=sys.stderr)
             sys.exit(2)
 
         # AGOV declarative rules — LAST, and additive only (agov-det-06).

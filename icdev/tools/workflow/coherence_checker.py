@@ -8224,55 +8224,80 @@ def _load_bootstrap_parity() -> List[Dict[str, str]]:
     return [p for p in pairs if isinstance(p, dict) and p.get("target") and p.get("source")]
 
 
-#: ``REPO_ROOT / "a" / "b"`` as the packaged hooks spell it.
-_BOOTSTRAP_PATH_IDIOM = re.compile(
-    r'(?:REPO_ROOT|_REPO_ROOT|BASE_DIR|PROJECT_ROOT)\s*/\s*'
-    r'((?:"[^"]+"|\'[^\']+\')(?:\s*/\s*(?:"[^"]+"|\'[^\']+\'))*)'
+_BOOTSTRAP_HOOKS_DIR = (
+    PROJECT_ROOT / "icdev" / "data" / "claude_bootstrap" / "claude" / "hooks"
 )
-#: The name a hook binds a constructed path to, when it then executes it.
-_EXECUTED_PATH_RE = re.compile(r'spec_from_file_location\(\s*[^,]+,\s*([A-Za-z_][\w]*)')
 
 
-def _unshipped_executed_dependencies() -> List[str]:
-    """Modules a packaged hook ``exec_module``s that the payload does not ship.
+def _packaged_hook_payload_modules() -> List[Tuple[str, str]]:
+    """``(packaged hook, module it loads by path)`` for every packaged hook.
 
-    Scoped deliberately to EXECUTED dependencies rather than every path a hook
-    constructs. The packaged hooks also build ``.env``, ``.tmp/sessions``,
-    ``.tmp/worktrees``, ``.tmp/dashboard_unreachable`` and ``data/icdev.db`` —
-    all runtime artifacts created on demand and correctly absent from the
-    payload. Flagging those would be five false positives against one real
-    finding, and a gate that cries wolf gets switched off.
+    Derived from the hooks themselves — each declares a module-level
+    ``PAYLOAD_MODULES`` tuple and its loader iterates that same tuple — rather
+    than from a hand-maintained list here, which would be one more thing that
+    can go stale while looking green.
 
-    A module passed to ``spec_from_file_location`` and then ``exec_module``
-    is different in kind: it must exist at import time or the hook dies.
+    A hook with no ``PAYLOAD_MODULES`` contributes nothing: most hooks are
+    self-contained and only the ones that ``exec_module`` an implementation
+    file have a payload to ship.
     """
-    root = PROJECT_ROOT / "icdev" / "data" / "claude_bootstrap"
-    if not root.is_dir():
-        return []
-    gate = _load_bootstrap_parity_config()
-    allowed = {str(e.get("path")) for e in (gate.get("payload_grandfathered") or [])}
-    shipped = {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
-
-    out: List[str] = []
-    for hook in sorted((root / "claude" / "hooks").glob("*.py")):
-        src = _read_text(hook)
-        executed = set(_EXECUTED_PATH_RE.findall(src))
-        if not executed:
+    found: List[Tuple[str, str]] = []
+    if not _BOOTSTRAP_HOOKS_DIR.is_dir():
+        return found
+    for hook in sorted(_BOOTSTRAP_HOOKS_DIR.glob("*.py")):
+        try:
+            tree = ast.parse(hook.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — an unparseable hook is another check's job
             continue
-        for name in executed:
-            for match in re.finditer(
-                rf'^{re.escape(name)}\s*=\s*' + _BOOTSTRAP_PATH_IDIOM.pattern, src, re.M
-            ):
-                rel = "/".join(
-                    p.strip("\"'") for p in re.findall(r'"[^"]+"|\'[^\']+\'', match.group(1))
-                )
-                if not rel or rel in allowed:
-                    continue
-                # the payload flattens `.claude/` to `claude/`
-                if rel in shipped or rel.replace(".claude/", "claude/") in shipped:
-                    continue
-                out.append(f"{hook.name} executes {rel} — not in the bootstrap payload")
-    return sorted(set(out))
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if "PAYLOAD_MODULES" not in names:
+                continue
+            try:
+                for module in ast.literal_eval(node.value):
+                    found.append((hook.name, str(module)))
+            except Exception:  # noqa: BLE001 — a non-literal declaration is unusable
+                continue
+    return found
+
+
+def _bootstrap_payload_defects() -> List[str]:
+    """Modules a packaged hook loads that did NOT ship with it, or shipped stale.
+
+    THE BUG THIS EXISTS FOR (exa-bench-10)
+    ======================================
+    ``claude/hooks/pre_tool_use.py`` loads its implementation with
+    ``spec_from_file_location`` + ``exec_module``. The bootstrap payload shipped
+    the hook and not the implementation, so in every project `icdev init`
+    created the hook raised ``FileNotFoundError`` on EVERY tool call — and the
+    generated settings.json wraps each hook in ``|| true``, so the shell
+    returned 0 and nothing ever surfaced. Every generated project believed it
+    had a PreToolUse guard and had none.
+
+    Byte-parity against ``tools/hooks/`` is checked too: a payload module that
+    ships one release behind is the #960 trap one directory over.
+    """
+    defects: List[str] = []
+    for hook_name, module in _packaged_hook_payload_modules():
+        packaged = _BOOTSTRAP_HOOKS_DIR / module
+        if not packaged.is_file():
+            defects.append(
+                f"claude/hooks/{hook_name} loads '{module}' by path, but "
+                f"icdev/data/claude_bootstrap/claude/hooks/{module} does not "
+                f"exist — the hook cannot load in a scaffolded project"
+            )
+            continue
+        source = PROJECT_ROOT / "tools" / "hooks" / module
+        if source.is_file() and source.read_bytes() != packaged.read_bytes():
+            defects.append(
+                f"claude/hooks/{module} != tools/hooks/{module} "
+                f"({packaged.stat().st_size} vs {source.stat().st_size} bytes) "
+                f"— `icdev init` ships a stale implementation of "
+                f"claude/hooks/{hook_name}"
+            )
+    return defects
 
 
 def check_bootstrap_parity() -> CoherenceCheck:
@@ -8288,9 +8313,17 @@ def check_bootstrap_parity() -> CoherenceCheck:
     raw byte-compare of two 40 KB blobs whose offset markers read like CRLF
     drift. This check runs locally, covers every pair declared in
     args/bootstrap_parity.yaml, and names the file and the fix.
+
+    It also runs a PAYLOAD-COMPLETENESS rule (exa-bench-10): every module a
+    packaged hook loads by path must ship beside it, and must not be stale.
+    That one is derived from the hooks, not declared here — see
+    :func:`_bootstrap_payload_defects`.
     """
+    payload_defects = _bootstrap_payload_defects()
     pairs = _load_bootstrap_parity()
-    if not pairs:
+    # The payload rule is DERIVED from the packaged hooks, not declared in the
+    # YAML, so it still has something to say when the declaration is missing.
+    if not pairs and not payload_defects:
         return CoherenceCheck(
             check_id="bootstrap_parity",
             check_name="Bootstrap Parity",
@@ -8324,56 +8357,58 @@ def check_bootstrap_parity() -> CoherenceCheck:
                 f"({target.stat().st_size} vs {source.stat().st_size} bytes)"
             )
 
-    if drift:
+    if drift or payload_defects:
+        reasons = []
+        if drift:
+            reasons.append(
+                f"{len(drift)} packaged bootstrap file(s) differ from the repo "
+                f"file they scaffold, so `icdev init` would hand a new project "
+                f"different instructions than this repo runs on (that is #960)."
+            )
+        if payload_defects:
+            reasons.append(
+                f"{len(payload_defects)} module(s) a packaged hook loads by "
+                f"path did not ship with it (or shipped stale), so that hook "
+                f"raises on every tool call in a scaffolded project — and the "
+                f"generated settings.json wraps hooks in `|| true`, so it fails "
+                f"invisibly (exa-bench-10)."
+            )
         return CoherenceCheck(
             check_id="bootstrap_parity",
             check_name="Bootstrap Parity",
             status="fail",
-            expected=[f"{len(pairs)} bootstrap pair(s) byte-identical"],
-            actual=[f"{len(drift)} drifted"],
+            expected=[
+                f"{len(pairs)} bootstrap pair(s) byte-identical",
+                "every module a packaged hook loads ships beside it",
+            ],
+            actual=[
+                f"{len(drift)} drifted",
+                f"{len(payload_defects)} payload defect(s)",
+            ],
             missing=missing,
-            extra=drift,
+            extra=drift + payload_defects,
             message=(
-                f"{len(drift)} packaged bootstrap file(s) differ from the repo "
-                f"file they scaffold, so `icdev init` would hand a new project "
-                f"different instructions than this repo runs on (that is #960). "
-                "Fix: `python tools/installer/prebuild_bootstrap.py` — it "
+                " ".join(reasons)
+                + " Fix: `python tools/installer/prebuild_bootstrap.py` — it "
                 "regenerates the whole bootstrap from the repo, which is the "
                 "sanctioned path. Do NOT hand-copy a single file: the other "
                 "packaged files drift too and a targeted copy hides that."
             ),
         )
 
-    unshipped = _unshipped_executed_dependencies()
-    if unshipped:
-        return CoherenceCheck(
-            check_id="bootstrap_parity",
-            check_name="Bootstrap Parity",
-            status="fail",
-            expected=["every module a packaged hook exec_module()s ships with it"],
-            actual=[f"{len(unshipped)} executed dependency not in the payload"],
-            missing=[],
-            extra=unshipped,
-            message=(
-                f"{len(unshipped)} module(s) a packaged hook LOADS AND EXECUTES are "
-                "not in the bootstrap payload, so in a scaffolded project the hook "
-                "raises on import and exits non-zero on every tool call. Parity is "
-                "not enough: a file can match the repo byte-for-byte and still be "
-                "unusable because what it imports was never shipped. Fix by adding "
-                "the dependency to BOOTSTRAP_MAP in tools/cli/init.py — NOT by "
-                "wrapping the hook in `|| true`, which converts a loud failure into "
-                "a guard that silently does not guard. Grandfather an accepted gap "
-                "in args/bootstrap_parity.yaml under its task id, and DELETE the "
-                "entry when it is fixed rather than editing it."
-            ),
-        )
-
-    note = f"{checked} bootstrap pair(s) byte-identical"
+    n_payload = len(_packaged_hook_payload_modules())
+    note = (
+        f"{checked} bootstrap pair(s) byte-identical, "
+        f"{n_payload} packaged hook payload module(s) present"
+    )
     return CoherenceCheck(
         check_id="bootstrap_parity",
         check_name="Bootstrap Parity",
         status="warn" if missing else "pass",
-        expected=[f"{len(pairs)} bootstrap pair(s) byte-identical"],
+        expected=[
+            f"{len(pairs)} bootstrap pair(s) byte-identical",
+            "every module a packaged hook loads ships beside it",
+        ],
         actual=[note],
         missing=missing,
         extra=[],
