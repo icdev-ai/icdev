@@ -1028,8 +1028,6 @@ tests/test_genesis_market_anomaly.py
 tests/test_genesis_orange_proposal.py
 tests/test_genesis_pattern_detector.py
 tests/test_genesis_reflex_cato_monitor.py
-tests/test_genesis_reflex_cpmp_monitor.py
-tests/test_genesis_reflex_cpmp_monitor_card_identity.py
 tests/test_genesis_reflex_experiment.py
 tests/test_genesis_reflex_failure_triage.py
 tests/test_genesis_reflex_nocc_alarm_triage.py

@@ -24,6 +24,23 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 
+def _placeholder_titles() -> frozenset:
+    """Title values that name no particular contract.
+
+    Sourced from contract_manager so the two cannot drift: if the default that
+    create_contract() stamps is ever changed, this follows it. Imported lazily
+    with a literal fallback because this reflex is loaded by the Genesis daemon
+    and must not fail to import when a govcon dependency is unavailable.
+    """
+    default = "Untitled Contract"
+    try:
+        from tools.govcon.contract_manager import DEFAULT_CONTRACT_TITLE
+        default = DEFAULT_CONTRACT_TITLE
+    except Exception:
+        pass
+    return frozenset({default.casefold()})
+
+
 def _contract_label(contract: Dict) -> str:
     """Human-identifiable label for a contract, for use in card titles.
 
@@ -33,10 +50,24 @@ def _contract_label(contract: Dict) -> str:
     empty string and every card landed titled "[CPMP] : Subcontractor
     Compliance" — unidentifiable, and identical across contracts. Fall back on
     the VALUE, not the key.
+
+    A present value is not automatically an identifying one. create_contract()
+    stamps 'Untitled Contract' on any contract created without a title, so
+    falling back to `title` reintroduced the very collapse the paragraph above
+    describes, one door over: on 2026-08-12 four DIFFERENT active contracts
+    (df32ba49, 6d67ff20, 719d5e59, 8143e17a) each held a board card titled
+    exactly "[CPMP] Untitled Contract: Overdue Deliverables", two of them
+    dispatched to sessions at the same time. The card ids differ, so nothing
+    was dropped — but a title that cannot distinguish which of four contracts
+    it means is not actionable, which is the whole point of the label.
+
+    So a placeholder is treated as ABSENT and the chain falls through to the
+    id, which is the only field guaranteed to identify exactly one contract.
     """
+    placeholders = _placeholder_titles()
     for key in ("contract_number", "title"):
         value = (contract.get(key) or "").strip()
-        if value:
+        if value and value.casefold() not in placeholders:
             return value
     return f"contract {str(contract.get('id') or '?')[:8]}"
 
