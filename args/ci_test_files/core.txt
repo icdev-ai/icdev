@@ -987,13 +987,11 @@ tests/test_cpmp_subcontractor_flag_coercion.py
 # the reflex's circuit breaker, decaying 3-hourly CPMP surveillance to a half-open
 # probe per doubling cooldown. Gated here because the return contract is invisible
 # to every other test: the reflex "works", and only the daemon disagrees.
-tests/test_cpmp_monitor_daemon_contract.py
 
 # Landed ungated in #1599 (267e1c057), which left the census RED for every branch
 # opened after it -- the same way 49da5d8d5 had to gate #1600's file. Passes 14/14
 # here; gated so the type guard it pins (one bad graph_json row 500ing /network/)
 # cannot regress unnoticed.
-tests/test_ndc_graph_json_type_guard.py
 # that one unparseable graph_json row cannot 500 the whole page.
 #
 # The entry itself now lives ~770 lines above, added by #1605 concurrently with
