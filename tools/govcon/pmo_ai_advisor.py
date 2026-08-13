@@ -79,18 +79,26 @@ def _gather_contract_context(contract_id):
         ).fetchone()
         ctx["evm"] = dict(evm) if evm else {}
 
+        # Closed statuses come from contract_manager.CLOSED_DELIVERABLE_STATUSES,
+        # not a literal tuple: these two queries and compute_overdue_deliverables
+        # have to agree on what "still an open obligation" means, and a literal
+        # is how 'cancelled' gets added to one of them and forgotten in the next.
+        from tools.govcon.contract_manager import CLOSED_DELIVERABLE_STATUSES
+        closed = CLOSED_DELIVERABLE_STATUSES
+        closed_ph = ", ".join(["%s"] * len(closed))
+
         overdue = conn.execute(
             "SELECT COUNT(*) as cnt FROM cpmp_deliverables "
-            "WHERE contract_id = %s AND status NOT IN ('accepted','rejected') AND due_date < %s",
-            (contract_id, date.today().isoformat())
+            f"WHERE contract_id = %s AND status NOT IN ({closed_ph}) AND due_date < %s",  # nosec B608 -- placeholders only, values bound
+            (contract_id, *closed, date.today().isoformat())
         ).fetchone()
         ctx["overdue_deliverables"] = overdue["cnt"] if overdue else 0
 
         due_soon = conn.execute(
             "SELECT COUNT(*) as cnt FROM cpmp_deliverables "
-            "WHERE contract_id = %s AND status NOT IN ('accepted','rejected') "
+            f"WHERE contract_id = %s AND status NOT IN ({closed_ph}) "  # nosec B608 -- placeholders only, values bound
             "AND due_date >= %s AND due_date <= %s",
-            (contract_id, date.today().isoformat(), (date.today() + timedelta(days=30)).isoformat())
+            (contract_id, *closed, date.today().isoformat(), (date.today() + timedelta(days=30)).isoformat())
         ).fetchone()
         ctx["due_in_30_days"] = due_soon["cnt"] if due_soon else 0
 

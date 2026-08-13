@@ -13,7 +13,7 @@
     <div>
         <h1>{{ deliverable.title }}</h1>
         <div style="margin-top:4px;">
-            {% set dstatus_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error'} %}
+            {% set dstatus_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error', 'cancelled': 'cancelled'} %}
             <span class="badge badge-{{ dstatus_colors.get(deliverable.status, 'info') }}">{{ deliverable.status | replace('_', ' ') | title }}</span>
         </div>
     </div>
@@ -35,7 +35,7 @@
 </style>
 
 {% set main_states = ['not_started', 'in_progress', 'draft_complete', 'internal_review', 'submitted', 'government_review', 'accepted'] %}
-{% set branch_states = ['rejected', 'resubmitted', 'overdue'] %}
+{% set branch_states = ['rejected', 'resubmitted', 'overdue', 'cancelled'] %}
 {% set state_labels = {
     'not_started': 'Not Started',
     'in_progress': 'In Progress',
@@ -46,7 +46,8 @@
     'accepted': 'Accepted',
     'rejected': 'Rejected',
     'resubmitted': 'Resubmitted',
-    'overdue': 'Overdue'
+    'overdue': 'Overdue',
+    'cancelled': 'Cancelled'
 } %}
 
 <div class="status-pipeline" role="img" aria-label="Deliverable lifecycle: {{ deliverable.status | replace('_', ' ') | title }}">
@@ -178,7 +179,7 @@
                 <td class="text-muted">{{ h.created_at or h.timestamp or '—' }}</td>
                 <td>{{ (h.old_status or '—') | replace('_', ' ') | title }}</td>
                 <td>
-                    {% set h_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error'} %}
+                    {% set h_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error', 'cancelled': 'cancelled'} %}
                     <span class="badge badge-{{ h_colors.get(h.new_status, 'info') }}">{{ h.new_status | replace('_', ' ') | title }}</span>
                 </td>
                 <td>{{ h.changed_by or '—' }}</td>

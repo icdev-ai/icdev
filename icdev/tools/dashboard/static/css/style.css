@@ -599,6 +599,13 @@ tbody tr:hover {
     color: var(--status-green);
     border: 1px solid var(--status-green);
 }
+/* Withdrawn / no longer an obligation. Deliberately muted rather than green:
+   a cancelled CDRL is not a delivered one, and it must not read as success. */
+.badge-cancelled {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-light);
+}
 
 /* Severity badges */
 .badge-CAT-I, .badge-high {

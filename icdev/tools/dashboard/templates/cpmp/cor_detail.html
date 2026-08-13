@@ -84,7 +84,7 @@
                     <td>{{ d.title | default('—') }}</td>
                     <td>
                         {% set dstatus = d.status | default('not_started') %}
-                        {% set dstatus_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error'} %}
+                        {% set dstatus_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error', 'cancelled': 'cancelled'} %}
                         <span class="badge badge-{{ dstatus_colors.get(dstatus, 'info') }}">{{ dstatus | replace('_', ' ') | title }}</span>
                     </td>
                     <td>{{ d.due_date or '—' }}</td>
