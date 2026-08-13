@@ -1,15 +1,18 @@
 # CUI // SP-CTI
 """Genesis Reflex: CPMP Monitor — proactive contract health surveillance.
 
-Runs every 3 hours via Genesis daemon. Three detection passes:
+Runs every 3 hours via Genesis daemon. One state pass, then four detection passes:
+  0. Overdue Sweep   — compute_overdue_deliverables() → the only thing that ever
+                       moves a CDRL to status 'overdue' and fills days_overdue
   1. PMO AI Issues   — auto_detect_issues() → kanban cards for critical/high findings
   2. CPARS Trajectory — predicted score declining toward Marginal → CAT2 alert
   3. Subcontractor Noncompliance — detect_noncompliance() → kanban high-priority
   4. Deliverable Auto-Generation — generate CDRLs due in 14 days
 
 Pass type controlled by trigger_data['pass_type']:
-  'full' (default) — all four passes
-  'deliverables'   — only deliverable auto-generation pass (lightweight, every 3h)
+  'full' (default) — all passes
+  'deliverables'   — only the overdue sweep + deliverable auto-generation
+                     (lightweight, every 3h)
 """
 
 import hashlib
@@ -86,8 +89,47 @@ def run(trigger_data=None, context=None):
         "cpars_alerts": 0,
         "subcon_alerts": 0,
         "cdrl_generated": 0,
+        "deliverables_marked_overdue": 0,
         "errors": [],
     }
+
+    # ── Pass 0: drive the overdue state machine ───────────────────────
+    #
+    # contract_manager.compute_overdue_deliverables() is what moves a CDRL to
+    # status 'overdue' and fills days_overdue. Until now NOTHING called it
+    # outside its own argparse block, so on the live board no deliverable had
+    # ever reached that state and days_overdue was 0 on every row — including
+    # rows 44 days past due.
+    #
+    # That is not cosmetic, because 'overdue' is the ONLY thing four separate
+    # consumers look at, and all four therefore read a permanent zero:
+    #
+    #   contract_manager.get_contract()      -> overdue_count on the contract page
+    #   portfolio_manager                    -> per-contract count AND the
+    #                                           portfolio-wide overdue list
+    #   cpars_predictor                      -> overdue count feeds the predicted
+    #                                           CPARS score, so the predictor is
+    #                                           blind to schedule slip
+    #   negative_event_tracker               -> gated on days_overdue > 0, so a
+    #                                           late CDRL has never once been
+    #                                           recorded as a negative event
+    #
+    # Meanwhile pmo_ai_advisor derives overdue LIVE from due_date, which is why
+    # this reflex files a high-severity "N CDRL(s) are past due" card while the
+    # contract page next to it says 0 overdue. Same table, two definitions, and
+    # only one of them had anything driving it.
+    #
+    # Runs before the contract loop and unscoped: one query covers deliverables
+    # on non-active contracts too (the loop only walks active ones), and one
+    # audit row per cycle instead of one per contract. Guarded, because a sweep
+    # that raises must not take the surveillance passes below down with it.
+    if pass_type in ("full", "deliverables"):
+        try:
+            from tools.govcon.contract_manager import compute_overdue_deliverables
+            swept = compute_overdue_deliverables()
+            results["deliverables_marked_overdue"] = swept.get("overdue_count", 0)
+        except Exception as e:
+            results["errors"].append(f"Overdue sweep: {e}")
 
     try:
         from tools.db.storage import get_connection
@@ -369,7 +411,8 @@ def _write_memory_log(results: Dict):
                 f"{results['issues_found']} issues, "
                 f"{results['cards_created']} cards, "
                 f"{results['cpars_alerts']} CPARS alerts, "
-                f"{results['cdrl_generated']} CDRLs generated."
+                f"{results['cdrl_generated']} CDRLs generated, "
+                f"{results['deliverables_marked_overdue']} newly overdue."
             ),
             entry_type="event",
             source="cpmp_monitor",
