@@ -980,6 +980,11 @@ tests/test_cpmp_update_subcontractor_requires_name.py
 # execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
 tests/test_cpmp_subcontractor_flag_coercion.py
 tests/test_ndc_graph_json_type_guard.py
+# (test_ndc_graph_json_type_guard.py was registered here by #1604 and, in the
+# same window, higher up this file by #1606. core.txt is merge=union, so both
+# appends landed and the row became an exact duplicate -- which --check rejects.
+# The #1606 block above is kept; this one is removed rather than both, so the
+# file still gates the test exactly once.)
 
 # Overdue-CDRL marking. compute_overdue_deliverables() is the only writer of
 # cpmp_deliverables.status='overdue' and days_overdue, and it had no caller but
