@@ -955,3 +955,18 @@ tests/ci/test_precommit_test_gating.py
 # tsg-policy-02. It pins that one malformed graph_json row cannot 500 /network/.
 # 14 tests, ~1s, no DB/network. Registered here in the PR that makes the same
 # mistake harder to repeat.
+# cpmp_monitor satisfied neither half of its contract and nothing went red for it.
+# It returned a bare results dict with no `success` key, so GenesisDaemon's
+# `result.get("success", False)` scored every run a failure -- 11 runs, 0
+# successes, circuit breaker OPEN, the reflex silently switched off. Pass 3 also
+# read `noncompliance`/`issue_type`/`subcontractor_name`, none of which
+# detect_noncompliance has ever returned, so no [SUBCON] card was ever filed.
+# Gated here in the PR that fixes it: both halves are contract bugs between two
+# modules, which is exactly the shape that re-breaks silently on the next rename.
+tests/test_cpmp_monitor_reflex_contract.py
+# Added by #1599 (ndc graph_json type guard) without a core.txt entry, which left
+# main red on this very census. Verified green (14 passed) before gating -- this
+# is the sanctioned remediation, same as 49da5d8d5 did for the gate-sentinel test.
+# Not this PR's change, but the census runs in the required `test` job, so every
+# branch is blocked until someone lands it.
+tests/test_ndc_graph_json_type_guard.py

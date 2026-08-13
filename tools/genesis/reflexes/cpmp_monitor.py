@@ -99,7 +99,8 @@ def run(trigger_data=None, context=None):
         conn.close()
         active = [dict(r) for r in active]
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        results["errors"].append(str(e))
+        return {"success": False, "metric_value": 0, "details": results, "error": str(e)}
 
     results["contracts_scanned"] = len(active)
 
@@ -220,15 +221,23 @@ def run(trigger_data=None, context=None):
             try:
                 from tools.govcon.subcontractor_tracker import detect_noncompliance
                 nc = detect_noncompliance(cid)
-                findings = nc.get("noncompliance", [])
+                # detect_noncompliance returns its list under "findings", and each
+                # entry is keyed category/company_name. Reading "noncompliance",
+                # "issue_type" and "subcontractor_name" — none of which that
+                # function has ever returned — made this pass a guaranteed no-op:
+                # the list was always [], so no [SUBCON] card has ever been filed
+                # (0 on the board against 14 [CPMP] cards from pmo_ai_advisor,
+                # which is a separate path). The keys are pinned by
+                # tests/test_cpmp_monitor_reflex_contract.py.
+                findings = nc.get("findings", [])
                 high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
                 for finding in high_findings:
                     try:
                         wrote = _suggest_kanban_card(
-                            title=f"[SUBCON] {clabel}: {finding.get('issue_type','Noncompliance').replace('_',' ').title()}",
+                            title=f"[SUBCON] {clabel}: {finding.get('category','Noncompliance').replace('_',' ').title()}",
                             description=(
                                 f"Contract: {ctitle}\n"
-                                f"Subcontractor: {finding.get('subcontractor_name','N/A')}\n"
+                                f"Subcontractor: {finding.get('company_name') or 'N/A'}\n"
                                 f"Issue: {finding.get('description','')}\n"
                                 f"Severity: {finding.get('severity','').upper()}\n"
                                 f"Action: Initiate flow-down corrective action per FAR 52.219-9."
@@ -236,9 +245,17 @@ def run(trigger_data=None, context=None):
                             priority="high",
                             context_data={"contract_id": cid, "contract_number": cnum, "finding": finding},
                             created_by="cpmp_monitor_subcon",
+                            # sub_id, not company_name: it is the stable
+                            # discriminator, and two subs can share a name. It is
+                            # None for contract-level findings (isr_ssr), where
+                            # category alone is already unique per contract. With
+                            # the old keys this expression evaluated to a constant
+                            # f"{cid}:noncompliance:" for EVERY finding, so one
+                            # contract's flowdown, cybersecurity and cmmc findings
+                            # would have collapsed into a single card.
                             dedup_key=(
-                                f"{cid}:{finding.get('issue_type','noncompliance')}"
-                                f":{finding.get('subcontractor_name','')}"
+                                f"{cid}:{finding.get('category','noncompliance')}"
+                                f":{finding.get('sub_id') or ''}"
                             ),
                         )
                         results["subcon_alerts"] += 1 if wrote else 0
@@ -277,7 +294,15 @@ def run(trigger_data=None, context=None):
 
     _write_memory_log(results)
     results["status"] = "ok"
-    return results
+    # GenesisDaemon._run_reflex_impl_inner reads success/metric_value/details off
+    # this dict (`result.get("success", False)`). Returning the bare results dict
+    # meant `success` was ALWAYS absent, so every run — including a perfectly
+    # clean sweep — was scored a failure and the metric was read as 0.0 rather
+    # than cards_created. That is why the state row showed 11 runs / 0 successes
+    # and the circuit breaker tripped, silently switching this reflex off. The
+    # sibling reflex in this directory (pmo_option_tracker) already returns this
+    # shape; cpmp_monitor never did.
+    return {"success": True, "metric_value": results["cards_created"], "details": results}
 
 
 def _suggest_kanban_card(
