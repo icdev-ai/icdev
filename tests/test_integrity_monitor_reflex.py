@@ -111,7 +111,12 @@ def _count_cards(conn):
 # --------------------------------------------------------------------------- #
 # Helper / unit coverage
 # --------------------------------------------------------------------------- #
-def test_rel_path_strips_quarantine_prefix():
+def test_rel_path_strips_quarantine_prefix(monkeypatch):
+    # The marker-absent fallback is flag-dependent, so the OFF case must be
+    # PINNED rather than inherited: ICDEV_SIPA_RELPATH_DIRS=1 ships in .env, so
+    # a test that assumes "unset" asserts a default the deployment does not have
+    # and fails on every developer machine that loaded it.
+    monkeypatch.delenv("ICDEV_SIPA_RELPATH_DIRS", raising=False)
     # <quarantine>/<assessment_id>/<relpath> -> <relpath>
     assert integrity_monitor._rel_path("/q/dir/7/net.py", 7) == "net.py"
     assert integrity_monitor._rel_path("/q/dir/7/sub/x.py", 7) == "sub/x.py"
@@ -257,7 +262,10 @@ def test_rel_path_dirs_flag_preserves_directories(monkeypatch):
     """With ICDEV_SIPA_RELPATH_DIRS on, the marker-absent fallback keeps the
     normalized relative posix path (directory preserved) instead of the bare
     basename — resolving the posture.py x6 / iac_generator.py x24 ambiguity."""
-    # Default (flag OFF): legacy basename fallback — unchanged live behaviour.
+    # Flag OFF: legacy basename fallback. Pinned with delenv, not assumed — the
+    # repo .env sets ICDEV_SIPA_RELPATH_DIRS=1, so inheriting the ambient value
+    # made this assertion pass or fail on operator configuration.
+    monkeypatch.delenv("ICDEV_SIPA_RELPATH_DIRS", raising=False)
     assert integrity_monitor._rel_path("tools/sipa/canvas_compliance/posture.py", 5) == "posture.py"
     assert integrity_monitor._rel_path("infra\\k8s_generator.py", 5) == "k8s_generator.py"
 
