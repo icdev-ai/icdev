@@ -36,6 +36,9 @@ def _tasks() -> list[dict]:
             "priority": "critical",
             "status": "in_progress",
             "description": (
+                "RISK: SBX rewrites the SBOM and conformance evidence path; letting the "
+                "runner build it unattended ships compliance artefacts no human decided to "
+                "ship.\n\n"
                 "Manual hold for the SBX card. Every sbx-* task depends on this one, so "
                 "while it sits at in_progress the kanban runner cannot promote or dispatch "
                 "any of them. Do NOT move this to done without an explicit decision to let "

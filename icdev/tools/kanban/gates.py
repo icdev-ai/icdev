@@ -95,7 +95,7 @@ _IMPLICIT_RISK_PHRASES = (
 )
 
 
-def _has_gate_id(task_id: str | None) -> bool:
+def has_gate_id(task_id: str | None) -> bool:
     """True when the id is ``<card>-gate-<number>`` for any number.
 
     Split from the right so a card prefix that itself contains the separator
@@ -106,13 +106,18 @@ def _has_gate_id(task_id: str | None) -> bool:
     return bool(prefix) and bool(separator) and number.isdigit()
 
 
+#: The name this predicate had while it was private. Kept so nothing that
+#: reached for it breaks; new callers should use the public name.
+_has_gate_id = has_gate_id
+
+
 def is_manual_gate(task_id: str | None, title: str | None) -> bool:
     """True when the task is a manual-mode gate sentinel.
 
     Matches on EITHER the id shape or the title marker, so a gate is still
     recognised if one of the two is renamed.
     """
-    return _has_gate_id(task_id) or GATE_TITLE_MARKER in (title or "")
+    return has_gate_id(task_id) or GATE_TITLE_MARKER in (title or "")
 
 
 def declared_risk(description: str | None) -> tuple[str | None, str]:
@@ -153,3 +158,27 @@ def declared_risk(description: str | None) -> tuple[str | None, str]:
                 if phrase in line.lower():
                     return line.strip(), "implicit"
     return None, "none"
+
+
+def declares_gate(title: str | None, description: str | None) -> bool:
+    """True when the task's CONTENT says it is a gate, not merely its id.
+
+    ``is_manual_gate`` reads the id, and reads it deliberately widely, because at
+    DISPATCH time a missed gate releases work nobody was watching. At SEEDING time
+    the question runs the other way: this id claims to be a sentinel — does the
+    task behave like one? Recognition must stay wide; what a seeder is allowed to
+    WRITE must not.
+
+    That asymmetry is the whole defect. ``tsg-gate-01`` was work — "decide the CI
+    allowlist policy" — and its id alone made ``is_manual_gate`` true, so
+    ``promote_backlog_to_scheduled`` filtered it out and it was undispatchable
+    from the moment it was seeded. Nothing went red: a task nobody can dispatch
+    looks exactly like a task nobody has got to yet.
+
+    A gate is distinguishable from work by more than its id. It either carries the
+    canonical title marker, or it states the risk that justifies holding work
+    (:func:`declared_risk`) — because holding work is only justified by one.
+    """
+    if GATE_TITLE_MARKER in (title or ""):
+        return True
+    return declared_risk(description)[0] is not None

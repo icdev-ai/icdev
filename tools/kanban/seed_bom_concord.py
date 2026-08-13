@@ -496,6 +496,8 @@ CONCORD: list[dict] = [
         "id": "cncd-gate-00",
         "title": "MANUAL GATE — hold the CONCORD stream (do not close)",
         "description": (
+            "RISK: the CONCORD repo does not exist yet, so every cncd-* task would be "
+            "dispatched against a target the runner cannot reach.\n\n"
             "Pipeline-exempt holding gate. While this task is in_progress, "
             "promote_backlog_to_scheduled will not dispatch any cncd-* task.\n\n"
             "Release only once the CONCORD repo exists AND "
