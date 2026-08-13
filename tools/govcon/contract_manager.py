@@ -44,6 +44,13 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
+# Placeholder title stamped on a contract created without one. It is a
+# PLACEHOLDER, not a name: it is identical on every such row, so anything that
+# identifies a contract to a human must treat it as absent rather than as a
+# title. Exported so those consumers can test against it instead of repeating
+# the literal and drifting from it — see cpmp_monitor._contract_label().
+DEFAULT_CONTRACT_TITLE = "Untitled Contract"
+
 
 # ── Config ───────────────────────────────────────────────────────────
 
@@ -145,7 +152,7 @@ def create_contract(data):
         (
             contract_id,
             data.get("contract_number", ""),
-            data.get("title", "Untitled Contract"),
+            data.get("title", DEFAULT_CONTRACT_TITLE),
             data.get("agency", ""),
             data.get("cor_name"),
             data.get("cor_email"),

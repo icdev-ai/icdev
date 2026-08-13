@@ -915,3 +915,22 @@ tests/test_genesis_test_reflex_policy.py
 # joke this task exists to stop, so it goes here in the same commit that adds it
 # -- which is also the policy it enforces, demonstrated.
 tests/ci/test_test_gating_census.py
+
+# CPMP monitor card identity (cpmp-a7642ba5d9). The reflex's card TITLE is what
+# a human uses to tell one finding from another, and it regressed twice: first
+# to "[CPMP] :" (blank contract_number), then to "[CPMP] Untitled Contract:"
+# (create_contract's placeholder default) -- four different active contracts
+# carried one identical title on the live board, two dispatched at once. Both
+# files pass today and pin the number -> title -> id fallback, so they gate the
+# fix rather than documenting it. Moved out of the backlog census, not new.
+tests/test_genesis_reflex_cpmp_monitor.py
+tests/test_genesis_reflex_cpmp_monitor_card_identity.py
+
+# The /network/ graph_json type guard (#1599) shipped to main WITHOUT being
+# gated, so the census check failed on main -- exactly the "a test file that CI
+# never runs has never gated a merge" case this policy exists to catch. It pins
+# that one unparseable graph_json row cannot 500 the whole page. Passes (14
+# tests), so it is gated here rather than added to the closed census.
+# (test_kanban_gate_sentinel_seeding.py was the same gap; #1601 gated it above
+# while this branch was in flight, so it is deliberately not repeated here.)
+tests/test_ndc_graph_json_type_guard.py

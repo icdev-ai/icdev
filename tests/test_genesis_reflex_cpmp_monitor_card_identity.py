@@ -117,6 +117,60 @@ class TestContractLabel:
     def test_label_never_blank(self, reflex):
         assert reflex._contract_label({}).strip()
 
+    def test_placeholder_title_is_treated_as_absent(self, reflex):
+        """create_contract() stamps this on any contract created without a
+        title, so it is identical across rows and names no contract at all."""
+        label = reflex._contract_label(
+            {"id": "8143e17a-0a01-452f", "contract_number": "", "title": "Untitled Contract"}
+        )
+        assert label == "contract 8143e17a"
+
+    def test_placeholder_check_ignores_case_and_padding(self, reflex):
+        label = reflex._contract_label(
+            {"id": "df32ba49-9c39", "contract_number": "", "title": "  untitled contract  "}
+        )
+        assert label == "contract df32ba49"
+
+    def test_placeholder_tracks_the_contract_manager_default(self, reflex):
+        """Sourced from the constant, so changing the default cannot silently
+        re-admit a placeholder as an identifier."""
+        from tools.govcon.contract_manager import DEFAULT_CONTRACT_TITLE
+        label = reflex._contract_label(
+            {"id": "6d67ff20-a9", "contract_number": "", "title": DEFAULT_CONTRACT_TITLE}
+        )
+        assert label == "contract 6d67ff20"
+
+    def test_placeholder_still_caught_when_contract_manager_is_absent(self, reflex, monkeypatch):
+        """contract_manager has no icdev/ mirror, so in a packaged install the
+        constant import raises and the literal fallback is the ONLY thing
+        keeping the placeholder out of card titles."""
+        import builtins
+        real_import = builtins.__import__
+
+        def _no_govcon(name, *a, **kw):
+            if "contract_manager" in name:
+                raise ImportError("no icdev/tools/govcon/contract_manager.py")
+            return real_import(name, *a, **kw)
+
+        monkeypatch.setattr(builtins, "__import__", _no_govcon)
+        label = reflex._contract_label(
+            {"id": "719d5e59-bd", "contract_number": "", "title": "Untitled Contract"}
+        )
+        assert label == "contract 719d5e59"
+
+    def test_real_title_still_wins_over_the_id(self, reflex):
+        """Only the placeholder is discarded — a genuine title is the label."""
+        label = reflex._contract_label(
+            {"id": "bff20029-94e2", "contract_number": "", "title": "GCPL Seed Contract"}
+        )
+        assert label == "GCPL Seed Contract"
+
+    def test_placeholder_title_does_not_beat_a_real_number(self, reflex):
+        label = reflex._contract_label(
+            {"id": "8143e17a", "contract_number": "W912-24-C-0001", "title": "Untitled Contract"}
+        )
+        assert label == "W912-24-C-0001"
+
 
 class TestCardIdentity:
     def _emit(self, reflex, cid, label, issue_type="subcontractor_compliance"):
@@ -130,7 +184,12 @@ class TestCardIdentity:
         )
 
     def test_distinct_contracts_get_distinct_cards(self, reflex, board):
-        """The collapse bug: 5 contracts with blank numbers produced 1 card."""
+        """The collapse bug: 5 contracts with blank numbers produced 1 card.
+
+        Labels are passed in here, so this pins the id scheme only; that two of
+        them are the same placeholder is the subject of TestContractLabel and
+        of test_no_card_title_is_left_unidentifiable.
+        """
         contracts = [
             ("bff20029-94e2", "GCPL Seed Contract"),
             ("0f28acca-ee28", "bypass probe"),
@@ -258,9 +317,17 @@ class TestRunEndToEnd:
         titles = sorted(r["title"] for r in wired.rows.values())
         assert not any(t.startswith("[CPMP] :") for t in titles), titles
         assert "[CPMP] GCPL Seed Contract: Subcontractor Compliance" in titles
-        # Two contracts share the title 'Untitled Contract' — they must still be
-        # two rows, which is why the dedup key is the contract id, not the label.
         assert len(wired.rows) == 5
+
+        # Distinct rows are NOT enough. Two of these contracts are titled
+        # 'Untitled Contract' — the placeholder create_contract() stamps on any
+        # untitled contract — so falling back to `title` gave them one identical
+        # card title and a human could not tell which contract a card meant.
+        # Every title must name exactly one contract.
+        assert len(set(titles)) == 5, f"two cards cannot share a title: {titles}"
+        assert "[CPMP] Untitled Contract: Subcontractor Compliance" not in titles
+        assert "[CPMP] contract df32ba49: Subcontractor Compliance" in titles
+        assert "[CPMP] contract 8143e17a: Subcontractor Compliance" in titles
 
     def test_second_cycle_adds_nothing(self, reflex, wired, monkeypatch):
         from tools.govcon import cdrl_generator
