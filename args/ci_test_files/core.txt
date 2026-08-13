@@ -955,3 +955,8 @@ tests/ci/test_precommit_test_gating.py
 # tsg-policy-02. It pins that one malformed graph_json row cannot 500 /network/.
 # 14 tests, ~1s, no DB/network. Registered here in the PR that makes the same
 # mistake harder to repeat.
+tests/test_ndc_graph_json_type_guard.py
+# Guards the other half of the write path that #1520 closed: create rejects a
+# nameless subcontractor, update blanked the name right back. Gated in the PR
+# that makes it pass, per docs/ci/test-gating-policy.md.
+tests/test_cpmp_update_subcontractor_requires_name.py
