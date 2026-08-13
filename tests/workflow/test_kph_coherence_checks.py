@@ -58,6 +58,53 @@ class TestTestDbIsolation:
         r = cc.check_test_db_isolation([f])
         assert r.status == "fail", r.message
 
+    def test_local_bound_storage_connection_is_clean(self, repo):
+        """A local bound straight to StorageConnection(...) IS the remedy.
+
+        The propagation in _safe_connection_names only reached names referencing
+        an already-safe FACTORY FUNCTION, so patching with a variable assigned
+        directly from StorageConnection(raw, "sqlite") -- the exact fix this
+        check's own failure message prescribes -- still read as a violation, with
+        no way to write it that would pass.
+        """
+        f = _write(
+            repo / "tests" / "test_ok_direct_wrap.py",
+            "import sqlite3\n"
+            "from unittest.mock import patch\n"
+            "from tools.db.storage import StorageConnection\n"
+            "def test_x():\n"
+            "    raw = sqlite3.connect(':memory:')\n"
+            "    wrapped = StorageConnection(raw, 'sqlite')\n"
+            "    import tools.observability_canvas.mitre_coverage_db as m\n"
+            "    with patch.object(m, 'get_connection', return_value=wrapped):\n"
+            "        m.list_coverage('proj-1')  # runtime SQL uses '%s'\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "pass", r.message
+
+    def test_direct_wrap_recognition_does_not_clear_an_unwrapped_raw(self, repo):
+        """...but wrapping ONE connection must not launder a different raw one.
+
+        Guards the fix above from over-reaching: a file holding both a correctly
+        wrapped connection and a factory patched to a bare sqlite3 handle is
+        still a violation.
+        """
+        f = _write(
+            repo / "tests" / "test_mixed_wrap.py",
+            "import sqlite3\n"
+            "from unittest.mock import patch\n"
+            "from tools.db.storage import StorageConnection\n"
+            "def test_x():\n"
+            "    wrapped = StorageConnection(sqlite3.connect(':memory:'), 'sqlite')\n"
+            "    assert wrapped is not None\n"
+            "    naked = sqlite3.connect(':memory:')\n"
+            "    import tools.dashboard.api.admin as m\n"
+            "    with patch.object(m, 'get_connection', return_value=naked):\n"
+            "        m.load('%s')\n",
+        )
+        r = cc.check_test_db_isolation([f])
+        assert r.status == "fail", r.message
+
     def test_raw_sqlite_only_qmark_is_clean(self, repo):
         # conftest-style seed: raw sqlite3 but only ? placeholders, no factory patch.
         f = _write(

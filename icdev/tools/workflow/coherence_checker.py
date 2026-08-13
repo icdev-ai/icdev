@@ -6399,6 +6399,22 @@ def _only_raises(fn: ast.AST) -> bool:
     return bool(body) and all(isinstance(stmt, ast.Raise) for stmt in body)
 
 
+def _is_storage_connection_call(node: ast.AST) -> bool:
+    """True for a direct ``StorageConnection(...)`` construction.
+
+    Recognised as a Name (``from tools.db.storage import StorageConnection``) and
+    as an Attribute (``storage.StorageConnection``, the form a shim-aware test
+    uses) -- the same two shapes ``_sql_compat_factory_names._is_compat_call``
+    accepts. Kept module-level so both callers agree on what the remedy looks like.
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    fname = node.func
+    if isinstance(fname, ast.Name) and fname.id == "StorageConnection":
+        return True
+    return isinstance(fname, ast.Attribute) and fname.attr == "StorageConnection"
+
+
 def _safe_connection_names(tree: ast.AST, safe_factories: Set[str]) -> Set[str]:
     """Extend the safe factories with local names bound to a translating connection.
 
@@ -6420,6 +6436,19 @@ def _safe_connection_names(tree: ast.AST, safe_factories: Set[str]) -> Set[str]:
                 continue
             targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
             if not targets or all(t in safe for t in targets):
+                continue
+            # ``wrapped = StorageConnection(raw, "sqlite")`` bound straight to a
+            # local, with no intervening factory function, is the literal remedy
+            # this check's failure message prescribes. Propagation below only
+            # reaches names that reference an already-safe FUNCTION, so a direct
+            # construction was invisible and the fixture stayed flagged no matter
+            # how it was written -- the gate rejecting its own remedy for the
+            # fourth time. Checked before the raw-connect bail for the same
+            # reason _has_unwrapped_raw_connect skips wrapped connects: the
+            # wrapper's own input is not residue.
+            if any(_is_storage_connection_call(sub) for sub in ast.walk(node.value)):
+                safe.update(targets)
+                grew = True
                 continue
             if any(_is_sqlite_connect(sub) for sub in ast.walk(node.value)):
                 continue

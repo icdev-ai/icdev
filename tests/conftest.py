@@ -4190,6 +4190,113 @@ CREATE TABLE IF NOT EXISTS developer_scorecards (
 CREATE INDEX IF NOT EXISTS idx_sc_project ON developer_scorecards(project_id);
 CREATE INDEX IF NOT EXISTS idx_sc_actor ON developer_scorecards(actor);
 CREATE INDEX IF NOT EXISTS idx_sc_created ON developer_scorecards(created_at);
+
+-- Operator-configured indicator thresholds. Copied verbatim from
+-- tools/db/migrations/154_indicator_baselines/up.sql -- including the two CHECK
+-- constraints, which mirror tools/threat_analysis/service.py::_SCOPE_RANK and
+-- the severity bands. tools/threat_analysis/service.py writes every column here.
+CREATE TABLE IF NOT EXISTS indicator_baselines (
+    id TEXT PRIMARY KEY,
+    indicator_name TEXT NOT NULL,
+    indicator_category TEXT DEFAULT 'general',
+    scope TEXT NOT NULL DEFAULT 'project'
+        CHECK(scope IN ('global', 'platform', 'tenant', 'project', 'user')),
+    scope_id TEXT,
+    threshold_score REAL NOT NULL,
+    severity_band TEXT DEFAULT 'medium'
+        CHECK(severity_band IN ('low', 'medium', 'high', 'critical')),
+    operator_id TEXT NOT NULL,
+    rationale TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_scope
+    ON indicator_baselines(scope, scope_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_name
+    ON indicator_baselines(indicator_name, is_active);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_operator
+    ON indicator_baselines(operator_id, created_at);
+
+-- PIR/CCIR collection requirements. Copied verbatim from
+-- tools/db/migrations/051_sg_pir_requirements/up.py::_DDL. This is the table
+-- tools/threat_analysis/service.py::auto_generate_pir_alert writes an alert row
+-- into when a baseline is breached, so it has to exist alongside the one above.
+CREATE TABLE IF NOT EXISTS sg_pir_requirements (
+    id                  TEXT PRIMARY KEY,
+    pir_type            TEXT NOT NULL DEFAULT 'PIR'
+                            CHECK(pir_type IN ('PIR','CCIR','EEI')),
+    topic               TEXT NOT NULL,
+    description         TEXT,
+    collection_priority INTEGER NOT NULL DEFAULT 3
+                            CHECK(collection_priority BETWEEN 1 AND 5),
+    status              TEXT NOT NULL DEFAULT 'active'
+                            CHECK(status IN ('active','satisfied','cancelled')),
+    tasked_to           TEXT,
+    due_by              TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_type     ON sg_pir_requirements(pir_type);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_status   ON sg_pir_requirements(status);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_priority ON sg_pir_requirements(collection_priority);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_created  ON sg_pir_requirements(created_at);
+
+-- Cross-canvas event queue. Copied from the SQLite branch of
+-- tools/db/migrations/039_canvas_events/up.py::_DDL_SQLITE (the migration keeps
+-- a separate PG DDL differing only in the timestamp types). This is the table
+-- tools/canvas/event_bus.py::publish writes to and dispatch_pending drains.
+CREATE TABLE IF NOT EXISTS canvas_events (
+    id             TEXT NOT NULL,
+    source_canvas  TEXT NOT NULL,
+    target_canvas  TEXT,
+    event_type     TEXT NOT NULL,
+    payload_json   TEXT NOT NULL DEFAULT '{}',
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    consumed_at    TEXT,
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_events_source ON canvas_events(source_canvas);
+CREATE INDEX IF NOT EXISTS idx_canvas_events_target ON canvas_events(target_canvas);
+CREATE INDEX IF NOT EXISTS idx_canvas_events_type ON canvas_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_canvas_events_consumed ON canvas_events(consumed_at);
+
+-- Network/Simulation canvas session tables. Copied from the SQLite branch of
+-- tools/db/migrations/037_nc_simulation_tables/up.py (_DDL_*_SQLITE); the
+-- migration keeps a parallel PG DDL differing only in TIMESTAMPTZ/JSONB.
+-- tests/test_nc_simulation_schema.py exists specifically to assert these three
+-- are reachable through the icdev_db fixture, FKs included -- storage.py opens
+-- SQLite with PRAGMA foreign_keys=ON, so the order below is load-bearing.
+CREATE TABLE IF NOT EXISTS nc_simulation_sessions (
+    id           TEXT NOT NULL,
+    canvas_type  TEXT NOT NULL,
+    topology_id  TEXT,
+    mode         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    metadata     TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS nc_simulation_runs (
+    id          TEXT NOT NULL,
+    session_id  TEXT NOT NULL REFERENCES nc_simulation_sessions(id),
+    run_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    steps       TEXT NOT NULL DEFAULT '[]',
+    summary     TEXT,
+    PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS nc_simulation_artifacts (
+    id            TEXT NOT NULL,
+    run_id        TEXT NOT NULL REFERENCES nc_simulation_runs(id),
+    artifact_type TEXT NOT NULL,
+    content       TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_nc_sim_sessions_canvas_type ON nc_simulation_sessions(canvas_type);
+CREATE INDEX IF NOT EXISTS idx_nc_sim_sessions_topology_id ON nc_simulation_sessions(topology_id);
+CREATE INDEX IF NOT EXISTS idx_nc_sim_runs_session_id ON nc_simulation_runs(session_id);
+CREATE INDEX IF NOT EXISTS idx_nc_sim_artifacts_run_id ON nc_simulation_artifacts(run_id);
+CREATE INDEX IF NOT EXISTS idx_nc_sim_artifacts_type ON nc_simulation_artifacts(artifact_type);
 """
 
 
