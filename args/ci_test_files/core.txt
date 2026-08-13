@@ -994,3 +994,15 @@ tests/test_cpmp_monitor_daemon_contract.py
 # here; gated so the type guard it pins (one bad graph_json row 500ing /network/)
 # cannot regress unnoticed.
 tests/test_ndc_graph_json_type_guard.py
+
+# Nothing called contract_manager.compute_overdue_deliverables() outside its own
+# argparse block, so no CDRL had ever reached status 'overdue' and days_overdue
+# was 0 on every row -- while four consumers key on exactly that state and read a
+# permanent zero (contract page overdue_count, portfolio_manager x2,
+# cpars_predictor, negative_event_tracker). pmo_ai_advisor derives overdue live
+# from due_date, which is how a "5 CDRL(s) are past due" card sits next to a
+# contract page reporting 0. Gated because a behavioural test of the sweep cannot
+# catch this -- the sweep was always correct, it was simply never called -- so
+# these tests assert the CALL, and an ungated test of a call site is exactly the
+# thing that silently reverts to zero callers in the next refactor.
+tests/test_cpmp_overdue_sweep_is_driven.py
