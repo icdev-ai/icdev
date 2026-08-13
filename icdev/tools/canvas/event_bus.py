@@ -139,29 +139,45 @@ def _audit_event(
         logger.warning("_audit_event: best-effort INSERT into audit_trail failed (non-blocking): %s", exc)
 
 
+# Heuristic: key prefixes that mark a value as TS-sensitive.
+_TS_KEY_PREFIXES = ("ts_", "top_secret_", "sci_", "secret_")
+
+# Bookkeeping keys _downgrade_payload writes itself. They are never candidates
+# for TS-stripping, and — see below — never recursion targets either.
+_DOWNGRADE_CONTROL_KEYS = ("_security_context", "_downgraded")
+
+
+def _strip_ts_keys(value: object) -> object:
+    """Recursively drop TS-looking keys from a payload subtree.
+
+    Walks only the caller's own data, so it terminates on any finite payload.
+    """
+    if not isinstance(value, dict):
+        return value
+    return {
+        k: _strip_ts_keys(v)
+        for k, v in value.items()
+        if k in _DOWNGRADE_CONTROL_KEYS or not k.startswith(_TS_KEY_PREFIXES)
+    }
+
+
 def _downgrade_payload(payload: dict) -> dict:
-    """Return a CUI-downgraded copy of the payload: strip TS fields, keep CUI."""
-    result = deepcopy(payload)
-    sec_ctx = result.get("_security_context", {})
+    """Return a CUI-downgraded copy of the payload: strip TS fields, keep CUI.
+
+    Stripping runs first and the CUI markers are stamped on afterwards. The
+    previous order stamped ``_security_context`` on and *then* recursed into
+    every dict-valued key — including the one it had just written — so each
+    level created a fresh nested ``_security_context`` to descend into and the
+    call never terminated. Every downgrade raised RecursionError, which meant
+    the SECRET-to-CUI path was dead rather than merely slow: no payload was
+    ever actually scrubbed in production.
+    """
+    result = _strip_ts_keys(deepcopy(payload))
+    sec_ctx = result.get("_security_context") or {}
     sec_ctx["clearance"] = "CUI"
     sec_ctx["compartment"] = None
     result["_security_context"] = sec_ctx
     result["_downgraded"] = True
-
-    # Heuristic: remove keys that look TS-sensitive at top level
-    ts_patterns = ("ts_", "top_secret_", "sci_", "secret_")
-    keys_to_remove = [
-        k for k in list(result.keys())
-        if k not in ("_security_context", "_downgraded") and k.startswith(ts_patterns)
-    ]
-    for k in keys_to_remove:
-        del result[k]
-
-    # Recursively downgrade nested dict values
-    for k, v in list(result.items()):
-        if isinstance(v, dict):
-            result[k] = _downgrade_payload(v)
-
     return result
 
 

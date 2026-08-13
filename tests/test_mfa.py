@@ -22,6 +22,7 @@ os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
 pyotp = pytest.importorskip("pyotp", reason="pyotp not installed")
 
 import tools.saas.auth.mfa as _mfa
+from tests._sql_compat import translating
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,19 @@ import tools.saas.auth.mfa as _mfa
 
 @pytest.fixture()
 def mfa_db(tmp_path, monkeypatch):
-    """In-memory SQLite DB wired into the mfa module."""
+    """SQLite DB wired into the mfa module, with PG placeholders translated.
+
+    mfa.py authors its SQL for PostgreSQL (``%s``) — the primary backend — and
+    ``StorageConnection`` rewrites the placeholders when the backend is SQLite.
+    The fixture stands in for ``get_connection()``, so it has to keep that layer:
+    a bare ``sqlite3`` connection makes every statement in the module under test
+    raise ``sqlite3.OperationalError: near "%": syntax error``, which is what
+    took this whole file red. ``tests/_sql_compat`` delegates to the same
+    ``translate_sql`` the runtime uses, so the fixture cannot drift from it.
+
+    ``unclosable=True`` because the wrapper's ``__exit__`` closes, while every
+    ``with _mfa._conn()`` block here shares this one connection with the test.
+    """
     db_path = tmp_path / "mfa_test.db"
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -39,26 +52,7 @@ def mfa_db(tmp_path, monkeypatch):
     )
     conn.commit()
 
-    class _FakeCtxConn:
-        def __init__(self):
-            self._conn = conn
-
-        def execute(self, sql, params=()):
-            return self._conn.execute(sql, params)
-
-        def commit(self):
-            return self._conn.commit()
-
-        def close(self):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            pass
-
-    monkeypatch.setattr(_mfa, "_conn", lambda: _FakeCtxConn())
+    monkeypatch.setattr(_mfa, "_conn", lambda: translating(conn, unclosable=True))
     return conn
 
 
@@ -209,3 +203,44 @@ class TestDisable:
         _mfa.enroll("user-040", "p@example.com")
         _mfa.disable("user-040", disabled_by="admin-001")
         assert _mfa.is_enrolled("user-040") is False
+
+
+# ---------------------------------------------------------------------------
+# Dialect
+# ---------------------------------------------------------------------------
+
+
+class TestPgNativePlaceholders:
+    """mfa.py must author its runtime SQL for PostgreSQL, the primary backend.
+
+    This is what the fixture above stands in for, so it is worth pinning in both
+    directions: reverting the module to SQLite-dialect ``?`` would make the
+    fixture pass either way while ``translate_sql`` — an init/seed/migrate
+    fallback, never load-bearing — silently carried the runtime on PG.
+    """
+
+    def test_no_bare_question_mark_placeholders(self):
+        import ast
+        import re
+        from pathlib import Path
+
+        source = Path(_mfa.__file__).read_text(encoding="utf-8")
+        placeholder = re.compile(r"(?<![A-Za-z0-9_])\?")
+
+        offenders = []
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+            if name not in {"execute", "executemany"}:
+                continue
+            for lit in ast.walk(node.args[0]):
+                if isinstance(lit, ast.Constant) and isinstance(lit.value, str):
+                    if placeholder.search(lit.value):
+                        offenders.append((lit.lineno, lit.value.strip()[:70]))
+
+        assert not offenders, (
+            "tools/saas/auth/mfa.py passes SQLite-dialect SQL to execute(); use %s "
+            f"so psycopg2 binds it directly: {offenders}"
+        )

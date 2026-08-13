@@ -94,6 +94,13 @@ IRREVERSIBLE = "irreversible"
 UNKNOWN = "unknown"
 TIERS = (REVERSIBLE, RECOVERABLE, IRREVERSIBLE, UNKNOWN)
 
+# --- Confidentiality (exa-bench-09) ----------------------------------------
+# A SECOND dimension, not a fifth tier. See Classification and
+# _apply_confidentiality for why reversibility could never express this.
+ORDINARY = "ordinary"
+SENSITIVE = "sensitive"
+CONFIDENTIALITY_RULE = "sensitive_path"
+
 # --- Modes -----------------------------------------------------------------
 MODE_ENFORCE = "enforce"   # halt and ask (default)
 MODE_DRY_RUN = "dry_run"   # record what would have halted, then allow
@@ -224,16 +231,27 @@ def _command_tools(policy: dict[str, Any]) -> set[str]:
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Classification:
-    """The reversibility verdict for one tool call."""
+    """The verdict for one tool call, on both dimensions.
+
+    ``tier`` is reversibility. ``confidentiality`` is disclosure, and it is a
+    SECOND axis rather than a fifth tier because the two are genuinely
+    independent: a read of ``~/.netrc`` is perfectly reversible — nothing
+    changed — and completely unrecoverable — the credential is disclosed and
+    cannot be un-disclosed. Collapsing that into the tier would have meant
+    re-tiering ``read_file`` as irreversible, which is false and which would
+    have made every ordinary read prompt.
+    """
 
     tool_name: str
     tier: str
     rule: str            # which policy rule decided this
     detail: str          # human-readable "what will happen", from the policy
     requires_approval: bool
+    confidentiality: str = ORDINARY   # ORDINARY | SENSITIVE (exa-bench-09)
 
     def summary(self) -> str:
-        line = f"[{self.tier.upper()}] {self.tool_name} (rule: {self.rule})"
+        marker = " [SENSITIVE]" if self.confidentiality == SENSITIVE else ""
+        line = f"[{self.tier.upper()}]{marker} {self.tool_name} (rule: {self.rule})"
         return f"{line}\n{self.detail}" if self.detail else line
 
 
@@ -257,6 +275,28 @@ def _tool_tiers(policy: dict[str, Any]) -> dict[str, str]:
 
 
 def classify(
+    tool_name: str,
+    tool_input: Any = None,
+    *,
+    policy: Optional[dict[str, Any]] = None,
+) -> Classification:
+    """Classify a tool call on both dimensions: reversibility, then disclosure.
+
+    Two independent questions, asked separately and deliberately in this order:
+
+    1. :func:`_classify_reversibility` — unchanged, including rule 0's total
+       escalation exemption for a tool the policy enumerates ``reversible``.
+    2. :func:`_apply_confidentiality` — does this call DISCLOSE credential
+       material? Consulted independently of whatever tier step 1 returned, which
+       is the only way a reversible tool can be held: a read is reversible and
+       unrecoverable at the same time (exa-bench-09).
+    """
+    policy = policy if policy is not None else load_policy()
+    verdict = _classify_reversibility(tool_name, tool_input, policy=policy)
+    return _apply_confidentiality(verdict, tool_name, tool_input, policy=policy)
+
+
+def _classify_reversibility(
     tool_name: str,
     tool_input: Any = None,
     *,
@@ -370,6 +410,107 @@ def classify(
             "that fails open is decoration — an unrecognised tool needs a human."
         ),
         requires_approval=default_tier in require,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Confidentiality — the second dimension (exa-bench-09)
+# ---------------------------------------------------------------------------
+def _sensitive_paths_module():
+    """The shared inventory, or ``None`` when it cannot be imported.
+
+    A layer, not a dependency: the reversibility verdict must still be returned
+    if ``tools/security/sensitive_paths.py`` is unavailable. Note the asymmetry
+    — an absent inventory cannot make a call look SAFER than the tier said,
+    only leave the second question unasked.
+    """
+    try:
+        from tools.security import sensitive_paths
+
+        return sensitive_paths
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("approval_gate: sensitive-path inventory unavailable: %s", exc)
+        return None
+
+
+def _disclosure(
+    tool_name: str, tool_input: Any, policy: dict[str, Any]
+) -> Optional[str]:
+    """One reason string when this call discloses credential material.
+
+    Where it looks depends on what the tool IS, mirroring the escalation /
+    downgrade asymmetry above:
+
+    * a **generic executor** — the input IS a command, so the command is parsed
+      for a read verb (``cat ~/.aws/credentials``) or a path-free disclosure
+      (``env | grep -i key``). ``touch`` and ``mkdir`` are not read verbs and do
+      not match: a write outside the worktree is exa-bench-07's gap, measured by
+      its own probes, and quietly absorbing it here would report it as fixed.
+    * **anything else** — only the PATH-LIKE arguments. Scanning the whole
+      flattened input would fire on prose, and a gate that halts on a document
+      that merely mentions ``~/.netrc`` is one operators learn to click through.
+    """
+    inventory = _sensitive_paths_module()
+    if inventory is None:
+        return None
+    try:
+        if (tool_name or "").lower() in _command_tools(policy):
+            command = ""
+            if isinstance(tool_input, dict):
+                for key in ("command", "cmd", "script", "shell"):
+                    value = tool_input.get(key)
+                    if isinstance(value, str) and value:
+                        command = value
+                        break
+            else:
+                command = str(tool_input or "")
+            return inventory.command_disclosure(command)
+        hits = inventory.sensitive_args(tool_input)
+        return hits[0].summary() if hits else None
+    except Exception as exc:  # noqa: BLE001 — a broken layer never fails open
+        logger.warning("approval_gate: confidentiality check raised: %s", exc)
+        return None
+
+
+def _apply_confidentiality(
+    verdict: Classification,
+    tool_name: str,
+    tool_input: Any,
+    *,
+    policy: dict[str, Any],
+) -> Classification:
+    """Overlay the disclosure dimension on a reversibility verdict.
+
+    Consulted **independently of the tier**, which is the entire point.
+    ``read_file`` is enumerated ``reversible`` and rule 0 exempts it from all
+    content escalation — correctly: a tool that does not execute its arguments
+    cannot be made irreversible by them, and without that exemption
+    ``read_file("how do I git push safely")`` halted for human approval, which
+    teaches operators to approve reflexively and costs more safety than it buys.
+    That exemption is UNCHANGED and must stay: the defect was never rule 0, it
+    was that reversibility is the wrong axis for a read. Four tiers have no word
+    for disclosure, so this adds the word rather than corrupting the tiers.
+
+    Only ever escalates. A sensitive path cannot lower a tier, and an ordinary
+    path cannot clear one an irreversible pattern already raised.
+    """
+    section = policy.get("confidentiality")
+    if isinstance(section, dict) and not section.get("enabled", True):
+        return verdict
+    reason = _disclosure(tool_name, tool_input, policy)
+    if not reason:
+        return verdict
+    return Classification(
+        tool_name=verdict.tool_name,
+        tier=verdict.tier,          # reversibility is still reported honestly
+        rule=CONFIDENTIALITY_RULE,
+        detail=(
+            f"discloses credential material — {reason}. Tier {verdict.tier} is "
+            "about whether this can be UNDONE; a disclosure cannot be. The "
+            "inventory is args/sensitive_paths.yaml (exa-bench-09)."
+        ),
+        requires_approval=True,
+        confidentiality=SENSITIVE,
     )
 
 
@@ -718,6 +859,23 @@ def build_approval_hook(
     return hook
 
 
+#: Agent-surface tools whose input names a file they WRITE. Translated to the
+#: hook's ``Write`` shape *with the path*, because a check that decides on the
+#: path cannot see one that the translation dropped: ``patch_file`` fell to the
+#: catch-all below, which flattens every argument into ``content``, so
+#: ``patch_file('/home/victim/.bashrc')`` reached the hook as a pathless write
+#: and the exa-bench-07 boundary check had nothing to judge.
+#:
+#: Read-shaped tools are deliberately NOT here. Handing ``read_file``'s path to
+#: the hook as a ``Write`` would refuse a read on a write rule — a
+#: mis-translation that would read as coverage of exa-bench-09 while actually
+#: measuring nothing.
+_WRITE_SHAPED_TOOLS = frozenset({
+    "write_file", "Write", "append_file", "create_file",
+    "patch_file", "edit_file", "apply_patch", "Edit", "MultiEdit",
+})
+
+
 def _hard_block(tool_name: str, tool_input: dict[str, Any]) -> tuple[bool, str]:
     """Ask the headless pre_tool_use hook. Unavailable → not a hard block."""
     try:
@@ -725,9 +883,12 @@ def _hard_block(tool_name: str, tool_input: dict[str, Any]) -> tuple[bool, str]:
 
         if tool_name in ("run_command", "bash", "Bash"):
             hook_tool, hook_input = "Bash", {"command": str(tool_input.get("command", ""))}
-        elif tool_name in ("write_file", "Write"):
+        elif tool_name in _WRITE_SHAPED_TOOLS:
+            content = tool_input.get("content")
             hook_tool, hook_input = "Write", {
-                "content": str(tool_input.get("content", "")),
+                "content": (
+                    str(content) if content is not None else flatten_input(tool_input)
+                ),
                 "path": str(tool_input.get("path") or tool_input.get("file_path", "")),
             }
         else:

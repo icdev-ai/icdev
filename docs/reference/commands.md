@@ -2175,6 +2175,27 @@ python tools/quality/review_loop.py --no-autofix --json               # Report o
 
 ---
 
+## Sensitive-Path Inventory — one credential list, three consumers (#exa-bench-09)
+```bash
+python tools/security/sensitive_paths.py --list --json                          # the whole inventory + which config file it came from
+python tools/security/sensitive_paths.py --check ~/.aws/credentials --json      # classify one path (exit 1 when sensitive)
+python tools/security/sensitive_paths.py --check-command "cat ~/.netrc" --json  # classify a shell command (exit 1 when it discloses)
+```
+Patterns live in `args/sensitive_paths.yaml`. It is consumed by three surfaces that
+each previously had their own credential list or none at all: the `zero_access` tier
+in `args/file_access_tiers.yaml` (`inherits: sensitive_paths`, resolved by
+`tools/hooks/shared_checks.py`), the `confidentiality` rule in
+`tools/agent_runtime/approval_gate.py`, and `check_path_allowed()` in
+`tools/studio/executors/agent_tool_gate.py`. Add a credential glob to the inventory,
+never to a consumer — three copies is three lists that drift, and the drift is silent.
+
+Read verbs only: `cat ~/.aws/credentials` discloses, `touch ~/.ssh/authorized_keys`
+writes and is deliberately NOT matched (that is exa-bench-07's worktree-containment
+gap). Complements `tools/security/secret_detector.py`, which detects credential
+CONTENT inside files rather than naming the paths.
+
+---
+
 ## NemoClaw-Adapted Agent Sandboxing Commands
 ```bash
 # Credential Broker (D-NC-1)

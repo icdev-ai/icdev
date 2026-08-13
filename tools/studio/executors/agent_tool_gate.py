@@ -91,6 +91,12 @@ REASON_APPROVAL_REJECTED = "agent_tool_approval_rejected"
 REASON_GATE_UNAVAILABLE = "agent_tool_approval_gate_unavailable"
 REASON_POLICY_UNAVAILABLE = "agent_gate_policy_unavailable"
 
+#: A call whose PATH argument names credential material (exa-bench-09). Its own
+#: reason rather than `not_allowlisted`, because the tool IS allowlisted — what
+#: was refused is its reach, and an operator reading the audit row needs to see
+#: which of the two happened.
+REASON_SENSITIVE_PATH = "agent_tool_sensitive_path"
+
 #: Warn condition: a tool survived the offer filter but was refused at call
 #: time. Not expected — it means the two layers disagreed — so it is recorded
 #: under its own reason rather than silently folded into the refusal above.
@@ -219,6 +225,69 @@ def check_tool_allowed(tool: str, policy: dict | None = None) -> str:
         f"egresses) to make it callable." + hint,
         tool=tool,
         reason=REASON_NOT_ALLOWLISTED,
+    )
+
+
+# ── Path constraint on an allowlisted tool (exa-bench-09) ──────────────────
+
+def _sensitive_paths_module():
+    """The shared inventory, or ``None`` when it cannot be imported."""
+    try:
+        from tools.security import sensitive_paths
+
+        return sensitive_paths
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def check_path_allowed(
+    tool: str, tool_input: dict | None, policy: dict | None = None
+) -> None:
+    """Refuse a call whose PATH argument names credential material.
+
+    ``allowed`` is a NAME allowlist, and a name is a constant while a path is an
+    argument — so allowlisting ``read_file`` as "read-only inspection of the
+    step's own worktree" said nothing at all about reach. MEASURED: an agent
+    node could read ``~/.aws/credentials``. The worktree toolset in
+    ``tools/genesis/rubric_build_tools.py`` does traversal-guard its handlers,
+    but that is one toolset's property, not the gate's, and the gate is what the
+    policy claims.
+
+    Only the path-like arguments are inspected (see
+    :data:`tools.security.sensitive_paths.PATH_ARG_KEYS`), never the whole
+    input: a ``content`` that mentions ``~/.netrc`` is a document about a
+    credential, not a read of one.
+
+    Fail-closed on the policy, not on the inventory: ``sensitive_path_denied``
+    defaults to ``True`` when absent, so a policy that never heard of this check
+    still gets it. An inventory that will not import leaves the question
+    unasked — it cannot make a path look safer than the allowlist already did.
+
+    Raises:
+        AgentToolGateError: ``agent_tool_sensitive_path``.
+    """
+    pol = _policy(policy)
+    if not pol.get("sensitive_path_denied", True):
+        return
+    inventory = _sensitive_paths_module()
+    if inventory is None or not tool_input:
+        return
+    try:
+        hits = inventory.sensitive_args(tool_input)
+    except Exception:  # noqa: BLE001 — a broken layer never blocks a session
+        return
+    if not hits:
+        return
+    hit = hits[0]
+    raise AgentToolGateError(
+        f"{SURFACE} '{tool}' was refused a path outside its reach: {hit.summary()}. "
+        f"The {GATE_POLICY_KEY} allowlist names TOOLS, not paths — this path is in "
+        f"the shared sensitive-path inventory (args/sensitive_paths.yaml), which "
+        f"also backs the zero_access file tier and the approval gate's "
+        f"confidentiality rule. A credential an agent step genuinely needs is "
+        f"issued by tools/security/credential_broker.py, not read off disk.",
+        tool=tool,
+        reason=REASON_SENSITIVE_PATH,
     )
 
 
@@ -393,15 +462,24 @@ def authorize(
     caller: dict | None = None,
     policy: dict | None = None,
     registry=None,
+    *,
+    tool_input: dict | None = None,
 ) -> dict:
-    """Full authorization decision for one tool: allowlist, then IL and roles.
+    """Full authorization decision for one tool: allowlist, path, IL and roles.
 
     Returns ``{"tool", "disposition", **limits}``. Raises
     :class:`AgentToolGateError` on any refusal — the allowlist is checked first,
     so a tool nobody allowlisted is never looked up in the component registry.
+
+    ``tool_input`` is available only at CALL time, which is exactly why the path
+    constraint could not live in the allowlist: at offer time there is no path
+    to constrain, so the sensitive-path check is simply skipped and the tool is
+    still offered. Omitting it (the offer-time path, and every pre-exa-bench-09
+    caller) is therefore the same behaviour as before.
     """
     pol = _policy(policy)
     disposition = check_tool_allowed(tool, pol)
+    check_path_allowed(tool, tool_input, pol)
     limits = check_caller_authorized(tool, caller, pol, registry)
     return {"tool": tool, "disposition": disposition, **limits}
 
@@ -586,7 +664,9 @@ def build_gate_hook(
         if not isinstance(tool_input, dict):
             tool_input = {} if tool_input is None else {"value": tool_input}
         try:
-            decision = authorize(tool_name, caller, pol, registry)
+            decision = authorize(
+                tool_name, caller, pol, registry, tool_input=tool_input
+            )
             approval: dict = {}
             if decision["disposition"] == DISPOSITION_REQUIRES_APPROVAL:
                 # Re-read the gate per call rather than caching the approval in

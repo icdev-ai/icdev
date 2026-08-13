@@ -142,6 +142,13 @@ tests/test_init_goals_and_selective.py
 # instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
 tests/test_bootstrap_parity.py
 
+# test_scheduled_dispatch_reclaim.py: startup_recovery sweeps only
+# in_progress, so a dispatch that dies BEFORE the row moves there leaves it
+# in `scheduled` holding a dead pid that nothing looks at — neither running
+# nor reclaimable, and its slot never used. exa-bench-10 sat that way for 71
+# minutes with two of three slots free. <2s, fakes the connection, no DB.
+tests/test_scheduled_dispatch_reclaim.py
+
 # test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
 # objects, so a fix landed in one while the other runs is only half live and
 # the stale half fails SILENTLY. #1542 shipped that way and two tasks were
@@ -659,6 +666,18 @@ tests/test_codex_cli_adapter.py
 # unit. Both are decided from injected report data, so no DB service, LLM or
 # network; ~3s.
 tests/test_coherence_capability_liveness.py
+# test_sensitive_paths.py is the inventory behind exa-bench-09 -- ONE credential
+# path list consumed by three gates (the zero_access file tier, approval_gate's
+# confidentiality rule, and agent_tool_gate.check_path_allowed). It earns its own
+# slot alongside test_skip_permissions_compensating_controls.py because that one
+# measures the CONSUMERS and this one measures the list, and the list can regress
+# in two directions that look nothing alike: too NARROW is how the tier came to
+# cover **/credentials.json but not ~/.aws/credentials in the first place, and
+# too BROAD would silently absorb exa-bench-07's write probes and report that gap
+# as closed. Both directions are asserted here and neither is visible from the
+# consumer side. Pure matching against one YAML -- no DB service, LLM or network;
+# ~0.7s (exa-bench-09).
+tests/test_sensitive_paths.py
 
 # test_cost_budget_downgrade.py earns a slot because the property it pins is one
 # a well-meaning edit reverses without noticing: this budget layer DOWNGRADES
@@ -669,6 +688,18 @@ tests/test_coherence_capability_liveness.py
 # threshold ASK, which reverts to once-per-call the moment the dedupe is dropped.
 # Fully injected config and spend; no DB, LLM or network; ~0.7s (exa-policy-04).
 tests/test_cost_budget_downgrade.py
+
+# tests/hooks/test_hook_parity.py earns a slot because it is the only thing that
+# asserts .claude/hooks/pre_tool_use.py and hook_compat.HEADLESS_CHECKS run the
+# SAME set — and it was not gated, so it never ran in CI. That is the exact
+# failure it was written to catch, one level up: exa-bench-06 found
+# check_git_danger sitting in shared_checks and in HEADLESS_CHECKS while main()
+# never called it, so `git reset --hard` was refused headlessly and ALLOWED in the
+# Claude Code session that runs with --dangerously-skip-permissions (D394).
+# exa-bench-07 adds check_write_outside_worktree to both lists and depends on the
+# same property. Drives the hook as a subprocess reading JSON on stdin; no DB,
+# LLM or network; ~2s.
+tests/hooks/test_hook_parity.py
 # exa-policy-03 -- the three builtin policies. Earns a slot because it is the
 # only place the ALLOW/DENY/ASK chain and the session state are exercised by a
 # policy that actually USES them, and because the two properties most likely to
@@ -692,3 +723,134 @@ tests/test_agent_policy_builtins.py
 tests/test_copilot_cli_adapter.py
 tests/test_goose_cli_adapter.py
 tests/test_agent_adapter_no_inert_stubs.py
+
+# tsg-stale-01 -- the two SKI ACE roles (product_manager, software_craftsperson).
+# Ungated, it rotted three ways at once and nothing went red: RoleLoader started
+# returning structured RoleStep objects instead of bare strings (ace-qa-04), the
+# craftsperson's listen_topics were narrowed to bootstrap-only task.assigned to
+# break a circular-deadlock loop in the ACE event dispatcher, and 33 declared
+# skill packs plus 4 persona sources turned out never to have been committed at
+# all. The listen_topics narrowing is the one worth a gate: the role emits
+# task.completed and pr.ready, so re-subscribing reactively re-triggers its own
+# sessions, and the invariant is otherwise only prose in two other role YAMLs.
+# Skips are per-pack and name the missing path, so an unvendored library reads as
+# unvendored rather than as covered. Pure YAML/file parsing plus a tmp_path
+# SQLite ACE db; ~13s, no LLM or network.
+tests/test_ski_roles_lifecycle.py
+# tsg-dead-02: the NDC remediation simulator. Was 17/18 red since the commit that
+# added it (36d611a31) — the fixture handed the module a raw sqlite3.Connection,
+# but tools/network/db/init_db.get_connection ALWAYS returns a StorageConnection,
+# which is what translates the module's PG-native %s placeholders on the SQLite
+# path. Gated here so it cannot rot again. ~1s, in-memory SQLite, no LLM or network.
+tests/test_remediation_simulator.py
+# tsg-dead-01: remediation_simulator's NQE layer (Layer 2) imported two symbols
+# from tools.network.advisory that have never existed there. The ImportError was
+# swallowed by a bare `except Exception` and returned {"verdict": "skipped"} --
+# which is ALSO the correct answer when the Forward Networks API is genuinely
+# unreachable, so a layer that had never once executed was indistinguishable from
+# normal degraded operation. It stayed that way for six weeks because the only
+# suite covering the simulator mocks _run_nqe_layer out entirely.
+# test_remediation_nqe_layer.py pins the fix from both sides: pass/warn are
+# reachable (the layer really runs), and a wiring defect -- missing symbol, wrong
+# signature -- RAISES instead of being laundered back into "skipped". Every
+# "skipped" now carries a reason, so a dead layer is legible again.
+# test_advisory.py was 24-failing since the commit that created it; it specified
+# an advisory module that was never built, against the migration-220 nc_advisories
+# shape rather than the init_db.py one the live code writes. It now specifies the
+# module that actually ships. Both are pure-Python: no DB, LLM or network.
+tests/test_remediation_nqe_layer.py
+tests/test_advisory.py
+# tsg-stale-04 -- the three suites that went stale against changes they never
+# learned about. All three now pin the change instead of merely tolerating it.
+#
+# The two proposals/detail.html suites each carried a hand-listed `opp` dict and
+# an un-authenticated Flask app. When PROPOSALS_ALTER_SQL added the capture
+# columns (win_probability, ptw_low/high, ...) and the template read them, both
+# went red on UndefinedError; when @require_role(*GOVCON_WRITE_ROLES) landed on
+# the write endpoints (prop-fix-09), every API assertion in both answered 401 and
+# read as a broken endpoint. The stub is now derived from the
+# proposal_opportunities schema the route actually queries, so a new column
+# cannot re-stale it, and each suite asserts the RBAC gate directly --
+# unauthenticated 401, non-write role 403, every write role 200 -- so the gate
+# cannot be removed to turn the success path green again.
+#
+# test_mfa.py's fixture replaced get_connection() with a bare sqlite3 connection,
+# which dropped the %s -> ? translation the real StorageConnection performs, so
+# every statement in the module under test raised `near "%": syntax error`. It
+# now goes through tests/_sql_compat (the same translate_sql the runtime uses)
+# and asserts mfa.py's SQL stays PG-native in the first place.
+#
+# ~3s combined, pure Python: no DB service, no LLM, no network. pyotp is an
+# optional dependency and test_mfa skips cleanly without it.
+tests/test_proposals_detail_extract_requirements.py
+tests/test_proposals_detail_map_capabilities.py
+tests/test_mfa.py
+# tsg-stale-03 -- two route suites that had rotted into 41 red tests, restored and
+# gated so they cannot rot again. Both went red because a DELIBERATE change to the
+# code was never taught to the test, which is precisely the failure an ungated
+# suite cannot report:
+#   * test_zig_routes.py -- nav-sec-05 put @require_role(*_ZIG_MUTATION_ROLES) on
+#     the two ZIG mutation endpoints; the fixture only set ICDEV_AUTH_BYPASS, which
+#     clears sc_login_required but not require_role, so every write 401'd. The
+#     fixture now supplies g.current_user AND section 5 asserts the gate directly
+#     (anonymous 401, wrong-role 403, every declared role accepted) -- satisfying a
+#     gate is not evidence it exists, so removing @require_role now goes red.
+#   * test_move_endpoint_gate.py -- guards the move-to-done verification gate
+#     (guard-22). Its fixture pasted a private 15-column kanban_tasks DDL and
+#     stubbed get_connection with a bare sqlite3 connection; production had since
+#     grown start_date/target_date and the %s placeholders never got translated.
+#     It now builds on conftest's MINIMAL_ICDEV_SCHEMA via the icdev_db fixture and
+#     returns a real StorageConnection, so schema drift can no longer hide here.
+# Both are pure Flask test clients over a temp SQLite DB -- no LLM, no network, no
+# DB service. test_zig_routes ~8s; test_move_endpoint_gate ~25s (it rebuilds the
+# canonical schema per test, which is the point -- a cheaper private copy is what
+# broke it).
+tests/test_zig_routes.py
+tests/test_move_endpoint_gate.py
+
+# --- tsg-stale-05: six files from the STALE long tail, each verified alone AND
+# in one shared pytest process (111 tests). In every case the code had moved and
+# the test was never told; where the code was actually wrong it was FIXED, not
+# asserted around.
+#   * test_threat_level_thresholds.py -- indicator_baselines / sg_pir_requirements
+#     were never added to conftest's MINIMAL_ICDEV_SCHEMA (the 8-point checklist
+#     step everyone skips), so 16 of 19 died on "no such table". Both DDLs are now
+#     copied from their migrations. The last 3 failed because only HALF the flow
+#     takes a db_path: pir_manager.create_pir takes none and resolves
+#     ICDEV_DB_PATH, so the PIR write was landing in the real data/icdev.db while
+#     the baseline was read from tmp. The fixture now redirects the default too.
+#   * test_mitre_coverage_db.py -- loaded its migration by hardcoded NUMBER, and
+#     028_odc_mitre_coverage was renumbered to 336 to clear a duplicate-028
+#     collision. It now resolves the migration by SLUG and fails loudly if that
+#     is ever ambiguous, so the next renumber cannot silently rot it.
+#   * test_event_bus_security.py -- ran against whatever get_connection() resolved
+#     to and DELETEd its own rows back out of it, including from append-only
+#     audit_trail; a fresh worktree has no canvas_events at all, so all 12 errored
+#     at setup. Now on a temp DB (canvas_events added to MINIMAL_ICDEV_SCHEMA).
+#     That exposed a REAL bug: _downgrade_payload stamped _security_context onto
+#     the result and then recursed into every dict value -- including the one it
+#     had just written -- so every SECRET->CUI downgrade raised RecursionError and
+#     no payload was ever actually scrubbed. Fixed in tools/canvas/event_bus.py;
+#     a new test walks 25 levels to prove it terminates and still strips.
+#   * test_metrics.py -- built a MetricsCollector per test, which only ever worked
+#     because prometheus_client was absent and every collector took the stdlib
+#     fallback. Once the dep landed, 13 collided on the process-global REGISTRY.
+#     MetricsCollector now accepts an explicit registry (None = the global default,
+#     i.e. production is unchanged) and the tests isolate.
+#   * test_nc_simulation_schema.py -- its entire purpose is to assert the three
+#     nc_simulation_* tables are reachable via icdev_db; they had never been added.
+#   * test_xai_assessor.py -- 8 checks called a bare get_connection(), ignoring the
+#     self.db_path its own BaseAssessor stores, so XAIAssessor(db_path=X) assessed
+#     a DIFFERENT database than X and returned 'not_assessed' for all 10 checks
+#     wherever otel_spans was missing -- a compliance assessor silently grading the
+#     wrong DB. Rerouted through BaseAssessor._get_connection(); the except was
+#     widened to OSError so a missing DB still degrades to 'not_assessed' instead
+#     of crashing the other 9 checks.
+# All six are pure SQLite/in-process -- no LLM, no network, no DB service.
+# Combined ~50s.
+tests/test_threat_level_thresholds.py
+tests/test_mitre_coverage_db.py
+tests/test_event_bus_security.py
+tests/test_metrics.py
+tests/test_nc_simulation_schema.py
+tests/test_xai_assessor.py

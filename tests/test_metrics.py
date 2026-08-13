@@ -6,6 +6,7 @@ _FallbackHistogram), the MetricsCollector singleton, Flask middleware
 registration, and Prometheus text exposition output.
 """
 
+import contextlib
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -21,6 +22,25 @@ from tools.saas.metrics import (
     _FallbackHistogram,
     get_collector,
 )
+
+
+def _fresh_registry():
+    """Return an isolated prometheus registry, or None when the lib is absent.
+
+    prometheus_client metric names are unique *per registry*, and the default is
+    process-global — so the second ``MetricsCollector()`` in a process raises
+    "Duplicated timeseries in CollectorRegistry". This file constructs one per
+    test and used to get away with it only because prometheus_client was not
+    installed and every collector silently took the stdlib fallback path. Once
+    the dependency landed, nine tests started colliding with each other and with
+    the ``get_collector()`` singleton. Isolating the registry is what the tests
+    always meant; ``None`` keeps the air-gapped fallback path working unchanged.
+    """
+    try:
+        from prometheus_client import CollectorRegistry
+    except ImportError:
+        return None
+    return CollectorRegistry()
 
 
 # ============================================================================
@@ -124,17 +144,17 @@ class TestMetricsCollector:
     def test_initializes_without_prometheus_client(self):
         """MetricsCollector must initialize even without prometheus_client."""
         with patch.dict("sys.modules", {"prometheus_client": None}):
-            collector = MetricsCollector()
+            collector = MetricsCollector(registry=_fresh_registry())
             assert collector._use_prometheus is False
 
     def test_has_http_requests_total(self):
         """Collector must expose an http_requests_total metric."""
-        collector = MetricsCollector()
+        collector = MetricsCollector(registry=_fresh_registry())
         assert hasattr(collector, "http_requests_total")
 
     def test_has_http_request_duration(self):
         """Collector must expose an http_request_duration metric."""
-        collector = MetricsCollector()
+        collector = MetricsCollector(registry=_fresh_registry())
         assert hasattr(collector, "http_request_duration")
 
 
@@ -148,7 +168,7 @@ class TestFormatMetrics:
 
     @pytest.fixture(autouse=True)
     def _collector(self):
-        self.collector = MetricsCollector()
+        self.collector = MetricsCollector(registry=_fresh_registry())
         # Force fallback mode for deterministic test output
         self.collector._use_prometheus = False
         self.collector._create_fallback_metrics()
@@ -191,34 +211,52 @@ class TestFormatMetrics:
 # ============================================================================
 
 
+@contextlib.contextmanager
+def _rebuilt_singleton():
+    """Force ``get_collector()`` to build a fresh singleton, then fully undo it.
+
+    Restoring ``_collector`` is not enough on its own. ``get_collector()`` takes
+    no registry, so the rebuilt collector registers its metric names on
+    prometheus_client's process-global REGISTRY — and those registrations
+    survive the assignment being rolled back. The first test doing this left
+    them behind and the next one died on "Duplicated timeseries" before it could
+    assert anything. Unregister whatever the rebuild registered so the default
+    registry ends the test exactly as it started.
+    """
+    import tools.saas.metrics as metrics_module
+
+    original = metrics_module._collector
+    metrics_module._collector = None
+    try:
+        yield
+    finally:
+        built = metrics_module._collector
+        metrics_module._collector = original
+        if built is not None and getattr(built, "_use_prometheus", False):
+            from prometheus_client import REGISTRY
+
+            for obj in list(vars(built).values()):
+                try:
+                    REGISTRY.unregister(obj)
+                except Exception:
+                    pass  # not a registered collector — nothing to undo
+
+
 class TestGetCollector:
     """Tests for the get_collector() global singleton."""
 
     def test_returns_metrics_collector(self):
         """get_collector() must return a MetricsCollector instance."""
-        # Reset the global singleton for isolation
-        import tools.saas.metrics as metrics_module
-
-        original = metrics_module._collector
-        metrics_module._collector = None
-        try:
+        with _rebuilt_singleton():
             collector = get_collector()
             assert isinstance(collector, MetricsCollector)
-        finally:
-            metrics_module._collector = original
 
     def test_returns_same_instance(self):
         """get_collector() must return the same instance on second call."""
-        import tools.saas.metrics as metrics_module
-
-        original = metrics_module._collector
-        metrics_module._collector = None
-        try:
+        with _rebuilt_singleton():
             first = get_collector()
             second = get_collector()
             assert first is second
-        finally:
-            metrics_module._collector = original
 
 
 # ============================================================================
@@ -247,14 +285,14 @@ class TestMetricsMiddleware:
 
     def test_register_metrics_middleware(self, flask_app):
         """Registering middleware must not raise."""
-        collector = MetricsCollector()
+        collector = MetricsCollector(registry=_fresh_registry())
         collector.register_metrics_middleware(flask_app)
         # Middleware hooks should be attached
         assert len(flask_app.before_request_funcs.get(None, [])) >= 1
 
     def test_middleware_increments_request_counter(self, flask_app):
         """After a request, the http_requests_total counter must increase."""
-        collector = MetricsCollector()
+        collector = MetricsCollector(registry=_fresh_registry())
         collector._use_prometheus = False
         collector._create_fallback_metrics()
         collector.register_metrics_middleware(flask_app)
@@ -269,7 +307,7 @@ class TestMetricsMiddleware:
 
     def test_middleware_records_duration(self, flask_app):
         """After a request, the http_request_duration histogram must have data."""
-        collector = MetricsCollector()
+        collector = MetricsCollector(registry=_fresh_registry())
         collector._use_prometheus = False
         collector._create_fallback_metrics()
         collector.register_metrics_middleware(flask_app)
@@ -291,12 +329,12 @@ class TestBestEffortUpdates:
 
     def test_update_circuit_breaker_does_not_crash(self):
         """update_circuit_breaker_metrics must not raise even if module missing."""
-        collector = MetricsCollector()
+        collector = MetricsCollector(registry=_fresh_registry())
         # Should silently pass (no circuit breaker module in test env)
         collector.update_circuit_breaker_metrics()
 
     def test_update_tenant_metrics_does_not_crash(self):
         """update_tenant_metrics must not raise even if platform.db missing."""
-        collector = MetricsCollector()
+        collector = MetricsCollector(registry=_fresh_registry())
         # Should silently pass (no platform.db in test env)
         collector.update_tenant_metrics()

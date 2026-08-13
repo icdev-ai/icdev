@@ -244,10 +244,22 @@ class MetricsCollector:
     to stdlib-only text formatting (air-gap safe).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, registry: Any = None) -> None:
+        """Build the collector.
+
+        Args:
+            registry: Optional ``prometheus_client.CollectorRegistry`` to
+                register into. Defaults to ``prometheus_client.REGISTRY``, the
+                process-global default, which is what the ``get_collector()``
+                singleton uses. Metric names are unique per registry, so a
+                second collector on the default registry raises
+                "Duplicated timeseries" — pass an isolated registry when you
+                need more than one instance in a process.
+        """
         self._use_prometheus = False
         self._start_time = time.time()
         self._fallback_metrics: List[Any] = []
+        self._registry = registry
 
         try:
             import prometheus_client  # noqa: F401
@@ -269,43 +281,57 @@ class MetricsCollector:
     def _create_prometheus_metrics(self) -> None:
         from prometheus_client import Counter, Gauge, Histogram
 
+        # Metric names are unique per registry. None means the library's
+        # process-global REGISTRY -- what get_collector() and therefore
+        # production use; an explicit registry lets a second collector
+        # exist in the same process without a duplicate-timeseries error.
+        _reg = {} if self._registry is None else {"registry": self._registry}
+
         self.http_requests_total = Counter(
             "icdev_http_requests_total",
             "Total HTTP requests",
             ["method", "endpoint", "status", "tenant_id"],
+            **_reg,
         )
         self.http_request_duration = Histogram(
             "icdev_http_request_duration_seconds",
             "HTTP request duration in seconds",
             ["method", "endpoint", "tenant_id"],
+            **_reg,
         )
         self.http_in_flight = Gauge(
             "icdev_http_requests_in_flight",
             "Number of HTTP requests currently in flight",
+            **_reg,
         )
         self.http_errors_total = Counter(
             "icdev_http_errors_total",
             "Total HTTP error responses",
             ["method", "endpoint", "status", "tenant_id"],
+            **_reg,
         )
         self.rate_limit_hits = Counter(
             "icdev_rate_limit_hits_total",
             "Total rate limit hits",
             ["tenant_id"],
+            **_reg,
         )
         self.circuit_breaker_state = Gauge(
             "icdev_circuit_breaker_state",
             "Circuit breaker state (0=closed, 1=open, 2=half-open)",
             ["service_name", "state"],
+            **_reg,
         )
         self.gateway_uptime = Gauge(
             "icdev_gateway_uptime_seconds",
             "Gateway uptime in seconds",
+            **_reg,
         )
         self.platform_tenants = Gauge(
             "icdev_platform_tenants_total",
             "Total tenants on the platform",
             ["status"],
+            **_reg,
         )
 
     def _create_fallback_metrics(self) -> None:
