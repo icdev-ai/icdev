@@ -2,10 +2,11 @@
 
 **CUI // SP-CTI**
 
-**Status:** adopted 2026-08-12 (`tsg-policy-01`)
+**Status:** adopted 2026-08-12 (`tsg-policy-01`); extended to commit time 2026-08-13 (`tsg-policy-02`)
 **Supersedes:** the unwritten convention that PRs #1526 and #1533 were already following
 **Enforced by:** `tools/ci/gated_test_list.py --check-coverage`, run as the **Test gating
-census** step of the required `test` job
+census** step of the required `test` job — and, for a local commit, by
+`.githooks/pre-commit` via `tools/testing/pre_commit_check.py`
 **Config:** [`args/test_gating_gate.yaml`](../../args/test_gating_gate.yaml)
 
 ---
@@ -101,6 +102,51 @@ because headroom is room for the gap to regrow unobserved. Raising it is the vis
 reviewable act of deciding to take on more surface that CI does not check, and it should
 be argued for in the PR body. This is the same convention as `args/model_id_gate.yaml`
 and `args/insert_schema_gate.yaml`.
+
+## Where the census runs (`tsg-policy-02`)
+
+CI works, and it caught two unregistered test files within two hours of existing —
+`tests/test_bootstrap_hook_payload.py` (#1582) and `tests/test_kanban_gate_sentinel_seeding.py`
+(#1598), one from an autonomous worker and one from an interactive session. But it caught
+them in the **wrong place**. A census failure in CI turns `main` red, which blocks every
+open PR, and each one cost a follow-up branch + PR + full CI cycle (#1601) to add a single
+line the author could have added in one second. Item 8 of the CLAUDE.md registration
+checklist was enforced nowhere the author could feel it.
+
+So the same census also runs at `git commit`:
+
+| | Pre-commit (`.githooks/pre-commit`) | CI (`test` job) |
+|---|---|---|
+| When | the commit **adds or renames** a file in the census `scope` | every push |
+| Cost | 0.17s when it fires; **0 when it does not** — measured 155ms before / 154ms after for a commit touching no test file | already in the job |
+| Skippable | yes (`--no-verify`) | no |
+| Covers | local commits only | everything, including anything that never was a local commit |
+| Role | **fast path** | **backstop** |
+
+Four properties are deliberate:
+
+0. **It refuses only what THIS commit introduces.** The census describes the whole tree,
+   and the tree can already be non-compliant through no fault of the author — `main` was
+   red on two other people's files while this was being written. A pre-existing offender
+   is printed as a `NOTE` and left to CI; blocking on it would refuse a commit the author
+   cannot fix without stepping on the PR that already owns the line, and a hook that
+   refuses commits you cannot fix gets `--no-verify`d permanently.
+
+
+1. **CI keeps its step.** A hook is bypassable and is simply absent for changes that do
+   not arrive through a local commit. Removing the CI step would trade a real gate for a
+   convenience.
+2. **The hook never edits `core.txt`.** Auto-appending would gate a test nobody has run —
+   the exact failure `tsg-policy-01` exists to close, reintroduced as a feature. The
+   message tells the author what to append and where; the append is theirs.
+3. **It fails open on its own machinery.** A missing `args/test_gating_gate.yaml`, missing
+   `pyyaml`, or an unavailable git prints `SKIPPED` and lets the commit through. A fast
+   path whose whole justification is that CI still runs the same check must never be the
+   reason a good commit is refused.
+
+Scope is read from `args/test_gating_gate.yaml` — the hook shares `in_scope()` with the
+census rather than re-deriving `tests/` + `test_*.py`, so the two cannot drift into
+nagging about files the gate ignores.
 
 ## Why the backlog is not `merge=union`
 
