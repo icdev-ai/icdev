@@ -124,17 +124,7 @@ def run(trigger_data=None, context=None):
         conn.close()
         active = [dict(r) for r in active]
     except Exception as e:
-        # `details` must carry the `error` key: base.classify_failure only
-        # reports the real cause when it is there, and otherwise files a hard
-        # scan failure as a metric threshold miss — pointing whoever debugs the
-        # state row at the wrong subsystem (the xbm-wake-01 lesson).
-        return {
-            "status": "error",
-            "message": str(e),
-            "success": False,
-            "metric_value": 0.0,
-            "details": {"error": str(e), "stage": "contract_scan"},
-        }
+        return {"status": "error", "message": str(e)}
 
     results["contracts_scanned"] = len(active)
 
@@ -336,30 +326,6 @@ def run(trigger_data=None, context=None):
 
     _write_memory_log(results)
     results["status"] = "ok"
-
-    # The Genesis daemon scores a run from three keys — `success`,
-    # `metric_value`, `details` (tools/genesis/daemon.py::_run_reflex_impl_inner)
-    # — and this function returned NONE of them. `status: "ok"` is not part of
-    # that contract, and neither is the top-level `cards_created` that
-    # args/genesis_config.yaml names as this reflex's success_metric. So
-    # `success` defaulted to False and `metric_value` to 0.0 on every run, and a
-    # completed sweep was recorded as `reflex_reported_failure: cards_created=0.0`
-    # — a failure string naming a metric that in fact satisfies its own `gte 0`
-    # threshold. Eleven consecutive such "failures" opened the circuit breaker on
-    # 2026-08-13T02:01:35Z, after which only a half-open probe per cooldown window
-    # gets through, and each probe re-trips it and doubles the wait toward the
-    # 1440-minute cap. The 3-hourly CPMP surveillance decayed to roughly daily
-    # while genesis_reflex_state reported 0 successes in 11 runs.
-    #
-    # A sweep that completes and creates nothing NEW is a success: the id-derived
-    # dedup in _suggest_kanban_card is doing its job, and `cards_created: 0` is
-    # the steady state it exists to produce. Per-contract failures are reported
-    # in `details.errors` rather than failing the sweep, so one bad contract
-    # cannot dead-letter surveillance of the whole portfolio.
-    details = dict(results)
-    results["success"] = True
-    results["metric_value"] = float(results["cards_created"])
-    results["details"] = details
     return results
 
 
@@ -448,10 +414,7 @@ def _write_memory_log(results: Dict):
             content=(
                 f"CPMP monitor [{results['pass_type']}]: "
                 f"{results['contracts_scanned']} contracts "
-                # "skipped" was true of an earlier build that dropped unnumbered
-                # contracts. They are scanned now (see the loop above); only the
-                # count is still reported, so the wording has to say so.
-                f"({results['contracts_unnumbered']} unnumbered), "
+                f"({results['contracts_unnumbered']} skipped, no contract number), "
                 f"{results['issues_found']} issues, "
                 f"{results['cards_created']} cards, "
                 f"{results['cpars_alerts']} CPARS alerts, "
