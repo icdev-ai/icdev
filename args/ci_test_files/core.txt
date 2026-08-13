@@ -785,6 +785,20 @@ tests/test_advisory.py
 tests/test_proposals_detail_extract_requirements.py
 tests/test_proposals_detail_map_capabilities.py
 tests/test_mfa.py
+# tsg-stale-02 -- two Flask API suites that had rotted to 53 failures against a
+# single shared cause: dashboard SQL is authored PG-natively (`%s` placeholders,
+# PG is the primary backend) and depends on StorageConnection/StorageCursor to
+# translate for SQLite, but both files handed the routes a bare sqlite3
+# connection. Every statement raised `near "%": syntax error` -- in test_intake
+# from auth's before_request hook, so all 22 tests failed identically and the
+# real assertions never ran. Gated here because a placeholder migration is
+# exactly the kind of change that leaves an ungated suite silently red:
+# test_pma_igap covers the 8 INT coverage/collection-requirement endpoints
+# end-to-end through a real StorageConnection, so the next such migration fails
+# in CI instead of in a stale-test sweep. ~26s combined, SQLite only, LLM
+# disabled (_HAS_LLM patched False), no network.
+tests/test_pma_igap_api.py
+tests/test_intake_api.py
 # tsg-stale-03 -- two route suites that had rotted into 41 red tests, restored and
 # gated so they cannot rot again. Both went red because a DELIBERATE change to the
 # code was never taught to the test, which is precisely the failure an ungated

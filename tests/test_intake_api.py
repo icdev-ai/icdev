@@ -18,6 +18,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tools.db.storage import StorageConnection  # noqa: E402  (needs sys.path above)
+
 
 def _init_test_db(db_path):
     """Create tables using the real init script for full schema compatibility."""
@@ -28,77 +30,83 @@ def _init_test_db(db_path):
         cwd=str(Path(__file__).resolve().parent.parent),
         capture_output=True,
     )
-    if not db_path.exists():
-        # Fallback: the init script may use a hardcoded path — just create
-        # the minimal tables needed for dashboard + intake.
-        conn = sqlite3.connect(str(db_path))
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS projects (
-                id TEXT PRIMARY KEY, name TEXT, description TEXT, type TEXT,
-                classification TEXT, impact_level TEXT, status TEXT,
-                tech_stack_backend TEXT, tech_stack_frontend TEXT,
-                tech_stack_database TEXT, directory_path TEXT, created_by TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS agents (
-                id TEXT PRIMARY KEY, name TEXT, status TEXT, type TEXT,
-                port INTEGER, endpoint TEXT, last_heartbeat TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS alerts (
-                id TEXT PRIMARY KEY, title TEXT, severity TEXT, source TEXT,
-                status TEXT, project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS poam_items (
-                id TEXT PRIMARY KEY, project_id TEXT, title TEXT, severity TEXT,
-                status TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS audit_trail (
-                id TEXT PRIMARY KEY, event_type TEXT, actor TEXT, action TEXT,
-                project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS stig_findings (
-                id TEXT PRIMARY KEY, project_id TEXT, severity TEXT, status TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS deployments (
-                id TEXT PRIMARY KEY, project_id TEXT, status TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS a2a_tasks (
-                id TEXT PRIMARY KEY, target_agent_id TEXT, status TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS hook_events (
-                id TEXT PRIMARY KEY, event_type TEXT, source TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS nlq_queries (
-                id TEXT PRIMARY KEY, query_text TEXT, sql_text TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS ssp_documents (
-                id TEXT PRIMARY KEY, project_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS sbom_records (
-                id TEXT PRIMARY KEY, project_id TEXT,
-                generated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS self_healing_events (
-                id TEXT PRIMARY KEY, pattern_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS knowledge_patterns (
-                id TEXT PRIMARY KEY, description TEXT
-            );
-            CREATE TABLE IF NOT EXISTS failure_log (
-                id TEXT PRIMARY KEY, resolved INTEGER DEFAULT 0
-            );
-        """)
-        conn.commit()
-        conn.close()
+    # The minimal schema below is applied UNCONDITIONALLY, not behind the
+    # `db_path.exists()` guard it used to sit behind. File existence is not a
+    # success probe: the init script connects (creating the file) before it
+    # finishes populating it, so a run that fails partway leaves a file that
+    # looks initialized. Locally this script produces all 528 tables and the
+    # guard was harmless; on the ubuntu CI runner it left a database with no
+    # `projects` table, and GET / died on `no such table: projects` — the one
+    # test in this module that renders the home page. Every statement here is
+    # CREATE TABLE IF NOT EXISTS, so it is a no-op when the real init succeeded.
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY, name TEXT, description TEXT, type TEXT,
+            classification TEXT, impact_level TEXT, status TEXT,
+            tech_stack_backend TEXT, tech_stack_frontend TEXT,
+            tech_stack_database TEXT, directory_path TEXT, created_by TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS agents (
+            id TEXT PRIMARY KEY, name TEXT, status TEXT, type TEXT,
+            port INTEGER, endpoint TEXT, last_heartbeat TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS alerts (
+            id TEXT PRIMARY KEY, title TEXT, severity TEXT, source TEXT,
+            status TEXT, project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS poam_items (
+            id TEXT PRIMARY KEY, project_id TEXT, title TEXT, severity TEXT,
+            status TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS audit_trail (
+            id TEXT PRIMARY KEY, event_type TEXT, actor TEXT, action TEXT,
+            project_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS stig_findings (
+            id TEXT PRIMARY KEY, project_id TEXT, severity TEXT, status TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS deployments (
+            id TEXT PRIMARY KEY, project_id TEXT, status TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS a2a_tasks (
+            id TEXT PRIMARY KEY, target_agent_id TEXT, status TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS hook_events (
+            id TEXT PRIMARY KEY, event_type TEXT, source TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS nlq_queries (
+            id TEXT PRIMARY KEY, query_text TEXT, sql_text TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS ssp_documents (
+            id TEXT PRIMARY KEY, project_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS sbom_records (
+            id TEXT PRIMARY KEY, project_id TEXT,
+            generated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS self_healing_events (
+            id TEXT PRIMARY KEY, pattern_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS knowledge_patterns (
+            id TEXT PRIMARY KEY, description TEXT
+        );
+        CREATE TABLE IF NOT EXISTS failure_log (
+            id TEXT PRIMARY KEY, resolved INTEGER DEFAULT 0
+        );
+    """)
+    conn.commit()
+    conn.close()
 
     # Ensure dashboard auth tables exist + test user (Phase 30)
     conn = sqlite3.connect(str(db_path))
@@ -125,28 +133,56 @@ def _init_test_db(db_path):
     conn.close()
 
 
-@pytest.fixture
-def chat_app(tmp_path):
-    """Create a test Flask app with intake tables."""
-    db_path = tmp_path / "test_icdev.db"
+@pytest.fixture(scope="module")
+def chat_app(tmp_path_factory):
+    """Create a test Flask app with intake tables.
+
+    Module-scoped: create_app() mounts every blueprint in the platform, which
+    costs ~2s a call, and _init_test_db shells out to the real init script.
+    Paying that 22 times put this file at ~3.5 minutes, which is why it is a
+    single build shared by the module. Each test still creates its own intake
+    session, so they do not observe each other's rows.
+    """
+    db_path = tmp_path_factory.mktemp("intake_api") / "test_icdev.db"
     _init_test_db(db_path)
 
     # Patch _get_db in all dashboard modules to return connections to the test
     # DB.  Patching DB_PATH alone is insufficient because get_connection() may
     # resolve paths independently.
+    # The connection MUST be wrapped in a real StorageConnection. Dashboard SQL
+    # is authored PG-natively (`%s` placeholders — PG is the primary backend)
+    # and depends on StorageConnection/StorageCursor to translate for SQLite.
+    # Handing the routes a bare sqlite3.Connection made every such statement
+    # raise `near "%": syntax error`; auth's before_request hook calls
+    # get_user_by_id() on every request, so that single mismatch turned all 22
+    # tests in this module red at once.
     def _make_conn():
         c = sqlite3.connect(str(db_path))
         c.row_factory = sqlite3.Row
-        return c
+        return StorageConnection(c, "sqlite")
+
+    # tools/dashboard/app.py does `from tools.dashboard.config import DB_PATH`,
+    # which binds its OWN module-level name — patching the config module alone
+    # leaves app.py's closure `_get_db()` pointed at the real data/icdev.db.
+    # GET / therefore read the repo database, which passes on a developer box
+    # that has one and fails on a CI runner that does not (`no such table:
+    # projects`). Import the module up front so the attribute exists to patch.
+    import tools.dashboard.app  # noqa: F401
 
     with (
         patch.dict(os.environ, {"ICDEV_DB_PATH": str(db_path)}),
         patch("tools.dashboard.config.DB_PATH", str(db_path)),
+        patch("tools.dashboard.app.DB_PATH", str(db_path)),
         patch("tools.dashboard.auth._get_db", side_effect=lambda: _make_conn()),
         patch("tools.dashboard.api.projects._get_db", side_effect=lambda: _make_conn()),
         patch("tools.dashboard.api.intake._get_db", side_effect=lambda: _make_conn()),
         patch("tools.dashboard.api.intake.DB_PATH", db_path),
         patch("tools.requirements.intake_engine.DB_PATH", db_path),
+        # readiness_scorer resolves its own module-level DB_PATH (the repo's
+        # data/icdev.db) — without this patch /api/intake/readiness queries a
+        # database that has none of this test's sessions, and 500s on the
+        # missing/empty file rather than scoring the session just created.
+        patch("tools.requirements.readiness_scorer.DB_PATH", db_path),
         patch("tools.requirements.intake_engine._HAS_LLM", False),
     ):
         from tools.dashboard.app import create_app
@@ -156,7 +192,7 @@ def chat_app(tmp_path):
         yield app
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def client(chat_app):
     """Create authenticated test client."""
     c = chat_app.test_client()
@@ -171,12 +207,14 @@ class TestChatPages:
     def test_chat_new_page(self, client):
         resp = client.get("/chat")
         assert resp.status_code == 200
-        assert b"<h1>Chat</h1>" in resp.data
+        # Heading renamed "Chat" -> "AI Assistant" in e709aead1 (chat-ux, cu-fix).
+        assert b"<h1>AI Assistant</h1>" in resp.data
 
     def test_chat_new_with_wizard_params(self, client):
         resp = client.get("/chat?goal=build&role=developer&classification=il4")
         assert resp.status_code == 200
-        assert b"<h1>Chat</h1>" in resp.data
+        # Heading renamed "Chat" -> "AI Assistant" in e709aead1 (chat-ux, cu-fix).
+        assert b"<h1>AI Assistant</h1>" in resp.data
 
     def test_chat_session_not_found(self, client):
         resp = client.get("/chat/nonexistent-session")
