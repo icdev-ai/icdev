@@ -870,3 +870,11 @@ tests/test_xai_assessor.py
 # ~3s combined, SQLite only, LLM calls patched, no network.
 tests/genesis_auto/test_reflexion_agent.py
 tests/genesis_auto/test_pain_extractor.py
+# tsg-gen-02: the generated-test policy gate. tsg-gen-01 removed 96 private-constant
+# assertions from tests/genesis_auto/, but the Genesis Test Reflex that emitted them
+# was still free to re-add all 96 on its next run. This generates FRESH output from
+# tools/genesis/reflexes/test.py and asserts no `hasattr(mod, "_` appears in it, so
+# the cleanup cannot be undone silently. Unlisted here the pin never runs in CI,
+# which is the declared-but-unconsumed failure mode it exists to prevent.
+# ~1s, no DB, no network, no LLM.
+tests/test_genesis_test_reflex_policy.py

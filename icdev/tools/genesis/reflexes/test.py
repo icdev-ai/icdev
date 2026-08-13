@@ -8,6 +8,17 @@ stubs).
 
 YELLOW tier (reversible writes — new test files only, worktree sandbox).
 Scanner-tier only (zero Claude tokens).
+
+GENERATED-TEST POLICY (tsg-gen-02) — a generated test asserts BEHAVIOUR, never
+the existence of a private name. `assert hasattr(mod, "_THRESHOLD")` is not a
+behavioural claim: it cannot fail in a way that names a defect, and it DOES fail
+on any legal rename. Because the emitted guard catches ImportError but not
+AssertionError, that failure surfaces as a hard error rather than a skip — which
+is how 96 such assertions across 26 files in tests/genesis_auto/ became a
+standing source of red (removed in #1591 / tsg-gen-01). Emission is therefore
+filtered by `_is_public_name` and pinned by
+tests/test_genesis_test_reflex_policy.py; see tests/genesis_auto/README.md for
+the assertions that DO earn their keep.
 """
 IMPLEMENTATION_STATUS = "full"
 
@@ -45,6 +56,16 @@ _RUN_TEST_TIMEOUT_SEC      = 60   # per-file pytest subprocess timeout
 _STDOUT_TAIL_CHARS         = 1000 # captured pytest stdout tail
 _STDERR_TAIL_CHARS         = 500  # captured pytest stderr tail
 _ERROR_SNIPPET_CHARS       = 200  # failure-result stderr snippet in results
+
+
+def _is_public_name(name: str) -> bool:
+    """True when `name` is part of a module's public surface.
+
+    A leading underscore marks an implementation detail, so a generated test must
+    not assert it exists — see the generated-test policy in the module docstring.
+    Dunders (`__all__`, `__version__`) are public API despite the underscores.
+    """
+    return not name.startswith("_") or (name.startswith("__") and name.endswith("__"))
 
 
 def _utcnow_iso() -> str:
@@ -194,6 +215,11 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
     # Filter to public functions only
     pub_funcs = [f for f in functions if f.get("is_public", True)]
     pub_classes = [c for c in classes if c.get("is_public", True)]
+    # The extractor reports private constants too (`_MAX_X`.isupper() is True), but
+    # asserting one exists is an implementation-detail test — see the generated-test
+    # policy in the module docstring. Filter BEFORE the cap so private names cannot
+    # consume the _MAX_CONSTANTS_ASSERTED budget that public ones deserve.
+    pub_constants = [c for c in constants if _is_public_name(c["name"])]
 
     lines = [
         "#!/usr/bin/env python3",
@@ -386,7 +412,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                 )
 
     # Test constants
-    if constants:
+    if pub_constants:
         lines.extend(
             [
                 "",
@@ -398,7 +424,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                 f"        import {import_path} as mod",
             ]
         )
-        for const in constants[:_MAX_CONSTANTS_ASSERTED]:
+        for const in pub_constants[:_MAX_CONSTANTS_ASSERTED]:
             cname = const["name"]
             lines.append(f'        assert hasattr(mod, "{cname}"), "Missing constant {cname}"')
         lines.extend(
