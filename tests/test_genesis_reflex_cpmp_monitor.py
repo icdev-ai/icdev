@@ -118,7 +118,7 @@ def _run_reflex(issues):
             "tools.govcon.cpars_predictor.get_cpars_trend", return_value={"trend": []}))
         stack.enter_context(patch(
             "tools.govcon.subcontractor_tracker.detect_noncompliance",
-            return_value={"noncompliance": []}))
+            return_value={"findings": []}))
         stack.enter_context(patch(
             "tools.govcon.cdrl_generator.generate_all_due", return_value={"generated": 0}))
         stack.enter_context(patch("tools.memory.memory_write.write_to_db", return_value=None))

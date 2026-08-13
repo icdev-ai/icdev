@@ -290,7 +290,7 @@ class TestRunEndToEnd:
         from tools.govcon import cpars_predictor, subcontractor_tracker
         monkeypatch.setattr(cpars_predictor, "predict_cpars", lambda cid: {"predicted_score": 1.0})
         monkeypatch.setattr(cpars_predictor, "get_cpars_trend", lambda cid: {"trend": []})
-        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"findings": []})
         monkeypatch.setattr(reflex, "_write_memory_log", lambda results: None)
         return board
 
@@ -364,7 +364,7 @@ class TestCparsEscalation:
 
         from tools.govcon import cdrl_generator, cpars_predictor, pmo_ai_advisor, subcontractor_tracker
         monkeypatch.setattr(pmo_ai_advisor, "auto_detect_issues", lambda cid: {"issues": []})
-        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"findings": []})
         monkeypatch.setattr(cdrl_generator, "generate_all_due", lambda cid, days_ahead=14: {"generated": 0})
         monkeypatch.setattr(
             cpars_predictor, "predict_cpars",
@@ -414,7 +414,7 @@ class TestEscalationFailureIsVisible:
 
         from tools.govcon import cdrl_generator, cpars_predictor, pmo_ai_advisor, subcontractor_tracker
         monkeypatch.setattr(pmo_ai_advisor, "auto_detect_issues", lambda cid: {"issues": []})
-        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"findings": []})
         monkeypatch.setattr(cdrl_generator, "generate_all_due", lambda cid, days_ahead=14: {"generated": 0})
         monkeypatch.setattr(
             cpars_predictor, "predict_cpars",

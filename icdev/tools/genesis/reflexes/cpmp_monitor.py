@@ -41,6 +41,31 @@ def _placeholder_titles() -> frozenset:
     return frozenset({default.casefold()})
 
 
+# Display label and corrective action per detect_noncompliance() category.
+# The reflex read a nonexistent 'issue_type' key, so every card it could have
+# filed would have been titled "Noncompliance" and carried the flow-down remedy
+# regardless of category — a CMMC gap arriving with a FAR 52.219-9 flow-down
+# action. Keyed on 'category', which is what the finding actually carries.
+_SUBCON_CATEGORIES = {
+    "flowdown": (
+        "Flow-Down",
+        "Initiate flow-down corrective action per FAR 52.219-9.",
+    ),
+    "cybersecurity": (
+        "Cybersecurity",
+        "Issue cure notice; verify NIST SP 800-171 implementation per DFARS 252.204-7012.",
+    ),
+    "cmmc": (
+        "CMMC",
+        "Establish the subcontractor's CMMC level per DFARS 252.204-7021.",
+    ),
+    "isr_ssr": (
+        "ISR/SSR",
+        "File the outstanding ISR/SSR in eSRS per FAR 52.219-9(d).",
+    ),
+}
+
+
 def _contract_label(contract: Dict) -> str:
     """Human-identifiable label for a contract, for use in card titles.
 
@@ -220,25 +245,49 @@ def run(trigger_data=None, context=None):
             try:
                 from tools.govcon.subcontractor_tracker import detect_noncompliance
                 nc = detect_noncompliance(cid)
-                findings = nc.get("noncompliance", [])
+                # detect_noncompliance() returns its list under 'findings'. This
+                # read 'noncompliance' — a key that function has never returned —
+                # so the list was empty on every cycle for every contract, and the
+                # pass was inert from its first commit. No exception, no error
+                # entry, subcon_alerts steady at 0 and status 'ok'. Pass 1 counts
+                # noncompliant subs with its own SQL, so the board still showed
+                # "N subcontractor(s) have incomplete flow-down or cybersecurity
+                # gaps" while the card naming WHICH sub and WHICH gap was the one
+                # thing missing.
+                findings = nc.get("findings", [])
                 high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
                 for finding in high_findings:
                     try:
+                        # 'category' and 'company_name' are the keys the findings
+                        # carry; 'issue_type'/'subcontractor_name' never existed.
+                        category = finding.get("category") or "noncompliance"
+                        company = finding.get("company_name")
+                        label, action = _SUBCON_CATEGORIES.get(
+                            category,
+                            (category.replace("_", " ").title(), "Review with the subcontract manager."),
+                        )
+                        # isr_ssr is contract-level: it has no subcontractor, and
+                        # printing "Subcontractor: None" reads as missing data.
+                        subject = f"Subcontractor: {company}\n" if company else ""
                         wrote = _suggest_kanban_card(
-                            title=f"[SUBCON] {clabel}: {finding.get('issue_type','Noncompliance').replace('_',' ').title()}",
+                            title=f"[SUBCON] {clabel}: {label}",
                             description=(
-                                f"Contract: {ctitle}\n"
-                                f"Subcontractor: {finding.get('subcontractor_name','N/A')}\n"
+                                f"Contract: {clabel}\n"
+                                f"{subject}"
                                 f"Issue: {finding.get('description','')}\n"
                                 f"Severity: {finding.get('severity','').upper()}\n"
-                                f"Action: Initiate flow-down corrective action per FAR 52.219-9."
+                                f"Action: {action}"
                             ),
                             priority="high",
                             context_data={"contract_id": cid, "contract_number": cnum, "finding": finding},
                             created_by="cpmp_monitor_subcon",
+                            # sub_id is the row identity, so two subs sharing a
+                            # company_name still get one card each; it falls back
+                            # to the name, then to the category alone for the
+                            # contract-level isr_ssr finding.
                             dedup_key=(
-                                f"{cid}:{finding.get('issue_type','noncompliance')}"
-                                f":{finding.get('subcontractor_name','')}"
+                                f"{cid}:{category}"
+                                f":{finding.get('sub_id') or company or ''}"
                             ),
                         )
                         results["subcon_alerts"] += 1 if wrote else 0

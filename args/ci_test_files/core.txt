@@ -932,6 +932,17 @@ tests/ci/test_test_gating_census.py
 tests/test_genesis_reflex_cpmp_monitor.py
 tests/test_genesis_reflex_cpmp_monitor_card_identity.py
 
+# CPMP monitor pass 3 is actually live (cpmp-f3acda96eb). The reflex read
+# detect_noncompliance()["noncompliance"]; that function returns "findings", so
+# the subcontractor pass filed zero cards for every contract since it was
+# written -- no exception, no error entry, subcon_alerts steady at 0. The two
+# files above could not catch it because they stubbed the dependency with
+# {"noncompliance": []}, i.e. the fake encoded the caller's misreading. This one
+# runs the REAL detect_noncompliance against an in-memory board, so renaming the
+# key on either side fails here. New file, passes (9 tests), gated in the same
+# PR that adds it per docs/ci/test-gating-policy.md.
+tests/test_genesis_reflex_cpmp_monitor_subcon_pass.py
+
 # The /network/ graph_json type guard (#1599) shipped to main WITHOUT being
 # gated, so the census check failed on main -- exactly the "a test file that CI
 # never runs has never gated a merge" case this policy exists to catch. It pins
