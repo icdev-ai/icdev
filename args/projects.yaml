@@ -7915,6 +7915,9 @@ projects:
   - key: iso
     title: ISO - test-isolation defects
     priority: medium
+  - key: policy
+    title: POLICY - decide the CI allowlist policy the fixes have been assuming
+    priority: high
 - key: exa
   name: EXA - External Adoption (buzz / omnigent / prime-agent)
   description: |-
