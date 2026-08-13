@@ -142,6 +142,13 @@ tests/test_init_goals_and_selective.py
 # instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
 tests/test_bootstrap_parity.py
 
+# test_bootstrap_hook_payload.py arrived with exa-bench-10 (#1582) and was
+# gated by nothing — the census in this PR is what caught it. It is the test
+# that proves `icdev init` ships the module its PreToolUse hook exec_module()s,
+# i.e. the very defect exa-bench-10 fixed, so leaving it ungated would let that
+# defect return with nothing going red. 9 tests, <4s, pure filesystem.
+tests/test_bootstrap_hook_payload.py
+
 # test_scheduled_dispatch_reclaim.py: startup_recovery sweeps only
 # in_progress, so a dispatch that dies BEFORE the row moves there leaves it
 # in `scheduled` holding a dead pid that nothing looks at — neither running
