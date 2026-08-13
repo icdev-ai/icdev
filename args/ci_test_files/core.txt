@@ -994,6 +994,16 @@ tests/test_cpmp_monitor_daemon_contract.py
 # here; gated so the type guard it pins (one bad graph_json row 500ing /network/)
 # cannot regress unnoticed.
 tests/test_ndc_graph_json_type_guard.py
+# that one unparseable graph_json row cannot 500 the whole page.
+#
+# The entry itself now lives ~770 lines above, added by #1605 concurrently with
+# this block. Both branches were racing the same red census and both appended,
+# which `gated_test_list.py --check --list core` rejects outright:
+#   ##[error]CI test allowlist (core): listed more than once
+# Note that `--check-coverage` -- the command CLAUDE.md tells you to run -- does
+# NOT catch a duplicate, only an unlisted file, so this passed locally on both
+# branches and failed in the required `test` job on every branch opened after
+# them. Deduped here rather than left for the next PR to trip over.
 
 # Nothing called contract_manager.compute_overdue_deliverables() outside its own
 # argparse block, so no CDRL had ever reached status 'overdue' and days_overdue
