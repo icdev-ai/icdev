@@ -922,6 +922,20 @@ tests/test_genesis_test_reflex_policy.py
 # -- which is also the policy it enforces, demonstrated.
 tests/ci/test_test_gating_census.py
 
+# CPMP deliverable cancellation (cpmp-49654d62b3). Gates the 'cancelled'
+# terminal state: that it requires a reason, that the reason is persisted to the
+# append-only cpmp_status_history, that compute_overdue_deliverables does not
+# sweep a cancelled CDRL back to 'overdue', and that the YAML transition map --
+# which OVERRIDES the Python default at import -- stays in sync with it. That
+# last one is the reason this is gated rather than trusted: a fix applied to
+# only one of the two copies is silently inert.
+tests/test_cpmp_deliverable_cancellation.py
+
+# Landed ungated by #1598 and #1599 respectively — both pass (60 tests), they
+# were simply never appended here, so the census was failing every PR opened
+# after them, including this one. Gated rather than excluded because both guard
+# live regressions: seeding work under a gate sentinel's id, and one bad
+# graph_json row 500-ing /network/.
 # CPMP monitor card identity (cpmp-a7642ba5d9). The reflex's card TITLE is what
 # a human uses to tell one finding from another, and it regressed twice: first
 # to "[CPMP] :" (blank contract_number), then to "[CPMP] Untitled Contract:"

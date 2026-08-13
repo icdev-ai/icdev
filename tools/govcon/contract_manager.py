@@ -76,21 +76,43 @@ CONTRACT_TRANSITIONS = _CFG.get(
     },
 )
 
+# Every path through this machine used to end at 'accepted' (the government took
+# delivery) or loop forever ('rejected' -> 'resubmitted' -> 'government_review').
+# There was no way to say a CDRL is NOT going to be delivered — descoped by
+# contract mod, superseded by a later CDRL, or created in error. The only
+# dispositions available were to leave it (it counts as overdue forever and
+# cpmp_monitor re-alarms on it every cycle), DELETE it (destroys the
+# cpmp_status_history trail, and no delete API exists), or flip it to 'accepted'
+# — a false assertion of government acceptance that also feeds CPARS quality
+# scoring. 'cancelled' is the honest fourth option, and it is TERMINAL.
+#
+# It is a disposition, not a mute button: transition_deliverable() refuses a
+# cancellation with no reason, and the reason lands in the append-only
+# cpmp_status_history. Not reachable from 'accepted' — reversing delivery is a
+# contract-mod concern, not a status flip.
 DELIVERABLE_TRANSITIONS = _CFG.get(
     "deliverable_transitions",
     {
-        "not_started": ["in_progress"],
-        "in_progress": ["draft_complete", "overdue"],
-        "draft_complete": ["internal_review"],
-        "internal_review": ["submitted", "in_progress"],
-        "submitted": ["government_review"],
+        "not_started": ["in_progress", "cancelled"],
+        "in_progress": ["draft_complete", "overdue", "cancelled"],
+        "draft_complete": ["internal_review", "cancelled"],
+        "internal_review": ["submitted", "in_progress", "cancelled"],
+        "submitted": ["government_review", "cancelled"],
         "government_review": ["accepted", "rejected"],
         "accepted": [],
-        "rejected": ["resubmitted"],
+        "rejected": ["resubmitted", "cancelled"],
         "resubmitted": ["government_review"],
-        "overdue": ["in_progress", "submitted"],
+        "overdue": ["in_progress", "submitted", "cancelled"],
+        "cancelled": [],
     },
 )
+
+# Statuses that close out a deliverable — it is no longer an open obligation, so
+# it must not be counted as overdue or swept back into 'overdue'. Every date-based
+# overdue query derives its exclusion list from this constant rather than
+# repeating a literal tuple, which is how 'cancelled' would otherwise have been
+# added in one query and missed in the next.
+CLOSED_DELIVERABLE_STATUSES = ("accepted", "rejected", "cancelled")
 
 
 # ── Delinquent (overdue) deliverables — ONE definition ───────────────
@@ -123,12 +145,23 @@ DELIVERED_DELIVERABLE_STATUSES = (
 # Rendered once from the tuple above so the SQL cannot drift from the vocabulary.
 DELIVERED_STATUS_SQL_LIST = ", ".join(f"'{s}'" for s in DELIVERED_DELIVERABLE_STATUSES)
 
+# A cancelled CDRL is not delivered, but it is no longer an obligation either,
+# so the overdue sweep must not reclaim it. Without this the sweep flips a
+# just-cancelled deliverable straight back to 'overdue' on its next 3h run and
+# the disposition is inert — the reason cancellation needs a vocabulary entry
+# and not just a status value. Derived from CLOSED_DELIVERABLE_STATUSES rather
+# than a literal so the two cannot drift.
+_NOT_AN_OBLIGATION = tuple(
+    dict.fromkeys(DELIVERED_DELIVERABLE_STATUSES + CLOSED_DELIVERABLE_STATUSES)
+)
+NOT_AN_OBLIGATION_SQL_LIST = ", ".join(f"'{s}'" for s in _NOT_AN_OBLIGATION)
+
 # A single `%s` binds the cutoff date (today, YYYY-MM-DD). due_date is a TEXT
 # column and is NULL or '' on rows created without one; neither is a missed date.
 OVERDUE_DELIVERABLE_SQL = (
     "due_date IS NOT NULL AND due_date <> '' AND due_date < %s "
     "AND submitted_date IS NULL "
-    f"AND status NOT IN ({DELIVERED_STATUS_SQL_LIST})"
+    f"AND status NOT IN ({NOT_AN_OBLIGATION_SQL_LIST})"
 )
 
 
@@ -753,6 +786,17 @@ def transition_deliverable(deliverable_id, new_status, changed_by=None, reason=N
             "message": f"Invalid transition: {old_status} → {new_status}. Allowed: {allowed}",
         }
 
+    # A cancellation is the one transition that ERASES an obligation rather than
+    # advancing it, so it has to carry its own justification — that rationale is
+    # what a COR or an auditor reads later to tell a descoped CDRL apart from a
+    # missed one. Without this, 'cancelled' is just a quieter way to lose work.
+    if new_status == "cancelled" and not (reason or "").strip():
+        conn.close()
+        return {
+            "status": "error",
+            "message": "Cancelling a deliverable requires a reason (e.g. the mod that descoped it).",
+        }
+
     updates = {"status": new_status, "updated_at": _now()}
     if new_status == "submitted":
         updates["submitted_date"] = _now()
@@ -761,6 +805,10 @@ def transition_deliverable(deliverable_id, new_status, changed_by=None, reason=N
         updates["days_overdue"] = 0
     elif new_status == "rejected":
         updates["rejected_date"] = _now()
+    elif new_status == "cancelled":
+        # No longer an open obligation — a stale overdue count on a cancelled
+        # CDRL still renders on the contract detail page.
+        updates["days_overdue"] = 0
 
     set_clauses = ", ".join(f"{k} = ?" for k in updates)
     params = list(updates.values()) + [deliverable_id]

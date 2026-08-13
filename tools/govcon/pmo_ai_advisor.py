@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 from tools.db.storage import get_connection
 from tools.govcon.contract_manager import (
-    DELIVERED_STATUS_SQL_LIST,
+    NOT_AN_OBLIGATION_SQL_LIST,
     OVERDUE_DELIVERABLE_SQL,
 )
 from tools.logging.icdev_logger import get_logger
@@ -97,11 +97,15 @@ def _gather_contract_context(contract_id):
         ).fetchone()
         ctx["overdue_deliverables"] = overdue["cnt"] if overdue else 0
 
-        # Same status vocabulary: a CDRL already handed to the government is
-        # not an upcoming action item either.
+        # Same status vocabulary as the overdue count above: a CDRL already
+        # handed to the government is not an upcoming action item — and neither
+        # is a cancelled one, which is why this uses NOT_AN_OBLIGATION_SQL_LIST
+        # (delivered + closed) rather than the delivered list alone. Counting a
+        # cancelled CDRL as "due in 30 days" would put a descoped obligation back
+        # on the PM's action list, the same way the overdue sweep would reclaim it.
         due_soon = conn.execute(
             "SELECT COUNT(*) as cnt FROM cpmp_deliverables "
-            f"WHERE contract_id = %s AND status NOT IN ({DELIVERED_STATUS_SQL_LIST}) "  # nosec B608 -- module constant, not user input
+            f"WHERE contract_id = %s AND status NOT IN ({NOT_AN_OBLIGATION_SQL_LIST}) "  # nosec B608 -- module constant, not user input
             "AND due_date >= %s AND due_date <= %s",
             (contract_id, date.today().isoformat(), (date.today() + timedelta(days=30)).isoformat())
         ).fetchone()

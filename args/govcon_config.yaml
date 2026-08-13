@@ -267,17 +267,27 @@ cpmp:
     terminated: [closed]
 
   # Deliverable status transitions (state machine)
+  # 'cancelled' is TERMINAL and means the CDRL will not be delivered — descoped
+  # by mod, superseded, or created in error. It is the only honest way to close
+  # an obligation that was never going to be met; without it such a row counts
+  # as overdue forever and cpmp_monitor re-alarms on it every cycle. Cancelling
+  # requires a reason (enforced in contract_manager.transition_deliverable) and
+  # is recorded in the append-only cpmp_status_history. Deliberately NOT
+  # reachable from 'accepted' — reversing delivery is a contract-mod concern.
+  # This block OVERRIDES the Python default in contract_manager.py; keep both in
+  # sync (tests/test_cpmp_deliverable_cancellation.py pins that they match).
   deliverable_transitions:
-    not_started: [in_progress]
-    in_progress: [draft_complete, overdue]
-    draft_complete: [internal_review]
-    internal_review: [submitted, in_progress]
-    submitted: [government_review]
+    not_started: [in_progress, cancelled]
+    in_progress: [draft_complete, overdue, cancelled]
+    draft_complete: [internal_review, cancelled]
+    internal_review: [submitted, in_progress, cancelled]
+    submitted: [government_review, cancelled]
     government_review: [accepted, rejected]
     accepted: []
-    rejected: [resubmitted]
+    rejected: [resubmitted, cancelled]
     resubmitted: [government_review]
-    overdue: [in_progress, submitted]
+    overdue: [in_progress, submitted, cancelled]
+    cancelled: []
 
   # EVM configuration (ANSI/EIA-748, D-CPMP-2)
   evm:
