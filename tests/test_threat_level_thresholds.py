@@ -23,6 +23,23 @@ from tools.threat_analysis.service import (
 from tools.intelligence.pir_alert_generator import evaluate_indicator_and_alert
 
 
+@pytest.fixture(autouse=True)
+def _default_db_is_icdev_db(icdev_db, monkeypatch):
+    """Point the process-default connection at the same temp DB as ``db_path``.
+
+    Only half this flow accepts a ``db_path``. ``validate_indicator_score`` and
+    ``create_baseline`` do; ``tools/intelligence/pir_manager.py::create_pir`` —
+    which ``auto_generate_pir_alert`` and ``evaluate_indicator_and_alert`` call
+    to persist the breach — takes no path at all and resolves ``get_connection()``
+    against ``ICDEV_DB_PATH``. Threading ``db_path`` alone therefore reads the
+    baseline from the temp DB and writes the PIR to the real ``data/icdev.db``.
+    Redirecting the default keeps both halves on one file, and keeps the write
+    off any developer's live database.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+
+
 # ---------------------------------------------------------------------------
 # create_baseline
 # ---------------------------------------------------------------------------

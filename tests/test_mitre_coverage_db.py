@@ -16,11 +16,31 @@ import pytest
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 
-_MIGRATION_PATH = _ROOT / "tools" / "db" / "migrations" / "028_odc_mitre_coverage" / "up.py"
+def _migration_path() -> Path:
+    """Locate the odc_mitre_coverage migration by SLUG, not by number.
+
+    It shipped as ``028_odc_mitre_coverage`` and was renumbered to
+    ``336_odc_mitre_coverage`` to clear a duplicate-028 collision (there are two
+    other 028_* directories). A hardcoded number turns any future renumber into
+    a FileNotFoundError at fixture setup — which is exactly how this file rotted.
+    The slug is the stable identifier, so match on it and fail loudly, with the
+    candidates named, if it is ever ambiguous or gone.
+    """
+    matches = sorted(
+        (_ROOT / "tools" / "db" / "migrations").glob("*_odc_mitre_coverage")
+    )
+    if len(matches) != 1:
+        raise AssertionError(
+            f"expected exactly 1 *_odc_mitre_coverage migration, found {len(matches)}: "
+            f"{[m.name for m in matches]}"
+        )
+    return matches[0] / "up.py"
 
 
 def _load_migration_up():
-    spec = importlib.util.spec_from_file_location("migration_028_up", _MIGRATION_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "migration_odc_mitre_coverage_up", _migration_path()
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.up
@@ -72,11 +92,15 @@ def patched_db(mem_db):
     must therefore wrap the in-memory connection in a ``StorageConnection`` too —
     a raw ``sqlite3`` connection raises ``sqlite3.OperationalError: near "%"``.
     The ``_NoCloseConn`` layer keeps each CRUD function's ``conn.close()`` from
-    tearing down the shared in-memory DB.
+    tearing down the shared in-memory DB. It goes on the INSIDE so that the
+    object handed to the module under test is the translating
+    ``StorageConnection`` itself, with ``StorageConnection.close()`` delegating
+    into the no-op. Either nesting translates correctly at runtime; this one just
+    puts the wrapper where a reader (and a static checker) expects it.
     """
     from tools.db.storage import StorageConnection
 
-    wrapped = _NoCloseConn(StorageConnection(mem_db, "sqlite"))
+    wrapped = StorageConnection(_NoCloseConn(mem_db), "sqlite")
 
     import tools.observability_canvas.mitre_coverage_db as mod
 

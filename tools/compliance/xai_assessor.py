@@ -36,7 +36,12 @@ CLI:
 """
 
 import sqlite3
-from tools.db.storage import get_connection
+# NOTE: the 10 automated checks below deliberately go through
+# BaseAssessor._get_connection(), NOT a bare storage.get_connection(). They
+# used to call the latter, which ignores self.db_path and reads whatever
+# ICDEV_DB_PATH resolves to -- so XAIAssessor(db_path=X) assessed a
+# different database than X and, where that database lacked otel_spans,
+# every check returned 'not_assessed' rather than a real finding.
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -107,33 +112,39 @@ class XAIAssessor(BaseAssessor):
     def _check_tracing_active(self, project_id: str) -> str:
         """XAI-001: Check if tracing is active (any spans exist)."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM otel_spans WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "not_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
     def _check_mcp_instrumentation(self, project_id: str) -> str:
         """XAI-002: Check for MCP tool call spans."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM otel_spans WHERE project_id = %s AND name = 'mcp.tool_call'",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "not_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
     def _check_a2a_tracing(self, project_id: str) -> str:
         """XAI-003: Check for cross-agent span linking."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             # Look for spans with parent_span_id (indicates linked hierarchy)
             count = conn.execute(
                 """SELECT COUNT(*) FROM otel_spans
@@ -142,20 +153,26 @@ class XAIAssessor(BaseAssessor):
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "partially_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
     def _check_provenance_populated(self, project_id: str) -> str:
         """XAI-004: Check provenance graph has entities."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM prov_entities WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "not_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
     def _check_content_policy(self) -> str:
@@ -168,7 +185,7 @@ class XAIAssessor(BaseAssessor):
     def _check_shap_recent(self, project_id: str) -> str:
         """XAI-006: Check SHAP analysis run within 30 days."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
             count = conn.execute(
                 """SELECT COUNT(*) FROM shap_attributions
@@ -177,20 +194,26 @@ class XAIAssessor(BaseAssessor):
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "not_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
     def _check_decision_rationale(self, project_id: str) -> str:
         """XAI-007: Check decision_records exist for project."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM decision_records WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "not_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
     def _check_retention_configured(self) -> str:
@@ -213,7 +236,7 @@ class XAIAssessor(BaseAssessor):
     def _check_ai_telemetry(self, project_id: str) -> str:
         """XAI-009: Check AI telemetry has recent entries."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             count = conn.execute(
                 """SELECT COUNT(*) FROM ai_telemetry
@@ -222,20 +245,26 @@ class XAIAssessor(BaseAssessor):
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "not_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
     def _check_trust_scoring(self, project_id: str) -> str:
         """XAI-010: Check agent trust scores have been computed."""
         try:
-            conn = get_connection()
+            conn = self._get_connection()
             count = conn.execute(
                 "SELECT COUNT(*) FROM agent_trust_scores WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             conn.close()
             return "satisfied" if count > 0 else "not_satisfied"
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
+            # OSError covers the FileNotFoundError _get_connection() raises for a
+            # missing database. An unreachable DB is 'not_assessed' -- an unknown,
+            # never a pass and never a crash that takes the other 9 checks with it.
             return "not_assessed"
 
 
