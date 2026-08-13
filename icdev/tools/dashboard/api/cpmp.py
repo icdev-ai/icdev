@@ -758,7 +758,11 @@ def update_subcontractor(sub_id):
         data = request.get_json(silent=True) or {}
         result = _update(sub_id, data)
         if result.get("status") == "error":
-            return jsonify(result), 404
+            # A rejected field is a bad request, not a missing row. Reporting
+            # validation as 404 tells the caller the subcontractor does not
+            # exist, which is the opposite of what happened.
+            missing = "not found" in (result.get("message") or "")
+            return jsonify(result), 404 if missing else 400
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

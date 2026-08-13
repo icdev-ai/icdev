@@ -1,15 +1,18 @@
 # CUI // SP-CTI
 """Genesis Reflex: CPMP Monitor — proactive contract health surveillance.
 
-Runs every 3 hours via Genesis daemon. Three detection passes:
+Runs every 3 hours via Genesis daemon. One state pass, then four detection passes:
+  0. Overdue Sweep   — compute_overdue_deliverables() → the only thing that ever
+                       moves a CDRL to status 'overdue' and fills days_overdue
   1. PMO AI Issues   — auto_detect_issues() → kanban cards for critical/high findings
   2. CPARS Trajectory — predicted score declining toward Marginal → CAT2 alert
   3. Subcontractor Noncompliance — detect_noncompliance() → kanban high-priority
   4. Deliverable Auto-Generation — generate CDRLs due in 14 days
 
 Pass type controlled by trigger_data['pass_type']:
-  'full' (default) — all four passes
-  'deliverables'   — only deliverable auto-generation pass (lightweight, every 3h)
+  'full' (default) — all passes
+  'deliverables'   — only the overdue sweep + deliverable auto-generation
+                     (lightweight, every 3h)
 """
 
 import hashlib
@@ -24,6 +27,48 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 
+def _placeholder_titles() -> frozenset:
+    """Title values that name no particular contract.
+
+    Sourced from contract_manager so the two cannot drift: if the default that
+    create_contract() stamps is ever changed, this follows it. Imported lazily
+    with a literal fallback because this reflex is loaded by the Genesis daemon
+    and must not fail to import when a govcon dependency is unavailable.
+    """
+    default = "Untitled Contract"
+    try:
+        from tools.govcon.contract_manager import DEFAULT_CONTRACT_TITLE
+        default = DEFAULT_CONTRACT_TITLE
+    except Exception:
+        pass
+    return frozenset({default.casefold()})
+
+
+# Display label and corrective action per detect_noncompliance() category.
+# The reflex read a nonexistent 'issue_type' key, so every card it could have
+# filed would have been titled "Noncompliance" and carried the flow-down remedy
+# regardless of category — a CMMC gap arriving with a FAR 52.219-9 flow-down
+# action. Keyed on 'category', which is what the finding actually carries.
+_SUBCON_CATEGORIES = {
+    "flowdown": (
+        "Flow-Down",
+        "Initiate flow-down corrective action per FAR 52.219-9.",
+    ),
+    "cybersecurity": (
+        "Cybersecurity",
+        "Issue cure notice; verify NIST SP 800-171 implementation per DFARS 252.204-7012.",
+    ),
+    "cmmc": (
+        "CMMC",
+        "Establish the subcontractor's CMMC level per DFARS 252.204-7021.",
+    ),
+    "isr_ssr": (
+        "ISR/SSR",
+        "File the outstanding ISR/SSR in eSRS per FAR 52.219-9(d).",
+    ),
+}
+
+
 def _contract_label(contract: Dict) -> str:
     """Human-identifiable label for a contract, for use in card titles.
 
@@ -33,12 +78,67 @@ def _contract_label(contract: Dict) -> str:
     empty string and every card landed titled "[CPMP] : Subcontractor
     Compliance" — unidentifiable, and identical across contracts. Fall back on
     the VALUE, not the key.
+
+    A present value is not automatically an identifying one. create_contract()
+    stamps 'Untitled Contract' on any contract created without a title, so
+    falling back to `title` reintroduced the very collapse the paragraph above
+    describes, one door over: on 2026-08-12 four DIFFERENT active contracts
+    (df32ba49, 6d67ff20, 719d5e59, 8143e17a) each held a board card titled
+    exactly "[CPMP] Untitled Contract: Overdue Deliverables", two of them
+    dispatched to sessions at the same time. The card ids differ, so nothing
+    was dropped — but a title that cannot distinguish which of four contracts
+    it means is not actionable, which is the whole point of the label.
+
+    So a placeholder is treated as ABSENT and the chain falls through to the
+    id, which is the only field guaranteed to identify exactly one contract.
     """
+    placeholders = _placeholder_titles()
     for key in ("contract_number", "title"):
         value = (contract.get(key) or "").strip()
-        if value:
+        if value and value.casefold() not in placeholders:
             return value
     return f"contract {str(contract.get('id') or '?')[:8]}"
+
+
+def _superseded_titles(title: str, label: str) -> frozenset:
+    """The same card title as written by a SUPERSEDED labelling rule.
+
+    Fixing `_contract_label` only ever helped cards that did not exist yet.
+    `_suggest_kanban_card` dedups on the card id, and a card id is derived from
+    the contract id and issue type — never from the label — so once a card is on
+    the board the reflex sees a primary-key collision and returns without
+    looking at the title. Both label fixes therefore landed and left the already
+    filed cards permanently unidentifiable: on 2026-08-13 the live board still
+    carried two cards titled "[CPMP] : Overdue Deliverables" from before the
+    first fix and five titled "[CPMP] Untitled Contract: ..." from before the
+    second, and the four sessions dispatched onto the latter could not tell
+    which of four contracts they had been given.
+
+    This returns the titles the CURRENT title would have had under each label
+    that has since been ruled unidentifiable — '' (the .get() default bug) and
+    every `_placeholder_titles()` entry. Matching is exact and the set is
+    finite, so a title edited by a human or rewritten by the kanban pipeline is
+    never in it and is never touched. That makes the repair a one-way ratchet:
+    unidentifiable -> identifiable, and nothing else.
+
+    Empty if `title` was not built from `label`, so a caller that formats its
+    title differently silently opts out rather than matching by accident.
+
+    Values are CASEFOLDED for comparison: `_placeholder_titles()` is casefolded
+    at the source (it feeds a casefolded membership test in `_contract_label`),
+    while the board stores whatever casing create_contract() stamped — so an
+    exact-case set would never match the 'Untitled Contract' rows it exists for.
+    """
+    marker = f" {label}: "
+    idx = title.find(marker) if label else -1
+    if idx == -1:
+        return frozenset()
+    tag = title[:idx]  # "[CPMP]", "[SUBCON]", "[CDRL]" — kept, only the label varies
+    suffix = title[idx + len(marker):]
+    superseded = {""} | set(_placeholder_titles())
+    return frozenset(
+        f"{tag} {old}: {suffix}".casefold() for old in superseded
+    ) - {title.casefold()}
 
 
 def run(trigger_data=None, context=None):
@@ -50,13 +150,68 @@ def run(trigger_data=None, context=None):
         "pass_type": pass_type,
         "contracts_scanned": 0,
         "contracts_unnumbered": 0,
+        "overdue_marked": 0,
+        "overdue_refreshed": 0,
         "issues_found": 0,
         "cards_created": 0,
+        # Stale titles repaired in place — NOT new cards, so kept out of
+        # cards_created, which must stay a count of rows actually written.
+        "cards_relabeled": 0,
         "cpars_alerts": 0,
         "subcon_alerts": 0,
         "cdrl_generated": 0,
+        "deliverables_marked_overdue": 0,
         "errors": [],
     }
+
+    # ── Pass 0: drive the overdue state machine ───────────────────────
+    #
+    # contract_manager.compute_overdue_deliverables() is what moves a CDRL to
+    # status 'overdue' and fills days_overdue. Until now NOTHING called it
+    # outside its own argparse block, so on the live board no deliverable had
+    # ever reached that state and days_overdue was 0 on every row — including
+    # rows 44 days past due.
+    #
+    # That is not cosmetic, because 'overdue' is the ONLY thing four separate
+    # consumers look at, and all four therefore read a permanent zero:
+    #
+    #   contract_manager.get_contract()      -> overdue_count on the contract page
+    #   portfolio_manager                    -> per-contract count AND the
+    #                                           portfolio-wide overdue list
+    #   cpars_predictor                      -> overdue count feeds the predicted
+    #                                           CPARS score, so the predictor is
+    #                                           blind to schedule slip
+    #   negative_event_tracker               -> gated on days_overdue > 0, so a
+    #                                           late CDRL has never once been
+    #                                           recorded as a negative event
+    #
+    # Meanwhile pmo_ai_advisor derives overdue LIVE from due_date, which is why
+    # this reflex files a high-severity "N CDRL(s) are past due" card while the
+    # contract page next to it says 0 overdue. Same table, two definitions, and
+    # only one of them had anything driving it.
+    #
+    # Runs before the contract loop and unscoped: one query covers deliverables
+    # on non-active contracts too (the loop only walks active ones), and one
+    # audit row per cycle instead of one per contract. Guarded, because a sweep
+    # that raises must not take the surveillance passes below down with it.
+    # MERGE NOTE: main fixed this same defect independently (#1618) with a second
+    # sweep further down, so merging the two branches textually produced TWO
+    # calls — git saw no conflict, and only the count assertions here caught it.
+    # Kept as ONE call at this position because the tests pin three things the
+    # other placement cannot satisfy: it must run on the 'deliverables' pass as
+    # well as 'full', it must precede the issue-detection pass, and it must be
+    # unscoped. Both result-key sets are reported so neither side's consumers
+    # break — `deliverables_marked_overdue` and main's `overdue_marked` /
+    # `overdue_refreshed` describe the same sweep.
+    if pass_type in ("full", "deliverables"):
+        try:
+            from tools.govcon.contract_manager import compute_overdue_deliverables
+            swept = compute_overdue_deliverables()
+            results["deliverables_marked_overdue"] = swept.get("overdue_count", 0)
+            results["overdue_marked"] = swept.get("overdue_count", 0)
+            results["overdue_refreshed"] = swept.get("days_refreshed", 0)
+        except Exception as e:
+            results["errors"].append(f"Overdue sweep: {e}")
 
     try:
         from tools.db.storage import get_connection
@@ -71,6 +226,13 @@ def run(trigger_data=None, context=None):
         return {"status": "error", "message": str(e)}
 
     results["contracts_scanned"] = len(active)
+
+    # (main's duplicate Pass-0 sweep was folded into the single call above during
+    # the merge — see the MERGE NOTE there. Its portfolio-wide rationale still
+    # holds and is why that call passes no contract_id: the loop below visits
+    # only status='active' contracts, while portfolio_manager counts overdue
+    # CDRLs across ('active', 'option_pending'), and an option-pending
+    # contract's deliverables are no less late.)
 
     for contract in active:
         cid = contract["id"]
@@ -112,6 +274,8 @@ def run(trigger_data=None, context=None):
                             context_data={"contract_id": cid, "contract_number": cnum, "issue": issue},
                             created_by="cpmp_monitor",
                             dedup_key=f"{cid}:{issue.get('type','issue')}",
+                            label=clabel,
+                            stats=results,
                         )
                         results["cards_created"] += 1 if wrote else 0
                     except Exception as ce:
@@ -152,6 +316,8 @@ def run(trigger_data=None, context=None):
                                 },
                                 created_by="cpmp_monitor_cpars",
                                 dedup_key=f"{cid}:cpars_trajectory",
+                                label=clabel,
+                                stats=results,
                             )
                             results["cpars_alerts"] += 1 if wrote else 0
                             results["cards_created"] += 1 if wrote else 0
@@ -189,26 +355,52 @@ def run(trigger_data=None, context=None):
             try:
                 from tools.govcon.subcontractor_tracker import detect_noncompliance
                 nc = detect_noncompliance(cid)
-                findings = nc.get("noncompliance", [])
+                # detect_noncompliance() returns its list under 'findings'. This
+                # read 'noncompliance' — a key that function has never returned —
+                # so the list was empty on every cycle for every contract, and the
+                # pass was inert from its first commit. No exception, no error
+                # entry, subcon_alerts steady at 0 and status 'ok'. Pass 1 counts
+                # noncompliant subs with its own SQL, so the board still showed
+                # "N subcontractor(s) have incomplete flow-down or cybersecurity
+                # gaps" while the card naming WHICH sub and WHICH gap was the one
+                # thing missing.
+                findings = nc.get("findings", [])
                 high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
                 for finding in high_findings:
                     try:
+                        # 'category' and 'company_name' are the keys the findings
+                        # carry; 'issue_type'/'subcontractor_name' never existed.
+                        category = finding.get("category") or "noncompliance"
+                        company = finding.get("company_name")
+                        label, action = _SUBCON_CATEGORIES.get(
+                            category,
+                            (category.replace("_", " ").title(), "Review with the subcontract manager."),
+                        )
+                        # isr_ssr is contract-level: it has no subcontractor, and
+                        # printing "Subcontractor: None" reads as missing data.
+                        subject = f"Subcontractor: {company}\n" if company else ""
                         wrote = _suggest_kanban_card(
-                            title=f"[SUBCON] {clabel}: {finding.get('issue_type','Noncompliance').replace('_',' ').title()}",
+                            title=f"[SUBCON] {clabel}: {label}",
                             description=(
-                                f"Contract: {ctitle}\n"
-                                f"Subcontractor: {finding.get('subcontractor_name','N/A')}\n"
+                                f"Contract: {clabel}\n"
+                                f"{subject}"
                                 f"Issue: {finding.get('description','')}\n"
                                 f"Severity: {finding.get('severity','').upper()}\n"
-                                f"Action: Initiate flow-down corrective action per FAR 52.219-9."
+                                f"Action: {action}"
                             ),
                             priority="high",
                             context_data={"contract_id": cid, "contract_number": cnum, "finding": finding},
                             created_by="cpmp_monitor_subcon",
+                            # sub_id is the row identity, so two subs sharing a
+                            # company_name still get one card each; it falls back
+                            # to the name, then to the category alone for the
+                            # contract-level isr_ssr finding.
                             dedup_key=(
-                                f"{cid}:{finding.get('issue_type','noncompliance')}"
-                                f":{finding.get('subcontractor_name','')}"
+                                f"{cid}:{category}"
+                                f":{finding.get('sub_id') or company or ''}"
                             ),
+                            label=clabel,
+                            stats=results,
                         )
                         results["subcon_alerts"] += 1 if wrote else 0
                         results["cards_created"] += 1 if wrote else 0
@@ -238,6 +430,8 @@ def run(trigger_data=None, context=None):
                             # An event, not a condition: the batch size is part
                             # of the identity so the next batch gets its own card.
                             dedup_key=f"{cid}:cdrl_generated:{generated}",
+                            label=clabel,
+                            stats=results,
                         )
                     except Exception:
                         pass
@@ -256,13 +450,16 @@ def _suggest_kanban_card(
     context_data: Dict = None,
     created_by: str = "cpmp_monitor",
     dedup_key: str = None,
+    label: str = None,
+    stats: Dict = None,
 ) -> bool:
     """Create a kanban suggestion card, keyed so one finding is one row.
 
-    Returns True only if a row was actually written, so callers count writes
-    rather than attempts — an attempt-counter reports steady card creation
-    forever while a working dedup writes nothing, and `_write_memory_log`
-    persists that number.
+    Returns True only if a row was INSERTED, so callers count writes rather
+    than attempts — an attempt-counter reports steady card creation forever
+    while a working dedup writes nothing, and `_write_memory_log` persists that
+    number. Repairing a stale title (below) is not a creation and returns
+    False; it is counted separately under ``stats['cards_relabeled']``.
 
     ``dedup_key`` identifies the FINDING (contract + issue), and the card's id
     is derived from it, so re-detecting the same finding is a primary-key
@@ -284,6 +481,18 @@ def _suggest_kanban_card(
     Findings that are events rather than conditions (e.g. CDRL generation)
     encode their magnitude in the key, so a genuinely new occurrence is a
     genuinely new key.
+
+    The one exception is the card's TITLE. Because the id is derived from the
+    contract and issue and never from the label, a card that predates a label
+    fix keeps its unidentifiable title forever — the collision check returns
+    before the title is ever compared. When ``label`` is supplied and the stored
+    title is EXACTLY one this finding would have had under a superseded
+    labelling rule (see `_superseded_titles`), it is rewritten in place. The
+    match is against a finite set of known-bad titles, so a human edit or a
+    pipeline rewrite never qualifies, and the ratchet only ever runs
+    unidentifiable -> identifiable. Nothing else about the row is touched: not
+    status, not priority, not description — repairing a name must not reopen,
+    re-prioritise, or otherwise resurrect work.
     """
     from tools.db.storage import get_connection
     conn = get_connection()
@@ -296,9 +505,19 @@ def _suggest_kanban_card(
 
         # Dedup on the card's own id — immune to later rewrites of title,
         # status, or dispatch_source by the kanban pipeline.
-        if conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)
-        ).fetchone():
+        existing = conn.execute(
+            "SELECT title FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
+        if existing:
+            stored = (dict(existing).get("title") or "")
+            if stored.casefold() in _superseded_titles(title[:120], label):
+                conn.execute(
+                    "UPDATE kanban_tasks SET title = %s WHERE id = %s",
+                    (title[:120], task_id),
+                )
+                conn.commit()
+                if stats is not None:
+                    stats["cards_relabeled"] = stats.get("cards_relabeled", 0) + 1
             return False
 
         now = datetime.now(timezone.utc).isoformat()
@@ -334,11 +553,14 @@ def _write_memory_log(results: Dict):
             content=(
                 f"CPMP monitor [{results['pass_type']}]: "
                 f"{results['contracts_scanned']} contracts "
-                f"({results['contracts_unnumbered']} skipped, no contract number), "
+                f"({results['contracts_unnumbered']} unnumbered), "
+                f"{results['overdue_marked']} newly overdue, "
                 f"{results['issues_found']} issues, "
                 f"{results['cards_created']} cards, "
+                f"{results.get('cards_relabeled', 0)} relabeled, "
                 f"{results['cpars_alerts']} CPARS alerts, "
-                f"{results['cdrl_generated']} CDRLs generated."
+                f"{results['cdrl_generated']} CDRLs generated, "
+                f"{results['deliverables_marked_overdue']} newly overdue."
             ),
             entry_type="event",
             source="cpmp_monitor",

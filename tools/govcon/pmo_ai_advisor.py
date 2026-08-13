@@ -13,6 +13,10 @@ import json
 from datetime import date, timedelta
 
 from tools.db.storage import get_connection
+from tools.govcon.contract_manager import (
+    NOT_AN_OBLIGATION_SQL_LIST,
+    OVERDUE_DELIVERABLE_SQL,
+)
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -79,26 +83,31 @@ def _gather_contract_context(contract_id):
         ).fetchone()
         ctx["evm"] = dict(evm) if evm else {}
 
-        # Closed statuses come from contract_manager.CLOSED_DELIVERABLE_STATUSES,
-        # not a literal tuple: these two queries and compute_overdue_deliverables
-        # have to agree on what "still an open obligation" means, and a literal
-        # is how 'cancelled' gets added to one of them and forgotten in the next.
-        from tools.govcon.contract_manager import CLOSED_DELIVERABLE_STATUSES
-        closed = CLOSED_DELIVERABLE_STATUSES
-        closed_ph = ", ".join(["%s"] * len(closed))
-
+        # OVERDUE_DELIVERABLE_SQL, not a local date predicate. This count is
+        # what the cpmp_monitor reflex files a high-priority board card from,
+        # and it used to be the ONLY date-based reading of "overdue" in CPMP:
+        # every screen (contract health, CPARS schedule, portfolio rollup,
+        # negative events) reads status='overdue'/days_overdue instead. Sharing
+        # the predicate with the writer is what keeps the card and the screens
+        # from telling a PM two different numbers. See contract_manager.
         overdue = conn.execute(
             "SELECT COUNT(*) as cnt FROM cpmp_deliverables "
-            f"WHERE contract_id = %s AND status NOT IN ({closed_ph}) AND due_date < %s",  # nosec B608 -- placeholders only, values bound
-            (contract_id, *closed, date.today().isoformat())
+            f"WHERE contract_id = %s AND {OVERDUE_DELIVERABLE_SQL}",  # nosec B608 -- module constant, not user input
+            (contract_id, date.today().isoformat())
         ).fetchone()
         ctx["overdue_deliverables"] = overdue["cnt"] if overdue else 0
 
+        # Same status vocabulary as the overdue count above: a CDRL already
+        # handed to the government is not an upcoming action item — and neither
+        # is a cancelled one, which is why this uses NOT_AN_OBLIGATION_SQL_LIST
+        # (delivered + closed) rather than the delivered list alone. Counting a
+        # cancelled CDRL as "due in 30 days" would put a descoped obligation back
+        # on the PM's action list, the same way the overdue sweep would reclaim it.
         due_soon = conn.execute(
             "SELECT COUNT(*) as cnt FROM cpmp_deliverables "
-            f"WHERE contract_id = %s AND status NOT IN ({closed_ph}) "  # nosec B608 -- placeholders only, values bound
+            f"WHERE contract_id = %s AND status NOT IN ({NOT_AN_OBLIGATION_SQL_LIST}) "  # nosec B608 -- module constant, not user input
             "AND due_date >= %s AND due_date <= %s",
-            (contract_id, *closed, date.today().isoformat(), (date.today() + timedelta(days=30)).isoformat())
+            (contract_id, date.today().isoformat(), (date.today() + timedelta(days=30)).isoformat())
         ).fetchone()
         ctx["due_in_30_days"] = due_soon["cnt"] if due_soon else 0
 

@@ -14,7 +14,12 @@
 
 set -e
 
-# Blueprint imports / nav routes (pre-existing gate).
+# Blueprint imports / nav routes / test-gating census.
+#
+# The census (tsg-policy-02) fires only when this commit ADDS or RENAMES a test
+# file, and it is the same `gated_test_list.py --check-coverage` the CI `test` job
+# runs — CI stays the backstop, this is the fast path. `--no-verify` skips it, and
+# that is exactly why CI keeps running it.
 if [ -f tools/testing/pre_commit_check.py ]; then
     python tools/testing/pre_commit_check.py || exit 1
 fi

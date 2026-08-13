@@ -156,6 +156,20 @@ tests/test_bootstrap_hook_payload.py
 # minutes with two of three slots free. <2s, fakes the connection, no DB.
 tests/test_scheduled_dispatch_reclaim.py
 
+# test_kanban_gate_sentinel_seeding.py arrived with kax-exec-04 (#1598) and was
+# gated by nothing, which turned main red on the census. It pins that create_tasks
+# refuses WORK carrying a '-gate-' sentinel id while still accepting a genuine
+# gate — the bug that made tsg-gate-01 permanently undispatchable while the board
+# idled with free slots. Ungated it could regress in silence, which is the exact
+# shape it exists to prevent. 46 tests, ~3s, no DB/network.
+tests/test_kanban_gate_sentinel_seeding.py
+
+# test_ndc_graph_json_type_guard.py arrived with #1599 and was gated by nothing —
+# the third such file in three hours, which is why tsg-policy-02 moves this check
+# to pre-commit. It pins that one malformed graph_json row cannot 500 /network/,
+# a route the E2E smoke suite does not cover. 14 tests, <1s, no DB/network.
+tests/test_ndc_graph_json_type_guard.py
+
 # test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
 # objects, so a fix landed in one while the other runs is only half live and
 # the stale half fails SILENTLY. #1542 shipped that way and two tasks were
@@ -922,5 +936,118 @@ tests/test_cpmp_deliverable_cancellation.py
 # after them, including this one. Gated rather than excluded because both guard
 # live regressions: seeding work under a gate sentinel's id, and one bad
 # graph_json row 500-ing /network/.
-tests/test_kanban_gate_sentinel_seeding.py
-tests/test_ndc_graph_json_type_guard.py
+# CPMP monitor card identity (cpmp-a7642ba5d9). The reflex's card TITLE is what
+# a human uses to tell one finding from another, and it regressed twice: first
+# to "[CPMP] :" (blank contract_number), then to "[CPMP] Untitled Contract:"
+# (create_contract's placeholder default) -- four different active contracts
+# carried one identical title on the live board, two dispatched at once. Both
+# files pass today and pin the number -> title -> id fallback, so they gate the
+# fix rather than documenting it. Moved out of the backlog census, not new.
+tests/test_genesis_reflex_cpmp_monitor.py
+tests/test_genesis_reflex_cpmp_monitor_card_identity.py
+
+# CPMP monitor pass 3 is actually live (cpmp-f3acda96eb). The reflex read
+# detect_noncompliance()["noncompliance"]; that function returns "findings", so
+# the subcontractor pass filed zero cards for every contract since it was
+# written -- no exception, no error entry, subcon_alerts steady at 0. The two
+# files above could not catch it because they stubbed the dependency with
+# {"noncompliance": []}, i.e. the fake encoded the caller's misreading. This one
+# runs the REAL detect_noncompliance against an in-memory board, so renaming the
+# key on either side fails here. New file, passes (9 tests), gated in the same
+# PR that adds it per docs/ci/test-gating-policy.md.
+tests/test_genesis_reflex_cpmp_monitor_subcon_pass.py
+
+# The /network/ graph_json type guard (#1599) shipped to main WITHOUT being
+# gated, so the census check failed on main -- exactly the "a test file that CI
+# never runs has never gated a merge" case this policy exists to catch. It pins
+# that one unparseable graph_json row cannot 500 the whole page. Passes (14
+# tests), so it is gated here rather than added to the closed census.
+# (test_kanban_gate_sentinel_seeding.py was the same gap; #1601 gated it above
+# while this branch was in flight, so it is deliberately not repeated here.)
+# tsg-policy-02 -- the census at COMMIT time. tsg-policy-01's CI step caught two
+# unregistered test files within two hours, but in the wrong place: each turned
+# main RED (blocking every open PR) for a one-line fix. The same census now runs
+# from .githooks/pre-commit when a commit ADDS or RENAMES a test file. This pins
+# both halves against a real throwaway git repo with a real staged index: the add
+# case is refused naming the file, the touch-nothing case never loads the census,
+# and the hook never edits this file itself.
+# ~4s, no DB, no network, no LLM.
+tests/ci/test_precommit_test_gating.py
+
+# test_ndc_graph_json_type_guard.py arrived with #1599 and was gated by nothing,
+# which is the second time in two days the census caught a new test file only
+# after it had already turned main red -- the observation that motivated
+# tsg-policy-02. It pins that one malformed graph_json row cannot 500 /network/.
+# 14 tests, ~1s, no DB/network. Registered here in the PR that makes the same
+# mistake harder to repeat.
+
+# Guards the other half of the write path that #1520 closed: create rejects a
+# nameless subcontractor, update blanked the name right back. Gated in the PR
+# that makes it pass, per docs/ci/test-gating-policy.md.
+tests/test_cpmp_update_subcontractor_requires_name.py
+
+# Same two write paths, next door (cpmp-3022d4da44): create coerced the 0/1
+# compliance flags to int, update passed the JSON boolean through raw, and PG
+# refuses a boolean for an INTEGER column — so recording "flow-down is now
+# complete" 500'd on the primary backend. Unfindable by the rest of the suite,
+# which runs on SQLite where a bool IS an int. Asserts on the params handed to
+# execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
+tests/test_cpmp_subcontractor_flag_coercion.py
+# cpmp_monitor returned `status: "ok"` plus a top-level `cards_created`, but the
+# Genesis daemon scores a reflex from `success`/`metric_value`/`details`. It read
+# neither, so every completed sweep was filed as
+# `reflex_reported_failure: cards_created=0.0` -- a failure naming a metric that
+# satisfies its own `gte 0` threshold -- and 11 consecutive such "failures" opened
+# the reflex's circuit breaker, decaying 3-hourly CPMP surveillance to a half-open
+# probe per doubling cooldown. Gated here because the return contract is invisible
+# to every other test: the reflex "works", and only the daemon disagrees.
+
+# Landed ungated in #1599 (267e1c057), which left the census RED for every branch
+# opened after it -- the same way 49da5d8d5 had to gate #1600's file. Passes 14/14
+# here; gated so the type guard it pins (one bad graph_json row 500ing /network/)
+# cannot regress unnoticed.
+# that one unparseable graph_json row cannot 500 the whole page.
+#
+# The entry itself now lives ~770 lines above, added by #1605 concurrently with
+# this block. Both branches were racing the same red census and both appended,
+# which `gated_test_list.py --check --list core` rejects outright:
+#   ##[error]CI test allowlist (core): listed more than once
+# Note that `--check-coverage` -- the command CLAUDE.md tells you to run -- does
+# NOT catch a duplicate, only an unlisted file, so this passed locally on both
+# branches and failed in the required `test` job on every branch opened after
+# them. Deduped here rather than left for the next PR to trip over.
+
+# Nothing called contract_manager.compute_overdue_deliverables() outside its own
+# argparse block, so no CDRL had ever reached status 'overdue' and days_overdue
+# was 0 on every row -- while four consumers key on exactly that state and read a
+# permanent zero (contract page overdue_count, portfolio_manager x2,
+# cpars_predictor, negative_event_tracker). pmo_ai_advisor derives overdue live
+# from due_date, which is how a "5 CDRL(s) are past due" card sits next to a
+# contract page reporting 0. Gated because a behavioural test of the sweep cannot
+# catch this -- the sweep was always correct, it was simply never called -- so
+# these tests assert the CALL, and an ungated test of a call site is exactly the
+# thing that silently reverts to zero callers in the next refactor.
+tests/test_cpmp_overdue_sweep_is_driven.py
+
+# SIPA integrity_monitor reflex. Gated by task-1b49742e56: its two _rel_path
+# tests read ICDEV_SIPA_RELPATH_DIRS from the ambient environment, so they
+# asserted a "flag defaults OFF" the shipped .env contradicts and were red on
+# any configured machine. Pinned with delenv and green (13 passed, 3s).
+tests/test_integrity_monitor_reflex.py
+
+# Regression for task-1b49742e56: proves known_safe_persistence_modules is
+# actually consulted. The allowlist existed for 16 days with zero call sites,
+# so an ungated test for it would have been the same defect one layer up.
+# Pure (no scanner shell-out, no optional third-party tool) — gateable as-is.
+tests/test_integrity_persistence_allowlist.py
+# cpmp-d70a553747. cpmp_deliverables.status='overdue' and days_overdue have five
+# readers (contract health, CPARS schedule dimension, portfolio rollup, portfolio
+# summary, negative_event_tracker) and one writer, and the writer had no caller
+# but its own CLI flag -- so on the live board 26 CDRLs were 44 days past due
+# with 0 rows marked overdue and green health everywhere, while the reflex filed
+# high-priority cards off pmo_ai_advisor's separate date-based count. Pins that
+# the reflex runs the sweep, that both counts share one predicate, that
+# days_overdue is refreshed rather than frozen at 1, and that one unparseable
+# due_date cannot silently undo the sweep. 18 tests, ~1s, in-memory sqlite, no
+# network/LLM. Gated in the PR that makes it pass.
+tests/test_cpmp_overdue_deliverable_state.py
