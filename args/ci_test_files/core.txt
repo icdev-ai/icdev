@@ -971,3 +971,11 @@ tests/ci/test_precommit_test_gating.py
 # nameless subcontractor, update blanked the name right back. Gated in the PR
 # that makes it pass, per docs/ci/test-gating-policy.md.
 tests/test_cpmp_update_subcontractor_requires_name.py
+
+# Same two write paths, next door (cpmp-3022d4da44): create coerced the 0/1
+# compliance flags to int, update passed the JSON boolean through raw, and PG
+# refuses a boolean for an INTEGER column — so recording "flow-down is now
+# complete" 500'd on the primary backend. Unfindable by the rest of the suite,
+# which runs on SQLite where a bool IS an int. Asserts on the params handed to
+# execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
+tests/test_cpmp_subcontractor_flag_coercion.py
