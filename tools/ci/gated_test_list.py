@@ -47,12 +47,36 @@ moving it out must not cost it. `--check` fails when:
 CI runs `--check` as its own step before pytest, so a truncated list is a red
 step with a named cause rather than a green run over three tests.
 
+THE GATE CANNOT SILENTLY REGROW EITHER (tsg-policy-01)
+-----------------------------------------------------
+`--check` proves the list did not shrink. It says nothing about the 1,826 test
+modules that were never on it — which is the bigger hole: a test file CI never
+runs has never gated a merge, so it can be wrong from its first commit and
+nothing goes red. That is how `remediation_simulator._run_nqe_layer` stayed dead
+for six weeks (tsg-dead-01).
+
+`--check-coverage` closes the regrowth path with a ratchet. Every collectible
+test module under `tests/` must be in one of three places:
+
+  * an allowlist (`args/ci_test_files/*.txt`) — CI runs it;
+  * a documented exclusion (`args/test_gating_gate.yaml`) — gating it would buy
+    no signal, and the reason is written down;
+  * the grandfathered census (`args/ci_test_backlog.txt`) — pre-existing debt,
+    enumerated so it is countable and can only shrink.
+
+Anything else is a NEW ungated test file, and it fails the `test` job by name.
+The fix is never "add it to the backlog" — it is "make it pass and append it to
+core.txt", which is the only sanctioned way to widen the allowlist.
+
 Usage
 -----
     python tools/ci/gated_test_list.py --check --list core
     python tools/ci/gated_test_list.py --print --list windows
     python tools/ci/gated_test_list.py --check --list core --out "$RUNNER_TEMP/t.txt"
     python tools/ci/gated_test_list.py --json
+    python tools/ci/gated_test_list.py --check-coverage          # the ratchet
+    python tools/ci/gated_test_list.py --check-coverage --json
+    python tools/ci/gated_test_list.py --prune-backlog           # drop fixed lines
     # Before/after proof that moving the list changed no entry:
     git show <rev>:.github/workflows/icdev-ci.yml > /tmp/old.yml
     python tools/ci/gated_test_list.py --extract-workflow /tmp/old.yml --job test
@@ -61,11 +85,14 @@ Usage
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Set
 
 #: Directory holding the allowlists, relative to the repository root.
 LIST_DIR = Path("args") / "ci_test_files"
@@ -197,6 +224,229 @@ def check(name: str = "core", root: Optional[Path] = None) -> Dict[str, object]:
 
 
 # --------------------------------------------------------------------------- #
+# Coverage census — the "gap cannot silently regrow" ratchet (tsg-policy-01)
+# --------------------------------------------------------------------------- #
+
+#: Policy config: scope, documented exclusions, backlog pointer, backlog ceiling.
+GATE_CONFIG = Path("args") / "test_gating_gate.yaml"
+
+
+def load_gate_config(root: Optional[Path] = None) -> Dict[str, object]:
+    """Read args/test_gating_gate.yaml.
+
+    Imported lazily so a missing pyyaml cannot break `--check`, which is the
+    load-bearing step that runs before pytest in every CI run.
+    """
+    root = root or repo_root()
+    path = root / GATE_CONFIG
+    if not path.is_file():
+        raise AllowlistError(
+            f"{path} is missing — the test gating policy cannot be resolved"
+        )
+    try:
+        import yaml  # noqa: PLC0415 — deliberate lazy import, see docstring
+    except ImportError as exc:  # pragma: no cover - pyyaml is a core dependency
+        raise AllowlistError(f"pyyaml is required to read {GATE_CONFIG}: {exc}") from exc
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise AllowlistError(f"{path} did not parse to a mapping")
+    return data
+
+
+def _matches(rel: str, pattern: str) -> bool:
+    """Glob match with a recursive `**` that behaves the way people expect.
+
+    `fnmatch` treats `*` as matching `/` too, so `tests/e2e_selenium/**` already
+    matches at any depth — but `tests/foo/**` would then NOT match `tests/foo/`
+    itself if someone wrote a bare prefix. Handling the `/**` suffix explicitly
+    means an exclusion covers the whole subtree whichever way it is written.
+    """
+    if pattern.endswith("/**") and rel.startswith(pattern[:-2]):
+        return True
+    return fnmatch.fnmatch(rel, pattern)
+
+
+def _tracked_files(root: Path) -> List[str]:
+    """Repo-relative, forward-slash paths that git tracks.
+
+    git rather than os.walk so an untracked scratch file in a developer's
+    worktree cannot fail the gate, and so a file someone forgot to `git add`
+    cannot pass it — the census must describe what a CI checkout will contain.
+    Falls back to a walk when git is unavailable (an unpacked tarball, a wheel).
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "ls-files"],
+            capture_output=True, text=True, timeout=120, check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    out: List[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__"}]
+        for name in filenames:
+            out.append(
+                (Path(dirpath) / name).relative_to(root).as_posix()
+            )
+    return out
+
+
+def collect_test_files(root: Path, config: Dict[str, object]) -> List[str]:
+    """Every module the runner would collect, per the config's `scope` block."""
+    scope = config.get("scope") or {}
+    roots = [str(r) for r in (scope.get("roots") or ["tests/"])]  # type: ignore[union-attr]
+    patterns = [str(p) for p in (scope.get("patterns") or ["test_*.py"])]  # type: ignore[union-attr]
+    hits: List[str] = []
+    for rel in _tracked_files(root):
+        if not any(rel.startswith(r) for r in roots):
+            continue
+        name = rel.rsplit("/", 1)[-1]
+        if any(fnmatch.fnmatch(name, pat) for pat in patterns):
+            hits.append(rel)
+    return sorted(hits)
+
+
+def gated_targets(root: Path, test_files: Sequence[str]) -> Set[str]:
+    """Expand every allowlist to the set of test FILES CI actually runs.
+
+    A directory entry (`tests/studio/`) covers the modules beneath it; that is
+    one line in the list but many files in the census, and counting the line
+    would understate coverage.
+    """
+    covered: Set[str] = set()
+    for name in LISTS:
+        for entry in resolve(name, root):
+            if entry.endswith("/"):
+                covered.update(f for f in test_files if f.startswith(entry))
+            else:
+                covered.add(entry)
+    return covered & set(test_files)
+
+
+def census(root: Optional[Path] = None) -> Dict[str, object]:
+    """Classify every test module as gated / excluded / backlog / UNLISTED.
+
+    `unlisted` is the gate. It is empty on a compliant tree, and any entry in it
+    is a test file that has never gated a merge and that nobody decided to leave
+    ungated — the exact state this ratchet exists to make impossible to reach
+    without an explicit, reviewable edit.
+    """
+    root = root or repo_root()
+
+    # No tests/ tree means an installed wheel, where args/ is mirrored but the
+    # suite is not shipped. Report NOT RUN rather than flagging all 2,150 files
+    # as missing — a check that cries wolf gets a `|| true` bolted onto it.
+    #
+    # Checked BEFORE the config is loaded, on purpose. The policy files are
+    # mirrored to icdev/data/args/ by sync_package_tree at RELEASE, not by every
+    # PR that edits them (hand-syncing args/ci_test_backlog.txt would put the
+    # two-files-per-fix cost straight back — kax-conflict-07). So in a wheel
+    # built between releases the config can legitimately be absent, and that must
+    # read as "nothing to census here", not as a crash. In a real checkout the
+    # tests/ tree IS present, so a missing config still raises.
+    if not (root / "tests").is_dir():
+        return {
+            "ran": False,
+            "reason": f"no tests/ tree at {root} — census NOT RUN",
+            "errors": [],
+            "ok": True,
+        }
+
+    config = load_gate_config(root)
+
+    test_files = collect_test_files(root, config)
+    gated = gated_targets(root, test_files)
+
+    exclusions = config.get("exclusions") or []
+    excluded: Set[str] = set()
+    stale_exclusions: List[str] = []
+    for rule in exclusions:  # type: ignore[union-attr]
+        pattern = str((rule or {}).get("pattern", ""))
+        if not pattern:
+            continue
+        hit = {f for f in test_files if _matches(f, pattern)}
+        if not hit:
+            stale_exclusions.append(pattern)
+        excluded |= hit
+    excluded -= gated  # an explicitly gated file is gated, whatever a glob says
+
+    backlog_file = str(config.get("backlog_file") or "args/ci_test_backlog.txt")
+    backlog_path = root / backlog_file
+    if not backlog_path.is_file():
+        raise AllowlistError(f"{backlog_path} is missing — the backlog census cannot be resolved")
+    backlog = parse(backlog_path.read_text(encoding="utf-8"))
+
+    ungated = [f for f in test_files if f not in gated and f not in excluded]
+    backlog_set = set(backlog)
+    unlisted = [f for f in ungated if f not in backlog_set]
+    effective = [f for f in ungated if f in backlog_set]
+    # A backlog line that is now gated, now excluded, or gone from the tree.
+    # Reported, never fatal: making a file pass and forgetting to delete its line
+    # here must not fail an otherwise correct PR. `--prune-backlog` clears them.
+    stale_backlog = sorted(backlog_set - set(ungated))
+
+    backlog_max = int(config.get("backlog_max", len(effective)))  # type: ignore[arg-type]
+
+    errors: List[str] = []
+    if unlisted:
+        shown = ", ".join(unlisted[:20]) + (f" (+{len(unlisted) - 20} more)" if len(unlisted) > 20 else "")
+        errors.append(
+            f"{len(unlisted)} test file(s) are gated by nothing: {shown}. "
+            "CI never runs them, so they can be wrong from their first commit and "
+            "nothing goes red. Make each one pass and append it to "
+            "args/ci_test_files/core.txt in this PR — that is the only sanctioned "
+            "way to widen the allowlist. If it genuinely should not be gated, add "
+            "an exclusion WITH A REASON to args/test_gating_gate.yaml. Do NOT add "
+            "it to args/ci_test_backlog.txt: that census is closed and only shrinks"
+        )
+    if len(effective) > backlog_max:
+        errors.append(
+            f"the ungated backlog is {len(effective)}, above the ceiling of "
+            f"{backlog_max} — it grew. Lower backlog_max in args/test_gating_gate.yaml "
+            "when you gate files; never raise it to get a commit through"
+        )
+
+    return {
+        "ran": True,
+        "total": len(test_files),
+        "gated": len(gated),
+        "excluded": len(excluded),
+        "backlog": len(effective),
+        "backlog_max": backlog_max,
+        "unlisted": unlisted,
+        "stale_backlog": stale_backlog,
+        "stale_exclusions": sorted(stale_exclusions),
+        "backlog_file": backlog_file,
+        "errors": errors,
+        "ok": not errors,
+    }
+
+
+def prune_backlog(root: Optional[Path] = None) -> Dict[str, object]:
+    """Delete census lines that are now gated, excluded, or gone from the tree.
+
+    Preserves the header comments and the file's order; only removes lines.
+    """
+    root = root or repo_root()
+    report = census(root)
+    if not report.get("ran"):
+        return {"pruned": [], "report": report}
+    stale = set(report["stale_backlog"])  # type: ignore[arg-type]
+    path = root / str(report["backlog_file"])
+    kept = [
+        line for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip().split(" #", 1)[0].strip() not in stale
+    ]
+    # newline="\n" explicitly: the default translates to CRLF on Windows, and a
+    # trailing CR makes every consumer report "file not found" for a path that
+    # plainly exists — the same class of bug as hgx-exec-01.
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8", newline="\n")
+    return {"pruned": sorted(stale), "report": report}
+
+
+# --------------------------------------------------------------------------- #
 # Legacy-workflow extraction — the before/after proof
 # --------------------------------------------------------------------------- #
 _JOB_RE = re.compile(r"^  (?P<job>[A-Za-z0-9_-]+):\s*$")
@@ -283,6 +533,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--job", help="restrict --extract-workflow to one job block")
     parser.add_argument("--min-targets", type=int, default=1,
                         help="with --extract-workflow, ignore pytest chains shorter than this")
+    parser.add_argument("--check-coverage", action="store_true",
+                        help="fail when a test file is gated by nothing (tsg-policy-01)")
+    parser.add_argument("--prune-backlog", action="store_true",
+                        help="delete backlog census lines that are now gated or gone")
     args = parser.parse_args(argv)
 
     # LF on every platform. `print()` translates "\n" to "\r\n" on Windows, and
@@ -304,6 +558,50 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                               "count": len(targets), "entries": targets}, indent=2))
         else:
             print("\n".join(targets))
+        return 0
+
+    if args.check_coverage or args.prune_backlog:
+        try:
+            root = args.root.resolve() if args.root else repo_root()
+            if args.prune_backlog:
+                pruned = prune_backlog(root)
+                report = pruned["report"]  # type: ignore[assignment]
+                if args.json:
+                    print(json.dumps(pruned, indent=2))
+                else:
+                    print(f"Pruned {len(pruned['pruned'])} stale backlog entries.")  # type: ignore[arg-type]
+                return 0
+            report = census(root)
+        except AllowlistError as exc:
+            print(f"::error::test gating census: {exc}", file=sys.stderr)
+            return 1
+
+        if args.json:
+            print(json.dumps(report, indent=2))
+        if not report["ok"]:
+            for err in report["errors"]:  # type: ignore[union-attr]
+                print(f"::error::test gating census: {err}", file=sys.stderr)
+            return 1
+        if not args.json:
+            if not report.get("ran"):
+                print(f"Test gating census: {report['reason']}")
+            else:
+                print(
+                    f"Test gating census: {report['total']} collectible test modules — "
+                    f"{report['gated']} gated, {report['excluded']} excluded, "
+                    f"{report['backlog']} grandfathered (ceiling {report['backlog_max']}), "
+                    f"0 unlisted."
+                )
+                # Warnings, not failures. A stale entry is bookkeeping the next
+                # --prune-backlog fixes; failing here would red-light a PR whose
+                # only sin was making a test pass.
+                for pattern in report["stale_exclusions"]:  # type: ignore[union-attr]
+                    print(f"::warning::exclusion {pattern!r} matches nothing — delete it or fix the pattern")
+                if report["stale_backlog"]:
+                    print(
+                        f"::warning::{len(report['stale_backlog'])} backlog entries are now gated "  # type: ignore[arg-type]
+                        "or gone — run `python tools/ci/gated_test_list.py --prune-backlog`"
+                    )
         return 0
 
     try:

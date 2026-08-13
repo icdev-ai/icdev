@@ -142,6 +142,13 @@ tests/test_init_goals_and_selective.py
 # instead of a 40 KB byte-compare that reads like CRLF drift. <1s, no DB/network.
 tests/test_bootstrap_parity.py
 
+# test_bootstrap_hook_payload.py arrived with exa-bench-10 (#1582) and was
+# gated by nothing — the census in this PR is what caught it. It is the test
+# that proves `icdev init` ships the module its PreToolUse hook exec_module()s,
+# i.e. the very defect exa-bench-10 fixed, so leaving it ungated would let that
+# defect return with nothing going red. 9 tests, <4s, pure filesystem.
+tests/test_bootstrap_hook_payload.py
+
 # test_scheduled_dispatch_reclaim.py: startup_recovery sweeps only
 # in_progress, so a dispatch that dies BEFORE the row moves there leaves it
 # in `scheduled` holding a dead pid that nothing looks at — neither running
@@ -892,3 +899,11 @@ tests/genesis_auto/test_pain_extractor.py
 # which is the declared-but-unconsumed failure mode it exists to prevent.
 # ~1s, no DB, no network, no LLM.
 tests/test_genesis_test_reflex_policy.py
+
+# tsg-policy-01 -- the test-gating RATCHET's own regression pin. It asserts the
+# live tree has zero test files gated by nothing, that a new ungated file goes
+# RED naming the file, that the backlog census only shrinks, and that the census
+# step is actually wired into this job. A gate whose own test is ungated is the
+# joke this task exists to stop, so it goes here in the same commit that adds it
+# -- which is also the policy it enforces, demonstrated.
+tests/ci/test_test_gating_census.py
