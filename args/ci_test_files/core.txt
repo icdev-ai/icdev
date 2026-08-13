@@ -979,3 +979,18 @@ tests/test_cpmp_update_subcontractor_requires_name.py
 # which runs on SQLite where a bool IS an int. Asserts on the params handed to
 # execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
 tests/test_cpmp_subcontractor_flag_coercion.py
+# cpmp_monitor returned `status: "ok"` plus a top-level `cards_created`, but the
+# Genesis daemon scores a reflex from `success`/`metric_value`/`details`. It read
+# neither, so every completed sweep was filed as
+# `reflex_reported_failure: cards_created=0.0` -- a failure naming a metric that
+# satisfies its own `gte 0` threshold -- and 11 consecutive such "failures" opened
+# the reflex's circuit breaker, decaying 3-hourly CPMP surveillance to a half-open
+# probe per doubling cooldown. Gated here because the return contract is invisible
+# to every other test: the reflex "works", and only the daemon disagrees.
+tests/test_cpmp_monitor_daemon_contract.py
+
+# Landed ungated in #1599 (267e1c057), which left the census RED for every branch
+# opened after it -- the same way 49da5d8d5 had to gate #1600's file. Passes 14/14
+# here; gated so the type guard it pins (one bad graph_json row 500ing /network/)
+# cannot regress unnoticed.
+tests/test_ndc_graph_json_type_guard.py
