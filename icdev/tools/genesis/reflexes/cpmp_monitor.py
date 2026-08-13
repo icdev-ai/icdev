@@ -72,6 +72,47 @@ def _contract_label(contract: Dict) -> str:
     return f"contract {str(contract.get('id') or '?')[:8]}"
 
 
+def _superseded_titles(title: str, label: str) -> frozenset:
+    """The same card title as written by a SUPERSEDED labelling rule.
+
+    Fixing `_contract_label` only ever helped cards that did not exist yet.
+    `_suggest_kanban_card` dedups on the card id, and a card id is derived from
+    the contract id and issue type — never from the label — so once a card is on
+    the board the reflex sees a primary-key collision and returns without
+    looking at the title. Both label fixes therefore landed and left the already
+    filed cards permanently unidentifiable: on 2026-08-13 the live board still
+    carried two cards titled "[CPMP] : Overdue Deliverables" from before the
+    first fix and five titled "[CPMP] Untitled Contract: ..." from before the
+    second, and the four sessions dispatched onto the latter could not tell
+    which of four contracts they had been given.
+
+    This returns the titles the CURRENT title would have had under each label
+    that has since been ruled unidentifiable — '' (the .get() default bug) and
+    every `_placeholder_titles()` entry. Matching is exact and the set is
+    finite, so a title edited by a human or rewritten by the kanban pipeline is
+    never in it and is never touched. That makes the repair a one-way ratchet:
+    unidentifiable -> identifiable, and nothing else.
+
+    Empty if `title` was not built from `label`, so a caller that formats its
+    title differently silently opts out rather than matching by accident.
+
+    Values are CASEFOLDED for comparison: `_placeholder_titles()` is casefolded
+    at the source (it feeds a casefolded membership test in `_contract_label`),
+    while the board stores whatever casing create_contract() stamped — so an
+    exact-case set would never match the 'Untitled Contract' rows it exists for.
+    """
+    marker = f" {label}: "
+    idx = title.find(marker) if label else -1
+    if idx == -1:
+        return frozenset()
+    tag = title[:idx]  # "[CPMP]", "[SUBCON]", "[CDRL]" — kept, only the label varies
+    suffix = title[idx + len(marker):]
+    superseded = {""} | set(_placeholder_titles())
+    return frozenset(
+        f"{tag} {old}: {suffix}".casefold() for old in superseded
+    ) - {title.casefold()}
+
+
 def run(trigger_data=None, context=None):
     """Entry point for Genesis daemon."""
     trigger_data = trigger_data or {}
@@ -83,6 +124,9 @@ def run(trigger_data=None, context=None):
         "contracts_unnumbered": 0,
         "issues_found": 0,
         "cards_created": 0,
+        # Stale titles repaired in place — NOT new cards, so kept out of
+        # cards_created, which must stay a count of rows actually written.
+        "cards_relabeled": 0,
         "cpars_alerts": 0,
         "subcon_alerts": 0,
         "cdrl_generated": 0,
@@ -143,6 +187,8 @@ def run(trigger_data=None, context=None):
                             context_data={"contract_id": cid, "contract_number": cnum, "issue": issue},
                             created_by="cpmp_monitor",
                             dedup_key=f"{cid}:{issue.get('type','issue')}",
+                            label=clabel,
+                            stats=results,
                         )
                         results["cards_created"] += 1 if wrote else 0
                     except Exception as ce:
@@ -183,6 +229,8 @@ def run(trigger_data=None, context=None):
                                 },
                                 created_by="cpmp_monitor_cpars",
                                 dedup_key=f"{cid}:cpars_trajectory",
+                                label=clabel,
+                                stats=results,
                             )
                             results["cpars_alerts"] += 1 if wrote else 0
                             results["cards_created"] += 1 if wrote else 0
@@ -240,6 +288,8 @@ def run(trigger_data=None, context=None):
                                 f"{cid}:{finding.get('issue_type','noncompliance')}"
                                 f":{finding.get('subcontractor_name','')}"
                             ),
+                            label=clabel,
+                            stats=results,
                         )
                         results["subcon_alerts"] += 1 if wrote else 0
                         results["cards_created"] += 1 if wrote else 0
@@ -269,6 +319,8 @@ def run(trigger_data=None, context=None):
                             # An event, not a condition: the batch size is part
                             # of the identity so the next batch gets its own card.
                             dedup_key=f"{cid}:cdrl_generated:{generated}",
+                            label=clabel,
+                            stats=results,
                         )
                     except Exception:
                         pass
@@ -287,13 +339,16 @@ def _suggest_kanban_card(
     context_data: Dict = None,
     created_by: str = "cpmp_monitor",
     dedup_key: str = None,
+    label: str = None,
+    stats: Dict = None,
 ) -> bool:
     """Create a kanban suggestion card, keyed so one finding is one row.
 
-    Returns True only if a row was actually written, so callers count writes
-    rather than attempts — an attempt-counter reports steady card creation
-    forever while a working dedup writes nothing, and `_write_memory_log`
-    persists that number.
+    Returns True only if a row was INSERTED, so callers count writes rather
+    than attempts — an attempt-counter reports steady card creation forever
+    while a working dedup writes nothing, and `_write_memory_log` persists that
+    number. Repairing a stale title (below) is not a creation and returns
+    False; it is counted separately under ``stats['cards_relabeled']``.
 
     ``dedup_key`` identifies the FINDING (contract + issue), and the card's id
     is derived from it, so re-detecting the same finding is a primary-key
@@ -315,6 +370,18 @@ def _suggest_kanban_card(
     Findings that are events rather than conditions (e.g. CDRL generation)
     encode their magnitude in the key, so a genuinely new occurrence is a
     genuinely new key.
+
+    The one exception is the card's TITLE. Because the id is derived from the
+    contract and issue and never from the label, a card that predates a label
+    fix keeps its unidentifiable title forever — the collision check returns
+    before the title is ever compared. When ``label`` is supplied and the stored
+    title is EXACTLY one this finding would have had under a superseded
+    labelling rule (see `_superseded_titles`), it is rewritten in place. The
+    match is against a finite set of known-bad titles, so a human edit or a
+    pipeline rewrite never qualifies, and the ratchet only ever runs
+    unidentifiable -> identifiable. Nothing else about the row is touched: not
+    status, not priority, not description — repairing a name must not reopen,
+    re-prioritise, or otherwise resurrect work.
     """
     from tools.db.storage import get_connection
     conn = get_connection()
@@ -327,9 +394,19 @@ def _suggest_kanban_card(
 
         # Dedup on the card's own id — immune to later rewrites of title,
         # status, or dispatch_source by the kanban pipeline.
-        if conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)
-        ).fetchone():
+        existing = conn.execute(
+            "SELECT title FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
+        if existing:
+            stored = (dict(existing).get("title") or "")
+            if stored.casefold() in _superseded_titles(title[:120], label):
+                conn.execute(
+                    "UPDATE kanban_tasks SET title = %s WHERE id = %s",
+                    (title[:120], task_id),
+                )
+                conn.commit()
+                if stats is not None:
+                    stats["cards_relabeled"] = stats.get("cards_relabeled", 0) + 1
             return False
 
         now = datetime.now(timezone.utc).isoformat()
@@ -368,6 +445,7 @@ def _write_memory_log(results: Dict):
                 f"({results['contracts_unnumbered']} skipped, no contract number), "
                 f"{results['issues_found']} issues, "
                 f"{results['cards_created']} cards, "
+                f"{results.get('cards_relabeled', 0)} relabeled, "
                 f"{results['cpars_alerts']} CPARS alerts, "
                 f"{results['cdrl_generated']} CDRLs generated."
             ),
