@@ -1116,6 +1116,7 @@ tests/test_integrity_mcp.py
 tests/test_integrity_no_shell_exec.py
 tests/test_integrity_pr_gates.py
 tests/test_integrity_provenance.py
+tests/test_integrity_scanners.py
 tests/test_integrity_scoring.py
 tests/test_integrity_skillspector_cache.py
 tests/test_integrity_tamper.py

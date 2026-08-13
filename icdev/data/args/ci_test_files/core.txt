@@ -226,14 +226,14 @@ tests/ci/test_gated_test_list.py
 # migration's own up.sql, no DB service/LLM/network (agov-wake-02).
 tests/test_agent_wake_tools.py
 
-# SIPA scanner adapters. Gated by task-1b49742e56, which added the regression
-# proving known_safe_persistence_modules is actually consulted — an allowlist
-# nothing reads is the defect the task was raised by. Green as of 2026-08-13
-# (37 passed); ungated, it could go back to suppressing nothing unnoticed.
-tests/test_integrity_scanners.py
-
 # SIPA integrity_monitor reflex. Gated by task-1b49742e56: its two _rel_path
 # tests read ICDEV_SIPA_RELPATH_DIRS from the ambient environment, so they
 # asserted a "flag defaults OFF" the shipped .env contradicts and were red on
 # any configured machine. Pinned with delenv and green (13 passed, 3s).
 tests/test_integrity_monitor_reflex.py
+
+# Regression for task-1b49742e56: proves known_safe_persistence_modules is
+# actually consulted. The allowlist existed for 16 days with zero call sites,
+# so an ungated test for it would have been the same defect one layer up.
+# Pure (no scanner shell-out, no optional third-party tool) — gateable as-is.
+tests/test_integrity_persistence_allowlist.py
