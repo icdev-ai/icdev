@@ -94,6 +94,51 @@ def _uuid():
     return str(uuid.uuid4())
 
 
+# Fields stored as INTEGER 0/1 that callers naturally send as JSON booleans.
+COMPLIANCE_FLAGS = (
+    "flow_down_complete",
+    "flowdown_verified",
+    "cybersecurity_compliant",
+    "isr_ssr_current",
+)
+
+# The only strings that mean "compliant". Everything else — including an
+# unrecognised word — means not compliant. See _compliance_flag.
+_TRUE_STRINGS = frozenset({"1", "true", "t", "yes", "y", "on"})
+
+
+def _compliance_flag(value):
+    """Coerce a caller-supplied compliance flag to the INTEGER 0/1 the column holds.
+
+    These are INTEGER columns and PostgreSQL — unlike SQLite, where ``bool`` is
+    an ``int`` subclass and everything just works — refuses a boolean for an
+    integer column outright ("column is of type integer but expression is of
+    type boolean"). ``create_subcontractor`` has coerced since #1520;
+    ``update_subcontractor`` passed ``data[field]`` through raw, so
+    ``PUT /api/cpmp/subcontractors/<id>`` with ``{"flow_down_complete": true}``
+    — a JSON boolean, i.e. exactly what the remediation this module exists to
+    track looks like — raised on the primary backend and returned 500. The gap
+    survived because the whole test suite runs on SQLite (tests/conftest.py
+    forces it), so no test could ever see it, and no test exercises the PUT at
+    all. Both write paths share this helper so they cannot drift apart again.
+
+    Coercion is FAIL-CLOSED: anything not recognised as affirmative reads as 0
+    (non-compliant). ``bool("0")`` is ``True`` in Python, so the obvious
+    ``int(bool(value))`` turns a form-encoded "0" into "flow-down complete" and
+    silently retires a FAR 52.219-9 gap nobody closed. For a compliance flag the
+    safe direction of a parsing mistake is to keep reporting the gap.
+    """
+    if isinstance(value, bool):
+        return int(value)
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value != 0)
+    if isinstance(value, str):
+        return int(value.strip().casefold() in _TRUE_STRINGS)
+    return 0
+
+
 def _audit(conn, action, details="", actor="subcontractor_tracker"):
     try:
         conn.execute(
@@ -162,11 +207,11 @@ def create_subcontractor(contract_id, data):
             data.get("performance_rating"),
             # Coerce boolean flags to int — these are INTEGER columns and PG
             # (unlike SQLite) rejects a boolean expression for an integer column.
-            int(bool(data.get("flow_down_complete", 0))),
-            int(bool(data.get("flowdown_verified", 0))),
-            int(bool(data.get("cybersecurity_compliant", 0))),
+            _compliance_flag(data.get("flow_down_complete", 0)),
+            _compliance_flag(data.get("flowdown_verified", 0)),
+            _compliance_flag(data.get("cybersecurity_compliant", 0)),
             data.get("cmmc_level"),
-            int(bool(data.get("isr_ssr_current", 0))),
+            _compliance_flag(data.get("isr_ssr_current", 0)),
             data.get("status", "active"),
             data.get("notes"),
             _now(),
@@ -204,6 +249,21 @@ def update_subcontractor(sub_id, data):
 
     old_status = row["status"]
 
+    # company_name is required on create; blanking it on update recreates the
+    # same phantom — a row with no name, permanently non-compliant because
+    # flow_down_complete defaults to 0, that check_flowdown reports forever and
+    # nobody can issue a cure notice to. Validate only when the caller supplies
+    # the key, so ordinary partial updates are unaffected.
+    if "company_name" in data:
+        company_name = data["company_name"]
+        if not isinstance(company_name, str) or not company_name.strip():
+            conn.close()
+            return {
+                "status": "error",
+                "message": "company_name must be a non-empty string",
+            }
+        data = {**data, "company_name": company_name.strip()}
+
     updatable = [
         "company_name",
         "cage_code",
@@ -224,7 +284,14 @@ def update_subcontractor(sub_id, data):
     for field in updatable:
         if field in data:
             sets.append(f"{field} = %s")
-            params.append(data[field])
+            # The 0/1 compliance flags go through the same coercion create uses.
+            # Without it a JSON `true` reached psycopg2 as a Python bool and PG
+            # rejected it for an INTEGER column, so recording the very
+            # remediation this module tracks — "flow-down is now complete" —
+            # failed with a 500 on the primary backend.
+            params.append(
+                _compliance_flag(data[field]) if field in COMPLIANCE_FLAGS else data[field]
+            )
 
     if not sets:
         conn.close()

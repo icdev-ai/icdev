@@ -136,7 +136,14 @@ def _rel_path(file_path: Optional[str], assessment_id: int) -> str:
     """
     if not file_path:
         return ""
-    posix = Path(file_path).as_posix()
+    # Separator normalization is done on the STRING, not by Path: on POSIX a
+    # backslash is an ordinary filename character, so Path("a\\b.py").as_posix()
+    # and .name both return the whole "a\\b.py". The findings this reads were
+    # written by whichever host ran the scan — the live board stores
+    # "hooks\\shared_checks.py" — so a Linux reflex against Windows-produced rows
+    # silently skipped the normalization this docstring promises, giving one file
+    # two signatures and a "basename" with a directory still in it.
+    posix = Path(file_path.replace("\\", "/")).as_posix()
     marker = f"/{assessment_id}/"
     idx = posix.find(marker)
     if idx >= 0:
@@ -145,7 +152,7 @@ def _rel_path(file_path: Optional[str], assessment_id: int) -> str:
         # Directory-preserving, normalized, and relative (strip any leading
         # slash so an absolute stray path can't destabilize the signature).
         return posix.lstrip("/")
-    return Path(file_path).name
+    return posix.rsplit("/", 1)[-1]
 
 
 def _signature(finding_type: str, rel_path: str, capability_type: str) -> str:

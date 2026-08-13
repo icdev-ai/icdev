@@ -29,6 +29,7 @@ class FakeBoard:
 
     def __init__(self, contracts=None):
         self.rows: dict[str, dict] = {}
+        self.updates: list[tuple[str, str]] = []
         self.contracts = [FakeRow(c) for c in (contracts or [])]
 
     def connection(self):
@@ -56,6 +57,15 @@ class FakeBoard:
                         "status": "suggested",
                         "dispatch_source": params[7],
                     }
+                    return _Result(None)
+                if "UPDATE kanban_tasks" in sql:
+                    title, task_id = params
+                    assert task_id in board.rows, f"UPDATE for absent card {task_id}"
+                    # Only the title may be rewritten — a relabel that also
+                    # moved status or priority would resurrect closed work.
+                    assert "title" in sql and "status" not in sql, sql
+                    board.rows[task_id]["title"] = title
+                    board.updates.append((task_id, title))
                     return _Result(None)
                 raise AssertionError(f"unexpected SQL: {sql}")
 
@@ -117,6 +127,60 @@ class TestContractLabel:
     def test_label_never_blank(self, reflex):
         assert reflex._contract_label({}).strip()
 
+    def test_placeholder_title_is_treated_as_absent(self, reflex):
+        """create_contract() stamps this on any contract created without a
+        title, so it is identical across rows and names no contract at all."""
+        label = reflex._contract_label(
+            {"id": "8143e17a-0a01-452f", "contract_number": "", "title": "Untitled Contract"}
+        )
+        assert label == "contract 8143e17a"
+
+    def test_placeholder_check_ignores_case_and_padding(self, reflex):
+        label = reflex._contract_label(
+            {"id": "df32ba49-9c39", "contract_number": "", "title": "  untitled contract  "}
+        )
+        assert label == "contract df32ba49"
+
+    def test_placeholder_tracks_the_contract_manager_default(self, reflex):
+        """Sourced from the constant, so changing the default cannot silently
+        re-admit a placeholder as an identifier."""
+        from tools.govcon.contract_manager import DEFAULT_CONTRACT_TITLE
+        label = reflex._contract_label(
+            {"id": "6d67ff20-a9", "contract_number": "", "title": DEFAULT_CONTRACT_TITLE}
+        )
+        assert label == "contract 6d67ff20"
+
+    def test_placeholder_still_caught_when_contract_manager_is_absent(self, reflex, monkeypatch):
+        """contract_manager has no icdev/ mirror, so in a packaged install the
+        constant import raises and the literal fallback is the ONLY thing
+        keeping the placeholder out of card titles."""
+        import builtins
+        real_import = builtins.__import__
+
+        def _no_govcon(name, *a, **kw):
+            if "contract_manager" in name:
+                raise ImportError("no icdev/tools/govcon/contract_manager.py")
+            return real_import(name, *a, **kw)
+
+        monkeypatch.setattr(builtins, "__import__", _no_govcon)
+        label = reflex._contract_label(
+            {"id": "719d5e59-bd", "contract_number": "", "title": "Untitled Contract"}
+        )
+        assert label == "contract 719d5e59"
+
+    def test_real_title_still_wins_over_the_id(self, reflex):
+        """Only the placeholder is discarded — a genuine title is the label."""
+        label = reflex._contract_label(
+            {"id": "bff20029-94e2", "contract_number": "", "title": "GCPL Seed Contract"}
+        )
+        assert label == "GCPL Seed Contract"
+
+    def test_placeholder_title_does_not_beat_a_real_number(self, reflex):
+        label = reflex._contract_label(
+            {"id": "8143e17a", "contract_number": "W912-24-C-0001", "title": "Untitled Contract"}
+        )
+        assert label == "W912-24-C-0001"
+
 
 class TestCardIdentity:
     def _emit(self, reflex, cid, label, issue_type="subcontractor_compliance"):
@@ -130,7 +194,12 @@ class TestCardIdentity:
         )
 
     def test_distinct_contracts_get_distinct_cards(self, reflex, board):
-        """The collapse bug: 5 contracts with blank numbers produced 1 card."""
+        """The collapse bug: 5 contracts with blank numbers produced 1 card.
+
+        Labels are passed in here, so this pins the id scheme only; that two of
+        them are the same placeholder is the subject of TestContractLabel and
+        of test_no_card_title_is_left_unidentifiable.
+        """
         contracts = [
             ("bff20029-94e2", "GCPL Seed Contract"),
             ("0f28acca-ee28", "bypass probe"),
@@ -193,6 +262,172 @@ class TestCardIdentity:
         assert "[CPMP] :" not in row["title"]
 
 
+class TestStaleTitleRepair:
+    """A card filed BEFORE a label fix can never be relabelled by it.
+
+    The card id is derived from contract id + issue type and never from the
+    label, so re-detecting the same finding is a primary-key collision that
+    returns before the title is compared. Both label fixes therefore left the
+    cards already on the board unidentifiable — on 2026-08-13 the live board
+    still held two "[CPMP] : Overdue Deliverables" and five
+    "[CPMP] Untitled Contract: ..." rows, four of which had been dispatched to
+    sessions that could not tell which contract they meant.
+    """
+
+    def _emit(self, reflex, cid, label, board=None, issue="Overdue Deliverables"):
+        stats = {}
+        reflex._suggest_kanban_card(
+            title=f"[CPMP] {label}: {issue}",
+            description="2 CDRL(s) are past due and not yet accepted.",
+            priority="medium",
+            context_data={"contract_id": cid, "contract_number": ""},
+            created_by="cpmp_monitor",
+            dedup_key=f"{cid}:overdue_deliverables",
+            label=label,
+            stats=stats,
+        )
+        return stats
+
+    def test_placeholder_title_is_repaired_in_place(self, reflex, board):
+        """The exact live-board case: card filed as 'Untitled Contract'."""
+        self._emit(reflex, "df32ba49-9c39", "Untitled Contract")
+        (card_id,) = board.rows
+        assert board.rows[card_id]["title"] == "[CPMP] Untitled Contract: Overdue Deliverables"
+
+        stats = self._emit(reflex, "df32ba49-9c39", "contract df32ba49", board)
+
+        assert len(board.rows) == 1, "a relabel must not file a second card"
+        assert board.rows[card_id]["title"] == "[CPMP] contract df32ba49: Overdue Deliverables"
+        assert stats["cards_relabeled"] == 1
+
+    def test_empty_label_title_is_repaired(self, reflex, board):
+        """The pre-first-fix form, still on the board from 2026-08-08."""
+        self._emit(reflex, "df32ba49-9c39", "")
+        (card_id,) = board.rows
+        board.rows[card_id]["title"] = "[CPMP] : Overdue Deliverables"
+
+        self._emit(reflex, "df32ba49-9c39", "contract df32ba49", board)
+
+        assert board.rows[card_id]["title"] == "[CPMP] contract df32ba49: Overdue Deliverables"
+
+    def test_repair_is_case_insensitive(self, reflex, board):
+        """_placeholder_titles() is casefolded at the source; the board stores
+        whatever casing create_contract() stamped."""
+        self._emit(reflex, "df32ba49-9c39", "Untitled Contract")
+        (card_id,) = board.rows
+        board.rows[card_id]["title"] = "[CPMP] UNTITLED CONTRACT: Overdue Deliverables"
+
+        self._emit(reflex, "df32ba49-9c39", "contract df32ba49", board)
+
+        assert board.rows[card_id]["title"] == "[CPMP] contract df32ba49: Overdue Deliverables"
+
+    def test_a_human_edited_title_is_never_stomped(self, reflex, board):
+        """The ratchet matches a finite set of known-bad titles, so anything a
+        human or the pipeline wrote is out of scope by construction."""
+        self._emit(reflex, "df32ba49-9c39", "Untitled Contract")
+        (card_id,) = board.rows
+        board.rows[card_id]["title"] = "[CPMP] URGENT — call the COR about A001"
+
+        stats = self._emit(reflex, "df32ba49-9c39", "contract df32ba49", board)
+
+        assert board.rows[card_id]["title"] == "[CPMP] URGENT — call the COR about A001"
+        assert board.updates == [], "rewrote a title it did not author"
+        assert stats.get("cards_relabeled", 0) == 0
+
+    def test_an_already_identifiable_title_is_not_rewritten(self, reflex, board):
+        """No UPDATE at all on the steady-state path — the reflex runs every 3h
+        and must not churn updated_at on every card, every cycle."""
+        self._emit(reflex, "bff20029-94e2", "GCPL Seed Contract")
+        board.updates.clear()
+
+        stats = self._emit(reflex, "bff20029-94e2", "GCPL Seed Contract", board)
+
+        assert board.updates == []
+        assert stats.get("cards_relabeled", 0) == 0
+
+    def test_a_different_finding_is_not_treated_as_a_stale_title(self, reflex, board):
+        """Only the LABEL segment may differ; the issue suffix must match, or a
+        placeholder card for one issue would be renamed to another issue."""
+        self._emit(reflex, "df32ba49-9c39", "Untitled Contract", issue="Overdue Deliverables")
+        (card_id,) = board.rows
+        board.updates.clear()
+
+        self._emit(reflex, "df32ba49-9c39", "contract df32ba49", board,
+                   issue="Subcontractor Compliance")
+
+        assert board.updates == []
+        assert board.rows[card_id]["title"] == "[CPMP] Untitled Contract: Overdue Deliverables"
+
+    def test_relabel_is_not_counted_as_a_created_card(self, reflex, board):
+        """cards_created must stay a count of rows actually written."""
+        self._emit(reflex, "df32ba49-9c39", "Untitled Contract")
+        wrote = reflex._suggest_kanban_card(
+            title="[CPMP] contract df32ba49: Overdue Deliverables",
+            description="d", priority="medium",
+            context_data={}, created_by="cpmp_monitor",
+            dedup_key="df32ba49-9c39:overdue_deliverables",
+            label="contract df32ba49",
+        )
+        assert wrote is False, "a relabel is not a creation"
+
+    def test_repair_works_without_a_stats_dict(self, reflex, board):
+        """stats is optional — omitting it must not raise."""
+        self._emit(reflex, "df32ba49-9c39", "Untitled Contract")
+        reflex._suggest_kanban_card(
+            title="[CPMP] contract df32ba49: Overdue Deliverables",
+            description="d", priority="medium",
+            context_data={}, created_by="cpmp_monitor",
+            dedup_key="df32ba49-9c39:overdue_deliverables",
+            label="contract df32ba49",
+        )
+        assert len(board.updates) == 1
+
+    def test_no_label_supplied_means_no_repair(self, reflex, board):
+        """A caller that does not pass a label opts out rather than matching by
+        accident — the pre-existing signature must keep its old behaviour."""
+        self._emit(reflex, "df32ba49-9c39", "Untitled Contract")
+        board.updates.clear()
+
+        reflex._suggest_kanban_card(
+            title="[CPMP] contract df32ba49: Overdue Deliverables",
+            description="d", priority="medium",
+            context_data={}, created_by="cpmp_monitor",
+            dedup_key="df32ba49-9c39:overdue_deliverables",
+        )
+
+        assert board.updates == []
+
+
+class TestSupersededTitles:
+    def test_covers_both_retired_label_forms(self, reflex):
+        got = reflex._superseded_titles(
+            "[CPMP] contract df32ba49: Overdue Deliverables", "contract df32ba49"
+        )
+        assert got == frozenset({
+            "[cpmp] : overdue deliverables",
+            "[cpmp] untitled contract: overdue deliverables",
+        })
+
+    def test_preserves_a_non_cpmp_tag(self, reflex):
+        """[SUBCON] and [CDRL] cards carry the same label and rot the same way."""
+        got = reflex._superseded_titles("[SUBCON] contract df32: Noncompliance", "contract df32")
+        assert "[subcon] untitled contract: noncompliance" in got
+        assert not any(g.startswith("[cpmp]") for g in got)
+
+    def test_never_includes_the_current_title(self, reflex):
+        """Otherwise a contract genuinely named 'Untitled Contract' would UPDATE
+        itself to the identical value on every 3h cycle."""
+        title = "[CPMP] Untitled Contract: Overdue Deliverables"
+        assert title.casefold() not in reflex._superseded_titles(title, "Untitled Contract")
+
+    def test_empty_when_title_was_not_built_from_the_label(self, reflex):
+        assert reflex._superseded_titles("[CPMP] something else: X", "contract abc") == frozenset()
+
+    def test_empty_when_no_label(self, reflex):
+        assert reflex._superseded_titles("[CPMP] x: Y", "") == frozenset()
+        assert reflex._superseded_titles("[CPMP] x: Y", None) == frozenset()
+
+
 class TestRunEndToEnd:
     """Drives run() so the card TITLE is built by the reflex, not the test.
 
@@ -231,7 +466,7 @@ class TestRunEndToEnd:
         from tools.govcon import cpars_predictor, subcontractor_tracker
         monkeypatch.setattr(cpars_predictor, "predict_cpars", lambda cid: {"predicted_score": 1.0})
         monkeypatch.setattr(cpars_predictor, "get_cpars_trend", lambda cid: {"trend": []})
-        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"findings": []})
         monkeypatch.setattr(reflex, "_write_memory_log", lambda results: None)
         return board
 
@@ -258,9 +493,17 @@ class TestRunEndToEnd:
         titles = sorted(r["title"] for r in wired.rows.values())
         assert not any(t.startswith("[CPMP] :") for t in titles), titles
         assert "[CPMP] GCPL Seed Contract: Subcontractor Compliance" in titles
-        # Two contracts share the title 'Untitled Contract' — they must still be
-        # two rows, which is why the dedup key is the contract id, not the label.
         assert len(wired.rows) == 5
+
+        # Distinct rows are NOT enough. Two of these contracts are titled
+        # 'Untitled Contract' — the placeholder create_contract() stamps on any
+        # untitled contract — so falling back to `title` gave them one identical
+        # card title and a human could not tell which contract a card meant.
+        # Every title must name exactly one contract.
+        assert len(set(titles)) == 5, f"two cards cannot share a title: {titles}"
+        assert "[CPMP] Untitled Contract: Subcontractor Compliance" not in titles
+        assert "[CPMP] contract df32ba49: Subcontractor Compliance" in titles
+        assert "[CPMP] contract 8143e17a: Subcontractor Compliance" in titles
 
     def test_second_cycle_adds_nothing(self, reflex, wired, monkeypatch):
         from tools.govcon import cdrl_generator
@@ -297,7 +540,7 @@ class TestCparsEscalation:
 
         from tools.govcon import cdrl_generator, cpars_predictor, pmo_ai_advisor, subcontractor_tracker
         monkeypatch.setattr(pmo_ai_advisor, "auto_detect_issues", lambda cid: {"issues": []})
-        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"findings": []})
         monkeypatch.setattr(cdrl_generator, "generate_all_due", lambda cid, days_ahead=14: {"generated": 0})
         monkeypatch.setattr(
             cpars_predictor, "predict_cpars",
@@ -347,7 +590,7 @@ class TestEscalationFailureIsVisible:
 
         from tools.govcon import cdrl_generator, cpars_predictor, pmo_ai_advisor, subcontractor_tracker
         monkeypatch.setattr(pmo_ai_advisor, "auto_detect_issues", lambda cid: {"issues": []})
-        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"noncompliance": []})
+        monkeypatch.setattr(subcontractor_tracker, "detect_noncompliance", lambda cid: {"findings": []})
         monkeypatch.setattr(cdrl_generator, "generate_all_due", lambda cid, days_ahead=14: {"generated": 0})
         monkeypatch.setattr(
             cpars_predictor, "predict_cpars",

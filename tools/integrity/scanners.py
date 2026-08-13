@@ -935,6 +935,24 @@ def run_signature_scan(assessment_id: int, staged_path: Optional[str] = None, co
     staged = _staged_dir(assessment_id, staged_path)
 
     safe_dyn = _load_safe_dynamic_import_modules()
+    safe_persist = _load_safe_persistence_modules()
+
+    def _suppressed(f: dict) -> bool:
+        """True when this hit is an allowlisted first-party false positive.
+
+        Both allowlists are keyed by capability category, so the predicate is one
+        place rather than one filter pass per category — a category whose
+        allowlist is never consulted here is an allowlist that suppresses
+        nothing, which is exactly how ``known_safe_persistence_modules`` sat
+        inert from 2026-07-28 (task-e74c6d806f) until task-1b49742e56.
+        """
+        category = (f.get("detail") or {}).get("category")
+        path = f.get("file_path")
+        if category == "dynamic_import":
+            return _is_safe_dynamic_import(path, safe_dyn)
+        if category == "persistence":
+            return _is_safe_persistence_module(path, safe_persist)
+        return False
 
     def _body(c: Any) -> dict:
         hits = _detect_signatures(staged)        # Semgrep (reused engine)
@@ -943,16 +961,11 @@ def run_signature_scan(assessment_id: int, staged_path: Optional[str] = None, co
             hits = _signature_fallback_scan(staged)
             engine = "regex_fallback"
         normalized = _normalize_signatures(hits, staged, engine)
-        # Suppress dynamic_import findings for first-party modules whose module
-        # names come from a trusted FORGE config (not user-controlled).
-        if safe_dyn:
-            normalized = [
-                f for f in normalized
-                if not (
-                    (f.get("detail") or {}).get("category") == "dynamic_import"
-                    and _is_safe_dynamic_import(f.get("file_path"), safe_dyn)
-                )
-            ]
+        # Suppress findings for first-party modules already reviewed and
+        # authorized in integrity_config.yaml: dynamic_import whose module names
+        # come from a trusted FORGE config (not user-controlled), and
+        # persistence whose match is a data string, not an executed mechanism.
+        normalized = [f for f in normalized if not _suppressed(f)]
         finding_ids = _persist(c, assessment_id, normalized)
         return {
             "scanner": "semgrep",

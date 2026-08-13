@@ -118,7 +118,7 @@ def _run_reflex(issues):
             "tools.govcon.cpars_predictor.get_cpars_trend", return_value={"trend": []}))
         stack.enter_context(patch(
             "tools.govcon.subcontractor_tracker.detect_noncompliance",
-            return_value={"noncompliance": []}))
+            return_value={"findings": []}))
         stack.enter_context(patch(
             "tools.govcon.cdrl_generator.generate_all_due", return_value={"generated": 0}))
         stack.enter_context(patch("tools.memory.memory_write.write_to_db", return_value=None))
@@ -143,14 +143,24 @@ def _run_reflex(issues):
 
 class TestUnnumberedContracts:
     def test_blank_contract_number_still_files_an_IDENTIFIABLE_card(self, board):
-        _add_contract(board, "c-blank", "", title="Untitled Contract")
+        _add_contract(board, "c-blank", "", title="Real Program Name")
 
         result = _run_reflex([_OVERDUE])
 
         assert result["cards_created"] == 1, "the finding must reach the board"
         assert result["contracts_unnumbered"] == 1, "and still be counted"
-        assert _titles(board) == ["[CPMP] Untitled Contract: Overdue Deliverables"], (
+        assert _titles(board) == ["[CPMP] Real Program Name: Overdue Deliverables"], (
             "falls back to the contract title, so the card names something real")
+
+    def test_placeholder_title_does_not_stand_in_for_a_name(self, board):
+        """'Untitled Contract' is create_contract()'s default, not a name — it
+        is identical on every untitled row, so the card must use the id."""
+        _add_contract(board, "c-blank", "", title="Untitled Contract")
+
+        result = _run_reflex([_OVERDUE])
+
+        assert result["cards_created"] == 1
+        assert _titles(board) == ["[CPMP] contract c-blank: Overdue Deliverables"]
 
     def test_several_unnumbered_contracts_each_get_their_own_card(self, board):
         """The collapse this file was written about: identical titles meant four
@@ -166,6 +176,10 @@ class TestUnnumberedContracts:
             "three contracts, three findings, three cards — the dedup key is the "
             "contract id, so an identical TITLE no longer collapses them")
         assert len(set(_ids(board))) == 3
+        # ...and three DISTINCT titles: all three share the placeholder title,
+        # so a title-based fallback made the three cards indistinguishable to
+        # whoever had to work them.
+        assert len(set(_titles(board))) == 3, _titles(board)
 
     def test_whitespace_only_number_counts_as_unnumbered(self, board):
         _add_contract(board, "c-ws", "   ")
