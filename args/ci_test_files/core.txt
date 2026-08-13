@@ -979,11 +979,6 @@ tests/test_cpmp_update_subcontractor_requires_name.py
 # which runs on SQLite where a bool IS an int. Asserts on the params handed to
 # execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
 tests/test_cpmp_subcontractor_flag_coercion.py
-# SIPA scanner adapters. Gated by task-1b49742e56, which added the regression
-# proving known_safe_persistence_modules is actually consulted — an allowlist
-# nothing reads is the defect the task was raised by. Green as of 2026-08-13
-# (37 passed); ungated, it could go back to suppressing nothing unnoticed.
-tests/test_integrity_scanners.py
 
 # SIPA integrity_monitor reflex. Gated by task-1b49742e56: its two _rel_path
 # tests read ICDEV_SIPA_RELPATH_DIRS from the ambient environment, so they
