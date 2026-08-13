@@ -1,7 +1,8 @@
 # CUI // SP-CTI
 """Genesis Reflex: CPMP Monitor — proactive contract health surveillance.
 
-Runs every 3 hours via Genesis daemon. Three detection passes:
+Runs every 3 hours via Genesis daemon. One state refresh, then four passes:
+  0. Overdue Sweep   — compute_overdue_deliverables() → maintain status/days_overdue
   1. PMO AI Issues   — auto_detect_issues() → kanban cards for critical/high findings
   2. CPARS Trajectory — predicted score declining toward Marginal → CAT2 alert
   3. Subcontractor Noncompliance — detect_noncompliance() → kanban high-priority
@@ -106,6 +107,8 @@ def run(trigger_data=None, context=None):
         "pass_type": pass_type,
         "contracts_scanned": 0,
         "contracts_unnumbered": 0,
+        "overdue_marked": 0,
+        "overdue_refreshed": 0,
         "issues_found": 0,
         "cards_created": 0,
         "cpars_alerts": 0,
@@ -127,6 +130,30 @@ def run(trigger_data=None, context=None):
         return {"status": "error", "message": str(e)}
 
     results["contracts_scanned"] = len(active)
+
+    # ── Pass 0: refresh the overdue state the other passes are read from ──
+    #
+    # compute_overdue_deliverables() is the only writer of
+    # cpmp_deliverables.status='overdue' and days_overdue, and until this call
+    # it had no caller but its own CLI flag. Contract health, the CPARS
+    # schedule dimension, the portfolio rollup and negative_event_tracker all
+    # READ those two fields, so on 2026-08-13 every one of them reported 0
+    # overdue and green health on a board carrying 26 CDRLs 44 days past due —
+    # while this reflex filed high-priority cards saying "5 CDRL(s) are past
+    # due" off pmo_ai_advisor's separate date-based count. Refreshing the state
+    # BEFORE the passes that consume it is what makes the two agree.
+    #
+    # Swept portfolio-wide rather than per-contract: the loop below visits only
+    # status='active' contracts, but portfolio_manager counts overdue CDRLs
+    # across ('active', 'option_pending'), and an option-pending contract's
+    # deliverables are no less late.
+    try:
+        from tools.govcon.contract_manager import compute_overdue_deliverables
+        swept = compute_overdue_deliverables()
+        results["overdue_marked"] = swept.get("overdue_count", 0)
+        results["overdue_refreshed"] = swept.get("days_refreshed", 0)
+    except Exception as e:
+        results["errors"].append(f"Overdue sweep: {e}")
 
     for contract in active:
         cid = contract["id"]
@@ -414,7 +441,8 @@ def _write_memory_log(results: Dict):
             content=(
                 f"CPMP monitor [{results['pass_type']}]: "
                 f"{results['contracts_scanned']} contracts "
-                f"({results['contracts_unnumbered']} skipped, no contract number), "
+                f"({results['contracts_unnumbered']} unnumbered), "
+                f"{results['overdue_marked']} newly overdue, "
                 f"{results['issues_found']} issues, "
                 f"{results['cards_created']} cards, "
                 f"{results['cpars_alerts']} CPARS alerts, "
