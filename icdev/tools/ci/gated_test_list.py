@@ -68,6 +68,16 @@ Anything else is a NEW ungated test file, and it fails the `test` job by name.
 The fix is never "add it to the backlog" — it is "make it pass and append it to
 core.txt", which is the only sanctioned way to widen the allowlist.
 
+AND IT RUNS AT COMMIT TIME TOO (tsg-policy-02)
+----------------------------------------------
+CI is the backstop, not the first line: a census failure there turns main red,
+which blocks every open PR, for a one-line fix. `staged_new_test_files` lets
+`tools/testing/pre_commit_check.py` run the same census on the same policy at
+`git commit` time — but only when the commit adds or renames a file in scope, so
+a commit touching no tests pays nothing. The hook prints this module's message
+and refuses; it never edits core.txt itself, because a hook that silently widened
+the allowlist would gate a test nobody has run.
+
 Usage
 -----
     python tools/ci/gated_test_list.py --check --list core
@@ -278,6 +288,9 @@ def _tracked_files(root: Path) -> List[str]:
         proc = subprocess.run(
             ["git", "-C", str(root), "ls-files"],
             capture_output=True, text=True, timeout=120, check=False,
+            # See staged_added_or_renamed: this now runs on every developer's
+            # Windows box at commit time, not only on a UTF-8 CI runner.
+            encoding="utf-8", errors="replace",
         )
         if proc.returncode == 0 and proc.stdout.strip():
             return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
@@ -293,19 +306,28 @@ def _tracked_files(root: Path) -> List[str]:
     return out
 
 
-def collect_test_files(root: Path, config: Dict[str, object]) -> List[str]:
-    """Every module the runner would collect, per the config's `scope` block."""
+def in_scope(rel: str, config: Dict[str, object]) -> bool:
+    """True when `rel` is a file the census counts, per the config's `scope` block.
+
+    Split out of `collect_test_files` so the pre-commit fast path (tsg-policy-02)
+    decides "is this staged file a test file?" through the SAME rule the census
+    uses, rather than re-deriving `tests/` + `test_*.py` from memory. A fast path
+    that scoped differently from the gate would either nag about files the gate
+    ignores or wave through files it fails on.
+    """
     scope = config.get("scope") or {}
     roots = [str(r) for r in (scope.get("roots") or ["tests/"])]  # type: ignore[union-attr]
     patterns = [str(p) for p in (scope.get("patterns") or ["test_*.py"])]  # type: ignore[union-attr]
-    hits: List[str] = []
-    for rel in _tracked_files(root):
-        if not any(rel.startswith(r) for r in roots):
-            continue
-        name = rel.rsplit("/", 1)[-1]
-        if any(fnmatch.fnmatch(name, pat) for pat in patterns):
-            hits.append(rel)
-    return sorted(hits)
+    rel = rel.replace("\\", "/")
+    if not any(rel.startswith(r) for r in roots):
+        return False
+    name = rel.rsplit("/", 1)[-1]
+    return any(fnmatch.fnmatch(name, pat) for pat in patterns)
+
+
+def collect_test_files(root: Path, config: Dict[str, object]) -> List[str]:
+    """Every module the runner would collect, per the config's `scope` block."""
+    return sorted(rel for rel in _tracked_files(root) if in_scope(rel, config))
 
 
 def gated_targets(root: Path, test_files: Sequence[str]) -> Set[str]:
@@ -444,6 +466,74 @@ def prune_backlog(root: Optional[Path] = None) -> Dict[str, object]:
     # plainly exists — the same class of bug as hgx-exec-01.
     path.write_text("\n".join(kept) + "\n", encoding="utf-8", newline="\n")
     return {"pruned": sorted(stale), "report": report}
+
+
+# --------------------------------------------------------------------------- #
+# Pre-commit fast path — run the census where the author can feel it (tsg-policy-02)
+# --------------------------------------------------------------------------- #
+# The CI step below is the backstop and stays the backstop: a hook is skippable
+# with --no-verify and is absent for anything that does not land through a local
+# commit. But CI is the WRONG PLACE to first learn that a test file is ungated —
+# it turns main red, which blocks every open PR, and costs a follow-up branch +
+# PR + full CI cycle to add one line the author could have added in one second.
+# Measured 2026-08-13: that happened twice within two hours of the census landing
+# (tests/test_bootstrap_hook_payload.py via #1582, tests/test_kanban_gate_sentinel_
+# seeding.py via #1598), once from an autonomous worker and once from an
+# interactive session — so it is not one actor's discipline problem.
+#
+# These two helpers give `tools/testing/pre_commit_check.py` the decision it
+# needs: which files does THIS commit add that the census would collect? They are
+# deliberately cheap — a `git diff --cached` plus one YAML read, no database, no
+# network, no `import tools` — and `staged_new_test_files` returns before reading
+# the config at all when the commit adds nothing.
+
+
+def staged_added_or_renamed(root: Optional[Path] = None) -> List[str]:
+    """Repo-relative paths this commit ADDS or RENAMES-TO, read from the index.
+
+    `--diff-filter=AR` with `--name-only` reports the DESTINATION path of a
+    rename, which is the one that has to be registered; a modification to an
+    already-registered file is correctly not reported at all.
+
+    Returns [] when git is unavailable or the command fails. The caller then
+    gates nothing, which is the right failure direction for a fast path whose
+    whole justification is that CI still runs the same census.
+    """
+    root = root or repo_root()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "diff", "--cached", "--name-only", "--diff-filter=AR"],
+            capture_output=True, text=True, timeout=60, check=False,
+            # Explicit, because `text=True` decodes with `locale.getencoding()` —
+            # cp1252 on a Windows dev box, where a non-ASCII path byte raises
+            # UnicodeDecodeError. git emits UTF-8.
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if proc.returncode != 0:
+        return []
+    return [line.strip().replace("\\", "/") for line in proc.stdout.splitlines() if line.strip()]
+
+
+def staged_new_test_files(
+    root: Optional[Path] = None,
+    files: Optional[Sequence[str]] = None,
+    config: Optional[Dict[str, object]] = None,
+) -> List[str]:
+    """Of the files this commit adds or renames, which ones the census collects.
+
+    `files` lets a caller that has already run `git diff --cached` pass its own
+    list rather than paying for a second git call.
+    """
+    root = root or repo_root()
+    staged = list(files) if files is not None else staged_added_or_renamed(root)
+    if not staged:
+        # The common case: a commit that only MODIFIES files adds no test file,
+        # so it must not pay for a config read to be told so.
+        return []
+    config = config if config is not None else load_gate_config(root)
+    return sorted(f for f in staged if in_scope(f, config))
 
 
 # --------------------------------------------------------------------------- #
