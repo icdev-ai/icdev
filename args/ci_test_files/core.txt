@@ -164,6 +164,12 @@ tests/test_scheduled_dispatch_reclaim.py
 # shape it exists to prevent. 46 tests, ~3s, no DB/network.
 tests/test_kanban_gate_sentinel_seeding.py
 
+# test_ndc_graph_json_type_guard.py arrived with #1599 and was gated by nothing —
+# the third such file in three hours, which is why tsg-policy-02 moves this check
+# to pre-commit. It pins that one malformed graph_json row cannot 500 /network/,
+# a route the E2E smoke suite does not cover. 14 tests, <1s, no DB/network.
+tests/test_ndc_graph_json_type_guard.py
+
 # test_mirror_parity_gate.py: tools/ and icdev/tools/ are separate module
 # objects, so a fix landed in one while the other runs is only half live and
 # the stale half fails SILENTLY. #1542 shipped that way and two tasks were
