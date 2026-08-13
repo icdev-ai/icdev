@@ -526,6 +526,9 @@ known_safe_persistence_modules:
   - cli/provision_db.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/network/seed_sops.py  # sipa-persistence-generic fired on line 2313: the match is "systemctl enable --now named" inside a static Python dict containing a SOP step's "command" string — a human-readable instruction for an operator, never executed by the platform. Authorized as a false-positive data-string match by REQ-NETWORK-SEED-SOPS-PERSISTENCE-FP-01 (assessment-115 review, 2026-06-27).
   - network/seed_sops.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  # ── Added for the 2026-08-13 persistence triage (task-1b49742e56, assessment 274) ──
+  - tools/hooks/shared_checks.py  # sipa-persistence-generic fired on lines 1059, 1067, 1149, 1419 and 1464. ALL FIVE are prose about the attack the file PREVENTS — the literal "/etc/cron.d/pwn" appears in the section comment, the two docstrings and the BLOCKED message emitted by check_write_outside_worktree(), the worktree write-containment guard added by 59374a531 (#exa-bench-07). The rule is `languages: [generic]` + pattern-regex, so it cannot tell a comment from code. The module executes no persistence mechanism: its only two subprocess calls are fixed-arg `git cherry` and `git add`. Suppressing the control that blocks persistence writes, because it names the path it blocks, is the whole false-positive class. Authorized by REQ-HOOKS-SHARED-CHECKS-PERSISTENCE-FP-01.
+  - hooks/shared_checks.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
 # Platform-wide capability authorizations — capability types listed here are
