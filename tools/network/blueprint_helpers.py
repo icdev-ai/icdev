@@ -139,6 +139,29 @@ def _scalar(row, key, idx):
     return row[idx]
 
 
+def parse_graph_json(raw):
+    """Parse a ``graph_json`` column into a graph dict, never raising.
+
+    ``json.loads`` returns whatever JSON type the column holds, and a decode
+    that SUCCEEDS can still yield a str/list/None — a double-encoded blob
+    (``'"{\\"nodes\\":[]}"'``) decodes to a str. Callers then do
+    ``graph.get("nodes")`` and the request dies with ``AttributeError: 'str'
+    object has no attribute 'get'``. One such row (written 2026-07-18) made
+    ``GET /network/`` return 500 for ~4 weeks, because the index renders every
+    topology in one loop and a single bad row takes down the whole page.
+
+    Guarding only the decode is not enough; the RESULT has to be type-checked.
+    Returns an empty graph for anything that is not a dict.
+    """
+    try:
+        parsed = json.loads(raw or '{"nodes":[],"edges":[]}')
+    except (ValueError, TypeError):
+        return {"nodes": [], "edges": []}
+    if not isinstance(parsed, dict):
+        return {"nodes": [], "edges": []}
+    return parsed
+
+
 def get_parsed_graph(conn, topo_id, copy: bool = False):
     """Return the parsed ``graph_json`` dict for a topology, memoized.
 
@@ -178,7 +201,7 @@ def get_parsed_graph(conn, topo_id, copy: bool = False):
     if row is None:
         return None
     raw = _scalar(row, "graph_json", 0)
-    parsed = json.loads(raw or '{"nodes":[],"edges":[]}')
+    parsed = parse_graph_json(raw)
     _PARSED_GRAPH_STATS["misses"] += 1
     _PARSED_GRAPH_CACHE[key] = parsed
     _PARSED_GRAPH_CACHE.move_to_end(key)

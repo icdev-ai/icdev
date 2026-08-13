@@ -18,6 +18,7 @@ from tools.network.blueprint_helpers import (
     _row_to_dict,
     get_parsed_graph,
     nc_login_required,
+    parse_graph_json,
 )
 from tools.network.constants import BOM_COSTS, COMPLIANCE_REGIMES
 from tools.network.db.init_db import get_connection
@@ -63,10 +64,7 @@ def register_pages_routes(bp, nc_config=None):
             topologies = []
             for r in rows:
                 t = _row_to_dict(r)
-                try:
-                    g = json.loads(t.get("graph_json") or '{"nodes":[],"edges":[]}')
-                except Exception:
-                    g = {"nodes": [], "edges": []}
+                g = parse_graph_json(t.get("graph_json"))
                 t["node_count"] = len(g.get("nodes", []))
                 t["edge_count"] = len(g.get("edges", []))
                 topologies.append(t)
@@ -78,10 +76,7 @@ def register_pages_routes(bp, nc_config=None):
             topologies = []
             for r in rows:
                 t = _row_to_dict(r)
-                try:
-                    g = json.loads(t.get("graph_json") or '{"nodes":[],"edges":[]}')
-                except Exception:
-                    g = {"nodes": [], "edges": []}
+                g = parse_graph_json(t.get("graph_json"))
                 t["node_count"] = len(g.get("nodes", []))
                 t["edge_count"] = len(g.get("edges", []))
                 topologies.append(t)
