@@ -785,3 +785,25 @@ tests/test_advisory.py
 tests/test_proposals_detail_extract_requirements.py
 tests/test_proposals_detail_map_capabilities.py
 tests/test_mfa.py
+# tsg-stale-03 -- two route suites that had rotted into 41 red tests, restored and
+# gated so they cannot rot again. Both went red because a DELIBERATE change to the
+# code was never taught to the test, which is precisely the failure an ungated
+# suite cannot report:
+#   * test_zig_routes.py -- nav-sec-05 put @require_role(*_ZIG_MUTATION_ROLES) on
+#     the two ZIG mutation endpoints; the fixture only set ICDEV_AUTH_BYPASS, which
+#     clears sc_login_required but not require_role, so every write 401'd. The
+#     fixture now supplies g.current_user AND section 5 asserts the gate directly
+#     (anonymous 401, wrong-role 403, every declared role accepted) -- satisfying a
+#     gate is not evidence it exists, so removing @require_role now goes red.
+#   * test_move_endpoint_gate.py -- guards the move-to-done verification gate
+#     (guard-22). Its fixture pasted a private 15-column kanban_tasks DDL and
+#     stubbed get_connection with a bare sqlite3 connection; production had since
+#     grown start_date/target_date and the %s placeholders never got translated.
+#     It now builds on conftest's MINIMAL_ICDEV_SCHEMA via the icdev_db fixture and
+#     returns a real StorageConnection, so schema drift can no longer hide here.
+# Both are pure Flask test clients over a temp SQLite DB -- no LLM, no network, no
+# DB service. test_zig_routes ~8s; test_move_endpoint_gate ~25s (it rebuilds the
+# canonical schema per test, which is the point -- a cheaper private copy is what
+# broke it).
+tests/test_zig_routes.py
+tests/test_move_endpoint_gate.py

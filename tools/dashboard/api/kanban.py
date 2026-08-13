@@ -1678,7 +1678,12 @@ def move_task(task_id):
 
         # Notify on done transitions (matches genesis scheduler behavior)
         if moving_to_done:
-            _notify_task_done(task_id, existing.get("title") or task_id)
+            # Subscript, not .get(): `existing` is a sqlite3.Row on the SQLite
+            # backend and sqlite3.Row has no .get(), so this raised
+            # AttributeError -> 500 on every move-to-done. Only PG's DictRow
+            # has .get(). `title` is always in the SELECT above, and every
+            # other read of `existing` here already uses a subscript.
+            _notify_task_done(task_id, existing["title"] or task_id)
 
         try:
             sse_manager.broadcast(
