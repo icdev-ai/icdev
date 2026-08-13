@@ -204,6 +204,21 @@ def update_subcontractor(sub_id, data):
 
     old_status = row["status"]
 
+    # company_name is required on create; blanking it on update recreates the
+    # same phantom — a row with no name, permanently non-compliant because
+    # flow_down_complete defaults to 0, that check_flowdown reports forever and
+    # nobody can issue a cure notice to. Validate only when the caller supplies
+    # the key, so ordinary partial updates are unaffected.
+    if "company_name" in data:
+        company_name = data["company_name"]
+        if not isinstance(company_name, str) or not company_name.strip():
+            conn.close()
+            return {
+                "status": "error",
+                "message": "company_name must be a non-empty string",
+            }
+        data = {**data, "company_name": company_name.strip()}
+
     updatable = [
         "company_name",
         "cage_code",
