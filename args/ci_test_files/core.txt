@@ -724,6 +724,19 @@ tests/test_copilot_cli_adapter.py
 tests/test_goose_cli_adapter.py
 tests/test_agent_adapter_no_inert_stubs.py
 
+# tsg-stale-01 -- the two SKI ACE roles (product_manager, software_craftsperson).
+# Ungated, it rotted three ways at once and nothing went red: RoleLoader started
+# returning structured RoleStep objects instead of bare strings (ace-qa-04), the
+# craftsperson's listen_topics were narrowed to bootstrap-only task.assigned to
+# break a circular-deadlock loop in the ACE event dispatcher, and 33 declared
+# skill packs plus 4 persona sources turned out never to have been committed at
+# all. The listen_topics narrowing is the one worth a gate: the role emits
+# task.completed and pr.ready, so re-subscribing reactively re-triggers its own
+# sessions, and the invariant is otherwise only prose in two other role YAMLs.
+# Skips are per-pack and name the missing path, so an unvendored library reads as
+# unvendored rather than as covered. Pure YAML/file parsing plus a tmp_path
+# SQLite ACE db; ~13s, no LLM or network.
+tests/test_ski_roles_lifecycle.py
 # tsg-dead-02: the NDC remediation simulator. Was 17/18 red since the commit that
 # added it (36d611a31) — the fixture handed the module a raw sqlite3.Connection,
 # but tools/network/db/init_db.get_connection ALWAYS returns a StorageConnection,
@@ -786,3 +799,72 @@ tests/test_mfa.py
 # disabled (_HAS_LLM patched False), no network.
 tests/test_pma_igap_api.py
 tests/test_intake_api.py
+# tsg-stale-03 -- two route suites that had rotted into 41 red tests, restored and
+# gated so they cannot rot again. Both went red because a DELIBERATE change to the
+# code was never taught to the test, which is precisely the failure an ungated
+# suite cannot report:
+#   * test_zig_routes.py -- nav-sec-05 put @require_role(*_ZIG_MUTATION_ROLES) on
+#     the two ZIG mutation endpoints; the fixture only set ICDEV_AUTH_BYPASS, which
+#     clears sc_login_required but not require_role, so every write 401'd. The
+#     fixture now supplies g.current_user AND section 5 asserts the gate directly
+#     (anonymous 401, wrong-role 403, every declared role accepted) -- satisfying a
+#     gate is not evidence it exists, so removing @require_role now goes red.
+#   * test_move_endpoint_gate.py -- guards the move-to-done verification gate
+#     (guard-22). Its fixture pasted a private 15-column kanban_tasks DDL and
+#     stubbed get_connection with a bare sqlite3 connection; production had since
+#     grown start_date/target_date and the %s placeholders never got translated.
+#     It now builds on conftest's MINIMAL_ICDEV_SCHEMA via the icdev_db fixture and
+#     returns a real StorageConnection, so schema drift can no longer hide here.
+# Both are pure Flask test clients over a temp SQLite DB -- no LLM, no network, no
+# DB service. test_zig_routes ~8s; test_move_endpoint_gate ~25s (it rebuilds the
+# canonical schema per test, which is the point -- a cheaper private copy is what
+# broke it).
+tests/test_zig_routes.py
+tests/test_move_endpoint_gate.py
+
+# --- tsg-stale-05: six files from the STALE long tail, each verified alone AND
+# in one shared pytest process (111 tests). In every case the code had moved and
+# the test was never told; where the code was actually wrong it was FIXED, not
+# asserted around.
+#   * test_threat_level_thresholds.py -- indicator_baselines / sg_pir_requirements
+#     were never added to conftest's MINIMAL_ICDEV_SCHEMA (the 8-point checklist
+#     step everyone skips), so 16 of 19 died on "no such table". Both DDLs are now
+#     copied from their migrations. The last 3 failed because only HALF the flow
+#     takes a db_path: pir_manager.create_pir takes none and resolves
+#     ICDEV_DB_PATH, so the PIR write was landing in the real data/icdev.db while
+#     the baseline was read from tmp. The fixture now redirects the default too.
+#   * test_mitre_coverage_db.py -- loaded its migration by hardcoded NUMBER, and
+#     028_odc_mitre_coverage was renumbered to 336 to clear a duplicate-028
+#     collision. It now resolves the migration by SLUG and fails loudly if that
+#     is ever ambiguous, so the next renumber cannot silently rot it.
+#   * test_event_bus_security.py -- ran against whatever get_connection() resolved
+#     to and DELETEd its own rows back out of it, including from append-only
+#     audit_trail; a fresh worktree has no canvas_events at all, so all 12 errored
+#     at setup. Now on a temp DB (canvas_events added to MINIMAL_ICDEV_SCHEMA).
+#     That exposed a REAL bug: _downgrade_payload stamped _security_context onto
+#     the result and then recursed into every dict value -- including the one it
+#     had just written -- so every SECRET->CUI downgrade raised RecursionError and
+#     no payload was ever actually scrubbed. Fixed in tools/canvas/event_bus.py;
+#     a new test walks 25 levels to prove it terminates and still strips.
+#   * test_metrics.py -- built a MetricsCollector per test, which only ever worked
+#     because prometheus_client was absent and every collector took the stdlib
+#     fallback. Once the dep landed, 13 collided on the process-global REGISTRY.
+#     MetricsCollector now accepts an explicit registry (None = the global default,
+#     i.e. production is unchanged) and the tests isolate.
+#   * test_nc_simulation_schema.py -- its entire purpose is to assert the three
+#     nc_simulation_* tables are reachable via icdev_db; they had never been added.
+#   * test_xai_assessor.py -- 8 checks called a bare get_connection(), ignoring the
+#     self.db_path its own BaseAssessor stores, so XAIAssessor(db_path=X) assessed
+#     a DIFFERENT database than X and returned 'not_assessed' for all 10 checks
+#     wherever otel_spans was missing -- a compliance assessor silently grading the
+#     wrong DB. Rerouted through BaseAssessor._get_connection(); the except was
+#     widened to OSError so a missing DB still degrades to 'not_assessed' instead
+#     of crashing the other 9 checks.
+# All six are pure SQLite/in-process -- no LLM, no network, no DB service.
+# Combined ~50s.
+tests/test_threat_level_thresholds.py
+tests/test_mitre_coverage_db.py
+tests/test_event_bus_security.py
+tests/test_metrics.py
+tests/test_nc_simulation_schema.py
+tests/test_xai_assessor.py

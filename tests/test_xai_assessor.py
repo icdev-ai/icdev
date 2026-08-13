@@ -3,6 +3,8 @@
 """Tests for XAI Compliance Assessor (D289)."""
 
 import json
+import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -389,6 +391,58 @@ class TestGetAutomatedChecks(unittest.TestCase):
         assessor = XAIAssessor(db_path=Path("/nonexistent/db.db"))
         result = assessor._check_tracing_active("proj-test")
         self.assertEqual(result, "not_assessed")
+
+    def test_checks_read_the_db_path_they_were_given(self):
+        """Every check must assess self.db_path, not the process-default DB.
+
+        The 10 checks used to call a bare ``storage.get_connection()``, which
+        ignores ``self.db_path`` and resolves ``ICDEV_DB_PATH`` instead. So
+        ``XAIAssessor(db_path=X)`` graded a *different* database than X: where
+        that other database had no ``otel_spans`` the assessor reported
+        ``not_assessed`` across the board, and where it did, it reported findings
+        about the wrong system entirely. This pins the connection to the argument
+        by pointing ICDEV_DB_PATH at a decoy that would give the opposite answer.
+        """
+        tmpdir = tempfile.mkdtemp()
+        try:
+            real = Path(tmpdir) / "real.db"
+            decoy = Path(tmpdir) / "decoy.db"
+            _create_test_db(real)
+            _create_test_db(decoy)
+
+            # Only the decoy has a span. If a check consults ICDEV_DB_PATH it
+            # will say "satisfied"; reading the db_path it was handed says
+            # "not_satisfied".
+            conn = sqlite3.connect(str(decoy))
+            conn.execute(
+                "INSERT INTO otel_spans (id, trace_id, name, start_time, project_id) "
+                "VALUES ('decoy-1', 't1', 'test', '2025-01-01', 'proj-test')"
+            )
+            conn.commit()
+            conn.close()
+
+            original = os.environ.get("ICDEV_DB_PATH")
+            os.environ["ICDEV_DB_PATH"] = str(decoy)
+            try:
+                assessor = XAIAssessor(db_path=real)
+                self.assertEqual(
+                    assessor._check_tracing_active("proj-test"),
+                    "not_satisfied",
+                    "check read ICDEV_DB_PATH instead of the db_path it was constructed with",
+                )
+                # ...and the same assessor pointed at the decoy does see it, so
+                # the assertion above is not just passing on a broken query.
+                self.assertEqual(
+                    XAIAssessor(db_path=decoy)._check_tracing_active("proj-test"),
+                    "satisfied",
+                )
+            finally:
+                if original is None:
+                    os.environ.pop("ICDEV_DB_PATH", None)
+                else:
+                    os.environ["ICDEV_DB_PATH"] = original
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 class TestXAICatalog(unittest.TestCase):

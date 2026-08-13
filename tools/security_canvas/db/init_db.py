@@ -1568,7 +1568,11 @@ def _seed_zig(conn):
         )
     except ImportError:
         try:
-            import sys
+            # NB: do NOT `import sys` here. A local import binds `sys` as a
+            # function-local name for the WHOLE function, so the happy path —
+            # where the first import succeeds and this block never runs — left
+            # `sys` unbound and the trailing print() raised UnboundLocalError,
+            # crashing every init_db() call. `sys` is imported at module level.
             sys.path.insert(0, str(_ICDEV_ROOT))
             from tools.security_canvas.constants import (
                 ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES,
