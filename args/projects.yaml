@@ -7209,6 +7209,37 @@ projects:
   - key: gov
     title: Governance - gates, delivery, claim accuracy
     priority: medium
+- key: ctx
+  name: 'CTX — Cortex Activation & Hardening'
+  description: 'Successor to cxo (21/21 done). Cortex is ~11k lines, well-architected, and almost entirely SWITCHED OFF — the finding is activation and enforcement, not performance. Measured 2026-08-13 against the live tree. (1) check_vendor_parity, shipped BY cxo-doc-03 to catch exactly this, cannot fire: coherence_checker.py:8313 SKIPS a vendored consumer whose path is absent, and compass/idea_lab are separate private repos ICDEV CI never checks out, so the gate returns pass even with --gate and --changed-files tools/cortex/client.py (verified by simulating an absent root). Root cause is repo topology, not OS — /home/me/standalone skips exactly as C:/AI/standalone does. Consequence: both vendored clients are 2 public methods behind (CortexClient.reason, .agent, added ce78c1aeb 2026-08-09) and vendor_parity.yaml still says last_synced 2026-08-02. (2) tests/cortex/ holds 50 modules; 56 cortex-named modules sit in ci_test_backlog.txt and exactly ONE cortex-related file is gated — so test_tenant_isolation, test_egress_redaction, test_provenance_gate, test_service_keys, test_rest_scopes and test_governance_* have never gated a merge on the one component that enforces tenant isolation, Bell-LaPadula read-down and egress redaction. (3) Five correctness defects that make governance report more than it does: cortex.ask(summarize=True) calls LLMRouter().invoke("summarization"), which is declared ONLY under task_categories and not under routing, so it silently falls back to routing.default whose chain is cloud-first (kimi-cloud first) with no exclude_model_ids and no assert_airgap_ready coverage — an air-gap violation on a CUI path, then swallowed and relabelled with a STRONGER trust label; rest_v1.py re-wraps four already-governed facades so the TRUST chain runs TWICE (2x provenance rows, 2x cortex_audit rows, double-counted metrics) — a defect the codebase documents in its own comment at rest_v1.py:378; the IQE cortex adapters close a caller-owned connection in finally and swallow with a bare except returning [], so a parallel union silently returns half its rows; those adapters cap at LIMIT 500 BEFORE filtering while Executor filters in Python after, so a 30-day question answers from the newest 500 rows and returns confidence_score 1.0. (4) Three config keys read by nobody: search.strategy_weights (RRF has no weight term), analyst.nlq_fallback_enabled (an operator disabling NL->SQL for policy has no effect), governance.skip_grounding_for_plain_complete. (5) cortex.search and cortex.govern record zero cost/latency because _audit only fills accounting for CortexResult — the most expensive facade is invisible in every spend panel. Also flips the three inert defaults, but fail_closed is MEASURE-THEN-FLIP: it has been fail-open since inception, so count from cortex_audit how many calls would newly be refused before switching. MANUAL-ONLY: every task gated behind ctx-gate-00 via depends_on_task_id; ctx-reach-01 touches the private compass/idea_lab repos the runner cannot build in.'
+  task_prefix: ctx-
+  default_open: false
+  briefs:
+  - 'gate: manual gate held in_progress; every task carries depends_on_task_id=ctx-gate-00 (ctx-gate-00)'
+  - 'trust: fix the five defects that make governance report more than it does — the summarization air-gap violation, the double-run TRUST chain on REST, the IQE adapters closing a caller-owned connection, the 500-row pre-filter cap that returns confidence 1.0 on a truncated scan, and the unscoped api_iqe_query'
+  - 'enf: make the gates real — a committed public-API manifest so vendor drift fails in CI with no external checkout, and the 10 security-critical cortex test files gated ONE PER PR (never bulk-widen: an unknown number are red)'
+  - 'obs: measure before optimizing — cost/latency for search and govern, and time the 7-gate chain separately from LLM latency'
+  - 'perf: memoize the config/path resolution, hoist _allowed_tables out of the comprehension, collapse the 5-6 connections per chat turn, cache the RAG config, add the missing indexes, then enable the response cache (deepcopy on hit first)'
+  - 'reach: re-vendor client.py into compass and idea_lab (MANUAL, private repos), and decide the fate of CortexClient, govern() and agent() — all three have zero in-repo consumers'
+  epics:
+  - key: gate
+    title: Manual Gate
+    priority: critical
+  - key: trust
+    title: TRUST — stop governance reporting more than it does
+    priority: critical
+  - key: enf
+    title: ENF — make the gates able to fire
+    priority: critical
+  - key: obs
+    title: OBS — measure before optimizing
+    priority: high
+  - key: perf
+    title: PERF — reduce the cost of being governed
+    priority: medium
+  - key: reach
+    title: REACH — vendored parity and adoption
+    priority: high
 - key: cxo
   name: 'CXO — Cortex Optimization'
   description: 'Repair and optimize the ICDEV Cortex unified AI facade (tools/cortex/). Root finding, measured against the live DB — the provenance gate has never written a row: governance.py passes citation_type="cortex", which is absent from CITATION_TYPES, so register_citation raises ValueError, the gate swallows it and records warn. 95 warn vs 14 pass in cortex_audit; 0 of 285 source_citation_registry rows are type cortex. The identical bug exists independently in tools/blockchain/asset_ledger.py (citation_type="asset_token"), where GovChain asset tokenization has therefore never anchored to the chain. Two subsystems shipping the same silent failure makes this a missing gate, not two bugs. Three further dead or ungoverned paths were measured: cot_invoke and cod_invoke resolve to error stubs because their module-level handlers do not exist and never have; nlq_query returns a canned string and never invokes an LLM; council_query and chat_router.intent_classifier._llm_classify call providers directly with no gateway check, redaction, provenance or audit. Also covers scoped performance defects (shadow config loader, uncached llm_config parse under air-gap, two DB connections per governed call, unbounded metrics scan, serial governed-LLM loops), the deferred chat_manager adoption that commit 9ec85e124 already built the facade for, and manifest hygiene. Governance stays fail-open — flipping enforcement is a separate decision. MANUAL-ONLY: every task gated behind cxo-gate-00 via depends_on_task_id.'
