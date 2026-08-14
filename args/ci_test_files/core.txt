@@ -1309,3 +1309,4 @@ tests/cortex/test_rls_index_coverage.py
 # other that it actually LOWERS the estimated cost -- "the index name appears"
 # would still pass on a worse plan.
 tests/pg_tier/test_cortex_rls_index_plan.py
+tests/test_kg_grounding.py

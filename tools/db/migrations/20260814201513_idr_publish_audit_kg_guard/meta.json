@@ -1,0 +1,7 @@
+{
+  "description": "idr_publish_audit_kg_guard",
+  "date": "2026-08-14",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
