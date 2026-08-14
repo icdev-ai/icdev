@@ -136,12 +136,30 @@ def client(icdev_db, monkeypatch):
 
     monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
 
-    from tools.cortex.blueprint import cortex_bp
-    from tools.dashboard.app import app
+    # A FRESH app per test, not the shared tools.dashboard.app singleton.
+    #
+    # This used to register onto that singleton behind an
+    # `if "cortex" not in app.blueprints` guard. The guard is backwards for the
+    # case that fails: it skips only when the blueprint is ALREADY there, and
+    # the failure is precisely when it is not. Any earlier module in the run
+    # that drives the shared app without registering cortex_bp locks Flask's
+    # setup phase, and this then raises
+    #
+    #   AssertionError: The setup method 'register_blueprint' can no longer be
+    #   called on the application. It has already handled its first request.
+    #
+    # It went unnoticed while this file was ungated; gating it surfaced the
+    # failure immediately in the full core allowlist. cortex_bp carries its own
+    # before_request, so a bare app suffices and nothing global is mutated.
+    from flask import Flask
 
-    if "cortex" not in app.blueprints:
-        app.register_blueprint(cortex_bp)
+    from tools.cortex.blueprint import cortex_bp
+
+    app = Flask(__name__)
+    app.secret_key = "test-secret"          # session_transaction needs one
     app.config["TESTING"] = True
+    app.register_blueprint(cortex_bp)
+
     with app.test_client() as test_client:
         with test_client.session_transaction() as sess:
             sess["user_id"] = "test-admin"
