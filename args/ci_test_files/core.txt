@@ -1337,3 +1337,18 @@ tests/pg_tier/test_cortex_rls_index_plan.py
 # reproducing the defect fails loudly instead of asserting 1 card against 1
 # finding. 38 tests, <1s, in-memory SQLite: no DB service, no LLM, no network.
 tests/test_reflex_finding_scope.py
+# The 7-gate governance chain never measured its own cost. CortexResult
+# latency_ms is set from LLMResponse.duration_ms (or the perf_counter around
+# the router invoke) -- the LLM call ONLY -- and no timer wrapped
+# GovernancePipeline.wrap, so "how much of a Cortex call is governance?" had no
+# answer and neither did "should perf work target the gates or the model call?".
+# Pins that a governed call records total wall time AND the wrapped-operation
+# time (report, audit payload, and per gate), that a slow GATE moves
+# governance_ms while leaving operation_ms alone and a slow OPERATION does the
+# converse -- the assertion a stopwatch wired around the wrong span fails --
+# and that a blocked or failed call is still timed. Also pins the metrics
+# honesty: an untimed row (pre-ctx-obs-02, or a cache hit that never entered the
+# pipeline) is EXCLUDED from the averages rather than counted as zero, and the
+# _DETAIL_ROW_LIMIT sampling cap the timing fields inherit is not widened.
+# 14 tests, ~1s, gate seams patched: no DB service, no LLM, no network.
+tests/cortex/test_governance_timing.py

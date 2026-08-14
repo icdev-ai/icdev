@@ -68,6 +68,43 @@ Non-retrieval calls skip only the grounding gates (recorded as `skip` in the
 `CortexContext.fail_closed`. Every governed call therefore leaves an auditable
 `GovernanceReport` (`gates_run`, `outcomes`, `blocked`).
 
+### 3.1 What the chain costs (ctx-obs-02)
+
+`CortexResult.latency_ms` is the **LLM call only** — it comes from
+`LLMResponse.duration_ms`, or the `perf_counter` around the router invoke. For a
+long time nothing timed the chain *around* it, so the question that decides
+whether the seven gates are worth their cost — and whether perf work should
+target the gates or the model call — had no answer.
+
+`wrap()` now times itself and records three fields on the `GovernanceReport`:
+
+| Field | Meaning |
+|---|---|
+| `total_ms` | the whole governed call (gates + operation) |
+| `operation_ms` | the wrapped operation alone |
+| `gate_ms` | per-gate wall time, keyed like `outcomes` |
+| `governance_ms` *(derived)* | `total_ms - operation_ms` — the chain's own cost |
+
+Per-gate timing extends `gates_json`, which already carried the per-gate
+outcomes, so there is no schema migration. Two deliberate properties:
+
+- **`total_ms` excludes the audit write.** A write cannot be inside the
+  measurement it persists, so the split is taken before it — which also makes
+  `sum(gate_ms) == total_ms` on a call that ran the chain to completion. A call
+  blocked mid-gate sums to less: the interrupted segment is never closed.
+- **`0.0` means *not measured*, never *free*.** Rows written before ctx-obs-02,
+  and cache hits (which never enter the pipeline), carry no timing.
+  `/cortex/metrics` therefore averages over `summary.timed_calls`, not
+  `summary.calls`, and says on the panel when the two differ. The timing fields
+  ride the same `gates_json` blob as the spend accounting, so they inherit its
+  `_DETAIL_ROW_LIMIT` sampling cap and its `detail.truncated` flag — adding a
+  field is not a reason to widen the cap.
+
+The panel surfaces **Avg latency** (LLM only), **Avg governance**, **Avg wall
+time** and a **By gate** table, so "governance is 40% of the call" can be
+narrowed to "…and it is one gate". Pinned by
+`tests/cortex/test_governance_timing.py`.
+
 ## 4. Persistence & row-level security
 
 Two governance tables (migration 262) — `cortex_sessions` (mutable per-caller

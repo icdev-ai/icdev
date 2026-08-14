@@ -335,6 +335,18 @@ def record_audit(payload: dict, conn=None) -> str:
                         "provider": payload.get("provider") or "",
                         "model": payload.get("model") or "",
                         "cache_hit": bool(payload.get("cache_hit")),
+                        # Wall-clock cost of the governance chain itself
+                        # (ctx-obs-02). latency_ms above times the LLM call
+                        # ONLY, so these are what make gate overhead derivable:
+                        # total_ms - operation_ms = governance_ms. Absent (0)
+                        # on rows written before ctx-obs-02 and on the
+                        # cache-hit path, which never enters the pipeline —
+                        # /cortex/metrics reads 0 as "not measured", never as
+                        # "free".
+                        "total_ms": float(payload.get("total_ms") or 0.0),
+                        "operation_ms": float(payload.get("operation_ms") or 0.0),
+                        "governance_ms": float(payload.get("governance_ms") or 0.0),
+                        "gate_ms": payload.get("gate_ms") or {},
                     },
                     default=str,
                 ),

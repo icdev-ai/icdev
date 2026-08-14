@@ -39,7 +39,7 @@
 <div style="background:#2a230f;border:1px solid #6e5a1e;border-radius:8px;padding:12px 16px;color:#e6b85a;font-size:12px;margin-bottom:16px;">
   <strong>Partial spend detail.</strong>
   Calls, blocked and the by-function / by-outcome / by-tenant counts below are exact for the full {{ stats.window_hours }}h window.
-  Cost, tokens, latency, redactions, cache hits and the domain / model breakdowns are computed from the most recent
+  Cost, tokens, latency, governance timing, redactions, cache hits and the domain / model / gate breakdowns are computed from the most recent
   {{ '{:,}'.format(stats.detail.rows_scanned) }} calls only — this window holds more than the {{ '{:,}'.format(stats.detail.limit) }}-row detail cap.
   Narrow the window for complete spend figures.
 </div>
@@ -57,9 +57,22 @@
   {{ card('Redactions', s.redactions, 'PII/CUI spans masked') }}
   {{ card('Cache hits', s.cache_hits) }}
   {{ card('Cost (USD)', '$%.4f'|format(s.cost_usd)) }}
-  {{ card('Avg latency', s.avg_latency_ms ~ ' ms') }}
+  {{ card('Avg latency', s.avg_latency_ms ~ ' ms', 'LLM call only') }}
+  {{ card('Avg governance', s.avg_governance_ms ~ ' ms', s.governance_pct ~ '% of wall time') }}
+  {{ card('Avg wall time', s.avg_total_ms ~ ' ms', 'gates + operation') }}
   {{ card('Tokens', '{:,}'.format(s.total_tokens), '{:,} in / {:,} out'.format(s.input_tokens, s.output_tokens)) }}
 </div>
+
+{# The governance-cost figures have their own denominator: only calls the
+   pipeline timed. Saying so is the same honesty as detail.truncated above —
+   a "0 ms governance" tile must not read as "the chain is free" when the real
+   answer is "these rows predate the timer". #}
+{% if s.timed_calls < s.calls %}
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:10px 14px;color:#7a8cb0;font-size:11px;margin:-12px 0 20px;">
+  Governance timing covers {{ '{:,}'.format(s.timed_calls) }} of the {{ '{:,}'.format(stats.detail.rows_scanned) }} calls read
+  {%- if s.timed_calls == 0 %} — none of them recorded a chain timing (rows written before governance timed itself, or cache hits, which never enter the pipeline){% else %}; the rest recorded no chain timing and are excluded from the averages rather than counted as zero{% endif %}.
+</div>
+{% endif %}
 
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
   <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
@@ -111,6 +124,20 @@
         <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;">{{ t.tenant_id }}</td><td style="padding:4px 6px;text-align:right;">{{ t.calls }}</td><td style="padding:4px 6px;text-align:right;">{{ t.blocked }}</td></tr>
       {% else %}
         <tr><td colspan="3" style="padding:8px 6px;color:#5a6b8a;">no data</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:13px;margin:0 0 10px;">By gate <span style="color:#5a6b8a;font-weight:400;">— where the chain spends its time</span></h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:#c8d6ea;">
+      <thead><tr style="color:#7a8cb0;text-align:left;"><th style="padding:4px 6px;">Gate</th><th style="padding:4px 6px;text-align:right;">Calls</th><th style="padding:4px 6px;text-align:right;">Avg</th><th style="padding:4px 6px;text-align:right;">Total</th></tr></thead>
+      <tbody>
+      {% for g in stats.by_gate %}
+        <tr style="border-top:1px solid #14294a;"><td style="padding:4px 6px;color:{{ '#b8d0e8' if g.gate == 'operation' else '#c8d6ea' }};">{{ g.gate }}{% if g.gate == 'operation' %} <span style="color:#5a6b8a;">(the call itself)</span>{% endif %}</td><td style="padding:4px 6px;text-align:right;">{{ g.calls }}</td><td style="padding:4px 6px;text-align:right;">{{ '%.1f'|format(g.avg_ms) }} ms</td><td style="padding:4px 6px;text-align:right;">{{ '%.0f'|format(g.total_ms) }} ms</td></tr>
+      {% else %}
+        <tr><td colspan="4" style="padding:8px 6px;color:#5a6b8a;">no timed calls</td></tr>
       {% endfor %}
       </tbody>
     </table>

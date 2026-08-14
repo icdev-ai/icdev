@@ -112,9 +112,47 @@ class GovernanceReport:
     # gate chain — what every caller that names no profile gets. A narrower
     # profile shows up as `skip` outcomes whose detail names it.
     profile: str = "default"
+    # Wall-clock cost of the governed call, in milliseconds (ctx-obs-02).
+    # ``CortexResult.latency_ms`` times the LLM call ONLY, so until these fields
+    # existed the seven-gate chain's own cost was unmeasured: "how much of a
+    # Cortex call is governance?" — the question that decides whether the TRUST
+    # chain is worth its cost, and whether perf work should target the gates or
+    # the model call — could not be answered at all.
+    #
+    # total_ms      the whole governed call as measured by GovernancePipeline.
+    #               Measured up to (not including) the audit write that records
+    #               it — a write cannot be inside its own measurement.
+    # operation_ms  the wrapped operation alone (the LLM / retrieval call).
+    # gate_ms       per-gate wall time, keyed like ``outcomes``. Segment
+    #               boundaries are the gates, so the glue between two gates is
+    #               charged to the one that follows and the values sum to
+    #               ``total_ms`` (a call blocked mid-gate sums to less: the
+    #               interrupted segment is never closed).
+    # All three are 0.0 on a report that was never run through ``wrap`` and on
+    # rows written before ctx-obs-02 — consumers must treat 0 as "not measured"
+    # rather than "instant".
+    total_ms: float = 0.0
+    operation_ms: float = 0.0
+    gate_ms: dict = field(default_factory=dict)
+
+    @property
+    def governance_ms(self) -> float:
+        """Wall time spent in the gates rather than in the wrapped operation.
+
+        This is the number the chain is judged on. Derived rather than stored so
+        it cannot drift from its two operands; ``0.0`` when the call was not
+        timed (both operands 0) and clamped at 0 so clock noise on a sub-
+        millisecond call never reports negative overhead.
+        """
+        return round(max(0.0, self.total_ms - self.operation_ms), 3)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        data = asdict(self)
+        # asdict() sees fields only; the derived overhead is what most consumers
+        # actually read, so surface it explicitly. from_dict() drops unknown
+        # keys, so the round-trip stays lossless.
+        data["governance_ms"] = self.governance_ms
+        return data
 
     @classmethod
     def from_dict(cls, data: Optional[dict]) -> "GovernanceReport":

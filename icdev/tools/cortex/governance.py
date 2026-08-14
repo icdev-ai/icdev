@@ -54,6 +54,12 @@ Fail-open/fail-closed: gate errors degrade to ``"warn"`` by default (matching
 ``CortexContext.fail_closed`` is True, any gate error or ``"fail"`` outcome
 blocks the response instead.
 
+Cost (ctx-obs-02): the chain times itself. ``GovernanceReport.total_ms`` is the
+whole governed call, ``operation_ms`` is the wrapped operation alone, and
+``gate_ms`` breaks the rest down per gate — so gate overhead
+(``governance_ms``) is derivable instead of being folded invisibly into
+``CortexResult.latency_ms``, which times the LLM call and nothing else.
+
 Test seams: every external module call goes through a module-level
 ``_gate_*`` function so tests monkeypatch ``governance._gate_check_text`` etc.
 without importing the heavy backends.
@@ -64,6 +70,7 @@ import functools
 import hashlib
 import importlib
 import json
+import time
 import uuid
 from typing import Callable, Optional
 
@@ -442,6 +449,50 @@ def _context_texts(context_sources) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Wall-clock accounting (ctx-obs-02)
+# ---------------------------------------------------------------------------
+class _Stopwatch:
+    """Split timer for ONE governed call: per-gate wall time plus the total.
+
+    ``CortexResult.latency_ms`` comes from ``LLMResponse.duration_ms`` (or the
+    ``perf_counter`` around the router invoke) — the LLM call and nothing else.
+    Nothing timed the chain around it, so the seven gates were the one part of a
+    Cortex call whose cost could not be stated.
+
+    One instance per :meth:`GovernancePipeline.wrap` call, held as a local:
+    never on the pipeline object, which the ``governed`` decorator reuses across
+    calls and threads.
+
+    ``split`` closes the current segment and charges it to ``gate``. Segment
+    boundaries are the gates themselves, so the glue between two gates is
+    charged to the one that follows it — every microsecond of the call lands on
+    some gate and the values sum to :meth:`total_ms`.
+    """
+
+    __slots__ = ("_start", "_last")
+
+    def __init__(self) -> None:
+        self._start = time.perf_counter()
+        self._last = self._start
+
+    def split(self, report: GovernanceReport, gate: str) -> float:
+        """Close the current segment, charge it to ``gate``, return its ms.
+
+        Accumulates (``+=``) rather than overwrites: a gate whose timing is
+        taken twice must not lose its earlier segment.
+        """
+        now = time.perf_counter()
+        elapsed = round((now - self._last) * 1000, 3)
+        report.gate_ms[gate] = round(report.gate_ms.get(gate, 0.0) + elapsed, 3)
+        self._last = now
+        return report.gate_ms[gate]
+
+    def total_ms(self) -> float:
+        """Milliseconds since the call entered the pipeline."""
+        return round((time.perf_counter() - self._start) * 1000, 3)
+
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 class GovernancePipeline:
@@ -506,23 +557,25 @@ class GovernancePipeline:
         return True
 
     def _degrade(
-        self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception
+        self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception,
+        clock: Optional[_Stopwatch] = None,
     ) -> None:
         """Gate error: warn and continue (fail-open) or block on fail_closed."""
         if resolve_fail_closed(ctx):
-            self._block(report, ctx, gate, f"{gate} unavailable: {exc}")
+            self._block(report, ctx, gate, f"{gate} unavailable: {exc}", clock=clock)
         logger.warning("cortex governance gate %s degraded (fail-open): %s", gate, exc)
         self._record(report, gate, OUTCOME_WARN, str(exc))
 
     def _block(
-        self, report: GovernanceReport, ctx: CortexContext, gate: str, reason: str
+        self, report: GovernanceReport, ctx: CortexContext, gate: str, reason: str,
+        clock: Optional[_Stopwatch] = None,
     ) -> None:
         report.outcomes[gate] = OUTCOME_FAIL
         if gate not in report.gates_run:
             report.gates_run.append(gate)
         report.blocked = True
         report.blocked_reason = reason
-        self._audit(report, ctx, blocked_gate=gate)
+        self._audit(report, ctx, blocked_gate=gate, clock=clock)
         raise GovernanceBlockedError(gate, reason, report)
 
     def _audit(
@@ -532,7 +585,16 @@ class GovernancePipeline:
         blocked_gate: str = "",
         provenance_id: str = "",
         result=None,
+        clock: Optional[_Stopwatch] = None,
     ) -> None:
+        # Stamp the call's wall time before the payload is built, so the audit
+        # row and the in-memory report the caller gets back carry the SAME
+        # numbers. The audit write itself is therefore outside total_ms — a
+        # write cannot be inside the measurement it persists. ``clock`` is
+        # optional so the pre-ctx-obs-02 call shape still works (an untimed
+        # report reports 0.0, which consumers read as "not measured").
+        if clock is not None:
+            report.total_ms = clock.total_ms()
         try:
             payload = {
                 "record_id": f"cgov-{uuid.uuid4().hex[:16]}",
@@ -554,6 +616,16 @@ class GovernancePipeline:
                 "outcomes": dict(report.outcomes),
                 "redactions_applied": report.redactions_applied,
                 "provenance_id": provenance_id,
+                # Wall-clock cost of the chain itself (ctx-obs-02). Carried in
+                # the same free-form gates_json blob as the spend accounting
+                # below — gates_json already holds the per-gate outcomes, so
+                # per-gate TIMING is an extension of a field that exists rather
+                # than a schema migration. governance_ms is stored rather than
+                # left derived so a metrics read need not know the formula.
+                "total_ms": float(report.total_ms or 0.0),
+                "operation_ms": float(report.operation_ms or 0.0),
+                "governance_ms": report.governance_ms,
+                "gate_ms": dict(report.gate_ms),
             }
             # Accounting for observability. cost/latency/provider/model live on
             # the CortexResult, not on cortex_audit columns — carry them in the
@@ -606,6 +678,9 @@ class GovernancePipeline:
         :class:`GovernanceProfileError` instead of running an unintended chain.
         """
         ctx = ctx or CortexContext()
+        # Starts before profile resolution: a profile lookup that hits the
+        # config file is part of what a governed call costs.
+        clock = _Stopwatch()
         profile_name = (
             self.profile if profile is None else (profile or "").strip()
         ) or DEFAULT_PROFILE
@@ -627,18 +702,20 @@ class GovernancePipeline:
                 pre = _gate_check_text(prompt)
             except Exception as exc:
                 pre = None
-                self._degrade(report, ctx, GATE_PRE_CHECK, exc)
+                self._degrade(report, ctx, GATE_PRE_CHECK, exc, clock=clock)
             if pre is not None:
                 if not pre.get("allowed", True):
                     self._block(
                         report, ctx, GATE_PRE_CHECK,
                         pre.get("blocked_reason") or "blocked by LLM gateway pre-check",
+                        clock=clock,
                     )
                 self._record(
                     report, GATE_PRE_CHECK,
                     OUTCOME_WARN if pre.get("warnings") else OUTCOME_PASS,
                     "; ".join(pre.get("warnings") or []),
                 )
+        clock.split(report, GATE_PRE_CHECK)
 
         # 2. Input redaction — skipped ONLY for trusted content (same rationale
         #    as gate 1). Output redaction below is NOT affected: egress is always
@@ -654,17 +731,25 @@ class GovernancePipeline:
                 report.redactions_applied += masked
                 self._record(report, GATE_INPUT_REDACTION, OUTCOME_PASS)
             except Exception as exc:
-                self._degrade(report, ctx, GATE_INPUT_REDACTION, exc)
+                self._degrade(report, ctx, GATE_INPUT_REDACTION, exc, clock=clock)
+        clock.split(report, GATE_INPUT_REDACTION)
 
         # 3. The wrapped operation. Errors are recorded then re-raised —
         #    the pipeline governs, it does not swallow provider failures.
+        #    Timed in a nested finally so operation_ms is populated on the
+        #    failure path too, BEFORE the audit row for that failure is written:
+        #    a call that spent 8s in the provider and then raised is the most
+        #    interesting latency row there is, and the one easiest to lose.
         try:
-            result = fn(governed_prompt)
+            try:
+                result = fn(governed_prompt)
+            finally:
+                report.operation_ms = clock.split(report, GATE_OPERATION)
         except GovernanceBlockedError:
             raise
         except Exception:
             self._record(report, GATE_OPERATION, OUTCOME_FAIL)
-            self._audit(report, ctx, blocked_gate=GATE_OPERATION)
+            self._audit(report, ctx, blocked_gate=GATE_OPERATION, clock=clock)
             raise
         self._record(report, GATE_OPERATION, OUTCOME_PASS)
 
@@ -694,7 +779,8 @@ class GovernancePipeline:
                         grounded = False
                         detail = f"hallucinated citations: {citation_report['hallucinated_citations']}"
                         if resolve_fail_closed(ctx):
-                            self._block(report, ctx, GATE_CITATION_GROUNDING, detail)
+                            self._block(report, ctx, GATE_CITATION_GROUNDING, detail,
+                                        clock=clock)
                         self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
                     elif not citation_report.get("cited_count"):
                         # Presence policy hardens in ctx-govern-02; today it warns.
@@ -706,7 +792,7 @@ class GovernancePipeline:
                     raise
                 except Exception as exc:
                     grounded = False
-                    self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc)
+                    self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc, clock=clock)
         elif skip_grounding_for_plain_complete():
             grounded = False
             self._record(report, GATE_CITATION_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
@@ -725,7 +811,8 @@ class GovernancePipeline:
                         f"{citation_report['hallucinated_citations']}"
                     )
                     if resolve_fail_closed(ctx):
-                        self._block(report, ctx, GATE_CITATION_GROUNDING, detail)
+                        self._block(report, ctx, GATE_CITATION_GROUNDING, detail,
+                                    clock=clock)
                     self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
                 else:
                     self._record(
@@ -735,7 +822,8 @@ class GovernancePipeline:
             except GovernanceBlockedError:
                 raise
             except Exception as exc:
-                self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc)
+                self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc, clock=clock)
+        clock.split(report, GATE_CITATION_GROUNDING)
 
         # 5. Content grounding — semantic claim-vs-context grounding when the
         #    call is retrieval-backed AND snippet text is available; otherwise a
@@ -782,7 +870,8 @@ class GovernancePipeline:
                     grounded = False
                     detail = "; ".join(issues)
                     if resolve_fail_closed(ctx):
-                        self._block(report, ctx, GATE_CONTENT_GROUNDING, detail)
+                        self._block(report, ctx, GATE_CONTENT_GROUNDING, detail,
+                                    clock=clock)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
                 else:
                     self._record(
@@ -794,7 +883,7 @@ class GovernancePipeline:
                 raise
             except Exception as exc:
                 grounded = False
-                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc)
+                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc, clock=clock)
         elif skip_grounding_for_plain_complete():
             self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
         else:
@@ -814,7 +903,8 @@ class GovernancePipeline:
                     grounded = False
                     detail = f"unresolved placeholders: {placeholders}"
                     if resolve_fail_closed(ctx):
-                        self._block(report, ctx, GATE_CONTENT_GROUNDING, detail)
+                        self._block(report, ctx, GATE_CONTENT_GROUNDING, detail,
+                                    clock=clock)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
                 else:
                     self._record(
@@ -824,7 +914,8 @@ class GovernancePipeline:
                 raise
             except Exception as exc:
                 grounded = False
-                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc)
+                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc, clock=clock)
+        clock.split(report, GATE_CONTENT_GROUNDING)
 
         # 6. Output redaction — never skipped, and applied to the CALLER-VISIBLE
         #    content of EVERY result shape. Egress PII/CUI masking is not optional
@@ -872,7 +963,8 @@ class GovernancePipeline:
                 f"patterns: {hits}" if hits else "",
             )
         except Exception as exc:
-            self._degrade(report, ctx, GATE_OUTPUT_REDACTION, exc)
+            self._degrade(report, ctx, GATE_OUTPUT_REDACTION, exc, clock=clock)
+        clock.split(report, GATE_OUTPUT_REDACTION)
 
         # 7. Provenance record + audit row — never skipped, never blocking.
         record_id = f"cgov-{uuid.uuid4().hex[:16]}"
@@ -911,7 +1003,13 @@ class GovernancePipeline:
             # missing. Degrades to warn, which is the fail-open posture.
             logger.warning("cortex governance provenance record failed: %s", exc)
             self._record(report, GATE_PROVENANCE, OUTCOME_WARN, str(exc))
-        self._audit(report, ctx, provenance_id=registry_id or "", result=result)
+        # Split BEFORE the audit write (gate 7b): _audit stamps total_ms, and the
+        # write that persists a measurement cannot be inside it. Every segment up
+        # to here is now closed, so sum(gate_ms) == total_ms on a call that ran
+        # the chain to completion.
+        clock.split(report, GATE_PROVENANCE)
+        self._audit(report, ctx, provenance_id=registry_id or "", result=result,
+                    clock=clock)
 
         if attach and is_cortex_result:
             result.governance = report
