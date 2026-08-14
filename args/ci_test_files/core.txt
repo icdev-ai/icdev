@@ -1044,6 +1044,18 @@ tests/test_govcon_overdue_deliverable_marking.py
 # thing that silently reverts to zero callers in the next refactor.
 tests/test_cpmp_overdue_sweep_is_driven.py
 
+# SIPA integrity_monitor reflex. Gated by task-1b49742e56: its two _rel_path
+# tests read ICDEV_SIPA_RELPATH_DIRS from the ambient environment, so they
+# asserted a "flag defaults OFF" the shipped .env contradicts and were red on
+# any configured machine. Pinned with delenv and green (13 passed, 3s).
+tests/test_integrity_monitor_reflex.py
+
+# Regression for task-1b49742e56: proves known_safe_persistence_modules is
+# actually consulted. The allowlist existed for 16 days with zero call sites,
+# so an ungated test for it would have been the same defect one layer up.
+# Pure (no scanner shell-out, no optional third-party tool) — gateable as-is.
+tests/test_integrity_persistence_allowlist.py
+
 # cpmp-d70a553747. cpmp_deliverables.status='overdue' and days_overdue have five
 # readers (contract health, CPARS schedule dimension, portfolio rollup, portfolio
 # summary, negative_event_tracker) and one writer, and the writer had no caller
