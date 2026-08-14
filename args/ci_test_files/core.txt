@@ -1159,3 +1159,17 @@ tests/test_cpmp_isr_ssr_applicability.py
 # the projects.yaml prefix/epic rules the Home progress card renders from.
 # 10 tests, ~1s, no DB service, no LLM, no network.
 tests/kanban/test_seed_ctx_kanban.py
+# One REST call ran the TRUST chain TWICE. rest_v1 imports the GOVERNED facades
+# from .api (deliberately -- importing the raw impls would bypass governance
+# entirely), then re-wrapped four of them in a second GovernancePipeline: two
+# gateway screens, two redaction passes, two source_citation_registry rows, two
+# cortex_audit rows, ~2x gate latency, and /cortex/metrics double-counting every
+# REST-origin complete/reason/classify/extract. The codebase documented the bug
+# in its own comment at rest_v1.py:378 while explaining why api_v1_agent avoids
+# it. Counts pipeline CONSTRUCTIONS, not audit rows, so it stays a unit test --
+# and patches GovernancePipeline in BOTH modules, because patching only the REST
+# reference counts the outer wrapper and misses the facade's own, which is the
+# one that made the total two. api_v1_govern is asserted to STAY single-pipeline:
+# it passes an identity lambda, so its one pipeline IS the operation.
+# 6 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_rest_single_governance.py

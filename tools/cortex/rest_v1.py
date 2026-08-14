@@ -264,13 +264,13 @@ def api_v1_complete(data):
         kwargs["max_tokens"] = params["max_tokens"]
     if "temperature" in params:
         kwargs["temperature"] = params["temperature"]
-    result = _governed(
-        "cortex.complete",
-        params["prompt"],
-        lambda governed_prompt: complete(governed_prompt, ctx=ctx, **kwargs),
-        ctx,
-        retrieval=False,
-    )
+    # Called BARE, like agent/search/ask. `complete` is itself a
+    # @_governed_facade, so wrapping it in _governed ran the TRUST chain twice
+    # over one request — two gateway screens, two redaction passes, two
+    # provenance rows, two cortex_audit rows, and a double count in
+    # /cortex/metrics. A blocked pre-check still raises GovernanceBlockedError
+    # from inside the facade and @_cortex_api still maps it to 403.
+    result = complete(params["prompt"], ctx=ctx, **kwargs)
     return result.to_dict()
 
 
@@ -285,13 +285,8 @@ def api_v1_reason(data):
         kwargs["max_tokens"] = params["max_tokens"]
     if "temperature" in params:
         kwargs["temperature"] = params["temperature"]
-    result = _governed(
-        "cortex.reason",
-        params["prompt"],
-        lambda governed_prompt: reason(governed_prompt, ctx=ctx, **kwargs),
-        ctx,
-        retrieval=False,
-    )
+    # Bare — see api_v1_complete. `reason` is itself a @_governed_facade.
+    result = reason(params["prompt"], ctx=ctx, **kwargs)
     return result.to_dict()
 
 
@@ -301,13 +296,8 @@ def api_v1_classify(data):
     params = validators.validate_classify(data)
     ctx = _server_context(validators.domain_of(data))
     labels = params["labels"]
-    result = _governed(
-        "cortex.classify",
-        params["text"],
-        lambda governed_text: classify(governed_text, labels, ctx=ctx),
-        ctx,
-        retrieval=False,
-    )
+    # Bare — see api_v1_complete. `classify` is itself a @_governed_facade.
+    result = classify(params["text"], labels, ctx=ctx)
     return result.to_dict()
 
 
@@ -317,13 +307,8 @@ def api_v1_extract(data):
     params = validators.validate_extract(data)
     ctx = _server_context(validators.domain_of(data))
     schema = params["schema"]
-    result = _governed(
-        "cortex.extract",
-        params["text"],
-        lambda governed_text: extract(governed_text, schema, ctx=ctx),
-        ctx,
-        retrieval=False,
-    )
+    # Bare — see api_v1_complete. `extract` is itself a @_governed_facade.
+    result = extract(params["text"], schema, ctx=ctx)
     return result.to_dict()
 
 
