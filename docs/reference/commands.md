@@ -3979,6 +3979,10 @@ python -c "from tools.cortex import load_domain_profile, list_domain_names; prin
 
 # --- MCP server (cortex_server.py: 8 cortex_* tools, ctx-expose-01) ---
 # Start the Cortex MCP server over stdio (cortex_search/ask/complete/reason/classify/extract/govern/agent_launch)
+# NOTE (ctx-reach-03): .mcp.json launches ONLY icdev-unified, which serves all 8
+# of these from TOOL_REGISTRY — that is how they are reached in this repo. This
+# standalone command is the BOUNDED alternative for an external / air-gapped MCP
+# client that must see only the Cortex family. Both serve the same handlers.
 python tools/mcp/cortex_server.py
 
 # --- REST API v1 (rest_v1.py folded onto the /cortex blueprint, ctx-expose-02) ---

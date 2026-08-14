@@ -1391,3 +1391,25 @@ tests/cortex/test_governance_timing.py
 # 17 tests, ~1.5s, tmp_path configs + stub providers: no DB service, no LLM,
 # no network.
 tests/rag/test_retriever_config_and_embedding.py
+# ctx-reach-03. cortex.govern / cortex.agent were flagged as zero-consumer
+# facades, with args/projects.yaml recording "cortex.agent mode graph. Note the
+# latent bug - mode is unvalidated." The membership check turned out to already
+# be in place (hgx-cx-01/02) -- but the SECOND implementation was not:
+# cortex_server._agent_launch_fallback still reached ACEController /
+# run_agent_loop directly, with no TRUST chain, dispatching off the pre-hgx
+# `use_team` boolean that made an unrecognised mode silently run a real, billed
+# single agent. It sat behind `getattr(cortex_api, "agent", None)`, a probe that
+# could never fail once the facade landed. Deleted here, and kept deleted.
+# Also pins the reach decisions themselves: agent() ADOPTED (canvas chat,
+# MCP tool, REST v1 -- each asserted to genuinely reach the facade, with
+# cortex:agent still out of DEFAULT_SCOPES) and govern() EXTERNAL-ONLY (its one
+# MCP entry point asserted live; api_v1_govern asserted NOT to call it, since a
+# GovernanceReport has no field for the governed text that response returns).
+# Plus the swept surfaces: the compliance domain lens now resolves to a profile
+# instead of being a picker entry that scoped nothing, empty `sources:` is
+# asserted to be the documented no-op it claims to be, the standalone cortex
+# stdio server cannot host a tool the unified registry lacks, and the four
+# ignored cot/cod schema params are echoed rather than silently dropped.
+# 25 tests, ~12s, fully stubbed governance sinks: no DB service, no LLM,
+# no network.
+tests/cortex/test_cortex_reach_decisions.py
