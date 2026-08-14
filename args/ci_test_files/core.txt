@@ -995,3 +995,50 @@ tests/test_ndc_graph_json_type_guard.py
 # negative_event_tracker's delinquent-delivery arm (days_overdue > 0) can never
 # fire. New file, passes (21 tests), 9 of which fail against the old code.
 tests/test_govcon_overdue_deliverable_marking.py
+# cpmp_monitor returned `status: "ok"` plus a top-level `cards_created`, but the
+# Genesis daemon scores a reflex from `success`/`metric_value`/`details`. It read
+# neither, so every completed sweep was filed as
+# `reflex_reported_failure: cards_created=0.0` -- a failure naming a metric that
+# satisfies its own `gte 0` threshold -- and 11 consecutive such "failures" opened
+# the reflex's circuit breaker, decaying 3-hourly CPMP surveillance to a half-open
+# probe per doubling cooldown. Gated here because the return contract is invisible
+# to every other test: the reflex "works", and only the daemon disagrees.
+
+# Landed ungated in #1599 (267e1c057), which left the census RED for every branch
+# opened after it -- the same way 49da5d8d5 had to gate #1600's file. Passes 14/14
+# here; gated so the type guard it pins (one bad graph_json row 500ing /network/)
+# cannot regress unnoticed.
+# that one unparseable graph_json row cannot 500 the whole page.
+#
+# The entry itself now lives ~770 lines above, added by #1605 concurrently with
+# this block. Both branches were racing the same red census and both appended,
+# which `gated_test_list.py --check --list core` rejects outright:
+#   ##[error]CI test allowlist (core): listed more than once
+# Note that `--check-coverage` -- the command CLAUDE.md tells you to run -- does
+# NOT catch a duplicate, only an unlisted file, so this passed locally on both
+# branches and failed in the required `test` job on every branch opened after
+# them. Deduped here rather than left for the next PR to trip over.
+
+# Nothing called contract_manager.compute_overdue_deliverables() outside its own
+# argparse block, so no CDRL had ever reached status 'overdue' and days_overdue
+# was 0 on every row -- while four consumers key on exactly that state and read a
+# permanent zero (contract page overdue_count, portfolio_manager x2,
+# cpars_predictor, negative_event_tracker). pmo_ai_advisor derives overdue live
+# from due_date, which is how a "5 CDRL(s) are past due" card sits next to a
+# contract page reporting 0. Gated because a behavioural test of the sweep cannot
+# catch this -- the sweep was always correct, it was simply never called -- so
+# these tests assert the CALL, and an ungated test of a call site is exactly the
+# thing that silently reverts to zero callers in the next refactor.
+tests/test_cpmp_overdue_sweep_is_driven.py
+
+# cpmp-d70a553747. cpmp_deliverables.status='overdue' and days_overdue have five
+# readers (contract health, CPARS schedule dimension, portfolio rollup, portfolio
+# summary, negative_event_tracker) and one writer, and the writer had no caller
+# but its own CLI flag -- so on the live board 26 CDRLs were 44 days past due
+# with 0 rows marked overdue and green health everywhere, while the reflex filed
+# high-priority cards off pmo_ai_advisor's separate date-based count. Pins that
+# the reflex runs the sweep, that both counts share one predicate, that
+# days_overdue is refreshed rather than frozen at 1, and that one unparseable
+# due_date cannot silently undo the sweep. 18 tests, ~1s, in-memory sqlite, no
+# network/LLM. Gated in the PR that makes it pass.
+tests/test_cpmp_overdue_deliverable_state.py

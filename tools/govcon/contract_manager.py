@@ -79,10 +79,10 @@ CONTRACT_TRANSITIONS = _CFG.get(
 DELIVERABLE_TRANSITIONS = _CFG.get(
     "deliverable_transitions",
     {
-        "not_started": ["in_progress", "overdue"],
+        "not_started": ["in_progress"],
         "in_progress": ["draft_complete", "overdue"],
-        "draft_complete": ["internal_review", "overdue"],
-        "internal_review": ["submitted", "in_progress", "overdue"],
+        "draft_complete": ["internal_review"],
+        "internal_review": ["submitted", "in_progress"],
         "submitted": ["government_review"],
         "government_review": ["accepted", "rejected"],
         "accepted": [],
@@ -92,23 +92,43 @@ DELIVERABLE_TRANSITIONS = _CFG.get(
     },
 )
 
-# A CDRL is delinquent when it is past due and has NOT yet reached the
-# government. These are exactly the pre-delivery states, and each one lists
-# 'overdue' in DELIVERABLE_TRANSITIONS above so compute_overdue_deliverables()
-# never drives a transition the state machine would reject.
+
+# ── Delinquent (overdue) deliverables — ONE definition ───────────────
 #
-# The delivered states (submitted / government_review / accepted / rejected /
-# resubmitted) are deliberately absent: the contractor met the delivery date
-# and the artifact is now awaiting government action, so marking it
-# 'delinquent_delivery' would blame the contractor for the government's
-# review queue. Only 'not_started' and 'in_progress' declared 'overdue'
-# before; a CDRL sitting in draft_complete or internal_review past its due
-# date is just as undelivered, and the omission made it unmarkable.
-PREDELIVERY_DELIVERABLE_STATUSES = (
-    "not_started",
-    "in_progress",
-    "draft_complete",
-    "internal_review",
+# Two definitions is how the board and every CPMP screen came to disagree.
+# `pmo_ai_advisor` counted date-wise (`due_date < today AND status NOT IN
+# ('accepted','rejected')`) and filed high-priority kanban cards from it, while
+# contract health (`get_contract`), the CPARS schedule dimension, the portfolio
+# rollup and `negative_event_tracker` all read `status = 'overdue'` /
+# `days_overdue` instead. Those two fields have exactly one writer —
+# `compute_overdue_deliverables()` below — which until now had no caller but
+# its own CLI flag, so they were never written: on 2026-08-13 the live board
+# held 26 CDRLs 44 days past due, 0 rows with `status='overdue'`, 0 rows with
+# `days_overdue > 0`, health green on all nine contracts, and a board card
+# saying "5 CDRL(s) are past due".
+#
+# A deliverable handed to the government on time is NOT delinquent while it
+# sits in government review: the contractor met the date. Marking it overdue
+# charges them for the government's review clock and drags down the CPARS
+# schedule rating on a delivery they actually made — so the delivered statuses
+# are excluded, as is any row carrying a submitted_date.
+DELIVERED_DELIVERABLE_STATUSES = (
+    "submitted",
+    "government_review",
+    "accepted",
+    "rejected",
+    "resubmitted",
+)
+
+# Rendered once from the tuple above so the SQL cannot drift from the vocabulary.
+DELIVERED_STATUS_SQL_LIST = ", ".join(f"'{s}'" for s in DELIVERED_DELIVERABLE_STATUSES)
+
+# A single `%s` binds the cutoff date (today, YYYY-MM-DD). due_date is a TEXT
+# column and is NULL or '' on rows created without one; neither is a missed date.
+OVERDUE_DELIVERABLE_SQL = (
+    "due_date IS NOT NULL AND due_date <> '' AND due_date < %s "
+    "AND submitted_date IS NULL "
+    f"AND status NOT IN ({DELIVERED_STATUS_SQL_LIST})"
 )
 
 
@@ -752,43 +772,46 @@ def transition_deliverable(deliverable_id, new_status, changed_by=None, reason=N
     return {"status": "ok", "deliverable_id": deliverable_id, "old_status": old_status, "new_status": new_status}
 
 
+def _parse_due_date(raw):
+    """Return a ``date`` for a stored due_date, or None if it is unusable.
+
+    due_date is a TEXT column, so a seeded, imported or hand-edited row can
+    hold anything. This was a bare ``datetime.fromisoformat`` in the middle of
+    the marking loop: one unparseable row raised, the loop died before
+    ``conn.commit()``, and NOTHING was marked — an entire sweep silently undone
+    by a single bad row. Now called every 3h by the cpmp_monitor reflex, that
+    would have been a permanent outage of the overdue state rather than a bad
+    afternoon for whoever ran the CLI.
+    """
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
 def compute_overdue_deliverables(contract_id=None):
-    """Mark past-due CDRLs 'overdue' and keep days_overdue current.
+    """Detect and mark overdue deliverables, and refresh how late they are.
 
-    This is the ONLY writer of ``cpmp_deliverables.status = 'overdue'`` and of
-    ``days_overdue``, and until this was wired into the cpmp_monitor reflex it
-    had no caller but its own ``--compute-overdue`` CLI flag. Nothing scheduled
-    ever ran it, so on 2026-08-13 the live board held 26 past-due deliverables,
-    ZERO marked overdue and ZERO with days_overdue > 0 — while the board still
-    showed "N CDRL(s) are past due" cards, because pmo_ai_advisor counts by
-    date arithmetic instead of reading the status. The card looked right and
-    the table was empty, so nothing went red. Five readers were silently
-    zeroed: contract health (:204), cpars_predictor (:218), portfolio_manager
-    (:163, :303) and, worst, negative_event_tracker, whose delinquent-delivery
-    arm gates on ``days_overdue > 0`` and therefore could never record a
-    negative event for a late CDRL.
+    The ONLY writer of ``cpmp_deliverables.status = 'overdue'`` and
+    ``days_overdue`` — see the OVERDUE_DELIVERABLE_SQL block above for the five
+    readers that depend on it and what happened while it went uncalled.
 
-    Already-overdue rows are re-selected so the counter tracks elapsed time.
-    The previous query excluded them, which froze days_overdue at whatever it
-    was on first detection — and negative_event_tracker scales severity off
-    that number (>30 critical, >14 high, >7 medium), so a frozen counter
-    permanently understates a lengthening delinquency. The status change is
-    recorded only on the real transition, so refreshing does not spam the
-    status-history or audit trail every cycle.
+    Rows already marked overdue are re-visited to refresh ``days_overdue``
+    rather than skipped. Marking is prompt (every 3h), so a CDRL caught the day
+    it slips is stamped ``days_overdue = 1``; frozen there it is both wrong on
+    screen and, more quietly, still > 0 — which is the only thing
+    ``negative_event_tracker.auto_detect_delinquent`` checks, so a CDRL now
+    months late would be escalated as a one-day slip forever.
     """
     conn = _get_db()
-    now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    # Only pre-delivery states, plus 'overdue' itself for the refresh. A
-    # submitted CDRL awaiting government review is not delinquent.
-    markable = PREDELIVERY_DELIVERABLE_STATUSES + ("overdue",)
-    # %s, not '?': runtime SQL is authored for PostgreSQL and translate_sql
-    # warns on a bare '?'. It translates to '?' for the SQLite fallback.
-    placeholders = ", ".join("%s" for _ in markable)
+    today = datetime.now(timezone.utc).date()
     query = (
-        "SELECT id, due_date, status FROM cpmp_deliverables "  # nosec B608 -- interpolates only generated '%s' marks, never data; statuses are bound params
-        f"WHERE due_date < %s AND status IN ({placeholders})"
+        "SELECT id, due_date, status, days_overdue FROM cpmp_deliverables "
+        f"WHERE {OVERDUE_DELIVERABLE_SQL}"  # nosec B608 -- module constant built from an internal tuple, not user input
     )
-    params = [now_date, *markable]
+    params = [today.isoformat()]
     if contract_id:
         query += " AND contract_id = %s"
         params.append(contract_id)
@@ -796,16 +819,31 @@ def compute_overdue_deliverables(contract_id=None):
     rows = conn.execute(query, params).fetchall()
     marked = 0
     refreshed = 0
+    unparseable = 0
     for row in rows:
-        due = datetime.fromisoformat(row["due_date"])
-        days = (datetime.now(timezone.utc) - due.replace(tzinfo=timezone.utc)).days
+        due = _parse_due_date(row["due_date"])
+        if due is None:
+            unparseable += 1
+            continue
+        days = (today - due).days
+        if days < 1:
+            # due_date carried a time component that sorts before today's date
+            # without a full day having elapsed. Not yet late.
+            continue
+
+        if row["status"] == "overdue":
+            if row["days_overdue"] != days:
+                conn.execute(
+                    "UPDATE cpmp_deliverables SET days_overdue = %s, updated_at = %s WHERE id = %s",
+                    (days, _now(), row["id"]),
+                )
+                refreshed += 1
+            continue
+
         conn.execute(
             "UPDATE cpmp_deliverables SET status = 'overdue', days_overdue = %s, updated_at = %s WHERE id = %s",
             (days, _now(), row["id"]),
         )
-        if row["status"] == "overdue":
-            refreshed += 1
-            continue
         _record_status_change(
             conn, "deliverable", row["id"], row["status"], "overdue", "system", f"{days} days overdue"
         )
@@ -814,11 +852,16 @@ def compute_overdue_deliverables(contract_id=None):
     _audit(
         conn,
         "compute_overdue",
-        f"Marked {marked} deliverables as overdue; refreshed {refreshed}",
+        f"Marked {marked} deliverables as overdue; refreshed days_overdue on {refreshed}",
     )
     conn.commit()
     conn.close()
-    return {"status": "ok", "overdue_count": marked, "refreshed_count": refreshed}
+    return {
+        "status": "ok",
+        "overdue_count": marked,
+        "days_refreshed": refreshed,
+        "unparseable_due_dates": unparseable,
+    }
 
 
 # ── CLI ──────────────────────────────────────────────────────────────

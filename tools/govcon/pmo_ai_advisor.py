@@ -13,6 +13,10 @@ import json
 from datetime import date, timedelta
 
 from tools.db.storage import get_connection
+from tools.govcon.contract_manager import (
+    DELIVERED_STATUS_SQL_LIST,
+    OVERDUE_DELIVERABLE_SQL,
+)
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -79,16 +83,25 @@ def _gather_contract_context(contract_id):
         ).fetchone()
         ctx["evm"] = dict(evm) if evm else {}
 
+        # OVERDUE_DELIVERABLE_SQL, not a local date predicate. This count is
+        # what the cpmp_monitor reflex files a high-priority board card from,
+        # and it used to be the ONLY date-based reading of "overdue" in CPMP:
+        # every screen (contract health, CPARS schedule, portfolio rollup,
+        # negative events) reads status='overdue'/days_overdue instead. Sharing
+        # the predicate with the writer is what keeps the card and the screens
+        # from telling a PM two different numbers. See contract_manager.
         overdue = conn.execute(
             "SELECT COUNT(*) as cnt FROM cpmp_deliverables "
-            "WHERE contract_id = %s AND status NOT IN ('accepted','rejected') AND due_date < %s",
+            f"WHERE contract_id = %s AND {OVERDUE_DELIVERABLE_SQL}",  # nosec B608 -- module constant, not user input
             (contract_id, date.today().isoformat())
         ).fetchone()
         ctx["overdue_deliverables"] = overdue["cnt"] if overdue else 0
 
+        # Same status vocabulary: a CDRL already handed to the government is
+        # not an upcoming action item either.
         due_soon = conn.execute(
             "SELECT COUNT(*) as cnt FROM cpmp_deliverables "
-            "WHERE contract_id = %s AND status NOT IN ('accepted','rejected') "
+            f"WHERE contract_id = %s AND status NOT IN ({DELIVERED_STATUS_SQL_LIST}) "  # nosec B608 -- module constant, not user input
             "AND due_date >= %s AND due_date <= %s",
             (contract_id, date.today().isoformat(), (date.today() + timedelta(days=30)).isoformat())
         ).fetchone()
