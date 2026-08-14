@@ -1391,3 +1391,33 @@ tests/cortex/test_governance_timing.py
 # 17 tests, ~1.5s, tmp_path configs + stub providers: no DB service, no LLM,
 # no network.
 tests/rag/test_retriever_config_and_embedding.py
+# ctx-reach-02. tools/cortex/client.py is 542 lines and 23 public methods with
+# ZERO in-repo consumers -- deliberately, because the only ICDEV process that
+# could call it IS the Cortex server it talks to (see
+# docs/design/ctx-reach-02-cortex-client-external-only.md). The decision was to
+# declare it external-only rather than manufacture a loopback caller, and an
+# external-only surface has to be MORE verified than an ordinary one, not less:
+# it is the half of a contract whose other half lives in repos ICDEV CI never
+# checks out. This file was the only behavioural coverage it had and it sat in
+# args/ci_test_backlog.txt, so no merge had ever run it. Moved out of the
+# backlog (the census shrinks by one) and required by
+# check_external_only_surfaces, which fails if it is ever removed from here.
+# 9 tests, ~5s, stub HTTP server on a loopback port: no DB service, no LLM,
+# no outbound network.
+tests/cortex/test_client.py
+# ctx-reach-02, 2 of 2. The gate itself. Pins check_external_only_surfaces in
+# BOTH directions -- that a satisfied declaration passes, and that each
+# obligation independently fails: a missing decision doc, a docstring that stops
+# naming it, a production importer appearing (the stale-declaration case, whose
+# fix is to DELETE the entry rather than widen it), a surface that is not a
+# vendor_parity source, and a gated test that falls out of core.txt or is listed
+# in both lists. Also asserts the config carries no numeric budget, because a
+# suppression list with a count is how the backlog this check exists to prevent
+# would grow, and parametrises every import spelling -- `from pkg import module`
+# leaves ast.ImportFrom.node.module one segment short and was genuinely missed
+# by the first cut of the scan.
+# 25 tests, ~5s, tmp_path fixtures: no DB service, no LLM, no network. Two tests
+# scan the real tree; the check itself measures 2.3s (a text prefilter keeps the
+# AST walk off the ~99% of files that cannot import the surface), which is why
+# it is NOT in HEAVY_CHECKS and runs in both tiers.
+tests/workflow/test_external_only_surfaces.py

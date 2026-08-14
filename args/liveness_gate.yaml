@@ -42,6 +42,24 @@
 #   A capability class absent from `grandfathered` gets a budget of 0. That is
 #   deliberate: a NEW class of declared-but-unconsumed capability is exactly the
 #   thing this gate is for, and it should have to argue its way in.
+#
+# THE ONE SANCTIONED EXCEPTION (ctx-reach-02)
+#   A module can have zero in-repo consumers ON PURPOSE: an SDK surface whose
+#   callers live in other git repositories, where the only available in-repo
+#   caller would be a loopback into the process already holding the callee.
+#   tools/cortex/client.py is the case that forced the question.
+#
+#   That does NOT belong here as a raised budget. It is declared in
+#   args/external_only_surfaces.yaml and enforced by a check of its own,
+#   coherence_checker.py::check_external_only_surfaces, which makes the
+#   exception carry obligations rather than an allowance: a decision doc the
+#   module's own docstring names, ZERO production importers (checked in both
+#   directions — an importer appearing means DELETE the declaration, because the
+#   module is an ordinary capability now and belongs back under this gate), a
+#   vendor_parity pin, and a test in args/ci_test_files/core.txt. There is no
+#   number in that file to raise. If you are about to add a budget here for a
+#   module nothing calls, check whether it is that shape first — and if it is
+#   not, wire it up.
 # ---------------------------------------------------------------------------
 
 classification: CUI // SP-CTI
