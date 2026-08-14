@@ -1043,7 +1043,6 @@ tests/test_genome_evolution.py
 tests/test_gepa_optimizer_selection.py
 tests/test_goal_learner.py
 tests/test_goal_template_generator.py
-tests/test_govcon_auto_compliance_api.py
 tests/test_govcon_capabilities.py
 tests/test_govcon_obligation_burn_rate.py
 tests/test_govcon_pipeline_bd_view.py
