@@ -9,11 +9,14 @@ Verifies:
 4. Endpoint handles arbitrary opportunity IDs.
 5. Non-ok populate result (no requirements) still returns 200.
 6. Endpoint returns 500 + error key when populate_compliance_matrix raises.
+7. The endpoint is RBAC-gated: 401 unauthenticated, 403 for a non-write role,
+   and a denied caller reaches neither the populator nor the database.
 """
 from unittest.mock import MagicMock, patch
 
 import pytest
-from flask import Flask
+
+from tests._govcon_api_app import NON_WRITE_ROLE, WRITE_ROLE, build_govcon_api_app
 
 # ---------------------------------------------------------------------------
 # Fake return values from tools.govcon.compliance_populator.populate_compliance_matrix
@@ -91,13 +94,14 @@ def _make_mock_conn():
 # ---------------------------------------------------------------------------
 
 
-def _build_api_test_app() -> Flask:
-    from tools.dashboard.api.govcon import govcon_api
+def _build_api_test_app(role=WRITE_ROLE):
+    """App carrying the real blueprint, with an authenticated caller.
 
-    flask_app = Flask(__name__)
-    flask_app.config["TESTING"] = True
-    flask_app.register_blueprint(govcon_api)
-    return flask_app
+    The endpoint is ``@require_role(*GOVCON_WRITE_ROLES)`` (prop-fix-09); an app
+    with no ``g.current_user`` answers 401 to every one of these assertions. The
+    gate is authenticated past, never stripped — see ``TestAutoComplianceRBAC``.
+    """
+    return build_govcon_api_app(role=role)
 
 
 # ---------------------------------------------------------------------------
@@ -249,3 +253,68 @@ class TestAutoComplianceAPIEndpoint:
                 resp = c.post("/api/govcon/opportunities/opp-err/auto-compliance")
         data = resp.get_json()
         assert data["error"], "Error message must not be empty"
+
+
+# ---------------------------------------------------------------------------
+# RBAC: the gate that made every assertion above answer 401 (prop-fix-09)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoComplianceRBAC:
+    """auto-compliance is @require_role(*GOVCON_WRITE_ROLES).
+
+    Auto-population INSERTs into proposal_compliance_matrix, so it is a write
+    endpoint. These assertions exist so the gate can never be silently removed
+    to make the success-path tests above go green again.
+    """
+
+    def _post(self, app):
+        with patch(
+            "tools.govcon.compliance_populator.populate_compliance_matrix",
+            return_value=_FAKE_POPULATE_RESULT,
+        ):
+            with patch("tools.dashboard.api.govcon._get_db", return_value=_make_mock_conn()):
+                with app.test_client() as c:
+                    return c.post(f"/api/govcon/opportunities/{_OPP_ID}/auto-compliance")
+
+    def test_write_role_is_a_govcon_write_role(self):
+        from tools.dashboard.api.govcon import GOVCON_WRITE_ROLES
+
+        assert WRITE_ROLE in GOVCON_WRITE_ROLES
+        assert NON_WRITE_ROLE not in GOVCON_WRITE_ROLES
+
+    def test_unauthenticated_is_401(self):
+        resp = self._post(build_govcon_api_app(role=None))
+        assert resp.status_code == 401, (
+            "auto-compliance must reject an unauthenticated caller with 401"
+        )
+
+    def test_non_write_role_is_403(self):
+        resp = self._post(build_govcon_api_app(role=NON_WRITE_ROLE))
+        assert resp.status_code == 403, (
+            f"auto-compliance must deny role '{NON_WRITE_ROLE}' with 403, not "
+            f"{resp.status_code}"
+        )
+
+    def test_every_write_role_is_allowed(self):
+        from tools.dashboard.api.govcon import GOVCON_WRITE_ROLES
+
+        for role in GOVCON_WRITE_ROLES:
+            resp = self._post(build_govcon_api_app(role=role))
+            assert resp.status_code == 200, f"role '{role}' should be allowed"
+
+    def test_denied_caller_never_reaches_the_populator(self):
+        """The gate must deny BEFORE the endpoint body runs.
+
+        A 403 that still populated the matrix would leave the write done and
+        only the response withheld — the denial would be cosmetic.
+        """
+        populate = MagicMock(return_value=_FAKE_POPULATE_RESULT)
+        db = MagicMock(return_value=_make_mock_conn())
+        with patch("tools.govcon.compliance_populator.populate_compliance_matrix", populate):
+            with patch("tools.dashboard.api.govcon._get_db", db):
+                with build_govcon_api_app(role=NON_WRITE_ROLE).test_client() as c:
+                    resp = c.post(f"/api/govcon/opportunities/{_OPP_ID}/auto-compliance")
+        assert resp.status_code == 403
+        assert not populate.called, "a denied caller must not run the compliance populator"
+        assert not db.called, "a denied caller must not open a database connection"
