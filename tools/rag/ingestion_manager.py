@@ -39,6 +39,9 @@ from tools.rag.source_registry import (
     get_source_config,
 )
 from tools.rag.vector_store_factory import VectorStoreFactory
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
@@ -333,6 +336,29 @@ def _apply_contextual_prefixes(new_chunks, document_text: str, ctx_cfg: dict) ->
     return applied
 
 
+def invalidate_cortex_cache(source_type: str, chunks: int) -> None:
+    """Purge the Cortex response cache after the RAG corpus actually changed.
+
+    ``cortex.search`` answers are derived from the vector store this module
+    writes, so new chunks make cached search results stale before their TTL
+    runs out. This is the in-process choke point for that corpus, which is why
+    ``cortex.search`` is cacheable and ``cortex.ask`` (whose invalidating writes
+    land in the operational DB from other processes) is not — see
+    tools/cortex/cache.py.
+
+    Best-effort: ingestion must never fail because a cache purge did. Skipped
+    when nothing was written, so a no-op sweep does not throw away warm entries.
+    """
+    if chunks <= 0:
+        return
+    try:
+        from tools.cortex import cache as _cortex_cache
+        if _cortex_cache.is_enabled():
+            _cortex_cache.invalidate(f"rag ingest: {source_type} (+{chunks} chunks)")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("cortex cache invalidation skipped: %s", exc)
+
+
 def _log_ingestion(
     db_path: Path,
     source_type: str,
@@ -563,6 +589,9 @@ def ingest_source(
                 project_id=project_id,
             )
 
+    # The corpus cortex.search answers from just changed -> drop stale answers.
+    invalidate_cortex_cache(source_type, total_chunks)
+
     # Anomaly check: flag runs whose dedup skip-rate exceeds the adaptive norm.
     _processed = total_chunks + total_skipped
     skip_rate = (total_skipped / _processed) if _processed else 0.0
@@ -764,6 +793,8 @@ def ingest_single_record(
             project_id=project_id,
             correlation_id=correlation_id,
         )
+
+    invalidate_cortex_cache(source_type, inserted)
 
     return {"ingested": inserted, "embedded": len(embeddable), "skipped": len(chunks) - inserted}
 

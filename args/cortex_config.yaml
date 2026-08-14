@@ -257,8 +257,7 @@ analyst:
   nlq_fallback_enabled: true
 
 cache:
-  # In-process LRU + TTL response cache over the governed facades. OFF by
-  # default — enable knowingly.
+  # In-process LRU + TTL response cache over the governed facades.
   #
   # Security model: the cache key folds tenant_id + classification + domain +
   # air_gap, so a cached result can NEVER be served across any of those
@@ -266,12 +265,27 @@ cache:
   # hit never bypasses egress governance. Every hit still writes a cortex_audit
   # row (cache_hit=true, zero incremental cost) so the NIST-AU trail and
   # /cortex/metrics stay complete.
-  enabled: false
+  #
+  # Entries are copied in and out (deepcopy), so a caller mutating a served
+  # result cannot rewrite the answer every later hit gets — see the ctx-perf-06
+  # note in tools/cortex/cache.py.
+  enabled: true
+  # Read ONCE, when the cache singleton is built on first use. Changing it in a
+  # running process does nothing until cache.reset() — i.e. restart the service.
   max_entries: 512
   # Which governed operations may be cached. complete = free-form drafting (best
   # hit rate at temperature 0). search = retrieval fan-out (corpus drifts -> keep
-  # TTL short). ask = LIVE analyst NL->SQL answers over changing DB state -> very
-  # short TTL, and the riskiest to cache; drop it from this list to disable.
+  # TTL short; the RAG ingestion path calls cache.invalidate() so an in-process
+  # corpus change purges immediately rather than waiting out the TTL).
+  #
+  # cortex.ask is deliberately NOT in this list. It is live NL->SQL over the
+  # operational DB, so its invalidation trigger is "any write to any table the
+  # generated SQL touched" — authored by every subsystem, and mostly by OTHER
+  # processes (kanban runner, reflex daemons, ingestion workers, an operator at
+  # psql). An in-process cache cannot observe those, so hooking it would promise
+  # a freshness guarantee it cannot keep; a partial invalidation hook is worse
+  # than none. Its 30s ttl_seconds entry is kept below so an operator who adds it
+  # back knowingly gets the short bound instead of inheriting default: 300.
   #
   # classify + extract are the most deterministic and highest-repeat operations:
   # both are pure functions of (text, labels|schema, function) with no DB or
@@ -281,11 +295,12 @@ cache:
   # workbook). Their non-boundary args are folded into the key by the facade
   # decorator — a different label list or a different JSON schema is a different
   # entry, never a shared one.
-  operations: [cortex.complete, cortex.search, cortex.ask, cortex.classify, cortex.extract]
+  operations: [cortex.complete, cortex.search, cortex.classify, cortex.extract]
   ttl_seconds:
     default: 300
     cortex.complete: 900
     cortex.search: 120
+    # Not in `operations` — see the note above. Kept so re-adding it is bounded.
     cortex.ask: 30
     # classify DEGRADES rather than raising: when the router is unavailable it
     # returns a query_classifier heuristic label (provider="deterministic"), and

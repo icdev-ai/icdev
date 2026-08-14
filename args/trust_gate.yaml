@@ -1,0 +1,112 @@
+# CUI // SP-CTI
+# TRUST v2 — two-stage grounding gate profiles (trust-spine-01)
+#
+# One gate, four consumer surfaces. A profile declares, per guard, whether a
+# finding BLOCKS promotion/export, merely WARNS, or is SKIPped entirely — and
+# what posture to take when a guard cannot be measured at all.
+#
+# Guard names are the PUBLISH_GATES vocabulary in
+# tools/quality/citation_grounding.py. They are persisted verbatim into
+# idr_publish_audit.gate, whose CHECK constraint is rendered from that same
+# constant — so a guard name that is not in PUBLISH_GATES cannot be recorded and
+# must not appear here. tests/test_trust_gate.py asserts the two agree.
+#
+# ONLY implemented guards are declared. kg_guard (phase 2) and structure_guard
+# (phase 3) are added by the phase that ships them, together with the migration
+# that widens the CHECK. Declaring a guard before it can fire is the
+# declared-but-unconsumed defect this framework exists to catch.
+
+trust_gate:
+  default_profile: drafting
+
+  # ── Stage severities ──────────────────────────────────────────────────────
+  # block  — a finding refuses the promote/export unless a human force_* override
+  #          is supplied WITH a non-empty reason (pulse.py precedent).
+  # warn   — recorded, surfaced, never refuses.
+  # skip   — the guard does not run on this surface at all.
+  #
+  # unmeasurable: what to do when a guard has no evidence to work with (e.g.
+  # claim_guard with no source texts). NEVER silently "clean" — an unmeasured
+  # guard and a passing guard are different facts. Same discipline as
+  # chain_sweep's pre_cutover-vs-broken split.
+
+  profiles:
+
+    drafting:
+      description: >-
+        docgen/DIC, GovCon RFI, proposals, Strategos INTSUM/OPORD, AIIFY.
+        Human is in the loop by construction, so stage 2 is opt-in per call.
+      guards:
+        placeholder_guard: block
+        citation_guard: block
+        claim_guard: block
+        cove_guard: warn
+        constitution_guard: warn
+      unmeasurable: warn
+      stage2:
+        enabled: false          # opt-in per call — CoVe multiplies LLM calls
+        fail_closed: false      # unavailable stage 2 warns, does not refuse
+
+    compliance_evidence:
+      description: >-
+        SSP / POAM / KSI / control narratives. A hallucinated control claim is an
+        audit failure, so this is the only profile that refuses on an
+        unmeasurable guard or an unavailable stage 2.
+      guards:
+        placeholder_guard: block
+        citation_guard: block
+        claim_guard: block
+        cove_guard: block
+        constitution_guard: block
+      unmeasurable: block
+      stage2:
+        enabled: true
+        fail_closed: true       # no verifier reachable => no ATO-bearing export
+
+    agent_output:
+      description: >-
+        ANVIL builds, agent adapters, MCP tool output. Claims here are about the
+        system itself and are usually assertion-shaped rather than cited prose,
+        so claim_guard is off until the KG tier lands (phase 2).
+      guards:
+        placeholder_guard: warn
+        citation_guard: warn
+        claim_guard: skip
+        cove_guard: skip
+        constitution_guard: warn
+      unmeasurable: warn
+      stage2:
+        enabled: false
+        fail_closed: false
+
+    chat_rag:
+      description: >-
+        Cortex ask/complete, /ask-icdev, knowledge search. Interactive latency
+        budget rules out stage 2; placeholders are a drafting artifact and do not
+        occur here.
+      guards:
+        placeholder_guard: skip
+        citation_guard: warn
+        claim_guard: warn
+        cove_guard: skip
+        constitution_guard: skip
+      unmeasurable: warn
+      stage2:
+        enabled: false
+        fail_closed: false
+
+  # ── Stage 2 execution ─────────────────────────────────────────────────────
+  stage2:
+    # Running an LLM verification pass over an artifact stage 1 already refused
+    # spends tokens to reach a conclusion that cannot change the outcome
+    # (stage 2 may never unblock stage 1). Off by default.
+    run_when_stage1_blocked: false
+    cove_max_questions: 5
+    constitution_max_revisions: 2
+
+  # ── HITL overrides ────────────────────────────────────────────────────────
+  overrides:
+    # An override without a stated reason is indistinguishable from a bug, and
+    # is unauditable after the fact. Ported from the pulse.py force_publish
+    # precedent, which already mandates a non-empty force_reason.
+    require_reason: true

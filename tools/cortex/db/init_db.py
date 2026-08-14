@@ -91,6 +91,13 @@ CREATE INDEX IF NOT EXISTS idx_cortex_audit_session ON cortex_audit(session_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant ON cortex_audit(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_function ON cortex_audit(function);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_created_at ON cortex_audit(created_at);
+-- Composite matching the RLS predicate shape (ctx-perf-05, migration
+-- 20260814192722_cortex_rls_composite_indexes). get_connection() rewrites every
+-- read to carry `AND tenant_id = ?`, so the metrics window query is really
+-- tenant_id + created_at and the single-column indexes above can serve only one
+-- half of it. classification is deliberately excluded — it arrives as an IN-list
+-- and would forfeit the created_at ordering.
+CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant_created ON cortex_audit(tenant_id, created_at);
 
 -- Cortex canvas (chat) tables — the /cortex chat surface's conversation store,
 -- distinct from the governance cortex_sessions/cortex_audit above. Deploy DDL:
@@ -111,6 +118,7 @@ CREATE TABLE IF NOT EXISTS cortex_chat_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_chat_sessions_tenant ON cortex_chat_sessions(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_chat_sessions_user ON cortex_chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_cortex_chat_sessions_tenant_created ON cortex_chat_sessions(tenant_id, created_at);
 CREATE TABLE IF NOT EXISTS cortex_messages (
     message_id      TEXT PRIMARY KEY,
     session_id      TEXT,
@@ -127,6 +135,7 @@ CREATE TABLE IF NOT EXISTS cortex_messages (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_messages_session ON cortex_messages(session_id, turn_number);
+CREATE INDEX IF NOT EXISTS idx_cortex_messages_tenant_session_turn ON cortex_messages(tenant_id, session_id, turn_number);
 CREATE TABLE IF NOT EXISTS cortex_search_history (
     query_id        TEXT PRIMARY KEY,
     session_id      TEXT,
@@ -142,6 +151,7 @@ CREATE TABLE IF NOT EXISTS cortex_search_history (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_search_history_session ON cortex_search_history(session_id);
+CREATE INDEX IF NOT EXISTS idx_cortex_search_history_tenant_created ON cortex_search_history(tenant_id, created_at);
 """
 
 
