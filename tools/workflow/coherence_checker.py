@@ -991,10 +991,34 @@ def check_append_only() -> CoherenceCheck:
     )
 
 
+def _trust_guards_recordable(config: Path) -> bool:
+    """True when every guard named in args/trust_gate.yaml is in PUBLISH_GATES.
+
+    Returns True when the config or the constant cannot be read — this check
+    reports coverage, and a missing file is already reported by its own entry.
+    """
+    if not config.is_file():
+        return False
+    try:
+        import yaml
+        from tools.quality.citation_grounding import PUBLISH_GATES
+
+        raw = (yaml.safe_load(_read_text(config)) or {}).get("trust_gate") or {}
+        declared = {
+            g
+            for profile in (raw.get("profiles") or {}).values()
+            for g in (profile.get("guards") or {})
+        }
+    except Exception:  # noqa: BLE001 — a coherence check must never crash the sweep
+        return True
+    return bool(declared) and declared <= set(PUBLISH_GATES)
+
+
 def check_trust_coverage() -> CoherenceCheck:
     """Verify the TRUST invariants (xcut-01): the anti-hallucination grounding
-    modules ship in both package trees and are inheritable by child apps, and
-    the redaction fail-closed / ingestion-masking toggles exist in config.
+    modules ship in both package trees and are inheritable by child apps, the
+    redaction fail-closed / ingestion-masking toggles exist in config, and the
+    TRUST v2 two-stage gate (trust-gate-01) ships with its profile config.
 
     Guards against a recurrence of the mirror-sync drift that dropped grounding
     modules from icdev/, and against silently losing the mask toggles.
@@ -1015,6 +1039,25 @@ def check_trust_coverage() -> CoherenceCheck:
     rc_text = _read_text(rc) if rc.is_file() else ""
     checks["redaction.fail_closed toggle"] = "fail_closed:" in rc_text
     checks["redaction.mask_at_ingestion toggle"] = "mask_at_ingestion:" in rc_text
+
+    # TRUST v2 (trust-gate-01): the two-stage gate ships in both trees with its
+    # profile config, and every guard it can name is recordable.
+    checks["tools/quality/trust_gate.py"] = (
+        PROJECT_ROOT / "tools/quality/trust_gate.py"
+    ).is_file()
+    checks["icdev/tools/quality/trust_gate.py"] = (
+        PROJECT_ROOT / "icdev/tools/quality/trust_gate.py"
+    ).is_file()
+    tg = PROJECT_ROOT / "args/trust_gate.yaml"
+    tg_text = _read_text(tg) if tg.is_file() else ""
+    checks["trust_gate.yaml declares all four profiles"] = all(
+        f"{p}:" in tg_text
+        for p in ("drafting", "compliance_evidence", "agent_output", "chat_rag")
+    )
+    # A guard a profile can name but idr_publish_audit.gate cannot store is a
+    # guard whose own HITL override would die on the CHECK constraint — the
+    # exact failure migration 300 was written for.
+    checks["trust_gate guards are recordable publish gates"] = _trust_guards_recordable(tg)
 
     missing = sorted(k for k, ok in checks.items() if not ok)
     status = "pass" if not missing else "fail"

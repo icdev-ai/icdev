@@ -5453,6 +5453,32 @@ projects:
   - 'xcut: Cross-cutting — coherence-checker assertions for citation/ingestion/sources
     coverage plus a CLAUDE.md guardrail and append-only table registration
     (trust-xcut-01..02)'
+  - 'gate: TRUST v2 — two-stage gate spine, and adoption of the guards that shipped
+    with ZERO production callers. v1 built the claim tier (decompose_claims →
+    bind_claim_span → verify_claim → claim_gate) and the constitution rule block in
+    args/security_gates.yaml, and nothing ever called either — so the only thing
+    gating a promote was the shallow tier, and a fluent, well-cited, entirely
+    invented sentence passed. Stage 1 is deterministic and LLM-free so it runs
+    air-gapped; stage 2 is semantic and may never unblock stage 1 (trust-gate-01..)'
+  - 'kg: KG-to-text constrained validation — entity existence, type-schema legality
+    against the kg_ontology type-triple table already materialised from
+    ontology_subclass_closure, and edge existence. kg_unknown is NEVER scored
+    kg_contradicted: an empty graph must not fabricate findings (trust-kg-01..)'
+  - 'struct: Guardrails & structured outlining — one JSON-schema-subset validator to
+    replace three hand-rolled extractors, plus required-section contracts.
+    cortex.extract stops degrading silently on schema non-conformance (trust-struct-01..)'
+  - 'self: Self-correction & Self-RAG adoption — a bounded MONOTONE revise-and-recheck
+    loop (a round that adds findings is discarded), plus adoption of reflective_rerank
+    and the WRAPPER-UNADOPTED AdaptiveRetriever at the Cortex search seam
+    (trust-self-01..)'
+  - 'hitl: HITL deltas — the delta becomes the reviewable unit. Append-only
+    trust_deltas evidence + mutable approval_items state (the approval_inbox split),
+    a side-by-side delta review panel, and a mandatory force_reason on every override
+    (trust-hitl-01..)'
+  - 'anchor: Pluggable anchor transport — GovChain is NOT greenfield; the one missing
+    piece is a transport. hfc is in no requirements file so HAS_FABRIC is permanently
+    False, and the fabric.cli_path peer subprocess transport declared in
+    args/blockchain_config.yaml under D-GC-1 was never built (trust-anchor-01..)'
   epics:
   - key: cite
     title: Universal Citation & Provenance — mandatory sources on every generated artifact
@@ -5466,6 +5492,24 @@ projects:
   - key: xcut
     title: Cross-Cutting — coherence gate, guardrail, table registration
     priority: medium
+  - key: gate
+    title: v2 — Two-stage gate spine + adoption of the zero-caller guards
+    priority: high
+  - key: kg
+    title: v2 — KG-to-text constrained validation
+    priority: high
+  - key: struct
+    title: v2 — Guardrails + structured outlining
+    priority: medium
+  - key: self
+    title: v2 — Self-correction + Self-RAG adoption
+    priority: medium
+  - key: hitl
+    title: v2 — HITL deltas
+    priority: medium
+  - key: anchor
+    title: v2 — Pluggable anchor transport
+    priority: low
 - key: kanban-external-dispatch
   name: Kanban External-Repo Dispatch
   description: 'Make ICDev''s kanban runner able to BUILD INTO external repos (compass,
