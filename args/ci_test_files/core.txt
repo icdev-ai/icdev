@@ -1149,3 +1149,13 @@ tests/test_cpmp_monitor_reflex_contract.py
 # goes red for that. Pins BOTH directions: an obligated contract still flags,
 # and the staleness branch stays ungated. 25 tests, <1s, fully mocked.
 tests/test_cpmp_isr_ssr_applicability.py
+# The CTX card is MANUAL-ONLY, and "manual" here rests entirely on a scalar
+# column: promote_backlog_to_scheduled reads depends_on_task_id, NOT the status
+# of the gate sentinel. A held ctx-gate-00 with one ungated task means the runner
+# starts building a card whose whole premise is that a human drives it -- and the
+# card touches governance enforcement, the air-gap guarantee and the CI test gate.
+# Also pins the kax-exec-04 shape (a `-gate-<n>` id on a WORK task is filtered out
+# forever and nothing reports it stuck), the live task_type CHECK constraint, and
+# the projects.yaml prefix/epic rules the Home progress card renders from.
+# 10 tests, ~1s, no DB service, no LLM, no network.
+tests/kanban/test_seed_ctx_kanban.py
