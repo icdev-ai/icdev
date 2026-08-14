@@ -259,8 +259,13 @@ def _governed_facade(
                 return report
             if not attach:
                 _stash_outer_report(result, report)
-            # Store only successful, non-blocked governed results.
-            if cache_key is not None and not report.blocked:
+            # Store only successful, non-blocked governed results — and never a
+            # DEGRADED one. A search whose backend failed carries `.errors`
+            # (search_service.BackendResults); caching it would turn a momentary
+            # embedding-provider outage into a TTL-long one served from memory
+            # after the provider recovered (ctx-perf-04).
+            degraded = bool(getattr(result, "errors", None))
+            if cache_key is not None and not report.blocked and not degraded:
                 try:
                     from . import cache as _rc
                     _rc.put_by_key(cache_key, result, operation)
