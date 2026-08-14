@@ -3408,7 +3408,7 @@ def _project_card_entries() -> list:
     return out
 
 
-def check_project_card_coverage() -> CoherenceCheck:
+def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
     """A project card that silently renders NOTHING while its work sits on the board.
 
     ``_compute_project_progress`` in ``tools/dashboard/app.py`` derives every
@@ -3442,10 +3442,25 @@ def check_project_card_coverage() -> CoherenceCheck:
 
     Reported as ``warn``: the finding is board DATA, so failing a per-task code
     gate on it would block commits that have nothing to do with it.
+
+    ``conn_factory`` is an injection seam for tests. It exists because the
+    obvious alternative — monkeypatching ``tools.db.storage.get_connection`` —
+    does not reliably work here: ``tools.db.storage`` and
+    ``icdev.tools.db.storage`` are DISTINCT module objects with distinct
+    function objects, so a patch can land on the alias the test imported while
+    this function resolves the other one and quietly queries the real board.
+    The unreachable-board test did exactly that: it passed locally only because
+    the worktree database happened to have no ``kanban_tasks`` table, and failed
+    in CI where the table exists. A test for honest degradation that itself
+    degrades dishonestly is worse than no test.
     """
     try:
-        from tools.db.storage import get_connection
         from tools.kanban.gates import has_gate_id
+
+        if conn_factory is None:
+            from tools.db.storage import get_connection
+        else:
+            get_connection = conn_factory
 
         projects = _project_card_entries()
     except Exception as exc:  # noqa: BLE001

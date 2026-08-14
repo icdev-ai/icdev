@@ -87,21 +87,77 @@ def test_check_is_registered():
     assert CHECK_REGISTRY[_CARD_CHECK_ID] is check_project_card_coverage
 
 
-def test_check_degrades_honestly_when_the_board_is_unreachable(monkeypatch):
-    """A fresh worktree or an empty CI database must not read as clean.
+def test_check_degrades_honestly_when_the_board_is_unreachable():
+    """A fresh worktree or an unreachable database must not read as clean.
 
-    This is the same discipline as capability_liveness and chain_sweep: a check
-    that reports "fine" when it never ran is worse than no check.
+    Same discipline as capability_liveness and chain_sweep: a check that reports
+    "fine" when it never ran is worse than no check.
+
+    Injected rather than monkeypatched. `tools.db.storage` and
+    `icdev.tools.db.storage` are distinct module objects with distinct function
+    objects, so patching the alias this test imports can leave the alias the
+    check resolves untouched — which is exactly what happened: this test passed
+    locally (worktree DB has no kanban_tasks, so the REAL call raised and gave
+    the right answer for the wrong reason) and failed in CI where the table
+    exists and the unpatched call succeeded.
     """
-    import tools.db.storage as storage
-
-    def _boom():
+    def _unreachable():
         raise RuntimeError("no such table: kanban_tasks")
 
-    monkeypatch.setattr(storage, "get_connection", _boom)
-    result = check_project_card_coverage()
+    result = check_project_card_coverage(conn_factory=_unreachable)
     assert result.status == "warn"
     assert "NOT verified" in result.message
+
+
+def test_check_reports_warn_on_an_empty_board():
+    """An empty board cannot show an unclaimed task, so "no findings" is not a
+    result — it is the absence of one."""
+    class _EmptyConn:
+        def execute(self, *_a, **_kw):
+            class _Cur:
+                def fetchall(self_inner):
+                    return []
+            return _Cur()
+
+        def close(self):
+            pass
+
+    result = check_project_card_coverage(conn_factory=_EmptyConn)
+    assert result.status == "warn"
+    assert "NOT verified" in result.message
+
+
+def test_check_flags_a_task_no_epic_claims():
+    """The finding itself, on a synthetic board — no live data dependency.
+
+    Every registered card is audited, so a real project's real prefix is used;
+    the assertion is only that an unclaimed id is reported and a claimed one is
+    not.
+    """
+    entries = _project_card_entries()
+    proj = next(p for p in entries if p["epics"])
+    claimed = f"{proj['prefix']}{proj['epics'][0]}-01"
+    orphan = f"{proj['prefix']}zzznotanepic-01"
+    sentinel = f"{proj['prefix']}gate-00"
+
+    class _Conn:
+        def execute(self, *_a, **_kw):
+            rows = [{"id": claimed}, {"id": orphan}, {"id": sentinel}]
+
+            class _Cur:
+                def fetchall(self_inner):
+                    return rows
+            return _Cur()
+
+        def close(self):
+            pass
+
+    result = check_project_card_coverage(conn_factory=_Conn)
+    assert result.status == "warn"
+    joined = " ".join(result.extra)
+    assert orphan in joined, "an unclaimed task must be named"
+    assert claimed not in joined, "a claimed task must not be reported"
+    assert sentinel not in joined, "a gate sentinel holds the card; it is not work"
 
 
 def test_check_reports_warn_never_fail():
