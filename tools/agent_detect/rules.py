@@ -711,7 +711,7 @@ def _write_disk_cache(rules_dir: Path, signature: tuple, documents: list) -> Non
             "documents": [[display, data] for display, data in documents],
         }
         tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        tmp.write_text(json.dumps(payload), encoding="utf-8", newline="")
         tmp.replace(path)  # atomic, so a concurrent reader never sees a partial file
     except Exception as exc:  # noqa: BLE001
         logger.debug("agent_detect.rules: could not write rule cache: %s", exc)

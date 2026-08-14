@@ -6,10 +6,17 @@ idea_lab) vendor this file verbatim into tools/integrations/cortex_client.py
 with a provenance header — keep it importable with ZERO icdev dependencies
 (urllib/json/os only) so copies never drift into needing the platform.
 
-Those copies are declared in ``args/vendor_parity.yaml``. Adding a public method
-here without re-vendoring is caught by ``coherence_checker.py --check
-vendor_parity`` (cxo-doc-03) — the drift is otherwise latent, because a method
-no consumer calls yet goes missing without breaking anything.
+Those copies are declared in ``args/vendor_parity.yaml``. The drift is latent —
+a method no consumer calls yet goes missing without breaking anything — so
+adding or renaming a public member here is TWO steps:
+
+    python tools/workflow/vendor_api_manifest.py --write   # record the new API
+    # then re-vendor this file into compass / idea_lab (keep only their header)
+
+Skipping the first fails ``check_vendor_parity`` and
+``tests/workflow/test_vendor_api_manifest.py`` (ctx-enf-01). The manifest is
+what enforces here, because ICDEV CI never checks out the consumer repos and so
+the copy-vs-canonical comparison can only ever SKIP on a runner (cxo-doc-03).
 
 Server surfaces this client speaks to (one ICDEV host):
 

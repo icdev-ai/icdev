@@ -188,6 +188,12 @@ tests/test_awareness_edge_deriver.py
 tests/test_benchmark_compare.py
 tests/test_benchmark_report.py
 tests/workflow/test_vendor_parity.py
+# ctx-enf-01: the half of the vendor gate a CI runner can actually run. The
+# consumer repos (compass, idea_lab) are separate PRIVATE repositories the runner
+# never checks out, so test_vendor_parity.py above can only ever exercise the
+# SKIP path here; this file compares tools/cortex/client.py against a committed
+# API manifest, which needs no external checkout.
+tests/workflow/test_vendor_api_manifest.py
 tests/quality/test_run_component_scoring.py
 tests/slides/test_blueprint.py
 tests/integration/test_runtime_cli.py
