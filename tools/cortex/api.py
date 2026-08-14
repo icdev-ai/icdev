@@ -223,6 +223,14 @@ def _governed_facade(
             # facade without sources_param is byte-for-byte unaffected.
             call_retrieval = retrieval or bool(sources)
 
+            # ONE args/cortex_config.yaml snapshot for this call (ctx-perf-01).
+            # Threaded into the cache decision and the whole governance chain,
+            # which between them used to read the file six to eight times per
+            # call — each read stat()ing it before its mtime memo could answer.
+            # Taken per call, never cached on the module, so an operator's edit
+            # is picked up by the next call exactly as before.
+            cortex_cfg = load_cortex_config()
+
             # Response cache (opt-in). Serve a prior GOVERNED result for an
             # identical request. The key folds tenant/classification/domain/
             # air_gap so a hit never crosses those boundaries; a hit is still
@@ -231,11 +239,11 @@ def _governed_facade(
             if not return_report:
                 try:
                     from . import cache as _rc
-                    if _rc.is_enabled() and _rc.cacheable(operation):
+                    if _rc.is_enabled(cortex_cfg) and _rc.cacheable(operation, cortex_cfg):
                         extra = {k: v for k, v in bound.arguments.items()
                                  if k not in (text_param, "ctx")}
                         cache_key = _rc.make_key(operation, text, ctx, extra)
-                        hit = _rc.get_by_key(cache_key)
+                        hit = _rc.get_by_key(cache_key, cortex_cfg)
                         if hit is not None:
                             _rc.audit_hit(operation, ctx)
                             return hit
@@ -254,6 +262,7 @@ def _governed_facade(
                 context_sources=sources,
                 retrieval=call_retrieval,
                 attach=attach,
+                config=cortex_cfg,
             )
             if return_report:
                 return report
@@ -268,7 +277,7 @@ def _governed_facade(
             if cache_key is not None and not report.blocked and not degraded:
                 try:
                     from . import cache as _rc
-                    _rc.put_by_key(cache_key, result, operation)
+                    _rc.put_by_key(cache_key, result, operation, cortex_cfg)
                 except Exception as _cexc:  # noqa: BLE001
                     logger.debug("cortex cache write skipped: %s", _cexc)
             return result

@@ -76,25 +76,35 @@ _DEFAULT_OPERATIONS = (
 )
 
 
-def _cache_cfg() -> dict:
+def _cache_cfg(config=None) -> dict:
+    """The ``cache`` section. ``config`` is a caller's cortex-config snapshot.
+
+    Every read below routes through here, so it stays the single seam tests
+    patch to force a cache posture. ``config`` exists because the decision to
+    consult the cache costs three reads of the same file otherwise —
+    ``is_enabled`` then ``cacheable`` then ``_ttl_for`` — and the governed
+    wrapper already holds the snapshot (ctx-perf-01).
+    """
     try:
+        if config is not None:
+            return config.get("cache") or {}
         from .config import load_cortex_config
         return load_cortex_config().get("cache") or {}
     except Exception:  # noqa: BLE001 — missing/unreadable config -> disabled
         return {}
 
 
-def is_enabled() -> bool:
-    return bool(_cache_cfg().get("enabled", False))
+def is_enabled(config=None) -> bool:
+    return bool(_cache_cfg(config).get("enabled", False))
 
 
-def cacheable(operation: str) -> bool:
-    ops = _cache_cfg().get("operations")
+def cacheable(operation: str, config=None) -> bool:
+    ops = _cache_cfg(config).get("operations")
     return operation in (tuple(ops) if ops else _DEFAULT_OPERATIONS)
 
 
-def _ttl_for(operation: str) -> float:
-    ttls = {**_DEFAULT_TTL, **(_cache_cfg().get("ttl_seconds") or {})}
+def _ttl_for(operation: str, config=None) -> float:
+    ttls = {**_DEFAULT_TTL, **(_cache_cfg(config).get("ttl_seconds") or {})}
     return float(ttls.get(operation, ttls.get("default", 300.0)))
 
 
@@ -138,12 +148,14 @@ _cache: Optional[_TTLCache] = None
 _cache_lock = threading.Lock()
 
 
-def _get_cache() -> _TTLCache:
+def _get_cache(config=None) -> _TTLCache:
     global _cache
     if _cache is None:
         with _cache_lock:
             if _cache is None:
-                _cache = _TTLCache(int(_cache_cfg().get("max_entries") or _DEFAULT_MAX_ENTRIES))
+                _cache = _TTLCache(
+                    int(_cache_cfg(config).get("max_entries") or _DEFAULT_MAX_ENTRIES)
+                )
     return _cache
 
 
@@ -211,13 +223,13 @@ def make_key(operation: str, text: str, ctx, extra: dict) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def get_by_key(key: str):
+def get_by_key(key: str, config=None):
     """Return an INDEPENDENT copy of the cached value, or None on a miss.
 
     A copy failure is reported as a miss: re-running the operation is correct
     but slow, whereas returning the stored instance is fast and unsafe.
     """
-    value = _get_cache().get(key)
+    value = _get_cache(config).get(key)
     if value is None:
         return None
     try:
@@ -227,7 +239,7 @@ def get_by_key(key: str):
         return None
 
 
-def put_by_key(key: str, value: Any, operation: str) -> None:
+def put_by_key(key: str, value: Any, operation: str, config=None) -> None:
     """Store an INDEPENDENT copy, so the producing caller cannot poison the entry.
 
     A copy failure means the entry is not stored at all — never stored by
@@ -239,7 +251,7 @@ def put_by_key(key: str, value: Any, operation: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("cortex cache: result not copyable, not caching %s: %s", operation, exc)
         return
-    _get_cache().put(key, stored, _ttl_for(operation))
+    _get_cache(config).put(key, stored, _ttl_for(operation, config))
 
 
 def audit_hit(operation: str, ctx) -> None:
