@@ -1262,3 +1262,19 @@ tests/cortex/test_config_keys_enforced.py
 # 12 tests, ~1s, SQLite via tmp_path ICDEV_DB_PATH: no DB service, no LLM,
 # no network.
 tests/cortex/test_iqe_row_cap_truncation.py
+# The Cortex response cache shipped correct, wired and `enabled: false`, and
+# nobody ever flipped it -- because flipping it would have handed every hit the
+# SAME CortexResult instance (cache.py stored the live object, api.py returned it
+# verbatim), so one caller doing `result.text = trim(...)` would silently rewrite
+# the answer every later hit got for the whole TTL, with nothing in the audit
+# trail to show it. Entries are now deep-copied IN and OUT -- copy-on-read alone
+# is not enough, since the producing caller holds the object that was stored.
+# The other precondition was invalidation: there is none beyond TTL/LRU, and for
+# cortex.ask none can be built (live NL->SQL whose invalidating writes come from
+# other processes an in-process cache cannot observe), so ask is out of the
+# default operations list; cortex.search keeps caching because the RAG ingestion
+# path IS an in-process choke point and now calls cache.invalidate(). Pins the
+# mutation case end-to-end, both ingest entry points calling the invalidator, and
+# that a hit on the SHIPPED enabled config still writes its cortex_audit row.
+# 37 tests, ~1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_response_cache.py

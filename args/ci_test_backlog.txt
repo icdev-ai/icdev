@@ -136,7 +136,6 @@ tests/cortex/test_metrics.py
 tests/cortex/test_provenance_gate.py
 tests/cortex/test_provenance_swallow.py
 tests/cortex/test_reason_facade.py
-tests/cortex/test_response_cache.py
 tests/cortex/test_rest_agent.py
 tests/cortex/test_rest_api.py
 tests/cortex/test_rest_award.py
