@@ -28,9 +28,19 @@ times over. Three things bound that now:
    count. Those numbers stay EXACT over the full window.
 2. **The gates_json detail read is bounded.** Only the newest
    ``_DETAIL_ROW_LIMIT`` rows in the window are parsed for the fields that have
-   no column of their own (cost, tokens, latency, redactions, domain, model,
-   cache_hit). When that cap bites, ``detail.truncated`` is set so the panel can
-   say the spend figures cover a sample rather than quietly under-reporting.
+   no column of their own (cost, tokens, latency, governance timing,
+   redactions, domain, model, cache_hit). When that cap bites,
+   ``detail.truncated`` is set so the panel can say the spend figures cover a
+   sample rather than quietly under-reporting. Adding a field to the blob — as
+   ctx-obs-02 did with the timing fields — does NOT widen the cap: the new
+   figures are sampled on exactly the same terms as cost, and say so.
+
+Governance cost (ctx-obs-02). ``summary.avg_latency_ms`` is the LLM call alone.
+``avg_total_ms`` / ``avg_governance_ms`` / ``governance_pct`` and the
+``by_gate`` breakdown are the chain around it. Their denominator is
+``summary.timed_calls``, NOT ``summary.calls``: rows written before the
+pipeline timed itself, and cache hits that never entered it, carry no timing
+and are left out of the average rather than averaged in as zero.
 3. **The three routes share one computation.** A short-TTL in-process memo keyed
    by window + detail cap + the RLS boundary the read runs under (tenant +
    classification) + the DB pointer. The security context is part of the key
@@ -95,16 +105,27 @@ def _empty(window_hours: int, *, status: str = "unavailable") -> dict:
             "redactions": 0, "cache_hits": 0,
             "cost_usd": 0.0, "avg_latency_ms": 0.0,
             "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+            # Chain cost (ctx-obs-02). avg_latency_ms above is the LLM call
+            # alone; these three are the governed call around it, and
+            # governance_pct is the answer to "how much of a Cortex call is
+            # governance?". timed_calls is the denominator: rows written before
+            # ctx-obs-02, and cache hits (which never enter the pipeline), carry
+            # no timing and are EXCLUDED rather than averaged in as zero — an
+            # untimed row would otherwise halve the reported overhead.
+            "avg_total_ms": 0.0, "avg_governance_ms": 0.0,
+            "avg_operation_ms": 0.0, "governance_pct": 0.0, "timed_calls": 0,
         },
         # How much of the window the gates_json-derived figures actually cover.
-        # calls/blocked are always exact; cost, tokens, latency, redactions,
-        # cache hits and the domain/model breakdowns come from these rows only.
+        # calls/blocked are always exact; cost, tokens, latency, governance
+        # timing, redactions, cache hits and the domain/model/gate breakdowns
+        # come from these rows only.
         "detail": {"rows_scanned": 0, "limit": None, "truncated": False},
         "by_function": [],
         "by_outcome": {},
         "by_domain": [],
         "by_tenant": [],
         "by_model": [],
+        "by_gate": [],
     }
 
 
@@ -332,8 +353,13 @@ def _aggregate(rows, window_hours: int, counts=None, detail_limit: int | None = 
     by_domain: dict = {}
     by_tenant: dict = {}
     by_model: dict = {}
+    by_gate: dict = {}
     total_latency = 0.0
     latency_n = 0
+    total_wall = 0.0
+    total_governance = 0.0
+    total_operation = 0.0
+    timed_n = 0
 
     for row in rows:
         function = _row_get(row, "function", 0) or "cortex"
@@ -369,6 +395,35 @@ def _aggregate(rows, window_hours: int, counts=None, detail_limit: int | None = 
             total_latency += latency
             latency_n += 1
 
+        # Governance chain cost (ctx-obs-02). Only rows the pipeline actually
+        # timed contribute: total_ms == 0 means "not measured" (a pre-ctx-obs-02
+        # row, or a cache hit that bypassed the chain), and folding those in as
+        # zero would understate the very overhead this measures.
+        wall = float(gj.get("total_ms") or 0.0)
+        if wall > 0:
+            op_ms = float(gj.get("operation_ms") or 0.0)
+            # Prefer the stored value; fall back to the definition for a row
+            # written by a producer that recorded the operands but not the
+            # difference.
+            gov_ms = gj.get("governance_ms")
+            gov_ms = float(gov_ms) if gov_ms is not None else max(0.0, wall - op_ms)
+            total_wall += wall
+            total_operation += op_ms
+            total_governance += gov_ms
+            timed_n += 1
+            gate_ms = gj.get("gate_ms")
+            if isinstance(gate_ms, dict):
+                for gate_name, ms in gate_ms.items():
+                    try:
+                        ms = float(ms)
+                    except (TypeError, ValueError):
+                        continue
+                    g = by_gate.setdefault(
+                        str(gate_name), {"gate": str(gate_name), "calls": 0, "total_ms": 0.0}
+                    )
+                    g["calls"] += 1
+                    g["total_ms"] += ms
+
         fn = by_function.setdefault(
             function, {"function": function, "calls": 0, "blocked": 0,
                        "cost_usd": 0.0, "total_tokens": 0}
@@ -399,10 +454,20 @@ def _aggregate(rows, window_hours: int, counts=None, detail_limit: int | None = 
     summ["block_rate_pct"] = (
         round(100.0 * summ["blocked"] / summ["calls"], 1) if summ["calls"] else 0.0
     )
+    summ["timed_calls"] = timed_n
+    summ["avg_total_ms"] = round(total_wall / timed_n, 1) if timed_n else 0.0
+    summ["avg_governance_ms"] = round(total_governance / timed_n, 1) if timed_n else 0.0
+    summ["avg_operation_ms"] = round(total_operation / timed_n, 1) if timed_n else 0.0
+    summ["governance_pct"] = (
+        round(100.0 * total_governance / total_wall, 1) if total_wall > 0 else 0.0
+    )
     for fn in by_function.values():
         fn["cost_usd"] = round(fn["cost_usd"], 6)
     for m in by_model.values():
         m["cost_usd"] = round(m["cost_usd"], 6)
+    for g in by_gate.values():
+        g["avg_ms"] = round(g["total_ms"] / g["calls"], 3) if g["calls"] else 0.0
+        g["total_ms"] = round(g["total_ms"], 3)
 
     out["detail"] = {
         "rows_scanned": len(rows),
@@ -414,6 +479,9 @@ def _aggregate(rows, window_hours: int, counts=None, detail_limit: int | None = 
     out["by_domain"] = sorted(by_domain.values(), key=lambda r: r["calls"], reverse=True)
     out["by_tenant"] = sorted(by_tenant.values(), key=lambda r: r["calls"], reverse=True)
     out["by_model"] = sorted(by_model.values(), key=lambda r: r["total_tokens"], reverse=True)
+    # Costliest gate first — this list is what turns "governance is 40% of the
+    # call" into "…and it is one gate".
+    out["by_gate"] = sorted(by_gate.values(), key=lambda r: r["avg_ms"], reverse=True)
 
     if counts is not None:
         _apply_counts(out, counts)
