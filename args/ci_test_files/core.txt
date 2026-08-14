@@ -1372,6 +1372,29 @@ tests/test_reflex_finding_scope.py
 # _DETAIL_ROW_LIMIT sampling cap the timing fields inherit is not widened.
 # 14 tests, ~1s, gate seams patched: no DB service, no LLM, no network.
 tests/cortex/test_governance_timing.py
+# One POST /cortex/api/chat opened FOUR connections for one turn:
+# chat_session.ensure_session, chat_session.record_turn twice, and the
+# blueprint's cortex_search_history insert, each opening/committing/closing its
+# own -- on top of the governance audit's, which record_governed_call had
+# already collapsed for the audit pair (cxo-perf-03). The chat store never got
+# the same treatment. Counted with a CONNECTION COUNTER, not a timing assertion:
+# the defect is "how many", and a timing assertion on a shared runner is a
+# flake. The counter wraps get_connection on BOTH module aliases, which are
+# distinct objects -- patching one silently misses the copy the running
+# blueprint imported, and reports 0 opens as if the path were free. Every cost
+# assertion is paired with a read-back through the real GET
+# /cortex/api/session/<id>, because these writes are swallowed at debug: a
+# collapse that also collapsed the ROWS would look identical from outside.
+# Also pins the bool that was being bound to the INTEGER `grounded` column --
+# psycopg2 adapts it to a PG boolean, which PostgreSQL (the primary backend)
+# refuses, so the search-history row vanished on PG while SQLite accepted it and
+# kept the suite green -- and the ownership convention (a borrowed connection is
+# never closed by the borrower, a self-opened one always is) plus the rollback
+# that keeps a failed session write from taking the conversation rows down with
+# it inside the now-shared transaction.
+# 11 tests, ~25s (Flask app import dominates), SQLite via the conftest icdev_db
+# fixture: no DB service, no LLM, no network.
+tests/cortex/test_chat_turn_connections.py
 # Every cortex.search on the rag backend re-read AND re-parsed args/rag_config.yaml
 # from disk: retriever_common builds a fresh RAGRetriever per search and __init__
 # called an unmemoized _load_rag_config(), while cortex/config.py next door has

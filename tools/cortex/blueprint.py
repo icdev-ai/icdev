@@ -113,11 +113,20 @@ def _current_user() -> str:
 
 
 def _record_history(session_id: str, mode: str, domain: str, query_text: str,
-                    result_count: int = 0, strategy: str = "", grounded: bool = False) -> None:
-    """Best-effort insert into cortex_search_history (never raises)."""
+                    result_count: int = 0, strategy: str = "", grounded: bool = False,
+                    conn=None) -> None:
+    """Best-effort insert into cortex_search_history (never raises).
+
+    Pass ``conn`` to share the caller's connection — it is committed but never
+    closed here (ctx-perf-03). ``grounded`` binds as an int: the column is
+    INTEGER, and psycopg2 adapts a Python bool to a PG boolean, which
+    PostgreSQL refuses for an INTEGER column.
+    """
     tenant_id, classification = _security_context()
+    own_conn = conn is None
     try:
-        conn = _conn()
+        if own_conn:
+            conn = _conn()
         try:
             conn.execute(
                 "INSERT INTO cortex_search_history "
@@ -125,13 +134,20 @@ def _record_history(session_id: str, mode: str, domain: str, query_text: str,
                 "result_count, grounded, classification, tenant_id, created_at) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (uuid.uuid4().hex, session_id, _current_user(), mode, domain, query_text,
-                 strategy, result_count, grounded, classification, tenant_id, _now()),
+                 strategy, result_count, 1 if grounded else 0, classification, tenant_id,
+                 _now()),
             )
             conn.commit()
         finally:
-            conn.close()
+            if own_conn:
+                conn.close()
     except Exception as exc:
         logger.debug("cortex: history insert skipped: %s", exc)
+        if not own_conn and conn is not None:
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001 — rollback is itself best-effort
+                pass
 
 
 # ── Page Routes ─────────────────────────────────────────────────────────────────
@@ -537,10 +553,10 @@ def api_chat():
     ctx = _cortex_context(domain)
     outcome = _run_facade(facade, question, ctx, confirm_agent)
 
-    # THIN session persistence: session row + user turn + assistant turn.
+    # THIN session persistence: session row + user turn + assistant turn + the
+    # search-history row, all over ONE connection (see _persist_turn).
     tenant_id, classification = _security_context()
     _persist_turn(session_id, facade, domain, question, outcome, tenant_id, classification)
-    _record_history(session_id, facade, domain, question, grounded=outcome["grounded"])
 
     return jsonify({
         "answer": outcome["answer"],
@@ -564,27 +580,63 @@ def api_chat():
     })
 
 
-def _persist_turn(session_id, facade, domain, question, outcome, tenant_id, classification):
-    """Best-effort THIN persistence of one user+assistant exchange."""
+def _persist_turn(session_id, facade, domain, question, outcome, tenant_id, classification,
+                  conn=None):
+    """Best-effort THIN persistence of one user+assistant exchange, over ONE connection.
+
+    The four writes a chat turn needs — session row, user turn, assistant turn,
+    search-history row — each used to open, commit and close their own
+    connection, so one POST /cortex/api/chat cost four (ctx-perf-03). Opening one
+    here and threading it through all four collapses that to one, the same
+    treatment ``db/init_db.record_governed_call`` already gave the governance
+    session+audit pair (cxo-perf-03).
+
+    Each write keeps its OWN best-effort guard and rolls the shared connection
+    back on failure, so the four stay independent: a broken session write must
+    not take the conversation rows with it (on PostgreSQL a failed statement
+    poisons the whole transaction). Session bookkeeping gets a second guard
+    here, for the same reason record_governed_call gives it one — it is metadata,
+    the conversation rows are the artifact, and they win. The outer guard is the
+    last resort for a connection that could not be opened at all.
+    """
+    own_conn = conn is None
     try:
         from tools.cortex import chat_session
 
-        chat_session.ensure_session(
-            session_id, user_id=_current_user(), mode=facade, domain=domain,
-            tenant_id=tenant_id, classification=classification, title=question,
-        )
-        chat_session.record_turn(
-            session_id, "user", question, facade=facade,
-            tenant_id=tenant_id, classification=classification,
-        )
-        chat_session.record_turn(
-            session_id, "assistant", outcome["answer"], facade=facade,
-            grounded=outcome["grounded"], confidence=outcome["confidence"],
-            citations=outcome["citations"], governance=outcome["governance"],
-            tenant_id=tenant_id, classification=classification,
-        )
-        # facade-outcome audit is written by the governance pipeline into the
-        # canonical cortex_audit table (ctx-govern-03/04) — not duplicated here.
+        if own_conn:
+            conn = _conn()
+        try:
+            try:
+                chat_session.ensure_session(
+                    session_id, user_id=_current_user(), mode=facade, domain=domain,
+                    tenant_id=tenant_id, classification=classification, title=question,
+                    conn=conn,
+                )
+            except Exception as exc:  # noqa: BLE001 — turn rows must still land
+                logger.debug("cortex.chat: session bookkeeping skipped: %s", exc)
+                try:
+                    conn.rollback()
+                except Exception:  # noqa: BLE001 — rollback is itself best-effort
+                    pass
+            chat_session.record_turn(
+                session_id, "user", question, facade=facade,
+                tenant_id=tenant_id, classification=classification, conn=conn,
+            )
+            chat_session.record_turn(
+                session_id, "assistant", outcome["answer"], facade=facade,
+                grounded=outcome["grounded"], confidence=outcome["confidence"],
+                citations=outcome["citations"], governance=outcome["governance"],
+                tenant_id=tenant_id, classification=classification, conn=conn,
+            )
+            _record_history(
+                session_id, facade, domain, question,
+                grounded=outcome["grounded"], conn=conn,
+            )
+            # facade-outcome audit is written by the governance pipeline into the
+            # canonical cortex_audit table (ctx-govern-03/04) — not duplicated here.
+        finally:
+            if own_conn:
+                conn.close()
     except Exception as exc:  # noqa: BLE001 — persistence never breaks the answer
         logger.debug("cortex.chat: turn persistence skipped: %s", exc)
 
