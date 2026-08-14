@@ -361,23 +361,26 @@ def test_govern_prefers_api_facade(monkeypatch):
     json.dumps(result)
 
 
-def test_govern_falls_back_to_pipeline(monkeypatch):
-    # Ensure the facade path is not taken.
+def test_govern_has_no_pipeline_fallback(monkeypatch):
+    """ctx-reach-03: the `getattr(cortex_api, "govern", None)` probe and its
+    standalone-GovernancePipeline fallback are gone. The probe could never fail
+    (the facade landed in ctx-govern-04) and the branch it guarded was a second,
+    divergent implementation of the same chain.
+
+    With the facade absent the handler must ERROR, not quietly run its own
+    pipeline. Behavioural assertion: a fake pipeline that would answer if the
+    fallback still existed must never be entered.
+    """
     monkeypatch.delattr(cortex_api, "govern", raising=False)
 
-    class FakePipeline:
+    class FakePipeline:  # pragma: no cover - entering it IS the failure
         def __init__(self, operation="cortex"):
-            self.operation = operation
-
-        def wrap(self, fn, ctx, prompt="", context_sources=None, retrieval=True):
-            report = GovernanceReport(gates_run=["pre_check", "operation", "provenance"],
-                                      outcomes={"pre_check": "pass"})
-            return fn(prompt), report
+            raise AssertionError("handle_cortex_govern built its own pipeline")
 
     monkeypatch.setattr("tools.cortex.governance.GovernancePipeline", FakePipeline)
     result = cortex_server.handle_cortex_govern({"text": "hello world", "sources": ["a", "b"]})
-    assert "provenance" in result["governance"]["gates_run"]
-    assert result["governance"]["outcomes"]["pre_check"] == "pass"
+    assert "error" in result
+    assert "governance" not in result
 
 
 def test_govern_requires_text():
@@ -418,16 +421,20 @@ def test_agent_surfaces_governance_block(monkeypatch):
     assert result["governance"]["blocked_reason"] == "unsafe goal"
 
 
-def test_agent_falls_back_when_facade_absent(monkeypatch):
+def test_agent_has_no_ungoverned_fallback(monkeypatch):
+    """ctx-reach-03: `_agent_launch_fallback` is deleted, not stubbed.
+
+    It reached ACEController / run_agent_loop directly — no TRUST chain — and
+    dispatched off the pre-hgx `use_team` boolean, so an unrecognised `mode` ran
+    a real single agent instead of erroring. With the facade absent the tool must
+    refuse to launch anything at all.
+    """
+    assert not hasattr(cortex_server, "_agent_launch_fallback")
+
     monkeypatch.delattr(cortex_api, "agent", raising=False)
-
-    def fake_fallback(goal, roles, mode, ctx, arguments):
-        return CortexResult(text="fallback launched", provider="agent_loop", data={"mode": "single"})
-
-    monkeypatch.setattr(cortex_server, "_agent_launch_fallback", fake_fallback)
     result = cortex_server.handle_cortex_agent_launch({"goal": "summarize repo"})
-    assert result["text"] == "fallback launched"
-    assert result["data"]["mode"] == "single"
+    assert "error" in result
+    assert "text" not in result
 
 
 def test_agent_requires_goal():
