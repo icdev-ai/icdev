@@ -1661,6 +1661,22 @@ reflexes:
       name: semantic_facts_written
       threshold: 0
       operator: gte
+  ungated_test_drift:
+    timeout_seconds: 600
+    enabled: true
+    risk_tier: green
+    a2a_eligible: false
+    schedule: every 6h
+    description: >-
+      Sample the ~1,823 test modules CI never runs and report files that went
+      from passing to failing. Transitions only - files already failing are
+      known debt and are not re-reported. Seeds silently on a database with no
+      baseline rather than filing a card per file.
+    success_metric:
+      name: checked
+      threshold: 0
+      operator: gte
+    sample_per_run: 40
 
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
