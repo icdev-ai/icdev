@@ -207,6 +207,11 @@ def handle_rag_delete_source(arguments: Dict[str, Any]) -> Dict[str, Any]:
             return {"deleted": 0, "source_type": source_type}
 
         deleted = store.delete(ids)
+        # Deletion is the sharper staleness case: a cached cortex.search answer
+        # can keep citing a source that no longer exists. Same in-process hook
+        # the ingest path uses (tools/rag/ingestion_manager.py).
+        from tools.rag.ingestion_manager import invalidate_cortex_cache
+        invalidate_cortex_cache(f"delete:{source_type}", deleted)
         return {
             "classification": "CUI // SP-CTI",
             "deleted": deleted,

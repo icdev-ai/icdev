@@ -1111,41 +1111,74 @@ def api_publish(session_id: str):
     title = data.get("title") or session.get("title", "Document")
     classification = data.get("classification") or session.get("classification", "CUI")
 
-    # ── TRUST publish gate (cnr-doc-01) ──────────────────────────────────────
-    # Block export on citation / placeholder defects. A HITL force_* override
-    # publishes past the defect but writes an append-only audit row.
+    # ── TRUST publish gate (cnr-doc-01, trust-spine-01) ───────────────────────
+    # Block export on placeholder / citation / claim defects. A HITL force_*
+    # override publishes past the defect but writes an append-only audit row.
+    #
+    # force_reason is MANDATORY (args/trust_gate.yaml overrides.require_reason):
+    # an override with no stated reason is unauditable after the fact, and is
+    # indistinguishable from a bug. Same rule the pulse.py force_publish path
+    # already enforces. A reasonless force is simply not applied — the gate
+    # still refuses — so a client cannot bypass the requirement by omitting it.
     force_citations = bool(data.get("force_citations", False))
     force_placeholders = bool(data.get("force_placeholders", False))
+    force_claims = bool(data.get("force_claims", False))
+    force_reason = str(data.get("force_reason") or "").strip()
+    if (force_citations or force_placeholders or force_claims) and not force_reason:
+        return jsonify({
+            "error": "force_reason is required when overriding a TRUST publish gate",
+            "gate": None,
+        }), 400
+
     trust = citation_publish_gate(
         doc_text,
         force_citations=force_citations,
         force_placeholders=force_placeholders,
+        force_claims=force_claims,
+        force_reason=force_reason,
+        sources=data.get("sources"),
     )
+    if not trust["grounding_available"]:
+        # Never publish text no gate could inspect.
+        return jsonify({
+            "error": "Cannot publish: TRUST grounding modules unavailable",
+            "gate": None,
+        }), 409
     if trust["blocked"]:
+        _GATE_MESSAGE = {
+            "placeholder_guard": "unresolved [PLACEHOLDER] tokens",
+            "citation_guard": "citation defects (missing/hallucinated [source: …] tags)",
+            "claim_guard": "claims whose own cited source does not support them",
+        }
         return jsonify({
             "error": (
                 "Cannot publish: document has "
-                + ("unresolved [PLACEHOLDER] tokens"
-                   if trust["gate"] == "placeholder_guard"
-                   else "citation defects (missing/hallucinated [source: …] tags)")
-                + f" — resolve them or pass force_{trust['gate'].split('_')[0]}s=True after review."
+                + _GATE_MESSAGE.get(trust["gate"], "TRUST gate defects")
+                + " — resolve them, or re-submit with the matching force_* flag "
+                  "and a force_reason after review."
             ),
             "gate": trust["gate"],
             "citation_findings": trust["citation_findings"],
             "placeholder_findings": trust["placeholder_findings"],
+            "claim_findings": trust["claim_findings"],
         }), 409
     reviewer = data.get("reviewer") or session.get("created_by") or "dashboard"
-    for gate_name, key in (("placeholder_guard", "placeholder_guard_override"),
-                           ("citation_guard", "citation_guard_override")):
-        if trust["overrides"].get(key):
-            sm.record_publish_audit(
-                session_id, gate_name, reviewer,
-                trust["overrides"][key], tenant_id=session.get("tenant_id"),
-            )
-            logger.warning(
-                "IDR publish %s OVERRIDE: session=%s reviewer=%s defects=%d",
-                gate_name, session_id, reviewer, len(trust["overrides"][key]),
-            )
+    for gate_name in ("placeholder_guard", "citation_guard", "claim_guard"):
+        override = trust["overrides"].get(f"{gate_name}_override")
+        if not override:
+            continue
+        findings = override.get("findings") or []
+        sm.record_publish_audit(
+            session_id, gate_name, reviewer,
+            # Persist the reason alongside the findings — the reason is the
+            # whole point of the audit row.
+            {"reason": override.get("reason", ""), "findings": findings},
+            tenant_id=session.get("tenant_id"),
+        )
+        logger.warning(
+            "IDR publish %s OVERRIDE: session=%s reviewer=%s defects=%d reason=%s",
+            gate_name, session_id, reviewer, len(findings), override.get("reason", ""),
+        )
 
     try:
         artifacts = stage8_publish(

@@ -90,51 +90,99 @@ def citation_publish_gate(
     *,
     force_citations: bool = False,
     force_placeholders: bool = False,
+    force_claims: bool = False,
+    force_reason: str = "",
     allowed_sources: Any = None,
+    sources: Any = None,
     require_citations: bool = True,
+    profile: str = "drafting",
 ) -> dict[str, Any]:
     """TRUST export/publish gate — mirrors govcon ``response_drafter.approve_draft``.
 
-    Placeholder guard runs first, then citation guard. A defect blocks unless the
-    matching ``force_*`` override is set, in which case the finding is recorded in
+    Delegates to :class:`tools.quality.trust_gate.TrustGate` (trust-spine-01),
+    which runs placeholder → citation → **claim** in that order and composes one
+    verdict. The claim tier is what closes the hole the first two leave open: a
+    well-formed citation on an invented sentence passes both of them, because
+    neither ever looks at whether the cited span actually contains what the
+    sentence asserts.
+
+    ``sources`` (``{source_id: source_text}``) is what makes that tier
+    measurable — claim verification binds each claim to a SPAN of its cited
+    text, so ids alone are not enough. Callers that omit it get
+    ``claim_guard: unmeasurable``, which the ``drafting`` profile records as a
+    warning rather than a refusal. That keeps every pre-existing caller working
+    unchanged while making the gap visible instead of silently "clean".
+
+    A defect blocks unless the matching ``force_*`` override is set AND
+    ``force_reason`` is non-empty (``args/trust_gate.yaml overrides.require_reason``
+    — the pulse.py precedent). The suppressed finding is recorded in
     ``overrides`` for the caller to persist to the append-only audit trail.
 
-    Returns ``{blocked, gate, citation_findings, placeholder_findings, overrides,
-    grounding_available}``.  ``grounding_available`` is False when the shared
-    grounding module could not be imported — callers MUST fail closed on that
-    (never publish text no gate could inspect).
+    Returns ``{blocked, gate, citation_findings, placeholder_findings,
+    claim_findings, overrides, grounding_available, verdict}``.
+    ``grounding_available`` is False when the shared grounding module could not
+    be imported — callers MUST fail closed on that (never publish text no gate
+    could inspect). The legacy keys are unchanged; ``claim_findings`` and
+    ``verdict`` are additive.
     """
-    grounding_available = True
     try:
-        import tools.quality.citation_grounding  # noqa: F401
-        import tools.quality.content_grounding  # noqa: F401
+        from tools.quality.trust_gate import TrustGate, STATUS_UNAVAILABLE
     except Exception:
-        grounding_available = False
+        # The gate itself is unreachable. Fail closed — never publish text that
+        # no gate could inspect.
+        return {
+            "blocked": True,
+            "gate": None,
+            "citation_findings": [],
+            "placeholder_findings": [],
+            "claim_findings": [],
+            "overrides": {},
+            "grounding_available": False,
+            "verdict": None,
+        }
 
-    citation, placeholder = assembled_doc_findings(
-        doc_text, allowed_sources=allowed_sources, require_citations=require_citations
-    )
-    result: dict[str, Any] = {
-        "blocked": False,
-        "gate": None,
-        "citation_findings": citation,
-        "placeholder_findings": placeholder,
-        "overrides": {},
-        "grounding_available": grounding_available,
+    force = {
+        guard: force_reason
+        for guard, on in (
+            ("placeholder_guard", force_placeholders),
+            ("citation_guard", force_citations),
+            ("claim_guard", force_claims),
+        )
+        if on
     }
-    if placeholder and not force_placeholders:
-        result.update(blocked=True, gate="placeholder_guard")
-        return result
-    if citation and not force_citations:
-        result.update(blocked=True, gate="citation_guard")
-        return result
-    overrides: dict[str, Any] = {}
-    if placeholder and force_placeholders:
-        overrides["placeholder_guard_override"] = placeholder
-    if citation and force_citations:
-        overrides["citation_guard_override"] = citation
-    result["overrides"] = overrides
-    return result
+    verdict = TrustGate(profile).evaluate(
+        doc_text,
+        sources=sources,
+        allowed_sources=allowed_sources,
+        require_citations=require_citations,
+        force=force,
+    )
+
+    def _raw(guard: str) -> list[dict]:
+        result = verdict.stage1.get(guard)
+        if result is None:
+            return []
+        return [
+            {"item_number": f.item_number, "issue": f.issue, "detail": f.detail}
+            for f in result.findings
+        ]
+
+    grounding_available = True
+    for guard in ("placeholder_guard", "citation_guard"):
+        result = verdict.stage1.get(guard)
+        if result is not None and result.status == STATUS_UNAVAILABLE:
+            grounding_available = False
+
+    return {
+        "blocked": verdict.blocked,
+        "gate": verdict.gate,
+        "citation_findings": _raw("citation_guard"),
+        "placeholder_findings": _raw("placeholder_guard"),
+        "claim_findings": _raw("claim_guard"),
+        "overrides": verdict.overrides,
+        "grounding_available": grounding_available,
+        "verdict": verdict.to_dict(),
+    }
 
 
 def _diff_scope_check(

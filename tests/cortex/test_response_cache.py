@@ -4,6 +4,11 @@
 Focus on the security-load-bearing behaviors: the key folds the full
 tenant/classification/domain/air_gap boundary (a hit never crosses it), a hit is
 still audited, and a blocked result is never cached.
+
+ctx-perf-06 added the two preconditions for shipping it ON: entries are copied in
+and out (a caller cannot mutate the stored answer), and there is an explicit
+invalidation path — with cortex.ask dropped from the default operations because
+no sound in-process invalidation exists for it.
 """
 from __future__ import annotations
 
@@ -34,7 +39,7 @@ def _isolate(monkeypatch):
 def _enable(monkeypatch, **over):
     cfg = {
         "enabled": True, "max_entries": 8,
-        "operations": ["cortex.complete", "cortex.search", "cortex.ask",
+        "operations": ["cortex.complete", "cortex.search",
                        "cortex.classify", "cortex.extract"],
         "ttl_seconds": {"default": 300, "cortex.complete": 900,
                         "cortex.classify": 600, "cortex.extract": 900},
@@ -199,11 +204,11 @@ def _count_extract_invoke(monkeypatch, payload=None):
 
 
 def test_shipped_config_caches_classify_and_extract():
-    """The SHIPPED args/cortex_config.yaml opts both ops in — and stays disabled."""
+    """The SHIPPED args/cortex_config.yaml opts both ops in — and is now ON."""
     from tools.cortex.config import load_cortex_config
 
     cache_cfg = load_cortex_config().get("cache") or {}
-    assert cache_cfg.get("enabled") is False, "caching must stay opt-in platform-wide"
+    assert cache_cfg.get("enabled") is True, "ctx-perf-06 flipped the cache on"
     ops = cache_cfg.get("operations") or []
     assert "cortex.classify" in ops and "cortex.extract" in ops
     ttls = cache_cfg.get("ttl_seconds") or {}
@@ -344,3 +349,232 @@ def test_module_default_operations_cover_the_new_ops(monkeypatch):
     assert rc.cacheable("cortex.classify")
     assert rc.cacheable("cortex.extract")
     assert not rc.cacheable("cortex.govern")
+
+
+# --------------------------------------------------------------------------- #
+# ctx-perf-06 #1 — a served result is a COPY; a caller cannot poison the entry
+# --------------------------------------------------------------------------- #
+def test_hit_cannot_be_mutated_into_the_cache(monkeypatch):
+    """The acceptance case: mutate a hit, then re-read, and get the original.
+
+    Storing the live object means one caller doing `result.text = trim(...)`
+    rewrites the answer every later hit is served, for the whole TTL.
+    """
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch, text="original answer")
+    ctx = CortexContext(tenant_id="t-a")
+
+    api.complete("q", ctx=ctx)                       # miss -> stores
+    hit = api.complete("q", ctx=ctx)                 # hit
+    assert calls["n"] == 1
+
+    hit.text = "MUTATED"
+    hit.metadata["poison"] = True
+    hit.data["poison"] = True
+    hit.citations.append("bogus")
+
+    again = api.complete("q", ctx=ctx)               # still a hit
+    assert calls["n"] == 1, "must still be served from cache, not re-run"
+    assert again.text == "original answer"
+    assert "poison" not in again.metadata
+    assert "poison" not in again.data
+    assert "bogus" not in again.citations
+
+
+def test_miss_result_cannot_be_mutated_into_the_cache(monkeypatch):
+    """Copy-on-READ alone is not enough — the producing caller holds the object
+    that was stored, so the entry must be copied on WRITE too."""
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch, text="original answer")
+    ctx = CortexContext(tenant_id="t-a")
+
+    miss = api.complete("q", ctx=ctx)                # miss -> stores
+    miss.text = "MUTATED BY PRODUCER"
+    miss.metadata["poison"] = True
+
+    hit = api.complete("q", ctx=ctx)
+    assert calls["n"] == 1
+    assert hit.text == "original answer"
+    assert "poison" not in hit.metadata
+
+
+def test_every_caller_gets_a_distinct_object(monkeypatch):
+    """Two hits must not alias each other either — otherwise concurrent callers
+    share one mutable answer."""
+    _enable(monkeypatch)
+    _count_invoke(monkeypatch)
+    ctx = CortexContext(tenant_id="t-a")
+    r1 = api.complete("q", ctx=ctx)
+    r2 = api.complete("q", ctx=ctx)
+    r3 = api.complete("q", ctx=ctx)
+    assert r1 is not r2 and r2 is not r3
+    assert r1.metadata is not r2.metadata, "shallow copy would still share metadata"
+
+
+def test_nested_structured_payload_is_deep_copied():
+    """The analyst puts rows under result.data — a shallow copy would leave those
+    inner dicts shared even though the CortexResult itself was new."""
+    from tools.cortex.schemas import CortexResult
+
+    stored = CortexResult(text="rows", data={"rows": [{"qty": 1}], "row_count": 1})
+    rc.put_by_key("k", stored, "cortex.ask")
+
+    hit = rc.get_by_key("k")
+    hit.data["rows"][0]["qty"] = 999
+    hit.data["row_count"] = 999
+    hit.governance.outcomes["poison"] = True   # nested dataclass field
+
+    again = rc.get_by_key("k")
+    assert again.data["rows"][0]["qty"] == 1, "nested mutation leaked into the entry"
+    assert again.data["row_count"] == 1
+    assert "poison" not in again.governance.outcomes
+    # ...and the object handed to the producing caller is untouched too.
+    assert stored.data["rows"][0]["qty"] == 1
+
+
+def test_uncopyable_result_is_not_cached_by_reference():
+    """If a payload cannot be copied, skip the cache — never fall back to
+    storing the live object, which is the exact failure being prevented."""
+    class _NoCopy:
+        def __deepcopy__(self, memo):
+            raise TypeError("not copyable")
+
+    rc.put_by_key("k", _NoCopy(), "cortex.complete")
+    assert rc.get_by_key("k") is None, "an uncopyable result must not be cached"
+
+
+def test_uncopyable_stored_value_is_served_as_a_miss(monkeypatch):
+    """Copy failure on READ degrades to a miss (slow but correct), never to
+    handing out the stored instance."""
+    rc.put_by_key("k", {"a": 1}, "cortex.complete")
+
+    def _boom(value):
+        raise TypeError("not copyable")
+
+    monkeypatch.setattr(rc.copy, "deepcopy", _boom)
+    assert rc.get_by_key("k") is None
+
+
+# --------------------------------------------------------------------------- #
+# ctx-perf-06 #2 — invalidation: cortex.ask is out, and a purge path exists
+# --------------------------------------------------------------------------- #
+def test_ask_is_not_cacheable_by_default(monkeypatch):
+    """ask is live NL->SQL over the operational DB. Its invalidating writes come
+    from other processes, which an in-process cache cannot observe, so it is out
+    of the default operations list rather than hooked."""
+    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": True})
+    assert not rc.cacheable("cortex.ask")
+    assert "cortex.ask" not in rc._DEFAULT_OPERATIONS
+
+
+def test_shipped_config_does_not_cache_ask():
+    from tools.cortex.config import load_cortex_config
+
+    cache_cfg = load_cortex_config().get("cache") or {}
+    assert "cortex.ask" not in (cache_cfg.get("operations") or [])
+
+
+def test_ask_keeps_a_short_ttl_if_an_operator_re_adds_it(monkeypatch):
+    """Re-adding ask must be short-bounded, not silently inherit default: 300."""
+    from tools.cortex.config import load_cortex_config
+
+    ttls = (load_cortex_config().get("cache") or {}).get("ttl_seconds") or {}
+    assert float(ttls["cortex.ask"]) <= 30
+    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": True})
+    assert rc._ttl_for("cortex.ask") == 30.0 < rc._ttl_for("cortex.unknown")
+
+
+def test_ask_is_cacheable_when_explicitly_opted_in(monkeypatch):
+    """Dropping it from the DEFAULTS must not remove the operator's choice."""
+    _enable(monkeypatch, operations=["cortex.ask"])
+    assert rc.cacheable("cortex.ask")
+    assert not rc.cacheable("cortex.complete")
+
+
+def test_invalidate_purges_entries_and_reports_the_count(monkeypatch):
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    ctx = CortexContext(tenant_id="t-a")
+    api.complete("q1", ctx=ctx)
+    api.complete("q2", ctx=ctx)
+    api.complete("q1", ctx=ctx)          # hit
+    assert calls["n"] == 2
+
+    assert rc.invalidate("test") == 2
+    api.complete("q1", ctx=ctx)          # purged -> must re-run
+    assert calls["n"] == 3
+
+
+def test_invalidate_is_a_noop_on_a_cold_cache():
+    rc.reset()
+    assert rc.invalidate("cold") == 0
+
+
+def test_rag_ingestion_invalidates_the_cache(monkeypatch):
+    """The invalidation path has a REAL consumer — a declared-but-unconsumed
+    purge hook would be no invalidation story at all."""
+    from tools.rag import ingestion_manager as im
+
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    ctx = CortexContext(tenant_id="t-a")
+    api.complete("q", ctx=ctx)
+    api.complete("q", ctx=ctx)
+    assert calls["n"] == 1                      # warm
+
+    im.invalidate_cortex_cache("govcon_proposal_section", chunks=5)
+    api.complete("q", ctx=ctx)
+    assert calls["n"] == 2, "a corpus change must drop stale search-backed answers"
+
+
+def test_rag_ingestion_does_not_invalidate_when_nothing_was_written(monkeypatch):
+    """A dedup-only sweep writes no chunks — it must not throw away warm entries."""
+    from tools.rag import ingestion_manager as im
+
+    _enable(monkeypatch)
+    calls = _count_invoke(monkeypatch)
+    ctx = CortexContext(tenant_id="t-a")
+    api.complete("q", ctx=ctx)
+    im.invalidate_cortex_cache("govcon_proposal_section", chunks=0)
+    api.complete("q", ctx=ctx)
+    assert calls["n"] == 1
+
+
+def test_every_corpus_mutation_path_calls_the_invalidator():
+    """Guards the wiring itself: the hook is reachable from the batch ingest, the
+    realtime ingest AND the delete path — not just defined next to them. Delete
+    is the sharpest case: a cached answer can keep citing a removed source."""
+    from tools.mcp import rag_server
+    from tools.rag import ingestion_manager as im
+
+    assert "invalidate_cortex_cache" in im.ingest_source.__code__.co_names
+    assert "invalidate_cortex_cache" in im.ingest_single_record.__code__.co_names
+    assert "invalidate_cortex_cache" in rag_server.handle_rag_delete_source.__code__.co_names
+
+
+# --------------------------------------------------------------------------- #
+# ctx-perf-06 #3 — the flip: shipped config ON, and a hit still audits
+# --------------------------------------------------------------------------- #
+def test_shipped_config_serves_a_hit_and_still_audits_it(monkeypatch):
+    """End-to-end on the SHIPPED config (no _cache_cfg patch): the flip really
+    caches, and the NIST-AU trail stays complete because the hit writes its row.
+    """
+    rc.reset()
+    calls = _count_invoke(monkeypatch)
+    audits = []
+    import importlib
+    initdb = importlib.import_module("tools.cortex.db.init_db")
+    monkeypatch.setattr(initdb, "record_audit",
+                        lambda payload, conn=None: audits.append(payload) or "id")
+
+    ctx = CortexContext(tenant_id="t-shipped", classification="CUI")
+    api.complete("shipped prompt", ctx=ctx)
+    api.complete("shipped prompt", ctx=ctx)
+
+    assert calls["n"] == 1, "shipped config must actually serve the second call from cache"
+    hit = next((a for a in audits if a.get("cache_hit")), None)
+    assert hit is not None, "a cache hit must still write its cortex_audit row"
+    assert hit["operation"] == "cortex.complete"
+    assert hit["tenant_id"] == "t-shipped"
+    assert hit["cost_usd"] == 0.0
+    assert hit["blocked"] is False

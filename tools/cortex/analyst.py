@@ -67,11 +67,13 @@ import time
 from typing import Any, Optional
 
 from tools.iqe.ast_nodes import CollectionCall, ForeachNode
-from tools.iqe.executor import execute_query, list_collections
+from tools.iqe.executor import execute_query_with_meta, list_collections
 from tools.iqe.nl_to_iqe import nl_to_iqe
 from tools.iqe.parser import IQESyntaxError, parse
 from tools.logging.icdev_logger import get_logger
 from tools.quality.citation_grounding import (
+    CONF_ABSTAIN,
+    CONF_INCLUDE,
     classify_confidence,
     compute_attribution_score,
     parse_citations,
@@ -106,6 +108,12 @@ _GATE_NLQ_FALLBACK = "nlq_fallback_policy"
 # is LLM-summarized — raw row answers are grounded by construction and add no
 # gate entry, so the gate sequences asserted by ctx-analyst-01/-02 stay stable.
 _GATE_CITATION = "citation_validation"
+
+# Score a truncated row answer carries (ctx-trust-04). Derived from the shared
+# bands rather than hardcoded, so it lands mid-"flag" — below CONF_INCLUDE, so
+# nothing treats it as certain, and above CONF_ABSTAIN, because the rows that
+# ARE present are still real and the answer is still worth returning.
+_TRUNCATED_CONFIDENCE = round((CONF_ABSTAIN + CONF_INCLUDE) / 2, 4)
 
 # IQE gate failures that make an auto-mode question eligible for the NLQ
 # fallback: the question could not be served, as opposed to a valid query
@@ -549,10 +557,28 @@ def _execute_nlq_readonly(sql: str, ctx: CortexContext) -> dict:
             pass
 
 
-def _format_answer(rows: list[dict], targets: list[str], explanation: str) -> str:
-    """Human-readable summary of an analyst result set."""
+def _format_answer(
+    rows: list[dict],
+    targets: list[str],
+    explanation: str,
+    truncated: bool = False,
+) -> str:
+    """Human-readable summary of an analyst result set.
+
+    When the scan was cut short, the row count is a LOWER BOUND, and the text
+    says so — the prose is what an operator reads, and "600 rows" next to a
+    confidence caveat buried in metadata is still a wrong answer.
+    """
     n = len(rows)
-    lines = [f"{n} row{'s' if n != 1 else ''} from {', '.join(targets)}."]
+    plural = "s" if n != 1 else ""
+    if truncated:
+        headline = (
+            f"At least {n} row{plural} from {', '.join(targets)} "
+            f"(scan truncated — this is a lower bound, not a count)."
+        )
+    else:
+        headline = f"{n} row{plural} from {', '.join(targets)}."
+    lines = [headline]
     if explanation:
         lines.append(explanation + ".")
     for row in rows[:3]:
@@ -586,15 +612,31 @@ def _label_rows_result(result: CortexResult) -> CortexResult:
 
     No LLM touched the answer text — every value is a real row from a
     registered collection — so it is grounded without citation tags.
+
+    **Grounded is not the same as complete** (ctx-trust-04). Every row present
+    is real, but a scan that hit a row cap is missing rows the question asked
+    about, and the filtering happens in Python *after* that cap — so the count
+    is a lower bound. Labelling that ``confidence_score: 1.0`` is the worst
+    defect this surface can have: not a crash, a confident falsehood on the
+    view an operator uses to audit Cortex itself. A truncated scan is therefore
+    graded ``flag``: still returned, still grounded row-by-row, but no longer
+    presented as the answer. Both engines report through the same
+    ``data["truncated"]`` key — the IQE row cap and the NLQ ``MAX_ROWS`` cap.
     """
+    truncated = bool(result.data.get("truncated"))
     result.grounded = True
     result.metadata.update(
         {
-            "grounding": "rows_by_construction",
-            "confidence": "include",
-            "confidence_score": 1.0,
+            "grounding": "rows_by_construction_truncated" if truncated else "rows_by_construction",
+            "confidence": "flag" if truncated else "include",
+            "confidence_score": _TRUNCATED_CONFIDENCE if truncated else 1.0,
         }
     )
+    if truncated:
+        result.metadata["truncated"] = True
+        reasons = result.data.get("incomplete")
+        if reasons:
+            result.metadata["incomplete"] = reasons
     return result
 
 
@@ -811,7 +853,7 @@ def _ask_nlq(
     ]
 
     result = CortexResult(
-        text=_format_answer(rows, tables, ""),
+        text=_format_answer(rows, tables, "", bool(results.get("truncated"))),
         citations=citations,
         governance=governance,
         provider="nlq",
@@ -1010,7 +1052,12 @@ def _ask_iqe(
         conn = _open_connection()
     _apply_security_context(conn, ctx)
     try:
-        rows = execute_query(ast, conn)
+        # ...with_meta, not execute_query: the adapters cap their scan and the
+        # where clauses are applied in Python afterwards, so a capped fetch
+        # yields a lower bound. execute_query drops that fact and the answer
+        # would be labelled maximally confident (ctx-trust-04).
+        executed = execute_query_with_meta(ast, conn)
+        rows = executed.rows
     except Exception as exc:
         _record(governance, _GATE_EXECUTION, "fail")
         raise CortexAnalystError(
@@ -1039,8 +1086,16 @@ def _ask_iqe(
         for target in targets
     ]
 
+    truncated = not executed.complete
+    if truncated:
+        logger.warning(
+            "cortex.analyst: %s over %s returned a TRUNCATED scan (%s); "
+            "row_count is a lower bound",
+            question, targets, executed.incomplete,
+        )
+
     result = CortexResult(
-        text=_format_answer(rows, targets, explanation),
+        text=_format_answer(rows, targets, explanation, truncated),
         citations=citations,
         governance=governance,
         provider="iqe",
@@ -1052,6 +1107,8 @@ def _ask_iqe(
             "explanation": explanation,
             "collections": targets,
             "mode": mode,
+            "truncated": truncated,
+            "incomplete": executed.incomplete,
         },
     )
     return _finalize_result(result, question, summarize, ctx)
