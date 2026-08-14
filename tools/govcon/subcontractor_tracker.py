@@ -693,7 +693,11 @@ def detect_noncompliance(contract_id):
         1. Flow-down: Active subs with flow_down_complete = 0.
         2. Cybersecurity: Active subs above threshold with cybersecurity_compliant = 0.
         3. CMMC: Active subs with no CMMC level when contract requires it.
-        4. ISR/SSR currency: No report within the last reporting window.
+        4. ISR/SSR currency: No report within the last reporting window. The
+           "never filed" case is raised only where reporting is OWED — i.e. the
+           contract has recorded subcontract dollars (FAR 19.702(a)); staleness
+           of an already-filed report is always raised. Applicability is
+           reported under the 'isr_ssr' key so a suppressed check is visible.
 
     Args:
         contract_id: Parent contract UUID.
@@ -755,6 +759,44 @@ def detect_noncompliance(contract_id):
         )
 
     # 4. ISR/SSR currency — check if there is a recent report
+    #
+    # Whether a report is MISSING is only a finding if one is OWED. FAR 19.702(a)
+    # attaches a subcontracting plan — and with it the FAR 52.219-9(d) ISR/SSR
+    # reporting this checks — only where subcontracting possibilities exist. A
+    # contract that has subcontracted nothing owes no report, so its absent
+    # report is not a compliance gap.
+    #
+    # Asking only "is the table empty for this contract" made the check fire for
+    # every contract that had never filed, forever. On the live board (2026-08-13)
+    # that was all EIGHT active contracts: $0 of recorded subcontract dollars
+    # apiece, cpmp_small_business_plan empty board-wide, and a HIGH finding on
+    # every one — 100% false, no true positive ever. Six had reached the kanban
+    # board as high-priority cards and one was dispatched to a session, where it
+    # is unsatisfiable by construction: the remedy is filing in eSRS, an external
+    # government system, for a contract that owes nothing.
+    #
+    # Recorded DOLLARS decide it, not the subcontractor's current status. An ISR
+    # reports subcontracting dollars, so a contract whose subcontractors have all
+    # been terminated still owes a report for what it awarded them — gating on
+    # "has an active subcontractor" (which is how checks 1-3 above scope
+    # themselves, because they are about the sub's live posture) would drop that
+    # genuine obligation.
+    #
+    # The trade is a false NEGATIVE: a contract that owes a report but has no
+    # subcontractors recorded in ICDEV yet reads as not-applicable. That is the
+    # same blind spot checks 1-3 already have, and it is reported rather than
+    # silent — see the 'isr_ssr' block on the return.
+    subcontracted_dollars = float(
+        dict(
+            conn.execute(
+                "SELECT COALESCE(SUM(subcontract_value), 0) AS total "
+                "FROM cpmp_subcontractors WHERE contract_id = %s",
+                (contract_id,),
+            ).fetchone()
+        )["total"]
+        or 0.0
+    )
+
     # Note: DB may have reporting_period+report_type or period_start+period_end depending on init version
     try:
         latest_report = conn.execute(
@@ -771,17 +813,30 @@ def detect_noncompliance(contract_id):
         ).fetchone()
     conn.close()
 
+    # A filed report establishes the obligation on its own, so the staleness
+    # branch below is NOT gated on dollars — only the "never filed" branch is.
+    isr_ssr_applicable = subcontracted_dollars > 0 or latest_report is not None
+    isr_ssr_reason = (
+        "subcontract dollars recorded"
+        if subcontracted_dollars > 0
+        else "a report has already been filed"
+        if latest_report is not None
+        else "no subcontract dollars recorded — FAR 19.702(a) subcontracting "
+        "plan reporting does not attach"
+    )
+
     if not latest_report:
-        findings.append(
-            {
-                "category": "isr_ssr",
-                "severity": "high",
-                "sub_id": None,
-                "company_name": None,
-                "description": "No ISR/SSR report has been filed for this contract",
-                "subcontract_value": None,
-            }
-        )
+        if subcontracted_dollars > 0:
+            findings.append(
+                {
+                    "category": "isr_ssr",
+                    "severity": "high",
+                    "sub_id": None,
+                    "company_name": None,
+                    "description": "No ISR/SSR report has been filed for this contract",
+                    "subcontract_value": None,
+                }
+            )
     else:
         try:
             created = datetime.fromisoformat(latest_report["created_at"].replace("Z", "+00:00"))
@@ -824,6 +879,16 @@ def detect_noncompliance(contract_id):
         "category_counts": category_counts,
         "compliant": len(findings) == 0,
         "findings": findings,
+        # Reported, not silent. A check that quietly stops running is the defect
+        # one door over from a check that fires on everything: a caller (and the
+        # /api/cpmp noncompliance panel) can tell "no ISR/SSR gap" apart from
+        # "ISR/SSR not assessed for this contract", which a bare absent finding
+        # cannot express.
+        "isr_ssr": {
+            "applicable": isr_ssr_applicable,
+            "reason": isr_ssr_reason,
+            "subcontracted_dollars": subcontracted_dollars,
+        },
     }
 
 

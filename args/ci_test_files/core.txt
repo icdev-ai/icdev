@@ -1119,3 +1119,18 @@ tests/test_govcon_capabilities.py
 # shape that re-breaks on the next rename with no exception to notice it by.
 # 9 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/test_cpmp_monitor_reflex_contract.py
+# cpmp-841f3ee111 — the ISR/SSR check asked whether a report EXISTS, never
+# whether one is OWED. FAR 19.702(a) attaches subcontracting-plan reporting only
+# where subcontracting possibilities exist, so a contract that subcontracted
+# nothing owes no ISR/SSR and its absent report is not a gap. Live board
+# 2026-08-13: all EIGHT active contracts had $0 recorded subcontract dollars and
+# cpmp_small_business_plan was empty board-wide, so every one raised a HIGH
+# finding -- 100% false, no true positive ever. Six reached the kanban board and
+# one was dispatched to a session, unsatisfiable by construction (its remedy is
+# filing in eSRS, an external system, for a contract that owes nothing). Gated
+# because an always-firing finding is indistinguishable from a working one until
+# someone counts, and because the suppression must stay narrow: the four
+# regression guards here pin that recorded dollars, a terminated subcontractor's
+# dollars, and a stale filed report all still raise.
+# 9 tests, <1s, in-memory sqlite: no DB service, no LLM, no network.
+tests/test_cpmp_isr_ssr_obligation_gate.py
