@@ -2375,6 +2375,11 @@ def create_app(testing: bool = False) -> Flask:
             "ROLE_VIEWS": ROLE_VIEWS,
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
+            # Registry-driven enablement for ANY component, so a home tile can
+            # gate on whether its blueprint is actually mounted. One helper for
+            # all 66 registered components rather than a 67th `_HAS_*` boolean —
+            # registration is derived from args/component_registry.yaml.
+            "component_enabled": _REGISTRY.is_enabled,
             "strategos_enabled": _HAS_STRATEGOS,
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
             "network_enabled": _HAS_NETWORK,
@@ -2524,6 +2529,14 @@ def create_app(testing: bool = False) -> Flask:
     # All 55+ blueprints are mounted under /api/v1/* with /api/* legacy aliases.
     # See tools/dashboard/api/__init__.py for the full registration sequence.
     register_api_blueprints(app)
+
+    # ---- Backend guard (e2p-back-04) ----
+    # Refuse to serve from the SQLite fallback when this install declares
+    # ICDEV_PG_NO_FALLBACK. Deliberately NOT wrapped in a broad try/except that
+    # swallows it: the whole point is to fail loudly at boot instead of serving
+    # 500s from a database nothing maintains. See tools/db/backend_guard.py.
+    from tools.db.backend_guard import assert_primary_backend
+    assert_primary_backend("ICDEV dashboard")
 
     # ---- Studio DB init (kanban/ci-fix-26594490171) ----
     try:
@@ -3823,6 +3836,63 @@ def create_app(testing: bool = False) -> Flask:
             _dlog.getLogger(__name__).warning("IQE dispatch error [%s]: %s", canvas, exc)
             return jsonify({"error": str(exc), "canvas": canvas, "iqe": iqe_str}), 500
 
+    def _enrich_hitl_alerts(conn, rows):
+        """Attach to each firing HITL row what the operator needs to act.
+
+        Three things the panel could not show while 12 alerts were cleared by
+        hand on 2026-08-10:
+
+        * WHAT IT IS. `description` was never rendered, so the cause, the resume
+          budget and the PR link — the facts that decide which button can work —
+          were invisible and got read out of the database instead.
+        * WHETHER IT IS FLAPPING. #1513 wrote ~180 rows in a day, 27 for one
+          task, and the page showed firing rows plus a flat 50-row history. The
+          churn was only visible as a GROUP BY.
+        * WHETHER IT IS STALE. An alert whose task is done is describing work
+          that is over. `pr_watcher._sweep_stale_hitl_alerts` clears those now;
+          this marks any the sweep has not reached yet, so the panel is honest
+          in the window between the two.
+
+        Best-effort per row: an alert that cannot be enriched still renders with
+        today's columns rather than taking the page down.
+        """
+        from tools.kanban import hitl_alert_view as hv
+
+        for row in rows:
+            parsed = hv.parse_alert(row)
+            if not parsed:
+                continue
+            row["hitl"] = parsed
+            row["rebase_refusal"] = hv.rebase_refusal(parsed["cause"])
+            try:
+                churn = conn.execute(
+                    "SELECT COUNT(*) AS cnt, MIN(created_at) AS first_seen "
+                    "FROM alerts WHERE source = %s",
+                    (row.get("source"),),
+                ).fetchone()
+                if churn:
+                    churn = dict(churn)
+                    row["refire_count"] = int(churn.get("cnt") or 1)
+                    row["first_seen"] = churn.get("first_seen")
+                task = conn.execute(
+                    "SELECT status FROM kanban_tasks WHERE id = %s",
+                    (parsed["task_id"],),
+                ).fetchone()
+                status = (dict(task).get("status") or "") if task else ""
+                row["task_status"] = status
+                # Mirrors pr_watcher.PRWatcher.TERMINAL_TASK_STATES. Named here
+                # rather than imported so the dashboard does not pull the watcher
+                # in on a page render.
+                row["is_stale"] = (
+                    task is None
+                    or status.strip().lower() in ("done", "dismissed", "cancelled", "archived")
+                )
+            except Exception as exc:  # noqa: BLE001 — enrichment must not 500 the page
+                import logging as _enrich_log
+                _enrich_log.getLogger(__name__).debug(
+                    "monitoring: HITL enrichment failed for %s: %s", row.get("source"), exc)
+        return rows
+
     @app.route("/monitoring")
     def monitoring_overview():
         """Monitoring overview page."""
@@ -3843,6 +3913,8 @@ def create_app(testing: bool = False) -> Flask:
 
             # Recent alerts across all statuses (history view, capped)
             alerts = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50").fetchall()
+
+            firing_alerts = _enrich_hitl_alerts(conn, [dict(r) for r in firing_alerts])
 
             # Self-healing events
             healing_events = conn.execute(
@@ -3867,7 +3939,7 @@ def create_app(testing: bool = False) -> Flask:
 
             return render_template(
                 "monitoring/overview.html",
-                firing_alerts=[dict(r) for r in firing_alerts],
+                firing_alerts=firing_alerts,
                 alerts=[dict(r) for r in alerts],
                 healing_events=[dict(r) for r in healing_events],
                 firing_count=firing,
@@ -9680,6 +9752,31 @@ def create_app(testing: bool = False) -> Flask:
                 "needs_decomp": counts.get("needs_decomposition", 0),
                 "pct": pct,
             })
+        # ── Orphan detection ────────────────────────────────────────────────
+        # Every number above comes from EPIC patterns. A task that carries this
+        # project's prefix but that no epic claims is dropped from all of them —
+        # and if EVERY task is dropped, `visible` below goes False and the card
+        # disappears, indistinguishable from a project with no work at all.
+        # That silence is the bug: the only detector was a human noticing a
+        # missing card. Count them, surface them, and keep the card visible.
+        #
+        # Gate sentinels (`<prefix>gate-NN`) are excluded: a sentinel holds the
+        # card, it is not work, and it does not belong in a progress figure.
+        owned_rows = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\'" + excl_sql,
+            (f"{prefix_esc}%",) + excl_params,
+        ).fetchall()
+        try:
+            from tools.kanban.gates import has_gate_id
+        except Exception:  # noqa: BLE001 — orphan reporting must not break the page
+            def has_gate_id(_tid):  # type: ignore[misc]
+                return False
+        epic_pats = tuple(f"{prefix}{ep['key']}-" for ep in project.get("epics", []))
+        orphans = sorted(
+            tid for tid in (str(dict(r)["id"]) for r in owned_rows)
+            if not tid.startswith(epic_pats) and not has_gate_id(tid)
+        ) if epic_pats else []
+
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
             "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' " + excl_sql +
@@ -9707,7 +9804,14 @@ def create_app(testing: bool = False) -> Flask:
             "total_tasks": total_all,
             "done_tasks": done_all,
             "overall_pct": int(round(100 * done_all / total_all)) if total_all else 0,
-            "visible": total_all > 0 and done_all < total_all,
+            "orphaned_tasks": len(orphans),
+            "orphaned_sample": orphans[:10],
+            # A card with unclaimed tasks stays visible even at 0 counted work.
+            # "No tasks yet" and "tasks nobody counts" are different facts, and
+            # rendering them identically is what made this cost manual triage
+            # every time. Percentages on such a card are computed over a subset —
+            # `orphaned_tasks` is what tells the operator not to trust them.
+            "visible": (total_all > 0 and done_all < total_all) or bool(orphans),
         }
 
     def _compute_triage_summary() -> dict:
@@ -9875,13 +9979,51 @@ def create_app(testing: bool = False) -> Flask:
         # 4. Global triage summary
         triage = _compute_triage_summary()
 
-        visible = bool(triage_recent) or bool(autofix_branches) or bool(unresolved_failures)
+        # 5. What pr_watcher recovered WITHOUT a human (last 24h).
+        #
+        # This panel is where auto-resolved work belongs, and pr_watcher's
+        # recoveries were missing from it entirely: it rebases stale branches and
+        # feeds CI failures back as resumes, all of it recorded in audit_trail
+        # and none of it visible here. The result read as "nothing is happening"
+        # during the exact periods the pipeline was busiest recovering — and it
+        # made the HITL alerts look like the only thing the system ever does,
+        # when they are the rare exception.
+        pr_recovery: list = []
+        try:
+            _c = _gc()
+            _pg = getattr(_c, "_backend", "sqlite") == "postgresql"
+            _details = "details::text" if _pg else "details"
+            _cut = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            for _r in _c.execute(
+                f"SELECT action, {_details} AS d, created_at FROM audit_trail "  # nosec B608
+                "WHERE action IN ('pr_watcher.rebase', 'pr_watcher.resume') "
+                "AND created_at >= %s ORDER BY created_at DESC LIMIT 20",
+                (_cut,),
+            ).fetchall():
+                _d = dict(_r)
+                try:
+                    _payload = json.loads(_d.get("d") or "{}")
+                except (ValueError, TypeError):
+                    _payload = {}
+                pr_recovery.append({
+                    "task_id": _payload.get("task_id"),
+                    "kind": (_d.get("action") or "").split(".")[-1],
+                    "reason": (_payload.get("reason") or "")[:160],
+                    "at": _d.get("created_at"),
+                })
+            _c.close()
+        except Exception as _rec_exc:  # noqa: BLE001 — a panel must not 500
+            app.logger.debug("autonomy: pr recovery lookup failed: %s", _rec_exc)
+
+        visible = (bool(triage_recent) or bool(autofix_branches)
+                   or bool(unresolved_failures) or bool(pr_recovery))
         return jsonify({
             "visible": visible,
             "triage_recent": triage_recent,
             "autofix_branches": autofix_branches,
             "unresolved_failures": unresolved_failures,
             "triage_summary": triage.get("summary", {}),
+            "pr_recovery": pr_recovery,
         })
 
     @app.route("/digital-twin")

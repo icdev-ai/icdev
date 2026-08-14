@@ -23,7 +23,13 @@ search:
     factual_confidence: 0.75
 
   # Per-backend fusion weights for the unified search fan-out. Keys are the
-  # normalized CORTEX_BACKENDS names (tools/cortex/schemas.py).
+  # normalized CORTEX_BACKENDS names (tools/cortex/schemas.py). Read by
+  # config.resolve_strategy_weights() and applied in
+  # search_service._rrf_fuse: an item scores sum(weight / (rrf_k + rank))
+  # over the backends that returned it, so raising kb above rag genuinely
+  # re-orders the fused list. A backend with no entry here weighs 1.0
+  # (neutral); a negative or non-numeric entry is clamped to 0.0, which
+  # demotes that backend rather than inverting the ordering.
   strategy_weights:
     rag: 1.0
     graph: 0.8
@@ -162,10 +168,19 @@ governance:
   # change with blast radius across every Cortex adopter, so enable knowingly.
   fail_closed: false
 
-  # complete() is free-form drafting with no evidence set — skip the
-  # grounding pass for plain completions instead of failing it closed. (The
-  # pipeline already realizes this structurally: non-retrieval calls skip the
-  # grounding gates.)
+  # complete() is free-form drafting with no evidence set — skip the grounding
+  # pass for plain (retrieval=False) completions instead of failing it closed.
+  #
+  # Set to FALSE and the two grounding gates run on plain completions too:
+  #   citation_grounding  validates against an EMPTY allowed set, so any
+  #                       [source: N] tag a plain completion emits is
+  #                       fabricated by construction -> outcome "fail"
+  #                       (and a block under fail_closed).
+  #   content_grounding   there is nothing to ground against, so the gate is
+  #                       the placeholder scan: unresolved [PLACEHOLDER]/TBD
+  #                       tokens in drafting output -> outcome "warn".
+  # Either way `grounded` stays False for a non-retrieval call — a completion
+  # with no evidence set is never certified, only checked.
   skip_grounding_for_plain_complete: true
 
   # -- Governance profiles (hgx-gov-01) ---------------------------------------
@@ -231,13 +246,18 @@ governance:
     routing_function: cortex_complete
 
 analyst:
-  # When the deterministic NLQ->SQL path returns nothing, fall back to the
-  # cortex_analyst LLM routing chain.
+  # Whether ask(mode="auto") may DEGRADE from the IQE path into the LLM
+  # NL->SQL path when IQE cannot resolve/translate/authorize the question.
+  #
+  # Set to false as a policy control — "no LLM-generated SQL runs against this
+  # database by accident". The IQE error is then re-raised to the caller with
+  # a `nlq_fallback_policy: skip` gate on the governance report, so the refusal
+  # is auditable. Scope is exactly the fallback: an explicit ask(mode="nlq") is
+  # a caller opting in by name and is NOT governed by this key.
   nlq_fallback_enabled: true
 
 cache:
-  # In-process LRU + TTL response cache over the governed facades. OFF by
-  # default — enable knowingly.
+  # In-process LRU + TTL response cache over the governed facades.
   #
   # Security model: the cache key folds tenant_id + classification + domain +
   # air_gap, so a cached result can NEVER be served across any of those
@@ -245,12 +265,27 @@ cache:
   # hit never bypasses egress governance. Every hit still writes a cortex_audit
   # row (cache_hit=true, zero incremental cost) so the NIST-AU trail and
   # /cortex/metrics stay complete.
-  enabled: false
+  #
+  # Entries are copied in and out (deepcopy), so a caller mutating a served
+  # result cannot rewrite the answer every later hit gets — see the ctx-perf-06
+  # note in tools/cortex/cache.py.
+  enabled: true
+  # Read ONCE, when the cache singleton is built on first use. Changing it in a
+  # running process does nothing until cache.reset() — i.e. restart the service.
   max_entries: 512
   # Which governed operations may be cached. complete = free-form drafting (best
   # hit rate at temperature 0). search = retrieval fan-out (corpus drifts -> keep
-  # TTL short). ask = LIVE analyst NL->SQL answers over changing DB state -> very
-  # short TTL, and the riskiest to cache; drop it from this list to disable.
+  # TTL short; the RAG ingestion path calls cache.invalidate() so an in-process
+  # corpus change purges immediately rather than waiting out the TTL).
+  #
+  # cortex.ask is deliberately NOT in this list. It is live NL->SQL over the
+  # operational DB, so its invalidation trigger is "any write to any table the
+  # generated SQL touched" — authored by every subsystem, and mostly by OTHER
+  # processes (kanban runner, reflex daemons, ingestion workers, an operator at
+  # psql). An in-process cache cannot observe those, so hooking it would promise
+  # a freshness guarantee it cannot keep; a partial invalidation hook is worse
+  # than none. Its 30s ttl_seconds entry is kept below so an operator who adds it
+  # back knowingly gets the short bound instead of inheriting default: 300.
   #
   # classify + extract are the most deterministic and highest-repeat operations:
   # both are pure functions of (text, labels|schema, function) with no DB or
@@ -260,11 +295,12 @@ cache:
   # workbook). Their non-boundary args are folded into the key by the facade
   # decorator — a different label list or a different JSON schema is a different
   # entry, never a shared one.
-  operations: [cortex.complete, cortex.search, cortex.ask, cortex.classify, cortex.extract]
+  operations: [cortex.complete, cortex.search, cortex.classify, cortex.extract]
   ttl_seconds:
     default: 300
     cortex.complete: 900
     cortex.search: 120
+    # Not in `operations` — see the note above. Kept so re-adding it is bounded.
     cortex.ask: 30
     # classify DEGRADES rather than raising: when the router is unavailable it
     # returns a query_classifier heuristic label (provider="deterministic"), and

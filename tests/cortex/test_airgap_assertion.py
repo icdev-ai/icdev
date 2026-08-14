@@ -151,6 +151,10 @@ def test_routing_functions_pin_api_constants():
         api.CORTEX_EXTRACT_FUNCTION,
         api.CORTEX_SEARCH_REWRITE_FUNCTION,
         api.CORTEX_ANALYST_FUNCTION,
+        # ctx-trust-01 added cortex_summarize to CORTEX_ROUTING_FUNCTIONS but
+        # left this pin behind, so the test that exists to stop the two drifting
+        # was itself red on main. That is the whole point of a pin: update both.
+        api.CORTEX_SUMMARIZE_FUNCTION,
     )
 
 

@@ -130,9 +130,60 @@ def test_citation_publish_gate_blocks_placeholders_first():
 
 def test_citation_publish_gate_force_records_override():
     from tools.docgen.workflow import citation_publish_gate
-    res = citation_publish_gate("Uncited body text.", force_citations=True)
+    res = citation_publish_gate(
+        "Uncited body text.", force_citations=True, force_reason="reviewed by SME",
+    )
     assert res["blocked"] is False
-    assert res["overrides"].get("citation_guard_override")
+    override = res["overrides"].get("citation_guard_override")
+    assert override
+    assert override["reason"] == "reviewed by SME"
+    assert override["findings"]
+
+
+def test_citation_publish_gate_force_without_reason_still_blocks():
+    """trust-spine-01 invariant 4: an override with no stated reason is not applied.
+
+    An unexplained override is unauditable after the fact and indistinguishable
+    from a bug, so the gate refuses rather than publishing something nobody can
+    later account for.
+    """
+    from tools.docgen.workflow import citation_publish_gate
+    res = citation_publish_gate("Uncited body text.", force_citations=True)
+    assert res["blocked"] is True
+    assert res["gate"] == "citation_guard"
+    assert res["overrides"] == {}
+
+
+def test_citation_publish_gate_claim_tier_is_unmeasurable_without_sources():
+    """No source texts means the claim tier could not run — that is not a pass.
+
+    Reporting "clean" for a guard that never looked is the exact defect TRUST v2
+    exists to remove. The drafting profile records it as a warning so pre-existing
+    callers keep working, but the status is visible.
+    """
+    from tools.docgen.workflow import citation_publish_gate
+    res = citation_publish_gate("Firewalls are configured [source: kb1].")
+    claim = res["verdict"]["stage1"]["claim_guard"]
+    assert claim["status"] == "unmeasurable"
+    assert res["blocked"] is False
+
+
+def test_citation_publish_gate_claim_tier_blocks_a_well_cited_invention():
+    """The hole the first two guards leave open.
+
+    The sentence carries a well-formed citation to a source that was genuinely
+    retrieved, so citation_guard passes it — but the cited span says nothing
+    about 47 days, and that specific is the whole assertion.
+    """
+    from tools.docgen.workflow import citation_publish_gate
+    res = citation_publish_gate(
+        "The system achieved an average patch latency of 47 days [source: kb1].",
+        sources={"kb1": "The system enforces multi-factor authentication for all "
+                        "privileged accounts and logs each session."},
+    )
+    assert res["blocked"] is True
+    assert res["gate"] == "claim_guard"
+    assert res["claim_findings"]
 
 
 def test_publish_route_blocks_uncited_document(tmp_path):
@@ -154,13 +205,30 @@ def test_publish_route_force_citations_writes_audit_row(tmp_path):
     with patch("tools.docgen.workflow.stage8_publish", return_value=[{"format": "html"}]):
         resp = client.post(
             f"/docgen/api/sessions/{s['id']}/publish",
-            json={"force_citations": True, "reviewer": "alice"},
+            json={
+                "force_citations": True,
+                "force_reason": "SME confirmed the source offline",
+                "reviewer": "alice",
+            },
         )
     assert resp.status_code == 201
     rows = list_publish_audit(s["id"])
     assert len(rows) == 1
     assert rows[0]["gate"] == "citation_guard"
     assert rows[0]["reviewer"] == "alice"
+    assert "SME confirmed the source offline" in (rows[0]["findings"] or "")
+
+
+def test_publish_route_rejects_force_without_a_reason(tmp_path):
+    """A force_* flag with no force_reason is a 400, not a silent publish."""
+    client = _client(tmp_path)
+    s = _session_ready("A runbook with no citations whatsoever.")
+    resp = client.post(
+        f"/docgen/api/sessions/{s['id']}/publish",
+        json={"force_citations": True, "reviewer": "alice"},
+    )
+    assert resp.status_code == 400
+    assert "force_reason" in resp.get_json()["error"]
 
 
 def test_publish_route_allows_cited_document(tmp_path):

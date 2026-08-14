@@ -25,7 +25,14 @@ from tools.quality.citation_grounding import PUBLISH_GATES, publish_gate_check_s
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _CONSOLIDATED = _ROOT / "tools" / "db" / "schema" / "pg_consolidated.sql"
-_MIGRATION = _ROOT / "tools" / "db" / "migrations" / "300_idr_publish_audit_cove_guard.sql"
+_MIGRATION_300 = _ROOT / "tools" / "db" / "migrations" / "300_idr_publish_audit_cove_guard.sql"
+# The CURRENT constraint. Each widening supersedes the last, so only the newest
+# migration is expected to render the full PUBLISH_GATES set — older ones are
+# historical snapshots and are asserted to be widening-only, not exhaustive.
+_MIGRATION = (
+    _ROOT / "tools" / "db" / "migrations"
+    / "20260814181227_idr_publish_audit_trust_v2_gates" / "up.sql"
+)
 
 
 def _gates_in(sql: str) -> set[str]:
@@ -64,10 +71,30 @@ def test_gates_are_unique():
     assert len(PUBLISH_GATES) == len(set(PUBLISH_GATES))
 
 
+def test_trust_v2_guards_are_recognised_gates():
+    """TRUST v2 wired the claim tier and the constitution rule set.
+
+    Both had shipped with zero production callers. A guard that can block but
+    whose override cannot be recorded is worse than no guard.
+    """
+    assert {"claim_guard", "constitution_guard"} <= set(PUBLISH_GATES)
+
+
+def test_unshipped_guards_are_not_declared_early():
+    """kg_guard (phase 2) and structure_guard (phase 3) must not appear yet.
+
+    A gate value nothing can emit is the declared-but-unconsumed defect this
+    framework exists to catch. Each ships with its own widening migration.
+    """
+    assert "kg_guard" not in PUBLISH_GATES
+    assert "structure_guard" not in PUBLISH_GATES
+
+
 def test_rendered_sql_is_deterministic():
     """Sorted, so the constant and the SQL can be compared literally."""
     assert publish_gate_check_sql() == (
-        "gate IN ('citation_guard','cove_guard','placeholder_guard')"
+        "gate IN ('citation_guard','claim_guard','constitution_guard',"
+        "'cove_guard','placeholder_guard')"
     )
     assert publish_gate_check_sql("g").startswith("g IN (")
 
@@ -105,24 +132,45 @@ def test_sql_matches_the_python_constant(path: pathlib.Path):
     assert _gates_in(text) == set(PUBLISH_GATES)
 
 
-def test_migration_widens_rather_than_replaces():
-    """An override already recorded must not be invalidated by this change."""
-    sql = _MIGRATION.read_text(encoding="utf-8", errors="replace")
+@pytest.mark.parametrize(
+    "path", [_MIGRATION_300, _MIGRATION], ids=["migration_300", "trust_v2"]
+)
+def test_migration_widens_rather_than_replaces(path: pathlib.Path):
+    """An override already recorded must not be invalidated by a widening.
+
+    Every migration in the chain must accept everything its predecessor did.
+    """
+    sql = path.read_text(encoding="utf-8", errors="replace")
     assert "DROP CONSTRAINT IF EXISTS" in sql, "must be idempotent"
-    assert _gates_in(sql) >= {"citation_guard", "placeholder_guard"}
+    assert _gates_in(sql) >= {"citation_guard", "cove_guard", "placeholder_guard"}
 
 
-def test_migration_number_avoids_the_reserved_range():
+def test_migration_300_avoided_the_reserved_range():
     """298/299 were offered to the two open PRs still holding 295.
 
     Resolving one collision must not manufacture another — picking a migration
     number is a repo-wide claim, so open PRs count, not just main.
     """
-    assert _MIGRATION.name.startswith("300_")
+    assert _MIGRATION_300.name.startswith("300_")
 
 
-def test_migration_is_not_a_duplicate_version():
+def test_trust_v2_migration_is_timestamp_versioned():
+    """The 001-341 sequence is CLOSED (CLAUDE.md).
+
+    Hand-numbering is a read-modify-write across concurrent branches with no
+    lock between them; the loser is silently never applied because
+    MigrationRunner keeps only the FIRST entry per version.
+    """
+    version = _MIGRATION.parent.name.split("_", 1)[0]
+    assert len(version) == 14 and version.isdigit(), (
+        f"{_MIGRATION.parent.name} must use a 14-digit UTC timestamp version"
+    )
+
+
+def test_migrations_are_not_duplicate_versions():
     """Belt and braces against the failure this repo has 70 instances of."""
     from tools.db.migration_versions import find_duplicates
 
-    assert "300" not in find_duplicates()
+    duplicates = find_duplicates()
+    assert "300" not in duplicates
+    assert _MIGRATION.parent.name.split("_", 1)[0] not in duplicates

@@ -225,6 +225,64 @@ def resolve_fail_closed(ctx=None, config_path=None) -> bool:
     return bool((cfg.get("governance") or {}).get("fail_closed", False))
 
 
+def resolve_strategy_weights(search_cfg=None, config_path=None) -> Dict[str, float]:
+    """Per-backend fusion weights for RRF (``search.strategy_weights``).
+
+    Consumed by ``search_service._rrf_fuse``, which scores each item
+    ``sum(weight / (rrf_k + rank))`` over the backends that returned it —
+    the formula args/cortex_config.yaml has always documented. A backend with
+    no entry weighs 1.0 (neutral); an unparseable or negative entry is clamped
+    to 0.0 so a typo demotes that backend rather than inverting the ordering.
+
+    ``search_cfg`` lets a caller that already loaded the ``search`` section
+    pass it in instead of paying a second (cached) config read.
+    """
+    if search_cfg is None:
+        search_cfg = (load_cortex_config(config_path) or {}).get("search") or {}
+    raw = search_cfg.get("strategy_weights") or {}
+    weights: Dict[str, float] = {}
+    if isinstance(raw, dict):
+        for backend, value in raw.items():
+            try:
+                weights[str(backend)] = max(0.0, float(value))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "cortex: non-numeric search.strategy_weights[%r]=%r — using 0.0",
+                    backend, value,
+                )
+                weights[str(backend)] = 0.0
+    return weights
+
+
+def nlq_fallback_enabled(config_path=None) -> bool:
+    """Whether ``analyst.ask()`` may fall back from IQE to the LLM NL->SQL path.
+
+    ``analyst.nlq_fallback_enabled: false`` is a POLICY switch: it stops
+    ``mode="auto"`` from silently degrading into LLM-generated SQL when IQE
+    cannot resolve/translate/authorize the question. It deliberately does NOT
+    govern an explicit ``mode="nlq"`` call — that is a caller opting in by
+    name, not a fallback.
+    """
+    cfg = load_cortex_config(config_path)
+    return bool((cfg.get("analyst") or {}).get("nlq_fallback_enabled", True))
+
+
+def skip_grounding_for_plain_complete(config_path=None) -> bool:
+    """Whether a non-retrieval call skips the two grounding gates.
+
+    Default True: a plain ``complete()`` is free-form drafting with no evidence
+    set, so both grounding gates record ``skip``. Set
+    ``governance.skip_grounding_for_plain_complete: false`` to run them anyway —
+    the citation gate then validates against an EMPTY allowed set (a plain
+    completion injects no sources, so any ``[source: N]`` tag it emits is
+    fabricated by construction) and the content gate runs the placeholder scan.
+    """
+    cfg = load_cortex_config(config_path)
+    return bool(
+        (cfg.get("governance") or {}).get("skip_grounding_for_plain_complete", True)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Air-gap invariant
 # ---------------------------------------------------------------------------
