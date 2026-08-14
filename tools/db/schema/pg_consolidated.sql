@@ -63949,9 +63949,10 @@ CREATE TABLE IF NOT EXISTS public.idr_publish_audit (
     session_id  TEXT NOT NULL,
     -- Values derived from tools.quality.citation_grounding.PUBLISH_GATES;
     -- kept in sync by tests/test_publish_gates.py. Widened by migration 300
-    -- (cove_guard) and 20260814181227 (claim_guard, constitution_guard).
+    -- (cove_guard), 20260814181227 (claim_guard, constitution_guard) and
+    -- 20260814201513 (kg_guard).
     gate        TEXT NOT NULL
-                    CHECK (gate IN ('citation_guard','claim_guard','constitution_guard','cove_guard','placeholder_guard')),
+                    CHECK (gate IN ('citation_guard','claim_guard','constitution_guard','cove_guard','kg_guard','placeholder_guard')),
     reviewer    TEXT,
     findings    TEXT,
     tenant_id   TEXT,

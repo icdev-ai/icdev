@@ -179,13 +179,13 @@ PUBLISH_GATES: tuple[str, ...] = (
     "cove_guard",           # Chain-of-Verification found a claim needing revision
     "claim_guard",          # a claim's own cited span does not contain what it asserts
     "constitution_guard",   # a mandatory constitutional rule failed and stayed failed
+    "kg_guard",             # a claim asserts a relation the knowledge graph forbids
 )
 # Guards are added here by the phase that WIRES them, together with the
 # migration that widens the CHECK — never in advance. A gate value nothing can
 # emit is the declared-but-unconsumed defect this module exists to catch, and it
 # would also make `idr_publish_audit.gate` accept a value no reviewer can
-# produce. kg_guard and structure_guard are deliberately absent until their
-# guards ship.
+# produce. structure_guard is deliberately absent until its guard ships.
 
 
 def publish_gate_check_sql(column: str = "gate") -> str:

@@ -1,0 +1,36 @@
+{
+  "generated_from": "args/vendor_parity.yaml",
+  "note": "GENERATED — do not hand-edit. Regenerate with `python tools/workflow/vendor_api_manifest.py --write` after changing a declared vendored source, and re-vendor the file into each consumer repo.",
+  "sources": {
+    "tools/cortex/client.py": {
+      "member_count": 25,
+      "public_api": [
+        "CortexClient.__init__(self, base_url=..., api_key=..., *, api_key_env=..., timeout=..., ask_timeout=..., enabled=...)",
+        "CortexClient.agent(self, goal, *, mode=..., roles=..., workflow_id=..., project_id=..., inputs=..., max_iterations=..., system_prompt=..., llm_function=..., trigger_ref=..., domain=..., timeout=...)",
+        "CortexClient.ask(self, question, *, mode=..., canvas=..., collections=..., summarize=..., domain=..., timeout=...)",
+        "CortexClient.bom(self, documents, *, timeout=...)",
+        "CortexClient.classify(self, text, labels, *, domain=..., timeout=...)",
+        "CortexClient.complete(self, prompt, *, system_prompt=..., max_tokens=..., temperature=..., domain=..., timeout=...)",
+        "CortexClient.export_dashboard(self, title, tiles, *, fmt=..., timeout=...)",
+        "CortexClient.extract(self, text, schema, *, domain=..., timeout=...)",
+        "CortexClient.feed_read(self, connector, table, *, limit=..., filters=..., timeout=...)",
+        "CortexClient.feed_write(self, connector, table, payload, *, timeout=...)",
+        "CortexClient.govern(self, text, *, context_sources=..., retrieval=..., operation=..., domain=..., timeout=...)",
+        "CortexClient.health(self, *, timeout=...)",
+        "CortexClient.intake_create(self, verbatim_ask, *, customer_name, customer_org=..., goal=..., role=..., impact_level=..., origin=..., extra_context=..., timeout=...)",
+        "CortexClient.intake_session(self, session_id, *, timeout=...)",
+        "CortexClient.intake_turn(self, session_id, message, *, timeout=...)",
+        "CortexClient.is_available(self)",
+        "CortexClient.price_cost_volume(self, opportunity_id, *, contract_type=..., allow_unrated=..., timeout=...)",
+        "CortexClient.push_priced_cost_volume(self, opportunity_id, priced, *, priced_by=..., timeout=...)",
+        "CortexClient.push_staffing_matrix(self, opportunity_id, people, *, timeout=...)",
+        "CortexClient.push_win_themes(self, opportunity_id, themes, *, timeout=...)",
+        "CortexClient.reason(self, prompt, *, mode=..., system_prompt=..., max_tokens=..., temperature=..., domain=..., timeout=...)",
+        "CortexClient.search(self, query, *, top_k=..., strategy=..., domain=..., timeout=...)",
+        "CortexClient.slides_build(self, slides, *, theme=..., title=..., timeout=...)",
+        "CortexClient.transition_won_opportunity(self, opportunity_id, *, created_by=..., timeout=...)",
+        "class CortexClient"
+      ]
+    }
+  }
+}

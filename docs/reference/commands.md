@@ -2156,6 +2156,18 @@ python tools/workflow/coherence_checker.py --check insert_schema_parity --gate  
 python tools/workflow/coherence_checker.py --check vendor_parity --json                             # Report copies lagging canonical
 python tools/workflow/coherence_checker.py --check vendor_parity --changed-files "tools/cortex/client.py" --gate   # Fail when a changed source outruns a copy
 
+# Vendored-source API manifest (ctx-enf-01) — the half of the gate above that a CI runner can
+# actually run. compass and idea_lab are separate PRIVATE repos ICDEV CI never checks out, so
+# every consumer SKIPs there (correctly) and the check can never block, however far the copies
+# lag. Root cause is repo TOPOLOGY, not the OS: /srv/standalone skips exactly as C:/AI/standalone
+# did. args/vendor_api_manifest.json is a COMMITTED snapshot of each declared source's public API,
+# generated from the same _public_api() the check compares with, so the two cannot disagree.
+# Changing a source's public API without regenerating it FAILS in both coherence tiers and fails
+# tests/workflow/test_vendor_api_manifest.py — which makes re-vendoring a deliberate step.
+python tools/workflow/vendor_api_manifest.py                                                        # Verify; exit 1 when the manifest is stale
+python tools/workflow/vendor_api_manifest.py --write                                                # Regenerate after changing a vendored source
+python tools/workflow/vendor_api_manifest.py --json                                                 # Machine-readable drift report
+
 # Bootstrap parity — what `icdev init` scaffolds must be what this repo runs on. Two rules:
 #   1. must_match pairs (args/bootstrap_parity.yaml) are byte-identical, both directions.
 #   2. payload completeness (exa-bench-10) — every module a PACKAGED HOOK loads by path

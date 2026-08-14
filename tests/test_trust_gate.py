@@ -52,6 +52,42 @@ _SOURCES = {
 _GROUNDED = "The system enforces multi-factor authentication for all privileged accounts [source: kb1]."
 
 
+class _MeasurableGraph:
+    """A populated-but-irrelevant graph, so kg_guard is CLEAN rather than
+    unmeasurable.
+
+    The stage-2 policy tests below are about what happens when the LLM verifier
+    is unreachable. Under `compliance_evidence` an unmeasurable guard blocks
+    stage 1 (invariant 2), which short-circuits stage 2 and would make those
+    tests assert the wrong thing. Supplying a graph that resolves none of the
+    claim's entities keeps kg_guard clean and leaves stage 2 the subject.
+    """
+
+    _NODES = [{"id": "n1", "label": "Zzz Unrelated Node", "entity_type": "thing",
+               "properties": "{}"}]
+
+    def execute(self, sql, params=()):
+        q = " ".join(sql.split())
+        if "COUNT(*) AS n FROM kg_nodes" in q:
+            rows = [{"n": 1}]
+        elif "FROM kg_ontology" in q:
+            rows = []
+        elif "FROM kg_edges e" in q:
+            rows = [{"st": "thing", "p": "relates_to", "ot": "thing"}]
+        elif "FROM kg_nodes" in q:
+            rows = list(self._NODES)
+        else:
+            rows = []
+
+        class _Cur:
+            def fetchall(self_inner):
+                return rows
+        return _Cur()
+
+    def close(self):
+        pass
+
+
 # --------------------------------------------------------------------------- #
 # Config integrity
 # --------------------------------------------------------------------------- #
@@ -210,6 +246,7 @@ def test_stage2_can_add_a_block_of_its_own(monkeypatch):
     )
     verdict = TrustGate("compliance_evidence").evaluate(
         _GROUNDED, sources=_SOURCES, router=object(), run_stage2=True,
+        conn=_MeasurableGraph(),
     )
     assert verdict.blocked is True
     assert verdict.gate == "cove_guard"
@@ -228,6 +265,7 @@ def test_no_router_refuses_compliance_evidence_but_only_warns_for_drafting():
     """
     strict = TrustGate("compliance_evidence").evaluate(
         _GROUNDED, sources=_SOURCES, router=None, run_stage2=True,
+        conn=_MeasurableGraph(),
     )
     assert strict.stage2_status == STAGE2_UNAVAILABLE
     assert strict.blocked is True
@@ -235,6 +273,7 @@ def test_no_router_refuses_compliance_evidence_but_only_warns_for_drafting():
 
     lenient = TrustGate("drafting").evaluate(
         _GROUNDED, sources=_SOURCES, router=None, run_stage2=True,
+        conn=_MeasurableGraph(),
     )
     assert lenient.stage2_status == STAGE2_UNAVAILABLE
     assert lenient.blocked is False
@@ -298,3 +337,52 @@ def test_to_dict_is_json_safe():
     payload = json.dumps(verdict.to_dict())
     assert "claim_guard" in payload
     assert json.loads(payload)["blocked"] is True
+
+
+# --------------------------------------------------------------------------- #
+# kg_guard wiring (trust-kg-02)
+# --------------------------------------------------------------------------- #
+
+def test_kg_guard_without_a_connection_is_unmeasurable_not_clean():
+    """Invariant 2 again, on the newest guard.
+
+    The whole check is "does the graph attest this?" — with no graph there is
+    nothing to attest anything, and reporting clean would be a guard that never
+    looked claiming it found nothing wrong.
+    """
+    verdict = TrustGate("drafting").evaluate(_GROUNDED, sources=_SOURCES)
+    assert verdict.stage1["kg_guard"].status == STATUS_UNMEASURABLE
+
+
+def test_an_unmeasurable_kg_guard_refuses_compliance_evidence_but_not_drafting():
+    """Same missing evidence, two stated postures — the profile decides."""
+    assert TrustGate("drafting").evaluate(
+        _GROUNDED, sources=_SOURCES, run_stage2=False,
+    ).blocked is False
+
+    strict = TrustGate("compliance_evidence").evaluate(
+        _GROUNDED, sources=_SOURCES, run_stage2=False,
+    )
+    assert strict.blocked is True
+    assert strict.gate == "kg_guard"
+
+
+def test_kg_guard_reports_which_schema_produced_its_verdict():
+    """A caller must never have to guess whether a verdict could have blocked.
+
+    Only a DECLARED schema (kg_ontology, which ships empty) licenses a
+    contradiction; under the observed schema this guard can inform but never
+    refuse.
+    """
+    verdict = TrustGate("drafting").evaluate(
+        _GROUNDED, sources=_SOURCES, conn=_MeasurableGraph(),
+    )
+    result = verdict.stage1["kg_guard"]
+    assert result.status == STATUS_CLEAN
+    assert result.detail["schema_source"] == "observed"
+
+
+def test_kg_guard_is_declared_by_every_profile_and_is_recordable():
+    for name in list_profiles():
+        assert "kg_guard" in load_profile(name).guards
+    assert "kg_guard" in PUBLISH_GATES

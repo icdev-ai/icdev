@@ -31,7 +31,7 @@ _MIGRATION_300 = _ROOT / "tools" / "db" / "migrations" / "300_idr_publish_audit_
 # historical snapshots and are asserted to be widening-only, not exhaustive.
 _MIGRATION = (
     _ROOT / "tools" / "db" / "migrations"
-    / "20260814181227_idr_publish_audit_trust_v2_gates" / "up.sql"
+    / "20260814201513_idr_publish_audit_kg_guard" / "up.sql"
 )
 
 
@@ -80,13 +80,18 @@ def test_trust_v2_guards_are_recognised_gates():
     assert {"claim_guard", "constitution_guard"} <= set(PUBLISH_GATES)
 
 
+def test_kg_guard_is_a_recognised_gate():
+    """TRUST v2 phase 2 wired KG-to-text constrained validation."""
+    assert "kg_guard" in PUBLISH_GATES
+
+
 def test_unshipped_guards_are_not_declared_early():
     """kg_guard (phase 2) and structure_guard (phase 3) must not appear yet.
 
     A gate value nothing can emit is the declared-but-unconsumed defect this
     framework exists to catch. Each ships with its own widening migration.
+    structure_guard is phase 3.
     """
-    assert "kg_guard" not in PUBLISH_GATES
     assert "structure_guard" not in PUBLISH_GATES
 
 
@@ -94,7 +99,7 @@ def test_rendered_sql_is_deterministic():
     """Sorted, so the constant and the SQL can be compared literally."""
     assert publish_gate_check_sql() == (
         "gate IN ('citation_guard','claim_guard','constitution_guard',"
-        "'cove_guard','placeholder_guard')"
+        "'cove_guard','kg_guard','placeholder_guard')"
     )
     assert publish_gate_check_sql("g").startswith("g IN (")
 

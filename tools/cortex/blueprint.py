@@ -16,6 +16,7 @@ Routes:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, render_template, request
@@ -70,24 +71,45 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _security_context() -> tuple[str, str]:
+def _g_security_context():
+    """Return ``flask.g.security_context`` if there is one, else None."""
     try:
-        from flask import g
-        ctx = getattr(g, "security_context", None) or {}
-        return ctx.get("tenant_id", "default"), ctx.get("classification", "CUI")
+        from flask import g, has_request_context
+        if not has_request_context():
+            return None
+        return getattr(g, "security_context", None)
     except Exception:
-        return "default", "CUI"
+        return None
+
+
+def _ctx_field(ctx, name: str, default: str) -> str:
+    """Read *name* off a security context that may be a mapping OR an object.
+
+    The dashboard puts BOTH shapes on ``g.security_context``: a plain dict for a
+    Cortex service-key binding (``auth.py``) and a ``SecurityContext`` dataclass
+    for a session user (``security_context._extract_from_flask_g``). A
+    mapping-only read (``ctx.get(...)``) raised AttributeError on the dataclass
+    and fell through to the "default" tenant — so every session user's canvas
+    activity was attributed to a tenant they are not in, and (ctx-trust-05, now
+    that the IQE route SCOPES on this value) would be filtered against it too.
+    """
+    if ctx is None:
+        return default
+    value = ctx.get(name) if isinstance(ctx, Mapping) else getattr(ctx, name, None)
+    return str(value) if value else default
+
+
+def _security_context() -> tuple[str, str]:
+    ctx = _g_security_context()
+    return _ctx_field(ctx, "tenant_id", "default"), _ctx_field(ctx, "classification", "CUI")
 
 
 def _current_user() -> str:
-    try:
-        from flask import g, has_request_context
-        if has_request_context():
-            ctx = getattr(g, "security_context", None) or {}
-            return ctx.get("user_id") or ctx.get("username") or "current_user"
-    except Exception:
-        pass
-    return "current_user"
+    ctx = _g_security_context()
+    if ctx is None:
+        return "current_user"
+    user = _ctx_field(ctx, "user_id", "")
+    return user or _ctx_field(ctx, "username", "current_user")
 
 
 def _record_history(session_id: str, mode: str, domain: str, query_text: str,
@@ -435,7 +457,13 @@ def _response_from_result(result, grounded_override=None) -> dict:
 
 
 def _response_from_search(results: list) -> dict:
-    """Synthesize a chat answer from a list of CortexSearchResult hits."""
+    """Synthesize a chat answer from a list of CortexSearchResult hits.
+
+    ``results`` may be a ``search_service.BackendResults`` carrying ``.errors``.
+    Zero hits with a recorded backend failure is NOT "nothing matched" — saying
+    so is how a dead embedding provider was reported to the user as an empty
+    corpus (ctx-perf-04). Those two cases get different answers here.
+    """
     citations = []
     lines = []
     for i, r in enumerate(results, 1):
@@ -446,8 +474,20 @@ def _response_from_search(results: list) -> dict:
         if snippet:
             lines.append(f"{i}. {snippet[:220]}")
     grounded = bool(citations)
+    errors = list(getattr(results, "errors", ()) or ())
+    degraded = bool(errors) and not lines
     if lines:
         answer = f"Found {len(results)} result(s):\n" + "\n".join(lines[:5])
+    elif degraded:
+        detail = "; ".join(
+            f"{e.get('backend', '?')} ({e.get('stage', 'error')}): "
+            f"{e.get('message', '')}".strip()
+            for e in errors
+        )
+        answer = (
+            "Search could not run — this is a retrieval FAILURE, not an empty "
+            f"result set, so the corpus may well contain an answer: {detail}"
+        )
     else:
         answer = "No matching results were found across the Cortex backends."
     return {
@@ -457,11 +497,14 @@ def _response_from_search(results: list) -> dict:
         "citations": citations,
         "governance": {
             "gates_run": ["retrieval"],
-            "outcomes": {"retrieval": "pass" if results else "warn"},
+            "outcomes": {
+                "retrieval": "pass" if results else ("error" if degraded else "warn")
+            },
             "blocked": False,
+            "backend_errors": errors,
         },
         "requires_confirm": False,
-        "degraded": False,
+        "degraded": degraded,
     }
 
 
@@ -613,6 +656,11 @@ def api_session(session_id):
     })
 
 
+def _open_query_connection():
+    """Open the connection the IQE route executes on (seam for tests)."""
+    return _conn()
+
+
 @cortex_bp.route("/api/iqe-query", methods=["POST"])
 def api_iqe_query():
     """IQE natural-language query over the cortex.* collections.
@@ -622,6 +670,21 @@ def api_iqe_query():
     fallback — never raises), parse, and execute. An IQE syntax error yields an
     empty result set rather than a 500, so an unparseable translation still
     returns 200.
+
+    Two things it does NOT copy from that dispatcher (ctx-trust-05):
+
+    **The security context is threaded explicitly, not inherited.** Calling
+    ``execute_query(ast, conn=None)`` makes every adapter open its OWN
+    connection, so tenant scope and Bell-LaPadula read-down hold only as far as
+    ``get_connection()`` happens to find a populated ``flask.g.security_context``
+    — and when it does not, the query runs UNSCOPED and reads every tenant's
+    rows while returning 200. This route opens one connection and applies the
+    caller's CortexContext to it through the same ``_apply_security_context``
+    the analyst path uses, which refuses (or at minimum warns) rather than
+    falling through unscoped. Cortex is the component that enforces tenant
+    isolation, so its own query surface may not be the one that assumes it.
+
+    **The result set is bounded.** See ``IQE_MAX_ROWS``.
     """
     data = request.get_json(silent=True) or {}
     question = (data.get("question") or "").strip()
@@ -635,22 +698,43 @@ def api_iqe_query():
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import IQESyntaxError, parse as iqe_parse
 
-        from tools.cortex.constants import IQE_COLLECTIONS
+        from tools.cortex.analyst import _apply_security_context
+        from tools.cortex.constants import IQE_COLLECTIONS, IQE_MAX_ROWS
 
         result = nl_to_iqe(question, list(IQE_COLLECTIONS))
         iqe_str = result.get("iqe", "")
         explanation = result.get("explanation", "")
         try:
             ast = iqe_parse(iqe_str)
-            rows = execute_query(ast, conn=None)
         except IQESyntaxError:
+            ast = None
+
+        if ast is None:
             rows = []
+        else:
+            conn = _open_query_connection()
+            try:
+                # Explicit tenant + classification, never ambient g state.
+                # Raises (fail-closed) or warns when the connection cannot
+                # carry it — either way it is closed, not leaked.
+                _apply_security_context(conn, _cortex_context(DEFAULT_DOMAIN))
+                rows = execute_query(ast, conn)
+            finally:
+                try:
+                    conn.close()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
+        truncated = len(rows) > IQE_MAX_ROWS
+        rows = rows[:IQE_MAX_ROWS]
         return jsonify({
             "ok": True,
             "iqe": iqe_str,
             "explanation": explanation,
             "results": rows,
             "row_count": len(rows),
+            "truncated": truncated,
+            "max_rows": IQE_MAX_ROWS,
         })
     except Exception as exc:
         logger.warning("cortex: iqe-query error: %s", exc)

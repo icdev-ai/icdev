@@ -63,7 +63,9 @@ GATE_VERSION = "trust-2.0"
 # Guard order within each stage IS the reporting order: the first blocking guard
 # becomes ``TrustVerdict.gate``, which is persisted to idr_publish_audit.gate.
 # Placeholder before citation matches the pre-existing docgen ordering.
-STAGE1_GUARDS: tuple[str, ...] = ("placeholder_guard", "citation_guard", "claim_guard")
+STAGE1_GUARDS: tuple[str, ...] = (
+    "placeholder_guard", "citation_guard", "claim_guard", "kg_guard",
+)
 STAGE2_GUARDS: tuple[str, ...] = ("cove_guard", "constitution_guard")
 ALL_GUARDS: tuple[str, ...] = STAGE1_GUARDS + STAGE2_GUARDS
 
@@ -383,6 +385,50 @@ def _run_claim_guard(text: str, severity: str, *, sources: Any, judge=None) -> G
     )
 
 
+def _run_kg_guard(
+    text: str, severity: str, *, conn, graph_id=None, flag_unknown_entities: bool = False
+) -> GuardResult:
+    """Validate claims against GRAPH FACTS (trust-kg-01).
+
+    Needs a database connection: the whole check is "does the graph attest
+    this?", and without a graph there is nothing to attest anything. No
+    connection is ``unmeasurable``, never ``clean`` — invariant 2.
+
+    ``schema_source`` is carried through to the caller because it decides how
+    much the verdict is worth: only a DECLARED schema (``kg_ontology``, which
+    ships empty) licenses a contradiction. Under the observed schema this guard
+    can inform but never refuse, and saying so is the difference between a
+    conservative check and a broken one.
+    """
+    from tools.quality.kg_grounding import kg_gate, kg_ground_claims
+
+    if conn is None:
+        return GuardResult(
+            guard="kg_guard", status=STATUS_UNMEASURABLE, severity=severity,
+            detail={"reason": "no graph connection supplied; nothing to validate against"},
+        )
+    report = kg_ground_claims(text, conn=conn, graph_id=graph_id)
+    if report.get("status") != "ok":
+        return GuardResult(
+            guard="kg_guard", status=STATUS_UNMEASURABLE, severity=severity,
+            detail={"reason": report.get("detail") or report.get("status")},
+        )
+    findings = _findings_from(
+        "kg_guard", kg_gate(report, flag_unknown_entities=flag_unknown_entities), severity
+    )
+    return GuardResult(
+        guard="kg_guard",
+        status=STATUS_FINDINGS if findings else STATUS_CLEAN,
+        severity=severity,
+        findings=findings,
+        detail={
+            "schema_source": report.get("schema_source"),
+            "counts": report.get("counts"),
+            "unknown_entities": (report.get("unknown_entities") or [])[:10],
+        },
+    )
+
+
 def _run_cove_guard(text: str, severity: str, *, sources: Any, router, max_questions: int) -> GuardResult:
     from tools.quality.cove_guard import cove_guard as _cove
     # force_override is deliberately NOT threaded through: an override is a
@@ -501,6 +547,12 @@ class TrustGate:
                 return _run_claim_guard(
                     kw["text"], severity, sources=kw.get("sources"), judge=kw.get("judge")
                 )
+            if guard == "kg_guard":
+                return _run_kg_guard(
+                    kw["text"], severity,
+                    conn=kw.get("conn"), graph_id=kw.get("graph_id"),
+                    flag_unknown_entities=bool(kw.get("flag_unknown_entities")),
+                )
             if guard == "cove_guard":
                 return _run_cove_guard(
                     kw["text"], severity,
@@ -535,6 +587,9 @@ class TrustGate:
         artifact_type: Optional[str] = None,
         judge: Any = None,
         run_stage2: Optional[bool] = None,
+        conn: Any = None,
+        graph_id: Optional[str] = None,
+        flag_unknown_entities: bool = False,
     ) -> TrustVerdict:
         """Evaluate ``text`` and return a composed :class:`TrustVerdict`.
 
@@ -545,6 +600,9 @@ class TrustGate:
                 ``unmeasurable`` (invariant 2).
             allowed_sources: ids the draft is permitted to cite (int or iterable),
                 passed through to ``citation_gate``.
+            conn: a database connection for ``kg_guard``. Without it that guard
+                reports ``unmeasurable`` rather than passing silently.
+            graph_id: scope KG validation to one graph.
             router: an ``LLMRouter``. Stage 2 cannot run without one.
             force: ``{guard: reason}`` HITL overrides. A reason is mandatory
                 unless ``overrides.require_reason`` is disabled (invariant 4).
@@ -559,6 +617,8 @@ class TrustGate:
             "text": text, "sources": sources, "allowed_sources": allowed_sources,
             "require_citations": require_citations, "router": router,
             "artifact_type": artifact_type, "judge": judge,
+            "conn": conn, "graph_id": graph_id,
+            "flag_unknown_entities": flag_unknown_entities,
         }
 
         # ── STAGE 1 — deterministic, no LLM, always runs ────────────────────

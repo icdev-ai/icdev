@@ -188,6 +188,12 @@ tests/test_awareness_edge_deriver.py
 tests/test_benchmark_compare.py
 tests/test_benchmark_report.py
 tests/workflow/test_vendor_parity.py
+# ctx-enf-01: the half of the vendor gate a CI runner can actually run. The
+# consumer repos (compass, idea_lab) are separate PRIVATE repositories the runner
+# never checks out, so test_vendor_parity.py above can only ever exercise the
+# SKIP path here; this file compares tools/cortex/client.py against a committed
+# API manifest, which needs no external checkout.
+tests/workflow/test_vendor_api_manifest.py
 tests/quality/test_run_component_scoring.py
 tests/slides/test_blueprint.py
 tests/integration/test_runtime_cli.py
@@ -1263,6 +1269,19 @@ tests/test_project_card_coverage.py
 # 12 tests, ~1s, SQLite via tmp_path ICDEV_DB_PATH: no DB service, no LLM,
 # no network.
 tests/cortex/test_iqe_row_cap_truncation.py
+# POST /cortex/api/iqe-query executed execute_query(ast, conn=None), which makes
+# every IQE adapter open its OWN connection: tenant scope and Bell-LaPadula
+# read-down then held only as far as get_connection() happened to find a usable
+# flask.g.security_context. It does not always -- the dashboard sets a dict for
+# a Cortex service-key binding, whose .tenant_id attribute the RLS injector
+# reads as None -- so the route returned EVERY tenant's rows and answered 200.
+# The route now threads an explicit CortexContext through the analyst's
+# _apply_security_context and bounds the response at IQE_MAX_ROWS. The DENY case
+# is the acceptance proof: two tenants' rows in one table, tenant-b's ABSENT
+# from tenant-a's answer, asserted over a real StorageConnection so predicate
+# injection actually runs (it leaks 5 rows on the unfixed route).
+# 13 tests, ~1s, temp SQLite DB: no DB service, no LLM, no network.
+tests/cortex/test_iqe_query_security_context.py
 # The Cortex response cache shipped correct, wired and `enabled: false`, and
 # nobody ever flipped it -- because flipping it would have handed every hit the
 # SAME CortexResult instance (cache.py stored the live object, api.py returned it
@@ -1309,6 +1328,7 @@ tests/cortex/test_rls_index_coverage.py
 # other that it actually LOWERS the estimated cost -- "the index name appears"
 # would still pass on a worse plan.
 tests/pg_tier/test_cortex_rls_index_plan.py
+tests/test_kg_grounding.py
 # A code-level reflex finding files ONE card, not one per affected row
 # (ctx-perf-07). cpmp_monitor pass 3 filed a [SUBCON] ISR/SSR card PER CONTRACT:
 # seven cards for ONE defect -- detect_noncompliance check #4 had no FAR
@@ -1375,3 +1395,22 @@ tests/cortex/test_governance_timing.py
 # 11 tests, ~25s (Flask app import dominates), SQLite via the conftest icdev_db
 # fixture: no DB service, no LLM, no network.
 tests/cortex/test_chat_turn_connections.py
+# Every cortex.search on the rag backend re-read AND re-parsed args/rag_config.yaml
+# from disk: retriever_common builds a fresh RAGRetriever per search and __init__
+# called an unmemoized _load_rag_config(), while cortex/config.py next door has
+# memoized its own file per path+mtime since ctx-perf-01. Now mtime-keyed the same
+# way -- the stat() stays, because it is the invalidation signal, and an edited
+# config must still be picked up without a restart. Two adjacent defects on the
+# same hot path are pinned here too: the fallback embedding path hardcoded
+# model="nomic-embed-text" (one vendor pinned into code on a path whose callers
+# swallow exceptions), and an embedding failure returned [] -- byte-identical to
+# "the corpus matched nothing", which is how a DEAD EMBEDDING PROVIDER reached the
+# chat user as "No matching results were found across the Cortex backends". The
+# failure now raises EmbeddingUnavailableError, is logged at ERROR, is carried on
+# BackendResults.errors through the fan-out, and gets a different answer than a
+# genuine zero-result. Pins both directions: a real empty set must KEEP the old
+# "no matching results" wording, and one failing backend must not turn a partial
+# answer into an error.
+# 17 tests, ~1.5s, tmp_path configs + stub providers: no DB service, no LLM,
+# no network.
+tests/rag/test_retriever_config_and_embedding.py
