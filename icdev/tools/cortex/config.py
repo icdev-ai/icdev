@@ -59,6 +59,10 @@ CORTEX_ROUTING_FUNCTIONS = (
     "cortex_extract",
     "cortex_search_rewrite",
     "cortex_analyst",
+    # analyst.ask(summarize=True). Absent from this tuple until ctx-trust-01,
+    # so assert_airgap_ready() never validated the one Cortex LLM call that was
+    # NOT going through the router singleton or passing air-gap exclusions.
+    "cortex_summarize",
 )
 
 # Fallback skeleton when args/cortex_config.yaml is missing or unreadable.

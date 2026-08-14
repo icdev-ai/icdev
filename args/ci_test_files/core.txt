@@ -1173,3 +1173,30 @@ tests/kanban/test_seed_ctx_kanban.py
 # it passes an identity lambda, so its one pipeline IS the operation.
 # 6 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_rest_single_governance.py
+# cortex.ask(summarize=True) reached for the CLOUD tier under air-gap, and the
+# guard could not see it. analyst._llm_summarize called
+# LLMRouter().invoke("summarization"), a name declared only under
+# `task_categories:` and never under `routing:` -- LLMRouter resolves
+# routing.get(fn, routing.get("default")), so it silently took routing.default,
+# chain kimi-cloud first. No exclude_model_ids was passed, and the name was
+# absent from CORTEX_ROUTING_FUNCTIONS so assert_airgap_ready() never validated
+# it either: the one unguarded Cortex LLM call was also the one the guard was
+# blind to. The failure then degraded to a row dump labelled
+# grounding="rows_by_construction" / confidence_score 1.0 -- a STRONGER label
+# than the summarized path earns. Asserts behaviour (resolved function, kwargs
+# reaching the router, result metadata), never that a config key parses.
+# 12 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_summarize_routing_airgap.py
+# The IQE Cortex adapters closed a connection they did not open. Executor
+# _fetch_union/_fetch_join fetch several collections IN PARALLEL over ONE
+# caller-supplied connection (analyst._ask_iqe opens it), so adapter #1's
+# unconditional finally-close pulled it out from under adapter #2 mid-query; #2
+# raised, a bare `except Exception: return []` swallowed it with no log, and the
+# union returned HALF ITS ROWS looking like a complete answer -- on the very
+# collections used to audit Cortex itself. Pins both halves: ownership (a
+# caller-supplied connection survives, a self-opened one is still closed) and
+# honesty (a failure raises and logs; a genuinely empty collection still
+# returns []). Also pins that hitting the row cap logs, which is the only
+# visibility ctx-trust-04 has until predicate pushdown lands.
+# 18 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_iqe_adapter_connection_ownership.py

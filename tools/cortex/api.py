@@ -79,6 +79,12 @@ CORTEX_EXTRACT_FUNCTION = "cortex_extract"
 CORTEX_SEARCH_REWRITE_FUNCTION = "cortex_search_rewrite"
 CORTEX_ANALYST_FUNCTION = "cortex_analyst"
 CORTEX_REASON_FUNCTION = "cortex_complete"  # reasoning reuses complete's routing
+# analyst.ask(summarize=True) prose summary. Declared as its OWN routing
+# function rather than reusing "summarization": that name exists only under
+# `task_categories:` in args/llm_config.yaml, and LLMRouter resolves
+# `routing.get(fn, routing.get("default", {}))` — so an undeclared function
+# silently took routing.default, whose chain is cloud-first. See ctx-trust-01.
+CORTEX_SUMMARIZE_FUNCTION = "cortex_summarize"
 
 # cortex.reason modes -> LLMRouter multi-step orchestration methods.
 _REASON_MODES = {

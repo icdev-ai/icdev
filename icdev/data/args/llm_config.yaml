@@ -1167,6 +1167,14 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  # Cortex analyst prose summary — analyst.ask(summarize=True). Its own entry,
+  # NOT the "summarization" task_category: that name is not under `routing:`, and
+  # LLMRouter falls back to routing.default for an undeclared function, which is
+  # cloud-first. Local tier first here, matching the other short Cortex calls.
+  cortex_summarize:
+    chain: [qwen3-local, kimi-cloud, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
+    effort: low
+
 # -----------------------------------------------------------------------
 # Per-Agent Effort Defaults (Enhancement #4 — used by agent_executor)
 # -----------------------------------------------------------------------

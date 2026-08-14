@@ -629,21 +629,40 @@ def _label_llm_result(result: CortexResult) -> CortexResult:
     return result
 
 
-def _llm_summarize(question: str, rows: list, citations: list) -> Optional[str]:
+def _llm_summarize(
+    question: str, rows: list, citations: list, ctx: Optional[CortexContext] = None
+) -> Optional[str]:
     """LLM prose summary of the result rows; None degrades to the raw format.
 
     The prompt requires an inline ``[source: <id>]`` tag per claim, citing
     only this result's citation ids — but the output is never trusted:
     ``_label_llm_result`` validates whatever comes back.
+
+    Routed exactly like every other Cortex LLM call (ctx-trust-01). It used to
+    do ``LLMRouter().invoke("summarization", ...)``, which was wrong three ways:
+
+    1. ``summarization`` is declared only under ``task_categories:`` in
+       args/llm_config.yaml, never under ``routing:``. LLMRouter resolves
+       ``routing.get(fn, routing.get("default", {}))``, so it silently took
+       routing.default — a CLOUD-FIRST chain. Now ``cortex_summarize``.
+    2. No ``exclude_model_ids`` was passed, so an air-gapped caller would still
+       reach for the cloud tier. Now threaded from ``ctx`` like ``api._invoke``.
+    3. ``LLMRouter()`` was constructed per call, re-parsing the ~2000-line
+       config and starting from a cold availability cache every time. Now the
+       late-bound ``tools.llm.get_router`` singleton.
     """
     ids = ", ".join(c.source_id for c in citations if c.source_id)
     evidence = "\n".join(f"[{c.source_id}] {c.snippet}" for c in citations if c.source_id)
     try:
+        from tools.cortex.api import CORTEX_SUMMARIZE_FUNCTION
+        from tools.cortex.config import airgap_exclusions
+        from tools.llm import get_router
         from tools.llm.provider import LLMRequest
-        from tools.llm.router import LLMRouter
 
-        response = LLMRouter().invoke(
-            "summarization",
+        exclusions = airgap_exclusions(ctx) if ctx is not None else None
+        kwargs = {"exclude_model_ids": exclusions} if exclusions else {}
+        response = get_router().invoke(
+            CORTEX_SUMMARIZE_FUNCTION,
             LLMRequest(
                 system_prompt=(
                     "Summarize the query result rows as a direct answer to the "
@@ -665,6 +684,7 @@ def _llm_summarize(question: str, rows: list, citations: list) -> Optional[str]:
                 temperature=0.0,
                 skip_injection_scan=True,  # question already passed _screen_question
             ),
+            **kwargs,
         )
         return (response.content or "").strip() or None
     except Exception as exc:  # noqa: BLE001 — summarization is optional
@@ -672,15 +692,39 @@ def _llm_summarize(question: str, rows: list, citations: list) -> Optional[str]:
         return None
 
 
-def _finalize_result(result: CortexResult, question: str, summarize: bool) -> CortexResult:
-    """TRUST labeling applied to every result before it leaves ask()."""
+def _finalize_result(
+    result: CortexResult,
+    question: str,
+    summarize: bool,
+    ctx: Optional[CortexContext] = None,
+) -> CortexResult:
+    """TRUST labeling applied to every result before it leaves ask().
+
+    A requested-but-unavailable summary is RECORDED (ctx-trust-01). It used to
+    fall through silently to ``_label_rows_result``, which stamps
+    ``grounding="rows_by_construction"``, ``confidence="include"`` and
+    ``confidence_score: 1.0`` — a STRONGER label than the summarized path earns.
+    So a caller that asked for prose, and whose LLM call failed (or was routed
+    to a provider air-gap forbids), got back a maximally-trusted row dump with
+    nothing to distinguish it from a summary that was never requested.
+    The rows are still grounded by construction, so this degrades rather than
+    refuses — it just stops the degradation being invisible.
+    """
     if summarize:
         rows = result.data.get("rows") or []
-        text = _llm_summarize(question, rows, result.citations) if rows else None
+        text = _llm_summarize(question, rows, result.citations, ctx) if rows else None
         if text:
             result.text = text
             result.data["summarized"] = True
             return _label_llm_result(result)
+        result = _label_rows_result(result)
+        result.data["summarized"] = False
+        result.metadata["summary_requested"] = True
+        result.metadata["summary_unavailable"] = True
+        result.metadata["summary_unavailable_reason"] = (
+            "no rows to summarize" if not rows else "summarization call returned nothing"
+        )
+        return result
     return _label_rows_result(result)
 
 
@@ -772,7 +816,7 @@ def _ask_nlq(
             "mode": mode,
         },
     )
-    return _finalize_result(result, question, summarize)
+    return _finalize_result(result, question, summarize, ctx)
 
 
 def ask(
@@ -982,4 +1026,4 @@ def _ask_iqe(
             "mode": mode,
         },
     )
-    return _finalize_result(result, question, summarize)
+    return _finalize_result(result, question, summarize, ctx)
