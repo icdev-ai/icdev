@@ -1119,3 +1119,16 @@ tests/test_govcon_capabilities.py
 # shape that re-breaks on the next rename with no exception to notice it by.
 # 9 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/test_cpmp_monitor_reflex_contract.py
+# The "no ISR/SSR filed" check in detect_noncompliance was gated on nothing: any
+# contract without a cpmp_small_business_plan row produced a HIGH finding. Its
+# three sibling checks are all scoped (flow-down/cyber filter status='active',
+# CMMC also filters on value) and that asymmetry was the defect. On the live
+# board all 7 active contracts had ZERO active subcontractors, so #1-#3
+# correctly found nothing while #4 fired HIGH on every one; cpmp_monitor filed a
+# card each and 2 were dispatched to sessions told to file an ISR/SSR in eSRS
+# for a $0 contract with no subcontractors. The pass had never produced a true
+# positive and could not. Gated in the PR that fixes it, because the failure
+# mode is a check that looks busy while being 100% false positives -- nothing
+# goes red for that. Pins BOTH directions: an obligated contract still flags,
+# and the staleness branch stays ungated. 25 tests, <1s, fully mocked.
+tests/test_cpmp_isr_ssr_applicability.py
