@@ -1944,16 +1944,19 @@ def resolve_write_target(raw: str, anchor: Path):
     # drive-relative `C:x` means "the cwd OF DRIVE C", which is per-process shell
     # state. Both are outside by construction rather than by comparison.
     #
-    # ONE leading backslash counts too, and the platform is why. On Windows
-    # `\attacker\share\payload` is drive-root-relative, so Path() calls it
-    # absolute and it resolves outside the worktree on its own. On POSIX the
-    # backslash is an ordinary filename character, so the same string is a
-    # RELATIVE name that gets joined onto the anchor and lands INSIDE — the
-    # guard silently reverses verdict across platforms, which is how this passed
-    # on Windows and failed only on Linux CI. Judged by construction here so
-    # both platforms agree; a POSIX file genuinely named with a leading
-    # backslash is pathological, and refusing the write is the safe direction.
-    if text.startswith("\\") or _WINDOWS_DRIVE_RELATIVE_RE.match(text):
+    # TWO backslashes, deliberately — not one. A single leading backslash is
+    # drive-root-relative on Windows (Path() calls it absolute, and it resolves
+    # outside the worktree on its own, which is the correct verdict reached by
+    # resolution). On POSIX a backslash is an ORDINARY FILENAME CHARACTER, so
+    # `\attacker\share\payload` is a RELATIVE name that resolves INSIDE the
+    # worktree — and that is also correct, because a file by that name really is
+    # inside it. Widening this to `startswith("\\")` to make the two platforms
+    # agree looks safe and is not: it refuses a legitimate in-worktree POSIX
+    # write, which contradicts this guard's own rule that it must fail OPEN on a
+    # path it cannot place and never be the reason a session cannot work.
+    # The platform difference is real, so it is expressed in the TEST (a
+    # Windows-only case for the root-relative form) rather than flattened here.
+    if text.startswith("\\\\") or _WINDOWS_DRIVE_RELATIVE_RE.match(text):
         return UNRESOLVABLE_TARGET
     # A Windows-absolute path evaluated on POSIX is not relative to the worktree
     # — joining it onto the anchor would silently make `C:/Windows/...` INSIDE.
