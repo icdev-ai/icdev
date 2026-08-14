@@ -29,6 +29,7 @@ Checks:
  19. doc_command_paths — every `python tools/...` command in CLAUDE.md / commands.md resolves to a real file (oss-fix-02)
  20. swallowed_persistence — no `except Exception: pass` guarding an INSERT in tools/; best-effort must log (swp-swallow-01)
  21. vendor_parity   — declared stdlib-only modules stay a subset of their OUT-OF-REPO vendored copies (cxo-doc-03)
+                      + match the committed args/vendor_api_manifest.json, which is the half CI can run (ctx-enf-01)
  22. capability_liveness — a declared capability with ZERO lifetime consumption fails; budgets in args/liveness_gate.yaml (exa-live-02)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
@@ -8231,6 +8232,119 @@ def _public_api(source: str) -> Set[str]:
     return api
 
 
+# The committed public-API snapshot of every declared vendored source (ctx-enf-01).
+# This is the half of the vendor gate that can actually fire on a CI runner: the
+# consumer repos are SEPARATE PRIVATE repositories ICDEV CI never checks out, so
+# the copy-vs-canonical comparison below always SKIPS there and `drift` stays
+# empty. The manifest lives IN this repo, so comparing canonical against it needs
+# no external checkout at all — and a mismatch means somebody changed the public
+# API without doing the re-vendoring step, which is exactly the latent drift the
+# check exists to catch.
+_VENDOR_API_MANIFEST = "args/vendor_api_manifest.json"
+
+_VENDOR_MANIFEST_NOTE = (
+    "GENERATED — do not hand-edit. Regenerate with "
+    "`python tools/workflow/vendor_api_manifest.py --write` after changing a "
+    "declared vendored source, and re-vendor the file into each consumer repo."
+)
+
+
+def vendor_parity_sources() -> List[str]:
+    """Declared vendored source paths, repo-relative, in config order."""
+    entries = (_vendor_parity_config().get("vendored_copies") or [])
+    sources: List[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        source = str(entry.get("source") or "").strip()
+        if source and source not in sources:
+            sources.append(source)
+    return sources
+
+
+def render_vendor_api_manifest() -> str:
+    """The manifest JSON text for the CURRENT tree. Deterministic — no clock.
+
+    Sorted keys and a sorted member list so regenerating on an unchanged tree is
+    a byte-for-byte no-op; a timestamp here would make every regeneration a diff
+    and teach everyone to ignore it.
+    """
+    sources: Dict[str, Any] = {}
+    for source in vendor_parity_sources():
+        path = PROJECT_ROOT / source
+        if not path.exists():
+            continue
+        members = sorted(_public_api(path.read_text(encoding="utf-8")))
+        sources[source] = {"member_count": len(members), "public_api": members}
+    payload = {
+        "note": _VENDOR_MANIFEST_NOTE,
+        "generated_from": _VENDOR_PARITY_CONFIG,
+        "sources": sources,
+    }
+    return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def _load_vendor_api_manifest() -> Dict[str, Set[str]]:
+    """Committed public API per source. ``{}`` when the manifest is unreadable."""
+    path = PROJECT_ROOT / _VENDOR_API_MANIFEST
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    sources = (data or {}).get("sources") if isinstance(data, dict) else None
+    if not isinstance(sources, dict):
+        return {}
+    out: Dict[str, Set[str]] = {}
+    for source, record in sources.items():
+        members = record.get("public_api") if isinstance(record, dict) else None
+        if isinstance(members, list):
+            out[str(source)] = {str(m) for m in members}
+    return out
+
+
+def vendor_manifest_drift(sources: Optional[List[str]] = None) -> List[str]:
+    """Declared sources whose live public API differs from the committed manifest.
+
+    Returns one human-readable line per drifted source; empty means in sync.
+    A source ABSENT from the manifest is drift, and so is a manifest that does
+    not exist at all — otherwise deleting the file would silently disarm the one
+    half of this gate that CI can run.
+    """
+    manifest = _load_vendor_api_manifest()
+    findings: List[str] = []
+    for source in sources if sources is not None else vendor_parity_sources():
+        path = PROJECT_ROOT / source
+        if not path.exists():
+            continue
+        try:
+            live = _public_api(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, ValueError) as exc:
+            findings.append(f"{source}: canonical source could not be parsed ({exc})")
+            continue
+        if source not in manifest:
+            findings.append(
+                f"{source}: no entry in {_VENDOR_API_MANIFEST} "
+                f"({len(live)} public member(s) unrecorded)"
+            )
+            continue
+        recorded = manifest[source]
+        added = sorted(live - recorded)
+        removed = sorted(recorded - live)
+        if not added and not removed:
+            continue
+        bits = []
+        if added:
+            bits.append(f"+{len(added)}: " + ", ".join(added[:6]) + (" …" if len(added) > 6 else ""))
+        if removed:
+            bits.append(
+                f"-{len(removed)}: " + ", ".join(removed[:6]) + (" …" if len(removed) > 6 else "")
+            )
+        findings.append(f"{source}: public API differs from {_VENDOR_API_MANIFEST} — " + "; ".join(bits))
+    return findings
+
+
 def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
     """Flag a declared stdlib-only module whose out-of-repo VENDORED copies lag it.
 
@@ -8245,10 +8359,28 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
     FAIL when a CHANGED declared source's public API is not a subset of a
     present vendored copy's; WARN on the full-repo sweep. A consumer path that
     does not exist on this machine is SKIPPED with a note, never failed.
+
+    That skip is correct and it is also why this half of the check CANNOT fire in
+    CI (ctx-enf-01): compass and idea_lab are separate PRIVATE repositories the
+    ICDEV runner never checks out, so every consumer skips and ``drift`` stays
+    empty no matter how far the copies lag. The root cause is repo topology, not
+    the OS — ``/srv/standalone`` skips exactly as ``C:/AI/standalone`` does.
+
+    So enforcement is carried by ``args/vendor_api_manifest.json``: a committed
+    snapshot of each declared source's public API, generated from the SAME
+    ``_public_api()`` this check compares with, so the two cannot disagree.
+    Changing a vendored source's public API without regenerating the manifest is
+    a hard FAIL in BOTH tiers — no external checkout required — which makes
+    re-vendoring a deliberate, reviewable step. Complement, do not replace: the
+    consumer-side comparison still runs wherever the copies ARE present (a
+    developer machine, and compass/idea_lab CI).
     """
     check_id = "vendor_parity"
     check_name = "Vendored Copy Parity"
-    expected = ["Canonical public API is a subset of every declared vendored copy's API"]
+    expected = [
+        "Canonical public API is a subset of every declared vendored copy's API",
+        f"Canonical public API matches the committed {_VENDOR_API_MANIFEST}",
+    ]
 
     config = _vendor_parity_config()
     entries = [e for e in (config.get("vendored_copies") or []) if isinstance(e, dict)]
@@ -8270,10 +8402,16 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
     if changed_files:
         severity = "fail"
         touched = [str(p).replace("\\", "/") for p in changed_files]
+        # Editing the manifest itself puts EVERY declared source back in scope —
+        # otherwise the one edit that can disarm the gate is the one edit the
+        # gate never looks at.
+        manifest_touched = any(t.endswith(_VENDOR_API_MANIFEST) for t in touched)
         in_scope = []
         for entry in entries:
             source = str(entry.get("source") or "").strip()
-            if source and any(t == source or t.endswith("/" + source) for t in touched):
+            if not source:
+                continue
+            if manifest_touched or any(t == source or t.endswith("/" + source) for t in touched):
                 in_scope.append(entry)
         if not in_scope:
             return CoherenceCheck(
@@ -8291,6 +8429,13 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
     drift: List[str] = []
     skipped: List[str] = []
     verified: List[str] = []
+
+    # The in-repo half. Always a hard fail: unlike the consumer comparison this
+    # is machine-independent, so downgrading it on the full sweep would leave
+    # nothing that can actually block.
+    manifest_drift = vendor_manifest_drift(
+        [str(e.get("source") or "").strip() for e in entries if e.get("source")]
+    )
 
     for entry in entries:
         source = str(entry.get("source") or "").strip()
@@ -8334,25 +8479,38 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
                 )
 
     actual = verified + skipped
-    if drift:
+    if manifest_drift or drift:
+        messages = []
+        if manifest_drift:
+            messages.append(
+                f"{len(manifest_drift)} vendored source(s) changed without regenerating "
+                f"{_VENDOR_API_MANIFEST} — run "
+                "`python tools/workflow/vendor_api_manifest.py --write` and re-vendor "
+                "the file into each consumer repo"
+            )
+        if drift:
+            messages.append(
+                f"{len(drift)} vendored copy(ies) lag their canonical source — "
+                "re-copy the file into the consumer repo (keep only its provenance "
+                f"header) or update {_VENDOR_PARITY_CONFIG}"
+            )
         return CoherenceCheck(
             check_id=check_id,
             check_name=check_name,
-            status=severity,
+            # Manifest drift is in-repo and reproducible anywhere, so it blocks in
+            # both tiers; consumer drift keeps its machine-dependent severity.
+            status="fail" if manifest_drift else severity,
             expected=expected,
             actual=actual,
-            missing=drift,
+            missing=manifest_drift + drift,
             extra=[],
-            message=(
-                f"{len(drift)} vendored copy(ies) lag their canonical source — "
-                "re-copy the file into the consumer repo (keep only its provenance "
-                f"header) or update {_VENDOR_PARITY_CONFIG}."
-            ),
+            message="; ".join(messages) + ".",
         )
 
     note = f"{len(verified)} copy(ies) in sync"
     if skipped:
         note += f", {len(skipped)} skipped (consumer repo absent on this machine)"
+    note += f", {len(entries)} source(s) match {_VENDOR_API_MANIFEST}"
     return CoherenceCheck(
         check_id=check_id,
         check_name=check_name,

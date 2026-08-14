@@ -74,7 +74,12 @@ def repo(tmp_path, monkeypatch):
 
 
 def _config(repo: Path, consumer_path: str) -> None:
-    """Declare one vendor target pointing at *consumer_path* (a posix path)."""
+    """Declare one vendor target pointing at *consumer_path* (a posix path).
+
+    Also writes an IN-SYNC API manifest, so the assertions in this file isolate
+    the CONSUMER-side comparison. The manifest half of the check (ctx-enf-01) has
+    its own file, tests/workflow/test_vendor_api_manifest.py.
+    """
     _write(
         repo / "args" / "vendor_parity.yaml",
         "path_defaults: {}\n"
@@ -84,6 +89,7 @@ def _config(repo: Path, consumer_path: str) -> None:
         "      - name: compass\n"
         f'        path: "{consumer_path}"\n',
     )
+    _write(repo / "args" / "vendor_api_manifest.json", cc.render_vendor_api_manifest())
 
 
 CHANGED = [Path("tools/cortex/client.py")]
