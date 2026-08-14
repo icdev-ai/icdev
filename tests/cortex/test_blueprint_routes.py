@@ -18,6 +18,48 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+def _isolated_app(blueprint, *, url_prefix=None):
+    """A FRESH Flask app carrying the dashboard's template/static/config.
+
+    Registering onto the shared ``tools.dashboard.app`` singleton behind an
+    ``if "<name>" not in app.blueprints`` guard looks safe and is not. The guard
+    skips only when the blueprint is ALREADY present, and the case that fails is
+    precisely when it is not: any earlier module in the run that drives the
+    shared app without registering this blueprint locks Flask's setup phase, and
+    the registration then raises
+
+        AssertionError: The setup method 'register_blueprint' can no longer be
+        called on the application. It has already handled its first request.
+
+    Whether the suite passes then depends on module ordering. Copying the
+    singleton's rendering context onto a fresh app keeps templates working while
+    mutating nothing other tests observe. Same shape as the probe app in
+    tests/test_penta_aadc_routes.py.
+    """
+    from flask import Flask
+
+    from tools.dashboard.app import app as _dashboard_app
+
+    app = Flask(
+        __name__,
+        template_folder=_dashboard_app.template_folder,
+        static_folder=_dashboard_app.static_folder,
+    )
+    app.config.update(_dashboard_app.config)
+    app.jinja_env.filters.update(_dashboard_app.jinja_env.filters)
+    app.jinja_env.globals.update(_dashboard_app.jinja_env.globals)
+    # App-wide context processors too: the shared base.html reads `nav_tree`,
+    # which a context processor supplies. Copying filters alone renders a
+    # jinja2 UndefinedError rather than the page.
+    app.template_context_processors[None].extend(
+        _dashboard_app.template_context_processors.get(None, [])
+    )
+    app.secret_key = _dashboard_app.secret_key or "test-secret"
+    app.config["TESTING"] = True
+    app.register_blueprint(blueprint, url_prefix=url_prefix) if url_prefix else app.register_blueprint(blueprint)
+    return app
+
+
 @pytest.fixture
 def client(icdev_db, monkeypatch):
     """Full dashboard app with the cortex blueprint guaranteed registered.
@@ -35,12 +77,8 @@ def client(icdev_db, monkeypatch):
     monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
 
     from tools.cortex.blueprint import cortex_bp
-    from tools.dashboard.app import app
 
-    if "cortex" not in app.blueprints:
-        app.register_blueprint(cortex_bp)
-
-    app.config["TESTING"] = True
+    app = _isolated_app(cortex_bp)
     with app.test_client() as test_client:
         with test_client.session_transaction() as sess:
             sess["user_id"] = "test-admin"

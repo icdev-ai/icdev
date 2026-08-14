@@ -1437,6 +1437,8 @@ tests/rag/test_retriever_config_and_embedding.py
 # 25 tests, ~12s, fully stubbed governance sinks: no DB service, no LLM,
 # no network.
 tests/cortex/test_cortex_reach_decisions.py
+tests/cortex/test_blueprint_routes.py
+tests/test_cnr_mission_canvas.py
 
 # ctx-reach-04. Pins an invariant that lives in an ABSENCE: `tools/cortex` appears
 # ZERO times in tools/builder/child_app_generator.py, whose DIRECTORY_TREE is an
