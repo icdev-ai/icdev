@@ -1413,3 +1413,5 @@ tests/rag/test_retriever_config_and_embedding.py
 # 25 tests, ~12s, fully stubbed governance sinks: no DB service, no LLM,
 # no network.
 tests/cortex/test_cortex_reach_decisions.py
+tests/cortex/test_blueprint_routes.py
+tests/test_cnr_mission_canvas.py
