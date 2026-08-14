@@ -409,25 +409,18 @@ def run(trigger_data=None, context=None):
             except Exception as e:
                 results["errors"].append(f"Subcon scan {cnum}: {e}")
 
-        # ── Pass 4: Deliverable State Maintenance + 14-Day Auto-Generation ──
+        # ── Pass 4: Deliverable 14-Day Auto-Generation ─────────────────
+        #
+        # The per-contract overdue sweep that used to sit here was REMOVED in the
+        # merge with origin/main, which had independently fixed the same defect
+        # with the unscoped Pass 0 above. Keeping both was a genuine double
+        # sweep: git auto-merged the two branches without a conflict because
+        # they touched different regions of this function, so nothing flagged
+        # it. Pass 0 strictly dominates — it is called once per cycle instead of
+        # once per contract, and it is unscoped, so it also reaches deliverables
+        # on option_pending contracts that this loop (status='active' only)
+        # never visits, while portfolio_manager counts those as overdue.
         if pass_type in ("full", "deliverables"):
-            # Mark past-due CDRLs 'overdue' and refresh days_overdue. This is
-            # the consumer compute_overdue_deliverables() never had: it was
-            # reachable only through its own --compute-overdue CLI flag, which
-            # no scheduler, route or goal invokes, so on 2026-08-13 all 26
-            # past-due deliverables on the board were still not_started or
-            # in_progress with days_overdue = 0. Cards kept reporting "N CDRL(s)
-            # past due" the whole time because pmo_ai_advisor counts by date
-            # rather than by status — the finding was visible, the state it
-            # describes was never written, and negative_event_tracker's
-            # delinquent-delivery arm (days_overdue > 0) could never fire.
-            try:
-                from tools.govcon.contract_manager import compute_overdue_deliverables
-                od = compute_overdue_deliverables(cid)
-                results["deliverables_marked_overdue"] += od.get("overdue_count", 0)
-            except Exception as e:
-                results["errors"].append(f"Overdue marking {cnum}: {e}")
-
             try:
                 from tools.govcon.cdrl_generator import generate_all_due
                 gen_result = generate_all_due(cid, days_ahead=14)
@@ -577,7 +570,12 @@ def _write_memory_log(results: Dict):
                 f"{results.get('cards_relabeled', 0)} relabeled, "
                 f"{results['cpars_alerts']} CPARS alerts, "
                 f"{results['cdrl_generated']} CDRLs generated, "
-                f"{results['deliverables_marked_overdue']} newly overdue."
+                # NOT deliverables_marked_overdue — the merge left both keys set
+                # from the same swept['overdue_count'], so printing both read
+                # "N newly overdue ... N newly overdue". days_overdue refreshes
+                # are the other half of the sweep and the number that shows a
+                # lengthening delinquency rather than a new one.
+                f"{results['overdue_refreshed']} overdue rows refreshed."
             ),
             entry_type="event",
             source="cpmp_monitor",

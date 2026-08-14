@@ -71,6 +71,7 @@
         <option value="government_review">Government Review</option>
         <option value="accepted">Accepted</option>
         <option value="rejected">Rejected</option>
+        <option value="cancelled">Cancelled</option>
     </select>
     <select id="filter-sort" class="form-control" style="width:160px;" onchange="loadDeliverables()">
         <option value="due_date">Sort: Due Date</option>
@@ -244,6 +245,7 @@ function _statusBadge(status) {
         'in_progress': 'badge-warning',
         'draft_complete': 'badge-warning',
         'internal_review': 'badge-warning',
+        'cancelled': 'badge-cancelled',
     }[status] || '';
     return '<span class="badge ' + cls + '" style="font-size:10px;">' + (status || '—').replace(/_/g, ' ') + '</span>';
 }

@@ -41,6 +41,12 @@ CREATE TABLE cpmp_deliverables (
     cdrl_number TEXT,
     title TEXT NOT NULL DEFAULT '',
     due_date TEXT,
+    -- Real column, and load-bearing: OVERDUE_DELIVERABLE_SQL filters on
+    -- `submitted_date IS NULL` so a CDRL that was actually handed over is
+    -- never swept, whatever its status says. Omitting it here does not make
+    -- the test lenient — SQLite raises `no such column`, so every sweep test
+    -- errors out.
+    submitted_date TEXT,
     status TEXT DEFAULT 'not_started',
     days_overdue INTEGER DEFAULT 0,
     updated_at TEXT
@@ -180,7 +186,7 @@ def test_already_overdue_row_has_its_day_count_refreshed(cm):
     # Frozen at 5, negative_event_tracker scores this 'low' (>7 medium,
     # >14 high, >30 critical) forever, however late it actually gets.
     assert cm.row("d1")["days_overdue"] >= 59, cm.row("d1")
-    assert result["refreshed_count"] == 1
+    assert result["days_refreshed"] == 1
     # A refresh is not a transition, so it must not be counted as one.
     assert result["overdue_count"] == 0
 
@@ -342,7 +348,7 @@ def reflex_run(monkeypatch):
 
     def _spy(contract_id=None):
         calls.append(contract_id)
-        return {"status": "ok", "overdue_count": 2, "refreshed_count": 0}
+        return {"status": "ok", "overdue_count": 2, "days_refreshed": 0}
 
     _patch_every_alias(monkeypatch, "govcon.contract_manager", "compute_overdue_deliverables", _spy)
     return rx, calls
@@ -355,7 +361,17 @@ def test_reflex_deliverables_pass_invokes_the_overdue_marker(reflex_run):
 
     # Without this call the marker is dead code behind a CLI flag, and every
     # past-due CDRL on the board stays not_started with days_overdue = 0.
-    assert calls == ["c1"], f"marker never invoked; calls={calls}"
+    #
+    # Called ONCE and UNSCOPED (contract_id=None), not once per contract. The
+    # per-contract placement this test originally pinned was dropped when
+    # origin/main turned out to have fixed the same defect with an unscoped
+    # sweep ahead of the contract loop; keeping both auto-merged cleanly into a
+    # genuine double sweep. Unscoped is the stronger contract — the loop walks
+    # status='active' only, while portfolio_manager counts overdue CDRLs across
+    # ('active','option_pending'), and an option-pending contract's deliverables
+    # are no less late. `[None]`, not `["c1"]`, is therefore the assertion, and
+    # the length pins that the duplicate call does not come back.
+    assert calls == [None], f"marker never invoked exactly once; calls={calls}"
     assert results["deliverables_marked_overdue"] == 2
     assert not results["errors"], results["errors"]
 
@@ -365,7 +381,7 @@ def test_full_pass_also_maintains_deliverable_state(reflex_run):
 
     rx.run({"pass_type": "full"})
 
-    assert calls == ["c1"]
+    assert calls == [None]
 
 
 def test_marker_failure_is_recorded_and_does_not_abort_the_reflex(monkeypatch, reflex_run):
@@ -381,7 +397,7 @@ def test_marker_failure_is_recorded_and_does_not_abort_the_reflex(monkeypatch, r
     # A reflex that returns no 'status' key is scored a failure forever and
     # self-circuit-breaks, so a single bad contract must not take it down.
     assert results["status"] == "ok"
-    assert any("Overdue marking" in e for e in results["errors"]), results["errors"]
+    assert any("Overdue sweep" in e for e in results["errors"]), results["errors"]
 
 
 # ---------------------------------------------------------------------------

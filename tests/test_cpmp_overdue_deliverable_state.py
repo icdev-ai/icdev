@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import ExitStack
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -95,7 +95,11 @@ CREATE TABLE kanban_tasks (
 );
 """
 
-_TODAY = date.today()
+# UTC, matching compute_overdue_deliverables(), which computes days_overdue
+# against datetime.now(timezone.utc).date(). date.today() is LOCAL, so on any
+# runner west of UTC the two disagree for part of the day and the expected day
+# count is off by one — green in the morning, red after 8pm ET.
+_TODAY = datetime.now(timezone.utc).date()
 _LATE = (_TODAY - timedelta(days=44)).isoformat()
 _FUTURE = (_TODAY + timedelta(days=10)).isoformat()
 
