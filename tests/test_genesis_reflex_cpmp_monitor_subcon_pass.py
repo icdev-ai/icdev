@@ -51,7 +51,11 @@ CREATE TABLE cpmp_contracts (
     id              TEXT PRIMARY KEY,
     contract_number TEXT,
     title           TEXT,
-    status          TEXT
+    status          TEXT,
+    -- The ISR/SSR check reads this to decide whether FAR 52.219-9 applies at
+    -- all (see _SBP_PLAN_THRESHOLD). Omitting the column made the check raise
+    -- inside detect_noncompliance rather than run.
+    total_value     REAL
 );
 CREATE TABLE cpmp_subcontractors (
     id                      TEXT PRIMARY KEY,
@@ -123,8 +127,13 @@ def board(monkeypatch):
     conn = _storage_conn(raw)
 
     raw.execute(
-        "INSERT INTO cpmp_contracts (id, contract_number, title, status) VALUES (?, ?, ?, ?)",
-        (CONTRACT_ID, "W912-24-C-0001", "Untitled Contract", "active"),
+        "INSERT INTO cpmp_contracts (id, contract_number, title, status, total_value) "
+        "VALUES (?, ?, ?, ?, ?)",
+        # $2M — comfortably over the $750K at which a subcontracting plan, and so
+        # the ISR/SSR obligation, actually attaches. This fixture expects the
+        # contract-level ISR/SSR finding as its third card, and that finding is
+        # now (correctly) only raised where the clause applies.
+        (CONTRACT_ID, "W912-24-C-0001", "Untitled Contract", "active", 2_000_000.0),
     )
     for sub_id, name, value, flowdown, cyber, cmmc in _SUBS:
         raw.execute(

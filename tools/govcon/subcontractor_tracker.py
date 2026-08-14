@@ -72,6 +72,18 @@ _CYBER_THRESHOLD = 100000.0
 # ISR/SSR currency window (days) — reports older than this are flagged
 _ISR_SSR_MAX_AGE_DAYS = 180
 
+# Contract value at or below which FAR 52.219-9 imposes no subcontracting plan,
+# and therefore no ISR/SSR reporting obligation at all (FAR 19.702(a)(1)).
+# Mirrors this repo's own statement of the rule — the FAR-19.7 entry in
+# tools/govcon/far_dfars_verifier.py: "Subcontracting plan required for
+# large-business prime contracts > $750K."
+#
+# The construction threshold is higher ($1.5M, FAR 19.702(a)(2)) and the clause
+# does not reach a small-business prime at any value (FAR 19.702(b)(1)) — this
+# constant is deliberately the LOWEST of those bounds, so the gate below only
+# ever suppresses a finding it can prove inapplicable and never the reverse.
+_SBP_PLAN_THRESHOLD = 750000.0
+
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -754,7 +766,29 @@ def detect_noncompliance(contract_id):
             }
         )
 
-    # 4. ISR/SSR currency — check if there is a recent report
+    # 4. ISR/SSR currency — but ONLY where FAR 52.219-9 actually applies.
+    #
+    # This check had no applicability gate, while all three above it do: flow-down
+    # and cybersecurity filter to ACTIVE subs, cybersecurity and CMMC additionally
+    # to subcontract_value > _CYBER_THRESHOLD. That asymmetry was the defect. The
+    # block below fired a HIGH "No ISR/SSR report has been filed for this contract"
+    # against EVERY contract with no cpmp_small_business_plan row, whether or not a
+    # subcontracting plan was ever required of it — and since the finding is derived
+    # from the ABSENCE of a row, a deployment that has never used the ISR/SSR feature
+    # produces one for every contract it holds. Measured on the live board
+    # 2026-08-13: zero cpmp_small_business_plan rows exist for any contract, so the
+    # check fired on 8 of 8 active contracts, 7 of them with total_value 0.0 — three
+    # orders of magnitude below the $750K at which the obligation begins. Every card
+    # it has ever filed instructed someone to file a federal report in eSRS that is
+    # not owed.
+    #
+    # It also made `compliant` unreachable: with no ISR/SSR row anywhere on the
+    # board, len(findings) == 0 could not be true for any contract, ever.
+    contract_row = conn.execute(
+        "SELECT total_value FROM cpmp_contracts WHERE id = %s", (contract_id,)
+    ).fetchone()
+    total_value = (dict(contract_row).get("total_value") if contract_row else None) or 0.0
+
     # Note: DB may have reporting_period+report_type or period_start+period_end depending on init version
     try:
         latest_report = conn.execute(
@@ -771,17 +805,37 @@ def detect_noncompliance(contract_id):
         ).fetchone()
     conn.close()
 
+    # An ISR/SSR that has ALREADY been filed is itself proof the obligation
+    # applies — nobody files one in eSRS against a contract with no plan — so a
+    # contract whose total_value was never populated still gets its currency
+    # checked once it has filed something. Only the absence-of-any-report branch
+    # depends on the value threshold, which is the branch that was wrong.
+    if latest_report is not None or total_value > _SBP_PLAN_THRESHOLD:
+        applicability = "required"
+    elif total_value > 0:
+        applicability = "not_required_below_threshold"
+    else:
+        # create_contract() defaults total_value to 0.0, so an unpopulated value
+        # is UNKNOWN, not "a zero-dollar contract". Either way the check cannot
+        # assert noncompliance: a HIGH finding derived from a field nobody filled
+        # in is a guess wearing a severity. The reason is reported instead of the
+        # check silently vanishing.
+        applicability = "unknown_contract_value"
+
+    # Have a report -> check how old it is. Have none -> that is only a finding
+    # if one was actually owed.
     if not latest_report:
-        findings.append(
-            {
-                "category": "isr_ssr",
-                "severity": "high",
-                "sub_id": None,
-                "company_name": None,
-                "description": "No ISR/SSR report has been filed for this contract",
-                "subcontract_value": None,
-            }
-        )
+        if applicability == "required":
+            findings.append(
+                {
+                    "category": "isr_ssr",
+                    "severity": "high",
+                    "sub_id": None,
+                    "company_name": None,
+                    "description": "No ISR/SSR report has been filed for this contract",
+                    "subcontract_value": None,
+                }
+            )
     else:
         try:
             created = datetime.fromisoformat(latest_report["created_at"].replace("Z", "+00:00"))
@@ -823,6 +877,10 @@ def detect_noncompliance(contract_id):
         "severity_counts": severity_counts,
         "category_counts": category_counts,
         "compliant": len(findings) == 0,
+        # Why the ISR/SSR check did or did not assert anything. Reported so that
+        # a suppressed check is visibly suppressed-and-why, rather than
+        # indistinguishable from a check that ran and found nothing.
+        "isr_ssr_applicability": applicability,
         "findings": findings,
     }
 

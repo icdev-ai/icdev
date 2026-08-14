@@ -1119,3 +1119,17 @@ tests/test_govcon_capabilities.py
 # shape that re-breaks on the next rename with no exception to notice it by.
 # 9 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/test_cpmp_monitor_reflex_contract.py
+# The ISR/SSR check in detect_noncompliance had no applicability gate, while all
+# three checks above it do (active-status and subcontract_value filters). It
+# raised a HIGH "No ISR/SSR report has been filed" from the ABSENCE of a
+# cpmp_small_business_plan row, so an installation that has never used the
+# feature gets one per contract regardless of whether FAR 52.219-9 attaches at
+# all. Live board 2026-08-13: fired on 8 of 8 active contracts, 7 with
+# total_value 0.0 -- three orders of magnitude below the $750K threshold in
+# FAR 19.702(a)(1) that this repo already states in far_dfars_verifier.FAR-19.7.
+# Every card told someone to file a federal report in eSRS that is not owed, and
+# `compliant` (len(findings) == 0) was unreachable for every contract on the
+# board. Gated in the PR that fixes it: an ungated applicability check is
+# indistinguishable from a working one until someone reads the FAR.
+# 8 tests, <1s, in-memory sqlite: no DB service, no LLM, no network.
+tests/test_cpmp_isr_ssr_applicability.py
