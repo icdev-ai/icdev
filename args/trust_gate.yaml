@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# TRUST v2 — two-stage grounding gate profiles (trust-gate-01)
+# TRUST v2 — two-stage grounding gate profiles (trust-spine-01)
 #
 # One gate, four consumer surfaces. A profile declares, per guard, whether a
 # finding BLOCKS promotion/export, merely WARNS, or is SKIPped entirely — and

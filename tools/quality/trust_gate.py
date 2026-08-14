@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""TRUST v2 — the two-stage grounding gate (trust-gate-01).
+"""TRUST v2 — the two-stage grounding gate (trust-spine-01).
 
 ICDEV already had the pieces. What it did not have was a spine, and the
 consequence was measurable: ``claim_gate``, ``verify_claim``, ``bind_claim_span``

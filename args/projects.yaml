@@ -5453,13 +5453,13 @@ projects:
   - 'xcut: Cross-cutting — coherence-checker assertions for citation/ingestion/sources
     coverage plus a CLAUDE.md guardrail and append-only table registration
     (trust-xcut-01..02)'
-  - 'gate: TRUST v2 — two-stage gate spine, and adoption of the guards that shipped
+  - 'spine: TRUST v2 — two-stage gate spine, and adoption of the guards that shipped
     with ZERO production callers. v1 built the claim tier (decompose_claims →
     bind_claim_span → verify_claim → claim_gate) and the constitution rule block in
     args/security_gates.yaml, and nothing ever called either — so the only thing
     gating a promote was the shallow tier, and a fluent, well-cited, entirely
     invented sentence passed. Stage 1 is deterministic and LLM-free so it runs
-    air-gapped; stage 2 is semantic and may never unblock stage 1 (trust-gate-01..)'
+    air-gapped; stage 2 is semantic and may never unblock stage 1 (trust-spine-01..)'
   - 'kg: KG-to-text constrained validation — entity existence, type-schema legality
     against the kg_ontology type-triple table already materialised from
     ontology_subclass_closure, and edge existence. kg_unknown is NEVER scored
@@ -5492,7 +5492,7 @@ projects:
   - key: xcut
     title: Cross-Cutting — coherence gate, guardrail, table registration
     priority: medium
-  - key: gate
+  - key: spine
     title: v2 — Two-stage gate spine + adoption of the zero-caller guards
     priority: high
   - key: kg

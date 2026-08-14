@@ -99,7 +99,7 @@ def citation_publish_gate(
 ) -> dict[str, Any]:
     """TRUST export/publish gate — mirrors govcon ``response_drafter.approve_draft``.
 
-    Delegates to :class:`tools.quality.trust_gate.TrustGate` (trust-gate-01),
+    Delegates to :class:`tools.quality.trust_gate.TrustGate` (trust-spine-01),
     which runs placeholder → citation → **claim** in that order and composes one
     verdict. The claim tier is what closes the hole the first two leave open: a
     well-formed citation on an invented sentence passes both of them, because

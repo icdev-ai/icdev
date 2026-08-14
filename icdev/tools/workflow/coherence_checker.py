@@ -1018,7 +1018,7 @@ def check_trust_coverage() -> CoherenceCheck:
     """Verify the TRUST invariants (xcut-01): the anti-hallucination grounding
     modules ship in both package trees and are inheritable by child apps, the
     redaction fail-closed / ingestion-masking toggles exist in config, and the
-    TRUST v2 two-stage gate (trust-gate-01) ships with its profile config.
+    TRUST v2 two-stage gate (trust-spine-01) ships with its profile config.
 
     Guards against a recurrence of the mirror-sync drift that dropped grounding
     modules from icdev/, and against silently losing the mask toggles.
@@ -1040,7 +1040,7 @@ def check_trust_coverage() -> CoherenceCheck:
     checks["redaction.fail_closed toggle"] = "fail_closed:" in rc_text
     checks["redaction.mask_at_ingestion toggle"] = "mask_at_ingestion:" in rc_text
 
-    # TRUST v2 (trust-gate-01): the two-stage gate ships in both trees with its
+    # TRUST v2 (trust-spine-01): the two-stage gate ships in both trees with its
     # profile config, and every guard it can name is recordable.
     checks["tools/quality/trust_gate.py"] = (
         PROJECT_ROOT / "tools/quality/trust_gate.py"

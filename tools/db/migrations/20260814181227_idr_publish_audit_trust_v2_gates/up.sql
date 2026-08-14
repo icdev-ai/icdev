@@ -3,7 +3,7 @@
 --
 -- Allow 'claim_guard' and 'constitution_guard' in idr_publish_audit.gate.
 --
--- TRUST v2 (trust-gate-01) wires two guards that had shipped with ZERO
+-- TRUST v2 (trust-spine-01) wires two guards that had shipped with ZERO
 -- production callers: the claim tier in tools/quality/citation_grounding.py
 -- (decompose_claims -> bind_claim_span -> verify_claim -> claim_gate) and
 -- constitutional_review in tools/quality/constitutional_ai.py, whose entire

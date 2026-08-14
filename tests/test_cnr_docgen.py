@@ -141,7 +141,7 @@ def test_citation_publish_gate_force_records_override():
 
 
 def test_citation_publish_gate_force_without_reason_still_blocks():
-    """trust-gate-01 invariant 4: an override with no stated reason is not applied.
+    """trust-spine-01 invariant 4: an override with no stated reason is not applied.
 
     An unexplained override is unauditable after the fact and indistinguishable
     from a bug, so the gate refuses rather than publishing something nobody can

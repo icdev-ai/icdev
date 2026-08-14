@@ -1111,7 +1111,7 @@ def api_publish(session_id: str):
     title = data.get("title") or session.get("title", "Document")
     classification = data.get("classification") or session.get("classification", "CUI")
 
-    # ── TRUST publish gate (cnr-doc-01, trust-gate-01) ───────────────────────
+    # ── TRUST publish gate (cnr-doc-01, trust-spine-01) ───────────────────────
     # Block export on placeholder / citation / claim defects. A HITL force_*
     # override publishes past the defect but writes an append-only audit row.
     #
