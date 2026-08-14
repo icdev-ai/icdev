@@ -1240,3 +1240,4 @@ tests/cortex/test_tenant_isolation.py
 # return, skip-vs-fail gate outcome). All 13 fail against the pre-fix tree.
 # 13 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_config_keys_enforced.py
+tests/test_project_card_coverage.py

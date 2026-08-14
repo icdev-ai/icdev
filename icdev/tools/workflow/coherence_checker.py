@@ -3379,6 +3379,169 @@ def check_gate_sentinel_shape() -> CoherenceCheck:
     )
 
 
+_CARD_CHECK_ID = "project_card_coverage"
+_CARD_CHECK_NAME = "Project Card Task Coverage"
+_CARD_EXPECTED = [
+    "every board task carrying a project's task_prefix is claimed by one of "
+    "that project's epics"
+]
+
+
+def _project_card_entries() -> list:
+    """Load args/projects.yaml entries that declare both a prefix and epics."""
+    import yaml
+
+    path = PROJECT_ROOT / "args" / "projects.yaml"
+    data = yaml.safe_load(_read_text(path)) or {}
+    out = []
+    for p in data.get("projects") or []:
+        if not isinstance(p, dict):
+            continue
+        prefix = str(p.get("task_prefix") or "").strip()
+        epics = [
+            str(e.get("key") or "").strip()
+            for e in (p.get("epics") or [])
+            if isinstance(e, dict) and str(e.get("key") or "").strip()
+        ]
+        if prefix and epics:
+            out.append({"key": str(p.get("key") or ""), "prefix": prefix, "epics": epics})
+    return out
+
+
+def check_project_card_coverage() -> CoherenceCheck:
+    """A project card that silently renders NOTHING while its work sits on the board.
+
+    ``_compute_project_progress`` in ``tools/dashboard/app.py`` derives every
+    number on a card from EPIC patterns — ``<task_prefix><epic_key>-%`` — and then
+    decides visibility from those numbers alone::
+
+        "visible": total_all > 0 and done_all < total_all,
+
+    A task that carries the project's ``task_prefix`` but that no epic claims is
+    dropped from every count. That collapses three different states into one
+    invisible card: no tasks yet, all tasks done, and **tasks exist but no epic
+    claims them**. Only the first two should hide. The third is a misconfiguration
+    and it hides in exactly the same way, which is why the only detector so far
+    has been a human noticing a card is missing.
+
+    Partial orphaning is the quieter half of the same bug: the percentage is then
+    computed over a subset, which is the recurring "the card's own progress claim
+    is wrong" complaint.
+
+    Two spellings of the same mistake produce it:
+      * seeding ``<prefix><something>-NN`` for a ``<something>`` that is not a
+        registered epic key, and
+      * adding tasks for an epic that was never added to ``args/projects.yaml``.
+
+    Both are invisible at seed time, because ``task_factory`` does not consult the
+    project registry.
+
+    Gate sentinels are deliberately NOT counted as orphans: a ``<prefix>gate-NN``
+    row holds the card, it is not work, and it should not appear in a progress
+    figure.
+
+    Reported as ``warn``: the finding is board DATA, so failing a per-task code
+    gate on it would block commits that have nothing to do with it.
+    """
+    try:
+        from tools.db.storage import get_connection
+        from tools.kanban.gates import has_gate_id
+
+        projects = _project_card_entries()
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
+            expected=_CARD_EXPECTED, actual=[f"load failed: {exc}"],
+            missing=[], extra=[],
+            message=f"projects.yaml or kanban board unreachable ({exc}) — coverage NOT verified",
+        )
+
+    conn = None
+    try:
+        conn = get_connection()
+        ids = [str(dict(r)["id"]) for r in conn.execute("SELECT id FROM kanban_tasks").fetchall()]
+    except Exception as exc:  # noqa: BLE001
+        return CoherenceCheck(
+            check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
+            expected=_CARD_EXPECTED, actual=[f"query failed: {exc}"],
+            missing=[], extra=[],
+            message=(
+                f"kanban board unreachable ({exc}) — card coverage NOT verified. A "
+                "fresh worktree or an empty CI database reaches this branch; it "
+                "reports warn rather than fabricating a clean result."
+            ),
+        )
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    if not ids:
+        return CoherenceCheck(
+            check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
+            expected=_CARD_EXPECTED, actual=["kanban_tasks is empty"],
+            missing=[], extra=[],
+            message=(
+                "kanban_tasks has no rows — card coverage NOT verified. An empty "
+                "board cannot show an unclaimed task, so 'no findings' would mean "
+                "nothing."
+            ),
+        )
+
+    # Longest prefix wins, so a nested child (`aadc-enh-`) claims its own rows
+    # instead of being audited against its parent's epic list.
+    by_prefix = sorted(projects, key=lambda p: -len(p["prefix"]))
+    findings: list = []
+    for proj in by_prefix:
+        prefix = proj["prefix"]
+        owned = [
+            i for i in ids
+            if i.startswith(prefix)
+            and not any(i.startswith(o["prefix"]) for o in by_prefix
+                        if o["prefix"] != prefix and len(o["prefix"]) > len(prefix))
+        ]
+        if not owned:
+            continue
+        claimed = {
+            i for i in owned
+            if any(i.startswith(f"{prefix}{ek}-") for ek in proj["epics"])
+        }
+        orphans = sorted(set(owned) - claimed - {i for i in owned if has_gate_id(i)})
+        if not orphans:
+            continue
+        scope = "EVERY task" if len(orphans) == len(owned) else f"{len(orphans)}/{len(owned)}"
+        findings.append(
+            f"{proj['key']}: {scope} unclaimed by any epic "
+            f"(epics: {','.join(proj['epics'])}) e.g. {', '.join(orphans[:3])}"
+        )
+
+    if findings:
+        invisible = [f for f in findings if "EVERY task" in f]
+        return CoherenceCheck(
+            check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
+            expected=_CARD_EXPECTED,
+            actual=[f"{len(projects)} card(s) with epics audited against {len(ids)} board task(s)"],
+            missing=[], extra=sorted(findings),
+            message=(
+                f"{len(findings)} project card(s) own board tasks that no epic claims"
+                + (f", and {len(invisible)} of them render NOTHING as a result"
+                   if invisible else "")
+                + ". Task ids must be <task_prefix><epic_key>-<N>: either fix the ids "
+                "or add the missing epic to args/projects.yaml."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="pass",
+        expected=_CARD_EXPECTED,
+        actual=[f"{len(projects)} card(s) audited against {len(ids)} board task(s)"],
+        missing=[], extra=[],
+        message="every card's board tasks are claimed by one of its epics",
+    )
+
+
 def check_sandbox_coverage() -> CoherenceCheck:
     """OPT-58 — verify docs/security/sandbox-coverage.md exists and
     documents all 4 tracked ingress-point gap files.
@@ -8757,6 +8920,7 @@ CHECK_REGISTRY = {
     "reflex_registry": check_reflex_registry,
     "capability_liveness": check_capability_liveness,
     "gate_sentinel_shape": check_gate_sentinel_shape,
+    "project_card_coverage": check_project_card_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,
     "provider_bypass": check_provider_bypass,
     "architecture_agnosticism": check_architecture_agnosticism,
