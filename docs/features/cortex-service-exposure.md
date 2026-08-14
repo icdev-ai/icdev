@@ -38,6 +38,13 @@ Built on top of what the expose epic already had on main: the MCP `cortex_*` fam
 
 ## Consumer wiring (compass / idea_lab)
 
+> **Cortex is never inherited, only reached.** No child app, canvas or descendant gets a
+> copy of `tools/cortex` — consumers vendor the stdlib-only client and point it at a
+> host. The access pattern, the full degradation contract and the in-repo-consumer
+> decision are in
+> [cortex-child-app-access-pattern.md](cortex-child-app-access-pattern.md).
+
+
 1. Issue a key: `python -m tools.cortex.service_keys create --label compass --tenant compass --json`
 2. Vendor `tools/cortex/client.py` → app `tools/integrations/cortex_client.py` (provenance header).
 3. App env: `ICDEV_CORTEX_BASE_URL=http://<icdev-host>:5050`, `COMPASS_CORTEX_API_KEY=icdev_ctx_…`

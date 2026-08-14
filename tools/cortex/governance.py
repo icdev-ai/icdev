@@ -77,7 +77,7 @@ from typing import Callable, Optional
 from tools.logging.icdev_logger import get_logger
 
 from .config import (
-    load_cortex_config,
+    cortex_config,
     resolve_fail_closed,
     skip_grounding_for_plain_complete,
 )
@@ -160,7 +160,7 @@ class GovernanceProfileError(ValueError):
     """
 
 
-def load_governance_profiles(config_path=None) -> dict:
+def load_governance_profiles(config_path=None, config=None) -> dict:
     """Validated ``{profile_name: frozenset(gate_names)}`` from Cortex config.
 
     ``default`` is always present and is always the full :data:`GATE_ORDER`;
@@ -179,7 +179,7 @@ def load_governance_profiles(config_path=None) -> dict:
             to redefine ``default`` (which would change the behaviour of every
             caller that names no profile — the one thing profiles must not do).
     """
-    raw = (load_cortex_config(config_path).get("governance") or {}).get("profiles")
+    raw = (cortex_config(config, config_path).get("governance") or {}).get("profiles")
     profiles = {DEFAULT_PROFILE: frozenset(GATE_ORDER)}
     if raw is None:
         return profiles
@@ -229,7 +229,7 @@ def load_governance_profiles(config_path=None) -> dict:
     return profiles
 
 
-def resolve_profile(name: str = "", config_path=None) -> frozenset:
+def resolve_profile(name: str = "", config_path=None, config=None) -> frozenset:
     """Gates enabled for ``name``; the full chain when it is blank.
 
     Raises:
@@ -240,7 +240,7 @@ def resolve_profile(name: str = "", config_path=None) -> frozenset:
     key = (name or "").strip()
     if not key or key == DEFAULT_PROFILE:
         return frozenset(GATE_ORDER)
-    profiles = load_governance_profiles(config_path)
+    profiles = load_governance_profiles(config_path, config)
     try:
         return profiles[key]
     except KeyError:
@@ -251,7 +251,7 @@ def resolve_profile(name: str = "", config_path=None) -> frozenset:
         ) from None
 
 
-def _content_grounding_floor(config_path=None) -> float:
+def _content_grounding_floor(config_path=None, config=None) -> float:
     """Pass/warn floor for the content_grounding gate — the SHARED band.
 
     Single source of truth: derived from ``citation_grounding.CONF_ABSTAIN``
@@ -262,7 +262,7 @@ def _content_grounding_floor(config_path=None) -> float:
     silently drift apart.
     """
     from tools.quality.citation_grounding import CONF_ABSTAIN
-    cfg = (load_cortex_config(config_path).get("governance") or {}).get(
+    cfg = (cortex_config(config, config_path).get("governance") or {}).get(
         "content_grounding"
     ) or {}
     override = cfg.get("min_score")
@@ -312,7 +312,7 @@ def _gate_find_placeholders(text: str) -> list:
     return _mod("quality.content_grounding").find_placeholders(text)
 
 
-def _gate_ground_content(output_text: str, context_snippets, ctx) -> dict:
+def _gate_ground_content(output_text: str, context_snippets, ctx, config=None) -> dict:
     """Gate 5b: semantic claim-vs-context grounding of the output.
 
     Delegates to the shared ``content_grounding.ground_content``. The LLM-
@@ -322,7 +322,7 @@ def _gate_ground_content(output_text: str, context_snippets, ctx) -> dict:
     are named here) and any failure degrades to the deterministic heuristic.
     """
     grounding_mod = _mod("quality.content_grounding")
-    cfg = (load_cortex_config().get("governance") or {}).get("content_grounding") or {}
+    cfg = (cortex_config(config).get("governance") or {}).get("content_grounding") or {}
     method = "heuristic"
     llm_invoke = None
     if cfg.get("llm_assisted"):
@@ -333,7 +333,7 @@ def _gate_ground_content(output_text: str, context_snippets, ctx) -> dict:
         output_text,
         context_snippets,
         method=method,
-        support_floor=_content_grounding_floor(),
+        support_floor=_content_grounding_floor(config=config),
         llm_invoke=llm_invoke,
     )
 
@@ -558,10 +558,10 @@ class GovernancePipeline:
 
     def _degrade(
         self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception,
-        clock: Optional[_Stopwatch] = None,
+        clock: Optional[_Stopwatch] = None, config=None,
     ) -> None:
         """Gate error: warn and continue (fail-open) or block on fail_closed."""
-        if resolve_fail_closed(ctx):
+        if resolve_fail_closed(ctx, config=config):
             self._block(report, ctx, gate, f"{gate} unavailable: {exc}", clock=clock)
         logger.warning("cortex governance gate %s degraded (fail-open): %s", gate, exc)
         self._record(report, gate, OUTCOME_WARN, str(exc))
@@ -654,6 +654,7 @@ class GovernancePipeline:
         retrieval: bool = True,
         attach: bool = True,
         profile: Optional[str] = None,
+        config=None,
     ) -> tuple:
         """Run ``fn(governed_prompt)`` inside the full TRUST chain.
 
@@ -676,15 +677,24 @@ class GovernancePipeline:
         ``None`` (the default) means "use the pipeline's". Resolution happens
         BEFORE any gate runs, so an unknown profile name raises
         :class:`GovernanceProfileError` instead of running an unintended chain.
+
+        ``config`` is ONE cortex-config snapshot for this call, taken here when
+        the caller has not already taken one (ctx-perf-01). Every gate below
+        reads it instead of re-reading args/cortex_config.yaml — the profile
+        lookup, the fail-closed posture at four sites, both grounding decisions
+        and the grounding floor at three. It is deliberately per-CALL and never
+        stored on ``self``: a snapshot that outlived the call would make an
+        operator's config edit invisible until the process restarted.
         """
         ctx = ctx or CortexContext()
         # Starts before profile resolution: a profile lookup that hits the
         # config file is part of what a governed call costs.
         clock = _Stopwatch()
+        config = cortex_config(config)
         profile_name = (
             self.profile if profile is None else (profile or "").strip()
         ) or DEFAULT_PROFILE
-        enabled = resolve_profile(profile_name)
+        enabled = resolve_profile(profile_name, config=config)
         report = GovernanceReport(profile=profile_name)
 
         # 1. Gateway pre-invoke check — a block ALWAYS fails closed.
@@ -702,7 +712,8 @@ class GovernancePipeline:
                 pre = _gate_check_text(prompt)
             except Exception as exc:
                 pre = None
-                self._degrade(report, ctx, GATE_PRE_CHECK, exc, clock=clock)
+                self._degrade(report, ctx, GATE_PRE_CHECK, exc, clock=clock,
+                              config=config)
             if pre is not None:
                 if not pre.get("allowed", True):
                     self._block(
@@ -731,7 +742,8 @@ class GovernancePipeline:
                 report.redactions_applied += masked
                 self._record(report, GATE_INPUT_REDACTION, OUTCOME_PASS)
             except Exception as exc:
-                self._degrade(report, ctx, GATE_INPUT_REDACTION, exc, clock=clock)
+                self._degrade(report, ctx, GATE_INPUT_REDACTION, exc, clock=clock,
+                              config=config)
         clock.split(report, GATE_INPUT_REDACTION)
 
         # 3. The wrapped operation. Errors are recorded then re-raised —
@@ -778,7 +790,7 @@ class GovernancePipeline:
                     if citation_report.get("hallucinated_citations"):
                         grounded = False
                         detail = f"hallucinated citations: {citation_report['hallucinated_citations']}"
-                        if resolve_fail_closed(ctx):
+                        if resolve_fail_closed(ctx, config=config):
                             self._block(report, ctx, GATE_CITATION_GROUNDING, detail,
                                         clock=clock)
                         self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
@@ -792,8 +804,9 @@ class GovernancePipeline:
                     raise
                 except Exception as exc:
                     grounded = False
-                    self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc, clock=clock)
-        elif skip_grounding_for_plain_complete():
+                    self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc, clock=clock,
+                                  config=config)
+        elif skip_grounding_for_plain_complete(config=config):
             grounded = False
             self._record(report, GATE_CITATION_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
         else:
@@ -810,7 +823,7 @@ class GovernancePipeline:
                         "citations in a non-retrieval call: "
                         f"{citation_report['hallucinated_citations']}"
                     )
-                    if resolve_fail_closed(ctx):
+                    if resolve_fail_closed(ctx, config=config):
                         self._block(report, ctx, GATE_CITATION_GROUNDING, detail,
                                     clock=clock)
                     self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
@@ -822,7 +835,8 @@ class GovernancePipeline:
             except GovernanceBlockedError:
                 raise
             except Exception as exc:
-                self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc, clock=clock)
+                self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc, clock=clock,
+                                  config=config)
         clock.split(report, GATE_CITATION_GROUNDING)
 
         # 5. Content grounding — semantic claim-vs-context grounding when the
@@ -841,8 +855,8 @@ class GovernancePipeline:
                     issues.append(f"unresolved placeholders: {placeholders}")
                 chunks = _context_texts(context_sources)
                 if chunks and text:
-                    grounding = _gate_ground_content(text, chunks, ctx)
-                    floor = _content_grounding_floor()
+                    grounding = _gate_ground_content(text, chunks, ctx, config=config)
+                    floor = _content_grounding_floor(config=config)
                     report.content_grounding = {
                         "score": grounding.get("score"),
                         "method": grounding.get("method"),
@@ -864,12 +878,12 @@ class GovernancePipeline:
                         "score": None,
                         "method": "placeholder",
                         "ungrounded_claims": [],
-                        "floor": _content_grounding_floor(),
+                        "floor": _content_grounding_floor(config=config),
                     }
                 if issues:
                     grounded = False
                     detail = "; ".join(issues)
-                    if resolve_fail_closed(ctx):
+                    if resolve_fail_closed(ctx, config=config):
                         self._block(report, ctx, GATE_CONTENT_GROUNDING, detail,
                                     clock=clock)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
@@ -883,8 +897,9 @@ class GovernancePipeline:
                 raise
             except Exception as exc:
                 grounded = False
-                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc, clock=clock)
-        elif skip_grounding_for_plain_complete():
+                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc, clock=clock,
+                              config=config)
+        elif skip_grounding_for_plain_complete(config=config):
             self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
         else:
             # governance.skip_grounding_for_plain_complete: false — there is no
@@ -897,12 +912,12 @@ class GovernancePipeline:
                     "score": None,
                     "method": "placeholder",
                     "ungrounded_claims": [],
-                    "floor": _content_grounding_floor(),
+                    "floor": _content_grounding_floor(config=config),
                 }
                 if placeholders:
                     grounded = False
                     detail = f"unresolved placeholders: {placeholders}"
-                    if resolve_fail_closed(ctx):
+                    if resolve_fail_closed(ctx, config=config):
                         self._block(report, ctx, GATE_CONTENT_GROUNDING, detail,
                                     clock=clock)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
@@ -914,7 +929,8 @@ class GovernancePipeline:
                 raise
             except Exception as exc:
                 grounded = False
-                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc, clock=clock)
+                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc, clock=clock,
+                              config=config)
         clock.split(report, GATE_CONTENT_GROUNDING)
 
         # 6. Output redaction — never skipped, and applied to the CALLER-VISIBLE
@@ -963,7 +979,8 @@ class GovernancePipeline:
                 f"patterns: {hits}" if hits else "",
             )
         except Exception as exc:
-            self._degrade(report, ctx, GATE_OUTPUT_REDACTION, exc, clock=clock)
+            self._degrade(report, ctx, GATE_OUTPUT_REDACTION, exc, clock=clock,
+                          config=config)
         clock.split(report, GATE_OUTPUT_REDACTION)
 
         # 7. Provenance record + audit row — never skipped, never blocking.

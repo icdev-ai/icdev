@@ -109,6 +109,14 @@ The child application SHALL include a complete memory system: MEMORY.md, daily l
 #### REQ-19-008: Dynamic CLAUDE.md
 The child application SHALL include a CLAUDE.md generated via Jinja2 template that documents only the capabilities present in that specific child application (D50).
 
+#### What a child does NOT inherit: Cortex
+
+`DIRECTORY_TREE` in `tools/builder/child_app_generator.py` is an **ALLOWLIST**, so anything absent from it (and from `CONDITIONAL_DIRS`) is excluded without needing an entry in `PARENT_ONLY_DIRS`. `tools/cortex` is in none of the four structures — the string `cortex` appears zero times in the generator.
+
+That is deliberate. Cortex is a **parent-hosted governed service reached over REST** with an `icdev_ctx_` service key, not a library to copy: a vendored copy would carry the shape of the TRUST chain without the audit tables, RLS predicates, routing config or the operator who can revoke a key. A child app that needs Cortex vendors the stdlib-only client (`tools/cortex/client.py`) and points it at an ICDEV host.
+
+Full access pattern — key issuance, the `/cortex/api/v1` surface, the three-way degradation contract, why the client is stdlib-only, and the standing decision on in-repo consumers: **[cortex-child-app-access-pattern.md](cortex-child-app-access-pattern.md)**.
+
 ### 4.4 Governance
 
 #### REQ-19-009: Grandchild Prevention

@@ -1,6 +1,15 @@
 # CUI // SP-CTI
 """Cortex service client SDK — stdlib-only, safe to vendor (ctx-expose-06).
 
+ACCESS PATTERN — read this first if you are wiring a new consumer:
+docs/features/cortex-child-app-access-pattern.md. Cortex is a PARENT-HOSTED
+governed service reached over REST with an ``icdev_ctx_`` service key. It is
+never copied into a child app, a canvas, or any descendant — `tools/cortex`
+appears ZERO times in tools/builder/child_app_generator.py, whose DIRECTORY_TREE
+is an allowlist. What you vendor is THIS FILE, not Cortex. That doc also spells
+out the degradation contract below, why this file is stdlib-only, and the
+standing decision that no in-repo apps/ consumer should call Cortex over REST.
+
 CANONICAL SOURCE: icdev tools/cortex/client.py. Standalone apps (compass,
 idea_lab) vendor this file verbatim into tools/integrations/cortex_client.py
 with a provenance header — keep it importable with ZERO icdev dependencies

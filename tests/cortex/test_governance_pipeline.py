@@ -203,13 +203,13 @@ def test_unset_ctx_follows_config_policy(calls, monkeypatch):
     monkeypatch.setattr(governance, "_gate_redact_input", boom)
 
     # Policy = fail-closed -> an unset ctx now blocks on the gate error.
-    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx: True)
+    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx, **kw: True)
     with pytest.raises(GovernanceBlockedError) as exc_info:
         GovernancePipeline().wrap(lambda p: "ok", CortexContext(), prompt="raw", retrieval=False)
     assert exc_info.value.gate == GATE_INPUT_REDACTION
 
     # Policy = fail-open -> the same unset ctx degrades (warn) instead.
-    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx: False)
+    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx, **kw: False)
     _, report = GovernancePipeline().wrap(
         lambda p: "ok", CortexContext(), prompt="raw", retrieval=False
     )
@@ -221,7 +221,7 @@ def test_generative_call_not_blocked_for_being_ungrounded_even_fail_closed(calls
     # The nuance: fail-closed must NOT block a plain generative complete() just
     # for being ungrounded. Non-retrieval calls skip the grounding gates, so
     # even under a fail-closed policy an uncited completion passes.
-    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx: True)
+    monkeypatch.setattr(governance, "resolve_fail_closed", lambda ctx, **kw: True)
     result, report = GovernancePipeline().wrap(
         lambda p: CortexResult(text="A confident answer with no citations."),
         CortexContext(), prompt="q", retrieval=False,

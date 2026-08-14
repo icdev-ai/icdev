@@ -93,11 +93,24 @@ search:
         retrieved evidence; if the data does not support a conclusion, say so
         explicitly.
 
-    # Document-intelligence lens (DIC chat / docgen / tech-writer). sources is
-    # left empty: row-level source scoping is opt-in and needs exact table
-    # prefixes; backends + persona + intents deliver the lens without risking
-    # dropping legitimate hits. Add sources once the doc table prefixes are
-    # confirmed. triage:false (no bespoke formatter — only security has one).
+    # ── `sources:` is EMPTY on purpose for document / proposal / network /
+    # compliance (ctx-reach-03) ────────────────────────────────────────────────
+    # Row-level source scoping (search_service._route_and_run ->
+    # domains.filter_by_sources) DROPS every hit whose source table/id does not
+    # start with one of these prefixes. `security` populates it because its four
+    # backing table families are known exactly (pvm_/dsoc_/incident_/cve...).
+    # For the other four lenses the corpora are federated (RAG collections, KG
+    # nodes, DIC documents, KB entries) and their source ids are not a closed
+    # prefix set, so a guessed list would silently delete legitimate evidence —
+    # a retrieval lens that quietly returns less is strictly worse than one that
+    # does not row-scope at all. `filter_by_sources` is a documented no-op on an
+    # empty list, so these lenses deliver via backends + collections + persona +
+    # intents and scope at the BACKEND level instead. This is a deliberate
+    # standing decision, not a TODO: populate a lens's `sources` only once its
+    # table prefixes are enumerated from the live schema, and confirm the
+    # `filtered_out` count in the search metadata stays 0 for known-good queries.
+
+    # Document-intelligence lens (DIC chat / docgen / tech-writer).
     document:
       display_name: "Documents"
       backends: [rag, dic, graph]
@@ -151,6 +164,36 @@ search:
         configuration drift. Structure any summary as: (1) Impact / blast
         radius, (2) Risks (migration, availability, drift), (3) Recommended
         actions. Never speculate beyond the retrieved topology.
+
+    # Compliance lens (ctx-reach-03). The lens was DECLARED in
+    # tools/cortex/constants.py::CORTEX_DOMAIN_LENSES from the start — the
+    # canvas offered "📋 Compliance — NIST 800-53, FedRAMP, CMMC, STIG controls
+    # and crosswalks" in the picker — but there was no `search.domains.compliance`
+    # block, so load_domain_profile("compliance") returned None and selecting it
+    # changed NOTHING: no backend narrowing, no persona, no intents. It only
+    # tagged ctx.domain in the audit row. That is the platform's signature
+    # declared-but-unconsumed defect, and the picker entry made it worse than
+    # inert — it advertised scoping that did not happen. This block is the
+    # consumer. triage:false — no bespoke formatter (only `security` has one),
+    # and summarize() returns None safely for a triage lens without one.
+    compliance:
+      display_name: "Compliance"
+      backends: [rag, graph, kb]
+      collections: [nist_controls, control_mappings, crosswalk_entries, stig_findings]
+      sources: []
+      intents: [control_lookup, crosswalk, gap_analysis, evidence_trace]
+      triage: false
+      persona: >
+        You are a senior compliance analyst working across NIST SP 800-53,
+        FedRAMP, CMMC, and DISA STIG. Answer in control terms: name the control
+        identifier (e.g. AC-2, SC-13, V-xxxxx) for every claim and cite the
+        catalog, baseline, or crosswalk row it came from. Distinguish what is
+        IMPLEMENTED from what is merely DOCUMENTED — a control with a policy
+        reference and no evidence is a gap, and you must say so. Never assert a
+        control is satisfied, never map one framework onto another, and never
+        state an impact level or baseline that the retrieved evidence does not
+        support. Structure any summary as: (1) Controls in scope, (2) Evidence
+        found per control, (3) Gaps and required actions.
 
 governance:
   # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
