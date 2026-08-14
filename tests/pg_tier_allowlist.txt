@@ -69,3 +69,14 @@ tests/test_sbom_dependency_graph.py
 # monitor mode would report a clean board while recording nothing. This tier is
 # the only place that failure mode is visible.
 tests/test_exa_policy_05_saas_mcp_authz.py
+
+# ctx-perf-05: whether the planner CHOOSES the composite RLS index is a
+# cost-based decision — no SQLite assertion and no mock can stand in for it, and
+# on the ~200 rows a dev cortex_audit holds PostgreSQL correctly ignores every
+# index, so the assertion would be vacuous anywhere but here. Seeds a 200k-row
+# schema of its own, EXPLAINs the real metrics._scan shape before and after
+# creating the index, and drops the schema in finally; never touches public.
+# Deviates from the ambient-connection rule above on purpose: it uses raw
+# psycopg2 because it needs DDL plus EXPLAIN on its own schema and must see the
+# RLS predicate as literal SQL it controls, that predicate being the subject.
+tests/pg_tier/test_cortex_rls_index_plan.py

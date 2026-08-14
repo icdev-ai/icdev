@@ -1297,3 +1297,14 @@ tests/cortex/test_response_cache.py
 # EXPLAINs the real query shape against a seeded 200k-row PostgreSQL schema it
 # creates and drops itself, and skips outright when no PG is reachable.
 tests/cortex/test_rls_index_coverage.py
+
+# ctx-perf-05 (PG tier): the companion plan assertion for the composite indexes
+# above. Gated here for the census; it SKIPS unless ICDEV_PYTEST_PG=1, and the
+# job that actually runs it is Test (PostgreSQL) via tests/pg_tier_allowlist.txt.
+# Splitting it out is the point: left in the SQLite suite it would skip every
+# run, and a test that always skips proves nothing while looking green.
+# 2 tests: one asserts the composite replaces the BitmapAnd of the two
+# single-column indexes (with the pre-index plan as the negative control), the
+# other that it actually LOWERS the estimated cost -- "the index name appears"
+# would still pass on a worse plan.
+tests/pg_tier/test_cortex_rls_index_plan.py
