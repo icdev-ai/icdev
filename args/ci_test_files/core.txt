@@ -1467,3 +1467,15 @@ tests/test_app.py
 # 5 tests, <1s, stubbed gates + stubbed provider: no DB service, no LLM, no network.
 tests/cortex/test_config_load_budget.py
 tests/workflow/test_playwright_gate.py
+
+# ── trust-struct-02: required-section outline contracts ──────────────────────
+# tools/quality/outline_contract.py validates a draft against the section
+# skeleton its artifact type already declares (docgen ATO_DOC_TYPES, DIC
+# TEMPLATE_SECTIONS, the RFI workbench floor) and emits missing_section /
+# unknown_section / section_out_of_order in the shared {item_number, issue,
+# detail} shape. Two invariants worth the gate: an unknown artifact type
+# resolves to None (unmeasured) rather than a fabricated skeleton, and the DIC
+# blueprint and the contract read the SAME object — a required-section contract
+# that is a copy of what instantiation creates is one that goes stale silently.
+# 53 tests, <1s, pure regex/dict: no DB, no LLM, no network.
+tests/test_outline_contract.py
