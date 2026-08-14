@@ -23,7 +23,13 @@ search:
     factual_confidence: 0.75
 
   # Per-backend fusion weights for the unified search fan-out. Keys are the
-  # normalized CORTEX_BACKENDS names (tools/cortex/schemas.py).
+  # normalized CORTEX_BACKENDS names (tools/cortex/schemas.py). Read by
+  # config.resolve_strategy_weights() and applied in
+  # search_service._rrf_fuse: an item scores sum(weight / (rrf_k + rank))
+  # over the backends that returned it, so raising kb above rag genuinely
+  # re-orders the fused list. A backend with no entry here weighs 1.0
+  # (neutral); a negative or non-numeric entry is clamped to 0.0, which
+  # demotes that backend rather than inverting the ordering.
   strategy_weights:
     rag: 1.0
     graph: 0.8
@@ -162,10 +168,19 @@ governance:
   # change with blast radius across every Cortex adopter, so enable knowingly.
   fail_closed: false
 
-  # complete() is free-form drafting with no evidence set — skip the
-  # grounding pass for plain completions instead of failing it closed. (The
-  # pipeline already realizes this structurally: non-retrieval calls skip the
-  # grounding gates.)
+  # complete() is free-form drafting with no evidence set — skip the grounding
+  # pass for plain (retrieval=False) completions instead of failing it closed.
+  #
+  # Set to FALSE and the two grounding gates run on plain completions too:
+  #   citation_grounding  validates against an EMPTY allowed set, so any
+  #                       [source: N] tag a plain completion emits is
+  #                       fabricated by construction -> outcome "fail"
+  #                       (and a block under fail_closed).
+  #   content_grounding   there is nothing to ground against, so the gate is
+  #                       the placeholder scan: unresolved [PLACEHOLDER]/TBD
+  #                       tokens in drafting output -> outcome "warn".
+  # Either way `grounded` stays False for a non-retrieval call — a completion
+  # with no evidence set is never certified, only checked.
   skip_grounding_for_plain_complete: true
 
   # Content-grounding gate (gate 5) knobs. The gate runs semantic
@@ -186,8 +201,14 @@ governance:
     routing_function: cortex_complete
 
 analyst:
-  # When the deterministic NLQ->SQL path returns nothing, fall back to the
-  # cortex_analyst LLM routing chain.
+  # Whether ask(mode="auto") may DEGRADE from the IQE path into the LLM
+  # NL->SQL path when IQE cannot resolve/translate/authorize the question.
+  #
+  # Set to false as a policy control — "no LLM-generated SQL runs against this
+  # database by accident". The IQE error is then re-raised to the caller with
+  # a `nlq_fallback_policy: skip` gate on the governance report, so the refusal
+  # is auditable. Scope is exactly the fallback: an explicit ask(mode="nlq") is
+  # a caller opting in by name and is NOT governed by this key.
   nlq_fallback_enabled: true
 
 cache:

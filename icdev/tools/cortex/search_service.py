@@ -43,7 +43,7 @@ from typing import Optional
 from tools.logging.icdev_logger import get_logger
 from tools.rag.retriever_common import clamp_unit, run_rag_search
 
-from .config import load_cortex_config
+from .config import load_cortex_config, resolve_strategy_weights
 from .schemas import CORTEX_BACKENDS, Citation, CortexContext, CortexSearchResult
 
 logger = get_logger(__name__)
@@ -141,15 +141,22 @@ def _fusion_ident(r) -> str:
     return str(src) if src else (getattr(r, "content", "") or "")
 
 
-def _rrf_fuse(results: list, k: int = _DEFAULT_RRF_K) -> list:
-    """Fuse multi-backend results by Reciprocal Rank Fusion.
+def _rrf_fuse(results: list, k: int = _DEFAULT_RRF_K, weights: Optional[dict] = None) -> list:
+    """Fuse multi-backend results by weighted Reciprocal Rank Fusion.
 
     Per-backend raw scores are not comparable across backends (each backend
     peak-normalizes its own set), so a plain score-sort over the concatenated
     list is biased toward whichever backend emits larger numbers. RRF instead
     ranks each backend's list independently and scores each item by
-    ``sum(1 / (k + rank))`` over the backends that returned it — rank-based, so
-    scale-free, and it rewards items surfaced by multiple backends.
+    ``sum(weight / (k + rank))`` over the backends that returned it — rank-based,
+    so scale-free, and it rewards items surfaced by multiple backends.
+
+    ``weights`` is ``search.strategy_weights`` from args/cortex_config.yaml
+    (normalized by ``config.resolve_strategy_weights``); a backend with no entry
+    weighs 1.0, which makes an absent/empty mapping identical to unweighted RRF.
+    This is the formula the YAML has always documented — until ctx-enf-03 the
+    code dropped the weight term, so tuning ``rag: 1.0`` against ``kb: 0.6``
+    changed nothing.
 
     The item's raw ``.score`` is left untouched (CRAG + callers still read it);
     the fused score is recorded in ``raw_scores['rrf']`` and the list is ordered
@@ -157,16 +164,20 @@ def _rrf_fuse(results: list, k: int = _DEFAULT_RRF_K) -> list:
     """
     if not results:
         return []
+    weights = weights or {}
     by_backend: dict = {}
     for r in results:
         by_backend.setdefault(getattr(r, "backend", "") or "", []).append(r)
 
     fused: dict = {}  # ident -> {"result": best_repr, "rrf": float}
-    for _backend, items in by_backend.items():
+    # NB: named `backend_name`, not `_backend` — the module-level `_backend()`
+    # importer would be shadowed, and this loop now READS the value.
+    for backend_name, items in by_backend.items():
+        weight = weights.get(backend_name, 1.0)
         ranked = sorted(items, key=lambda r: getattr(r, "score", 0.0) or 0.0, reverse=True)
         for rank, r in enumerate(ranked, start=1):
             ident = _fusion_ident(r)
-            contrib = 1.0 / (k + rank)
+            contrib = weight / (k + rank)
             cur = fused.get(ident)
             if cur is None:
                 fused[ident] = {"result": r, "rrf": contrib}
@@ -457,7 +468,7 @@ def search_all(
             logger.warning("Cortex search: unknown backend %r skipped", name)
             continue
         merged.extend(adapter(query, top_k=top_k, ctx=ctx))
-    return _rrf_fuse(merged)
+    return _rrf_fuse(merged, weights=resolve_strategy_weights())
 
 
 # ---------------------------------------------------------------------------
@@ -656,7 +667,11 @@ def _run_backends(
                 name,
                 budget,
             )
-    merged = _rrf_fuse(merged, k=int(search_cfg.get("rrf_k") or _DEFAULT_RRF_K))
+    merged = _rrf_fuse(
+        merged,
+        k=int(search_cfg.get("rrf_k") or _DEFAULT_RRF_K),
+        weights=resolve_strategy_weights(search_cfg),
+    )
     return merged, valid, timed_out
 
 
@@ -790,16 +805,26 @@ def rewrite_query(
 def _merge_corrective(
     original: list[CortexSearchResult],
     corrective: list[CortexSearchResult],
+    search_cfg: Optional[dict] = None,
 ) -> list[CortexSearchResult]:
     """Fuse both passes: dedupe by (backend, source_id), best raw score wins,
     then re-rank the survivors by RRF so an item found in both passes (and by
-    multiple backends) rises."""
+    multiple backends) rises.
+
+    Takes the same ``search_cfg`` the fan-out used so the corrective merge
+    ranks under the configured ``rrf_k`` + ``strategy_weights`` rather than a
+    second, unconfigured RRF."""
+    search_cfg = search_cfg or {}
     best: dict = {}
     for r in original + corrective:
         key = (r.backend, r.citation.source_id, r.content)
         if key not in best or r.score > best[key].score:
             best[key] = r
-    return _rrf_fuse(list(best.values()))
+    return _rrf_fuse(
+        list(best.values()),
+        k=int(search_cfg.get("rrf_k") or _DEFAULT_RRF_K),
+        weights=resolve_strategy_weights(search_cfg),
+    )
 
 
 def _corrective_pass(
@@ -860,7 +885,7 @@ def _corrective_pass(
         rewritten,
     )
     corrective = _routed_pass(rewritten, top_k, ctx, strategy, cfg, search_cfg)
-    merged = _merge_corrective(results, corrective)
+    merged = _merge_corrective(results, corrective, search_cfg)
     for r in merged:
         r.metadata["corrective_pass"] = True
         r.metadata["crag"] = dict(crag_record)
