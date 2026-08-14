@@ -1182,7 +1182,28 @@ tests/cortex/test_summarize_routing_airgap.py
 # collections used to audit Cortex itself. Pins both halves: ownership (a
 # caller-supplied connection survives, a self-opened one is still closed) and
 # honesty (a failure raises and logs; a genuinely empty collection still
-# returns []). Also pins that hitting the row cap logs, which is the only
-# visibility ctx-trust-04 has until predicate pushdown lands.
-# 18 tests, <1s, fully mocked: no DB service, no LLM, no network.
+# returns []). Also pins the row-cap report at the adapter boundary: the +1
+# detection row never leaks into the result set, exactly-cap is NOT truncated,
+# and a cap that bit is carried on the RowSet rather than only logged.
+# 21 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_iqe_adapter_connection_ownership.py
+# The IQE Cortex adapters capped at 500 rows BEFORE the executor applied the
+# query's where clauses -- which it does in PYTHON, after the fetch. So
+# cortex.ask("how many blocked calls in the last 30 days?") counted inside the
+# newest 500 audit rows and analyst._label_rows_result stamped the undercount
+# grounding="rows_by_construction" / confidence="include" /
+# confidence_score 1.0. Not a crash: a confident falsehood on the exact surface
+# an operator uses to audit Cortex itself. Runs against a REAL seeded
+# cortex_audit holding 700 rows (600 matching, hidden behind 100 newer
+# non-matching ones, so the cap is load-bearing) through the real adapter, real
+# SQL and real executor -- nothing mocked, because mocking the executor is
+# precisely how a cap-vs-filter ORDERING bug hides. Pins: the uncapped scan
+# returns the correct 600; a capped scan reports itself incomplete and is
+# labelled "flag", never confidence_score 1.0; the caveat reaches the answer
+# TEXT, not just metadata; exactly-cap is not truncated (a warning that fires
+# on correct answers is one nobody reads); the unregistered-collection
+# fallback is bounded (it was an unbounded SELECT * into Python memory); and a
+# union that lost a collection is incomplete rather than silently short.
+# 12 tests, ~1s, SQLite via tmp_path ICDEV_DB_PATH: no DB service, no LLM,
+# no network.
+tests/cortex/test_iqe_row_cap_truncation.py
