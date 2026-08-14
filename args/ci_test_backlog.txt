@@ -1833,6 +1833,5 @@ tests/voc/test_voc_engine.py
 tests/win_loss/test_win_loss_engine.py
 tests/workflow/test_kph_coherence_checks.py
 tests/workflow/test_pipeline_grader.py
-tests/workflow/test_playwright_gate.py
 tests/workflow/test_pytest_gate.py
 tests/workflow/test_validated_commit.py
