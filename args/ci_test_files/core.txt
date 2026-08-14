@@ -1173,3 +1173,16 @@ tests/kanban/test_seed_ctx_kanban.py
 # reaching the router, result metadata), never that a config key parses.
 # 12 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_summarize_routing_airgap.py
+# The IQE Cortex adapters closed a connection they did not open. Executor
+# _fetch_union/_fetch_join fetch several collections IN PARALLEL over ONE
+# caller-supplied connection (analyst._ask_iqe opens it), so adapter #1's
+# unconditional finally-close pulled it out from under adapter #2 mid-query; #2
+# raised, a bare `except Exception: return []` swallowed it with no log, and the
+# union returned HALF ITS ROWS looking like a complete answer -- on the very
+# collections used to audit Cortex itself. Pins both halves: ownership (a
+# caller-supplied connection survives, a self-opened one is still closed) and
+# honesty (a failure raises and logs; a genuinely empty collection still
+# returns []). Also pins that hitting the row cap logs, which is the only
+# visibility ctx-trust-04 has until predicate pushdown lands.
+# 18 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_iqe_adapter_connection_ownership.py
