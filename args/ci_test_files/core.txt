@@ -1051,3 +1051,13 @@ tests/test_integrity_persistence_allowlist.py
 # due_date cannot silently undo the sweep. 18 tests, ~1s, in-memory sqlite, no
 # network/LLM. Gated in the PR that makes it pass.
 tests/test_cpmp_overdue_deliverable_state.py
+
+# test_ungated_test_drift.py gates the reflex that watches the ~1,823 test
+# modules CI never runs. Listing it is not ceremony: a drift detector that
+# silently stopped detecting would leave the blind spot it exists to cover
+# looking permanently clean, which is strictly worse than not having one. The
+# tests pin the four properties that keep it trustworthy rather than noisy -
+# transitions only, silent seeding on a database with no baseline, a
+# deterministic card id, and an unrunnable file never overwriting a real
+# verdict. Hermetic: temp SQLite, subprocess calls stubbed, no network.
+tests/test_ungated_test_drift.py
