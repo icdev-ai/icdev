@@ -69,7 +69,11 @@ from typing import Callable, Optional
 
 from tools.logging.icdev_logger import get_logger
 
-from .config import load_cortex_config, resolve_fail_closed
+from .config import (
+    load_cortex_config,
+    resolve_fail_closed,
+    skip_grounding_for_plain_complete,
+)
 from .schemas import CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger(__name__)
@@ -703,9 +707,35 @@ class GovernancePipeline:
                 except Exception as exc:
                     grounded = False
                     self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc)
-        else:
+        elif skip_grounding_for_plain_complete():
             grounded = False
             self._record(report, GATE_CITATION_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
+        else:
+            # governance.skip_grounding_for_plain_complete: false — a plain
+            # completion injects NO sources, so the allowed set is empty by
+            # construction and any [source: N] tag the model emitted is
+            # fabricated. That is the one citation defect a non-retrieval call
+            # can actually commit, and until ctx-enf-03 nothing looked for it.
+            grounded = False
+            try:
+                citation_report = _gate_validate_citations(text, [])
+                if citation_report.get("hallucinated_citations"):
+                    detail = (
+                        "citations in a non-retrieval call: "
+                        f"{citation_report['hallucinated_citations']}"
+                    )
+                    if resolve_fail_closed(ctx):
+                        self._block(report, ctx, GATE_CITATION_GROUNDING, detail)
+                    self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
+                else:
+                    self._record(
+                        report, GATE_CITATION_GROUNDING, OUTCOME_PASS,
+                        "non-retrieval call cites nothing",
+                    )
+            except GovernanceBlockedError:
+                raise
+            except Exception as exc:
+                self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc)
 
         # 5. Content grounding — semantic claim-vs-context grounding when the
         #    call is retrieval-backed AND snippet text is available; otherwise a
@@ -765,8 +795,36 @@ class GovernancePipeline:
             except Exception as exc:
                 grounded = False
                 self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc)
-        else:
+        elif skip_grounding_for_plain_complete():
             self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
+        else:
+            # governance.skip_grounding_for_plain_complete: false — there is no
+            # context to ground against, so the placeholder scan is the whole
+            # gate: unresolved [PLACEHOLDER]/TBD tokens in free-form drafting
+            # output are a defect whether or not evidence was injected.
+            try:
+                placeholders = _gate_find_placeholders(text)
+                report.content_grounding = {
+                    "score": None,
+                    "method": "placeholder",
+                    "ungrounded_claims": [],
+                    "floor": _content_grounding_floor(),
+                }
+                if placeholders:
+                    grounded = False
+                    detail = f"unresolved placeholders: {placeholders}"
+                    if resolve_fail_closed(ctx):
+                        self._block(report, ctx, GATE_CONTENT_GROUNDING, detail)
+                    self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
+                else:
+                    self._record(
+                        report, GATE_CONTENT_GROUNDING, OUTCOME_PASS, "method=placeholder",
+                    )
+            except GovernanceBlockedError:
+                raise
+            except Exception as exc:
+                grounded = False
+                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc)
 
         # 6. Output redaction — never skipped, and applied to the CALLER-VISIBLE
         #    content of EVERY result shape. Egress PII/CUI masking is not optional
