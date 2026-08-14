@@ -71,3 +71,11 @@ CANVAS_URL_PREFIX = "/cortex"
 
 # IQE collection names the canvas exposes (mirrors args/component_registry.yaml).
 IQE_COLLECTIONS = ("cortex.chat_sessions", "cortex.audit", "cortex.search_history")
+
+# Maximum rows POST /cortex/api/iqe-query serialises into one JSON response
+# (ctx-trust-05). The adapter's ``_ROW_CAP`` bounds what is READ per collection;
+# this bounds what is RETURNED after the executor's in-Python where/select pass,
+# so a broad question ("show me everything") cannot serialise a 10k-row scan —
+# or, on a union, 3x that — into a single response body. A capped response says
+# so via ``truncated`` + ``max_rows`` rather than silently looking complete.
+IQE_MAX_ROWS = 500

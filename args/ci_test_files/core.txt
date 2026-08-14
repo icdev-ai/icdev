@@ -1261,3 +1261,16 @@ tests/cortex/test_config_keys_enforced.py
 # 12 tests, ~1s, SQLite via tmp_path ICDEV_DB_PATH: no DB service, no LLM,
 # no network.
 tests/cortex/test_iqe_row_cap_truncation.py
+# POST /cortex/api/iqe-query executed execute_query(ast, conn=None), which makes
+# every IQE adapter open its OWN connection: tenant scope and Bell-LaPadula
+# read-down then held only as far as get_connection() happened to find a usable
+# flask.g.security_context. It does not always -- the dashboard sets a dict for
+# a Cortex service-key binding, whose .tenant_id attribute the RLS injector
+# reads as None -- so the route returned EVERY tenant's rows and answered 200.
+# The route now threads an explicit CortexContext through the analyst's
+# _apply_security_context and bounds the response at IQE_MAX_ROWS. The DENY case
+# is the acceptance proof: two tenants' rows in one table, tenant-b's ABSENT
+# from tenant-a's answer, asserted over a real StorageConnection so predicate
+# injection actually runs (it leaks 5 rows on the unfixed route).
+# 13 tests, ~1s, temp SQLite DB: no DB service, no LLM, no network.
+tests/cortex/test_iqe_query_security_context.py
