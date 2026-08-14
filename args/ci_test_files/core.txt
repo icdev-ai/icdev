@@ -1352,3 +1352,22 @@ tests/test_reflex_finding_scope.py
 # _DETAIL_ROW_LIMIT sampling cap the timing fields inherit is not widened.
 # 14 tests, ~1s, gate seams patched: no DB service, no LLM, no network.
 tests/cortex/test_governance_timing.py
+# Every cortex.search on the rag backend re-read AND re-parsed args/rag_config.yaml
+# from disk: retriever_common builds a fresh RAGRetriever per search and __init__
+# called an unmemoized _load_rag_config(), while cortex/config.py next door has
+# memoized its own file per path+mtime since ctx-perf-01. Now mtime-keyed the same
+# way -- the stat() stays, because it is the invalidation signal, and an edited
+# config must still be picked up without a restart. Two adjacent defects on the
+# same hot path are pinned here too: the fallback embedding path hardcoded
+# model="nomic-embed-text" (one vendor pinned into code on a path whose callers
+# swallow exceptions), and an embedding failure returned [] -- byte-identical to
+# "the corpus matched nothing", which is how a DEAD EMBEDDING PROVIDER reached the
+# chat user as "No matching results were found across the Cortex backends". The
+# failure now raises EmbeddingUnavailableError, is logged at ERROR, is carried on
+# BackendResults.errors through the fan-out, and gets a different answer than a
+# genuine zero-result. Pins both directions: a real empty set must KEEP the old
+# "no matching results" wording, and one failing backend must not turn a partial
+# answer into an error.
+# 17 tests, ~1.5s, tmp_path configs + stub providers: no DB service, no LLM,
+# no network.
+tests/rag/test_retriever_config_and_embedding.py

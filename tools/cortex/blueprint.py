@@ -419,7 +419,13 @@ def _response_from_result(result, grounded_override=None) -> dict:
 
 
 def _response_from_search(results: list) -> dict:
-    """Synthesize a chat answer from a list of CortexSearchResult hits."""
+    """Synthesize a chat answer from a list of CortexSearchResult hits.
+
+    ``results`` may be a ``search_service.BackendResults`` carrying ``.errors``.
+    Zero hits with a recorded backend failure is NOT "nothing matched" — saying
+    so is how a dead embedding provider was reported to the user as an empty
+    corpus (ctx-perf-04). Those two cases get different answers here.
+    """
     citations = []
     lines = []
     for i, r in enumerate(results, 1):
@@ -430,8 +436,20 @@ def _response_from_search(results: list) -> dict:
         if snippet:
             lines.append(f"{i}. {snippet[:220]}")
     grounded = bool(citations)
+    errors = list(getattr(results, "errors", ()) or ())
+    degraded = bool(errors) and not lines
     if lines:
         answer = f"Found {len(results)} result(s):\n" + "\n".join(lines[:5])
+    elif degraded:
+        detail = "; ".join(
+            f"{e.get('backend', '?')} ({e.get('stage', 'error')}): "
+            f"{e.get('message', '')}".strip()
+            for e in errors
+        )
+        answer = (
+            "Search could not run — this is a retrieval FAILURE, not an empty "
+            f"result set, so the corpus may well contain an answer: {detail}"
+        )
     else:
         answer = "No matching results were found across the Cortex backends."
     return {
@@ -441,11 +459,14 @@ def _response_from_search(results: list) -> dict:
         "citations": citations,
         "governance": {
             "gates_run": ["retrieval"],
-            "outcomes": {"retrieval": "pass" if results else "warn"},
+            "outcomes": {
+                "retrieval": "pass" if results else ("error" if degraded else "warn")
+            },
             "blocked": False,
+            "backend_errors": errors,
         },
         "requires_confirm": False,
-        "degraded": False,
+        "degraded": degraded,
     }
 
 

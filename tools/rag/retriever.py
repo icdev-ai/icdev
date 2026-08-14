@@ -59,35 +59,98 @@ _MIN_SCORE_THRESHOLD      = 0.10   # minimum score to include in results
 _RESULT_PREVIEW_CHARS     = 120    # max chars in result preview/logging
 
 
-def _load_rag_config() -> dict:
-    """Load RAG config.
+#: Parsed RAG config keyed by path -> (mtime, config). See _load_rag_config().
+_rag_config_cache: Dict[str, tuple] = {}
+
+
+def reset_rag_config_cache() -> None:
+    """Drop the parsed-config memo. For tests that rewrite the config file."""
+    _rag_config_cache.clear()
+
+
+def _load_rag_config(refresh: bool = False) -> dict:
+    """Load RAG config, memoized per path+mtime.
 
     Path comes from :func:`tools.rag.config_path.rag_config_path` so a
     measurement run can point ``ICDEV_RAG_CONFIG`` at a temp config with exactly
     one toggle flipped, instead of rewriting the shared committed file.
+
+    Cached the same way ``tools/cortex/config.py::load_cortex_config`` caches
+    its own file (ctx-perf-04). ``RAGRetriever.__init__`` calls this, and every
+    Cortex search with the ``rag`` backend constructs a retriever, so the
+    uncached form paid a disk read plus a full YAML parse per search. The mtime
+    is the invalidation signal — an edited config is picked up on the next call
+    without a restart — so this still stat()s the file each time; that is one
+    syscall against a ~600-line parse. ``refresh=True`` bypasses the memo.
+
+    The returned dict is SHARED between callers (as the cortex memo's is):
+    read it, do not mutate it.
     """
     from tools.rag.config_path import rag_config_path
 
     config_path = rag_config_path()
+    key = str(config_path)
+    mtime = config_path.stat().st_mtime if config_path.is_file() else 0.0
+    if not refresh:
+        cached = _rag_config_cache.get(key)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
     if not config_path.exists():
         return {}
     try:
         import yaml
 
         with open(config_path, "r") as f:
-            return yaml.safe_load(f) or {}
-    except Exception:
+            config = yaml.safe_load(f) or {}
+    except Exception as exc:
+        logger.warning("RAG: unreadable config at %s (%s)", config_path, exc)
         return {}
+    _rag_config_cache[key] = (mtime, config)
+    return config
+
+
+class EmbeddingUnavailableError(RuntimeError):
+    """The query could not be embedded, so retrieval never ran.
+
+    Deliberately NOT the same as an empty result list (ctx-perf-04). Both used
+    to surface as ``[]``, which reaches a chat user as "No matching results were
+    found" — a dead embedding provider reported as "nothing matched". Every
+    caller of :meth:`RAGRetriever.search` already wraps it in ``try/except``, so
+    raising degrades exactly where ``[]`` used to, but a caller that wants to
+    tell the two apart now can.
+    """
 
 
 def _get_embedding_provider():
-    """Get embedding provider."""
+    """Get embedding provider, or None when the whole chain is unavailable."""
     try:
         from tools.llm import get_embedding_provider
 
         return get_embedding_provider()
-    except Exception:
+    except Exception as exc:
+        logger.error(
+            "RAG: no embedding provider available (%s) — queries cannot be "
+            "embedded; this is a provider failure, not an empty corpus",
+            exc,
+        )
         return None
+
+
+def _embed_query(provider, query: str) -> List[float]:
+    """Embed one query with whichever provider shape the router handed us.
+
+    An ICDEV ``EmbeddingProvider`` carries its own configured model, so
+    ``.embed()`` needs no model argument. A raw OpenAI-style client does not,
+    and the model id for that path is resolved from ``embeddings`` in
+    args/llm_config.yaml — never a literal in this file.
+    """
+    if hasattr(provider, "embed"):
+        return provider.embed(query)
+
+    from tools.llm.embedding_provider import resolve_embedding_model_id
+
+    resp = provider.embeddings.create(input=query, model=resolve_embedding_model_id())
+    return resp.data[0].embedding
 
 
 # ---------------------------------------------------------------------------
@@ -352,19 +415,26 @@ class RAGRetriever:
         do_rerank = rerank if rerank is not None else self._rerank_cfg.get("enabled", True)
         min_score = self._retrieval_cfg.get("min_score_threshold", _MIN_SCORE_THRESHOLD)
 
-        # Step 1: Embed query
+        # Step 1: Embed query. A failure here means retrieval never RAN, which
+        # is not the same answer as "the corpus matched nothing" — so it raises
+        # rather than returning [] (ctx-perf-04).
         provider = _get_embedding_provider()
         if not provider:
-            return []
+            raise EmbeddingUnavailableError(
+                "no embedding provider is available — the query was never "
+                "embedded and no backend was searched"
+            )
 
         try:
-            if hasattr(provider, "embed"):
-                query_embedding = provider.embed(query)
-            else:
-                resp = provider.embeddings.create(input=query, model="nomic-embed-text")
-                query_embedding = resp.data[0].embedding
-        except Exception:
-            return []
+            query_embedding = _embed_query(provider, query)
+        except Exception as exc:
+            logger.error(
+                "RAG: query embedding failed via %s (%s) — returning a retrieval "
+                "ERROR, not an empty result set",
+                type(provider).__name__,
+                exc,
+            )
+            raise EmbeddingUnavailableError(f"query embedding failed: {exc}") from exc
 
         # Step 2: Vector similarity search
         store = VectorStoreFactory.create(tenant_id=self._tenant_id)
