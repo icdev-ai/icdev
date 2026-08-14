@@ -118,12 +118,55 @@ class CortexAirgapError(RuntimeError):
 # ---------------------------------------------------------------------------
 # Behavior config (args/cortex_config.yaml)
 # ---------------------------------------------------------------------------
+#: Resolved config paths, keyed on the two env vars that can change the answer.
+#: See resolve_cortex_config_path() for why this is safe to memoize.
+_path_cache: Dict[tuple, Path] = {}
+
+
+def reset_path_cache() -> None:
+    """Drop the resolved-path memo. For tests that move config files around."""
+    _path_cache.clear()
+
+
 def resolve_cortex_config_path() -> Path:
-    """Return the cortex_config.yaml every ICDEV component should read."""
-    override = os.environ.get(CORTEX_CONFIG_ENV_VAR, "").strip()
+    """Return the cortex_config.yaml every ICDEV component should read.
+
+    Memoized (ctx-perf-01). The uncached form was a real hot-path cost: this
+    calls ``resolve_llm_config_path()``, which walks EVERY parent directory
+    is_file()-probing for ``args/llm_config.yaml`` with no memo of its own. A
+    single governed Cortex call reaches ``load_cortex_config()`` roughly 8-12
+    times — ``is_enabled``, ``cacheable``, ``_ttl_for``, ``resolve_fail_closed``
+    at three sites, ``_content_grounding_floor`` at two — so the walk was paid
+    that many times over, tens of filesystem syscalls per call, whether or not
+    the response cache was even on.
+
+    Safe to memoize because the answer depends on exactly two inputs, both keyed
+    here: the two env overrides. The directory walk starts from a module-level
+    root derived from ``__file__``, NOT from ``os.getcwd()``, so it cannot change
+    under a worktree or a test that chdirs. ``reset_path_cache()`` exists for
+    tests that genuinely relocate a config file.
+
+    NOTE what this does NOT fix: ``load_cortex_config`` still stat()s the
+    resolved path on every call to key its own mtime cache. That is one syscall
+    rather than a full walk, and it is the invalidation signal, so it stays.
+    Collapsing the 8-12 calls themselves would mean threading one config object
+    through the pipeline — a larger change than this card.
+    """
+    key = (
+        os.environ.get(CORTEX_CONFIG_ENV_VAR, "").strip(),
+        os.environ.get("ICDEV_LLM_CONFIG", "").strip(),
+    )
+    cached = _path_cache.get(key)
+    if cached is not None:
+        return cached
+
+    override = key[0]
     if override:
-        return Path(override).expanduser().resolve()
-    return resolve_llm_config_path().parent / CORTEX_CONFIG_FILENAME
+        resolved = Path(override).expanduser().resolve()
+    else:
+        resolved = resolve_llm_config_path().parent / CORTEX_CONFIG_FILENAME
+    _path_cache[key] = resolved
+    return resolved
 
 
 def _load_yaml(path: Path) -> Dict:

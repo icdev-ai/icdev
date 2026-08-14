@@ -345,7 +345,13 @@ def _validate_sql_safety(
             _GATE_ALLOWLIST,
             started,
         )
-    off_allowlist = [t for t in tables if t not in _allowed_tables()]
+    # Hoisted out of the comprehension (ctx-perf-02). As a condition it was
+    # re-evaluated ONCE PER TABLE, and _allowed_tables() calls list_collections()
+    # AND _canvas_iqe_mapping() -> get_registry().get_iqe_mapping(), which loads
+    # the component registry. A 5-table query did 5 full registry+executor scans,
+    # on the SQL-safety path of every analyst question.
+    allowed = _allowed_tables()
+    off_allowlist = [t for t in tables if t not in allowed]
     if off_allowlist:
         _refuse(
             question,

@@ -1173,3 +1173,16 @@ tests/kanban/test_seed_ctx_kanban.py
 # reaching the router, result metadata), never that a config key parses.
 # 12 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_summarize_routing_airgap.py
+# Two per-call costs on the Cortex hot path, asserted with CALL COUNTERS rather
+# than timings (a timing assertion on a shared runner is a flake, and the defect
+# is "how many times", not "how slow"). Measured pre-fix: the parent-directory
+# walk for args/llm_config.yaml ran 12 times for 12 resolutions -- and one
+# governed call reaches load_cortex_config 8-12 times, so it multiplied straight
+# into per-call syscalls; and _allowed_tables() ran 5 times for one validation of
+# a 5-table query, loading the component registry each time, because it sat in a
+# comprehension's CONDITION. Both are 1 after. The memo keys on BOTH env
+# overrides -- ICDEV_CORTEX_CONFIG and ICDEV_LLM_CONFIG -- because
+# cortex_config.yaml is resolved RELATIVE to the llm config, and a memo that
+# shadowed an override would be worse than the cost it saves.
+# 7 tests, <1s, no DB service, no LLM, no network.
+tests/cortex/test_hot_path_cost.py
