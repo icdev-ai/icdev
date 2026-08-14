@@ -23,10 +23,23 @@
 
 # Fallback values for ${VAR} placeholders in consumer paths, used only when the
 # environment variable is unset. A placeholder that resolves to nothing (no env
-# var, no default) makes the consumer SKIP — it never fails the check. This is
-# what keeps CI green on a runner where the standalone repos are not checked out.
-path_defaults:
-  ICDEV_STANDALONE_ROOT: C:/AI/standalone
+# var, no default) makes the consumer SKIP — it never fails the check.
+#
+# NO DEFAULT IS SHIPPED, deliberately (ctx-enf-01). This previously defaulted to
+# C:/AI/standalone — one workstation's layout, in a repo that is otherwise
+# OS-agnostic. Set ICDEV_STANDALONE_ROOT locally to run the consumer half.
+#
+# AND NOTE WHAT THAT SKIP MEANS: compass and idea_lab are SEPARATE PRIVATE
+# repositories that ICDEV's CI never checks out, so every consumer below always
+# skips in CI and this check can never fail there — verified even with --gate
+# and the source in --changed-files. That is repo topology, not an OS problem;
+# /home/me/standalone would skip identically. The enforceable half lives in
+# args/vendor_api/ (tools/workflow/vendor_api_manifest.py): a committed manifest
+# of each canonical source's public API, so a CHANGE to the contract fails
+# inside this repo with no external checkout. The two are complementary —
+#   manifest            -> "canonical changed"  : always enforceable here
+#   the check below     -> "a copy is behind"   : only where the copy exists
+path_defaults: {}
 
 vendored_copies:
   - source: tools/cortex/client.py

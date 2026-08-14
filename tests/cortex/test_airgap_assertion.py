@@ -144,13 +144,33 @@ def test_import_time_assertion_fires_on_broken_config(tmp_path, monkeypatch):
 
 
 def test_routing_functions_pin_api_constants():
+    """Every CORTEX_*_FUNCTION constant must be covered by assert_airgap_ready().
+
+    Derived from the constants rather than restating them as a literal tuple.
+    The literal made this an EQUALITY test against a hand-copied list, so adding
+    cortex_summarize (ctx-trust-01) failed it for the one reason that is not a
+    defect: the guard's coverage had been correctly widened. Worse, the file is
+    ungated, so nothing reported it.
+
+    Set comparison, both directions, because both failures matter:
+      - a constant missing from the tuple is a routing function the air-gap
+        assertion never validates (exactly the cortex_summarize hole),
+      - a tuple entry with no constant is a name nothing routes through.
+    """
     api = importlib.import_module("tools.cortex.api")
-    assert CORTEX_ROUTING_FUNCTIONS == (
-        api.CORTEX_COMPLETE_FUNCTION,
-        api.CORTEX_CLASSIFY_FUNCTION,
-        api.CORTEX_EXTRACT_FUNCTION,
-        api.CORTEX_SEARCH_REWRITE_FUNCTION,
-        api.CORTEX_ANALYST_FUNCTION,
+
+    declared = {
+        value for name, value in vars(api).items()
+        if name.startswith("CORTEX_") and name.endswith("_FUNCTION")
+        and isinstance(value, str)
+    }
+
+    assert declared - set(CORTEX_ROUTING_FUNCTIONS) == set(), (
+        "a CORTEX_*_FUNCTION constant is absent from CORTEX_ROUTING_FUNCTIONS, so "
+        "assert_airgap_ready() never validates that routing function"
+    )
+    assert set(CORTEX_ROUTING_FUNCTIONS) - declared == set(), (
+        "CORTEX_ROUTING_FUNCTIONS names a function with no CORTEX_*_FUNCTION constant"
     )
 
 

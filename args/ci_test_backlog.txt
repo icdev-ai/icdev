@@ -109,7 +109,6 @@ tests/ci/workflows/test_icdev_sdlc.py
 tests/ci/workflows/test_icdev_test.py
 tests/cli/test_icdev_enable.py
 tests/cortex/test_agent_confirm.py
-tests/cortex/test_airgap_assertion.py
 tests/cortex/test_analyst_citations.py
 tests/cortex/test_analyst_e2e.py
 tests/cortex/test_analyst_fallback.py

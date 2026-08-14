@@ -1173,3 +1173,28 @@ tests/kanban/test_seed_ctx_kanban.py
 # reaching the router, result metadata), never that a config key parses.
 # 12 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_summarize_routing_airgap.py
+# check_vendor_parity is a gate that cannot fire. It compares tools/cortex/client.py
+# against its vendored copies in compass/idea_lab, computes the drift correctly,
+# and returns PASS in CI -- because those copies live in SEPARATE PRIVATE repos
+# ICDEV CI never checks out, and an absent consumer is SKIPPED, not failed.
+# Verified even with --gate AND --changed-files tools/cortex/client.py. Repo
+# topology, not OS: /home/me/standalone skips identically. Consequence measured
+# 2026-08-13 -- CortexClient.reason()/.agent() were added 2026-08-09 and both
+# copies were still missing them, last_synced still reading 2026-08-02.
+# This gates the enforceable half: a committed manifest of the canonical public
+# API under args/vendor_api/, so a CHANGE to the contract fails here with no
+# external checkout. test_it_still_fails_with_no_standalone_checkout is the
+# load-bearing case -- the exact configuration the original gate is blind in.
+# 9 tests, <1s, no DB service, no LLM, no network.
+tests/workflow/test_vendor_api_manifest.py
+# Gated in the PR that makes it pass (ctx-enf-02 sequencing, brought forward
+# because this PR is what fixed it). It caught a REAL regression that reached
+# main: ctx-trust-01 widened CORTEX_ROUTING_FUNCTIONS with cortex_summarize and
+# this file's pin was a hand-copied literal tuple, so it failed for the one
+# reason that is not a defect -- the air-gap guard's coverage had correctly
+# grown. Nothing reported it, because the file was ungated. The pin is now
+# DERIVED from the CORTEX_*_FUNCTION constants and compares both directions: a
+# constant missing from the tuple is a routing function assert_airgap_ready()
+# never validates; a tuple entry with no constant routes nowhere.
+# 30 tests, ~1s, no DB service, no LLM, no network.
+tests/cortex/test_airgap_assertion.py
