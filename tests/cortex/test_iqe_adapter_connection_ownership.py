@@ -138,23 +138,48 @@ def test_an_empty_collection_still_returns_empty(name, fn_name):
 
 
 # ---------------------------------------------------------------------------
-# Truncation is observable (ctx-trust-04 — partial; see the module docstring)
+# Truncation is observable (ctx-trust-04)
 # ---------------------------------------------------------------------------
+# The adapter asks for limit + 1 rows so the cap is DETECTABLE; the fake conn
+# ignores the parameter and hands back whatever it was seeded with, so "rows
+# above the cap came back" is spelled here as len(seed) > limit.
+# End-to-end behaviour against a real 700-row table — the undercount, and the
+# confidence label it used to carry — lives in test_iqe_row_cap_truncation.py.
 
 
 def test_hitting_the_row_cap_logs_a_warning(caplog):
-    """The executor filters AFTER this cap, so a capped scan is a wrong answer.
-
-    Predicate pushdown is the real fix and needs an Executor API change; until
-    then a truncated scan must at least be visible rather than silent.
-    """
-    conn = _Conn(rows=[(1, 2)] * 5)
+    """The executor filters AFTER this cap, so a capped scan is a wrong answer."""
+    conn = _Conn(rows=[(1, 2)] * 6)
     adapters.logger.propagate = True
 
     with caplog.at_level("WARNING"):
         adapters.audit_adapter(conn, limit=5)
 
     assert any("cap" in r.getMessage() for r in caplog.records)
+
+
+def test_hitting_the_row_cap_is_reported_on_the_result(caplog):
+    """A log line nothing reads is not a fix — the caller must see it too."""
+    conn = _Conn(rows=[(1, 2)] * 6)
+
+    rows = adapters.audit_adapter(conn, limit=5)
+
+    assert len(rows) == 5, "the +1 detection row leaked into the result set"
+    assert rows.incomplete == [
+        {"collection": "cortex.audit", "reason": "row_cap", "limit": 5}
+    ]
+
+
+def test_exactly_the_cap_is_not_truncated(caplog):
+    """Off-by-one: a collection holding exactly `limit` rows is complete."""
+    conn = _Conn(rows=[(1, 2)] * 5)
+    adapters.logger.propagate = True
+
+    with caplog.at_level("WARNING"):
+        rows = adapters.audit_adapter(conn, limit=5)
+
+    assert not [r for r in caplog.records if "cap" in r.getMessage()]
+    assert not getattr(rows, "incomplete", [])
 
 
 def test_below_the_cap_logs_nothing(caplog):
