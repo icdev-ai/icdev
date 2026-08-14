@@ -1159,3 +1159,17 @@ tests/test_cpmp_isr_ssr_applicability.py
 # the projects.yaml prefix/epic rules the Home progress card renders from.
 # 10 tests, ~1s, no DB service, no LLM, no network.
 tests/kanban/test_seed_ctx_kanban.py
+# cortex.ask(summarize=True) reached for the CLOUD tier under air-gap, and the
+# guard could not see it. analyst._llm_summarize called
+# LLMRouter().invoke("summarization"), a name declared only under
+# `task_categories:` and never under `routing:` -- LLMRouter resolves
+# routing.get(fn, routing.get("default")), so it silently took routing.default,
+# chain kimi-cloud first. No exclude_model_ids was passed, and the name was
+# absent from CORTEX_ROUTING_FUNCTIONS so assert_airgap_ready() never validated
+# it either: the one unguarded Cortex LLM call was also the one the guard was
+# blind to. The failure then degraded to a row dump labelled
+# grounding="rows_by_construction" / confidence_score 1.0 -- a STRONGER label
+# than the summarized path earns. Asserts behaviour (resolved function, kwargs
+# reaching the router, result metadata), never that a config key parses.
+# 12 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_summarize_routing_airgap.py
