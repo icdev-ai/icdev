@@ -1242,6 +1242,7 @@ tests/test_trust_gate.py
 # return, skip-vs-fail gate outcome). All 13 fail against the pre-fix tree.
 # 13 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_config_keys_enforced.py
+tests/test_project_card_coverage.py
 # The IQE Cortex adapters capped at 500 rows BEFORE the executor applied the
 # query's where clauses -- which it does in PYTHON, after the fetch. So
 # cortex.ask("how many blocked calls in the last 30 days?") counted inside the
