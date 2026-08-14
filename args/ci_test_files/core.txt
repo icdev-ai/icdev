@@ -1372,3 +1372,4 @@ tests/test_reflex_finding_scope.py
 # _DETAIL_ROW_LIMIT sampling cap the timing fields inherit is not widened.
 # 14 tests, ~1s, gate seams patched: no DB service, no LLM, no network.
 tests/cortex/test_governance_timing.py
+tests/cortex/test_chat_routing.py

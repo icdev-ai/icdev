@@ -28,6 +28,34 @@ if str(ROOT) not in sys.path:
 # intent_router unit tests
 # ---------------------------------------------------------------------------
 class TestIntentRouter:
+    """Deterministic rule-engine assertions — the LLM signal is stubbed out.
+
+    ``intent_router.route()`` calls ``_base_signal``, which reaches
+    ``chat_router.intent_classifier.classify`` and, when a model server is
+    reachable, makes a LIVE LLM call. A design-flavoured verdict from that call
+    adds +2 to the agent score, so with Ollama up "draft an email to the
+    security team" was classified `security-design` and routed to `agent`
+    instead of `complete`.
+
+    That made these tests pass or fail on whether a local model server happened
+    to be running, and on what it happened to say. It showed up as an
+    order-dependence: run this file alone and two tests failed; run the whole
+    tests/cortex directory and all 888 passed, because an earlier module left
+    the LLM path unreachable.
+
+    ``_base_signal`` is documented as best-effort ("classifier optional; router
+    still works") and returns {} when it cannot run, so stubbing it asserts the
+    router on exactly the deterministic path it is designed to fall back to.
+    The LLM-influenced path is real behaviour and is not being disabled in
+    production — it simply is not what these unit tests are about.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _deterministic_base_signal(self, monkeypatch):
+        from tools.cortex import intent_router
+
+        monkeypatch.setattr(intent_router, "_base_signal", lambda _msg: {})
+
     def test_search_shaped_routes_to_search(self):
         from tools.cortex import intent_router
 
