@@ -1446,3 +1446,19 @@ tests/cortex/test_cortex_reach_decisions.py
 # half of the degradation contract against a refused port, and the doc pointers in
 # client.py + its icdev/ mirror + phase-19. No DB, no LLM, no network egress.
 tests/cortex/test_child_app_access_pattern.py
+# ctx-perf-01 part 2. Part 1 memoized the config PATH; the calls themselves were
+# left alone and its own docstring said so. Measured here, not eyeballed: one
+# governed cortex.complete loaded args/cortex_config.yaml SIX times and a
+# retrieval-backed one seven-to-eight -- cache.is_enabled, cache.cacheable,
+# cache._get_cache, cache._ttl_for, both grounding decisions, the grounding floor
+# twice and the fail-closed posture, none of them aware another had read the same
+# file microseconds earlier. Each of those stat()s the file before its mtime memo
+# can answer, so it was paid per gate on every Cortex call whether or not the
+# response cache was even on. One snapshot is now taken per governed call and
+# threaded through the cache decision and every gate: the budget is 1, asserted
+# as a CEILING for both the cheap path and the retrieval path. Two of the five
+# tests exist to stop the collapse eating the invalidation: an edited config must
+# still win on the next load, and a snapshot must never outlive its call (one
+# that did would make an operator's edit invisible until restart).
+# 5 tests, <1s, stubbed gates + stubbed provider: no DB service, no LLM, no network.
+tests/cortex/test_config_load_budget.py

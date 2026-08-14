@@ -45,7 +45,7 @@ def _enable(monkeypatch, **over):
                         "cortex.classify": 600, "cortex.extract": 900},
     }
     cfg.update(over)
-    monkeypatch.setattr(rc, "_cache_cfg", lambda: cfg)
+    monkeypatch.setattr(rc, "_cache_cfg", lambda config=None: cfg)
     rc.reset()
 
 
@@ -107,7 +107,7 @@ def test_ttlcache_expiry_and_lru(monkeypatch):
 # Facade integration
 # --------------------------------------------------------------------------- #
 def test_disabled_by_default_no_caching(monkeypatch):
-    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": False})
+    monkeypatch.setattr(rc, "_cache_cfg", lambda config=None: {"enabled": False})
     calls = _count_invoke(monkeypatch)
     ctx = CortexContext(tenant_id="t-a")
     api.complete("same prompt", ctx=ctx)
@@ -332,7 +332,7 @@ def test_new_op_ttls_come_from_module_defaults_not_the_generic_default(monkeypat
     Asserts the module fallback table, not the fixture: if _DEFAULT_TTL lacked
     the two new keys they would silently inherit default=300.
     """
-    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": True})
+    monkeypatch.setattr(rc, "_cache_cfg", lambda config=None: {"enabled": True})
     rc.reset()
     assert rc._ttl_for("cortex.classify") == 600.0
     assert rc._ttl_for("cortex.extract") == 900.0
@@ -345,7 +345,7 @@ def test_module_default_operations_cover_the_new_ops(monkeypatch):
     That fallback is what applies when args/cortex_config.yaml is unreadable, so
     it must not drift from the shipped file.
     """
-    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": True})
+    monkeypatch.setattr(rc, "_cache_cfg", lambda config=None: {"enabled": True})
     assert rc.cacheable("cortex.classify")
     assert rc.cacheable("cortex.extract")
     assert not rc.cacheable("cortex.govern")
@@ -462,7 +462,7 @@ def test_ask_is_not_cacheable_by_default(monkeypatch):
     """ask is live NL->SQL over the operational DB. Its invalidating writes come
     from other processes, which an in-process cache cannot observe, so it is out
     of the default operations list rather than hooked."""
-    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": True})
+    monkeypatch.setattr(rc, "_cache_cfg", lambda config=None: {"enabled": True})
     assert not rc.cacheable("cortex.ask")
     assert "cortex.ask" not in rc._DEFAULT_OPERATIONS
 
@@ -480,7 +480,7 @@ def test_ask_keeps_a_short_ttl_if_an_operator_re_adds_it(monkeypatch):
 
     ttls = (load_cortex_config().get("cache") or {}).get("ttl_seconds") or {}
     assert float(ttls["cortex.ask"]) <= 30
-    monkeypatch.setattr(rc, "_cache_cfg", lambda: {"enabled": True})
+    monkeypatch.setattr(rc, "_cache_cfg", lambda config=None: {"enabled": True})
     assert rc._ttl_for("cortex.ask") == 30.0 < rc._ttl_for("cortex.unknown")
 
 
