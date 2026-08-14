@@ -57,7 +57,11 @@ def _isolated(monkeypatch):
 
 
 def _stub_summary(monkeypatch, text):
-    monkeypatch.setattr(_analyst, "_llm_summarize", lambda q, rows, cits: text)
+    # *a/**k rather than a fixed arity: _llm_summarize gained a `ctx` argument in
+    # ctx-trust-01 (air-gap exclusions have to reach the router), and a stub
+    # pinned to the old signature fails with a TypeError that looks like a
+    # product bug rather than a stale double.
+    monkeypatch.setattr(_analyst, "_llm_summarize", lambda *a, **k: text)
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +107,12 @@ def test_summarizer_unavailable_degrades_to_rows(monkeypatch):
     assert result.grounded is True
     assert result.metadata["grounding"] == "rows_by_construction"
     assert "2 rows" in result.text
-    assert "summarized" not in result.data
+    # ctx-trust-01: the rows really are grounded by construction, so the label
+    # is right — but the caller ASKED for prose and did not get it, and that used
+    # to be invisible. The degradation is now recorded alongside the label.
+    assert result.data["summarized"] is False
+    assert result.metadata["summary_requested"] is True
+    assert result.metadata["summary_unavailable"] is True
 
 
 # ---------------------------------------------------------------------------
