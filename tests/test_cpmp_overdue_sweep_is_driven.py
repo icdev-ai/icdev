@@ -60,6 +60,37 @@ class _FakeConn:
         return None
 
 
+# Modules that do `from tools.db.storage import get_connection` at MODULE level
+# and therefore hold their own binding, independent of the storage module's
+# attribute. Both namespaces, because `tools.x` and `icdev.tools.x` are distinct
+# module objects even though `tools/` is a shim over `icdev.tools`.
+_CONN_HOLDERS = tuple(
+    f"{ns}.{mod}"
+    for ns in ("tools", "icdev.tools")
+    for mod in ("db.storage", "govcon.pmo_ai_advisor", "govcon.contract_manager")
+)
+
+# Imported HERE, at collection, and deliberately not inside a fixture.
+#
+# cpmp_monitor.run() imports pmo_ai_advisor lazily, inside the function body. If
+# that is the module's first import and it happens while this file's fixtures
+# have get_connection patched, pmo_ai_advisor's module-level
+# `from tools.db.storage import get_connection` binds THE FAKE — permanently.
+# monkeypatch then restores the storage module's attribute and reports itself
+# clean, but the captured reference in pmo_ai_advisor is not an attribute
+# monkeypatch ever recorded, so it survives teardown and every later test in the
+# session gets _FakeConn. That is not hypothetical: it silently broke three
+# tests in test_cpmp_deliverable_cancellation.py, whose _gather_contract_context
+# then swallowed the resulting error and returned a dict missing
+# 'overdue_deliverables' — a KeyError in a file this one does not import and
+# only ever when the two ran in the same session.
+for _name in _CONN_HOLDERS:
+    try:
+        importlib.import_module(_name)
+    except ImportError:
+        pass
+
+
 def _patch_get_connection(monkeypatch, factory):
     """Patch get_connection on EVERY module the reflex could resolve it through.
 
@@ -67,14 +98,20 @@ def _patch_get_connection(monkeypatch, factory):
     and `from tools.db.storage import get_connection` inside a function body
     resolves by attribute traversal to the icdev one. Patching only the module
     the test imported leaves the reflex talking to the LIVE board.
+
+    The consumers in `_CONN_HOLDERS` are patched too, not just the storage
+    modules: each captured its own reference at import, so patching the source
+    module alone leaves them pointed at the real board.
     """
     patched = 0
-    for name in ("tools.db.storage", "icdev.tools.db.storage"):
+    for name in _CONN_HOLDERS:
         try:
-            monkeypatch.setattr(importlib.import_module(name), "get_connection", factory)
-            patched += 1
+            mod = importlib.import_module(name)
         except ImportError:
             continue
+        if hasattr(mod, "get_connection"):
+            monkeypatch.setattr(mod, "get_connection", factory)
+            patched += 1
     assert patched, "no storage module could be patched — the reflex would hit a real DB"
 
 
