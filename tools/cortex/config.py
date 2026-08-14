@@ -146,11 +146,11 @@ def resolve_cortex_config_path() -> Path:
     under a worktree or a test that chdirs. ``reset_path_cache()`` exists for
     tests that genuinely relocate a config file.
 
-    NOTE what this does NOT fix: ``load_cortex_config`` still stat()s the
-    resolved path on every call to key its own mtime cache. That is one syscall
-    rather than a full walk, and it is the invalidation signal, so it stays.
-    Collapsing the 8-12 calls themselves would mean threading one config object
-    through the pipeline — a larger change than this card.
+    The calls themselves are collapsed separately, by threading ONE snapshot
+    through the pipeline (see :func:`load_cortex_config`); the ``stat()`` that
+    remains is the invalidation signal and is now paid once per governed call
+    rather than once per gate. Budget asserted by
+    tests/cortex/test_config_load_budget.py.
     """
     key = (
         os.environ.get(CORTEX_CONFIG_ENV_VAR, "").strip(),
@@ -196,6 +196,17 @@ def load_cortex_config(config_path=None, refresh: bool = False) -> Dict:
 
     Cached per path+mtime so hot paths (search fan-out) can call freely;
     ``refresh=True`` bypasses the cache.
+
+    "Cached" is not free (ctx-perf-01): the mtime is the cache KEY, so every
+    call still resolves the path and ``stat()``s it before the memo can answer.
+    A governed Cortex call used to reach here six to eight times — three from
+    the response cache, two from the grounding gates, one from the fail-closed
+    posture, none of them aware the others had just read the same file. The
+    readers below therefore take an optional ``config``: a caller that already
+    holds a snapshot passes it in and pays nothing. :meth:`GovernancePipeline.wrap`
+    and the ``_governed_facade`` wrapper each take one snapshot per call and
+    thread it down, which is what keeps an operator's edit visible (the NEXT
+    call re-reads) while costing one stat instead of eight.
     """
     path = Path(config_path) if config_path else resolve_cortex_config_path()
     key = str(path)
@@ -209,7 +220,17 @@ def load_cortex_config(config_path=None, refresh: bool = False) -> Dict:
     return config
 
 
-def resolve_fail_closed(ctx=None, config_path=None) -> bool:
+def cortex_config(config=None, config_path=None) -> Dict:
+    """A caller's already-loaded snapshot, or a fresh (mtime-memoized) load.
+
+    The one place the "did someone upstream already read this?" question is
+    answered, so every reader below is a two-line function instead of a
+    conditional repeated eight times.
+    """
+    return config if config is not None else load_cortex_config(config_path)
+
+
+def resolve_fail_closed(ctx=None, config_path=None, config=None) -> bool:
     """Effective fail-closed posture for a Cortex call.
 
     An explicit ``ctx.fail_closed`` (True or False) always wins. When it is
@@ -221,11 +242,11 @@ def resolve_fail_closed(ctx=None, config_path=None) -> bool:
     explicit = getattr(ctx, "fail_closed", None)
     if explicit is not None:
         return bool(explicit)
-    cfg = load_cortex_config(config_path)
+    cfg = cortex_config(config, config_path)
     return bool((cfg.get("governance") or {}).get("fail_closed", False))
 
 
-def resolve_strategy_weights(search_cfg=None, config_path=None) -> Dict[str, float]:
+def resolve_strategy_weights(search_cfg=None, config_path=None, config=None) -> Dict[str, float]:
     """Per-backend fusion weights for RRF (``search.strategy_weights``).
 
     Consumed by ``search_service._rrf_fuse``, which scores each item
@@ -238,7 +259,7 @@ def resolve_strategy_weights(search_cfg=None, config_path=None) -> Dict[str, flo
     pass it in instead of paying a second (cached) config read.
     """
     if search_cfg is None:
-        search_cfg = (load_cortex_config(config_path) or {}).get("search") or {}
+        search_cfg = (cortex_config(config, config_path) or {}).get("search") or {}
     raw = search_cfg.get("strategy_weights") or {}
     weights: Dict[str, float] = {}
     if isinstance(raw, dict):
@@ -254,7 +275,7 @@ def resolve_strategy_weights(search_cfg=None, config_path=None) -> Dict[str, flo
     return weights
 
 
-def nlq_fallback_enabled(config_path=None) -> bool:
+def nlq_fallback_enabled(config_path=None, config=None) -> bool:
     """Whether ``analyst.ask()`` may fall back from IQE to the LLM NL->SQL path.
 
     ``analyst.nlq_fallback_enabled: false`` is a POLICY switch: it stops
@@ -263,11 +284,11 @@ def nlq_fallback_enabled(config_path=None) -> bool:
     govern an explicit ``mode="nlq"`` call — that is a caller opting in by
     name, not a fallback.
     """
-    cfg = load_cortex_config(config_path)
+    cfg = cortex_config(config, config_path)
     return bool((cfg.get("analyst") or {}).get("nlq_fallback_enabled", True))
 
 
-def skip_grounding_for_plain_complete(config_path=None) -> bool:
+def skip_grounding_for_plain_complete(config_path=None, config=None) -> bool:
     """Whether a non-retrieval call skips the two grounding gates.
 
     Default True: a plain ``complete()`` is free-form drafting with no evidence
@@ -277,7 +298,7 @@ def skip_grounding_for_plain_complete(config_path=None) -> bool:
     completion injects no sources, so any ``[source: N]`` tag it emits is
     fabricated by construction) and the content gate runs the placeholder scan.
     """
-    cfg = load_cortex_config(config_path)
+    cfg = cortex_config(config, config_path)
     return bool(
         (cfg.get("governance") or {}).get("skip_grounding_for_plain_complete", True)
     )
@@ -350,9 +371,16 @@ def assert_airgap_ready(config_path=None) -> None:
     CortexAirgapError listing every missing entry. A config with no routing:
     section at all (stub/minimal test environments, or PyYAML unavailable)
     is logged and skipped — there is nothing meaningful to validate.
+
+    Reads through ``_load_llm_config`` rather than ``_load_yaml`` (ctx-perf-01):
+    this runs at MODULE IMPORT of ``tools.cortex.api``, and a raw parse there
+    both re-read args/llm_config.yaml in a process that is about to read it
+    again for routing, and left the memo cold for the first ``airgap_exclusions``
+    call. Same file, same mtime key — so the invariant is unchanged, it just
+    populates the cache instead of bypassing it.
     """
     path = Path(config_path) if config_path else resolve_llm_config_path()
-    config = _load_yaml(path)
+    config = _load_llm_config(path)
     routing = config.get("routing") or {}
     if not routing:
         logger.warning(

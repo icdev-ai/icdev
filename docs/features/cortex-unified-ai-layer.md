@@ -149,7 +149,26 @@ only. Error envelopes are stable: 401 unauthenticated, 400 validation,
 `cortex_complete`, `cortex_reason`, `cortex_classify`, `cortex_extract`, `cortex_govern`,
 `cortex_agent_launch`. Handlers are thin calls into `tools/cortex`; the gateway
 `security_chain` (D284) wraps traffic, so there is no per-server auth to
-maintain. Run standalone over stdio with `python tools/mcp/cortex_server.py`.
+maintain.
+
+**Two entry points, one tool set (ctx-reach-03).** `.mcp.json` configures only
+`icdev-unified` (`tools/mcp/unified_server.py`), which registers all eight
+`cortex_*` tools from `TOOL_REGISTRY` — that is how they are reached in this
+repo. `python tools/mcp/cortex_server.py` runs the same handlers standalone over
+stdio and is kept deliberately, as a **bounded** surface for an external or
+air-gapped MCP client that must see only the Cortex family rather than the full
+unified registry. The risk of two entry points is drift, so it is gated: every
+tool in `CORTEX_TOOLS` must also be in `TOOL_REGISTRY`
+(`tests/cortex/test_cortex_reach_decisions.py`), or it would be reachable only
+via the server nobody launches.
+
+Neither `cortex_govern` nor `cortex_agent_launch` has an ungoverned fallback.
+Both shipped ahead of the ctx-govern-04 facades behind a
+`getattr(cortex_api, ..., None)` probe with a standalone
+`GovernancePipeline` / `ACEController` + `run_agent_loop` branch behind it; the
+facades landed, so the probe could never fail, and the branch it guarded was
+deleted in ctx-reach-03. See
+[phase-ctx-reach-03-cortex-reach-decisions.md](phase-ctx-reach-03-cortex-reach-decisions.md).
 
 ## 6. Domain lenses (ctx-canvas-04)
 

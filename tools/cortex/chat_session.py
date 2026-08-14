@@ -25,6 +25,17 @@ detach onto it without touching the blueprint.
 Every write is best-effort: a missing table (fresh checkout, migration not yet
 run) degrades to a no-op rather than raising, mirroring the blueprint's
 skeleton behaviour.
+
+CONNECTION OWNERSHIP (ctx-perf-03): every write takes an optional ``conn``. Called
+standalone it opens, commits and closes its own connection, exactly as before;
+given one it borrows it and never closes it — the same convention
+``db/init_db.record_governed_call`` uses to collapse the governance audit pair
+onto a single connection. One chat turn is three of these writes plus the
+blueprint's history insert, so threading one connection through all four takes a
+turn from four connections to one. A borrowed connection is rolled back (not
+closed) when a write fails: on PostgreSQL a failed statement poisons the whole
+transaction, so without the rollback one broken write would silently take its
+siblings down with it.
 """
 from __future__ import annotations
 
@@ -49,8 +60,22 @@ def _conn():
 
 
 def _to_bool_int(value: Any) -> int:
-    """0/1 for the grounded column (SQLite has no bool; PG coerces 0/1)."""
+    """0/1 for the grounded column.
+
+    An INTEGER column, so the bound value must be an ``int``: psycopg2 adapts a
+    Python ``bool`` to a PG ``boolean`` literal, which PostgreSQL refuses for an
+    INTEGER column (the mirror image of the ``blocked``/``air_gap`` note in
+    db/init_db.py, where the column IS boolean and an int fails).
+    """
     return 1 if value else 0
+
+
+def _rollback(conn) -> None:
+    """Undo a failed write on a BORROWED connection so its siblings still land."""
+    try:
+        conn.rollback()
+    except Exception:  # noqa: BLE001 — rollback is itself best-effort
+        pass
 
 
 def ensure_session(
@@ -62,15 +87,19 @@ def ensure_session(
     tenant_id: str,
     classification: str,
     title: str = "",
+    conn=None,
 ) -> None:
     """Upsert the session row: insert on first turn, else bump mode/domain/updated_at.
 
     Best-effort — never raises. The session row is metadata only; turns live in
-    cortex_messages.
+    cortex_messages. Pass ``conn`` to share the caller's connection (it is
+    committed but never closed here); omit it to open and close one.
     """
     now = _now()
+    own_conn = conn is None
     try:
-        conn = _conn()
+        if own_conn:
+            conn = _conn()
         try:
             row = conn.execute(
                 "SELECT session_id FROM cortex_chat_sessions WHERE session_id = %s",
@@ -93,9 +122,12 @@ def ensure_session(
                 )
             conn.commit()
         finally:
-            conn.close()
+            if own_conn:
+                conn.close()
     except Exception as exc:  # noqa: BLE001
         logger.debug("cortex.session: ensure_session skipped: %s", exc)
+        if not own_conn and conn is not None:
+            _rollback(conn)
 
 
 def record_turn(
@@ -110,16 +142,24 @@ def record_turn(
     governance: Optional[dict] = None,
     tenant_id: str = "default",
     classification: str = "CUI",
+    conn=None,
 ) -> Optional[int]:
     """Append one conversation turn to cortex_messages. Returns the turn number.
 
     ``citations`` and ``governance`` are stored as JSON so the reload endpoint
     can rehydrate the exact TRUST labels the UI rendered. Best-effort: returns
-    None if the table is unavailable.
+    None if the table is unavailable. Pass ``conn`` to share the caller's
+    connection (committed, never closed here); omit it to open and close one.
+
+    The MAX(turn_number) read and the INSERT stay on the SAME connection either
+    way, so a shared connection does not change which turn number this write
+    sees — the previous turn's commit is already visible to it.
     """
     now = _now()
+    own_conn = conn is None
     try:
-        conn = _conn()
+        if own_conn:
+            conn = _conn()
         try:
             row = conn.execute(
                 "SELECT COALESCE(MAX(turn_number), 0) FROM cortex_messages "
@@ -152,9 +192,12 @@ def record_turn(
             conn.commit()
             return turn_number
         finally:
-            conn.close()
+            if own_conn:
+                conn.close()
     except Exception as exc:  # noqa: BLE001
         logger.debug("cortex.session: record_turn skipped: %s", exc)
+        if not own_conn and conn is not None:
+            _rollback(conn)
         return None
 
 

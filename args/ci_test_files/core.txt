@@ -1372,6 +1372,29 @@ tests/test_reflex_finding_scope.py
 # _DETAIL_ROW_LIMIT sampling cap the timing fields inherit is not widened.
 # 14 tests, ~1s, gate seams patched: no DB service, no LLM, no network.
 tests/cortex/test_governance_timing.py
+# One POST /cortex/api/chat opened FOUR connections for one turn:
+# chat_session.ensure_session, chat_session.record_turn twice, and the
+# blueprint's cortex_search_history insert, each opening/committing/closing its
+# own -- on top of the governance audit's, which record_governed_call had
+# already collapsed for the audit pair (cxo-perf-03). The chat store never got
+# the same treatment. Counted with a CONNECTION COUNTER, not a timing assertion:
+# the defect is "how many", and a timing assertion on a shared runner is a
+# flake. The counter wraps get_connection on BOTH module aliases, which are
+# distinct objects -- patching one silently misses the copy the running
+# blueprint imported, and reports 0 opens as if the path were free. Every cost
+# assertion is paired with a read-back through the real GET
+# /cortex/api/session/<id>, because these writes are swallowed at debug: a
+# collapse that also collapsed the ROWS would look identical from outside.
+# Also pins the bool that was being bound to the INTEGER `grounded` column --
+# psycopg2 adapts it to a PG boolean, which PostgreSQL (the primary backend)
+# refuses, so the search-history row vanished on PG while SQLite accepted it and
+# kept the suite green -- and the ownership convention (a borrowed connection is
+# never closed by the borrower, a self-opened one always is) plus the rollback
+# that keeps a failed session write from taking the conversation rows down with
+# it inside the now-shared transaction.
+# 11 tests, ~25s (Flask app import dominates), SQLite via the conftest icdev_db
+# fixture: no DB service, no LLM, no network.
+tests/cortex/test_chat_turn_connections.py
 # Every cortex.search on the rag backend re-read AND re-parsed args/rag_config.yaml
 # from disk: retriever_common builds a fresh RAGRetriever per search and __init__
 # called an unmemoized _load_rag_config(), while cortex/config.py next door has
@@ -1421,3 +1444,51 @@ tests/cortex/test_client.py
 # AST walk off the ~99% of files that cannot import the surface), which is why
 # it is NOT in HEAVY_CHECKS and runs in both tiers.
 tests/workflow/test_external_only_surfaces.py
+# ctx-reach-03. cortex.govern / cortex.agent were flagged as zero-consumer
+# facades, with args/projects.yaml recording "cortex.agent mode graph. Note the
+# latent bug - mode is unvalidated." The membership check turned out to already
+# be in place (hgx-cx-01/02) -- but the SECOND implementation was not:
+# cortex_server._agent_launch_fallback still reached ACEController /
+# run_agent_loop directly, with no TRUST chain, dispatching off the pre-hgx
+# `use_team` boolean that made an unrecognised mode silently run a real, billed
+# single agent. It sat behind `getattr(cortex_api, "agent", None)`, a probe that
+# could never fail once the facade landed. Deleted here, and kept deleted.
+# Also pins the reach decisions themselves: agent() ADOPTED (canvas chat,
+# MCP tool, REST v1 -- each asserted to genuinely reach the facade, with
+# cortex:agent still out of DEFAULT_SCOPES) and govern() EXTERNAL-ONLY (its one
+# MCP entry point asserted live; api_v1_govern asserted NOT to call it, since a
+# GovernanceReport has no field for the governed text that response returns).
+# Plus the swept surfaces: the compliance domain lens now resolves to a profile
+# instead of being a picker entry that scoped nothing, empty `sources:` is
+# asserted to be the documented no-op it claims to be, the standalone cortex
+# stdio server cannot host a tool the unified registry lacks, and the four
+# ignored cot/cod schema params are echoed rather than silently dropped.
+# 25 tests, ~12s, fully stubbed governance sinks: no DB service, no LLM,
+# no network.
+tests/cortex/test_cortex_reach_decisions.py
+
+# ctx-reach-04. Pins an invariant that lives in an ABSENCE: `tools/cortex` appears
+# ZERO times in tools/builder/child_app_generator.py, whose DIRECTORY_TREE is an
+# ALLOWLIST — so no generated descendant inherits Cortex, which is a parent-hosted
+# governed service reached over REST with an icdev_ctx_ service key. An absence is
+# undone by a one-line addition with nothing going red, so assert it. Also pins the
+# client's stdlib-only vendoring contract (zero first-party imports), the `None`
+# half of the degradation contract against a refused port, and the doc pointers in
+# client.py + its icdev/ mirror + phase-19. No DB, no LLM, no network egress.
+tests/cortex/test_child_app_access_pattern.py
+# ctx-perf-01 part 2. Part 1 memoized the config PATH; the calls themselves were
+# left alone and its own docstring said so. Measured here, not eyeballed: one
+# governed cortex.complete loaded args/cortex_config.yaml SIX times and a
+# retrieval-backed one seven-to-eight -- cache.is_enabled, cache.cacheable,
+# cache._get_cache, cache._ttl_for, both grounding decisions, the grounding floor
+# twice and the fail-closed posture, none of them aware another had read the same
+# file microseconds earlier. Each of those stat()s the file before its mtime memo
+# can answer, so it was paid per gate on every Cortex call whether or not the
+# response cache was even on. One snapshot is now taken per governed call and
+# threaded through the cache decision and every gate: the budget is 1, asserted
+# as a CEILING for both the cheap path and the retrieval path. Two of the five
+# tests exist to stop the collapse eating the invalidation: an edited config must
+# still win on the next load, and a snapshot must never outlive its call (one
+# that did would make an operator's edit invisible until restart).
+# 5 tests, <1s, stubbed gates + stubbed provider: no DB service, no LLM, no network.
+tests/cortex/test_config_load_budget.py

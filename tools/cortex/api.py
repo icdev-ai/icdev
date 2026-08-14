@@ -223,6 +223,14 @@ def _governed_facade(
             # facade without sources_param is byte-for-byte unaffected.
             call_retrieval = retrieval or bool(sources)
 
+            # ONE args/cortex_config.yaml snapshot for this call (ctx-perf-01).
+            # Threaded into the cache decision and the whole governance chain,
+            # which between them used to read the file six to eight times per
+            # call — each read stat()ing it before its mtime memo could answer.
+            # Taken per call, never cached on the module, so an operator's edit
+            # is picked up by the next call exactly as before.
+            cortex_cfg = load_cortex_config()
+
             # Response cache (opt-in). Serve a prior GOVERNED result for an
             # identical request. The key folds tenant/classification/domain/
             # air_gap so a hit never crosses those boundaries; a hit is still
@@ -231,11 +239,11 @@ def _governed_facade(
             if not return_report:
                 try:
                     from . import cache as _rc
-                    if _rc.is_enabled() and _rc.cacheable(operation):
+                    if _rc.is_enabled(cortex_cfg) and _rc.cacheable(operation, cortex_cfg):
                         extra = {k: v for k, v in bound.arguments.items()
                                  if k not in (text_param, "ctx")}
                         cache_key = _rc.make_key(operation, text, ctx, extra)
-                        hit = _rc.get_by_key(cache_key)
+                        hit = _rc.get_by_key(cache_key, cortex_cfg)
                         if hit is not None:
                             _rc.audit_hit(operation, ctx)
                             return hit
@@ -254,6 +262,7 @@ def _governed_facade(
                 context_sources=sources,
                 retrieval=call_retrieval,
                 attach=attach,
+                config=cortex_cfg,
             )
             if return_report:
                 return report
@@ -268,7 +277,7 @@ def _governed_facade(
             if cache_key is not None and not report.blocked and not degraded:
                 try:
                     from . import cache as _rc
-                    _rc.put_by_key(cache_key, result, operation)
+                    _rc.put_by_key(cache_key, result, operation, cortex_cfg)
                 except Exception as _cexc:  # noqa: BLE001
                     logger.debug("cortex cache write skipped: %s", _cexc)
             return result
@@ -846,6 +855,33 @@ def govern(
     Returns the :class:`GovernanceReport` (the caller already holds the text).
     The function body is the identity operation the pipeline governs — the
     decorator supplies all governance behavior.
+
+    DECISION (ctx-reach-03): **external-only surface, deliberately.** ``govern``
+    has no in-repo Python caller and is not expected to grow one. Its only entry
+    point is the ``cortex_govern`` MCP tool. That is not an adoption gap:
+
+    * Every in-process ICDEV path that produces LLM text through Cortex already
+      runs this exact chain, because ``@_governed_facade`` wraps
+      complete/reason/classify/extract/search/ask/agent. An internal caller that
+      wants TRUST calls a facade. Calling ``govern`` on top of a facade result
+      would run the chain a SECOND time over one operation — two gateway
+      screens, two redaction passes, two ``source_citation_registry`` rows, two
+      ``cortex_audit`` rows, and a double count in ``/cortex/metrics``. That is
+      exactly the defect ctx-trust-02 removed from four REST endpoints; adopting
+      ``govern`` internally would reintroduce it under a different name.
+    * ``/cortex/api/v1/govern`` (``rest_v1.api_v1_govern``) does NOT call this
+      function and must not be "fixed" to. It runs a single pipeline over its own
+      identity lambda so it can (a) return the governed/redacted TEXT, which a
+      ``GovernanceReport`` has no field for, and (b) honour the caller's
+      ``retrieval`` flag, which this facade fixes at True. Pinned by
+      ``tests/cortex/test_rest_single_governance.py``.
+    * The genuine adoption target is a NON-Cortex drafting surface (proposal /
+      RFI / DIC / Tech Writer) that today calls ``tools/quality/citation_grounding``
+      directly. Migrating one is its own card — it changes what blocks a promote
+      or an export — not a drive-by here.
+
+    Reversing this decision means naming the internal consumer and proving it is
+    not already governed. See ``docs/features/phase-ctx-reach-03-cortex-reach-decisions.md``.
     """
     return text
 
@@ -912,6 +948,33 @@ def agent(
     before dispatch and the agent output passes through the output-redaction,
     provenance, and audit gates — the report is attached to
     ``result.governance``.
+
+    DECISION (ctx-reach-03): **adopted; it is the ONLY sanctioned way to launch
+    an agent under governance, and its scope stays ungranted.** Three live
+    consumers, all pinned by ``tests/cortex/test_cortex_reach_decisions.py``:
+
+    * ``tools/cortex/blueprint.py::_launch_confirmed_agent`` — the canvas
+      confirm-then-launch chat path. This is a first-party in-repo Python
+      consumer; the card's premise that ``agent`` has none was wrong.
+    * ``tools/mcp/cortex_server.py::handle_cortex_agent_launch`` — the
+      ``cortex_agent_launch`` MCP tool. Its ungoverned ``_agent_launch_fallback``
+      (ACEController / run_agent_loop reached directly, dispatched off the old
+      ``use_team`` boolean) was DELETED in ctx-reach-03; a second implementation
+      of "launch an agent" that skipped the TRUST chain is the thing this facade
+      exists to prevent.
+    * ``tools/cortex/rest_v1.py::api_v1_agent`` — the remote surface. Guarded by
+      the ``cortex:agent`` scope, which ``service_keys.AGENT_SCOPES`` never
+      grants by default. That stays: this is the one endpoint that makes the
+      platform ACT rather than answer.
+
+    What is deliberately NOT adopted: an internal tool that wants a team run
+    calls ``ACEController.launch`` directly, and Studio nodes call the agent loop
+    directly. ``agent`` is the governed entry for a goal arriving from OUTSIDE a
+    trusted call path (a chat turn, an MCP client, a remote key) — text that must
+    be injection-screened before it is allowed to authorise action. An internal
+    caller that already holds a trusted, structured task does not need it, and
+    routing every ACE launch through it would put a governance screen on
+    first-party control flow.
     """
     mode = (mode or "auto").strip().lower()
     if mode not in _AGENT_MODES:

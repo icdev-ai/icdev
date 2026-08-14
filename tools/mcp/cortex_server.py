@@ -19,15 +19,21 @@ Each handler is a thin one-liner into ``tools.cortex``:
     cortex_govern        -> cortex.govern()            -> GovernanceReport
     cortex_agent_launch  -> cortex.agent()             -> CortexResult
 
-``cortex.govern`` / ``cortex.agent`` land with the governance epic
-(ctx-govern-04). Until that facade is present this server falls back to the
-same seams the facade uses — the standalone ``GovernancePipeline`` for govern,
-and ``ACEController`` / ``run_agent_loop`` for agent — so every tool is
-functional today and transparently prefers the ``api`` facade once it merges.
-
 Every governed facade may raise ``GovernanceBlockedError`` (pre-check block /
 fail-closed gate). Handlers catch it and return the ``GovernanceReport`` so the
 block is observable in the tool response rather than a bare stack trace.
+
+There is NO ungoverned fallback path (ctx-reach-03). ``cortex_govern`` and
+``cortex_agent_launch`` shipped ahead of the ``ctx-govern-04`` facades behind a
+``getattr(cortex_api, "govern"/"agent", None)`` probe, with a standalone
+``GovernancePipeline`` / ``ACEController`` + ``run_agent_loop`` fallback for the
+branch where the facade did not exist yet. Both facades landed, so the probe
+could never fail — but the fallback it guarded was still reachable code that
+(a) launched agents WITHOUT the TRUST chain and (b) re-derived dispatch from the
+``use_team = mode == "team" or (mode == "auto" and roles)`` boolean that
+``api.agent`` replaced precisely because an unrecognised ``mode`` silently ran a
+single agent. It was deleted rather than left as a dormant second
+implementation. A missing facade is now an ``ImportError`` the handler reports.
 
 Security note: the unified MCP gateway (``tools/gateway/security_chain.py`` +
 ``base_server`` D284 instrumentation) wraps all gateway traffic automatically —
@@ -36,13 +42,24 @@ this server adds NO transport-layer auth of its own by design.
 Usage:
     python tools/mcp/cortex_server.py          # Start MCP server (stdio)
     python tools/mcp/cortex_server.py --help   # Show help
+
+``.mcp.json`` deliberately does NOT launch this server (ctx-reach-03). It
+configures only ``icdev-unified`` (``tools/mcp/unified_server.py``), which
+serves all eight ``cortex_*`` tools from ``TOOL_REGISTRY`` — the handlers below
+are the same objects, reached through the registry rather than through
+``build_server()``. ``main()`` is kept as a BOUNDED stdio surface for an
+external / air-gapped MCP client that must see only the Cortex family and not
+the full unified registry. Because two entry points serve one tool set, the
+invariant that matters is that they cannot drift: every tool in
+``CORTEX_TOOLS`` must also be in ``TOOL_REGISTRY``, asserted by
+``tests/cortex/test_cortex_reach_decisions.py``.
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -258,9 +275,10 @@ def handle_cortex_extract(arguments: Dict[str, Any]) -> Dict[str, Any]:
 def handle_cortex_govern(arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Run the enforced TRUST chain standalone over already-produced text.
 
-    Prefers the ``cortex.govern`` facade (ctx-govern-04); falls back to the
-    standalone ``GovernancePipeline`` (identity operation) so external callers
-    can adopt the TRUST chain today.
+    This tool IS the external-adoption surface ``cortex.govern`` was written for
+    (ctx-reach-03): an external caller holds text it produced itself and wants
+    the platform's TRUST chain graded over it. It calls the facade directly —
+    there is no ungoverned fallback (see the module docstring).
     """
     text = arguments.get("text", "")
     if not text:
@@ -268,25 +286,12 @@ def handle_cortex_govern(arguments: Dict[str, Any]) -> Dict[str, Any]:
     sources = arguments.get("sources")  # int count | list of ids/dicts
 
     try:
-        import tools.cortex.api as cortex_api
+        from tools.cortex.api import govern as cortex_govern
         from tools.cortex.governance import GovernanceBlockedError
 
         ctx = _build_context(arguments)
         try:
-            govern_fn = getattr(cortex_api, "govern", None)
-            if callable(govern_fn):
-                report = govern_fn(text, sources=sources, ctx=ctx)
-            else:
-                # Fallback: run the pipeline directly over an identity op.
-                from tools.cortex.governance import GovernancePipeline
-
-                _, report = GovernancePipeline(operation="cortex.govern").wrap(
-                    lambda governed: governed,
-                    ctx,
-                    prompt=text,
-                    context_sources=sources,
-                    retrieval=True,
-                )
+            report = cortex_govern(text, sources=sources, ctx=ctx)
             return {
                 "classification": _CLASSIFICATION,
                 "governance": report.to_dict() if hasattr(report, "to_dict") else report,
@@ -300,11 +305,13 @@ def handle_cortex_govern(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def handle_cortex_agent_launch(arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Run a goal through the multi-agent stack (ACE team or single agent-loop), governed.
+    """Run a goal through the multi-agent stack (ACE team / single loop / graph), governed.
 
-    Prefers the ``cortex.agent`` facade (ctx-govern-04); falls back to the same
-    seams the facade uses (``ACEController`` for team launches, ``run_agent_loop``
-    for single-agent goals) so the tool launches work today.
+    Calls the ``cortex.agent`` facade directly (ctx-reach-03). ``mode`` is passed
+    through unvalidated ON PURPOSE: the facade owns the ``_AGENT_MODES``
+    membership check and raises ``ValueError`` on anything else, which is
+    reported below as a tool error. Screening it here would fork the accepted set
+    into two places that can disagree.
     """
     goal = arguments.get("goal", "")
     if not goal:
@@ -315,27 +322,23 @@ def handle_cortex_agent_launch(arguments: Dict[str, Any]) -> Dict[str, Any]:
     graph = arguments.get("graph") or None
 
     try:
-        import tools.cortex.api as cortex_api
+        from tools.cortex.api import agent as cortex_agent
         from tools.cortex.governance import GovernanceBlockedError
 
         ctx = _build_context(arguments)
         try:
-            agent_fn = getattr(cortex_api, "agent", None)
-            if callable(agent_fn):
-                result = agent_fn(
-                    goal,
-                    roles=roles,
-                    ctx=ctx,
-                    mode=mode,
-                    graph=graph,
-                    trigger_source=arguments.get("trigger_source") or "cortex.agent",
-                    trigger_ref=arguments.get("trigger_ref") or "",
-                    webhook_url=arguments.get("webhook_url") or "",
-                    llm_function=arguments.get("llm_function") or "code_generation",
-                    max_iterations=int(arguments.get("max_iterations", 12)),
-                )
-            else:
-                result = _agent_launch_fallback(goal, roles, mode, ctx, arguments)
+            result = cortex_agent(
+                goal,
+                roles=roles,
+                ctx=ctx,
+                mode=mode,
+                graph=graph,
+                trigger_source=arguments.get("trigger_source") or "cortex.agent",
+                trigger_ref=arguments.get("trigger_ref") or "",
+                webhook_url=arguments.get("webhook_url") or "",
+                llm_function=arguments.get("llm_function") or "code_generation",
+                max_iterations=int(arguments.get("max_iterations", 12)),
+            )
             return {"classification": _CLASSIFICATION, **result.to_dict()}
         except GovernanceBlockedError as exc:
             return _blocked_response(exc)
@@ -343,72 +346,6 @@ def handle_cortex_agent_launch(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": "Cortex agent subsystem not available"}
     except Exception as exc:
         return {"error": str(exc)}
-
-
-def _agent_launch_fallback(goal: str, roles: Optional[list], mode: str, ctx, arguments: Dict[str, Any]):
-    """Ungoverned functional fallback until the cortex.agent facade lands.
-
-    Mirrors ``cortex.agent`` (ctx-govern-04): team launch via ACEController,
-    single-agent goal via run_agent_loop. Returns a CortexResult.
-    """
-    from tools.cortex import CortexResult
-
-    use_team = mode == "team" or (mode == "auto" and bool(roles))
-
-    if use_team:
-        from tools.ace.controller import ACEController
-
-        controller = ACEController.get_instance()
-        instance_id = controller.launch(
-            problem_text=goal,
-            trigger_source=arguments.get("trigger_source") or "cortex.agent",
-            trigger_ref=arguments.get("trigger_ref") or (ctx.tenant_id or "cortex"),
-            user_id=ctx.user_id or "system",
-            project_id=ctx.tenant_id or "",
-            webhook_url=arguments.get("webhook_url") or "",
-            role_ids=list(roles) if roles else None,
-        )
-        return CortexResult(
-            text=f"Launched ACE team run {instance_id} for goal: {goal}",
-            provider="ace",
-            data={
-                "mode": "team",
-                "instance_id": instance_id,
-                "roles": list(roles) if roles else [],
-                "goal": goal,
-            },
-        )
-
-    from tools.llm import get_router
-    from tools.llm.agent_loop import run_agent_loop
-
-    loop = run_agent_loop(
-        get_router(),
-        system_prompt=arguments.get("system_prompt")
-        or "You are an ICDEV autonomous agent. Complete the goal.",
-        user_prompt=goal,
-        tools=arguments.get("tools") or [],
-        tool_handlers={},
-        llm_function=arguments.get("llm_function") or "code_generation",
-        max_iterations=int(arguments.get("max_iterations", 12)),
-        tenant_id=ctx.tenant_id,
-        user_id=ctx.user_id,
-    )
-    return CortexResult(
-        text=loop.final_content or "",
-        provider=loop.provider or "agent_loop",
-        model=loop.model_id or "",
-        cost=float(loop.total_cost_usd or 0.0),
-        data={
-            "mode": "single",
-            "result_subtype": loop.result_subtype,
-            "turns": loop.turns,
-            "done": loop.done,
-            "truncated": loop.truncated,
-            "session_id": loop.session_id,
-            "tool_call_log": loop.tool_call_log,
-        },
-    )
 
 
 # ---------------------------------------------------------------------------
