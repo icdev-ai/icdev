@@ -93,10 +93,17 @@ CONTRACT_TRANSITIONS = _CFG.get(
 DELIVERABLE_TRANSITIONS = _CFG.get(
     "deliverable_transitions",
     {
-        "not_started": ["in_progress", "cancelled"],
+        # 'overdue' is reachable from every PRE-DELIVERY state because
+        # compute_overdue_deliverables() drives that transition by raw UPDATE; a
+        # state missing it is one transition_deliverable() would reject as
+        # invalid. Delivered states (submitted onward) deliberately omit it —
+        # the contractor met the date and the CDRL is in the government's
+        # review queue. 'cancelled' is the orthogonal terminal disposition.
+        # Keep in sync with args/govcon_config.yaml, which OVERRIDES this.
+        "not_started": ["in_progress", "overdue", "cancelled"],
         "in_progress": ["draft_complete", "overdue", "cancelled"],
-        "draft_complete": ["internal_review", "cancelled"],
-        "internal_review": ["submitted", "in_progress", "cancelled"],
+        "draft_complete": ["internal_review", "overdue", "cancelled"],
+        "internal_review": ["submitted", "in_progress", "overdue", "cancelled"],
         "submitted": ["government_review", "cancelled"],
         "government_review": ["accepted", "rejected"],
         "accepted": [],
@@ -155,6 +162,23 @@ _NOT_AN_OBLIGATION = tuple(
     dict.fromkeys(DELIVERED_DELIVERABLE_STATUSES + CLOSED_DELIVERABLE_STATUSES)
 )
 NOT_AN_OBLIGATION_SQL_LIST = ", ".join(f"'{s}'" for s in _NOT_AN_OBLIGATION)
+
+# The states a CDRL can be swept FROM — everything the sweep does not exclude.
+# These are the transitions compute_overdue_deliverables() performs by raw
+# UPDATE, so every one of them must declare 'overdue' in DELIVERABLE_TRANSITIONS
+# or transition_deliverable() would reject as invalid a move the sweep makes
+# anyway. Only 'in_progress' used to declare it, and not_started was 7 of the 26
+# delinquent rows on the live board — the most clear-cut case there is.
+#
+# DERIVED from the state machine minus the exclusions rather than written out,
+# because a hand-listed copy is what lets a status be added to the vocabulary in
+# one place and missed in the other. Sorted for a stable, assertable order.
+PREDELIVERY_DELIVERABLE_STATUSES = tuple(
+    sorted(
+        s for s in DELIVERABLE_TRANSITIONS
+        if s not in _NOT_AN_OBLIGATION and s != "overdue"
+    )
+)
 
 # A single `%s` binds the cutoff date (today, YYYY-MM-DD). due_date is a TEXT
 # column and is NULL or '' on rows created without one; neither is a missed date.

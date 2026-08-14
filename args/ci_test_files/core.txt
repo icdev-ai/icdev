@@ -993,6 +993,21 @@ tests/test_cpmp_update_subcontractor_requires_name.py
 # which runs on SQLite where a bool IS an int. Asserts on the params handed to
 # execute, so it holds regardless of backend. 58 tests, <1s, no DB/network.
 tests/test_cpmp_subcontractor_flag_coercion.py
+# (test_ndc_graph_json_type_guard.py was registered here by #1604 and, in the
+# same window, higher up this file by #1606. core.txt is merge=union, so both
+# appends landed and the row became an exact duplicate -- which --check rejects.
+# The #1606 block above is kept; this one is removed rather than both, so the
+# file still gates the test exactly once.)
+
+# Overdue-CDRL marking. compute_overdue_deliverables() is the only writer of
+# cpmp_deliverables.status='overdue' and days_overdue, and it had no caller but
+# its own --compute-overdue CLI flag: on 2026-08-13 the live board held 26
+# past-due deliverables, none marked, all with days_overdue=0, while cpmp_monitor
+# kept filing "N CDRL(s) past due" cards off date arithmetic. Gated because the
+# regression is silent by construction -- the board looks correct while
+# negative_event_tracker's delinquent-delivery arm (days_overdue > 0) can never
+# fire. New file, passes (21 tests), 9 of which fail against the old code.
+tests/test_govcon_overdue_deliverable_marking.py
 # cpmp_monitor returned `status: "ok"` plus a top-level `cards_created`, but the
 # Genesis daemon scores a reflex from `success`/`metric_value`/`details`. It read
 # neither, so every completed sweep was filed as
@@ -1040,6 +1055,7 @@ tests/test_integrity_monitor_reflex.py
 # so an ungated test for it would have been the same defect one layer up.
 # Pure (no scanner shell-out, no optional third-party tool) — gateable as-is.
 tests/test_integrity_persistence_allowlist.py
+
 # cpmp-d70a553747. cpmp_deliverables.status='overdue' and days_overdue have five
 # readers (contract health, CPARS schedule dimension, portfolio rollup, portfolio
 # summary, negative_event_tracker) and one writer, and the writer had no caller
@@ -1083,3 +1099,12 @@ tests/test_govcon_bid_recommendation_api.py
 # the decorator cannot be stripped to turn the success path green again.
 # 27 tests, ~1s, fully mocked: no DB service, no LLM, no network.
 tests/test_govcon_auto_compliance_api.py
+# tsg-drift-bf36818e8b — govcon proposal capability API surface: drafts list,
+# quality scoring, approve/reject review decisions and their section-status
+# transitions, Q&A records, question status, knowledge base. Gated after fixing
+# 33 tests that had been red since prop-sec-01 (2026-07-07) put an ABAC
+# separation-of-duties gate on draft approve/reject and never taught the test
+# about it — TestDraftReviewAbacGate now asserts that gate directly, so a
+# future silent removal of @abac_protect fails here. 630 tests, ~25s,
+# in-memory/tmp sqlite, no network/LLM. Gated in the PR that makes it pass.
+tests/test_govcon_capabilities.py
