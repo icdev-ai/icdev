@@ -4582,6 +4582,33 @@ def _no_live_llm_calls(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_cortex_response_cache():
+    """Drop the Cortex response cache around every test (ctx-perf-06).
+
+    The cache is a process-wide singleton and is now enabled by default, so
+    without this a facade call leaks its answer into every LATER test that
+    issues an identical call — the second test then asserts against the first
+    test's double instead of its own. Cross-call reuse is the feature in
+    production and pollution in a suite; reset here rather than weakening it.
+
+    Read out of sys.modules rather than imported: a checkout without the cortex
+    package must not fail collection over a cache reset, and an unimported cache
+    has nothing to drop. Both dotted names are swept — `tools.cortex.cache` and
+    `icdev.tools.cortex.cache` can be DISTINCT module objects with their own
+    singletons, so resetting one leaves the other warm.
+    """
+    def _drop():
+        for name in ("tools.cortex.cache", "icdev.tools.cortex.cache"):
+            module = sys.modules.get(name)
+            if module is not None:
+                module.reset()
+
+    _drop()
+    yield
+    _drop()
+
+
+@pytest.fixture(autouse=True)
 def _stop_chat_agent_loops():
     """Stop any chat agent loops a test leaves running."""
     yield
