@@ -223,7 +223,19 @@ def run(trigger_data=None, context=None):
         conn.close()
         active = [dict(r) for r in active]
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        # Same contract shape as the success path below — the error return had no
+        # 'success' key either, so a reflex that failed to even open a connection
+        # was scored identically to one that swept cleanly: both False, both 0.0.
+        results["errors"].append(str(e))
+        return {
+            **results,
+            "status": "error",
+            "message": str(e),
+            "success": False,
+            "metric_value": 0,
+            "details": results,
+            "error": str(e),
+        }
 
     results["contracts_scanned"] = len(active)
 
@@ -450,7 +462,25 @@ def run(trigger_data=None, context=None):
 
     _write_memory_log(results)
     results["status"] = "ok"
-    return results
+    # GenesisDaemon._run_reflex_impl_inner (tools/genesis/daemon.py) reads
+    # success/metric_value/details off this dict. Returning the bare results dict
+    # meant `result.get("success", False)` was ALWAYS False — including on a
+    # perfectly clean sweep — and metric_value defaulted to 0.0 instead of
+    # cards_created. The configured success_metric is `cards_created >= 0`, which
+    # 0 satisfies, so this was never a threshold miss: the reflex was scored a
+    # failure every single run until the circuit breaker tripped and switched it
+    # off, and nothing went red. The sibling reflex in this directory
+    # (pmo_option_tracker) has always returned this shape; cpmp_monitor never did.
+    #
+    # `**results` is spread ALONGSIDE the envelope on purpose, not by accident.
+    # Three gated suites — test_genesis_reflex_cpmp_monitor.py, _card_identity.py
+    # and _subcon_pass.py — read this return FLAT (`run()["cards_created"]`,
+    # `["subcon_alerts"]`). Returning the bare envelope alone breaks 16 of their
+    # assertions with KeyError. The daemon only ever reads success/metric_value/
+    # details, so carrying both shapes satisfies the daemon without a breaking
+    # change to a return value three CI-enforced suites already pin. `details` is
+    # the same object, so the two views cannot drift.
+    return {**results, "success": True, "metric_value": results["cards_created"], "details": results}
 
 
 def _suggest_kanban_card(

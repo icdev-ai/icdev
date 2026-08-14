@@ -1089,3 +1089,14 @@ tests/test_ungated_test_drift.py
 # the decorator cannot be stripped to turn the success path green again.
 # 27 tests, ~1s, fully mocked: no DB service, no LLM, no network.
 tests/test_govcon_auto_compliance_api.py
+# cpmp_monitor satisfied neither half of the GenesisDaemon reflex contract and
+# nothing went red for it. run() returned its bare results dict with no `success`
+# key, so daemon.py's `result.get("success", False)` scored EVERY run a failure --
+# including a clean sweep -- and read metric_value as 0.0 rather than
+# cards_created. The state row reached 11 runs / 0 successes with the circuit
+# breaker open: the reflex was switched off entirely, silently. The success_metric
+# is `cards_created >= 0`, which 0 satisfies, so this was never a threshold miss.
+# Gated here in the PR that fixes it: a contract bug BETWEEN two modules is the
+# shape that re-breaks on the next rename with no exception to notice it by.
+# 9 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/test_cpmp_monitor_reflex_contract.py
