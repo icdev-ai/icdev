@@ -668,7 +668,7 @@ def test_bash_write_targets_includes_the_redirect_forms(shared):
         ("~/.bashrc", True),
         ("$HOME/.bashrc", True),                 # a shell would have expanded it
         ("C:/Windows/System32/drivers/etc/hosts", True),  # true on POSIX too
-        (r"\attacker\share\payload", True),     # UNC — a host we cannot judge
+        (r"\\attacker\share\payload", True),     # UNC — a host we cannot judge
         ("C:notes.txt", True),                   # drive-RELATIVE — per-drive cwd
         ("tools/foo.py", False),
         (".tmp/scratch/report.json", False),
@@ -678,6 +678,21 @@ def test_bash_write_targets_includes_the_redirect_forms(shared):
 )
 def test_outside_write_root(shared, raw, outside):
     assert bool(shared.outside_write_root(raw, repo_root=REPO_ROOT)) is outside
+
+
+@pytest.mark.skipif(os.name != "nt", reason="root-relative is a Windows concept")
+def test_a_root_relative_windows_path_is_outside(shared):
+    r"""A single leading `\` is root-relative on Windows and resolves onto the
+    current drive, so it lands outside the worktree.
+
+    Split out from the case above rather than parametrized with it: on POSIX a
+    backslash is an ordinary filename character, so `\attacker\share\payload` is
+    a RELATIVE name that correctly resolves inside the worktree. The UNC case
+    next to it needs TWO leading backslashes to reach the UNC branch at all —
+    with one it passed on Windows only by accident of this resolution, and this
+    file was not in the CI gate to notice (exa-bench-05 added it).
+    """
+    assert shared.outside_write_root(r"\attacker\share\payload", repo_root=REPO_ROOT)
 
 
 def test_the_boundary_check_is_writes_only(shared):
