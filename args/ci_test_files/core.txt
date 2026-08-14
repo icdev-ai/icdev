@@ -1077,6 +1077,16 @@ tests/test_cpmp_overdue_deliverable_state.py
 # deterministic card id, and an unrunnable file never overwriting a real
 # verdict. Hermetic: temp SQLite, subprocess calls stubbed, no network.
 tests/test_ungated_test_drift.py
+
+# test_govcon_bid_recommendation_api.py was red from 2026-05-30 to 2026-08-13:
+# prop-fix-09 put @require_role(*GOVCON_WRITE_ROLES) on the endpoint and the
+# suite, written ten days earlier, never learned about it — so all 15 assertions
+# answered 401 and get_json() returned None. Nothing went red because the file
+# was in the backlog census. The fix authenticates through the gate via
+# tests/_govcon_api_app.py rather than stripping the decorator, and adds the
+# 401/403 deny cases as first-class assertions. Hermetic: get_summary patched,
+# no DB, no network. Gated in the PR that makes it pass.
+tests/test_govcon_bid_recommendation_api.py
 # tsg-drift-cdaac178ae -- the third GovCon API suite with the same cause the two
 # proposals/detail.html suites above had: the file builds a bare Flask app with
 # no g.current_user, and when @require_role(*GOVCON_WRITE_ROLES) landed on the

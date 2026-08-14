@@ -9,11 +9,13 @@ Verifies:
 5. Endpoint handles arbitrary opportunity IDs.
 6. Endpoint returns insufficient_data result (no requirements) with score == 0.0.
 7. Endpoint returns 500 + error key when get_summary raises.
+8. The endpoint is RBAC-gated: 401 unauthenticated, 403 for a non-write role.
 """
 from unittest.mock import patch
 
 import pytest
-from flask import Flask
+
+from tests._govcon_api_app import NON_WRITE_ROLE, WRITE_ROLE, build_govcon_api_app
 
 # ---------------------------------------------------------------------------
 # Fake return values from tools.govcon.compliance_populator.get_summary
@@ -63,13 +65,14 @@ _FAKE_SUMMARY_NO_REQS = {
 # ---------------------------------------------------------------------------
 
 
-def _build_api_test_app() -> Flask:
-    from tools.dashboard.api.govcon import govcon_api
+def _build_api_test_app(role=WRITE_ROLE):
+    """App carrying the real blueprint, authenticated as a GovCon write role.
 
-    flask_app = Flask(__name__)
-    flask_app.config["TESTING"] = True
-    flask_app.register_blueprint(govcon_api)
-    return flask_app
+    The endpoint is ``@require_role(*GOVCON_WRITE_ROLES)`` (prop-fix-09); an app
+    with no ``g.current_user`` answers 401 to every one of these assertions. The
+    gate is exercised, not removed — see TestBidRecommendationRBAC below.
+    """
+    return build_govcon_api_app(role=role)
 
 
 # ---------------------------------------------------------------------------
@@ -170,3 +173,52 @@ class TestBidRecommendationAPIEndpoint:
                 resp = c.get(f"/api/govcon/opportunities/{_OPP_ID}/bid-recommendation")
         data = resp.get_json()
         assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# RBAC: the gate that made every assertion above answer 401 (prop-fix-09)
+# ---------------------------------------------------------------------------
+
+
+class TestBidRecommendationRBAC:
+    """bid-recommendation is @require_role(*GOVCON_WRITE_ROLES).
+
+    The bid/no-bid score is capture-sensitive competitive intelligence, so the
+    read is held to the write roles rather than being open to any authenticated
+    caller. These assertions exist so the gate can never be silently removed to
+    make the suite above go green.
+    """
+
+    def _get(self, api_app):
+        with patch(
+            "tools.govcon.compliance_populator.get_summary",
+            return_value=_FAKE_SUMMARY_RESULT,
+        ):
+            with api_app.test_client() as c:
+                return c.get(f"/api/govcon/opportunities/{_OPP_ID}/bid-recommendation")
+
+    def test_role_fixtures_match_the_live_role_tuple(self):
+        from tools.dashboard.api.govcon import GOVCON_WRITE_ROLES
+
+        assert WRITE_ROLE in GOVCON_WRITE_ROLES
+        assert NON_WRITE_ROLE not in GOVCON_WRITE_ROLES
+
+    def test_unauthenticated_is_401(self):
+        resp = self._get(build_govcon_api_app(role=None))
+        assert resp.status_code == 401, (
+            "bid-recommendation must reject an unauthenticated caller with 401"
+        )
+
+    def test_non_write_role_is_403(self):
+        resp = self._get(build_govcon_api_app(role=NON_WRITE_ROLE))
+        assert resp.status_code == 403, (
+            f"bid-recommendation must deny role '{NON_WRITE_ROLE}' with 403, not "
+            f"{resp.status_code}"
+        )
+
+    def test_every_write_role_is_allowed(self):
+        from tools.dashboard.api.govcon import GOVCON_WRITE_ROLES
+
+        for role in GOVCON_WRITE_ROLES:
+            resp = self._get(build_govcon_api_app(role=role))
+            assert resp.status_code == 200, f"role '{role}' should be allowed"
