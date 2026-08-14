@@ -319,7 +319,16 @@ def record_audit(payload: dict, conn=None) -> str:
                         # audit columns for these — see GovernancePipeline._audit).
                         "domain": payload.get("domain") or "",
                         "cost_usd": float(payload.get("cost_usd") or 0.0),
-                        "latency_ms": int(payload.get("latency_ms") or 0),
+                        # Float, not int: the pipeline measures sub-millisecond
+                        # operations too (ctx-obs-01), and metrics treats 0 as
+                        # "no measurement" and drops the row from the average.
+                        "latency_ms": round(float(payload.get("latency_ms") or 0.0), 3),
+                        # How the headline latency splits: time inside the wrapped
+                        # operation vs. across the whole governed call (gates
+                        # included). Recorded for every result shape, which is what
+                        # makes governance overhead measurable before optimising it.
+                        "operation_ms": round(float(payload.get("operation_ms") or 0.0), 3),
+                        "pipeline_ms": round(float(payload.get("pipeline_ms") or 0.0), 3),
                         "input_tokens": int(payload.get("input_tokens") or 0),
                         "output_tokens": int(payload.get("output_tokens") or 0),
                         "provider": payload.get("provider") or "",

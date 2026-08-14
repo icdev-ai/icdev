@@ -60,10 +60,12 @@ without importing the heavy backends.
 """
 from __future__ import annotations
 
+import contextvars
 import functools
 import hashlib
 import importlib
 import json
+import time
 import uuid
 from typing import Callable, Optional
 
@@ -438,6 +440,119 @@ def _context_texts(context_sources) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Accounting capture (ctx-obs-01)
+# ---------------------------------------------------------------------------
+# The audit row's cost/latency/token fields used to be populated ONLY when the
+# operation happened to return a CortexResult. Two facades do not: ``search``
+# returns a list of CortexSearchResult and ``govern`` returns a str. Both showed
+# up in ``calls`` and contributed nothing to ``cost_usd``, ``avg_latency_ms`` or
+# ``by_model`` — and ``search`` is the most expensive facade there is (backend
+# fan-out, an optional CRAG re-retrieval, plus a rewrite LLM call), so the
+# biggest consumer was invisible in exactly the panel used to decide what to
+# optimise.
+#
+# The capture is now keyed on the CALL, not on the return type:
+#
+# ``operation_ms``  wall-clock inside the wrapped callable, measured by the
+#                   pipeline. Always available, whatever ``fn`` returns.
+# ``pipeline_ms``   wall-clock across the whole governed call (gates included).
+#                   This is the only meaningful figure for ``govern``, whose
+#                   operation body is the identity function and whose real cost
+#                   IS the gate chain.
+# ``latency_ms``    the headline the panel averages: the result's own
+#                   provider-reported latency when it has one (unchanged for
+#                   every facade returning a CortexResult), else pipeline_ms.
+#                   NOT operation_ms — ``govern``'s body is the identity
+#                   function, so its operation time is a few microseconds and
+#                   reporting that as the call's latency would be a more
+#                   precise-looking lie than the zero it replaced.
+#
+# Provider spend inside an operation that does not surface it on its return
+# value is collected through ``record_llm_call``: ``api._invoke`` reports every
+# router call to the enclosing governed operation. A ContextVar (not a global)
+# scopes that to the call, so concurrent and nested governed calls each keep
+# their own tally.
+_llm_accounting: contextvars.ContextVar = contextvars.ContextVar(
+    "cortex_llm_accounting", default=None
+)
+
+
+def _new_accounting() -> dict:
+    return {"calls": 0, "cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0,
+            "provider": "", "model": ""}
+
+
+def _elapsed_ms(started: float) -> float:
+    """Milliseconds since ``started`` (perf_counter), sub-millisecond preserved.
+
+    Rounded rather than truncated to int: an operation that takes 400us is not
+    a zero-latency operation, and ``metrics`` treats 0 as "no measurement" and
+    drops the row from the average entirely.
+    """
+    return round((time.perf_counter() - started) * 1000.0, 3)
+
+
+def record_llm_call(response) -> None:
+    """Attribute one provider call to the enclosing governed operation.
+
+    Called by ``api._invoke`` after every ``LLMRouter.invoke``. A no-op outside
+    a governed operation (ungoverned callers have nothing to attribute it to),
+    and best-effort throughout: telemetry must never break a provider call.
+    """
+    tally = _llm_accounting.get()
+    if tally is None:
+        return
+    try:
+        tally["calls"] += 1
+        tally["cost_usd"] += float(getattr(response, "cost_usd", 0.0) or 0.0)
+        tally["input_tokens"] += int(getattr(response, "input_tokens", 0) or 0)
+        tally["output_tokens"] += int(getattr(response, "output_tokens", 0) or 0)
+        # Last writer wins: a single audit row carries one model, and the last
+        # call is the one that produced the answer the caller sees.
+        tally["provider"] = str(getattr(response, "provider", "") or "") or tally["provider"]
+        tally["model"] = str(getattr(response, "model_id", "") or "") or tally["model"]
+    except Exception as exc:  # noqa: BLE001 — accounting is never load-bearing
+        logger.debug("cortex llm accounting skipped: %s", exc)
+
+
+def _accounting_fields(result, timing: Optional[dict], tally: Optional[dict]) -> dict:
+    """Accounting for one governed call, independent of the operation's return type."""
+    timing = timing or {}
+    tally = tally or {}
+    operation_ms = float(timing.get("operation_ms") or 0.0)
+    pipeline_ms = (
+        _elapsed_ms(timing["started"]) if timing.get("started") is not None else 0.0
+    )
+    out = {
+        "cost_usd": 0.0, "latency_ms": 0.0, "provider": "", "model": "",
+        "input_tokens": 0, "output_tokens": 0,
+        "operation_ms": operation_ms, "pipeline_ms": pipeline_ms,
+    }
+    if isinstance(result, CortexResult):
+        out["cost_usd"] = float(getattr(result, "cost", 0.0) or 0.0)
+        out["latency_ms"] = float(getattr(result, "latency_ms", 0) or 0)
+        out["provider"] = getattr(result, "provider", "") or ""
+        out["model"] = getattr(result, "model", "") or ""
+        out["input_tokens"] = int(getattr(result, "input_tokens", 0) or 0)
+        out["output_tokens"] = int(getattr(result, "output_tokens", 0) or 0)
+    # Provider calls the result did not report (search's CRAG rewrite; any
+    # non-CortexResult shape). Never overwrites a figure the result DID report,
+    # so every existing CortexResult facade is byte-for-byte unchanged.
+    if tally.get("calls") and not (
+        out["cost_usd"] or out["input_tokens"] or out["output_tokens"]
+    ):
+        out["cost_usd"] = float(tally.get("cost_usd") or 0.0)
+        out["input_tokens"] = int(tally.get("input_tokens") or 0)
+        out["output_tokens"] = int(tally.get("output_tokens") or 0)
+        out["provider"] = out["provider"] or (tally.get("provider") or "")
+        out["model"] = out["model"] or (tally.get("model") or "")
+    # Latency is ALWAYS recorded — see the precedence note above.
+    if out["latency_ms"] <= 0:
+        out["latency_ms"] = pipeline_ms
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 class GovernancePipeline:
@@ -502,23 +617,29 @@ class GovernancePipeline:
         return True
 
     def _degrade(
-        self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception
+        self, report: GovernanceReport, ctx: CortexContext, gate: str, exc: Exception,
+        *, result=None, timing: Optional[dict] = None, tally: Optional[dict] = None,
     ) -> None:
         """Gate error: warn and continue (fail-open) or block on fail_closed."""
         if resolve_fail_closed(ctx):
-            self._block(report, ctx, gate, f"{gate} unavailable: {exc}")
+            self._block(report, ctx, gate, f"{gate} unavailable: {exc}",
+                        result=result, timing=timing, tally=tally)
         logger.warning("cortex governance gate %s degraded (fail-open): %s", gate, exc)
         self._record(report, gate, OUTCOME_WARN, str(exc))
 
     def _block(
-        self, report: GovernanceReport, ctx: CortexContext, gate: str, reason: str
+        self, report: GovernanceReport, ctx: CortexContext, gate: str, reason: str,
+        *, result=None, timing: Optional[dict] = None, tally: Optional[dict] = None,
     ) -> None:
         report.outcomes[gate] = OUTCOME_FAIL
         if gate not in report.gates_run:
             report.gates_run.append(gate)
         report.blocked = True
         report.blocked_reason = reason
-        self._audit(report, ctx, blocked_gate=gate)
+        # A call blocked at a POST-operation gate still ran the operation, so it
+        # still cost money and time. Carry its accounting like any other row.
+        self._audit(report, ctx, blocked_gate=gate, result=result,
+                    timing=timing, tally=tally)
         raise GovernanceBlockedError(gate, reason, report)
 
     def _audit(
@@ -528,6 +649,8 @@ class GovernancePipeline:
         blocked_gate: str = "",
         provenance_id: str = "",
         result=None,
+        timing: Optional[dict] = None,
+        tally: Optional[dict] = None,
     ) -> None:
         try:
             payload = {
@@ -551,18 +674,16 @@ class GovernancePipeline:
                 "redactions_applied": report.redactions_applied,
                 "provenance_id": provenance_id,
             }
-            # Accounting for observability. cost/latency/provider/model live on
-            # the CortexResult, not on cortex_audit columns — carry them in the
-            # free-form gates_json blob so /cortex/metrics can aggregate spend
-            # without a schema migration. This is INSERT-only; the append-only
-            # audit invariant is untouched.
-            if isinstance(result, CortexResult):
-                payload["cost_usd"] = float(getattr(result, "cost", 0.0) or 0.0)
-                payload["latency_ms"] = int(getattr(result, "latency_ms", 0) or 0)
-                payload["provider"] = getattr(result, "provider", "") or ""
-                payload["model"] = getattr(result, "model", "") or ""
-                payload["input_tokens"] = int(getattr(result, "input_tokens", 0) or 0)
-                payload["output_tokens"] = int(getattr(result, "output_tokens", 0) or 0)
+            # Accounting for observability. cost/latency/provider/model have no
+            # cortex_audit columns — carry them in the free-form gates_json blob
+            # so /cortex/metrics can aggregate spend without a schema migration.
+            # This is INSERT-only; the append-only audit invariant is untouched.
+            #
+            # Derived from the CALL, not from the return type (ctx-obs-01): the
+            # pipeline's own timing and the provider calls made inside the
+            # operation are recorded whatever `fn` handed back, so search (list)
+            # and govern (str) are no longer holes in the spend/latency panels.
+            payload.update(_accounting_fields(result, timing, tally))
             _gate_record_audit(payload)
         except Exception as exc:  # audit stub must never mask the real outcome
             logger.error("cortex governance audit record failed: %s", exc)
@@ -607,6 +728,10 @@ class GovernancePipeline:
         ) or DEFAULT_PROFILE
         enabled = resolve_profile(profile_name)
         report = GovernanceReport(profile=profile_name)
+        # Accounting state for THIS call. Local, not on `self` — the `governed`
+        # decorator shares one pipeline instance across every call it wraps.
+        timing = {"started": time.perf_counter(), "operation_ms": 0.0}
+        tally = _new_accounting()
 
         # 1. Gateway pre-invoke check — a block ALWAYS fails closed.
         #    SKIPPED for trusted first-party content (ctx.trusted_content): the
@@ -623,12 +748,14 @@ class GovernancePipeline:
                 pre = _gate_check_text(prompt)
             except Exception as exc:
                 pre = None
-                self._degrade(report, ctx, GATE_PRE_CHECK, exc)
+                self._degrade(report, ctx, GATE_PRE_CHECK, exc,
+                              timing=timing, tally=tally)
             if pre is not None:
                 if not pre.get("allowed", True):
                     self._block(
                         report, ctx, GATE_PRE_CHECK,
                         pre.get("blocked_reason") or "blocked by LLM gateway pre-check",
+                        timing=timing, tally=tally,
                     )
                 self._record(
                     report, GATE_PRE_CHECK,
@@ -650,18 +777,29 @@ class GovernancePipeline:
                 report.redactions_applied += masked
                 self._record(report, GATE_INPUT_REDACTION, OUTCOME_PASS)
             except Exception as exc:
-                self._degrade(report, ctx, GATE_INPUT_REDACTION, exc)
+                self._degrade(report, ctx, GATE_INPUT_REDACTION, exc,
+                              timing=timing, tally=tally)
 
         # 3. The wrapped operation. Errors are recorded then re-raised —
         #    the pipeline governs, it does not swallow provider failures.
+        #    Timed here, and every router call made inside it reports into
+        #    `tally` (see record_llm_call), so the accounting below never
+        #    depends on what the operation chose to return.
+        token = _llm_accounting.set(tally)
+        op_started = time.perf_counter()
         try:
             result = fn(governed_prompt)
         except GovernanceBlockedError:
             raise
         except Exception:
+            timing["operation_ms"] = _elapsed_ms(op_started)
             self._record(report, GATE_OPERATION, OUTCOME_FAIL)
-            self._audit(report, ctx, blocked_gate=GATE_OPERATION)
+            self._audit(report, ctx, blocked_gate=GATE_OPERATION,
+                        timing=timing, tally=tally)
             raise
+        finally:
+            _llm_accounting.reset(token)
+        timing["operation_ms"] = _elapsed_ms(op_started)
         self._record(report, GATE_OPERATION, OUTCOME_PASS)
 
         is_cortex_result = isinstance(result, CortexResult)
@@ -690,7 +828,8 @@ class GovernancePipeline:
                         grounded = False
                         detail = f"hallucinated citations: {citation_report['hallucinated_citations']}"
                         if resolve_fail_closed(ctx):
-                            self._block(report, ctx, GATE_CITATION_GROUNDING, detail)
+                            self._block(report, ctx, GATE_CITATION_GROUNDING, detail,
+                                        result=result, timing=timing, tally=tally)
                         self._record(report, GATE_CITATION_GROUNDING, OUTCOME_FAIL, detail)
                     elif not citation_report.get("cited_count"):
                         # Presence policy hardens in ctx-govern-02; today it warns.
@@ -702,7 +841,8 @@ class GovernancePipeline:
                     raise
                 except Exception as exc:
                     grounded = False
-                    self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc)
+                    self._degrade(report, ctx, GATE_CITATION_GROUNDING, exc,
+                                  result=result, timing=timing, tally=tally)
         else:
             grounded = False
             self._record(report, GATE_CITATION_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
@@ -752,7 +892,8 @@ class GovernancePipeline:
                     grounded = False
                     detail = "; ".join(issues)
                     if resolve_fail_closed(ctx):
-                        self._block(report, ctx, GATE_CONTENT_GROUNDING, detail)
+                        self._block(report, ctx, GATE_CONTENT_GROUNDING, detail,
+                                    result=result, timing=timing, tally=tally)
                     self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_WARN, detail)
                 else:
                     self._record(
@@ -764,7 +905,8 @@ class GovernancePipeline:
                 raise
             except Exception as exc:
                 grounded = False
-                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc)
+                self._degrade(report, ctx, GATE_CONTENT_GROUNDING, exc,
+                              result=result, timing=timing, tally=tally)
         else:
             self._record(report, GATE_CONTENT_GROUNDING, OUTCOME_SKIP, "non-retrieval call")
 
@@ -814,7 +956,8 @@ class GovernancePipeline:
                 f"patterns: {hits}" if hits else "",
             )
         except Exception as exc:
-            self._degrade(report, ctx, GATE_OUTPUT_REDACTION, exc)
+            self._degrade(report, ctx, GATE_OUTPUT_REDACTION, exc,
+                          result=result, timing=timing, tally=tally)
 
         # 7. Provenance record + audit row — never skipped, never blocking.
         record_id = f"cgov-{uuid.uuid4().hex[:16]}"
@@ -853,7 +996,8 @@ class GovernancePipeline:
             # missing. Degrades to warn, which is the fail-open posture.
             logger.warning("cortex governance provenance record failed: %s", exc)
             self._record(report, GATE_PROVENANCE, OUTCOME_WARN, str(exc))
-        self._audit(report, ctx, provenance_id=registry_id or "", result=result)
+        self._audit(report, ctx, provenance_id=registry_id or "", result=result,
+                    timing=timing, tally=tally)
 
         if attach and is_cortex_result:
             result.governance = report

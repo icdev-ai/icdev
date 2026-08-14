@@ -1231,3 +1231,19 @@ tests/cortex/test_iqe_adapter_connection_ownership.py
 # signal here, and it never passes vacuously.
 # 7 tests (6 + 1 PG skip), <1s, fully stubbed: no DB service, no LLM, no network.
 tests/cortex/test_tenant_isolation.py
+# GovernancePipeline._audit populated cost/latency/tokens/model ONLY when the
+# operation returned a CortexResult. cortex.search returns a list and
+# cortex.govern returns a str, so both counted in `calls` and contributed
+# NOTHING to cost_usd/avg_latency_ms/by_model -- and search, the most expensive
+# facade there is (backend fan-out + CRAG re-retrieval + a rewrite LLM call),
+# was the one missing from the panel used to decide what to optimise. Accounting
+# is now keyed on the CALL: the pipeline times the operation and the whole
+# governed call, and api._invoke reports every router call to the enclosing
+# operation through a ContextVar tally. Pins the two acceptance targets (search
+# and govern record real latency that reaches /cortex/metrics), that the CRAG
+# rewrite's spend is attributed, that by_function counts are untouched because
+# they come from the SQL GROUP BY (exact even when the detail read truncates),
+# and that a CortexResult keeps its own provider-reported figures verbatim.
+# 16 tests, ~15s, fully mocked: no DB service, no LLM, no network. One test
+# boots the dashboard app to assert the figure at /cortex/api/metrics itself.
+tests/cortex/test_accounting_capture.py
