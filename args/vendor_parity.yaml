@@ -33,7 +33,7 @@ vendored_copies:
     note: >-
       Cortex service client SDK (ctx-expose-06). Stdlib-only by contract so the
       standalone apps can vendor it; see the module docstring.
-    last_synced: "2026-08-02"
+    last_synced: "2026-08-14"
     consumers:
       - name: compass
         path: "${ICDEV_STANDALONE_ROOT}/compass/tools/integrations/cortex_client.py"
