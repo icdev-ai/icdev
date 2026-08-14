@@ -1061,3 +1061,15 @@ tests/test_cpmp_overdue_deliverable_state.py
 # deterministic card id, and an unrunnable file never overwriting a real
 # verdict. Hermetic: temp SQLite, subprocess calls stubbed, no network.
 tests/test_ungated_test_drift.py
+# tsg-drift-cdaac178ae -- the third GovCon API suite with the same cause the two
+# proposals/detail.html suites above had: the file builds a bare Flask app with
+# no g.current_user, and when @require_role(*GOVCON_WRITE_ROLES) landed on the
+# write endpoints (prop-fix-09, 2026-05-30) every one of its 22 assertions began
+# answering 401 -- ten days after the suite was written, and unseen for eleven
+# weeks because nothing in CI ran it. It now authenticates through the shared
+# tests/_govcon_api_app helper and asserts the gate as behaviour in its own
+# right: unauthenticated 401, non-write role 403, every write role 200, and a
+# denied caller reaching neither populate_compliance_matrix nor _get_db -- so
+# the decorator cannot be stripped to turn the success path green again.
+# 27 tests, ~1s, fully mocked: no DB service, no LLM, no network.
+tests/test_govcon_auto_compliance_api.py
