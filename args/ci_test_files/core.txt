@@ -1464,3 +1464,4 @@ tests/test_app.py
 # that did would make an operator's edit invisible until restart).
 # 5 tests, <1s, stubbed gates + stubbed provider: no DB service, no LLM, no network.
 tests/cortex/test_config_load_budget.py
+tests/workflow/test_playwright_gate.py

@@ -17,15 +17,48 @@ def test_specs_backend_only_diff_returns_empty():
     ) == []
 
 
-def test_specs_app_py_too_broad_returns_empty():
-    assert vc._playwright_specs_for_changed_files(
+def test_specs_app_py_does_not_suppress_a_canvas_spec():
+    """A too-broad file alongside a specific one must not swallow the specific one.
+
+    `app.py` matches no single slug, so it is skipped rather than allowed to
+    short-circuit the scan: a diff touching app.py AND a canvas template should
+    still run that canvas's spec. Asserted by SLUG, not by the exact filenames,
+    so adding a chat*.spec.ts does not break this test.
+    """
+    specs = vc._playwright_specs_for_changed_files(
         ["tools/dashboard/app.py", "tools/dashboard/templates/chat/index.html"]
-    ) == []
+    )
+    assert specs, "a canvas template change must map to that canvas's spec"
+    assert all(os.path.basename(s).startswith("chat") for s in specs), specs
 
 
-def test_specs_base_layout_too_broad_returns_empty():
+def test_specs_base_layout_falls_back_to_the_broad_smoke_specs():
+    """A change affecting every page runs the smoke specs, NOT nothing.
+
+    These two cases used to return [], which sent the caller to the Selenium
+    fallback - one kanban-depends-on test touching none of the changed pages,
+    so the task reported "E2E verification" having exercised nothing relevant.
+    "Every page" is exactly what a smoke spec covers, and key_pages_smoke +
+    nav_smoke are seconds rather than the ~15 minutes of the full suite.
+    """
+    for changed in (
+        ["tools/dashboard/templates/base.html"],
+        ["tools/dashboard/app.py"],
+    ):
+        specs = vc._playwright_specs_for_changed_files(changed)
+        assert [os.path.basename(s) for s in specs] == list(
+            vc._BROAD_UI_SMOKE_SPECS
+        ), (changed, specs)
+
+
+def test_specs_backend_only_still_returns_empty():
+    """The smoke fallback fires on a UI change only — a backend diff maps to nothing.
+
+    Guards the boundary the two tests above move: making too-broad UI changes
+    resolve to smoke must not turn every backend commit into an E2E run.
+    """
     assert vc._playwright_specs_for_changed_files(
-        ["tools/dashboard/templates/base.html"]
+        ["tools/kanban/task_factory.py", "tools/db/storage.py", "args/projects.yaml"]
     ) == []
 
 
