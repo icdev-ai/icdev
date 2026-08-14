@@ -36,7 +36,7 @@ from .analyst import ask as _ask_impl
 
 # The enforced TRUST chain (ctx-govern-01). Every public facade on this module
 # runs through it — see _governed_facade / CORTEX_FACADES below.
-from .governance import GovernancePipeline
+from .governance import GovernancePipeline, record_llm_call
 
 # Unified search backend (ctx-search-01/02/04). Imported as the raw impl for
 # the same reason as ``ask``; the public ``search`` below is governance-wrapped.
@@ -474,8 +474,16 @@ def _invoke(function: str, request, context: CortexContext):
     router = _get_router()
     exclusions = airgap_exclusions(context)
     if exclusions:
-        return router.invoke(function, request, exclude_model_ids=exclusions)
-    return router.invoke(function, request)
+        response = router.invoke(function, request, exclude_model_ids=exclusions)
+    else:
+        response = router.invoke(function, request)
+    # Attribute this provider call to the enclosing governed operation
+    # (ctx-obs-01). Facades returning a CortexResult already carry their own
+    # accounting and are unaffected; this is what makes spend inside an
+    # operation returning something else - the rewrite call inside search -
+    # visible in /cortex/metrics. A no-op outside a governed call.
+    record_llm_call(response)
+    return response
 
 
 def _num(value, cast, default=0):

@@ -66,6 +66,7 @@ without importing the heavy backends.
 """
 from __future__ import annotations
 
+import contextvars
 import functools
 import hashlib
 import importlib
@@ -493,6 +494,97 @@ class _Stopwatch:
 
 
 # ---------------------------------------------------------------------------
+# Provider-spend attribution (ctx-obs-01)
+# ---------------------------------------------------------------------------
+# The audit row cost/token fields were populated ONLY when the operation
+# happened to return a CortexResult. Two facades do not: ``search`` returns a
+# list of CortexSearchResult and ``govern`` returns a str. Both appeared in
+# ``calls`` and contributed nothing to ``cost_usd`` or ``by_model`` - and
+# ``search`` is the most expensive facade there is (backend fan-out, an optional
+# CRAG re-retrieval, plus a rewrite LLM call), so the biggest consumer was
+# invisible in exactly the panel used to decide what to optimise.
+#
+# Spend is therefore attributed by the CALL, not by the return type:
+# ``api._invoke`` reports every router call to the enclosing governed operation.
+# A ContextVar (not a global) scopes the tally to the call, so concurrent and
+# nested governed calls each keep their own.
+#
+# LATENCY is already solved and is NOT re-implemented here: ctx-obs-02 landed
+# ``report.total_ms`` / ``operation_ms`` / ``gate_ms``, and ``total_ms`` is the
+# fallback when a result carries no provider-reported latency of its own.
+_llm_accounting: contextvars.ContextVar = contextvars.ContextVar(
+    "cortex_llm_accounting", default=None
+)
+
+
+def _new_accounting() -> dict:
+    return {"calls": 0, "cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0,
+            "provider": "", "model": ""}
+
+
+def record_llm_call(response) -> None:
+    """Attribute one provider call to the enclosing governed operation.
+
+    Called by ``api._invoke`` after every ``LLMRouter.invoke``. A no-op outside
+    a governed operation (an ungoverned caller has nothing to attribute it to),
+    and best-effort throughout: telemetry must never break a provider call.
+    """
+    tally = _llm_accounting.get()
+    if tally is None:
+        return
+    try:
+        tally["calls"] += 1
+        tally["cost_usd"] += float(getattr(response, "cost_usd", 0.0) or 0.0)
+        tally["input_tokens"] += int(getattr(response, "input_tokens", 0) or 0)
+        tally["output_tokens"] += int(getattr(response, "output_tokens", 0) or 0)
+        # Last writer wins: one audit row carries one model, and the last call
+        # is the one that produced the answer the caller sees.
+        tally["provider"] = str(getattr(response, "provider", "") or "") or tally["provider"]
+        tally["model"] = str(getattr(response, "model_id", "") or "") or tally["model"]
+    except Exception as exc:  # noqa: BLE001 - accounting is never load-bearing
+        logger.debug("cortex llm accounting skipped: %s", exc)
+
+
+def _accounting_fields(result, report) -> dict:
+    """Accounting for one governed call, independent of the return type.
+
+    Precedence is deliberate. A figure the RESULT reported always wins, so every
+    facade already returning a CortexResult is byte-for-byte unchanged. The
+    tally fills in only what the result did not carry - the search rewrite call,
+    the gate-only work of govern, any non-CortexResult shape.
+
+    ``latency_ms`` falls back to ``report.total_ms`` (the whole governed call),
+    NOT to ``operation_ms``: the operation body of ``govern`` is the identity
+    function, so its operation time is a few microseconds, and reporting that as
+    the latency of the call would be a more precise-looking lie than the zero it
+    replaces.
+    """
+    tally = getattr(report, "llm_tally", None) or {}
+    out = {
+        "cost_usd": 0.0, "latency_ms": 0.0, "provider": "", "model": "",
+        "input_tokens": 0, "output_tokens": 0,
+    }
+    if isinstance(result, CortexResult):
+        out["cost_usd"] = float(getattr(result, "cost", 0.0) or 0.0)
+        out["latency_ms"] = float(getattr(result, "latency_ms", 0) or 0)
+        out["provider"] = getattr(result, "provider", "") or ""
+        out["model"] = getattr(result, "model", "") or ""
+        out["input_tokens"] = int(getattr(result, "input_tokens", 0) or 0)
+        out["output_tokens"] = int(getattr(result, "output_tokens", 0) or 0)
+    if tally.get("calls") and not (
+        out["cost_usd"] or out["input_tokens"] or out["output_tokens"]
+    ):
+        out["cost_usd"] = float(tally.get("cost_usd") or 0.0)
+        out["input_tokens"] = int(tally.get("input_tokens") or 0)
+        out["output_tokens"] = int(tally.get("output_tokens") or 0)
+        out["provider"] = out["provider"] or (tally.get("provider") or "")
+        out["model"] = out["model"] or (tally.get("model") or "")
+    if out["latency_ms"] <= 0:
+        out["latency_ms"] = float(getattr(report, "total_ms", 0.0) or 0.0)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 class GovernancePipeline:
@@ -632,13 +724,7 @@ class GovernancePipeline:
             # free-form gates_json blob so /cortex/metrics can aggregate spend
             # without a schema migration. This is INSERT-only; the append-only
             # audit invariant is untouched.
-            if isinstance(result, CortexResult):
-                payload["cost_usd"] = float(getattr(result, "cost", 0.0) or 0.0)
-                payload["latency_ms"] = int(getattr(result, "latency_ms", 0) or 0)
-                payload["provider"] = getattr(result, "provider", "") or ""
-                payload["model"] = getattr(result, "model", "") or ""
-                payload["input_tokens"] = int(getattr(result, "input_tokens", 0) or 0)
-                payload["output_tokens"] = int(getattr(result, "output_tokens", 0) or 0)
+            payload.update(_accounting_fields(result, report))
             _gate_record_audit(payload)
         except Exception as exc:  # audit stub must never mask the real outcome
             logger.error("cortex governance audit record failed: %s", exc)
@@ -740,11 +826,19 @@ class GovernancePipeline:
         #    failure path too, BEFORE the audit row for that failure is written:
         #    a call that spent 8s in the provider and then raised is the most
         #    interesting latency row there is, and the one easiest to lose.
+        # Attribute every router call made inside fn() to this governed call.
+        # The dict is handed to the report by reference, so _audit reads the
+        # final tally even after the ContextVar is reset - no signature change
+        # and no re-indentation of this 370-line method.
+        tally = _new_accounting()
+        report.llm_tally = tally
+        _tally_token = _llm_accounting.set(tally)
         try:
             try:
                 result = fn(governed_prompt)
             finally:
                 report.operation_ms = clock.split(report, GATE_OPERATION)
+                _llm_accounting.reset(_tally_token)
         except GovernanceBlockedError:
             raise
         except Exception:
