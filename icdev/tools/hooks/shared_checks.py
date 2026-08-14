@@ -49,6 +49,11 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "default_repo_root",
+    # 0 — shell-aware scanning, shared by every Bash-shaped check
+    "command_segments",
+    "strip_heredoc_data",
+    "command_word",
+    "shell_tokens",
     # 1 — .env access
     "is_env_file_access",
     "check_env_file_access",
@@ -144,31 +149,275 @@ def _on(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+# ── 0. Shell-aware scanning ───────────────────────────────────────────────
+#
+# Every Bash-shaped check below used to match against the WHOLE raw command
+# string. Measured over 86,475 real tool calls (exa-bench-05, see
+# ``tools/hooks/fire_rate_survey.py``) that is the single largest source of
+# false refusals, in two distinct shapes:
+#
+#   1. **Heredoc and quoted bodies scanned as if they were commands.** A PR body
+#      that quotes ``DELETE FROM audit_trail``, a commit message describing a
+#      ``.env`` fix, a grep pattern searching for the very thing being guarded —
+#      all read as the guarded action itself.
+#   2. **Cross-segment attribution.** ``rm -f x.json; grep -rln foo tests/``
+#      contains ``rm``, and later, ``-r``. The old ``\brm\s+.*-[a-z]*r`` spans
+#      the ``;`` and reads the grep's flag as the rm's, so a targeted delete of
+#      one file scored as a recursive wipe.
+#
+# Both are fixed once, here, rather than nine times. Splitting a command into
+# segments can only ever make each haystack SMALLER, so it cannot introduce a
+# false negative for a single-command pattern; the splitter is quote-aware so a
+# separator inside ``psql -c "... WHERE a|b"`` does not cut the statement in two.
+
+_HEREDOC_OPEN_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+#: A heredoc fed to one of these IS the program being run, so its body is code
+#: and must still be scanned. Fed to anything else (``cat > f``, ``git commit
+#: -F -``, ``gh pr create --body "$(cat <<EOF``) it is data.
+_INTERPRETER_RE = re.compile(
+    r"(?<![\w./-])(?:python[23]?|py|sh|bash|zsh|ksh|node|perl|ruby|psql|sqlite3|mysql)\b"
+)
+
+#: Command words that print or search text and cannot themselves perform the
+#: guarded action: a match inside their arguments is a pattern or a message.
+#: ``echo '{"command":"rm -rf /"}' | python hook.py`` — the corpus's own way of
+#: testing this very hook — is an ``echo``, not a delete.
+_PROSE_COMMAND_WORDS = frozenset({
+    "grep", "egrep", "fgrep", "rg", "ag", "ack", "findstr", "select-string",
+    "cat", "less", "more", "head", "tail", "wc", "diff", "ls", "echo", "printf",
+    "gh", "glab", "code",
+})
+
+#: Adds ``git`` for the SQL checks only. A commit message or PR body quoting
+#: ``DELETE FROM audit_trail`` executes nothing — but ``git rm -rf`` deletes, so
+#: ``git`` must NOT be excused from :func:`is_dangerous_rm_command`.
+_READ_ONLY_COMMAND_WORDS = _PROSE_COMMAND_WORDS | {"git"}
+
+_COMMAND_WORD_RE = re.compile(
+    r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"      # leading VAR=value assignments
+    r"(?:(?:sudo|command|exec|time|env|nohup)\s+)*"  # transparent prefixes
+    r"([^\s;|&<>()]+)"
+)
+
+
+def strip_heredoc_data(command: str) -> str:
+    """Drop heredoc bodies that are DATA, keep the ones that are CODE.
+
+    The opener line decides: ``python - <<'PY'`` runs its body, so the body is
+    kept; ``cat > notes.md <<'EOF'`` and ``git commit -F - <<'EOF'`` do not, so
+    theirs is dropped. An unterminated heredoc (a truncated transcript, a
+    still-open command) drops to end-of-string rather than raising.
+    """
+    if "<<" not in command:
+        return command
+    lines = command.splitlines()
+    out: List[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        match = _HEREDOC_OPEN_RE.search(line)
+        if not match:
+            continue
+        terminator = match.group(2)
+        end = i
+        while end < len(lines) and lines[end].strip() != terminator:
+            end += 1
+        if _INTERPRETER_RE.search(line):
+            out.extend(lines[i:end])
+        if end < len(lines):
+            out.append(lines[end])
+        i = end + 1
+    return "\n".join(out)
+
+
+def command_segments(command: str) -> List[str]:
+    """Split *command* into individually-executed segments, quote-aware.
+
+    Splits on ``&&``, ``||``, ``;``, ``|`` and newlines that are not inside a
+    quoted string, after :func:`strip_heredoc_data`. Returns ``[]`` for a
+    command that is entirely whitespace.
+    """
+    text = strip_heredoc_data(command or "")
+    segments: List[str] = []
+    buf: List[str] = []
+    quote: Optional[str] = None
+    i = 0
+    length = len(text)
+    while i < length:
+        ch = text[i]
+        if quote is not None:
+            buf.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < length:
+                buf.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < length:
+            buf.append(ch)
+            buf.append(text[i + 1])
+            i += 2
+            continue
+        if text[i:i + 2] in ("&&", "||"):
+            segments.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        if ch in ";|\n&":
+            segments.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    segments.append("".join(buf))
+    return [s.strip() for s in segments if s.strip()]
+
+
+def command_word(segment: str) -> str:
+    """Lowercased basename of the program a segment invokes, or ``""``.
+
+    ``VAR=1 sudo /usr/bin/grep -r x`` -> ``grep``.
+    """
+    match = _COMMAND_WORD_RE.match(segment or "")
+    if not match:
+        return ""
+    token = match.group(1).strip("\"'")
+    return os.path.basename(token.replace("\\", "/")).lower()
+
+
+def _is_read_only_segment(segment: str) -> bool:
+    """True when the segment's program cannot perform the guarded action."""
+    return command_word(segment) in _READ_ONLY_COMMAND_WORDS
+
+
 # ── 1. .env file access ───────────────────────────────────────────────────
 
 ENV_FILE_BLOCK_REASON = (
     "BLOCKED: Access to .env files is prohibited. Use AWS Secrets Manager."
 )
 
-_ENV_BASH_PATTERNS = (
-    re.compile(r"\b\.env\b(?!\.sample)"),
-    re.compile(r"cat\s+.*\.env\b(?!\.sample)"),
-    re.compile(r"echo\s+.*>\s*\.env\b(?!\.sample)"),
-)
+#: Suffixes that mark a checked-in TEMPLATE rather than a secrets file. Mirrors
+#: the ``!.env.sample`` / ``!.env.example`` exclusions already declared in
+#: ``args/file_access_tiers.yaml`` — the two must agree, or this check refuses
+#: what D-ORCH-8 explicitly permits (measured: 24 of 70 refusals).
+_ENV_TEMPLATE_SUFFIXES = (".sample", ".example", ".template", ".dist", ".tpl")
+
+#: `C:\x\.env` and `\\host\share\.env` are paths; `^\.env` is a regex.
+_WINDOWS_PATH_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
+
+
+def _is_env_template(file_path: str) -> bool:
+    name = os.path.basename(file_path.replace("\\", "/")).lower()
+    return name.endswith(_ENV_TEMPLATE_SUFFIXES)
+
+
+def shell_tokens(segment: str) -> List[str]:
+    """Best-effort argv of one shell segment. Never raises.
+
+    Falls back to a whitespace split when the segment does not lex — a
+    half-quoted fragment must still be scannable, just less precisely.
+    """
+    try:
+        tokens = shlex.split(segment, posix=(os.name != "nt"))
+    except ValueError:
+        tokens = segment.split()
+    return [
+        t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t
+        for t in tokens
+    ]
+
+
+def _is_env_path_operand(token: str) -> bool:
+    """True when *token* IS the ``.env`` file, rather than mentions it.
+
+    ``.env`` and ``$WT/.env`` are the file. ``process.env``, the regex literal
+    ``\\.env``, ``.env.example`` and a ``--body`` describing a ``.env`` change
+    are not, and each of those refused before this (measured, exa-bench-05).
+    """
+    t = token.strip("\"'").lstrip("><&")
+    if t == ".env":
+        return True
+    # A parent directory is required, so the bare escaped `\.env` of a grep
+    # pattern is not a path.
+    if t.endswith("/.env") and len(t) > 5:
+        return True
+    # A backslash is a path separator only in something already shaped like a
+    # Windows path. Otherwise `grep -n "^\.env" .gitignore` reads as one.
+    if t.endswith("\\.env") and _WINDOWS_PATH_RE.match(t):
+        return True
+    return False
+
+
+#: Programs that put a file's CONTENTS somewhere — on screen, in another file,
+#: or into the shell. This is the original check's vocabulary (``cat …​ .env``
+#: and ``echo …​ > .env``) made precise, not widened. ``ls``, ``git
+#: check-ignore`` and ``grep`` are deliberately absent: they were never blocked,
+#: they reveal nothing a directory listing does not, and inspecting which
+#: backend `.env` selects is routine work in this repo. Deletion of `.env` is
+#: not this check's business either — ``check_file_access_tiers`` governs it
+#: through the ``zero_access`` tier, with the exclusions D-ORCH-8 declares.
+#:
+#: ``source``/``.`` are absent for the same reason ``cp`` is: ``set -a && .
+#: ./.env`` is how CLAUDE.md tells a session to load platform configuration
+#: before running the kanban CLI. It puts nothing on screen.
+_ENV_CONTENT_COMMANDS = frozenset({
+    "cat", "less", "more", "bat", "head", "tail", "strings", "base64", "xxd",
+    "od", "tee",
+})
+
+_REDIRECT_TOKEN_RE = re.compile(r"^\d*>{1,2}$")
+
+
+def _bash_reads_env_file(segment: str) -> bool:
+    tokens = shell_tokens(segment)
+    if not tokens:
+        return False
+    env_operands = [i for i, t in enumerate(tokens) if _is_env_path_operand(t)]
+    if not env_operands:
+        return False
+    if command_word(segment) in _ENV_CONTENT_COMMANDS:
+        return True
+    # `> .env`, `>> .env`, `2> .env`, and the unspaced `>.env` (whose redirect
+    # chars _is_env_path_operand already strips).
+    for i in env_operands:
+        if tokens[i].lstrip("><&") != tokens[i]:
+            return True
+        if i and _REDIRECT_TOKEN_RE.match(tokens[i - 1]):
+            return True
+    return False
 
 
 def is_env_file_access(tool_name: str, tool_input: dict) -> bool:
-    """Check if a tool is trying to access .env files."""
+    """Check if a tool is trying to access .env files.
+
+    The Bash arm requires a ``.env`` **path operand** of a content-reading or
+    file-writing command, not the substring anywhere in the line. ICDEV's own
+    documented idiom is ``python -c "from dotenv import load_dotenv;
+    load_dotenv('.env')"`` — CLAUDE.md tells admins to configure the platform in
+    ``.env`` — and that reaches the shell as a single ``python -c`` argument,
+    not as a file the command opens.
+    """
     if tool_name in ("Read", "Edit", "MultiEdit", "Write"):
         file_path = tool_input.get("file_path", "")
-        if ".env" in file_path and not file_path.endswith(".env.sample"):
+        if ".env" in file_path and not _is_env_template(file_path):
             return True
 
     elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        for pattern in _ENV_BASH_PATTERNS:
-            if pattern.search(command):
-                return True
+        return any(
+            _bash_reads_env_file(seg)
+            for seg in command_segments(tool_input.get("command", ""))
+        )
 
     return False
 
@@ -182,38 +431,109 @@ def check_env_file_access(tool_name: str, tool_input: dict) -> Optional[str]:
 
 DANGEROUS_RM_BLOCK_REASON = "BLOCKED: Dangerous rm command detected and prevented"
 
+#: ``rm`` as a program name, not as the tail of a flag.
+#:
+#: ``\brm`` matches inside ``docker run --rm`` — ``-`` is a non-word character,
+#: so ``\b`` sits right before the ``r``. Every ``docker run --rm`` in the corpus
+#: therefore scored as a dangerous delete (measured: the largest single class of
+#: this check's 494 refusals). ``/bin/rm`` and ``git rm`` are still matched;
+#: ``--rm``, ``--rmdir`` and ``xyz-rm`` are not.
+_RM_WORD = r"(?<![-\w.])rm\b"
+
 _RM_FLAG_PATTERNS = tuple(
     re.compile(p) for p in (
-        r"\brm\s+.*-[a-z]*r[a-z]*f",
-        r"\brm\s+.*-[a-z]*f[a-z]*r",
-        r"\brm\s+--recursive\s+--force",
-        r"\brm\s+--force\s+--recursive",
-        r"\brm\s+-r\s+.*-f",
-        r"\brm\s+-f\s+.*-r",
+        rf"{_RM_WORD}\s+.*-[a-z]*r[a-z]*f",
+        rf"{_RM_WORD}\s+.*-[a-z]*f[a-z]*r",
+        rf"{_RM_WORD}\s+--recursive\s+--force",
+        rf"{_RM_WORD}\s+--force\s+--recursive",
+        rf"{_RM_WORD}\s+-r\s+.*-f",
+        rf"{_RM_WORD}\s+-f\s+.*-r",
     )
 )
 
-_RM_RECURSIVE_RE = re.compile(r"\brm\s+.*-[a-z]*r")
-_RM_DANGEROUS_PATH_PATTERNS = tuple(
-    re.compile(p) for p in (r"/", r"/\*", r"~", r"~/", r"\$HOME", r"\.\.", r"\*", r"\.")
-)
+_RM_RECURSIVE_RE = re.compile(rf"{_RM_WORD}\s+.*-[a-z]*r")
+
+#: Targets whose recursive deletion is unrecoverable or catastrophic.
+#:
+#: These used to be substring patterns — ``/``, ``.``, ``*`` — searched across
+#: the WHOLE command, which made every possible target dangerous: any path has a
+#: separator, any filename has a dot. Combined with the flag patterns, that made
+#: the rule "no ``rm -rf``, ever", and a rule that refuses 288 scratch-directory
+#: cleanups in 30 days is a rule that has to be left switched off. What makes
+#: ``rm -rf`` dangerous is the TARGET, so the target is what is matched — as a
+#: whole token now, not as a substring.
+_RM_WIDE_TARGETS = frozenset({
+    "", "-", "/", "/*", "~", "~/", "~/*", ".", "./", "./*", ".*",
+    "..", "../", "../*", "*", "$home", "$home/", "$home/*",
+    # A repository's history is the one thing inside a checkout that `git`
+    # cannot restore, so it is wide even though it is a relative path.
+    ".git", ".git/", ".git/*",
+})
+
+
+def _rm_targets(segment: str) -> List[str]:
+    """Positional operands of the ``rm`` in *segment*, flags removed."""
+    tokens = shell_tokens(segment)
+    for i, tok in enumerate(tokens):
+        if os.path.basename(tok.replace("\\", "/")).lower() == "rm":
+            return [t for t in tokens[i + 1:] if not t.startswith("-")]
+    return []
+
+
+def _is_wide_rm_target(target: str) -> bool:
+    """True when deleting *target* recursively is unrecoverable or catastrophic."""
+    t = target.strip("\"'").replace("\\", "/").lower().rstrip()
+    if t in _RM_WIDE_TARGETS:
+        return True
+    if t.startswith("~") or t.startswith("$home"):
+        return True
+    if t.endswith("/.git") or t.endswith("/.git/"):
+        return True
+    parts = [p for p in t.split("/") if p not in ("", ".")]
+    if ".." in parts:
+        return True
+    if t.startswith("/"):
+        # /etc, /usr, /home — a top-level system directory. /home/u/proj/build
+        # is a specific path and not this check's business.
+        return len(parts) <= 1
+    if re.match(r"^[a-z]:(/|$)", t):
+        return len(parts) <= 2   # c:, c:/, c:/users
+    return False
+
+
+def _is_dangerous_rm_segment(segment: str) -> bool:
+    if command_word(segment) in _PROSE_COMMAND_WORDS:
+        return False
+
+    normalized = " ".join(segment.lower().split())
+    recursive_force = any(p.search(normalized) for p in _RM_FLAG_PATTERNS)
+    recursive = recursive_force or bool(_RM_RECURSIVE_RE.search(normalized))
+    if not recursive:
+        return False
+
+    targets = _rm_targets(segment)
+    if not targets:
+        # A recursive rm whose target this parser cannot see is not a scoped
+        # delete as far as anything here can tell. Fail closed.
+        return True
+    return any(_is_wide_rm_target(t) for t in targets)
 
 
 def is_dangerous_rm_command(command: str) -> bool:
-    """Detect dangerous rm commands."""
-    normalized = " ".join(command.lower().split())
+    """Detect dangerous rm commands.
 
-    for pattern in _RM_FLAG_PATTERNS:
-        if pattern.search(normalized):
-            return True
+    Two changes from the flag-only form, both measured over 86,612 real tool
+    calls (exa-bench-05):
 
-    # Check for rm with recursive flag targeting dangerous paths
-    if _RM_RECURSIVE_RE.search(normalized):
-        for path in _RM_DANGEROUS_PATH_PATTERNS:
-            if path.search(normalized):
-                return True
-
-    return False
+    * **Per shell segment.** The flags of a LATER command are not the flags of
+      an earlier ``rm``. ``rm -f a.json; grep -rln foo tests/`` deletes exactly
+      one file, and refused because the grep's ``-r`` completed the ``rm``'s
+      pattern across the ``;``.
+    * **Scoped by target.** ``rm -rf /`` and ``rm -rf .tmp/probe`` differ in
+      what they destroy, not in how they are spelled. See
+      :data:`_RM_WIDE_TARGETS`.
+    """
+    return any(_is_dangerous_rm_segment(seg) for seg in command_segments(command))
 
 
 def check_dangerous_rm(tool_name: str, tool_input: dict) -> Optional[str]:
@@ -244,6 +564,24 @@ APPEND_ONLY_BLOCK_REASON = (
 # larger) alternation entirely. The overwhelming majority of Bash calls are not
 # SQL at all, and this hook is on the critical path of every single tool call.
 _SQL_MUTATION_VERB_RE = re.compile(r"\b(?:update|delete|drop|truncate)\b")
+
+#: Markers that a segment has deliberately pointed the storage layer at a
+#: disposable database.
+#:
+#: This guard protects the PLATFORM's audit tables. Every remaining refusal in
+#: the corpus was a security test building its own chain in a tempdir and then
+#: tampering with it to prove detection works — exa-audit-03 and exa-audit-04
+#: could not have been written with this enforcing. It is a mistake-preventer,
+#: not an attacker-resistant control (it string-matches a command the agent
+#: composed itself), so an explicit "this is a scratch DB" marker is a
+#: legitimate thing for it to believe. The real per-call authority over an
+#: irreversible action is ``tools/agent_runtime/approval_gate.py``.
+_THROWAWAY_DB_MARKERS = (":memory:", "tempfile", "icdev_db_path=", "mkdtemp")
+
+
+def _targets_throwaway_db(segment: str) -> bool:
+    lowered = segment.lower()
+    return any(marker in lowered for marker in _THROWAWAY_DB_MARKERS)
 
 # Compiled once per distinct table list, then reused. One alternation per SQL
 # shape instead of three regexes per table: with 350+ tables the naive form
@@ -284,12 +622,29 @@ def is_append_only_table_modification(
     validator to detect drift:
     ``python tools/testing/claude_dir_validator.py --json``
     """
-    if tool_name == "Bash":
-        command = tool_input.get("command", "").lower()
-        if not _SQL_MUTATION_VERB_RE.search(command):
-            return False
-        for pattern in _append_only_patterns(tables):
-            if pattern.search(command):
+    if tool_name != "Bash":
+        return False
+
+    command = tool_input.get("command", "") or ""
+    # Cheap pre-guard on the whole string before any segmentation work.
+    if not _SQL_MUTATION_VERB_RE.search(command.lower()):
+        return False
+
+    # Whole-command, not per segment: `export ICDEV_DB_PATH=<tmp>` and the
+    # python that uses it are two segments of one line.
+    if _targets_throwaway_db(command):
+        return False
+
+    patterns = _append_only_patterns(tables)
+    for segment in command_segments(command):
+        # `grep -n "DELETE FROM audit_trail" tests/` searches FOR the guarded
+        # statement; `gh pr create --title "... UPDATE audit_trail ..."` writes
+        # prose about it. Neither executes SQL, and both refused before this.
+        if _is_read_only_segment(segment):
+            continue
+        lowered = segment.lower()
+        for pattern in patterns:
+            if pattern.search(lowered):
                 return True
 
     return False
@@ -328,15 +683,28 @@ DIRECT_SQLITE_BLOCK_REASON = (
 
 # Files that legitimately need raw sqlite3.
 _SQLITE_EXEMPT_PATTERNS = (
-    "tools/db/storage.py",            # IS the storage layer
-    "tools/db/init_icdev_db.py",      # DDL/schema initialization
-    "tools/db/migration_runner.py",   # schema migrations
-    "tools/db/backup_manager.py",     # backup/restore with the sqlite3 API
-    "tools/db/pg_init.py",            # PG initialization
-    "tools/db/migrate_to_storage.py", # one-time migration script
-    "tools/db/migrate_add_missing_columns.py",
+    # The storage layer's own package. Seven files here were listed one by one;
+    # every module added to it since (`shadowed_migration_replay.py`, …) needs
+    # the same exemption for the same reason, and enumerating them one refusal
+    # at a time is how the list fell behind.
+    "tools/db/",
     "tools/compat/db_utils.py",       # path resolution utilities
     "tools/saas/",                    # tenant-isolated DBs (separate SQLite per tenant)
+    "tools/hooks/",                   # IS this check — its source names the pattern
+)
+
+#: Source extensions this check applies to. It exists to stop a raw
+#: ``sqlite3.connect()`` from being INTRODUCED, and only an importable module
+#: can introduce one. Documenting the pattern is not committing it: the old
+#: content-substring test refused `tools/manifest/safety-hooks.md`, which is the
+#: manifest row FOR this check, and the very file that implements it.
+_SQLITE_SOURCE_SUFFIXES = (".py", ".pyi")
+
+#: A one-liner that WRITES through a raw sqlite3 handle. See the Bash arm.
+_SQLITE_WRITE_RE = re.compile(
+    r"\b(?:insert\s+into|update\s+\w|delete\s+from|drop\s+table|create\s+table"
+    r"|alter\s+table|truncate|replace\s+into|\.commit\(|executemany\()",
+    re.IGNORECASE,
 )
 
 
@@ -358,6 +726,9 @@ def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
         if "/tools/" not in file_path and not file_path.startswith("tools/"):
             return False
 
+        if not file_path.lower().endswith(_SQLITE_SOURCE_SUFFIXES):
+            return False
+
         for exempt in _SQLITE_EXEMPT_PATTERNS:
             if exempt in file_path:
                 return False
@@ -370,13 +741,21 @@ def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
             return True
 
     elif tool_name == "Bash":
-        command = tool_input.get("command", "")
-        # Block ad-hoc sqlite3.connect to icdev.db in python one-liners
-        if "sqlite3.connect" in command and "icdev.db" in command:
+        # Per segment, so the two substrings have to appear in the SAME command
+        # rather than anywhere in a compound line.
+        for segment in command_segments(tool_input.get("command", "")):
+            if "sqlite3.connect" not in segment or "icdev.db" not in segment:
+                continue
             # Allow if it's running a migration or init script
-            if any(x in command for x in
+            if any(x in segment for x in
                    ["init_icdev_db", "migration_runner", "migrate_to_storage", "backup"]):
-                return False
+                continue
+            if not _SQLITE_WRITE_RE.search(segment):
+                # The stated harm is "data written to SQLite never appears in
+                # the UI" (the storage layer routes to PostgreSQL). A read does
+                # not write anything anywhere, and read-only diagnostics were
+                # the bulk of this check's refusals.
+                continue
             return True
 
     return False
@@ -395,46 +774,133 @@ _FILE_ACCESS_TIERS_CACHE: Dict[str, Optional[dict]] = {}
 
 _RM_TARGET_RE = re.compile(r"\brm\s+(?:-[a-z]*\s+)*([^\s|;&]+)")
 
-#: Write redirections, and the target each one writes to.
-#:
-#: The previous pattern was ``>\s*([^\s|;&]+)``, which read an APPEND redirect
-#: wrong in a way that silently defeated the tiers: against
-#: ``echo k >> ~/.ssh/authorized_keys`` the first ``>`` matched, ``\s*`` matched
-#: nothing, and the capture group took the SECOND ``>``. ``file_path`` became the
-#: literal string ``">"``, which matches no tier pattern, so the append was
-#: ALLOWED — while the single-``>`` form of the same command was blocked.
-#:
-#: So the operator is now matched as a unit. ``(?<!>)`` starts the match at the
-#: FIRST ``>`` of a pair and ``>{1,2}`` consumes both, which is what the old
-#: pattern got wrong. Nothing needs to be said about the fd prefix — ``1>>``,
-#: ``2>>`` and ``&>>`` all just leave their prefix before the operator, so they
-#: are handled by the same two tokens, with or without a space before the path.
-#: ``(?!&)`` keeps fd duplication (``2>&1``) from reading as a write to a file
-#: named ``1``, and excluding ``>`` from the capture class stops a stray
-#: operator character being returned as a path again.
-_REDIRECT_TARGET_RE = re.compile(r"(?<!>)>{1,2}\s*(?!&)([^\s|;&>]+)")
+#: Characters that end a word when they are not inside quotes. ``(`` and ``)``
+#: are in here because a ``$( … 2>/dev/null)`` leaves the closing paren glued to
+#: the redirect target, which is how ``/dev/null)`` came to be read as a write to
+#: ``C:\dev\null)`` instead of matching :data:`_NULL_SINKS`.
+_SHELL_WORD_BREAK = frozenset(" \t\r\n|;&<>()")
 
-#: ``tee`` writes its target without any redirection operator at all, so the
-#: pattern above cannot see it. ``-a`` (append) and friends are skipped the same
-#: way ``_RM_TARGET_RE`` skips ``rm``'s flags.
-_TEE_TARGET_RE = re.compile(r"\btee\s+(?:-[a-zA-Z]+\s+)*([^\s|;&>]+)")
+#: The only characters a backslash escapes inside a double-quoted span. Anything
+#: else keeps its backslash, so a Windows path survives the quotes intact.
+_DQUOTE_ESCAPABLE = frozenset('"\\$`')
+
+
+def _verb_of(token: str) -> str:
+    """The command name *token* names, without its directory or ``.exe``."""
+    return (
+        os.path.basename((token or "").strip().strip("'\""))
+        .lower()
+        .removesuffix(".exe")
+    )
+
+
+def shell_words_and_operators(command: str) -> List[Tuple[str, str]]:
+    """*command* as ``(kind, text)`` pairs, ``kind`` in ``{"word", "op"}``.
+
+    Rough, and deliberately not a shell. It answers exactly one question a
+    regex cannot: **is this ``>`` a redirection operator, or a character inside
+    a string**. That distinction is the whole reason this exists — the pattern
+    it replaces matched the ``>`` of ``--jq '"#\\(.n) -> \\(.state)"'`` and
+    handed back ``\\(.state)"'`` as a path about to be written, 370 times in the
+    survey corpus. Quoted spans are returned with their quotes removed, so
+    ``> "out file.txt"`` yields the real name rather than nothing.
+
+    Backslash is NOT an escape outside quotes. On this platform it is a path
+    separator, and ``C:\\Users\\schuo\\x`` must not tokenize to ``C:Usersschuox``
+    — the same reason the neighbouring code calls ``shlex.split`` with
+    ``posix=False`` on Windows. Inside double quotes it escapes only the four
+    characters a shell actually treats that way (:data:`_DQUOTE_ESCAPABLE`),
+    which is also POSIX's rule; taking it as a general escape there ate the
+    separators out of ``> "C:\\Users\\schuo\\AppData\\...\\x.json"`` and turned 38
+    ordinary temp-file writes into unresolvable paths.
+    """
+    tokens: List[Tuple[str, str]] = []
+    text = command or ""
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch in " \t\r":
+            i += 1
+            continue
+        if ch in "|;&<>()\n":
+            end = i + 1
+            if end < n and text[end] == ch and ch in "|&<>":
+                end += 1
+            tokens.append(("op", text[i:end]))
+            i = end
+            continue
+        buf: List[str] = []
+        while i < n:
+            c = text[i]
+            if c in _SHELL_WORD_BREAK:
+                break
+            if c in "'\"":
+                quote = c
+                i += 1
+                while i < n and text[i] != quote:
+                    if (
+                        quote == '"'
+                        and text[i] == "\\"
+                        and i + 1 < n
+                        and text[i + 1] in _DQUOTE_ESCAPABLE
+                    ):
+                        buf.append(text[i + 1])
+                        i += 2
+                        continue
+                    buf.append(text[i])
+                    i += 1
+                i += 1  # the closing quote, or end-of-string for an unclosed one
+                continue
+            buf.append(c)
+            i += 1
+        tokens.append(("word", "".join(buf)))
+    return tokens
+
+
+def _redirect_and_tee_targets(command: str) -> List[str]:
+    """Every path *command* redirects to, or hands to ``tee``.
+
+    Returns ALL of them rather than the first: a command redirects to more than
+    one file often enough (``a > log 2>> err``) that stopping at the first match
+    left the rest unexamined, and the tier check has to see each one.
+    """
+    targets: List[str] = []
+    tokens = shell_words_and_operators(command)
+    i = 0
+    while i < len(tokens):
+        kind, text = tokens[i]
+        if kind == "op" and text and set(text) == {">"}:
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+            # `2>&1` duplicates a descriptor. It writes no file, and reading the
+            # `1` as one is how a redirect scan invents a target named `1`.
+            if nxt is not None and nxt[0] == "op" and nxt[1].startswith("&"):
+                i += 2
+                continue
+            if nxt is not None and nxt[0] == "word" and nxt[1]:
+                targets.append(nxt[1])
+                i += 2
+                continue
+        elif kind == "word" and _verb_of(text) == "tee":
+            # `tee` writes its target with no operator at all, so the operator
+            # walk above cannot see it. Flags are skipped the way `_RM_TARGET_RE`
+            # skips `rm`'s.
+            i += 1
+            while i < len(tokens) and tokens[i][0] == "word":
+                if not tokens[i][1].startswith("-"):
+                    targets.append(tokens[i][1])
+                i += 1
+            continue
+        i += 1
+    return targets
 
 
 def bash_file_targets(command: str) -> List[Tuple[str, bool, bool]]:
-    """Every path a Bash command writes to or deletes, as ``(path, write, delete)``.
-
-    Returns ALL of them rather than the first. A command redirects to more than
-    one file often enough (``a > log 2>> err``) that stopping at the first match
-    left the rest unexamined, and the tier check has to see each one to refuse
-    the call.
-    """
+    """Every path a Bash command writes to or deletes, as ``(path, write, delete)``."""
     targets: List[Tuple[str, bool, bool]] = []
     for match in _RM_TARGET_RE.finditer(command):
         targets.append((match.group(1), False, True))
-    for match in _REDIRECT_TARGET_RE.finditer(command):
-        targets.append((match.group(1), True, False))
-    for match in _TEE_TARGET_RE.finditer(command):
-        targets.append((match.group(1), True, False))
+    for path in _redirect_and_tee_targets(command):
+        targets.append((path, True, False))
     return targets
 
 #: Inventories a tier may pull its patterns from via ``inherits:``. One name
@@ -546,20 +1012,24 @@ def _matches_tier(file_path: str, patterns: List[str]) -> bool:
     fp = file_path.replace("\\", "/")
     if fp.startswith("./"):
         fp = fp[2:]
+    # os.path.basename, not PurePosixPath(fp).name: fp is already
+    # forward-slashed, and the two disagree on a trailing separator.
+    base = os.path.basename(fp)
+
+    # Exclusions are matched against the SAME two candidates as inclusions.
+    # They used to be full-path only while inclusions also tried the basename,
+    # so `.env.*` caught `C:/wt/repo/.env.example` on its basename and
+    # `!.env.example` — an absolute path against a bare pattern — never fired.
+    # Every `.env.example` read and edit in the corpus refused on a tier that
+    # explicitly exempts it (measured: 24 refusals, exa-bench-05).
+    for exc in patterns:
+        if exc.startswith("!") and (fnmatch(fp, exc[1:]) or fnmatch(base, exc[1:])):
+            return False
+
     for pattern in patterns:
         if pattern.startswith("!"):
-            continue  # exclusion patterns handled separately
-        # Check exclusions first
-        excluded = False
-        for exc in patterns:
-            if exc.startswith("!") and fnmatch(fp, exc[1:]):
-                excluded = True
-                break
-        if excluded:
-            continue
-        # os.path.basename, not PurePosixPath(fp).name: fp is already
-        # forward-slashed, and the two disagree on a trailing separator.
-        if fnmatch(fp, pattern) or fnmatch(os.path.basename(fp), pattern):
+            continue  # exclusion patterns handled above
+        if fnmatch(fp, pattern) or fnmatch(base, pattern):
             return True
     return False
 
@@ -613,7 +1083,23 @@ def check_file_access_tiers(
             (tool_input.get("file_path", tool_input.get("notebook_path", "")), True, False)
         )
     elif tool_name == "Bash":
-        targets.extend(bash_file_targets(tool_input.get("command", "")))
+        # Segment first, then take EVERY target within each segment. Both halves
+        # are load-bearing and neither subsumes the other:
+        #
+        #   * scanning the whole command at once (`bash_file_targets` alone)
+        #     sees every target of `a > log 2>> err`, which stopping at the
+        #     first match did not — but it also reads a heredoc BODY as
+        #     commands, so `cat > note <<EOF / rm -rf .env / EOF` reported a
+        #     delete that the shell never runs.
+        #   * splitting first (`command_segments` alone) drops the second and
+        #     later targets of any one segment, because the per-segment form it
+        #     was written against took only the first.
+        #
+        # Composed, `cd wt && ruff check tests/x.py && rm -f .env` still
+        # refuses on `.env` — segmenting must not lose a real target — while a
+        # segment that names nothing contributes nothing.
+        for segment in command_segments(tool_input.get("command", "")):
+            targets.extend(bash_file_targets(segment))
 
     zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
     ro_patterns = [p for t in [tiers.get("read_only", {})] for p in t.get("patterns", [])]
@@ -753,6 +1239,11 @@ def check_branch_deletion(
 
 # ── 7. Worktree path enforcement ──────────────────────────────────────────
 
+#: A token the shell would expand before git ever sees it. `shlex` strips the
+#: quotes but cannot resolve the value, so what reaches this parser is the
+#: literal `$P` / `${WT}` / `` `pwd` `` — never a path.
+_UNEXPANDED_RE = re.compile(r"[$`]")
+
 
 def worktree_add_target(command: str, posix: Optional[bool] = None) -> Optional[str]:
     """Target path of a ``git worktree add`` in *command*, or None.
@@ -774,6 +1265,14 @@ def worktree_add_target(command: str, posix: Optional[bool] = None) -> Optional[
         return None
     if posix is None:
         posix = os.name != "nt"
+    # Only the segment that actually runs `git worktree add`. Otherwise
+    # `cd repo && P=$(...worktree_paths...) && git worktree add --detach "$P"`
+    # is parsed as one token stream and the `cd`'s arguments can be read as the
+    # target — which is how `gh pr checks 1537` scored as a stray worktree.
+    for segment in command_segments(command):
+        if "worktree" in segment and "add" in segment:
+            command = segment
+            break
     try:
         tokens = shlex.split(command, posix=posix)
         if not posix:
@@ -800,6 +1299,16 @@ def worktree_add_target(command: str, posix: Optional[bool] = None) -> Optional[
             continue
         if tok.startswith("-"):
             continue                  # --detach, --no-checkout, --force, ...
+        if _UNEXPANDED_RE.search(tok):
+            # `git worktree add --detach "$P"` where P came from
+            # `python -m tools.git.worktree_paths --path cli <slug>`: the
+            # EXACT form CLAUDE.md prescribes. The shell expands it; this hook
+            # cannot, so the target is unknown — and an unknown target is the
+            # documented "cannot be determined with confidence" case, not a
+            # violation. Measured 2026-08-12: 640 of this check's 652 refusals
+            # over 30 days were compliant sessions blocked on `"$P"`, i.e. the
+            # guard would have refused the convention it exists to enforce.
+            return None
         return tok                    # first positional is the worktree path
     return None
 
@@ -927,8 +1436,9 @@ def check_review_loop_precommit(
 # tests/hooks/test_hook_parity.py, which asserts the two paths run the same set.
 
 GIT_DANGER_PATTERNS: Tuple[Tuple[str, str], ...] = (
-    # Force push — direct or via shorthand
-    (r"\bgit\s+push\s+(?:[^\n]*\s)?(?:--force\b|--force-with-lease\b|-f\b)",
+    # Force push. `--force-with-lease` is deliberately NOT here — see
+    # `_GIT_FORCE_WITH_LEASE_RE` below.
+    (r"\bgit\s+push\s+(?:[^\n]*\s)?(?:--force\b|-f\b)",
      "git push --force is destructive — rewrites remote history"),
     # Hard reset anything
     (r"\bgit\s+reset\s+(?:[^\n]*\s)?--hard\b",
@@ -938,32 +1448,97 @@ GIT_DANGER_PATTERNS: Tuple[Tuple[str, str], ...] = (
      "git branch -D force-deletes branches (use -d for safe delete)"),
     (r"\bgit\s+branch\s+(?:[^\n]*\s)?--delete\s+--force\b",
      "git branch --delete --force force-deletes branches"),
-    # Dangerous clean
-    (r"\bgit\s+clean\s+(?:[^\n]*\s)?-[a-zA-Z]*f[a-zA-Z]*\b",
-     "git clean -f permanently deletes untracked files"),
-    # Checkout/restore of working tree — can wipe uncommitted edits
-    (r"\bgit\s+checkout\s+(?:--\s*\.|\.\s*$|\.\s)",
+    # Dangerous clean. Only the WHOLE-TREE form, or one that also removes
+    # ignored files (`-x`) — a pathspec-scoped `git clean -fd build/` deletes
+    # what the caller named and nothing else. 9 of the 9 scoped cleans in the
+    # 30-day corpus were routine (`git clean -fd data/studio_artifacts/`).
+    (r"\bgit\s+clean\s+(?:[^\n]*\s)?-[a-zA-Z]*(?:f[a-zA-Z]*x|x[a-zA-Z]*f)\b",
+     "git clean -fx permanently deletes untracked AND ignored files"),
+    (r"\bgit\s+clean\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*f[a-zA-Z]*\s*$",
+     "git clean -f with no pathspec deletes every untracked file in the tree"),
+    # Checkout/restore of the WHOLE working tree — can wipe uncommitted edits.
+    # `\.` alone matched the leading dot of a dotfile, so `git checkout --
+    # .cursor/mcp-setup.md` — a path-scoped restore of one file — read as
+    # `git checkout -- .` and refused. 17 of 17 such fires in the corpus were
+    # that bug. The `.` must therefore be a whole token.
+    (r"\bgit\s+checkout\s+(?:--\s+)?\.(?=\s|$)",
      "git checkout . discards uncommitted working-tree changes"),
-    (r"\bgit\s+restore\s+(?:[^\n]*\s)?(?:--\s*\.|\.\s*$|\.\s)",
+    (r"\bgit\s+restore\s+(?:[^\n]*\s)?(?:--\s+)?\.(?=\s|$)",
      "git restore . discards uncommitted working-tree changes"),
     # Interactive rebase cannot be driven by an agent
     (r"\bgit\s+rebase\s+(?:[^\n]*\s)?-i\b",
      "interactive git rebase requires manual approval (no automation)"),
 )
 
+#: `--force-with-lease` refuses the push when the remote moved under it, which
+#: is exactly the collision this repo's concurrent sessions have to survive, and
+#: it is what those sessions actually run: 127 of the 30-day corpus's 389
+#: git_danger fires were this form, on the session's own `kanban/*` branch.
+#: Blocking it would have made the guard's single largest category "the
+#: prescribed workflow", and a guard that refuses the prescribed workflow gets
+#: switched off. Bare `--force` / `-f` stays refused.
+_GIT_FORCE_WITH_LEASE_RE = re.compile(r"\bgit\s+push\b[^\n]*--force-with-lease\b")
+
+#: Pattern -> the git subcommand it is about, parsed from the pattern's own
+#: ``\bgit\s+<word>`` prefix so the two cannot drift.
+_GIT_SUBCOMMAND_IN_PATTERN = re.compile(r"\\bgit\\s\+([a-z-]+)")
+
 _GIT_DANGER_COMPILED = tuple(
-    (re.compile(pattern, re.IGNORECASE), reason)
+    (
+        re.compile(pattern, re.IGNORECASE),
+        reason,
+        (_GIT_SUBCOMMAND_IN_PATTERN.match(pattern).group(1)
+         if _GIT_SUBCOMMAND_IN_PATTERN.match(pattern) else ""),
+    )
     for pattern, reason in GIT_DANGER_PATTERNS
 )
+
+_GIT_SUBCOMMAND_RE = re.compile(r"^\s*git\s+(?:-[^\s]+\s+)*([a-z][a-z-]*)", re.IGNORECASE)
+
+
+def git_subcommand(segment: str) -> str:
+    """The git subcommand a segment invokes, lowercased, or ``""``."""
+    match = _GIT_SUBCOMMAND_RE.match(segment or "")
+    return match.group(1).lower() if match else ""
+
+
+def _git_danger_segment_reason(segment: str) -> Optional[str]:
+    """The refusal for ONE shell segment that actually invokes ``git``."""
+    if command_word(segment) != "git":
+        return None
+    if _GIT_FORCE_WITH_LEASE_RE.search(segment):
+        return None
+    subcommand = git_subcommand(segment)
+    for pattern, reason, pattern_subcommand in _GIT_DANGER_COMPILED:
+        # `git commit -m "…git clean -xdf…"` is a commit, not a clean. Only the
+        # rules for the subcommand this segment actually runs may refuse it.
+        if pattern_subcommand and subcommand and pattern_subcommand != subcommand:
+            continue
+        if pattern.search(segment):
+            return reason
+    return None
 
 
 def git_danger_reason(command: str) -> Optional[str]:
     """Return the reason a command is a destructive git call, else None.
 
-    Case-insensitive match on the raw command text.
+    Case-insensitive, and evaluated **per shell segment whose command word is
+    actually** ``git`` — not against the raw command text. Two measured reasons
+    (30-day corpus, 96,542 tool calls, exa-bench-05):
+
+    * The raw text includes heredoc bodies and quoted arguments, so a commit
+      message or PR body describing ``git reset --hard``, and a
+      ``python -c "…'git push --force'…"`` probe, both refused. 130 of 389.
+    * ``(?:[^\\n]*\\s)?`` spans ``&&`` and ``;``, so the ``--force`` of a later
+      ``git worktree remove … --force`` completed an earlier ``git push``.
+
+    This is the same narrowing :func:`is_dangerous_rm_command` documents, for
+    the same reason: these checks became able to REFUSE when exa-bench-05
+    removed ``|| true``, so a match on prose is now a blocked call.
     """
-    for pattern, reason in _GIT_DANGER_COMPILED:
-        if pattern.search(command):
+    for segment in command_segments(command):
+        reason = _git_danger_segment_reason(segment)
+        if reason:
             return reason
     return None
 
@@ -1079,6 +1654,17 @@ def check_agent_rules(
 WRITE_BOUNDARY_GUARD_ENV = "ICDEV_WRITE_BOUNDARY_GUARD"
 WRITE_BOUNDARY_EXTRA_ROOTS_ENV = "ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS"
 
+#: ``enforce`` (refuse the call) or ``monitor`` (compute the verdict, allow it).
+#: exa-bench-07 shipped this check enforcing, at a time when ``|| true`` in
+#: ``.claude/settings.json`` was discarding every refusal — so it had never
+#: actually refused anything and its fire rate had never been measured. Removing
+#: that wrapper is what makes the rate matter, so it was measured before the
+#: wrapper came off, and the parse defects it exposed were fixed rather than the
+#: check stood down; see :func:`check_write_outside_worktree`. Re-measure with
+#: ``python tools/hooks/fire_rate_survey.py --check write_outside_worktree``
+#: before changing this. NEVER flip it without a fresh survey.
+WRITE_BOUNDARY_DEFAULT_MODE = "enforce"
+
 #: :func:`resolve_write_target` verdicts that are not a path.
 SKIP_TARGET = "skip"                  #: not a file on disk — never a violation
 UNRESOLVABLE_TARGET = "unresolvable"  #: cannot be placed — treated as OUTSIDE
@@ -1094,9 +1680,28 @@ _NULL_SINKS = frozenset({
 #: ``C:\x`` / ``C:/x`` — absolute on Windows, and on POSIX a path into a
 #: filesystem this host does not have.
 _WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+#: Git Bash spells ``C:\AI\ICDev`` as ``/c/AI/ICDev``, and the Bash tool on this
+#: platform IS Git Bash. Resolving that literally gives ``C:\c\AI\ICDev``, which
+#: is outside every sanctioned root — so 539 of the first survey's 2,526 fires
+#: were a session writing INSIDE its own worktree, spelled the way the shell it
+#: was running in spells it. ``/cygdrive/c/…`` is the Cygwin form of the same.
+#: Single-letter first component only, so ``/tmp`` and ``/etc`` are untouched.
+_MSYS_DRIVE_RE = re.compile(r"^/(?:cygdrive/)?([A-Za-z])(?=/|$)")
 #: ``C:x`` — drive-RELATIVE. Its meaning depends on the shell's per-drive cwd,
 #: which is exactly the state this module refuses to consult.
 _WINDOWS_DRIVE_RELATIVE_RE = re.compile(r"^[A-Za-z]:(?![\\/])")
+
+#: Directories under ``~/.claude`` that belong to the HARNESS, not to the
+#: session — it writes them on the session's behalf and the session never names
+#: them. ``plans`` alone was 371 of the first survey's fires: plan mode writes
+#: the plan file, and refusing that refuses plan mode.
+#:
+#: Enumerated rather than allowing ``~/.claude`` wholesale, because the same
+#: directory holds ``settings.json`` (which wires this hook) and ``hooks/``
+#: (which implements it). A guard that permits writes to its own configuration
+#: is not a guard.
+_CLAUDE_HARNESS_DIRS = ("projects", "plans", "todos", "jobs", "shell-snapshots")
 
 #: Home references a shell would expand but a raw string comparison would not.
 #: Deliberately narrow: these are the ones that reach a persistence surface
@@ -1113,7 +1718,6 @@ _WRITE_TOOL_NAMES = frozenset({
 })
 _WRITE_PATH_KEYS = ("file_path", "path", "notebook_path", "target_file", "filename")
 
-_SEGMENT_SPLIT_RE = re.compile(r"\|\||&&|[;|\n]")
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 #: Wrappers that precede the real verb. Stripped so ``sudo mkdir /etc/x`` is
 #: still read as a ``mkdir``.
@@ -1152,15 +1756,23 @@ def bash_write_targets(command: str) -> List[str]:
     Deletes are NOT included: ``rm`` outside the worktree is already refused by
     :func:`check_dangerous_rm` and the ``no_delete`` tier, and folding them in
     here would report one violation under two names.
-    """
-    targets: List[str] = [
-        path for path, is_write, _ in bash_file_targets(command or "") if is_write
-    ]
 
-    for segment in _SEGMENT_SPLIT_RE.split(command or ""):
+    Both passes run per SEGMENT, over :func:`command_segments`. Scanning the raw
+    command instead is what put 758 heredoc-body fragments into the first
+    survey: ``cat > .tmp/prbody.md <<'EOF'`` followed by a PR body that mentions
+    ``tools/hooks/shared_checks.py`` was read as a write to ``C:\\tools\\hooks``.
+    The body of a heredoc is data, and :func:`strip_heredoc_data` already knows
+    which heredocs are data and which are an interpreter's source.
+    """
+    targets: List[str] = []
+
+    for segment in command_segments(command or ""):
         segment = segment.strip()
         if not segment:
             continue
+        targets.extend(
+            path for path, is_write, _ in bash_file_targets(segment) if is_write
+        )
         try:
             tokens = shlex.split(segment, posix=(os.name != "nt"))
         except ValueError:
@@ -1168,14 +1780,13 @@ def bash_write_targets(command: str) -> List[str]:
         # Leading `VAR=value` assignments and wrapper commands are not the verb.
         while tokens and (
             _ENV_ASSIGN_RE.match(tokens[0])
-            or os.path.basename(_unquote(tokens[0])).lower().removesuffix(".exe")
-            in _COMMAND_WRAPPERS
+            or _verb_of(tokens[0]) in _COMMAND_WRAPPERS
         ):
             tokens = tokens[1:]
         if not tokens:
             continue
 
-        verb = os.path.basename(_unquote(tokens[0])).lower().removesuffix(".exe")
+        verb = _verb_of(tokens[0])
         rest = tokens[1:]
         positional = [t for t in rest if not t.startswith("-")]
 
@@ -1250,10 +1861,11 @@ def sanctioned_write_roots(repo_root: Optional[Path] = None) -> Tuple[Path, ...]
       literal ``/tmp`` and ``/var/tmp`` (on Windows a Git-Bash ``> /tmp/x``
       really does land in ``C:\\tmp``, which CLAUDE.md documents);
     * ``$ICDEV_WORKTREE_ROOT`` when an operator relocated the worktree base;
-    * ``~/.claude/projects`` — per-session agent state and memory. NOT
-      ``~/.claude`` itself: ``settings.json`` there wires the PreToolUse hook, so
-      a write to it edits this guard, which is the persistence surface the check
-      exists to refuse;
+    * the harness's own state directories under ``~/.claude`` —
+      :data:`_CLAUDE_HARNESS_DIRS`. NOT ``~/.claude`` itself: ``settings.json``
+      there wires the PreToolUse hook, and ``hooks/`` holds its implementation,
+      so a write to either edits this guard — which is the persistence surface
+      the check exists to refuse;
     * anything in ``$ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS`` (``os.pathsep``-joined).
     """
     roots: List[Path] = []
@@ -1282,7 +1894,9 @@ def sanctioned_write_roots(repo_root: Optional[Path] = None) -> Tuple[Path, ...]
     add("/var/tmp")  # nosec B108 -- see above
     add(os.environ.get("ICDEV_WORKTREE_ROOT", "").strip())
     try:
-        add(Path.home() / ".claude" / "projects")
+        home_claude = Path.home() / ".claude"
+        for name in _CLAUDE_HARNESS_DIRS:
+            add(home_claude / name)
     except RuntimeError:
         pass
     for part in (os.environ.get(WRITE_BOUNDARY_EXTRA_ROOTS_ENV, "") or "").split(
@@ -1317,10 +1931,29 @@ def resolve_write_target(raw: str, anchor: Path):
                 return UNRESOLVABLE_TARGET
             break
 
+    # `/c/AI/ICDev/...` is how the shell that issued the command spells an
+    # absolute Windows path. Translated before the containment comparison so a
+    # write into the session's own worktree is recognised as one; on POSIX
+    # `/c/...` is an ordinary path and is left exactly as written.
+    if os.name == "nt":
+        msys = _MSYS_DRIVE_RE.match(text)
+        if msys:
+            text = f"{msys.group(1).upper()}:/{text[msys.end():].lstrip('/')}"
+
     # UNC (`\\server\share`) names a host this check cannot reason about, and a
     # drive-relative `C:x` means "the cwd OF DRIVE C", which is per-process shell
     # state. Both are outside by construction rather than by comparison.
-    if text.startswith("\\\\") or _WINDOWS_DRIVE_RELATIVE_RE.match(text):
+    #
+    # ONE leading backslash counts too, and the platform is why. On Windows
+    # `\attacker\share\payload` is drive-root-relative, so Path() calls it
+    # absolute and it resolves outside the worktree on its own. On POSIX the
+    # backslash is an ordinary filename character, so the same string is a
+    # RELATIVE name that gets joined onto the anchor and lands INSIDE — the
+    # guard silently reverses verdict across platforms, which is how this passed
+    # on Windows and failed only on Linux CI. Judged by construction here so
+    # both platforms agree; a POSIX file genuinely named with a leading
+    # backslash is pathological, and refusing the write is the safe direction.
+    if text.startswith("\\") or _WINDOWS_DRIVE_RELATIVE_RE.match(text):
         return UNRESOLVABLE_TARGET
     # A Windows-absolute path evaluated on POSIX is not relative to the worktree
     # — joining it onto the anchor would silently make `C:/Windows/...` INSIDE.
@@ -1447,10 +2080,39 @@ def check_write_outside_worktree(
     except Exception:  # noqa: BLE001 — fail open on a broken guard, never on a match
         return None
 
-    # Past this point the rule MATCHED, so it always blocks (or is explicitly in
-    # monitor mode). Nothing above may be allowed to throw us into the fail-open
-    # branch after a violation has been found.
-    if (os.environ.get(WRITE_BOUNDARY_GUARD_ENV, "").strip().lower()) == "monitor":
+    # Past this point the rule MATCHED, and by default that is a refusal.
+    #
+    # exa-bench-07 shipped this check enforcing while `|| true` in
+    # .claude/settings.json was still discarding every refusal, so nothing it
+    # returned could reach anyone and its fire rate had never been measured.
+    # exa-bench-05 removes that wrapper, which is what makes the rate matter.
+    # Measured first, on 96,799 real tool calls, it was 2,526 — 2.61%, thirty
+    # times the next check — and every class of it was a PARSE defect rather
+    # than an escape:
+    #
+    #   758  a heredoc BODY scanned as if it were commands: `cat > .tmp/pr.md
+    #        <<'EOF'` followed by a PR body naming `tools/hooks/shared_checks.py`
+    #   641  `$( … 2>/dev/null)` — the trailing `)` stayed on the token, so
+    #        `/dev/null)` missed `_NULL_SINKS` and read as a write to `C:\dev`
+    #   539  MSYS `/c/AI/ICDev/…` resolved to `C:\c\AI\ICDev\…`, i.e. a session
+    #        writing INSIDE its own worktree, spelled the way its shell spells it
+    #   370  a `>` inside a quoted string taken for a redirection operator —
+    #        `--jq '"#\(.n) -> \(.state)"'` returned `\(.state)"'` as a path
+    #   371  `~/.claude/plans`, which plan mode writes and no session named
+    #    38  `\` read as an escape inside double quotes, eating the separators
+    #        out of `> "C:\Users\…\x.json"`
+    #
+    # Fixing those — not standing the check down — leaves 850 (0.878%), of
+    # which 261 are unmeasurable in replay because the worktree the call was
+    # made from no longer exists. The 589 that remain are writes into
+    # `C:\AI\.worktrees` and `C:\AI\.wt*`: the historic worktree sprawl that
+    # `check_worktree_path` already refuses to CREATE and that
+    # `worktree_paths.is_sanctioned` deliberately does not bless. Those are the
+    # finding, so it stays enforcing. `ICDEV_WRITE_BOUNDARY_GUARD=monitor`
+    # records without refusing; `=0` turns it off.
+    mode = (os.environ.get(WRITE_BOUNDARY_GUARD_ENV, "").strip().lower()
+            or WRITE_BOUNDARY_DEFAULT_MODE)
+    if mode != "enforce":
         return None
     detail = "\n".join(
         f"    {raw}  ->  {resolved}" if raw != resolved else f"    {raw}"

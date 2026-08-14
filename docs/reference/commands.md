@@ -2665,6 +2665,23 @@ python tools/audit/chain_sweep.py --db-path /path/to/evidence.db   # sweep an ev
 # API: GET /api/govchain-provenance/chain-health
 # Scheduled: rides the genesis `audit` reflex (args/genesis_config.yaml -> reflexes.audit.checks)
 
+# PreToolUse hook — per-check fire-rate survey (exa-bench-05)
+# Replays the tool calls of recent sessions through every check in
+# .claude/hooks/pre_tool_use.py and counts what each one would refuse. Run this
+# BEFORE changing a check or its enforcement posture — a check enabled without a
+# measurement is how nine of them stayed advisory behind `|| true`.
+python tools/hooks/fire_rate_survey.py --json
+python tools/hooks/fire_rate_survey.py --markdown --since-days 30 --project ICDev
+python tools/hooks/fire_rate_survey.py --check env_file_access --samples 25
+python tools/hooks/fire_rate_survey.py --live-git          # evaluate branch_deletion for real
+python tools/hooks/fire_rate_survey.py --gate --max-fire-rate 0.01   # exit 1 above 1%
+# Corpus is the Claude Code transcripts (~/.claude/projects/**/*.jsonl) — the only
+# source that carries the OPERANDS. hook_events persists tool-input key names
+# only, and is reported unusable rather than contributing a misleading zero.
+# Enforcement switches (read by the hook, not by this tool):
+#   ICDEV_PRETOOLUSE_ENFORCE=0   all nine checks report but never refuse
+#   ICDEV_<CHECK>_GUARD=0        skip one check — see CHECK_KILL_SWITCHES
+
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server

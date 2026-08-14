@@ -266,7 +266,6 @@ tests/govcon/test_clause_risk_engine.py
 tests/govcon/test_past_performance_suggester.py
 tests/hooks/test_headless_parity.py
 tests/hooks/test_network_egress.py
-tests/hooks/test_shared_checks.py
 tests/http/test_egress_guard.py
 tests/http/test_fetch_extract.py
 tests/http/test_fetch_extract_retrofit.py
