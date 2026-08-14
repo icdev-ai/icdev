@@ -51,7 +51,13 @@ CREATE TABLE cpmp_contracts (
     id              TEXT PRIMARY KEY,
     contract_number TEXT,
     title           TEXT,
-    status          TEXT
+    status          TEXT,
+    -- The ISR/SSR check reads these to decide whether FAR 52.219-9 applies at
+    -- all: a contract under the FAR 19.702(a)(1) threshold, or with no active
+    -- subcontractors, owes no subcontracting plan and therefore no report.
+    total_value     REAL,
+    funded_value    REAL,
+    ceiling_value   REAL
 );
 CREATE TABLE cpmp_subcontractors (
     id                      TEXT PRIMARY KEY,
@@ -123,8 +129,12 @@ def board(monkeypatch):
     conn = _storage_conn(raw)
 
     raw.execute(
-        "INSERT INTO cpmp_contracts (id, contract_number, title, status) VALUES (?, ?, ?, ?)",
-        (CONTRACT_ID, "W912-24-C-0001", "Untitled Contract", "active"),
+        "INSERT INTO cpmp_contracts (id, contract_number, title, status, total_value) "
+        "VALUES (?, ?, ?, ?, ?)",
+        # $2M: over the FAR 19.702(a)(1) threshold, so this contract — which has
+        # two active subcontractors below — genuinely owes a subcontracting plan
+        # and an ISR/SSR. That is what makes the third card a true positive.
+        (CONTRACT_ID, "W912-24-C-0001", "Untitled Contract", "active", 2_000_000.0),
     )
     for sub_id, name, value, flowdown, cyber, cmmc in _SUBS:
         raw.execute(

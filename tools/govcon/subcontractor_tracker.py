@@ -72,6 +72,13 @@ _CYBER_THRESHOLD = 100000.0
 # ISR/SSR currency window (days) — reports older than this are flagged
 _ISR_SSR_MAX_AGE_DAYS = 180
 
+# FAR 19.702(a)(1) subcontracting plan threshold. A contract below it owes no
+# subcontracting plan, and therefore no ISR/SSR under FAR 52.219-9(d)(10).
+# Regulatory figure, so it is overridable without a code change.
+_SUBCONTRACTING_PLAN_THRESHOLD = float(
+    _CFG.get("subcontracting_plan", {}).get("threshold", 750000.0)
+)
+
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -686,6 +693,67 @@ def list_sb_reports(contract_id):
 # ── Noncompliance Detection ─────────────────────────────────────────
 
 
+def _subcontracting_plan_required(conn, contract_id):
+    """Whether FAR 52.219-9 obliges this contract to file an ISR/SSR at all.
+
+    Returns ``(required, reason_not_required)``.
+
+    The "no ISR/SSR has been filed" check used to be gated on nothing: any
+    contract without a ``cpmp_small_business_plan`` row produced a HIGH finding.
+    Its three sibling checks are all scoped — flow-down and cybersecurity filter
+    ``status = 'active'``, CMMC additionally filters on subcontract value — and
+    that asymmetry was the defect rather than a nuance. On the live board all
+    seven active contracts had zero ACTIVE subcontractors, so checks #1-#3
+    correctly found nothing while #4 fired HIGH on every one of them; the
+    cpmp_monitor reflex filed a card per contract and two were dispatched to
+    sessions told to "File the outstanding ISR/SSR in eSRS" for a $0 contract
+    with no subcontractors. The pass had never produced a true positive.
+
+    FAR 19.702(a) requires a subcontracting plan only where the contract exceeds
+    the threshold AND subcontracting possibilities exist. Both halves are
+    checked here, because either one alone still admits the false positive: a
+    large contract performed entirely in-house owes no plan, and neither does a
+    small one with subcontractors.
+
+    Value is taken as the greatest of total/funded/ceiling — an IDIQ routinely
+    carries its dollars on ceiling_value with total_value still 0.0, and reading
+    only total_value would under-report the obligation.
+    """
+    row = conn.execute(
+        "SELECT total_value, funded_value, ceiling_value FROM cpmp_contracts WHERE id = %s",
+        (contract_id,),
+    ).fetchone()
+    if not row:
+        return False, "contract not found"
+
+    values = dict(row)
+    value = max(
+        float(values.get(field) or 0.0)
+        for field in ("total_value", "funded_value", "ceiling_value")
+    )
+
+    # Scoped to 'active' to match check_flowdown/check_cybersecurity: a
+    # deactivated subcontractor is not evidence of ongoing subcontracting.
+    sub_row = conn.execute(
+        "SELECT COUNT(*) AS n FROM cpmp_subcontractors "
+        "WHERE contract_id = %s AND status = 'active'",
+        (contract_id,),
+    ).fetchone()
+    active_subs = int(dict(sub_row).get("n") or 0) if sub_row else 0
+
+    if active_subs == 0:
+        return False, (
+            "No active subcontractors — no subcontracting plan is required "
+            "under FAR 19.702(a), so no ISR/SSR is owed."
+        )
+    if value < _SUBCONTRACTING_PLAN_THRESHOLD:
+        return False, (
+            f"Contract value ${value:,.0f} is below the FAR 19.702(a)(1) "
+            f"subcontracting plan threshold of ${_SUBCONTRACTING_PLAN_THRESHOLD:,.0f}."
+        )
+    return True, None
+
+
 def detect_noncompliance(contract_id):
     """Detect all types of noncompliance for a contract's subcontractors.
 
@@ -769,20 +837,31 @@ def detect_noncompliance(contract_id):
             "WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
             (contract_id,),
         ).fetchone()
+
+    # Only the "never filed" branch below needs this; a report already on file
+    # is itself proof the obligation exists (see the else branch).
+    isr_ssr_applicable, isr_ssr_skip_reason = _subcontracting_plan_required(conn, contract_id)
     conn.close()
 
     if not latest_report:
-        findings.append(
-            {
-                "category": "isr_ssr",
-                "severity": "high",
-                "sub_id": None,
-                "company_name": None,
-                "description": "No ISR/SSR report has been filed for this contract",
-                "subcontract_value": None,
-            }
-        )
+        # Gated: a contract that owes no subcontracting plan owes no report, and
+        # reporting one as HIGH noncompliance sends a PM to eSRS to file nothing.
+        if isr_ssr_applicable:
+            findings.append(
+                {
+                    "category": "isr_ssr",
+                    "severity": "high",
+                    "sub_id": None,
+                    "company_name": None,
+                    "description": "No ISR/SSR report has been filed for this contract",
+                    "subcontract_value": None,
+                }
+            )
     else:
+        # UNGATED on purpose. An existing report proves the contract is in the
+        # reporting regime, so a stale one stays a finding however the contract
+        # looks today — otherwise deactivating the last subcontractor would
+        # silently retire a live reporting gap rather than closing it.
         try:
             created = datetime.fromisoformat(latest_report["created_at"].replace("Z", "+00:00"))
             age_days = (datetime.now(timezone.utc) - created.replace(tzinfo=timezone.utc)).days
@@ -824,6 +903,11 @@ def detect_noncompliance(contract_id):
         "category_counts": category_counts,
         "compliant": len(findings) == 0,
         "findings": findings,
+        # Reported rather than silently applied: a check skipped for good reason
+        # and a check that passed are indistinguishable from the outside, and
+        # that is how an inert compliance pass survives unnoticed.
+        "isr_ssr_applicable": isr_ssr_applicable,
+        "isr_ssr_not_applicable_reason": isr_ssr_skip_reason,
     }
 
 
