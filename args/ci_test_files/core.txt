@@ -1186,3 +1186,21 @@ tests/cortex/test_summarize_routing_airgap.py
 # visibility ctx-trust-04 has until predicate pushdown lands.
 # 18 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_iqe_adapter_connection_ownership.py
+# ctx-enf-02, 1 of 10. tests/cortex/ holds 50 modules and, until this PR, exactly
+# ZERO of them gated a merge -- on the component that enforces tenant isolation,
+# Bell-LaPadula read-down, egress redaction and an append-only NIST-AU trail. The
+# ten security-critical ones are being gated ONE PER PR, in the PR that proves the
+# file green; bulk-widening 50 files at once is what turns main red and gets the
+# gate switched off. Highest blast radius first: this file pins the ctx-expose-03
+# fix, where the NLQ fallback executed the analyst's generated SQL through the
+# dashboard's context-free execute_safely -- no tenant_id, no classification, so
+# the RLS predicate had nothing to filter on and one tenant's question could read
+# another tenant's rows. Pins all three directions: the caller's tenant +
+# classification ARE threaded onto the connection, an unscopable connection RAISES
+# under fail_closed instead of running unscoped, and the fail-open default at least
+# WARNS rather than swallowing. The live PostgreSQL leakage proof in the same file
+# skips cleanly under the SQLite-forced conftest (RLS predicates only exist on PG)
+# and is run separately with CORTEX_ISOLATION_PG=1 -- it is not counted as CI
+# signal here, and it never passes vacuously.
+# 7 tests (6 + 1 PG skip), <1s, fully stubbed: no DB service, no LLM, no network.
+tests/cortex/test_tenant_isolation.py
