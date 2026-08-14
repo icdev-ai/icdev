@@ -1043,12 +1043,13 @@ def check_trust_coverage() -> CoherenceCheck:
 
     # TRUST v2 (trust-spine-01): the two-stage gate ships in both trees with its
     # profile config, and every guard it can name is recordable.
-    checks["tools/quality/trust_gate.py"] = (
-        PROJECT_ROOT / "tools/quality/trust_gate.py"
-    ).is_file()
-    checks["icdev/tools/quality/trust_gate.py"] = (
-        PROJECT_ROOT / "icdev/tools/quality/trust_gate.py"
-    ).is_file()
+    for _mod in ("trust_gate.py", "kg_grounding.py"):
+        checks[f"tools/quality/{_mod}"] = (
+            PROJECT_ROOT / "tools/quality" / _mod
+        ).is_file()
+        checks[f"icdev/tools/quality/{_mod}"] = (
+            PROJECT_ROOT / "icdev/tools/quality" / _mod
+        ).is_file()
     tg = PROJECT_ROOT / "args/trust_gate.yaml"
     tg_text = _read_text(tg) if tg.is_file() else ""
     checks["trust_gate.yaml declares all four profiles"] = all(

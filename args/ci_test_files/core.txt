@@ -1328,6 +1328,7 @@ tests/cortex/test_rls_index_coverage.py
 # other that it actually LOWERS the estimated cost -- "the index name appears"
 # would still pass on a worse plan.
 tests/pg_tier/test_cortex_rls_index_plan.py
+tests/test_kg_grounding.py
 # A code-level reflex finding files ONE card, not one per affected row
 # (ctx-perf-07). cpmp_monitor pass 3 filed a [SUBCON] ISR/SSR card PER CONTRACT:
 # seven cards for ONE defect -- detect_noncompliance check #4 had no FAR

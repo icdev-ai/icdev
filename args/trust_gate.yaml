@@ -11,10 +11,16 @@
 # constant — so a guard name that is not in PUBLISH_GATES cannot be recorded and
 # must not appear here. tests/test_trust_gate.py asserts the two agree.
 #
-# ONLY implemented guards are declared. kg_guard (phase 2) and structure_guard
-# (phase 3) are added by the phase that ships them, together with the migration
-# that widens the CHECK. Declaring a guard before it can fire is the
-# declared-but-unconsumed defect this framework exists to catch.
+# ONLY implemented guards are declared. structure_guard (phase 3) is added by
+# the phase that ships it, together with the migration that widens the CHECK.
+# Declaring a guard before it can fire is the declared-but-unconsumed defect
+# this framework exists to catch.
+#
+# kg_guard needs a graph connection AND a populated graph. It reports
+# `unmeasurable` without either, and under the OBSERVED schema (kg_ontology
+# ships empty) it can only ever report `kg_unattested`, which does not block.
+# So `block` here means: block IF the graph ever gains a declared ontology.
+# It is not a claim that the guard refuses anything today.
 
 trust_gate:
   default_profile: drafting
@@ -40,6 +46,7 @@ trust_gate:
         placeholder_guard: block
         citation_guard: block
         claim_guard: block
+        kg_guard: warn
         cove_guard: warn
         constitution_guard: warn
       unmeasurable: warn
@@ -56,6 +63,7 @@ trust_gate:
         placeholder_guard: block
         citation_guard: block
         claim_guard: block
+        kg_guard: block
         cove_guard: block
         constitution_guard: block
       unmeasurable: block
@@ -67,11 +75,12 @@ trust_gate:
       description: >-
         ANVIL builds, agent adapters, MCP tool output. Claims here are about the
         system itself and are usually assertion-shaped rather than cited prose,
-        so claim_guard is off until the KG tier lands (phase 2).
+        so claim_guard is off and kg_guard carries the entity-level checking.
       guards:
         placeholder_guard: warn
         citation_guard: warn
         claim_guard: skip
+        kg_guard: warn
         cove_guard: skip
         constitution_guard: warn
       unmeasurable: warn
@@ -88,6 +97,7 @@ trust_gate:
         placeholder_guard: skip
         citation_guard: warn
         claim_guard: warn
+        kg_guard: warn
         cove_guard: skip
         constitution_guard: skip
       unmeasurable: warn
