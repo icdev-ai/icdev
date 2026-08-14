@@ -1447,6 +1447,7 @@ tests/cortex/test_cortex_reach_decisions.py
 # half of the degradation contract against a refused port, and the doc pointers in
 # client.py + its icdev/ mirror + phase-19. No DB, no LLM, no network egress.
 tests/cortex/test_child_app_access_pattern.py
+tests/test_app.py
 # ctx-perf-01 part 2. Part 1 memoized the config PATH; the calls themselves were
 # left alone and its own docstring said so. Measured here, not eyeballed: one
 # governed cortex.complete loaded args/cortex_config.yaml SIX times and a

@@ -513,7 +513,6 @@ tests/test_anvil_critique.py
 tests/test_api_gateway.py
 tests/test_api_key_scopes.py
 tests/test_api_surface_extractor.py
-tests/test_app.py
 tests/test_append_only_audit_nlp.py
 tests/test_arr_error_recovery.py
 tests/test_assessor_accountability_fixes.py
