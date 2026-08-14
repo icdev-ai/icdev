@@ -1186,3 +1186,9 @@ tests/cortex/test_summarize_routing_airgap.py
 # visibility ctx-trust-04 has until predicate pushdown lands.
 # 18 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_iqe_adapter_connection_ownership.py
+
+# ctx-perf-02: _allowed_tables() is hoisted out of the SQL-allowlist comprehension.
+# Asserts the CALL COUNT (not elapsed time) so a revert fails deterministically on
+# any runner, plus the unchanged accept/reject behaviour of the allowlist gate.
+# 9 tests, <1s: no LLM, no network; the one unmocked case reads the local registry.
+tests/cortex/test_analyst_allowlist_hoist.py

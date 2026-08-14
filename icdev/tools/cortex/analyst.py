@@ -345,7 +345,8 @@ def _validate_sql_safety(
             _GATE_ALLOWLIST,
             started,
         )
-    off_allowlist = [t for t in tables if t not in _allowed_tables()]
+    allowed = _allowed_tables()
+    off_allowlist = [t for t in tables if t not in allowed]
     if off_allowlist:
         _refuse(
             question,
