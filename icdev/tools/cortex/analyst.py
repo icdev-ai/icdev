@@ -78,7 +78,7 @@ from tools.quality.citation_grounding import (
     validate_citations,
 )
 
-from .config import resolve_fail_closed
+from .config import nlq_fallback_enabled, resolve_fail_closed
 from .schemas import Citation, CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger(__name__)
@@ -98,6 +98,10 @@ _GATE_NLQ_TRANSLATION = "nlq_translation"
 _GATE_SQL_READONLY = "sql_readonly"
 _GATE_ALLOWLIST = "table_allowlist"
 _GATE_NLQ_EXECUTION = "nlq_execution"
+# Recorded (as "skip") when analyst.nlq_fallback_enabled: false refused an
+# otherwise-eligible IQE->NLQ degrade, so the policy is visible in the report
+# the caller receives rather than being an invisible non-event.
+_GATE_NLQ_FALLBACK = "nlq_fallback_policy"
 # Citation/grounding gate (ctx-analyst-03): recorded only when the answer text
 # is LLM-summarized — raw row answers are grounded by construction and add no
 # gate entry, so the gate sequences asserted by ctx-analyst-01/-02 stay stable.
@@ -841,9 +845,13 @@ def ask(
         question:    Free-form question (e.g. "show all satellites").
         mode:        "auto" — IQE first, NL→SQL fallback when IQE cannot
                      resolve/translate/authorize the question (never on
-                     execution failures, and never when ``canvas=`` or
-                     ``collections=`` pinned the scope);
-                     "iqe" — IQE only; "nlq" — NL→SQL only.
+                     execution failures, never when ``canvas=`` or
+                     ``collections=`` pinned the scope, and never when
+                     ``analyst.nlq_fallback_enabled: false`` in
+                     args/cortex_config.yaml — the IQE error is re-raised
+                     with a ``nlq_fallback_policy: skip`` gate recorded);
+                     "iqe" — IQE only; "nlq" — NL→SQL only (an explicit
+                     opt-in, so ``nlq_fallback_enabled`` does not govern it).
         ctx:         Caller identity/policy context; tenant_id and
                      classification are threaded into the DB connection on
                      the IQE path. ``fail_closed`` also hardens the safety
@@ -923,6 +931,20 @@ def ask(
             and failed_gates <= set(_FALLBACK_GATES)
         )
         if not eligible:
+            raise
+        # Policy gate (analyst.nlq_fallback_enabled). Deliberately checked AFTER
+        # structural eligibility so the refusal is only recorded on calls that
+        # would actually have degraded into LLM-generated SQL — an operator who
+        # disabled the fallback wants to see the calls their policy stopped, not
+        # every unrelated IQE failure. mode="nlq" is untouched: that is an
+        # explicit opt-in by name, not a fallback.
+        if not nlq_fallback_enabled():
+            _record(exc.governance, _GATE_NLQ_FALLBACK, "skip")
+            logger.info(
+                "cortex.analyst: IQE path failed (%s) but analyst."
+                "nlq_fallback_enabled is false — refusing the NLQ fallback",
+                exc,
+            )
             raise
         logger.info("cortex.analyst: IQE path failed (%s); falling back to NLQ", exc)
         # The IQE gate failure stays recorded in outcomes as history, but it
