@@ -308,7 +308,16 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     lines_removed         INTEGER DEFAULT 0,
     completed_via_bypass  INTEGER DEFAULT 0,
     due_date              TEXT,
-    sla_hours             INTEGER
+    sla_hours             INTEGER,
+    -- RLS columns. get_connection() attaches the global row-level-security
+    -- predicate, which filters on `classification`; without it every read of
+    -- this table through get_connection() dies with
+    -- "sqlite3.OperationalError: no such column: classification" rather than
+    -- returning rows. That is what made tests/test_app.py's overview test skip
+    -- itself as "SQLite test DB lacks platform schema" - a vacuous pass hiding
+    -- a schema gap, not a missing feature. Defaults match pg_consolidated.sql.
+    classification        TEXT DEFAULT 'CUI',
+    tenant_id             TEXT DEFAULT 'default'
 );
 CREATE TABLE IF NOT EXISTS kanban_task_deps (
     task_id         TEXT NOT NULL,

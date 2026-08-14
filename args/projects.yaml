@@ -5475,6 +5475,13 @@ projects:
     trust_deltas evidence + mutable approval_items state (the approval_inbox split),
     a side-by-side delta review panel, and a mandatory force_reason on every override
     (trust-hitl-01..)'
+  - 'disc: Discrimination evidence (D396/D397) - every guardrail ICDEV has verifies
+    STRUCTURE, none verifies DISCRIMINATION, and a check that cannot fail carries zero
+    bits. Seven checks measured worthless in one session on 2026-08-14, including one
+    written while fixing the others. Makes red-first proof an ARTIFACT rather than an
+    ANVIL instruction, runs changed tests both alone and in-suite, counts a CI skip as
+    unmeasured rather than passing, and probes a substrate for rows before work is
+    designed against it (trust-disc-01..06)'
   - 'anchor: Pluggable anchor transport — GovChain is NOT greenfield; the one missing
     piece is a transport. hfc is in no requirements file so HAS_FABRIC is permanently
     False, and the fabric.cli_path peer subprocess transport declared in
@@ -5510,6 +5517,9 @@ projects:
   - key: anchor
     title: v2 — Pluggable anchor transport
     priority: low
+  - key: disc
+    title: v2 — Discrimination evidence (D396/D397)
+    priority: high
 - key: kanban-external-dispatch
   name: Kanban External-Repo Dispatch
   description: 'Make ICDev''s kanban runner able to BUILD INTO external repos (compass,

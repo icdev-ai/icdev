@@ -1372,6 +1372,7 @@ tests/test_reflex_finding_scope.py
 # _DETAIL_ROW_LIMIT sampling cap the timing fields inherit is not widened.
 # 14 tests, ~1s, gate seams patched: no DB service, no LLM, no network.
 tests/cortex/test_governance_timing.py
+tests/cortex/test_chat_routing.py
 # One POST /cortex/api/chat opened FOUR connections for one turn:
 # chat_session.ensure_session, chat_session.record_turn twice, and the
 # blueprint's cortex_search_history insert, each opening/committing/closing its
@@ -1448,6 +1449,7 @@ tests/test_cnr_mission_canvas.py
 # half of the degradation contract against a refused port, and the doc pointers in
 # client.py + its icdev/ mirror + phase-19. No DB, no LLM, no network egress.
 tests/cortex/test_child_app_access_pattern.py
+tests/test_app.py
 # ctx-perf-01 part 2. Part 1 memoized the config PATH; the calls themselves were
 # left alone and its own docstring said so. Measured here, not eyeballed: one
 # governed cortex.complete loaded args/cortex_config.yaml SIX times and a
