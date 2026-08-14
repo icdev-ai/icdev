@@ -439,12 +439,41 @@ def metrics_client(icdev_db, monkeypatch):
     monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
     init_db()
 
-    from tools.cortex.blueprint import cortex_bp
-    from tools.dashboard.app import app
+    # A FRESH app, not the shared tools.dashboard.app singleton. Registering
+    # onto that singleton behind `if "cortex" not in app.blueprints` looks safe
+    # and is not: the guard skips only when the blueprint is ALREADY present,
+    # and the case that fails is precisely when it is not. Any earlier module in
+    # the run that drives the shared app without registering cortex_bp locks
+    # Flask's setup phase, and the registration then raises
+    #
+    #   AssertionError: The setup method 'register_blueprint' can no longer be
+    #   called on the application. It has already handled its first request.
+    #
+    # Which is exactly what CI reported the moment this file was gated. cortex_bp
+    # carries its own before_request, so a bare app suffices.
+    from flask import Flask
 
-    if "cortex" not in app.blueprints:
-        app.register_blueprint(cortex_bp)
+    from tools.cortex.blueprint import cortex_bp
+    from tools.dashboard.app import app as _dashboard_app
+
+    app = Flask(
+        __name__,
+        template_folder=_dashboard_app.template_folder,
+        static_folder=_dashboard_app.static_folder,
+    )
+    app.config.update(_dashboard_app.config)
+    app.jinja_env.filters.update(_dashboard_app.jinja_env.filters)
+    app.jinja_env.globals.update(_dashboard_app.jinja_env.globals)
+    # Context processors too: /cortex/metrics renders through the shared
+    # base.html, which reads `nav_tree` from an app-wide context processor.
+    # Copying filters alone yields a jinja2 UndefinedError instead of the page.
+    app.template_context_processors[None].extend(
+        _dashboard_app.template_context_processors.get(None, [])
+    )
+    app.secret_key = _dashboard_app.secret_key or "test-secret"
     app.config["TESTING"] = True
+    app.register_blueprint(cortex_bp)
+
     with app.test_client() as client:
         with client.session_transaction() as sess:
             sess["user_id"] = "test-admin"
