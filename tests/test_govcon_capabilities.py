@@ -4415,7 +4415,42 @@ def _make_approve_db(tmp_path, section_status="not_started", include_section=Tru
     return db_path
 
 
-def _build_approve_api_app(tmp_path, section_status="not_started", include_section=True):
+# The draft approve/reject routes carry @abac_protect(..., "approve"/"reject")
+# (prop-sec-01). Separation of duties: only a privileged REVIEW role may decide
+# on a draft, a section_writer never self-approves, and an anonymous request
+# falls through every policy to default_deny. A bare Flask test app sets no
+# g.security_context, so without this the PEP returns 403 ABAC_DENIED before the
+# handler ever runs. The gate itself is asserted by TestDraftReviewAbacGate
+# below — these builders authenticate as a reviewer so the tests underneath can
+# exercise the handler behaviour they were written for.
+_DRAFT_REVIEWER_ROLE = "proposal_mgr"
+_DRAFT_REVIEWER_ID = "reviewer@example.mil"
+
+
+def _attach_subject(flask_app, role, user_id=_DRAFT_REVIEWER_ID):
+    """Attach a SecurityContext to every request on ``flask_app``.
+
+    ``role=None`` leaves the app anonymous (no security context at all), which
+    is what an unauthenticated caller looks like to the ABAC PEP.
+    """
+    if role is None:
+        return
+
+    from tools.security.security_context import SecurityContext
+
+    @flask_app.before_request
+    def _set_security_context():
+        from flask import g
+        g.security_context = SecurityContext(user_id=user_id, role=role)
+
+
+def _build_approve_api_app(
+    tmp_path,
+    section_status="not_started",
+    include_section=True,
+    role=_DRAFT_REVIEWER_ROLE,
+    user_id=_DRAFT_REVIEWER_ID,
+):
     """Return (flask_app, fake_get_db) for approve endpoint tests."""
     db_path = _make_approve_db(tmp_path, section_status=section_status, include_section=include_section)
 
@@ -4430,6 +4465,7 @@ def _build_approve_api_app(tmp_path, section_status="not_started", include_secti
     flask_app = Flask(__name__)
     flask_app.config["TESTING"] = True
     flask_app.register_blueprint(govcon_api)
+    _attach_subject(flask_app, role, user_id)
 
     return flask_app, fake_get_db, db_path
 
@@ -4807,7 +4843,13 @@ def _make_reject_db(tmp_path, section_status="not_started", include_section=True
     return db_path
 
 
-def _build_reject_api_app(tmp_path, section_status="not_started", include_section=True):
+def _build_reject_api_app(
+    tmp_path,
+    section_status="not_started",
+    include_section=True,
+    role=_DRAFT_REVIEWER_ROLE,
+    user_id=_DRAFT_REVIEWER_ID,
+):
     """Return (flask_app, fake_get_db, db_path) for reject endpoint tests."""
     db_path = _make_reject_db(tmp_path, section_status=section_status, include_section=include_section)
 
@@ -4822,6 +4864,7 @@ def _build_reject_api_app(tmp_path, section_status="not_started", include_sectio
     flask_app = Flask(__name__)
     flask_app.config["TESTING"] = True
     flask_app.register_blueprint(govcon_api)
+    _attach_subject(flask_app, role, user_id)
 
     return flask_app, fake_get_db, db_path
 
@@ -5104,6 +5147,79 @@ class TestRejectDraftSectionNotChanged:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Tests: ABAC separation-of-duties gate on draft approve/reject (prop-sec-01)
+#
+# The classes above authenticate as a privileged reviewer so they can exercise
+# handler behaviour. These assert the gate that makes that necessary: who is
+# allowed to decide on a draft at all. Without them, a future change that
+# silently dropped @abac_protect from either route would leave the whole file
+# green.
+# ---------------------------------------------------------------------------
+
+
+class TestDraftReviewAbacGate:
+    """Only a privileged review role may approve/reject a proposal draft."""
+
+    def _put(self, flask_app, fake_get_db, verb, draft_id):
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                return c.put(
+                    f"/api/govcon/drafts/{draft_id}/{verb}",
+                    json={},
+                    content_type="application/json",
+                )
+
+    def _approve_as(self, tmp_path, role):
+        flask_app, fake_get_db, _ = _build_approve_api_app(tmp_path, role=role)
+        return self._put(flask_app, fake_get_db, "approve", _APPROVE_DRAFT_ID)
+
+    def _reject_as(self, tmp_path, role):
+        flask_app, fake_get_db, _ = _build_reject_api_app(tmp_path, role=role)
+        return self._put(flask_app, fake_get_db, "reject", _REJECT_DRAFT_ID)
+
+    def test_anonymous_approve_is_denied(self, tmp_path):
+        assert self._approve_as(tmp_path, None).status_code == 403
+
+    def test_anonymous_reject_is_denied(self, tmp_path):
+        assert self._reject_as(tmp_path, None).status_code == 403
+
+    def test_anonymous_denial_names_the_abac_code(self, tmp_path):
+        data = self._approve_as(tmp_path, None).get_json()
+        assert data["code"] == "ABAC_DENIED"
+
+    def test_anonymous_denial_is_default_deny_not_a_named_permit(self, tmp_path):
+        data = self._approve_as(tmp_path, None).get_json()
+        assert data["policy"] == "default_deny"
+
+    def test_section_writer_cannot_self_approve(self, tmp_path):
+        """Separation of duties: the author never signs off on their own draft."""
+        assert self._approve_as(tmp_path, "section_writer").status_code == 403
+
+    def test_section_writer_cannot_self_reject(self, tmp_path):
+        assert self._reject_as(tmp_path, "section_writer").status_code == 403
+
+    def test_section_writer_denial_cites_the_review_policy(self, tmp_path):
+        data = self._approve_as(tmp_path, "section_writer").get_json()
+        assert data["policy"] == "proposal_draft_review_deny_unassigned"
+
+    def test_unknown_role_is_denied(self, tmp_path):
+        """A role absent from every policy falls through to default deny."""
+        assert self._approve_as(tmp_path, "intern").status_code == 403
+
+    @pytest.mark.parametrize(
+        "role", ["capture_mgr", "proposal_mgr", "pm", "reviewer", "tenant_admin", "admin"]
+    )
+    def test_privileged_review_roles_may_approve(self, tmp_path, role):
+        assert self._approve_as(tmp_path, role).status_code == 200
+
+    @pytest.mark.parametrize(
+        "role", ["capture_mgr", "proposal_mgr", "pm", "reviewer", "tenant_admin", "admin"]
+    )
+    def test_privileged_review_roles_may_reject(self, tmp_path, role):
+        assert self._reject_as(tmp_path, role).status_code == 200
 
 
 # ---------------------------------------------------------------------------

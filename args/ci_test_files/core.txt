@@ -1061,3 +1061,12 @@ tests/test_cpmp_overdue_deliverable_state.py
 # deterministic card id, and an unrunnable file never overwriting a real
 # verdict. Hermetic: temp SQLite, subprocess calls stubbed, no network.
 tests/test_ungated_test_drift.py
+# tsg-drift-bf36818e8b — govcon proposal capability API surface: drafts list,
+# quality scoring, approve/reject review decisions and their section-status
+# transitions, Q&A records, question status, knowledge base. Gated after fixing
+# 33 tests that had been red since prop-sec-01 (2026-07-07) put an ABAC
+# separation-of-duties gate on draft approve/reject and never taught the test
+# about it — TestDraftReviewAbacGate now asserts that gate directly, so a
+# future silent removal of @abac_protect fails here. 630 tests, ~25s,
+# in-memory/tmp sqlite, no network/LLM. Gated in the PR that makes it pass.
+tests/test_govcon_capabilities.py
