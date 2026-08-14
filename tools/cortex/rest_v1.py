@@ -216,6 +216,14 @@ def _governed(
 
     A blocked pre-check raises :class:`GovernanceBlockedError`, which the
     endpoint decorator maps to a 403 governance envelope.
+
+    ONLY for an operation that is NOT already governed. Every facade imported
+    from ``.api`` above is a ``_governed_facade`` and runs this chain itself, so
+    passing one here runs it TWICE over one call: two gateway screens, two input
+    and two output redaction passes, two ``register_citation`` rows, two
+    ``cortex_audit`` rows — which also double-counts the call in /cortex/metrics
+    (ctx-trust-02). ``api_v1_govern`` is the sole legitimate caller: its
+    operation is a bare ``CortexResult`` echo, not a facade.
     """
     pipeline = GovernancePipeline(operation=operation)
     result, _report = pipeline.wrap(
@@ -264,13 +272,9 @@ def api_v1_complete(data):
         kwargs["max_tokens"] = params["max_tokens"]
     if "temperature" in params:
         kwargs["temperature"] = params["temperature"]
-    result = _governed(
-        "cortex.complete",
-        params["prompt"],
-        lambda governed_prompt: complete(governed_prompt, ctx=ctx, **kwargs),
-        ctx,
-        retrieval=False,
-    )
+    # Called DIRECTLY — `complete` is itself a `_governed_facade` ("cortex.complete",
+    # api.py). See the note on `_governed` above: re-wrapping runs the chain twice.
+    result = complete(params["prompt"], ctx=ctx, **kwargs)
     return result.to_dict()
 
 
@@ -285,13 +289,8 @@ def api_v1_reason(data):
         kwargs["max_tokens"] = params["max_tokens"]
     if "temperature" in params:
         kwargs["temperature"] = params["temperature"]
-    result = _governed(
-        "cortex.reason",
-        params["prompt"],
-        lambda governed_prompt: reason(governed_prompt, ctx=ctx, **kwargs),
-        ctx,
-        retrieval=False,
-    )
+    # Called DIRECTLY — already `_governed_facade("cortex.reason")`.
+    result = reason(params["prompt"], ctx=ctx, **kwargs)
     return result.to_dict()
 
 
@@ -300,14 +299,8 @@ def api_v1_classify(data):
     """Single-label classification with deterministic air-gap fallback (governed)."""
     params = validators.validate_classify(data)
     ctx = _server_context(validators.domain_of(data))
-    labels = params["labels"]
-    result = _governed(
-        "cortex.classify",
-        params["text"],
-        lambda governed_text: classify(governed_text, labels, ctx=ctx),
-        ctx,
-        retrieval=False,
-    )
+    # Called DIRECTLY — already `_governed_facade("cortex.classify")`.
+    result = classify(params["text"], params["labels"], ctx=ctx)
     return result.to_dict()
 
 
@@ -316,14 +309,8 @@ def api_v1_extract(data):
     """Structured extraction conforming to a caller-supplied JSON schema (governed)."""
     params = validators.validate_extract(data)
     ctx = _server_context(validators.domain_of(data))
-    schema = params["schema"]
-    result = _governed(
-        "cortex.extract",
-        params["text"],
-        lambda governed_text: extract(governed_text, schema, ctx=ctx),
-        ctx,
-        retrieval=False,
-    )
+    # Called DIRECTLY — already `_governed_facade("cortex.extract")`.
+    result = extract(params["text"], params["schema"], ctx=ctx)
     return result.to_dict()
 
 
@@ -373,14 +360,15 @@ def api_v1_agent(data):
     * The launch is NON-BLOCKING in team and graph modes, exactly as in-process:
       the response carries ``instance_id`` / ``run_id`` and the caller polls.
 
-    Governance is NOT applied here. ``api.agent`` is itself a ``_governed_facade``
-    ("cortex.agent"), so the goal is injection-screened and input-redacted before
-    dispatch and the report comes back attached on ``result.governance``. Wrapping
-    it in ``_governed`` as well — the way complete/reason/classify/extract do —
-    would run the chain twice over one launch and write two audit rows for it.
-    ``search``/``ask`` are the precedent for calling an already-governed facade
-    directly; a blocked pre-check still raises ``GovernanceBlockedError`` from
-    inside the facade and the decorator above still maps it to a 403.
+    No SECOND governance wrapper is applied here. ``api.agent`` is itself a
+    ``_governed_facade`` ("cortex.agent"), so the goal is injection-screened and
+    input-redacted before dispatch and the report comes back attached on
+    ``result.governance``. Wrapping it in ``_governed`` as well would run the
+    chain twice over one launch and write two audit rows for it. Every endpoint
+    on this surface now calls its governed facade directly — complete/reason/
+    classify/extract did double-wrap until ctx-trust-02; a blocked pre-check
+    still raises ``GovernanceBlockedError`` from inside the facade and the
+    decorator above still maps it to a 403.
 
     Degradation: a provider that cannot serve native tool-use raises
     ``AgentLoopUnsupported``. That is a capability answer, not a fault, so it

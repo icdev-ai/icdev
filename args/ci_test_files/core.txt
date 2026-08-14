@@ -1186,3 +1186,18 @@ tests/cortex/test_summarize_routing_airgap.py
 # visibility ctx-trust-04 has until predicate pushdown lands.
 # 18 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_iqe_adapter_connection_ownership.py
+# REST v1 ran the TRUST chain TWICE on complete/reason/classify/extract.
+# rest_v1 imports the GOVERNED facades from .api (each is a @_governed_facade)
+# and then re-wrapped four of them in a SECOND GovernancePipeline via
+# _governed() -- so one POST meant two gateway screens, two input- and two
+# output-redaction passes, two register_citation rows and two cortex_audit
+# rows, roughly 2x the fixed gate latency, and /cortex/metrics double-counted
+# every REST-origin call because it aggregates those audit rows.
+# search/ask/agent already called their facade directly; these four were missed.
+# COUNTS REAL ROWS: gates 1-6 are faked (offline) but 7a/7b are left REAL
+# against a temp SQLite db, and every assertion is a before/after COUNT plus
+# the provenance_id join -- a duplicate write is invisible to a mock, which is
+# exactly how the double wrap shipped. Includes a discrimination test that
+# restores the pre-fix shape and asserts the counts go to 2.
+# 21 tests, ~2s, temp SQLite only: no DB service, no LLM, no network.
+tests/cortex/test_rest_single_governance.py
