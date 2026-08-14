@@ -1279,3 +1279,33 @@ tests/cortex/test_iqe_row_cap_truncation.py
 # that a hit on the SHIPPED enabled config still writes its cortex_audit row.
 # 37 tests, ~1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_response_cache.py
+
+# ctx-perf-05 -- the Cortex tables must be indexed for the query the DATABASE
+# runs, not the one the call site writes. get_connection() attaches the security
+# context and StorageCursor._inject_rls rewrites every read to carry
+# "AND tenant_id = ? AND classification IN (...)", so metrics._scan's
+# "WHERE created_at >= ?" is really tenant_id + created_at -- a shape the
+# separate single-column indexes from 262/263 can only half serve. Pins: the
+# migration is idempotent and applies to a database bootstrapped by 262/263;
+# down.sql restores the pre-migration index set exactly (it must not drop the
+# single-column indexes it never created); tenant_id LEADS each composite,
+# because (created_at, tenant_id) would satisfy a naive "is there a composite?"
+# check while serving the equality not at all; discover_migrations still orders
+# 262/263 BEFORE this 14-digit timestamp, since running out of order fails on a
+# FRESH database only; and both init_db.py copies declare the same composites,
+# because fresh deployments run init_db directly and never see the migration.
+# 7 tests, ~1s, in-process SQLite: no DB service, no LLM, no network. The 8th
+# EXPLAINs the real query shape against a seeded 200k-row PostgreSQL schema it
+# creates and drops itself, and skips outright when no PG is reachable.
+tests/cortex/test_rls_index_coverage.py
+
+# ctx-perf-05 (PG tier): the companion plan assertion for the composite indexes
+# above. Gated here for the census; it SKIPS unless ICDEV_PYTEST_PG=1, and the
+# job that actually runs it is Test (PostgreSQL) via tests/pg_tier_allowlist.txt.
+# Splitting it out is the point: left in the SQLite suite it would skip every
+# run, and a test that always skips proves nothing while looking green.
+# 2 tests: one asserts the composite replaces the BitmapAnd of the two
+# single-column indexes (with the pre-index plan as the negative control), the
+# other that it actually LOWERS the estimated cost -- "the index name appears"
+# would still pass on a worse plan.
+tests/pg_tier/test_cortex_rls_index_plan.py
