@@ -9752,6 +9752,31 @@ def create_app(testing: bool = False) -> Flask:
                 "needs_decomp": counts.get("needs_decomposition", 0),
                 "pct": pct,
             })
+        # ── Orphan detection ────────────────────────────────────────────────
+        # Every number above comes from EPIC patterns. A task that carries this
+        # project's prefix but that no epic claims is dropped from all of them —
+        # and if EVERY task is dropped, `visible` below goes False and the card
+        # disappears, indistinguishable from a project with no work at all.
+        # That silence is the bug: the only detector was a human noticing a
+        # missing card. Count them, surface them, and keep the card visible.
+        #
+        # Gate sentinels (`<prefix>gate-NN`) are excluded: a sentinel holds the
+        # card, it is not work, and it does not belong in a progress figure.
+        owned_rows = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\'" + excl_sql,
+            (f"{prefix_esc}%",) + excl_params,
+        ).fetchall()
+        try:
+            from tools.kanban.gates import has_gate_id
+        except Exception:  # noqa: BLE001 — orphan reporting must not break the page
+            def has_gate_id(_tid):  # type: ignore[misc]
+                return False
+        epic_pats = tuple(f"{prefix}{ep['key']}-" for ep in project.get("epics", []))
+        orphans = sorted(
+            tid for tid in (str(dict(r)["id"]) for r in owned_rows)
+            if not tid.startswith(epic_pats) and not has_gate_id(tid)
+        ) if epic_pats else []
+
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
             "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' " + excl_sql +
@@ -9779,7 +9804,14 @@ def create_app(testing: bool = False) -> Flask:
             "total_tasks": total_all,
             "done_tasks": done_all,
             "overall_pct": int(round(100 * done_all / total_all)) if total_all else 0,
-            "visible": total_all > 0 and done_all < total_all,
+            "orphaned_tasks": len(orphans),
+            "orphaned_sample": orphans[:10],
+            # A card with unclaimed tasks stays visible even at 0 counted work.
+            # "No tasks yet" and "tasks nobody counts" are different facts, and
+            # rendering them identically is what made this cost manual triage
+            # every time. Percentages on such a card are computed over a subset —
+            # `orphaned_tasks` is what tells the operator not to trust them.
+            "visible": (total_all > 0 and done_all < total_all) or bool(orphans),
         }
 
     def _compute_triage_summary() -> dict:

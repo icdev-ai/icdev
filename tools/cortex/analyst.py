@@ -67,18 +67,20 @@ import time
 from typing import Any, Optional
 
 from tools.iqe.ast_nodes import CollectionCall, ForeachNode
-from tools.iqe.executor import execute_query, list_collections
+from tools.iqe.executor import execute_query_with_meta, list_collections
 from tools.iqe.nl_to_iqe import nl_to_iqe
 from tools.iqe.parser import IQESyntaxError, parse
 from tools.logging.icdev_logger import get_logger
 from tools.quality.citation_grounding import (
+    CONF_ABSTAIN,
+    CONF_INCLUDE,
     classify_confidence,
     compute_attribution_score,
     parse_citations,
     validate_citations,
 )
 
-from .config import resolve_fail_closed
+from .config import nlq_fallback_enabled, resolve_fail_closed
 from .schemas import Citation, CortexContext, CortexResult, GovernanceReport
 
 logger = get_logger(__name__)
@@ -98,10 +100,20 @@ _GATE_NLQ_TRANSLATION = "nlq_translation"
 _GATE_SQL_READONLY = "sql_readonly"
 _GATE_ALLOWLIST = "table_allowlist"
 _GATE_NLQ_EXECUTION = "nlq_execution"
+# Recorded (as "skip") when analyst.nlq_fallback_enabled: false refused an
+# otherwise-eligible IQE->NLQ degrade, so the policy is visible in the report
+# the caller receives rather than being an invisible non-event.
+_GATE_NLQ_FALLBACK = "nlq_fallback_policy"
 # Citation/grounding gate (ctx-analyst-03): recorded only when the answer text
 # is LLM-summarized — raw row answers are grounded by construction and add no
 # gate entry, so the gate sequences asserted by ctx-analyst-01/-02 stay stable.
 _GATE_CITATION = "citation_validation"
+
+# Score a truncated row answer carries (ctx-trust-04). Derived from the shared
+# bands rather than hardcoded, so it lands mid-"flag" — below CONF_INCLUDE, so
+# nothing treats it as certain, and above CONF_ABSTAIN, because the rows that
+# ARE present are still real and the answer is still worth returning.
+_TRUNCATED_CONFIDENCE = round((CONF_ABSTAIN + CONF_INCLUDE) / 2, 4)
 
 # IQE gate failures that make an auto-mode question eligible for the NLQ
 # fallback: the question could not be served, as opposed to a valid query
@@ -345,7 +357,13 @@ def _validate_sql_safety(
             _GATE_ALLOWLIST,
             started,
         )
-    off_allowlist = [t for t in tables if t not in _allowed_tables()]
+    # Hoisted out of the comprehension (ctx-perf-02). As a condition it was
+    # re-evaluated ONCE PER TABLE, and _allowed_tables() calls list_collections()
+    # AND _canvas_iqe_mapping() -> get_registry().get_iqe_mapping(), which loads
+    # the component registry. A 5-table query did 5 full registry+executor scans,
+    # on the SQL-safety path of every analyst question.
+    allowed = _allowed_tables()
+    off_allowlist = [t for t in tables if t not in allowed]
     if off_allowlist:
         _refuse(
             question,
@@ -539,10 +557,28 @@ def _execute_nlq_readonly(sql: str, ctx: CortexContext) -> dict:
             pass
 
 
-def _format_answer(rows: list[dict], targets: list[str], explanation: str) -> str:
-    """Human-readable summary of an analyst result set."""
+def _format_answer(
+    rows: list[dict],
+    targets: list[str],
+    explanation: str,
+    truncated: bool = False,
+) -> str:
+    """Human-readable summary of an analyst result set.
+
+    When the scan was cut short, the row count is a LOWER BOUND, and the text
+    says so — the prose is what an operator reads, and "600 rows" next to a
+    confidence caveat buried in metadata is still a wrong answer.
+    """
     n = len(rows)
-    lines = [f"{n} row{'s' if n != 1 else ''} from {', '.join(targets)}."]
+    plural = "s" if n != 1 else ""
+    if truncated:
+        headline = (
+            f"At least {n} row{plural} from {', '.join(targets)} "
+            f"(scan truncated — this is a lower bound, not a count)."
+        )
+    else:
+        headline = f"{n} row{plural} from {', '.join(targets)}."
+    lines = [headline]
     if explanation:
         lines.append(explanation + ".")
     for row in rows[:3]:
@@ -576,15 +612,31 @@ def _label_rows_result(result: CortexResult) -> CortexResult:
 
     No LLM touched the answer text — every value is a real row from a
     registered collection — so it is grounded without citation tags.
+
+    **Grounded is not the same as complete** (ctx-trust-04). Every row present
+    is real, but a scan that hit a row cap is missing rows the question asked
+    about, and the filtering happens in Python *after* that cap — so the count
+    is a lower bound. Labelling that ``confidence_score: 1.0`` is the worst
+    defect this surface can have: not a crash, a confident falsehood on the
+    view an operator uses to audit Cortex itself. A truncated scan is therefore
+    graded ``flag``: still returned, still grounded row-by-row, but no longer
+    presented as the answer. Both engines report through the same
+    ``data["truncated"]`` key — the IQE row cap and the NLQ ``MAX_ROWS`` cap.
     """
+    truncated = bool(result.data.get("truncated"))
     result.grounded = True
     result.metadata.update(
         {
-            "grounding": "rows_by_construction",
-            "confidence": "include",
-            "confidence_score": 1.0,
+            "grounding": "rows_by_construction_truncated" if truncated else "rows_by_construction",
+            "confidence": "flag" if truncated else "include",
+            "confidence_score": _TRUNCATED_CONFIDENCE if truncated else 1.0,
         }
     )
+    if truncated:
+        result.metadata["truncated"] = True
+        reasons = result.data.get("incomplete")
+        if reasons:
+            result.metadata["incomplete"] = reasons
     return result
 
 
@@ -801,7 +853,7 @@ def _ask_nlq(
     ]
 
     result = CortexResult(
-        text=_format_answer(rows, tables, ""),
+        text=_format_answer(rows, tables, "", bool(results.get("truncated"))),
         citations=citations,
         governance=governance,
         provider="nlq",
@@ -835,9 +887,13 @@ def ask(
         question:    Free-form question (e.g. "show all satellites").
         mode:        "auto" — IQE first, NL→SQL fallback when IQE cannot
                      resolve/translate/authorize the question (never on
-                     execution failures, and never when ``canvas=`` or
-                     ``collections=`` pinned the scope);
-                     "iqe" — IQE only; "nlq" — NL→SQL only.
+                     execution failures, never when ``canvas=`` or
+                     ``collections=`` pinned the scope, and never when
+                     ``analyst.nlq_fallback_enabled: false`` in
+                     args/cortex_config.yaml — the IQE error is re-raised
+                     with a ``nlq_fallback_policy: skip`` gate recorded);
+                     "iqe" — IQE only; "nlq" — NL→SQL only (an explicit
+                     opt-in, so ``nlq_fallback_enabled`` does not govern it).
         ctx:         Caller identity/policy context; tenant_id and
                      classification are threaded into the DB connection on
                      the IQE path. ``fail_closed`` also hardens the safety
@@ -918,6 +974,20 @@ def ask(
         )
         if not eligible:
             raise
+        # Policy gate (analyst.nlq_fallback_enabled). Deliberately checked AFTER
+        # structural eligibility so the refusal is only recorded on calls that
+        # would actually have degraded into LLM-generated SQL — an operator who
+        # disabled the fallback wants to see the calls their policy stopped, not
+        # every unrelated IQE failure. mode="nlq" is untouched: that is an
+        # explicit opt-in by name, not a fallback.
+        if not nlq_fallback_enabled():
+            _record(exc.governance, _GATE_NLQ_FALLBACK, "skip")
+            logger.info(
+                "cortex.analyst: IQE path failed (%s) but analyst."
+                "nlq_fallback_enabled is false — refusing the NLQ fallback",
+                exc,
+            )
+            raise
         logger.info("cortex.analyst: IQE path failed (%s); falling back to NLQ", exc)
         # The IQE gate failure stays recorded in outcomes as history, but it
         # is a degrade, not a refusal — only a safety/NLQ failure below may
@@ -982,7 +1052,12 @@ def _ask_iqe(
         conn = _open_connection()
     _apply_security_context(conn, ctx)
     try:
-        rows = execute_query(ast, conn)
+        # ...with_meta, not execute_query: the adapters cap their scan and the
+        # where clauses are applied in Python afterwards, so a capped fetch
+        # yields a lower bound. execute_query drops that fact and the answer
+        # would be labelled maximally confident (ctx-trust-04).
+        executed = execute_query_with_meta(ast, conn)
+        rows = executed.rows
     except Exception as exc:
         _record(governance, _GATE_EXECUTION, "fail")
         raise CortexAnalystError(
@@ -1011,8 +1086,16 @@ def _ask_iqe(
         for target in targets
     ]
 
+    truncated = not executed.complete
+    if truncated:
+        logger.warning(
+            "cortex.analyst: %s over %s returned a TRUNCATED scan (%s); "
+            "row_count is a lower bound",
+            question, targets, executed.incomplete,
+        )
+
     result = CortexResult(
-        text=_format_answer(rows, targets, explanation),
+        text=_format_answer(rows, targets, explanation, truncated),
         citations=citations,
         governance=governance,
         provider="iqe",
@@ -1024,6 +1107,8 @@ def _ask_iqe(
             "explanation": explanation,
             "collections": targets,
             "mode": mode,
+            "truncated": truncated,
+            "incomplete": executed.incomplete,
         },
     )
     return _finalize_result(result, question, summarize, ctx)

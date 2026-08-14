@@ -157,6 +157,11 @@ def run(trigger_data=None, context=None):
         # Stale titles repaired in place — NOT new cards, so kept out of
         # cards_created, which must stay a count of rows actually written.
         "cards_relabeled": 0,
+        # Cards that were AGGREGATED because one code change closes every
+        # affected row (tools/genesis/finding_scope.py). Counted inside
+        # cards_created as well — it is one row written either way — and broken
+        # out because the number of sessions this saves is the whole point.
+        "code_level_cards": 0,
         "cpars_alerts": 0,
         "subcon_alerts": 0,
         "cdrl_generated": 0,
@@ -245,6 +250,11 @@ def run(trigger_data=None, context=None):
     # only status='active' contracts, while portfolio_manager counts overdue
     # CDRLs across ('active', 'option_pending'), and an option-pending
     # contract's deliverables are no less late.)
+
+    # Pass 3 collects across the whole loop and files below it — see the pass
+    # header for why scoping cannot happen inside the loop.
+    subcon_findings = []
+    subcon_population = 0
 
     for contract in active:
         cid = contract["id"]
@@ -363,6 +373,15 @@ def run(trigger_data=None, context=None):
                 results["errors"].append(f"CPARS trajectory {cnum}: {e}")
 
         # ── Pass 3: Subcontractor Noncompliance ────────────────────────
+        #
+        # COLLECTS here and files after the loop. Scoping a finding — one card
+        # for a code defect vs one card per row for a data problem — needs the
+        # whole population, and a reflex that writes inside its row loop can
+        # never see it. That blindness is the defect this pass shipped: it filed
+        # a [SUBCON] ISR/SSR card per contract, seven cards for ONE missing
+        # applicability gate, and four sessions fixed the same bug independently
+        # (#1628 landed; #1629, #1633, #1635 closed as redundant, two of them
+        # having created the same test file path). See tools/genesis/finding_scope.py.
         if pass_type in ("full",):
             try:
                 from tools.govcon.subcontractor_tracker import detect_noncompliance
@@ -377,47 +396,18 @@ def run(trigger_data=None, context=None):
                 # gaps" while the card naming WHICH sub and WHICH gap was the one
                 # thing missing.
                 findings = nc.get("findings", [])
+                # Counted only once the scan SUCCEEDED. Saturation is "fired on
+                # every row it examined", so a contract whose scan raised was
+                # never examined and must not dilute the ratio.
+                subcon_population += 1
                 high_findings = [f for f in findings if f.get("severity") in ("high", "critical")]
                 for finding in high_findings:
                     try:
-                        # 'category' and 'company_name' are the keys the findings
-                        # carry; 'issue_type'/'subcontractor_name' never existed.
-                        category = finding.get("category") or "noncompliance"
-                        company = finding.get("company_name")
-                        label, action = _SUBCON_CATEGORIES.get(
-                            category,
-                            (category.replace("_", " ").title(), "Review with the subcontract manager."),
+                        subcon_findings.append(
+                            _subcon_finding(contract, clabel, cnum, finding)
                         )
-                        # isr_ssr is contract-level: it has no subcontractor, and
-                        # printing "Subcontractor: None" reads as missing data.
-                        subject = f"Subcontractor: {company}\n" if company else ""
-                        wrote = _suggest_kanban_card(
-                            title=f"[SUBCON] {clabel}: {label}",
-                            description=(
-                                f"Contract: {clabel}\n"
-                                f"{subject}"
-                                f"Issue: {finding.get('description','')}\n"
-                                f"Severity: {finding.get('severity','').upper()}\n"
-                                f"Action: {action}"
-                            ),
-                            priority="high",
-                            context_data={"contract_id": cid, "contract_number": cnum, "finding": finding},
-                            created_by="cpmp_monitor_subcon",
-                            # sub_id is the row identity, so two subs sharing a
-                            # company_name still get one card each; it falls back
-                            # to the name, then to the category alone for the
-                            # contract-level isr_ssr finding.
-                            dedup_key=(
-                                f"{cid}:{category}"
-                                f":{finding.get('sub_id') or company or ''}"
-                            ),
-                            label=clabel,
-                            stats=results,
-                        )
-                        results["subcon_alerts"] += 1 if wrote else 0
-                        results["cards_created"] += 1 if wrote else 0
                     except Exception as ce:
-                        results["errors"].append(f"Subcon card {cnum}: {ce}")
+                        results["errors"].append(f"Subcon finding {cnum}: {ce}")
             except Exception as e:
                 results["errors"].append(f"Subcon scan {cnum}: {e}")
 
@@ -460,6 +450,9 @@ def run(trigger_data=None, context=None):
             except Exception as e:
                 results["errors"].append(f"CDRL gen {cnum}: {e}")
 
+    # ── Pass 3, filing half ───────────────────────────────────────────
+    _file_subcon_cards(subcon_findings, subcon_population, results)
+
     _write_memory_log(results)
     results["status"] = "ok"
     # GenesisDaemon._run_reflex_impl_inner (tools/genesis/daemon.py) reads
@@ -481,6 +474,184 @@ def run(trigger_data=None, context=None):
     # change to a return value three CI-enforced suites already pin. `details` is
     # the same object, so the two views cannot drift.
     return {**results, "success": True, "metric_value": results["cards_created"], "details": results}
+
+
+_SUBCON_SOURCE = "cpmp_monitor_subcon"
+
+# Card description budget. Was 500, which is ample for a card about one row and
+# too small for an AGGREGATED card, whose whole value is the list of affected
+# rows it carries instead of the N-1 cards it replaces. kanban_tasks.description
+# is TEXT, so the cap is a readability bound, not a schema one; the evidence
+# block reports its own truncation separately (`max_evidence_rows`).
+_DESCRIPTION_MAX = 2000
+
+
+def _subcon_category(finding: Dict):
+    """(category, display label, corrective action) for one subcon finding."""
+    category = finding.get("category") or "noncompliance"
+    label, action = _SUBCON_CATEGORIES.get(
+        category,
+        (category.replace("_", " ").title(), "Review with the subcontract manager."),
+    )
+    return category, label, action
+
+
+def _subcon_finding(contract: Dict, clabel: str, cnum: str, finding: Dict):
+    """Wrap one detect_noncompliance() finding for tools/genesis/finding_scope."""
+    from tools.genesis.finding_scope import Finding
+
+    cid = contract["id"]
+    category, _label, action = _subcon_category(finding)
+    # 'category' and 'company_name' are the keys the findings carry;
+    # 'issue_type'/'subcontractor_name' never existed.
+    company = finding.get("company_name")
+    # sub_id is the row identity, so two subs sharing a company_name still get
+    # one card each; it falls back to the name, then to empty for the
+    # contract-level isr_ssr finding, which has no subcontractor at all.
+    instance = finding.get('sub_id') or company or ""
+
+    return Finding(
+        # The contract is what the check EXAMINED, so it is the unit saturation
+        # is measured over — one contract with four bad subs is still one row
+        # looked at, not four.
+        subject=str(cid),
+        category=category,
+        # Unchanged from before this seam existed, so cards already on the board
+        # keep colliding with their own id instead of being re-filed.
+        dedup_key=f"{cid}:{category}:{instance}",
+        # The REMEDY's identity: what a human would be told to do, with nothing
+        # about which contract it came from. Two contracts merge only when the
+        # instruction is literally the same text — a finding naming its own
+        # subcontractor carries that name here and never merges with another's.
+        signature=f"{category}|{instance}|{finding.get('description', '')}|{action}",
+        evidence=f"{clabel} ({str(cid)[:8]})",
+        payload={
+            "contract_id": cid,
+            "contract_number": cnum,
+            "contract_label": clabel,
+            "finding": finding,
+        },
+    )
+
+
+class _PerRowSpec:
+    """A one-finding CardSpec built without importing finding_scope.
+
+    The fallback for a scoping failure, so the pass keeps working even when the
+    module it now depends on cannot be imported at all.
+    """
+
+    is_aggregated = False
+
+    def __init__(self, finding):
+        self.findings = (finding,)
+        self.dedup_key = finding.dedup_key
+
+
+def _file_subcon_cards(findings, population: int, results: Dict) -> None:
+    """File pass 3's cards, one per finding OR one per code-level defect.
+
+    Fail-soft in the SAFE direction: if scoping raises, the findings fall back
+    to one card per row — the behaviour that predates this seam. Over-reporting
+    costs a redundant card; returning early would lose the pass's findings
+    entirely and report the silence as a clean sweep, which is the failure mode
+    this reflex has already shipped twice.
+    """
+    if not findings:
+        return
+    config = None
+    try:
+        from tools.genesis import finding_scope as fs
+        config = fs.load_config()
+        specs = fs.group(_SUBCON_SOURCE, findings, population, config)
+    except Exception as e:
+        results["errors"].append(f"Subcon scoping: {e}")
+        specs = [_PerRowSpec(f) for f in findings]
+
+    for spec in specs:
+        try:
+            if spec.is_aggregated:
+                title, description, context = _aggregated_subcon_card(
+                    spec, population, config
+                )
+                label = None  # no contract in the title, so nothing to relabel
+            else:
+                title, description, context = _per_row_subcon_card(spec.findings[0])
+                label = spec.findings[0].payload.get("contract_label")
+
+            wrote = _suggest_kanban_card(
+                title=title,
+                description=description,
+                priority="high",
+                context_data=context,
+                created_by=_SUBCON_SOURCE,
+                dedup_key=spec.dedup_key,
+                label=label,
+                stats=results,
+            )
+            if wrote:
+                results["subcon_alerts"] += 1
+                results["cards_created"] += 1
+                if spec.is_aggregated:
+                    results["code_level_cards"] += 1
+        except Exception as ce:
+            results["errors"].append(f"Subcon card {spec.dedup_key}: {ce}")
+
+
+def _per_row_subcon_card(finding):
+    """One contract, one subcontractor gap — the data-level card, unchanged."""
+    raw = finding.payload["finding"]
+    clabel = finding.payload["contract_label"]
+    _category, label, action = _subcon_category(raw)
+    company = raw.get("company_name")
+    # isr_ssr is contract-level: it has no subcontractor, and printing
+    # "Subcontractor: None" reads as missing data.
+    subject = f"Subcontractor: {company}\n" if company else ""
+    return (
+        f"[SUBCON] {clabel}: {label}",
+        (
+            f"Contract: {clabel}\n"
+            f"{subject}"
+            f"Issue: {raw.get('description','')}\n"
+            f"Severity: {raw.get('severity','').upper()}\n"
+            f"Action: {action}"
+        ),
+        {
+            "contract_id": finding.payload["contract_id"],
+            "contract_number": finding.payload["contract_number"],
+            "finding": raw,
+        },
+    )
+
+
+def _aggregated_subcon_card(spec, population: int, config):
+    """One card for every affected contract, because one fix closes them all.
+
+    The affected contracts are carried in the DESCRIPTION as evidence and in the
+    context data in full — aggregating must not lose what N cards would have
+    said, which is exactly how a title-based dedup fails.
+    """
+    from tools.genesis.finding_scope import evidence_block
+
+    raw = spec.findings[0].payload["finding"]
+    _category, label, action = _subcon_category(raw)
+    return (
+        f"[SUBCON] {label}: identical on all {population} contracts — verify the check",
+        (
+            f"Issue: {raw.get('description','')}\n"
+            f"Severity: {str(raw.get('severity','')).upper()}\n"
+            f"Action if genuine: {action}\n"
+            f"Scoped code-level because: {spec.reason}\n\n"
+            + evidence_block(spec, population, _SUBCON_SOURCE, config)
+        ),
+        {
+            "scope": spec.scope,
+            "category": spec.category,
+            "reason": spec.reason,
+            "population": population,
+            "affected": [f.payload for f in spec.findings],
+        },
+    )
 
 
 def _suggest_kanban_card(
@@ -570,7 +741,7 @@ def _suggest_kanban_card(
                 task_id,
                 "fix",
                 title[:120],
-                description[:500],
+                description[:_DESCRIPTION_MAX],
                 priority,
                 json.dumps(context_data or {}),
                 created_by,
@@ -596,7 +767,10 @@ def _write_memory_log(results: Dict):
                 f"({results['contracts_unnumbered']} unnumbered), "
                 f"{results['overdue_marked']} newly overdue, "
                 f"{results['issues_found']} issues, "
-                f"{results['cards_created']} cards, "
+                f"{results['cards_created']} cards "
+                # The number of sessions the scoping seam saved: an aggregated
+                # card is one card standing in for one per affected row.
+                f"({results.get('code_level_cards', 0)} aggregated code-level), "
                 f"{results.get('cards_relabeled', 0)} relabeled, "
                 f"{results['cpars_alerts']} CPARS alerts, "
                 f"{results['cdrl_generated']} CDRLs generated, "

@@ -1,16 +1,81 @@
-"""IQE executor — dispatches ForeachNode AST to registered collection adapters."""
+"""IQE executor — dispatches ForeachNode AST to registered collection adapters.
+
+**Completeness is part of the answer** (ctx-trust-04). Adapters cap their scan
+and ``run`` applies the query's ``where`` clauses in PYTHON afterwards, so a
+question whose window matches more rows than the cap is answered from the
+newest ``cap`` rows only. That is not a crash — it is a *wrong number*, and
+``analyst._label_rows_result`` used to stamp it ``confidence_score: 1.0``.
+
+Predicate pushdown (filtering in SQL) is the other possible fix; it is not what
+this module does, because every adapter signature would have to change. Instead
+an adapter may report that it capped, by returning a :class:`RowSet` built with
+:func:`capped_rows`. The reason travels through ``union``/``join`` and out of
+:meth:`Executor.run_with_meta` as an :class:`ExecutionResult`, so the caller can
+label the answer honestly. An adapter that returns a plain ``list`` is taken at
+its word — complete — which keeps every existing adapter working unchanged.
+"""
 from __future__ import annotations
 
 import logging as _log
 import re
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 from concurrent.futures import as_completed as _as_completed
-from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Optional
 
 from tools.iqe.ast_nodes import AttrRef, BinOp, CollectionCall, ForeachNode, Literal, SelectNode, WhereNode
 
 _SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _logger = _log.getLogger("iqe.executor")
+
+#: Rows read before the unregistered-collection fallback stops. That path used
+#: to issue ``SELECT * FROM {table}`` with no LIMIT at all — an unbounded scan
+#: into Python memory whose result was then also filtered in Python.
+FALLBACK_ROW_CAP = 10000
+
+
+class RowSet(list):
+    """A row list that knows whether its source may have withheld rows.
+
+    ``incomplete`` holds one dict per reason, e.g.
+    ``{"collection": "cortex.audit", "reason": "row_cap", "limit": 10000}``.
+    An empty list means the rows are the complete set for that collection.
+    """
+
+    def __init__(self, rows: Iterable[dict] = (), incomplete: Iterable[dict] = ()) -> None:
+        super().__init__(rows)
+        self.incomplete: list[dict] = [dict(x) for x in incomplete]
+
+    @property
+    def complete(self) -> bool:
+        return not self.incomplete
+
+
+def capped_rows(rows: Iterable[dict], collection: str, limit: int) -> RowSet:
+    """Build a :class:`RowSet` marked as cut short by a row cap.
+
+    Adapters call this instead of returning a bare list when their ``LIMIT``
+    actually bit, so the executor's caller can refuse to label the answer
+    maximally confident.
+    """
+    return RowSet(rows, [{"collection": collection, "reason": "row_cap", "limit": int(limit)}])
+
+
+def incompleteness_of(rows: Any) -> list[dict]:
+    """Reasons *rows* may be missing rows; ``[]`` for a plain list."""
+    return [dict(x) for x in (getattr(rows, "incomplete", ()) or ())]
+
+
+@dataclass
+class ExecutionResult:
+    """Rows plus whether they are the complete answer to the query."""
+
+    rows: list[dict]
+    incomplete: list[dict] = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        return not self.incomplete
 
 
 class Executor:
@@ -24,7 +89,23 @@ class Executor:
         self._registry[name] = adapter_fn
 
     def run(self, ast: ForeachNode, conn: Any) -> list[dict]:
-        """Execute *ast*, returning matching rows projected per SELECT."""
+        """Execute *ast*, returning matching rows projected per SELECT.
+
+        Drops the completeness metadata. Callers that present the result to a
+        human — or compute a count from it — should use
+        :meth:`run_with_meta` instead, so a capped scan cannot be reported as
+        a certainty.
+        """
+        return self.run_with_meta(ast, conn).rows
+
+    def run_with_meta(self, ast: ForeachNode, conn: Any) -> ExecutionResult:
+        """Execute *ast*, returning rows **and** why they may be incomplete.
+
+        The ``where`` clauses are applied here, in Python, AFTER the adapter's
+        row cap — so any cap the fetch hit makes every aggregate over these
+        rows a lower bound rather than an answer. That is exactly what
+        ``ExecutionResult.incomplete`` carries.
+        """
         coll = ast.collection
         if isinstance(coll, CollectionCall):
             name = str(coll.name)
@@ -32,9 +113,10 @@ class Executor:
         else:
             name = str(coll)
             call_args = []
-        rows = self._fetch(name, conn, call_args)
-        rows = self._filter(rows, ast.var, ast.where_clauses)
-        return self._project(rows, ast.var, ast.select)
+        fetched = self._fetch(name, conn, call_args)
+        incomplete = incompleteness_of(fetched)
+        rows = self._filter(fetched, ast.var, ast.where_clauses)
+        return ExecutionResult(rows=self._project(rows, ast.var, ast.select), incomplete=incomplete)
 
     def _fetch(self, name: str, conn: Any, call_args: list | None = None) -> list[dict]:
         if call_args is None:
@@ -52,28 +134,44 @@ class Executor:
 
         if name in self._registry:
             fn = self._registry[name]
-            if call_args:
-                return list(fn(conn, *call_args))
-            return list(fn(conn))
+            out = fn(conn, *call_args) if call_args else fn(conn)
+            # A RowSet carries the adapter's completeness report; list() would
+            # silently discard it and the answer would read as certain again.
+            return out if isinstance(out, RowSet) else list(out)
         # SQLite fallback: validate table name is a safe identifier before interpolating.
         table = name.split(".")[-1]
         if not _SAFE_IDENT.match(table):
             raise ValueError(f"Unsafe collection table name: {table!r}")
-        cursor = conn.execute(f"SELECT * FROM {table}")  # noqa: S608  # nosec B608
+        # Bounded: this used to be an unbounded scan into Python memory, and
+        # the query's where clauses are applied after it either way, so an
+        # unregistered collection could quietly answer from a partial table.
+        cap = FALLBACK_ROW_CAP
+        cursor = conn.execute(f"SELECT * FROM {table} LIMIT {cap + 1}")  # noqa: S608  # nosec B608
         cols = [d[0] for d in cursor.description]
-        return [dict(zip(cols, row)) for row in cursor.fetchall()]
+        fetched = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        if len(fetched) > cap:
+            _logger.warning(
+                "collection %s is not registered; the fallback table scan hit its "
+                "%d-row cap, so where clauses are applied to a partial table",
+                name, cap,
+            )
+            return capped_rows(fetched[:cap], name, cap)
+        return fetched
 
     def _fetch_union(self, collections: list[str], conn: Any) -> list[dict]:
         """Fetch multiple collections in parallel and concatenate their rows.
 
         Order is preserved: rows from collections[0] appear before collections[1],
         even though fetches run concurrently.  A failed sub-fetch logs a warning
-        and contributes an empty slice rather than aborting the whole union.
+        and contributes an empty slice rather than aborting the whole union —
+        and records that slice as ``reason="fetch_failed"``, because a union
+        that lost one of its collections is a short answer, not a complete one.
         """
         if not collections:
             return []
         n_workers = min(len(collections), 8)
         results: dict[int, list[dict]] = {}
+        failed: dict[int, str] = {}
 
         def _fetch_one(idx: int, cname: str) -> tuple[int, list[dict]]:
             return idx, self._fetch(cname, conn, [])
@@ -81,15 +179,22 @@ class Executor:
         with _ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix="iqe-union") as pool:
             futures = {pool.submit(_fetch_one, i, c): i for i, c in enumerate(collections)}
             for fut in _as_completed(futures):
+                idx = futures[fut]
                 try:
-                    idx, rows = fut.result()
-                    results[idx] = rows
+                    _, results[idx] = fut.result()
                 except Exception as exc:  # noqa: BLE001
                     _logger.warning("union: sub-fetch failed: %s", exc)
+                    failed[idx] = str(exc)
 
-        merged: list[dict] = []
+        merged = RowSet()
         for i in range(len(collections)):
-            merged.extend(results.get(i, []))
+            part = results.get(i, [])
+            merged.extend(part)
+            merged.incomplete.extend(incompleteness_of(part))
+            if i in failed:
+                merged.incomplete.append(
+                    {"collection": collections[i], "reason": "fetch_failed", "error": failed[i]}
+                )
         return merged
 
     def _fetch_join(self, col1: str, col2: str, key: str, conn: Any) -> list[dict]:
@@ -98,6 +203,10 @@ class Executor:
         Tries DuckDB first (type coercion, handles mixed numeric/string keys).
         Falls back to a pure-Python dict-lookup join when DuckDB is not installed
         or raises for any reason.
+
+        A capped side makes the JOIN itself incomplete — rows drop out because
+        their partner was never fetched — so either side's report is carried
+        onto the merged result.
         """
         with _ThreadPoolExecutor(max_workers=2, thread_name_prefix="iqe-join") as pool:
             f1 = pool.submit(self._fetch, col1, conn, [])
@@ -105,10 +214,12 @@ class Executor:
             left = f1.result()
             right = f2.result()
 
+        incomplete = incompleteness_of(left) + incompleteness_of(right)
         try:
-            return _duckdb_join(left, right, key)
+            merged = _duckdb_join(left, right, key)
         except Exception:  # noqa: BLE001
-            return _python_join(left, right, key)
+            merged = _python_join(left, right, key)
+        return RowSet(merged, incomplete) if incomplete else merged
 
     def _filter(self, rows: list[dict], var: str, clauses: list[WhereNode]) -> list[dict]:
         if not clauses:
@@ -277,5 +388,15 @@ def list_collections() -> list[str]:
 
 
 def execute_query(ast: ForeachNode, conn: Any) -> list[dict]:
-    """Execute *ast* against *conn* using the module-level default Executor."""
+    """Execute *ast* against *conn* using the module-level default Executor.
+
+    Returns rows only. Use :func:`execute_query_with_meta` when the answer is
+    shown to a human or reduced to a count — a row cap that bit is invisible
+    here.
+    """
     return _default.run(ast, conn)
+
+
+def execute_query_with_meta(ast: ForeachNode, conn: Any) -> ExecutionResult:
+    """Execute *ast*, returning rows plus why they may be incomplete."""
+    return _default.run_with_meta(ast, conn)

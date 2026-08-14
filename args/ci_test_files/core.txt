@@ -1165,6 +1165,20 @@ tests/test_cpmp_isr_ssr_applicability.py
 # the projects.yaml prefix/epic rules the Home progress card renders from.
 # 10 tests, ~1s, no DB service, no LLM, no network.
 tests/kanban/test_seed_ctx_kanban.py
+# One REST call ran the TRUST chain TWICE. rest_v1 imports the GOVERNED facades
+# from .api (deliberately -- importing the raw impls would bypass governance
+# entirely), then re-wrapped four of them in a second GovernancePipeline: two
+# gateway screens, two redaction passes, two source_citation_registry rows, two
+# cortex_audit rows, ~2x gate latency, and /cortex/metrics double-counting every
+# REST-origin complete/reason/classify/extract. The codebase documented the bug
+# in its own comment at rest_v1.py:378 while explaining why api_v1_agent avoids
+# it. Counts pipeline CONSTRUCTIONS, not audit rows, so it stays a unit test --
+# and patches GovernancePipeline in BOTH modules, because patching only the REST
+# reference counts the outer wrapper and misses the facade's own, which is the
+# one that made the total two. api_v1_govern is asserted to STAY single-pipeline:
+# it passes an identity lambda, so its one pipeline IS the operation.
+# 6 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_rest_single_governance.py
 # cortex.ask(summarize=True) reached for the CLOUD tier under air-gap, and the
 # guard could not see it. analyst._llm_summarize called
 # LLMRouter().invoke("summarization"), a name declared only under
@@ -1179,6 +1193,19 @@ tests/kanban/test_seed_ctx_kanban.py
 # reaching the router, result metadata), never that a config key parses.
 # 12 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_summarize_routing_airgap.py
+# Two per-call costs on the Cortex hot path, asserted with CALL COUNTERS rather
+# than timings (a timing assertion on a shared runner is a flake, and the defect
+# is "how many times", not "how slow"). Measured pre-fix: the parent-directory
+# walk for args/llm_config.yaml ran 12 times for 12 resolutions -- and one
+# governed call reaches load_cortex_config 8-12 times, so it multiplied straight
+# into per-call syscalls; and _allowed_tables() ran 5 times for one validation of
+# a 5-table query, loading the component registry each time, because it sat in a
+# comprehension's CONDITION. Both are 1 after. The memo keys on BOTH env
+# overrides -- ICDEV_CORTEX_CONFIG and ICDEV_LLM_CONFIG -- because
+# cortex_config.yaml is resolved RELATIVE to the llm config, and a memo that
+# shadowed an override would be worse than the cost it saves.
+# 7 tests, <1s, no DB service, no LLM, no network.
+tests/cortex/test_hot_path_cost.py
 # The IQE Cortex adapters closed a connection they did not open. Executor
 # _fetch_union/_fetch_join fetch several collections IN PARALLEL over ONE
 # caller-supplied connection (analyst._ask_iqe opens it), so adapter #1's
@@ -1188,7 +1215,131 @@ tests/cortex/test_summarize_routing_airgap.py
 # collections used to audit Cortex itself. Pins both halves: ownership (a
 # caller-supplied connection survives, a self-opened one is still closed) and
 # honesty (a failure raises and logs; a genuinely empty collection still
-# returns []). Also pins that hitting the row cap logs, which is the only
-# visibility ctx-trust-04 has until predicate pushdown lands.
-# 18 tests, <1s, fully mocked: no DB service, no LLM, no network.
+# returns []). Also pins the row-cap report at the adapter boundary: the +1
+# detection row never leaks into the result set, exactly-cap is NOT truncated,
+# and a cap that bit is carried on the RowSet rather than only logged.
+# 21 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/cortex/test_iqe_adapter_connection_ownership.py
+# ctx-enf-02, 1 of 10. tests/cortex/ holds 50 modules and, until this PR, exactly
+# ZERO of them gated a merge -- on the component that enforces tenant isolation,
+# Bell-LaPadula read-down, egress redaction and an append-only NIST-AU trail. The
+# ten security-critical ones are being gated ONE PER PR, in the PR that proves the
+# file green; bulk-widening 50 files at once is what turns main red and gets the
+# gate switched off. Highest blast radius first: this file pins the ctx-expose-03
+# fix, where the NLQ fallback executed the analyst's generated SQL through the
+# dashboard's context-free execute_safely -- no tenant_id, no classification, so
+# the RLS predicate had nothing to filter on and one tenant's question could read
+# another tenant's rows. Pins all three directions: the caller's tenant +
+# classification ARE threaded onto the connection, an unscopable connection RAISES
+# under fail_closed instead of running unscoped, and the fail-open default at least
+# WARNS rather than swallowing. The live PostgreSQL leakage proof in the same file
+# skips cleanly under the SQLite-forced conftest (RLS predicates only exist on PG)
+# and is run separately with CORTEX_ISOLATION_PG=1 -- it is not counted as CI
+# signal here, and it never passes vacuously.
+# 7 tests (6 + 1 PG skip), <1s, fully stubbed: no DB service, no LLM, no network.
+tests/cortex/test_tenant_isolation.py
+tests/test_trust_gate.py
+# ctx-enf-03: three cortex_config.yaml keys that were read by NOBODY —
+# search.strategy_weights, analyst.nlq_fallback_enabled and
+# governance.skip_grounding_for_plain_complete. They survived because the
+# existing tests asserted the keys LOAD, never that they change anything.
+# Every test here writes TWO configs differing only in the key under test
+# and asserts the OBSERVABLE outcome differs (fused ordering, raise-vs-
+# return, skip-vs-fail gate outcome). All 13 fail against the pre-fix tree.
+# 13 tests, <1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_config_keys_enforced.py
+tests/test_project_card_coverage.py
+# The IQE Cortex adapters capped at 500 rows BEFORE the executor applied the
+# query's where clauses -- which it does in PYTHON, after the fetch. So
+# cortex.ask("how many blocked calls in the last 30 days?") counted inside the
+# newest 500 audit rows and analyst._label_rows_result stamped the undercount
+# grounding="rows_by_construction" / confidence="include" /
+# confidence_score 1.0. Not a crash: a confident falsehood on the exact surface
+# an operator uses to audit Cortex itself. Runs against a REAL seeded
+# cortex_audit holding 700 rows (600 matching, hidden behind 100 newer
+# non-matching ones, so the cap is load-bearing) through the real adapter, real
+# SQL and real executor -- nothing mocked, because mocking the executor is
+# precisely how a cap-vs-filter ORDERING bug hides. Pins: the uncapped scan
+# returns the correct 600; a capped scan reports itself incomplete and is
+# labelled "flag", never confidence_score 1.0; the caveat reaches the answer
+# TEXT, not just metadata; exactly-cap is not truncated (a warning that fires
+# on correct answers is one nobody reads); the unregistered-collection
+# fallback is bounded (it was an unbounded SELECT * into Python memory); and a
+# union that lost a collection is incomplete rather than silently short.
+# 12 tests, ~1s, SQLite via tmp_path ICDEV_DB_PATH: no DB service, no LLM,
+# no network.
+tests/cortex/test_iqe_row_cap_truncation.py
+# The Cortex response cache shipped correct, wired and `enabled: false`, and
+# nobody ever flipped it -- because flipping it would have handed every hit the
+# SAME CortexResult instance (cache.py stored the live object, api.py returned it
+# verbatim), so one caller doing `result.text = trim(...)` would silently rewrite
+# the answer every later hit got for the whole TTL, with nothing in the audit
+# trail to show it. Entries are now deep-copied IN and OUT -- copy-on-read alone
+# is not enough, since the producing caller holds the object that was stored.
+# The other precondition was invalidation: there is none beyond TTL/LRU, and for
+# cortex.ask none can be built (live NL->SQL whose invalidating writes come from
+# other processes an in-process cache cannot observe), so ask is out of the
+# default operations list; cortex.search keeps caching because the RAG ingestion
+# path IS an in-process choke point and now calls cache.invalidate(). Pins the
+# mutation case end-to-end, both ingest entry points calling the invalidator, and
+# that a hit on the SHIPPED enabled config still writes its cortex_audit row.
+# 37 tests, ~1s, fully mocked: no DB service, no LLM, no network.
+tests/cortex/test_response_cache.py
+
+# ctx-perf-05 -- the Cortex tables must be indexed for the query the DATABASE
+# runs, not the one the call site writes. get_connection() attaches the security
+# context and StorageCursor._inject_rls rewrites every read to carry
+# "AND tenant_id = ? AND classification IN (...)", so metrics._scan's
+# "WHERE created_at >= ?" is really tenant_id + created_at -- a shape the
+# separate single-column indexes from 262/263 can only half serve. Pins: the
+# migration is idempotent and applies to a database bootstrapped by 262/263;
+# down.sql restores the pre-migration index set exactly (it must not drop the
+# single-column indexes it never created); tenant_id LEADS each composite,
+# because (created_at, tenant_id) would satisfy a naive "is there a composite?"
+# check while serving the equality not at all; discover_migrations still orders
+# 262/263 BEFORE this 14-digit timestamp, since running out of order fails on a
+# FRESH database only; and both init_db.py copies declare the same composites,
+# because fresh deployments run init_db directly and never see the migration.
+# 7 tests, ~1s, in-process SQLite: no DB service, no LLM, no network. The 8th
+# EXPLAINs the real query shape against a seeded 200k-row PostgreSQL schema it
+# creates and drops itself, and skips outright when no PG is reachable.
+tests/cortex/test_rls_index_coverage.py
+
+# ctx-perf-05 (PG tier): the companion plan assertion for the composite indexes
+# above. Gated here for the census; it SKIPS unless ICDEV_PYTEST_PG=1, and the
+# job that actually runs it is Test (PostgreSQL) via tests/pg_tier_allowlist.txt.
+# Splitting it out is the point: left in the SQLite suite it would skip every
+# run, and a test that always skips proves nothing while looking green.
+# 2 tests: one asserts the composite replaces the BitmapAnd of the two
+# single-column indexes (with the pre-index plan as the negative control), the
+# other that it actually LOWERS the estimated cost -- "the index name appears"
+# would still pass on a worse plan.
+tests/pg_tier/test_cortex_rls_index_plan.py
+# A code-level reflex finding files ONE card, not one per affected row
+# (ctx-perf-07). cpmp_monitor pass 3 filed a [SUBCON] ISR/SSR card PER CONTRACT:
+# seven cards for ONE defect -- detect_noncompliance check #4 had no FAR
+# 19.702(a) applicability gate, so it fired HIGH on all seven active contracts
+# while its three siblings, which all scope to active subcontractors, correctly
+# found nothing. All 7 were false positives. Four sessions then fixed the same
+# bug independently: #1628 landed, #1629/#1633/#1635 were closed as redundant,
+# and two of those three had created the SAME test file path so they conflicted
+# with each other as well as with main. The cost of six extra cards was six
+# branches, six PRs and work a human had to adjudicate.
+#
+# Gates BOTH directions, because either alone is easy and useless: a code-level
+# finding is one card carrying every affected row as evidence, and a data-level
+# finding is still one card per row -- including at FULL saturation, when seven
+# of seven contracts have flow-down gaps naming seven different subcontractors.
+# Also gates the mechanism: identity is a deterministic key and never a title
+# (title dedup already shipped here and DROPS distinct findings, PR #1504), the
+# code-level key holds no subject so a shrinking population is still one card,
+# aggregating carries every input finding onto some output card rather than
+# discarding it, and the icdev/ mirror resolves the SAME args/finding_scope.yaml
+# -- a repo-root-relative path there lands in icdev/args/ (19 of 309 files) and
+# the mirror would quietly file seven cards while the root copy filed one.
+# The measured case is replayed end-to-end through the real reflex, the real
+# detect_noncompliance and a real in-memory board; the premise itself is pinned
+# (test_the_check_really_does_fire_on_all_seven), so a fixture that stopped
+# reproducing the defect fails loudly instead of asserting 1 card against 1
+# finding. 38 tests, <1s, in-memory SQLite: no DB service, no LLM, no network.
+tests/test_reflex_finding_scope.py

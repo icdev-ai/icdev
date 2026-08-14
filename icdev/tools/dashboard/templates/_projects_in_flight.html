@@ -108,6 +108,19 @@
   color:#fca5a5; margin-bottom:0.5rem;
 }
 
+/* ── Unclaimed-task warning ──
+   Amber, and never colour-only: the glyph and the bold count carry the signal
+   for CVD users, matching the provenance page's four-state treatment. */
+.proj-orphan-warn { border: 1px solid #b45309; border-left: 3px solid #f59e0b;
+                    background: rgba(245, 158, 11, 0.08); color: #fcd34d;
+                    border-radius: 6px; padding: 0.6rem 0.75rem;
+                    margin-bottom: 0.75rem; font-size: 0.85rem; line-height: 1.5; }
+.proj-orphan-warn code { background: rgba(0,0,0,0.25); padding: 0 0.25rem;
+                         border-radius: 3px; font-size: 0.8rem; }
+.proj-orphan-sample { margin-top: 0.4rem; font-family: ui-monospace, monospace;
+                      font-size: 0.78rem; opacity: 0.85; word-break: break-all; }
+.proj-orphan-flag { color: #f59e0b; margin-left: 0.35rem; }
+
 /* ── Project progress cards (unchanged) ── */
 .proj-card { border: 1px solid var(--border-color, #2a2a40);
              border-radius: 8px; background: var(--bg-card, #16213e);
@@ -409,12 +422,36 @@
     }).join('');
 
     var overallPct = Math.max(0, Math.min(100, p.overall_pct || 0));
+
+    // Unclaimed tasks: rows carrying this project's task_prefix that no epic
+    // key matches. They are absent from every count above, so the ratio and
+    // percentage on this card are computed over a SUBSET — say so, rather than
+    // presenting a partial figure as the whole truth. When the count equals
+    // total_tasks + orphans the card would previously not have rendered at all.
+    var orphans = p.orphaned_tasks || 0;
+    var orphanWarn = '';
+    if (orphans > 0) {
+      var sample = (p.orphaned_sample || []).slice(0, 5).map(esc).join(', ');
+      orphanWarn = '<div class="proj-orphan-warn">'
+        + '<strong>&#9888; ' + orphans + ' task' + (orphans === 1 ? '' : 's')
+        + ' not claimed by any epic</strong> &mdash; excluded from the counts above, '
+        + 'so the totals and percentage on this card are a subset. Task ids must be '
+        + '<code>&lt;task_prefix&gt;&lt;epic_key&gt;-&lt;N&gt;</code>: either fix the ids or add '
+        + 'the missing epic to <code>args/projects.yaml</code>.'
+        + (sample ? '<div class="proj-orphan-sample">' + sample
+                    + (orphans > 5 ? ', &hellip;' : '') + '</div>' : '')
+        + '</div>';
+    }
+    var statLabel = (p.done_tasks || 0) + ' / ' + (p.total_tasks || 0) + ' &middot; ' + overallPct + '%'
+      + (orphans > 0 ? ' <span class="proj-orphan-flag" title="' + orphans
+                       + ' task(s) not counted — see card">&#9888;</span>' : '');
+
     return '<details class="proj-card" id="' + esc(anchor) + '"' + openAttr + '>'
       + '<summary>'
       + '<div class="proj-title">' + esc(p.name || p.key) + '</div>'
-      + '<div class="proj-summary-stats">' + (p.done_tasks || 0) + ' / ' + (p.total_tasks || 0) + ' &middot; ' + overallPct + '%</div>'
+      + '<div class="proj-summary-stats">' + statLabel + '</div>'
       + '</summary>'
-      + '<div class="proj-body">' + desc + '<div class="proj-briefs">' + brief + '</div>' + epics + '</div>'
+      + '<div class="proj-body">' + orphanWarn + desc + '<div class="proj-briefs">' + brief + '</div>' + epics + '</div>'
       + '</details>';
   }
 

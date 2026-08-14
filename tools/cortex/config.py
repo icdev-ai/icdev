@@ -118,12 +118,55 @@ class CortexAirgapError(RuntimeError):
 # ---------------------------------------------------------------------------
 # Behavior config (args/cortex_config.yaml)
 # ---------------------------------------------------------------------------
+#: Resolved config paths, keyed on the two env vars that can change the answer.
+#: See resolve_cortex_config_path() for why this is safe to memoize.
+_path_cache: Dict[tuple, Path] = {}
+
+
+def reset_path_cache() -> None:
+    """Drop the resolved-path memo. For tests that move config files around."""
+    _path_cache.clear()
+
+
 def resolve_cortex_config_path() -> Path:
-    """Return the cortex_config.yaml every ICDEV component should read."""
-    override = os.environ.get(CORTEX_CONFIG_ENV_VAR, "").strip()
+    """Return the cortex_config.yaml every ICDEV component should read.
+
+    Memoized (ctx-perf-01). The uncached form was a real hot-path cost: this
+    calls ``resolve_llm_config_path()``, which walks EVERY parent directory
+    is_file()-probing for ``args/llm_config.yaml`` with no memo of its own. A
+    single governed Cortex call reaches ``load_cortex_config()`` roughly 8-12
+    times — ``is_enabled``, ``cacheable``, ``_ttl_for``, ``resolve_fail_closed``
+    at three sites, ``_content_grounding_floor`` at two — so the walk was paid
+    that many times over, tens of filesystem syscalls per call, whether or not
+    the response cache was even on.
+
+    Safe to memoize because the answer depends on exactly two inputs, both keyed
+    here: the two env overrides. The directory walk starts from a module-level
+    root derived from ``__file__``, NOT from ``os.getcwd()``, so it cannot change
+    under a worktree or a test that chdirs. ``reset_path_cache()`` exists for
+    tests that genuinely relocate a config file.
+
+    NOTE what this does NOT fix: ``load_cortex_config`` still stat()s the
+    resolved path on every call to key its own mtime cache. That is one syscall
+    rather than a full walk, and it is the invalidation signal, so it stays.
+    Collapsing the 8-12 calls themselves would mean threading one config object
+    through the pipeline — a larger change than this card.
+    """
+    key = (
+        os.environ.get(CORTEX_CONFIG_ENV_VAR, "").strip(),
+        os.environ.get("ICDEV_LLM_CONFIG", "").strip(),
+    )
+    cached = _path_cache.get(key)
+    if cached is not None:
+        return cached
+
+    override = key[0]
     if override:
-        return Path(override).expanduser().resolve()
-    return resolve_llm_config_path().parent / CORTEX_CONFIG_FILENAME
+        resolved = Path(override).expanduser().resolve()
+    else:
+        resolved = resolve_llm_config_path().parent / CORTEX_CONFIG_FILENAME
+    _path_cache[key] = resolved
+    return resolved
 
 
 def _load_yaml(path: Path) -> Dict:
@@ -180,6 +223,64 @@ def resolve_fail_closed(ctx=None, config_path=None) -> bool:
         return bool(explicit)
     cfg = load_cortex_config(config_path)
     return bool((cfg.get("governance") or {}).get("fail_closed", False))
+
+
+def resolve_strategy_weights(search_cfg=None, config_path=None) -> Dict[str, float]:
+    """Per-backend fusion weights for RRF (``search.strategy_weights``).
+
+    Consumed by ``search_service._rrf_fuse``, which scores each item
+    ``sum(weight / (rrf_k + rank))`` over the backends that returned it —
+    the formula args/cortex_config.yaml has always documented. A backend with
+    no entry weighs 1.0 (neutral); an unparseable or negative entry is clamped
+    to 0.0 so a typo demotes that backend rather than inverting the ordering.
+
+    ``search_cfg`` lets a caller that already loaded the ``search`` section
+    pass it in instead of paying a second (cached) config read.
+    """
+    if search_cfg is None:
+        search_cfg = (load_cortex_config(config_path) or {}).get("search") or {}
+    raw = search_cfg.get("strategy_weights") or {}
+    weights: Dict[str, float] = {}
+    if isinstance(raw, dict):
+        for backend, value in raw.items():
+            try:
+                weights[str(backend)] = max(0.0, float(value))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "cortex: non-numeric search.strategy_weights[%r]=%r — using 0.0",
+                    backend, value,
+                )
+                weights[str(backend)] = 0.0
+    return weights
+
+
+def nlq_fallback_enabled(config_path=None) -> bool:
+    """Whether ``analyst.ask()`` may fall back from IQE to the LLM NL->SQL path.
+
+    ``analyst.nlq_fallback_enabled: false`` is a POLICY switch: it stops
+    ``mode="auto"`` from silently degrading into LLM-generated SQL when IQE
+    cannot resolve/translate/authorize the question. It deliberately does NOT
+    govern an explicit ``mode="nlq"`` call — that is a caller opting in by
+    name, not a fallback.
+    """
+    cfg = load_cortex_config(config_path)
+    return bool((cfg.get("analyst") or {}).get("nlq_fallback_enabled", True))
+
+
+def skip_grounding_for_plain_complete(config_path=None) -> bool:
+    """Whether a non-retrieval call skips the two grounding gates.
+
+    Default True: a plain ``complete()`` is free-form drafting with no evidence
+    set, so both grounding gates record ``skip``. Set
+    ``governance.skip_grounding_for_plain_complete: false`` to run them anyway —
+    the citation gate then validates against an EMPTY allowed set (a plain
+    completion injects no sources, so any ``[source: N]`` tag it emits is
+    fabricated by construction) and the content gate runs the placeholder scan.
+    """
+    cfg = load_cortex_config(config_path)
+    return bool(
+        (cfg.get("governance") or {}).get("skip_grounding_for_plain_complete", True)
+    )
 
 
 # ---------------------------------------------------------------------------
