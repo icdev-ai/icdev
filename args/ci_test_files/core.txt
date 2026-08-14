@@ -1310,3 +1310,31 @@ tests/cortex/test_rls_index_coverage.py
 # would still pass on a worse plan.
 tests/pg_tier/test_cortex_rls_index_plan.py
 tests/test_kg_grounding.py
+# A code-level reflex finding files ONE card, not one per affected row
+# (ctx-perf-07). cpmp_monitor pass 3 filed a [SUBCON] ISR/SSR card PER CONTRACT:
+# seven cards for ONE defect -- detect_noncompliance check #4 had no FAR
+# 19.702(a) applicability gate, so it fired HIGH on all seven active contracts
+# while its three siblings, which all scope to active subcontractors, correctly
+# found nothing. All 7 were false positives. Four sessions then fixed the same
+# bug independently: #1628 landed, #1629/#1633/#1635 were closed as redundant,
+# and two of those three had created the SAME test file path so they conflicted
+# with each other as well as with main. The cost of six extra cards was six
+# branches, six PRs and work a human had to adjudicate.
+#
+# Gates BOTH directions, because either alone is easy and useless: a code-level
+# finding is one card carrying every affected row as evidence, and a data-level
+# finding is still one card per row -- including at FULL saturation, when seven
+# of seven contracts have flow-down gaps naming seven different subcontractors.
+# Also gates the mechanism: identity is a deterministic key and never a title
+# (title dedup already shipped here and DROPS distinct findings, PR #1504), the
+# code-level key holds no subject so a shrinking population is still one card,
+# aggregating carries every input finding onto some output card rather than
+# discarding it, and the icdev/ mirror resolves the SAME args/finding_scope.yaml
+# -- a repo-root-relative path there lands in icdev/args/ (19 of 309 files) and
+# the mirror would quietly file seven cards while the root copy filed one.
+# The measured case is replayed end-to-end through the real reflex, the real
+# detect_noncompliance and a real in-memory board; the premise itself is pinned
+# (test_the_check_really_does_fire_on_all_seven), so a fixture that stopped
+# reproducing the defect fails loudly instead of asserting 1 card against 1
+# finding. 38 tests, <1s, in-memory SQLite: no DB service, no LLM, no network.
+tests/test_reflex_finding_scope.py
