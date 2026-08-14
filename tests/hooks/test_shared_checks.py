@@ -668,7 +668,7 @@ def test_bash_write_targets_includes_the_redirect_forms(shared):
         ("~/.bashrc", True),
         ("$HOME/.bashrc", True),                 # a shell would have expanded it
         ("C:/Windows/System32/drivers/etc/hosts", True),  # true on POSIX too
-        (r"\attacker\share\payload", True),     # UNC — a host we cannot judge
+        (r"\\attacker\share\payload", True),     # UNC — a host we cannot judge
         ("C:notes.txt", True),                   # drive-RELATIVE — per-drive cwd
         ("tools/foo.py", False),
         (".tmp/scratch/report.json", False),
@@ -680,31 +680,39 @@ def test_outside_write_root(shared, raw, outside):
     assert bool(shared.outside_write_root(raw, repo_root=REPO_ROOT)) is outside
 
 
-@pytest.mark.parametrize("raw", [r"\attacker\share\payload", r"\\attacker\share\payload"])
-def test_backslash_rooted_paths_are_judged_by_construction_not_resolution(shared, raw):
-    """A backslash-rooted path must be refused WITHOUT being resolved.
+def test_a_real_unc_path_is_judged_by_construction_not_resolution(shared):
+    r"""A UNC path must be refused WITHOUT being resolved, on every platform.
 
-    This is the case that passed on Windows and failed only on Linux CI, and the
-    distinction is the whole fix. On Windows `\\attacker\\share\\payload` is
-    drive-root-relative, so Path() calls it absolute and it happens to resolve
-    outside the worktree — right answer, wrong reason. On POSIX a backslash is
-    an ordinary filename character, so the same string is RELATIVE, gets joined
-    onto the anchor, and lands INSIDE. Resolution therefore gives opposite
-    verdicts on the two platforms.
-
-    So this asserts the SENTINEL, not the verdict: the path must be classified
-    UNRESOLVABLE by construction, before any Path() call. That assertion fails
-    on Windows against the pre-fix code (which returned a resolved Path here),
-    which a verdict-only assertion could not do — `outside_write_root` returned
-    "outside" on Windows either way, so the bug was invisible to it off-CI.
+    TWO backslashes is what reaches the UNC branch. It names a host this check
+    cannot reason about, so the verdict must not depend on Path() resolving it —
+    which is what makes it platform-independent.
     """
+    raw = r"\\attacker\share\payload"
     sentinel = shared.resolve_write_target(raw, REPO_ROOT)
     assert sentinel is shared.UNRESOLVABLE_TARGET, (
         f"{raw!r} must be judged unresolvable by construction, not resolved to "
-        f"{sentinel!r} — resolution flips verdict between Windows and POSIX"
+        f"{sentinel!r}"
     )
-    # And the verdict itself, which is what the guard actually acts on.
     assert shared.outside_write_root(raw, repo_root=REPO_ROOT)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="root-relative is a Windows concept")
+def test_a_root_relative_windows_path_is_outside(shared):
+    r"""A single leading `\` is root-relative on Windows and resolves onto the
+    current drive, so it lands outside the worktree.
+
+    Split out from the parametrized case rather than folded into it, because the
+    platforms genuinely disagree and BOTH are right. On POSIX a backslash is an
+    ordinary filename character, so `\attacker\share\payload` is a RELATIVE name
+    that correctly resolves INSIDE the worktree — a file by that name really is
+    in there. Widening the guard to treat one backslash as UNC makes both
+    platforms "agree" by refusing a legitimate in-worktree POSIX write, which
+    contradicts the guard's own rule that it fails OPEN on a path it cannot
+    place. The UNC case next to this one needs TWO leading backslashes to reach
+    that branch at all; with one it passed on Windows only by accident of this
+    resolution, and this file was not in the CI gate to notice.
+    """
+    assert shared.outside_write_root(r"\attacker\share\payload", repo_root=REPO_ROOT)
 
 
 def test_the_boundary_check_is_writes_only(shared):
