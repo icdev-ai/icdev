@@ -105,14 +105,34 @@ def db(icdev_db, monkeypatch):
 
 @pytest.fixture
 def client(db):
-    """Dashboard app with the cortex blueprint registered, logged in as test-admin."""
+    """A FRESH app per test with the cortex blueprint, logged in as test-admin.
+
+    This used to register the blueprint onto the shared ``tools.dashboard.app``
+    singleton behind an ``if "cortex" not in app.blueprints`` guard. That works
+    when this file runs alone and fails in CI: any earlier module importing the
+    same singleton and issuing one request locks Flask's setup phase, so the
+    registration then raises
+
+        AssertionError: The setup method 'register_blueprint' can no longer be
+        called on the application. It has already handled its first request.
+
+    The guard cannot help — it only skips registration when the blueprint is
+    ALREADY there, and the failing case is precisely when it is not. Order
+    decided whether the suite passed.
+
+    cortex_bp carries its own ``before_request``, so it needs no dashboard
+    middleware and a bare Flask app is enough. Building one per test also stops
+    this file mutating global state other tests observe.
+    """
+    from flask import Flask
+
     from tools.cortex.blueprint import cortex_bp
-    from tools.dashboard.app import app
 
-    if "cortex" not in app.blueprints:
-        app.register_blueprint(cortex_bp)
-
+    app = Flask(__name__)
+    app.secret_key = "test-secret"          # session_transaction needs one
     app.config["TESTING"] = True
+    app.register_blueprint(cortex_bp)
+
     with app.test_client() as test_client:
         with test_client.session_transaction() as sess:
             sess["user_id"] = "test-admin"
