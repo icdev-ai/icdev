@@ -1413,3 +1413,13 @@ tests/rag/test_retriever_config_and_embedding.py
 # 25 tests, ~12s, fully stubbed governance sinks: no DB service, no LLM,
 # no network.
 tests/cortex/test_cortex_reach_decisions.py
+
+# ctx-reach-04. Pins an invariant that lives in an ABSENCE: `tools/cortex` appears
+# ZERO times in tools/builder/child_app_generator.py, whose DIRECTORY_TREE is an
+# ALLOWLIST — so no generated descendant inherits Cortex, which is a parent-hosted
+# governed service reached over REST with an icdev_ctx_ service key. An absence is
+# undone by a one-line addition with nothing going red, so assert it. Also pins the
+# client's stdlib-only vendoring contract (zero first-party imports), the `None`
+# half of the degradation contract against a refused port, and the doc pointers in
+# client.py + its icdev/ mirror + phase-19. No DB, no LLM, no network egress.
+tests/cortex/test_child_app_access_pattern.py
