@@ -224,6 +224,20 @@ reflexes:
       operator: gte
     targets_file: context/genesis/competitors.yaml
 
+  cache_warm:
+    enabled: true
+    risk_tier: green
+    a2a_eligible: false
+    schedule: every 4h
+    interval_seconds: 14400
+    timeout_seconds: 600
+    description: >-
+      Refill the LLM response cache after it resets. llm_response_cache is
+      UNLOGGED on PostgreSQL, so the server empties it on any unclean shutdown
+      and the cache goes cold until live traffic refills it. The reflex warms
+      ONLY when get_savings_stats() reports state == "cold" — warming makes real
+      LLM calls, so a populated or merely TTL-expired cache is a no-op.
+    success_metric: {name: seeds_warmed, threshold: 0, operator: gte}
   audit:
     enabled: true
     risk_tier: green

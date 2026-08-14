@@ -72,6 +72,7 @@ STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
 DEFAULT_REFLEX_TIMEOUT_SECONDS = 300
 
 REFLEX_NAMES = [
+    "cache_warm",
     "research",
     "scout",
     "audit",

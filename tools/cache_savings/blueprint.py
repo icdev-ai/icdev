@@ -56,6 +56,11 @@ def api_cache_savings_tile():
         "tokens_saved":  s["cache_read_tokens"],
         "cost_usd_saved": s["total_usd_saved"],
         "backend":       stats["backend"],
+        # Carried so the tile can say WHY it is zero. Without these it renders a
+        # cold cache and a broken one identically.
+        "state":          stats.get("state", ""),
+        "state_detail":   stats.get("state_detail", ""),
+        "stored_entries": stats.get("stored_entries", 0),
     })
 
 
