@@ -18,8 +18,10 @@ The four existing search backends return four incompatible native shapes:
 Each adapter takes ``(query, top_k, ctx)`` and normalizes its backend's
 native hits into ``CortexSearchResult`` (score clamped to [0, 1], native
 scores preserved verbatim in ``raw_scores``). Adapters are
-exception-isolated: a failing backend logs a warning and returns ``[]``,
-never breaking the other backends.
+exception-isolated: a failing backend logs and returns an EMPTY
+``BackendResults`` whose ``.errors`` says what went wrong, never breaking the
+other backends. That annotation is what lets a caller tell "the backend died"
+from "the corpus matched nothing" — the two used to be the same empty list.
 
 Backends are imported lazily from the same namespace root this module was
 loaded from (``tools.*`` shim or canonical ``icdev.tools.*``) so both
@@ -103,6 +105,38 @@ def _get_search_executor(search_cfg: Optional[dict] = None) -> concurrent.future
 def _backend(module: str):
     """Import a backend module from this module's own namespace root."""
     return importlib.import_module(f"{_NS}.{module}")
+
+
+class BackendResults(list):
+    """A result list that also carries the backends that FAILED (ctx-perf-04).
+
+    A backend that died returns zero hits — byte-identical to a backend that
+    legitimately matched nothing. That is how a dead embedding provider reached
+    the chat user as "No matching results were found across the Cortex
+    backends": an infrastructure failure rendered as an answer about the corpus.
+
+    This is a plain ``list`` subclass, so every consumer that treats the value
+    as a list (indexing, ``len``, iteration, ``extend``) is unaffected and any
+    code that rebuilds the list simply drops the annotation. A consumer that
+    wants to tell "failed" from "empty" reads ``getattr(results, "errors", ())``.
+    """
+
+    def __init__(self, items=(), errors=None):
+        super().__init__(items)
+        self.errors: list[dict] = list(errors or [])
+
+
+def _embedding_error_cls():
+    """The retriever's EmbeddingUnavailableError, resolved in this namespace.
+
+    Returns the empty tuple when the retriever module itself cannot be imported
+    — ``isinstance(exc, ())`` is False, so the caller falls through to the
+    generic backend-failure path.
+    """
+    try:
+        return _backend("rag.retriever").EmbeddingUnavailableError
+    except Exception:  # noqa: BLE001 — retriever unimportable; generic path is right
+        return ()
 
 
 def _clamp(value) -> float:
@@ -217,6 +251,11 @@ def search_rag(
     stay tenant-scoped. Vector/bm25/time-decay/rerank/final native scores are
     preserved in ``raw_scores``; ``final_score`` (already in [0, 1] for both
     RRF and weighted-sum fusion) becomes the normalized score.
+
+    Still exception-isolated — a failure never breaks the other backends — but
+    the failure is now RECORDED on the returned ``BackendResults`` instead of
+    vanishing into an empty list, so the caller can distinguish a dead
+    embedding provider from a corpus that matched nothing (ctx-perf-04).
     """
     ctx = ctx or CortexContext()
     try:
@@ -259,8 +298,19 @@ def search_rag(
             )
         return out
     except Exception as exc:
-        logger.warning("Cortex rag backend failed: %s", exc)
-        return []
+        if isinstance(exc, _embedding_error_cls()):
+            logger.error(
+                "Cortex rag backend could not embed the query: %s — reporting a "
+                "retrieval FAILURE, not zero results",
+                exc,
+            )
+            stage = "embedding"
+        else:
+            logger.warning("Cortex rag backend failed: %s", exc)
+            stage = "error"
+        return BackendResults(
+            [], errors=[{"backend": "rag", "stage": stage, "message": str(exc)}]
+        )
 
 
 def search_graph(
@@ -324,7 +374,10 @@ def search_graph(
         return out
     except Exception as exc:
         logger.warning("Cortex graph backend failed: %s", exc)
-        return []
+        return BackendResults(
+            [],
+            errors=[{"backend": "graph", "stage": "error", "message": str(exc)}],
+        )
 
 
 def search_dic(
@@ -387,7 +440,10 @@ def search_dic(
         return out
     except Exception as exc:
         logger.warning("Cortex dic backend failed: %s", exc)
-        return []
+        return BackendResults(
+            [],
+            errors=[{"backend": "dic", "stage": "error", "message": str(exc)}],
+        )
 
 
 def search_kb(
@@ -437,7 +493,10 @@ def search_kb(
         return out
     except Exception as exc:
         logger.warning("Cortex kb backend failed: %s", exc)
-        return []
+        return BackendResults(
+            [],
+            errors=[{"backend": "kb", "stage": "error", "message": str(exc)}],
+        )
 
 
 # Dispatch table for the Cortex facade — keys match CORTEX_BACKENDS.
@@ -457,18 +516,24 @@ def search_all(
 ) -> list[CortexSearchResult]:
     """Run the requested backends (default: all four) and merge results.
 
-    Returns the combined list sorted by normalized score descending. Each
-    adapter is already exception-isolated, so one failing backend degrades
+    Returns the combined list sorted by normalized score descending, as a
+    :class:`BackendResults` whose ``.errors`` names the backends that failed.
+    Each adapter is already exception-isolated, so one failing backend degrades
     to zero results without affecting the others.
     """
     merged: list[CortexSearchResult] = []
+    errors: list[dict] = []
     for name in backends or CORTEX_BACKENDS:
         adapter = BACKEND_ADAPTERS.get(name)
         if adapter is None:
             logger.warning("Cortex search: unknown backend %r skipped", name)
             continue
-        merged.extend(adapter(query, top_k=top_k, ctx=ctx))
-    return _rrf_fuse(merged, weights=resolve_strategy_weights())
+        backend_results = adapter(query, top_k=top_k, ctx=ctx)
+        merged.extend(backend_results)
+        errors.extend(getattr(backend_results, "errors", ()) or ())
+    return BackendResults(
+        _rrf_fuse(merged, weights=resolve_strategy_weights()), errors=errors
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +693,10 @@ def _run_backends(
     is abandoned (its worker thread is not joined) and logged; the results
     from the backends that finished are still returned — partial results beat
     no results.
+
+    ``results`` is a :class:`BackendResults`: any failure an adapter reported,
+    plus every timeout, is carried on ``.errors`` so an EMPTY result set can
+    still say why it is empty.
     """
     valid = []
     for name in backends:
@@ -636,12 +705,13 @@ def _run_backends(
         else:
             logger.warning("Cortex search: unknown backend %r skipped", name)
     if not valid:
-        return [], [], []
+        return BackendResults(), [], []
 
     timeouts = {**_DEFAULT_TIMEOUTS, **(search_cfg.get("timeouts") or {})}
     default_timeout = float(timeouts.get("default", 10.0))
     merged: list[CortexSearchResult] = []
     timed_out: list = []
+    errors: list[dict] = []
     # Submit onto the shared, bounded pool — never create/shut down a per-call
     # executor (that leaked a thread per timed-out backend). A timed-out future
     # is abandoned; its worker is reused by the pool once the adapter returns.
@@ -657,22 +727,31 @@ def _run_backends(
         budget = float(timeouts.get(name, default_timeout))
         remaining = max(0.0, start + budget - time.monotonic())
         try:
-            merged.extend(future.result(timeout=remaining))
+            backend_results = future.result(timeout=remaining)
+            merged.extend(backend_results)
+            errors.extend(getattr(backend_results, "errors", ()) or ())
         except concurrent.futures.TimeoutError:
             future.cancel()
             timed_out.append(name)
+            errors.append(
+                {
+                    "backend": name,
+                    "stage": "timeout",
+                    "message": f"timed out after {budget:.1f}s",
+                }
+            )
             logger.warning(
                 "Cortex %s backend timed out after %.1fs — returning "
                 "partial results",
                 name,
                 budget,
             )
-    merged = _rrf_fuse(
+    fused = _rrf_fuse(
         merged,
         k=int(search_cfg.get("rrf_k") or _DEFAULT_RRF_K),
         weights=resolve_strategy_weights(search_cfg),
     )
-    return merged, valid, timed_out
+    return BackendResults(fused, errors=errors), valid, timed_out
 
 
 def _routed_pass(
@@ -727,7 +806,9 @@ def _routed_pass(
         from .domains import filter_by_sources
 
         kept, dropped = filter_by_sources(results, domain_sources)
-        results = kept
+        # Re-wrap: the filter returns a plain list, and dropping the backend
+        # failures here is exactly how an empty set loses its explanation.
+        results = BackendResults(kept, errors=getattr(results, "errors", ()))
         domain_scope["sources"] = list(domain_sources)
         domain_scope["filtered_out"] = len(dropped)
 
@@ -885,7 +966,13 @@ def _corrective_pass(
         rewritten,
     )
     corrective = _routed_pass(rewritten, top_k, ctx, strategy, cfg, search_cfg)
-    merged = _merge_corrective(results, corrective, search_cfg)
+    merged = BackendResults(
+        _merge_corrective(results, corrective, search_cfg),
+        errors=[
+            *(getattr(results, "errors", ()) or ()),
+            *(getattr(corrective, "errors", ()) or ()),
+        ],
+    )
     for r in merged:
         r.metadata["corrective_pass"] = True
         r.metadata["crag"] = dict(crag_record)
@@ -922,6 +1009,11 @@ def search(
     corrective iteration rewrites the query (routing function
     ``cortex_search_rewrite``) and re-runs routing+fusion; see
     _corrective_pass() for the metadata contract.
+
+    The return is a :class:`BackendResults` — a list of hits that ALSO carries
+    ``.errors``, the backends that failed or timed out. An empty list with a
+    non-empty ``.errors`` means retrieval broke, not that nothing matched; a
+    caller that renders an answer must not report the two the same way.
     """
     ctx = ctx or CortexContext()
     cfg = config if config is not None else load_cortex_config()

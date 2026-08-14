@@ -68,7 +68,10 @@ def run_rag_search(
 
     Returns the retriever's result list, or ``[]`` when it yields nothing.
     Exceptions propagate: every current caller wraps this in its own
-    ``try/except`` and degrades to an empty/​error result.
+    ``try/except`` and degrades to an empty/​error result. One of them is
+    meaningful — ``retriever.EmbeddingUnavailableError`` says the query was
+    never embedded, so an empty list here means "no match" and that exception
+    means "retrieval did not run". Do not collapse the two.
     """
     retriever = retriever_cls(tenant_id=tenant_id)
     return retriever.search(query, **search_kwargs) or []

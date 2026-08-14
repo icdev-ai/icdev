@@ -50,6 +50,46 @@ except ImportError:
     HAS_GEMINI = False
 
 
+def resolve_embedding_model_id(chain_entry: str = "") -> str:
+    """Model id declared in ``embeddings`` in args/llm_config.yaml.
+
+    ``chain_entry`` names an entry in ``embeddings.models``; empty (the default)
+    means "the first entry of ``embeddings.default_chain``".
+
+    Exists so a call site that must name a model in a raw provider SDK call has
+    somewhere to get it OTHER than a literal. A literal like
+    ``model="nomic-embed-text"`` pins one vendor into code — and because those
+    call sites are wrapped in broad excepts, a deployment routing embeddings
+    anywhere else degrades silently rather than erroring.
+
+    Raises:
+        LookupError: llm_config declares no usable embedding model. Callers must
+            propagate that rather than substituting a literal — guessing an id
+            is what this function exists to prevent.
+    """
+    try:
+        import yaml
+
+        from tools.llm.config_path import resolve_llm_config_path
+
+        with open(resolve_llm_config_path(), encoding="utf-8") as fh:
+            config = yaml.safe_load(fh) or {}
+    except Exception as exc:
+        raise LookupError(f"llm_config.yaml is unreadable: {exc}") from exc
+
+    embeddings = config.get("embeddings") or {}
+    models = embeddings.get("models") or {}
+    name = chain_entry or next(iter(embeddings.get("default_chain") or []), "")
+    model_id = str((models.get(name) or {}).get("model_id") or "")
+    if not model_id:
+        raise LookupError(
+            "no embedding model id in llm_config.yaml for "
+            f"{name or 'embeddings.default_chain[0]'!r} — declare one under "
+            "embeddings.models before calling an embedding endpoint by name"
+        )
+    return model_id
+
+
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     """OpenAI-compatible embedding provider.
 
