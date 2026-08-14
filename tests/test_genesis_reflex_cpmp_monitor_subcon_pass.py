@@ -51,6 +51,7 @@ CREATE TABLE cpmp_contracts (
     id              TEXT PRIMARY KEY,
     contract_number TEXT,
     title           TEXT,
+    total_value     REAL,
     status          TEXT
 );
 CREATE TABLE cpmp_subcontractors (
@@ -122,9 +123,15 @@ def board(monkeypatch):
 
     conn = _storage_conn(raw)
 
+    # total_value is ABOVE the FAR 19.702(a)(1) subcontracting-plan threshold, so
+    # this contract genuinely owes an ISR/SSR and the missing-report finding below
+    # is a real one. Before _isr_ssr_applicability the value was irrelevant — the
+    # check fired on every contract regardless — which is exactly why this fixture
+    # never had to declare one.
     raw.execute(
-        "INSERT INTO cpmp_contracts (id, contract_number, title, status) VALUES (?, ?, ?, ?)",
-        (CONTRACT_ID, "W912-24-C-0001", "Untitled Contract", "active"),
+        "INSERT INTO cpmp_contracts (id, contract_number, title, total_value, status) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (CONTRACT_ID, "W912-24-C-0001", "Untitled Contract", 5_000_000.0, "active"),
     )
     for sub_id, name, value, flowdown, cyber, cmmc in _SUBS:
         raw.execute(

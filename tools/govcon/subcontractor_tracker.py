@@ -72,6 +72,18 @@ _CYBER_THRESHOLD = 100000.0
 # ISR/SSR currency window (days) — reports older than this are flagged
 _ISR_SSR_MAX_AGE_DAYS = 180
 
+# FAR 19.702(a)(1) — a small business subcontracting plan, and therefore the
+# FAR 52.219-9(d)(10) ISR/SSR filing obligation the plan carries, attaches only
+# to a contract expected to exceed this value. Below it there is no plan, so
+# there is no report to be late with.
+#
+# The construction carve-out (FAR 19.702(a)(2), $1,500,000 for construction of a
+# public facility) is deliberately NOT applied. 'Public facility' is not
+# derivable from naics_code, and inferring it from NAICS sector 23 would raise
+# the bar for every construction contract — converting a visible false positive
+# into a silent false negative, which is the strictly worse trade.
+_SB_PLAN_THRESHOLD = 750000.0
+
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -686,6 +698,71 @@ def list_sb_reports(contract_id):
 # ── Noncompliance Detection ─────────────────────────────────────────
 
 
+def _isr_ssr_applicability(conn, contract_id):
+    """Whether FAR 52.219-9(d) ISR/SSR reporting attaches to this contract at all.
+
+    Returns a dict with ``state`` ('required' | 'not_required' |
+    'undetermined'), a one-clause ``reason``, and the ``total_value`` the
+    decision was made on.
+
+    Checks 1-3 in detect_noncompliance are each scoped to the rows they can be
+    true of: flow-down and cybersecurity walk the contract's ACTIVE
+    subcontractors, and CMMC is additionally gated on subcontract_value. Check 4
+    had no gate of any kind — it asserted a HIGH FAR 52.219-9(d) violation from
+    the mere ABSENCE of a cpmp_small_business_plan row, on every contract,
+    forever. That asymmetry with its three siblings is the tell.
+
+    Measured on the live board 2026-08-13: cpmp_small_business_plan held 0 rows
+    platform-wide, so ``if not latest_report`` was true for every contract and
+    the board carried 7 identical HIGH '[SUBCON] <contract>: ISR/SSR' cards —
+    two of them for contracts with ZERO subcontractors, and all of them for
+    contracts whose total_value is 0. Every one was false, and each dispatched
+    an autonomous session to 'File the outstanding ISR/SSR in eSRS', which is
+    not an action this platform can take. An applicability check with no
+    applicability gate does not report a 100% violation rate; it reports
+    nothing, 100% of the time.
+
+    'undetermined' is deliberately NOT folded into either other state.
+    create_contract() defaults total_value to 0.0 exactly as it defaults
+    contract_number to '' — so a 0 means 'nobody filled this in' far more often
+    than it means 'this contract is worth nothing'. Reading 0 as
+    below-threshold would silence a genuine obligation on an unpopulated
+    contract: the same defect with the sign flipped, and no longer visible.
+    The caller raises it as its own MEDIUM finding instead, which names an
+    action that IS available — populate the contract value.
+    """
+    row = conn.execute(
+        "SELECT total_value FROM cpmp_contracts WHERE id = %s", (contract_id,)
+    ).fetchone()
+    if row is None:
+        return {"state": "undetermined", "reason": "contract not found", "total_value": None}
+
+    value = dict(row).get("total_value")
+    if value is None or value <= 0:
+        return {
+            "state": "undetermined",
+            "reason": "contract total_value is not populated",
+            "total_value": value,
+        }
+    if value < _SB_PLAN_THRESHOLD:
+        return {
+            "state": "not_required",
+            "reason": (
+                f"contract value ${value:,.2f} is below the FAR 19.702(a)(1) "
+                f"subcontracting plan threshold of ${_SB_PLAN_THRESHOLD:,.2f}"
+            ),
+            "total_value": value,
+        }
+    return {
+        "state": "required",
+        "reason": (
+            f"contract value ${value:,.2f} meets the FAR 19.702(a)(1) "
+            f"subcontracting plan threshold of ${_SB_PLAN_THRESHOLD:,.2f}"
+        ),
+        "total_value": value,
+    }
+
+
 def detect_noncompliance(contract_id):
     """Detect all types of noncompliance for a contract's subcontractors.
 
@@ -754,31 +831,63 @@ def detect_noncompliance(contract_id):
             }
         )
 
-    # 4. ISR/SSR currency — check if there is a recent report
-    # Note: DB may have reporting_period+report_type or period_start+period_end depending on init version
-    try:
-        latest_report = conn.execute(
-            "SELECT created_at, reporting_period, report_type FROM cpmp_small_business_plan "
-            "WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
-            (contract_id,),
-        ).fetchone()
-    except Exception:
-        # Fallback for older schema with period_start/period_end
-        latest_report = conn.execute(
-            "SELECT created_at, period_start AS reporting_period FROM cpmp_small_business_plan "
-            "WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
-            (contract_id,),
-        ).fetchone()
+    # 4. ISR/SSR currency — but only where FAR 52.219-9(d) actually attaches.
+    # See _isr_ssr_applicability: an absent report is only evidence of a missed
+    # filing on a contract that owed a filing in the first place.
+    applicability = _isr_ssr_applicability(conn, contract_id)
+
+    latest_report = None
+    if applicability["state"] == "required":
+        # Note: DB may have reporting_period+report_type or period_start+period_end depending on init version
+        try:
+            latest_report = conn.execute(
+                "SELECT created_at, reporting_period, report_type FROM cpmp_small_business_plan "
+                "WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
+                (contract_id,),
+            ).fetchone()
+        except Exception:
+            # Fallback for older schema with period_start/period_end
+            latest_report = conn.execute(
+                "SELECT created_at, period_start AS reporting_period FROM cpmp_small_business_plan "
+                "WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
+                (contract_id,),
+            ).fetchone()
     conn.close()
 
-    if not latest_report:
+    if applicability["state"] == "undetermined":
+        findings.append(
+            {
+                # A DIFFERENT category from 'isr_ssr': this is a data-quality gap
+                # in our own record, not a reporting violation by the prime, and
+                # the two must not be counted together.
+                "category": "isr_ssr_applicability",
+                # MEDIUM on purpose. cpmp_monitor files kanban cards for
+                # high/critical only, so an unpopulated contract value stays
+                # visible on the CPMP dashboard without dispatching a session to
+                # file a report that may not be owed.
+                "severity": "medium",
+                "sub_id": None,
+                "company_name": None,
+                "description": (
+                    f"ISR/SSR applicability cannot be determined: {applicability['reason']}. "
+                    "Populate the contract value to enable the FAR 52.219-9(d) currency check."
+                ),
+                "subcontract_value": None,
+            }
+        )
+    elif applicability["state"] != "required":
+        pass  # Below the FAR 19.702(a)(1) threshold: no plan, so no report is owed.
+    elif not latest_report:
         findings.append(
             {
                 "category": "isr_ssr",
                 "severity": "high",
                 "sub_id": None,
                 "company_name": None,
-                "description": "No ISR/SSR report has been filed for this contract",
+                "description": (
+                    "No ISR/SSR report has been filed for this contract "
+                    f"({applicability['reason']})"
+                ),
                 "subcontract_value": None,
             }
         )
@@ -823,6 +932,11 @@ def detect_noncompliance(contract_id):
         "severity_counts": severity_counts,
         "category_counts": category_counts,
         "compliant": len(findings) == 0,
+        # Reported rather than implied. A gate that suppresses a finding must say
+        # so out loud: 'not_required' and 'undetermined' both produce no
+        # isr_ssr finding, and without this key the two are indistinguishable
+        # from a contract that is fully current on its filings.
+        "isr_ssr_applicability": applicability,
         "findings": findings,
     }
 

@@ -1119,3 +1119,16 @@ tests/test_govcon_capabilities.py
 # shape that re-breaks on the next rename with no exception to notice it by.
 # 9 tests, <1s, fully mocked: no DB service, no LLM, no network.
 tests/test_cpmp_monitor_reflex_contract.py
+# cpmp-2f71eadacd — the FAR 52.219-9(d) ISR/SSR check in detect_noncompliance had
+# no applicability gate, while its three sibling checks in the same function are
+# each scoped to the rows they can be true of. It read the ABSENCE of a
+# cpmp_small_business_plan row as a HIGH violation on every contract, so with
+# 0 plan rows platform-wide it fired on all 7 active contracts and the board
+# carried 7 identical HIGH cards -- two for contracts with ZERO subcontractors,
+# all for contracts whose total_value is 0 -- each dispatching a session to
+# "File the outstanding ISR/SSR in eSRS", which ICDEV cannot do. Gated here in
+# the PR that fixes it because the regression is invisible by construction: an
+# ungated applicability check reports no exception, no error entry, and a
+# violation rate of 100% that reads as a working detector.
+# 11 tests, <1s, in-memory sqlite, no network/LLM.
+tests/test_cpmp_isr_ssr_applicability.py
