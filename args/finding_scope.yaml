@@ -1,0 +1,67 @@
+# CUI // SP-CTI
+#
+# Remedy scope for reflex findings — does ONE fix close all of these, or N?
+# Read by tools/genesis/finding_scope.py. Every key below is resolved through
+# `_setting()` / `_declared_category_scope()`; there is no key here that nothing
+# reads.
+#
+# THE BUG THIS EXISTS FOR
+# =======================
+# 2026-08-14: cpmp_monitor pass 3 filed a [SUBCON] ISR/SSR card PER CONTRACT —
+# seven cards for one code-level defect (detect_noncompliance check #4 had no
+# FAR 19.702(a) applicability gate, so it was 7/7 false positives). Four
+# sessions then fixed the same bug independently; #1628 landed, #1629/#1633/
+# #1635 were closed as redundant, and two of those had created the same test
+# file path so they conflicted with each other as well as with main.
+#
+# THE LEVER THIS FILE IS
+# ======================
+# `sources.<created_by>.categories.<category>: code` collapses a check's next
+# cycle from N cards to 1 — with the affected rows carried as evidence — WITHOUT
+# a code deploy. That is the fastest thing to reach for the moment a check is
+# discovered to be defective, and it is reversible by deleting the line.
+#
+# It does NOT retire cards already on the board. Fixing an ungated check and
+# sweeping the cards it already filed are two jobs; see the ISR/SSR case, where
+# #1628 landed and the whole pre-fix batch was still dispatching sessions the
+# next morning.
+
+version: 1
+
+defaults:
+  # Scope assumed when nothing declares one. `data` = today's behaviour, one
+  # card per row, and it stays the default because it is the SAFE direction:
+  # over-reporting costs a redundant card, under-reporting loses a finding.
+  scope: data
+
+  # Rule 3 in tools/genesis/finding_scope.py — infer code-level from a check
+  # that fired on 100% of its population with an identical remedy. OFF by
+  # default and enabled per source, because it is the only rule here that can
+  # be wrong: a genuine finding that happens to be universal aggregates too.
+  # That is a bounded cost (one session verifies, every row is listed on the
+  # card) but it is not a cost to impose on a source nobody has looked at.
+  infer_code_scope: false
+
+  # Below this many examined rows, "fired on everything" means nothing — three
+  # of three is a coincidence, seven of seven is a pattern. Also the floor on
+  # how many cards aggregation can save, so a lower value buys almost nothing.
+  min_population: 3
+
+  # Rows listed inline on an aggregated card. The remainder is REPORTED as a
+  # count, never silently dropped, and the full list is in the card's context
+  # data — a truncation nobody mentions reads as "that was all of them".
+  max_evidence_rows: 25
+
+sources:
+  # cpmp_monitor pass 3 (Subcontractor Noncompliance) — the measured instance.
+  # Opted in to inference because this is the check family that shipped the
+  # defect: #1-#3 scope to active subcontractors, #4 did not, and the asymmetry
+  # is invisible from inside any single contract's iteration.
+  cpmp_monitor_subcon:
+    infer_code_scope: true
+    # Per-category declarations go here as `<category>: code|data`. Empty on
+    # purpose: isr_ssr is a legitimate DATA finding now that #1628 gave it an
+    # applicability gate, and declaring it `code` would permanently aggregate
+    # real per-contract reporting gaps. Inference above is what catches the
+    # next check that loses its gate.
+    categories: {}
