@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -153,12 +154,42 @@ def test_env_file_access(shared, tool_name, tool_input, blocked):
 @pytest.mark.parametrize(
     "command,blocked",
     [
+        # ── catastrophic or unrecoverable targets ──────────────────────────
         ("rm -rf /", True),
         ("rm -fr ~", True),
-        ("rm --recursive --force build", True),
+        ("rm -rf ~/projects", True),
+        ("rm -rf $HOME/.ssh", True),
         ("rm -r . -f", True),
+        ("rm -rf ./*", True),
+        ("rm -rf *", True),
+        ("rm -rf ../sibling", True),
+        ("rm -rf /etc", True),
+        ("rm -rf C:/Users", True),
+        # git history is the one thing inside a checkout git cannot restore
+        ("rm -rf .git", True),
+        ("rm -rf /repo/wt/.git", True),
+        # a recursive rm whose target this parser cannot see fails CLOSED
+        ("rm -rf", True),
+        # ── scoped deletes: recoverable, and 288 of them in 30 days ───────
+        # exa-bench-05 changed this case. `rm --recursive --force build` used
+        # to refuse on the FLAGS alone, which made the rule "no rm -rf, ever" —
+        # and a rule that refuses every scratch cleanup is a rule that has to
+        # stay switched off, which is how this hook came to be advisory in the
+        # first place. What makes rm -rf dangerous is the target.
+        ("rm --recursive --force build", False),
+        ("rm -rf .tmp/probe", False),
+        ("rm -rf node_modules", False),
         ("rm file.txt", False),
         ("rmdir build", False),
+        # ── not an rm at all ───────────────────────────────────────────────
+        # `\brm` matches inside `--rm`: every `docker run --rm` in the corpus
+        # scored as a dangerous delete.
+        ("docker run --rm -v /w:/w -e X=1 python:3.11 bash -c 'pytest -q'", False),
+        # the flags of a LATER command are not the flags of an earlier rm
+        ("rm -f coverage.json; grep -rln foo tests/", False),
+        # echoing a dangerous command is not running it — this is how the
+        # corpus tests this very hook
+        ("""echo '{"tool_input":{"command":"rm -rf /"}}' | python hook.py""", False),
     ],
 )
 def test_dangerous_rm(shared, command, blocked):
@@ -351,6 +382,58 @@ def test_ordinary_redirects_are_still_allowed(shared, command):
     assert shared.check_file_access_tiers("Bash", {"command": command}) is None
 
 
+# ── the composed Bash target scan (exa-bench-05 × exa-bench-06) ───────────
+#
+# `check_file_access_tiers` was refactored independently on two branches and
+# NEITHER version subsumed the other, so taking either alone silently dropped a
+# property. exa-bench-06 made the scan return ALL targets (`a > log 2>> err`
+# left the rest unexamined); exa-bench-05 segmented the command first. The
+# resolution runs the all-targets scan INSIDE the per-segment split, and these
+# two cases are what tell the halves apart — each fails if its half is reverted.
+
+
+def test_a_real_target_in_a_later_segment_still_blocks(shared):
+    """Segmenting must not lose a target: the property exa-bench-05 could drop."""
+    command = "cd wt && ruff check tests/x.py && rm -f .env"
+    reason = shared.check_file_access_tiers("Bash", {"command": command})
+    assert reason and "zero_access" in reason, (
+        "the `.env` delete in the third segment was ALLOWED — segmenting the "
+        "command dropped a target the whole-command scan used to see"
+    )
+
+
+def test_a_later_segment_does_not_complete_an_earlier_one(shared):
+    """The false-fire the segmentation exists to remove.
+
+    `.env.example` is an argument to `grep`, not a target of the `rm` before
+    it. Its own tier explicitly exempts it, and the survey counted refusals of
+    exactly this shape.
+    """
+    command = "rm -f build.tmp ; grep -r pattern .env.example"
+    assert shared.check_file_access_tiers("Bash", {"command": command}) is None
+
+
+def test_every_target_within_one_segment_is_examined(shared):
+    """Per-segment must not go back to first-match-only: exa-bench-06's half."""
+    command = "echo hi > notes.md 2>> ~/.ssh/authorized_keys"
+    reason = shared.check_file_access_tiers("Bash", {"command": command})
+    assert reason and "zero_access" in reason, (
+        "only the FIRST redirect target of the segment was examined — the "
+        "second one wrote into a zero_access path and was allowed"
+    )
+
+
+def test_a_heredoc_body_is_not_read_as_commands(shared):
+    """What composing them BUYS, over either half alone.
+
+    `command_segments` strips heredoc data first, so a non-interpreter heredoc
+    whose body happens to contain shell text no longer contributes targets. The
+    whole-command scan on its own had no way to tell body from command.
+    """
+    command = "cat > notes.md <<'EOF'\nrm -f .env\nEOF"
+    assert shared.check_file_access_tiers("Bash", {"command": command}) is None
+
+
 # ── destructive git blocklist (both paths since exa-bench-06) ─────────────
 
 
@@ -375,6 +458,170 @@ def test_ordinary_redirects_are_still_allowed(shared, command):
 def test_git_danger(shared, command, blocked):
     assert bool(shared.git_danger_reason(command)) is blocked
     assert bool(shared.check_git_danger("Bash", {"command": command})) is blocked
+
+
+# ── exa-bench-05: shell-aware scanning ────────────────────────────────────
+#
+# These checks became hard blocks when the `|| true` came out of
+# .claude/settings.json, so what they read as "the command" has to be right.
+# Measured over 96,649 real tool calls, whole-string matching was the single
+# largest source of false refusals.
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        ("git status", ["git status"]),
+        ("cd x && ruff check .", ["cd x", "ruff check ."]),
+        ("a; b | c", ["a", "b", "c"]),
+        ("a && b || c", ["a", "b", "c"]),
+        # a separator inside quotes is data, not a separator
+        ("""psql -c "DELETE FROM t WHERE a|b" """, ['psql -c "DELETE FROM t WHERE a|b"']),
+        ("echo 'a && b'", ["echo 'a && b'"]),
+    ],
+)
+def test_command_segments(shared, command, expected):
+    assert shared.command_segments(command) == expected
+
+
+def test_heredoc_body_is_data_for_a_writer_and_code_for_an_interpreter(shared):
+    """A PR body quoting a dangerous command is not that command.
+
+    ``gh pr create --body "$(cat <<EOF … EOF)"`` and ``git commit -F - <<EOF``
+    put prose on the command line. ``python - <<PY`` puts a program there. The
+    opener's command word is what tells them apart.
+    """
+    prose = "git commit -F - <<'EOF'\nfix: stop DELETE FROM audit_trail\nEOF"
+    assert "audit_trail" not in shared.strip_heredoc_data(prose)
+
+    program = "python - <<'PY'\nconn.execute('DELETE FROM audit_trail')\nPY"
+    assert "audit_trail" in shared.strip_heredoc_data(program)
+
+    # an unterminated heredoc drops to end-of-string rather than raising
+    assert shared.strip_heredoc_data("cat > f <<'EOF'\nbody") == "cat > f <<'EOF'"
+
+
+@pytest.mark.parametrize(
+    "segment,expected",
+    [
+        ("grep -r x .", "grep"),
+        ("VAR=1 sudo /usr/bin/grep -r x", "grep"),
+        ("  python3 -c 'x'", "python3"),
+        ("", ""),
+    ],
+)
+def test_command_word(shared, segment, expected):
+    assert shared.command_word(segment) == expected
+
+
+@pytest.mark.parametrize(
+    "command,blocked",
+    [
+        # real operands
+        ("cat .env", True),
+        ("cat /repo/wt/.env", True),
+        ("head -c 20 .env", True),
+        ("echo 'K=v' > .env", True),
+        ("printf 'K=v\n' >> .env", True),
+        # mentions, not operands — every one of these refused before
+        ('grep -v "process.env" src/app.js', False),
+        (r'grep -n "^\.env" .gitignore', False),
+        ("cat .env.example", False),
+        ("""python -c "from dotenv import load_dotenv; load_dotenv('.env')" """, False),
+        ("set -a && . ./.env; set +a; python tools/kanban/cli.py --show x", False),
+        ("cp /repo/.env .env", False),
+        ("ls -la .env", False),
+        ("gh pr create --body 'fixes the .env loader'", False),
+    ],
+)
+def test_env_file_access_matches_operands_not_mentions(shared, command, blocked):
+    assert bool(shared.check_env_file_access("Bash", {"command": command})) is blocked
+
+
+@pytest.mark.parametrize(
+    "file_path,blocked",
+    [
+        (".env", True),
+        ("/repo/.env", True),
+        (".env.sample", False),
+        # D-ORCH-8 excludes these in args/file_access_tiers.yaml; this check
+        # refused them anyway, which is 24 of its 71 measured refusals.
+        (".env.example", False),
+        (".env.template", False),
+        ("/wt/.env.local-copy.template", False),
+    ],
+)
+def test_env_template_files_are_not_secrets(shared, file_path, blocked):
+    assert bool(shared.check_env_file_access("Read", {"file_path": file_path})) is blocked
+
+
+def test_append_only_ignores_searches_and_prose(shared):
+    tables = ["audit_trail", "hook_events"]
+
+    def blocked(command):
+        return bool(shared.check_append_only_write("Bash", {"command": command}, tables))
+
+    assert blocked("psql -c 'DELETE FROM audit_trail'")
+    # searching FOR the statement, and describing it, are not executing it
+    assert not blocked('grep -n "DELETE FROM audit_trail" tests/test_chain.py')
+    assert not blocked('gh pr create --title "fix: UPDATE audit_trail path"')
+    # a security test tampering with its own throwaway chain
+    assert not blocked(
+        'ICDEV_DB_PATH=/tmp/chain_demo.db python - <<\'PY\'\n'
+        "conn.execute('DELETE FROM audit_trail WHERE id=3')\nPY"
+    )
+
+
+def test_direct_sqlite_only_flags_source_that_writes(shared):
+    def blocked(tool, ti):
+        return bool(shared.check_direct_sqlite_usage(tool, ti))
+
+    assert blocked("Edit", {"file_path": "tools/foo/bar.py",
+                            "new_string": "sqlite3.connect('x')"})
+    # documentation about the pattern is not the pattern
+    assert not blocked("Edit", {"file_path": "tools/manifest/safety-hooks.md",
+                                "new_string": "blocks sqlite3.connect('x')"})
+    # the check's own implementation names the string it looks for
+    assert not blocked("Write", {"file_path": "tools/hooks/shared_checks.py",
+                                 "content": 'if "sqlite3.connect(" in new_content:'})
+    # the storage layer's own package
+    assert not blocked("Write", {"file_path": "tools/db/shadowed_migration_replay.py",
+                                 "content": "sqlite3.connect(p)"})
+    # a read-only diagnostic writes nothing anywhere
+    assert not blocked("Bash", {
+        "command": "python -c \"import sqlite3; "
+                   "print(sqlite3.connect('data/icdev.db').execute('select 1').fetchone())\""})
+    assert blocked("Bash", {
+        "command": "python -c \"import sqlite3; c=sqlite3.connect('data/icdev.db'); "
+                   "c.execute('DROP TABLE heartbeat_checks'); c.commit()\""})
+
+
+def test_worktree_target_is_unknown_when_the_shell_would_expand_it(shared):
+    """The convention CLAUDE.md mandates must not be what the guard refuses.
+
+    ``P=$(python -m tools.git.worktree_paths --path cli <slug>) && git worktree
+    add --detach "$P"`` is the prescribed form. The hook cannot expand ``$P``, so
+    the target is unknown — and unknown is the documented allow case, not a
+    violation. 640 of this check's 652 measured refusals were this shape.
+    """
+    assert shared.worktree_add_target(
+        'git worktree add --detach "$P" origin/main', posix=True) is None
+    assert shared.worktree_add_target(
+        "git worktree add -b feat/x ${WT} origin/main", posix=True) is None
+    assert shared.worktree_add_target(
+        "git worktree add /tmp/literal", posix=True) == "/tmp/literal"
+    # only the segment that runs the command is parsed
+    assert shared.worktree_add_target(
+        "cd /repo && git fetch origin && git worktree add /tmp/x", posix=True
+    ) == "/tmp/x"
+
+
+def test_tier_exclusions_match_the_same_candidates_as_inclusions(shared):
+    """`.env.*` caught a basename; `!.env.example` only ever tried a full path."""
+    patterns = [".env", ".env.*", "!.env.sample", "!.env.example"]
+    assert shared._matches_tier("C:/wt/repo/.env", patterns)
+    assert not shared._matches_tier("C:/wt/repo/.env.example", patterns)
+    assert not shared._matches_tier(".env.sample", patterns)
 
 
 # ── worktree write containment (exa-bench-07) ─────────────────────────────
@@ -433,6 +680,33 @@ def test_outside_write_root(shared, raw, outside):
     assert bool(shared.outside_write_root(raw, repo_root=REPO_ROOT)) is outside
 
 
+@pytest.mark.parametrize("raw", [r"\attacker\share\payload", r"\\attacker\share\payload"])
+def test_backslash_rooted_paths_are_judged_by_construction_not_resolution(shared, raw):
+    """A backslash-rooted path must be refused WITHOUT being resolved.
+
+    This is the case that passed on Windows and failed only on Linux CI, and the
+    distinction is the whole fix. On Windows `\\attacker\\share\\payload` is
+    drive-root-relative, so Path() calls it absolute and it happens to resolve
+    outside the worktree — right answer, wrong reason. On POSIX a backslash is
+    an ordinary filename character, so the same string is RELATIVE, gets joined
+    onto the anchor, and lands INSIDE. Resolution therefore gives opposite
+    verdicts on the two platforms.
+
+    So this asserts the SENTINEL, not the verdict: the path must be classified
+    UNRESOLVABLE by construction, before any Path() call. That assertion fails
+    on Windows against the pre-fix code (which returned a resolved Path here),
+    which a verdict-only assertion could not do — `outside_write_root` returned
+    "outside" on Windows either way, so the bug was invisible to it off-CI.
+    """
+    sentinel = shared.resolve_write_target(raw, REPO_ROOT)
+    assert sentinel is shared.UNRESOLVABLE_TARGET, (
+        f"{raw!r} must be judged unresolvable by construction, not resolved to "
+        f"{sentinel!r} — resolution flips verdict between Windows and POSIX"
+    )
+    # And the verdict itself, which is what the guard actually acts on.
+    assert shared.outside_write_root(raw, repo_root=REPO_ROOT)
+
+
 def test_the_boundary_check_is_writes_only(shared):
     """Reads are exa-bench-09's territory. Refusing one here would look like
     coverage of a gap this check does not close."""
@@ -473,3 +747,103 @@ def test_the_main_checkout_is_sanctioned_from_a_linked_worktree(shared, tmp_path
     roots = shared.sanctioned_write_roots(worktree)
     assert main.resolve() in roots
     assert worktree.resolve() in roots
+
+
+# ── exa-bench-05: what the write-boundary survey narrowed ─────────────────
+#
+# `check_write_outside_worktree` shipped ENFORCING (exa-bench-07) at a time when
+# `|| true` in .claude/settings.json was discarding every refusal, so it had
+# never actually refused anything and its rate had never been measured. Removing
+# that wrapper is what makes the rate matter. Measured first: 2,526 of 96,799
+# real tool calls, 2.61% — and every class of it was a PARSE defect. Each test
+# below pins one of those classes, with the count it was worth. Together they
+# take the check to 850 (0.878%), whose residue is writes into the
+# `C:\AI\.worktrees` / `C:\AI\.wt*` sprawl that `check_worktree_path` already
+# refuses to create — i.e. the finding, which is why the check stays enforcing.
+
+
+def test_the_check_is_enforcing_by_default(shared):
+    """The property exa-bench-07 shipped and the survey had to justify keeping.
+
+    Standing a check down because its rate is inconvenient is how the hook came
+    to be advisory in the first place. If this constant is ever flipped, the
+    survey has to say why.
+    """
+    assert shared.WRITE_BOUNDARY_DEFAULT_MODE == "enforce"
+
+
+def test_a_redirect_inside_a_quoted_string_is_not_a_redirect(shared):
+    """370 fires. `--jq '"#\\(.n) -> \\(.state)"'` has a `>` in it and redirects
+    nothing; the regex this replaced returned `\\(.state)"'` as a path."""
+    command = "gh pr view 1563 --json state --jq '\"1563 -> \\(.state)\"'"
+    assert shared.bash_write_targets(command) == []
+    assert shared.check_write_outside_worktree(
+        "Bash", {"command": command}, repo_root=REPO_ROOT
+    ) is None
+
+
+def test_a_command_substitution_does_not_glue_its_paren_to_the_target(shared):
+    """641 fires. `$(… 2>/dev/null)` left `/dev/null)` on the token, which misses
+    `_NULL_SINKS` and reads as a write to `C:\\dev`."""
+    command = 'm=$(git log origin/main --format=%H -1 2>/dev/null)'
+    assert shared.bash_write_targets(command) == ["/dev/null"]
+    assert shared.check_write_outside_worktree(
+        "Bash", {"command": command}, repo_root=REPO_ROOT
+    ) is None
+
+
+def test_a_heredoc_body_contributes_no_write_targets(shared):
+    """758 fires — the largest single class. `cat > .tmp/prbody.md <<'EOF'`
+    followed by a PR body that names a path is a write to the FILE, not to the
+    paths the prose mentions."""
+    command = (
+        "cat > .tmp/prbody.md <<'EOF'\n"
+        "The packaged hook resolved /tools/hooks/shared_checks.py wrongly.\n"
+        "EOF"
+    )
+    assert shared.bash_write_targets(command) == [".tmp/prbody.md"]
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # A quoted target with a space is a target, and used to be invisible.
+        ('echo hi > "out file.txt"', ["out file.txt"]),
+        # 38 fires: `\` is a path separator here, not an escape. The double-quote
+        # escape rule applies to `" \ $ \`` and to nothing else.
+        (r'python x.py > "C:\Users\schuo\AppData\Local\Temp\r.json"',
+         [r"C:\Users\schuo\AppData\Local\Temp\r.json"]),
+        (r'echo hi > "say \"hi\".txt"', ['say "hi".txt']),
+    ],
+)
+def test_a_quoted_redirect_target_survives_its_quotes(shared, command, expected):
+    assert shared.bash_write_targets(command) == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="MSYS drive spelling is Windows-only")
+def test_the_msys_spelling_of_this_worktree_is_inside_it(shared):
+    """539 fires. Git Bash spells `C:\\AI\\ICDev` as `/c/AI/ICDev`, and the Bash
+    tool IS Git Bash here — so these were sessions writing into their OWN
+    worktree, refused because `/c/...` resolved to `C:\\c\\...`."""
+    drive = REPO_ROOT.drive.rstrip(":").lower()
+    inside = "/" + drive + "/" + str(REPO_ROOT)[3:].replace("\\", "/") + "/.tmp/coh.json"
+    assert shared.outside_write_root(inside, repo_root=REPO_ROOT) is None
+    # The translation must not turn an outside path into an inside one.
+    assert shared.outside_write_root("/" + drive + "/Windows/System32/x",
+                                     repo_root=REPO_ROOT)
+
+
+def test_the_harness_own_claude_dirs_are_sanctioned_but_its_config_is_not(shared):
+    """371 fires were `~/.claude/plans`: plan mode writes the plan file and no
+    session names it, so refusing it refuses plan mode. `~/.claude` itself stays
+    outside — `settings.json` there wires this hook and `hooks/` implements it,
+    and a guard that permits writes to its own configuration is not a guard."""
+    home = Path.home() / ".claude"
+    for name in shared._CLAUDE_HARNESS_DIRS:
+        assert shared.outside_write_root(
+            str(home / name / "x.md"), repo_root=REPO_ROOT
+        ) is None, f"~/.claude/{name} is harness scratch and was refused"
+    for denied in ("settings.json", "hooks/pre_tool_use.py", "CLAUDE.md"):
+        assert shared.outside_write_root(
+            str(home / denied), repo_root=REPO_ROOT
+        ), f"~/.claude/{denied} configures the guard and must stay outside it"

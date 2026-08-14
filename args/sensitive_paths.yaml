@@ -132,11 +132,27 @@ sensitive_paths:
 
   # Carve-outs, applied to every entry above. A committed template is not a
   # secret, and blocking it makes the guard look broken rather than strict.
+  #
+  # Kept in step with `_ENV_TEMPLATE_SUFFIXES` in tools/hooks/shared_checks.py:
+  # `check_env_file_access` and `check_file_access_tiers` both see every
+  # `.env.*` path and must agree on which of them are secrets. The forms below
+  # `.env.example` were measured refusing real work before enforcement was
+  # turned on (exa-bench-05) — `file_access_tiers` fell 99 → 72 with them.
   exclusions:
     - ".env.sample"
     - ".env.example"
+    - ".env.template"
+    - ".env.dist"
+    - ".env.*.sample"
+    - ".env.*.example"
+    - ".env.*.template"
     - "**/.env.sample"
     - "**/.env.example"
+    - "**/.env.template"
+    - "**/.env.dist"
+    - "**/.env.*.sample"
+    - "**/.env.*.example"
+    - "**/.env.*.template"
 
   # Shell verbs that DISCLOSE a file's contents. Used to decide whether a Bash
   # command is reading a sensitive path — `cat ~/.aws/credentials` is, and
