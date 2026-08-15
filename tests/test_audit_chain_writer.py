@@ -17,6 +17,7 @@ worth of contention on a table it owns.
 """
 
 import json
+import re
 import sqlite3
 import sys
 import threading
@@ -656,3 +657,99 @@ def test_the_genesis_migration_creates_the_table_the_writer_needs(tmp_path):
     finally:
         audit_chain._GENESIS_CACHE.clear()
         sconn.close()
+
+
+SNAPSHOT_PATHS = (
+    "tools/db/schema/pg_consolidated.sql",
+    "icdev/tools/db/schema/pg_consolidated.sql",
+)
+
+
+@pytest.mark.parametrize("snapshot_path", SNAPSHOT_PATHS)
+def test_the_consolidated_pg_snapshot_declares_the_genesis_table(snapshot_path):
+    """A fresh PostgreSQL install must get the table from the baseline too.
+
+    ``bootstrap_pg`` builds a fresh database from ``pg_consolidated.sql`` and
+    then runs only the migrations the snapshot postdates. Today this migration
+    is in that tail, so it runs — but that is an accident of when the snapshot
+    was taken, not a property anyone maintains. Regenerating the dump and
+    bumping ``through_version`` (the procedure bootstrap_pg's own docstring
+    prescribes) marks 20260812041301 applied WITHOUT running it, and because the
+    canonical database has never run the migration a straight ``pg_dump`` does
+    not contain the table either. Both halves of that sentence are true right
+    now, so the table would disappear from every fresh install the day the
+    snapshot is next regenerated.
+
+    Nothing would fail. ``record_chain_start`` is deliberately non-fatal and
+    ``chain_start_id`` answers None for a missing table, so the only symptom is
+    ``chain_sweep`` quietly downgrading ``cutover.source`` to ``derived`` — the
+    inferred boundary that slides up when the first chained row is removed,
+    which is the one event the marker exists to expose. (task trust-anchor-03)
+    """
+    snapshot = (REPO_ROOT / snapshot_path).read_text(encoding="utf-8-sig", errors="replace")
+    assert re.search(
+        r"CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?\"?audit_chain_genesis\"?\s*\(",
+        snapshot,
+    ), (
+        f"audit_chain_genesis is not in {snapshot_path}. If you regenerated it "
+        f"with pg_dump, re-append the carried-forward section — pg_dump cannot "
+        f"emit a table the canonical database does not have."
+    )
+
+
+def test_the_snapshot_declares_every_column_the_writer_and_rls_need():
+    """Declared is not enough — the shape has to match the migration's.
+
+    Two copies of the same DDL is how a table ends up existing with the wrong
+    columns depending on which path built the database. ``chain_start_id`` /
+    ``hash_algorithm`` / ``note`` are what ``record_chain_start`` inserts;
+    ``tenant_id`` / ``classification`` are what the global RLS predicate injects
+    against for a dashboard reader, and a table lacking them raises
+    UndefinedColumn on every such read.
+    """
+    snapshot = (
+        REPO_ROOT / "tools/db/schema/pg_consolidated.sql"
+    ).read_text(encoding="utf-8-sig", errors="replace")
+    body = re.search(
+        r"CREATE TABLE IF NOT EXISTS public\.audit_chain_genesis \((.*?)\n\);",
+        snapshot,
+        re.S,
+    )
+    assert body, "audit_chain_genesis is not declared in the snapshot"
+
+    up_sql = (
+        REPO_ROOT / "tools/db/migrations" / MIGRATION_DIR_NAME / "up.sql"
+    ).read_text(encoding="utf-8")
+    migration_body = re.search(
+        r"CREATE TABLE IF NOT EXISTS audit_chain_genesis \((.*?)\n\);", up_sql, re.S
+    )
+    assert migration_body, "the migration no longer declares the table this test reads"
+
+    def columns(sql: str) -> set:
+        found = set()
+        for line in sql.splitlines():
+            line = line.split("--")[0].strip()
+            if line and not line.startswith(")"):
+                found.add(line.split()[0].strip(',').strip('"'))
+        return found
+
+    assert columns(body.group(1)) == columns(migration_body.group(1)), (
+        "the snapshot and the migration declare different columns for "
+        "audit_chain_genesis — the table's shape now depends on which path "
+        "built the database"
+    )
+
+
+def test_both_copies_of_the_snapshot_agree_on_the_genesis_table():
+    """The icdev/ mirror is a real import path, not a backup copy."""
+    bodies = []
+    for path in SNAPSHOT_PATHS:
+        text = (REPO_ROOT / path).read_text(encoding="utf-8-sig", errors="replace")
+        match = re.search(
+            r"CREATE TABLE IF NOT EXISTS public\.audit_chain_genesis \((.*?)\n\);",
+            text,
+            re.S,
+        )
+        assert match, f"audit_chain_genesis missing from {path}"
+        bodies.append(match.group(1))
+    assert bodies[0] == bodies[1], "the two snapshots declare different tables"
