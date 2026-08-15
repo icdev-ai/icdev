@@ -56,6 +56,27 @@
 #               ID, comparison across frameworks). This is where embedding
 #               recall degrades and reflective reranking has something to fix.
 #
+# ---------------------------------------------------------------------------
+# adaptive_route — optional gold label for the ROUTING task (trust-self-03)
+# ---------------------------------------------------------------------------
+# tools/rag/adaptive_router.py measures its skip/single_pass/decompose decision
+# against this set. Its gold label is DERIVED from `pattern` (see
+# PATTERN_TO_ROUTE there): simple -> single_pass, multi_hop -> decompose, and
+# complex -> single_pass, because "complex" here means the answer is ONE chunk
+# the query shares little vocabulary with — a lexical difficulty, not a
+# compositional one. Those are two different taxonomies and the mapping is only
+# valid where they agree.
+#
+# Where they disagree, the query carries an explicit `adaptive_route:`, which
+# wins. Two do, and the reason is measurable rather than editorial — their
+# substring targets do NOT co-occur in a single chunk of the live 4,111-chunk
+# corpus, so the answer must span more than one chunk however it is phrased:
+#   q-cx-fedramp-vs-cmmc   "FedRAMP"(387 chunks) + "CMMC"(154) co-occur in 4
+#   q-cx-prove-logging-works "event logging"(9) + "control assessment"(26) in 0
+# The other multi-substring complex queries stay single_pass on the same
+# evidence: "FIPS 199"+"impact level" co-occur in 132 chunks, and "controlled
+# unclassified information"+"marking" in 5.
+#
 # Design rule for new hard queries (keeps them discriminating, not dead):
 #   every substring target must be one ALREADY PROVEN retrievable by a v1
 #   query that scored recall 1.0. The difficulty then comes only from
@@ -358,6 +379,9 @@ queries:
       We already went through one federal authorization — how is the defense
       contractor certification different in what it actually assesses?
     pattern: complex
+    # Targets sit in different chunks (co-occur in 4 of 4,111) — a real
+    # comparison, so the routing gold is decompose, not the pattern default.
+    adaptive_route: decompose
     expect:
       substrings: ["FedRAMP", "CMMC"]
   - id: q-cx-how-impact-decided
@@ -379,5 +403,8 @@ queries:
       An assessor wants evidence that our logging is actually working. Which
       requirements produce that evidence?
     pattern: complex
+    # "event logging" and "control assessment" co-occur in ZERO chunks — the
+    # answer cannot come from one chunk, whatever the phrasing.
+    adaptive_route: decompose
     expect:
       substrings: ["event logging", "control assessment"]

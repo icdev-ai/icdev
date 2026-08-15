@@ -118,14 +118,11 @@ tests/cortex/test_api_core.py
 tests/cortex/test_api_governed.py
 tests/cortex/test_audit_persistence.py
 tests/cortex/test_audit_selfheal.py
-tests/cortex/test_blueprint_routes.py
-tests/cortex/test_chat_routing.py
 tests/cortex/test_client.py
 tests/cortex/test_complete_multiturn.py
 tests/cortex/test_domain_lenses.py
 tests/cortex/test_domain_triage.py
 tests/cortex/test_egress_redaction.py
-tests/cortex/test_extract_validation.py
 tests/cortex/test_governance_hardening.py
 tests/cortex/test_governance_pipeline.py
 tests/cortex/test_governance_profiles.py
@@ -137,7 +134,6 @@ tests/cortex/test_provenance_gate.py
 tests/cortex/test_provenance_swallow.py
 tests/cortex/test_reason_facade.py
 tests/cortex/test_rest_agent.py
-tests/cortex/test_rest_api.py
 tests/cortex/test_rest_award.py
 tests/cortex/test_rest_cost_volume.py
 tests/cortex/test_rest_dashboard.py
@@ -334,7 +330,6 @@ tests/rag/test_entitlement_rag.py
 tests/rag/test_rag_server_search.py
 tests/rag/test_retriever_common.py
 tests/rag/test_sqlite_store_hermetic.py
-tests/rag/test_toggle_harness.py
 tests/regulatory_foresight/test_regfore.py
 tests/security/test_anvil_runner.py
 tests/security/test_app_red_team.py
@@ -514,7 +509,6 @@ tests/test_anvil_critique.py
 tests/test_api_gateway.py
 tests/test_api_key_scopes.py
 tests/test_api_surface_extractor.py
-tests/test_app.py
 tests/test_append_only_audit_nlp.py
 tests/test_arr_error_recovery.py
 tests/test_assessor_accountability_fixes.py
@@ -626,7 +620,6 @@ tests/test_cloud_providers.py
 tests/test_clx_control_loop.py
 tests/test_cnr_docgen.py
 tests/test_cnr_migration_intel.py
-tests/test_cnr_mission_canvas.py
 tests/test_cnr_ops_cache_lookingglass.py
 tests/test_cnr_ops_mutation_auth.py
 tests/test_cnr_plat.py
@@ -1581,7 +1574,6 @@ tests/test_redaction_fail_closed.py
 tests/test_redaction_scan_reflex.py
 tests/test_redaction_scope.py
 tests/test_refinement_evidence.py
-tests/test_reflective_reranker.py
 tests/test_reflex_connection_scope.py
 tests/test_reflex_dependency_ordering.py
 tests/test_reflex_dispatch_parity.py
@@ -1837,6 +1829,5 @@ tests/voc/test_voc_engine.py
 tests/win_loss/test_win_loss_engine.py
 tests/workflow/test_kph_coherence_checks.py
 tests/workflow/test_pipeline_grader.py
-tests/workflow/test_playwright_gate.py
 tests/workflow/test_pytest_gate.py
 tests/workflow/test_validated_commit.py

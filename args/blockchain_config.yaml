@@ -8,6 +8,44 @@ fabric:
   channel_default: govchain-channel
   orderer_default: orderer.govchain.example.com:7050
 
+  # Anchor transports (D-GC-1). tools/blockchain/transport_registry.py probes
+  # each with health() and routes to the lowest `priority` HEALTHY one. When
+  # NONE is healthy the anchor is queued to govchain_pending_operations and
+  # replayed by `chain_anchor.py --flush-pending` — never dropped.
+  transport_health_ttl_seconds: 60
+  transports:
+    fabric_sdk:
+      # fabric-sdk-py (hfc) is NOT an ICDEV dependency and is in neither
+      # requirements.txt nor pyproject.toml. Left enabled so a deployment that
+      # installs it gets picked up; absent, it simply reports `unavailable`.
+      enabled: true
+      priority: 10
+      net_profile: ""   # required by hfc.fabric.Client; empty => unavailable
+      org_name: GovOrg1
+      user_name: Admin
+
+    peer_cli:
+      # The transport a real Fabric deployment always has. No Python SDK.
+      enabled: true
+      priority: 20
+      # Register one entry per peer endpoint to get ordered failover; an empty
+      # list means a single transport using the ambient CORE_PEER_* env.
+      peers: []
+      # - address: peer0.govorg1.example.com:7051
+      #   priority: 20
+      # - address: peer1.govorg1.example.com:7051
+      #   priority: 21
+
+    noop:
+      # Deliberately unhealthy by default: a no-op is not somewhere anchors go,
+      # it is the absence of a backend, and reporting it unhealthy is what makes
+      # the queue fall-through fire. Flip healthy (or set
+      # ICDEV_BLOCKCHAIN_NOOP_HEALTHY=1) to accept anchors into a simulation
+      # sink with synthetic `noop-` tx ids — never chain commitments.
+      enabled: true
+      priority: 90
+      healthy: false
+
   # Network topology
   organizations:
     - name: GovOrg1

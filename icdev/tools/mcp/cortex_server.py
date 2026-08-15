@@ -258,7 +258,7 @@ def handle_cortex_extract(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": "schema (JSON schema object) is required"}
 
     try:
-        from tools.cortex import extract
+        from tools.cortex import CortexSchemaError, extract
         from tools.cortex.governance import GovernanceBlockedError
 
         try:
@@ -266,6 +266,17 @@ def handle_cortex_extract(arguments: Dict[str, Any]) -> Dict[str, Any]:
             return {"classification": _CLASSIFICATION, **result.to_dict()}
         except GovernanceBlockedError as exc:
             return _blocked_response(exc)
+        except CortexSchemaError as exc:
+            # extract refuses non-conforming output rather than handing back the
+            # raw completion (trust-struct-03). Named explicitly so an MCP
+            # client can tell "the model missed the schema" from "the subsystem
+            # broke" -- the generic handler below flattens both to a string.
+            return {
+                "error": str(exc),
+                "schema_valid": False,
+                "attempts": exc.attempts,
+                "findings": exc.findings[:20],
+            }
     except ImportError:
         return {"error": "Cortex extract subsystem not available"}
     except Exception as exc:

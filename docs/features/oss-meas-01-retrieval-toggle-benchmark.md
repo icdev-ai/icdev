@@ -160,3 +160,36 @@ Stated plainly, because the quality deltas are small enough that these matter:
 - Widen the golden set further before treating any 1-query quality delta as a KEEP.
 - Decide wire-or-delete on `reflective_rerank` and `adaptive_routing`, and drop `auto_indexer` from
   the retrieval-toggle inventory — it is a CLI, not a retrieval toggle.
+
+## Follow-up: the wire-or-delete decisions closed (do not read this doc as open)
+
+The measurements above are a snapshot and are left exactly as recorded. The two
+open **wire-or-delete** items are not open any more:
+
+- **`reflective_rerank`** — wired inside `retriever.search()` (step 5b) by
+  `oss-meas-01` itself. Probe now reports `WIRED`.
+- **`adaptive_routing`** — adopted by **trust-self-03** at
+  `tools/cortex/search_service.py::search_rag`. The probe row above says
+  `NOT-WIRED`, which the harness later split into a separate verdict:
+  `AdaptiveRetriever` WRAPS `RAGRetriever`, so it could never appear in the
+  retriever's closure and only a caller could reach it. Probe now reports
+  `WIRED`, `imported by tools.cortex.search_service`.
+
+Two things that adoption established, both worth carrying forward:
+
+- The Cortex rag adapter is a **citation surface**, so the wrapper's `none`/skip
+  route is unavailable there by enforcement. Adaptive routing buys a wider
+  candidate set on compositional queries, never a skipped retrieval call —
+  `measure_savings` reports `retrieval_calls_saved: 0` on that surface by
+  construction, and across the 254 distinct queries in `rag_retrieval_log` only
+  2 would have skipped even on a surface that permitted it.
+- `complex_top_k` had never been able to fire: it applied only when the caller
+  passed no `top_k`, and every real caller passes one. The decompose route was
+  byte-identical to single_pass — a config key that read as a live lever and did
+  nothing, which is the same defect class this whole card exists to catch.
+
+Both toggles still ship **OFF**. Adoption gave them a caller; it did not flip
+them on. Run
+`python tools/rag/adaptive_router.py --measure` for the routing numbers and
+`python tools/rag/toggle_harness.py --probe` for current verdicts, rather than
+reading either from the table above.

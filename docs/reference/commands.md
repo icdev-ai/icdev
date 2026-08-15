@@ -952,6 +952,49 @@ argument key **names** — is the only sanctioned way to build a deliverable bod
 
 ---
 
+## HITL Trust Deltas — the Delta is the Reviewable Unit (trust-hitl-01)
+
+A `force_*` override records THAT a human bypassed a TRUST gate and never WHAT
+CHANGED. `approve_draft` writes "promoted despite 3 citation defect(s)" and the
+draft text — the thing actually approved — appears nowhere. A reviewer cannot
+review a count.
+
+```bash
+python tools/quality/hitl_delta.py --pending --json
+python tools/quality/hitl_delta.py --pending --artifact-id draft-42
+python tools/quality/hitl_delta.py --show <delta_id> --json
+python tools/quality/hitl_delta.py --show <delta_id> --with-text
+python tools/quality/hitl_delta.py --settle <delta_id> --approve \
+    --reason "verified against the source PDF" --json
+python tools/quality/hitl_delta.py --chain <delta_id> --json
+```
+
+The diff is **claim-anchored, not textual**: `compute_delta` runs over
+`citation_grounding` claim offsets, so each changed span carries a start/end into
+its own text plus the `verify_claim` verdict on both sides. A claim that could
+not be checked is `unknown` — never `supported`.
+
+**Same storage split as the approval inbox above.** `trust_deltas` (migration
+`20260815063941`) is append-only EVIDENCE and is in `APPEND_ONLY_TABLES`; the
+human's disposition is mutable STATE and lands in the existing `approval_items`.
+`settle_delta` issues no UPDATE against `trust_deltas` — it resolves through
+`approval_inbox.resolve()`, which writes the permanent `agent_approval_log` row.
+A correction **appends** a successor through `supersedes_delta_id` and never
+edits its predecessor, the rule `sbom_revision.apply_correction` already follows;
+`revision_chain()` derives supersession at read time.
+
+Artifact **text is never delivered**. It lives in `trust_deltas` behind the RLS
+predicate; `render_delta_summary()` builds the inbox body from counts, hashes and
+the delta id, because those rows are mirrored to Slack.
+
+**A delta whose enqueue failed still reads pending.** Evidence is written before
+the ask, so a dropped ask surfaces as unanswered rather than as an approval.
+
+Consumers: the side-by-side panel is trust-hitl-02, the `force_*` call sites are
+trust-hitl-03. Until those land the CLI above is the operable surface.
+
+---
+
 ## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
 
 Mirrors a pending item to a messaging channel and turns the human's reply back
@@ -1220,6 +1263,51 @@ python tools/db/seeds/seed_sdc_demo.py --all
 ```
 
 ---
+
+## GovChain Anchor Transports (trust-anchor-01, D-GC-1)
+
+`args/blockchain_config.yaml` declared `fabric.cli_path: peer` under the comment
+"Fabric CLI via subprocess" since GovChain shipped, and there was zero subprocess
+usage anywhere in `tools/blockchain/`. Separately, `hfc`/fabric-sdk-py is in
+neither `requirements.txt` nor `pyproject.toml`, so `blockchain_config.HAS_FABRIC`
+was permanently `False` and every anchor on the platform reached
+`NoOpFabricClient`. Anchoring is now routed by a transport registry.
+
+```bash
+# Which backend is carrying anchors right now, and why the others are not
+python tools/blockchain/transport_registry.py --doctor --json
+python tools/blockchain/blockchain_config.py --doctor          # same report via config
+python tools/blockchain/blockchain_config.py --test --json     # adds active_transport
+
+# The queue is the fall-through, not a failure: with no healthy transport every
+# anchor lands in govchain_pending_operations and is replayed later.
+python tools/blockchain/chain_anchor.py --anchor-provenance scr-001 --json
+python tools/blockchain/chain_anchor.py --flush-pending --json
+```
+
+Transports are tried in ascending `priority` and the first HEALTHY one wins
+(`fabric_sdk` 10 -> `peer_cli` 20 -> `noop` 90). Registering one `peer_cli`
+entry per endpoint under `fabric.transports.peer_cli.peers` is how peer failover
+works. Health is cached for `fabric.transport_health_ttl_seconds` (60s) because
+`is_enabled()` is on the dashboard render path.
+
+| Status | Healthy? | Meaning |
+|---|---|---|
+| `ok` | yes | backend answered and is worth using |
+| `degraded` | yes | answered, but something is missing (e.g. no orderer -> invokes will fail) |
+| `unreachable` | no | configured but did not answer |
+| `unavailable` | no | not installed / not configured (e.g. `hfc` absent, `peer` not on PATH) |
+
+- `hfc` remains an **undeclared dependency**. Nothing in `tools/blockchain/transports/`
+  imports it at module scope; absent, `FabricSdkTransport` reports `unavailable`
+  and the registry skips it.
+- The no-op is **unhealthy by default** — it is the absence of a backend, and
+  saying so is what makes the queue fall-through fire. `ICDEV_BLOCKCHAIN_NOOP_HEALTHY=1`
+  turns it into a simulation sink whose `noop-` tx ids are **not** chain
+  commitments.
+- A transport reports failure by RETURNING `status: failed`, not by raising.
+  `ChainAnchor` queues on anything that is not `anchored`, and `flush_pending()`
+  drains a row only on `anchored`.
 
 ## AI Security Commands
 ```bash
@@ -1765,6 +1853,27 @@ python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Mer
 # every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
 # local git heuristic, not a landing check. One task id per invocation; not combinable with
 # --force-done. Marking done records the same actor='manual' audit transition --force-done does.
+# Kanban — is this task id ALREADY on main? task -> main, not task -> PR (trust-disc-05)
+python -m tools.kanban.landed_check --task <task-id> --json
+python -m tools.kanban.landed_check --all --json              # every non-terminal task
+python -m tools.kanban.landed_check --all --status done --no-prs --json   # the fire-rate survey
+python -m tools.kanban.landed_check --task <task-id> --gate    # exit 1 if it is already on main
+# The board tracks task -> PR and NOTHING checked task -> main. On 2026-08-15 two of the five
+# cards in pr_opened had their work already merged under a different PR number — ctx-perf-02
+# landed as #1641 and ctx-trust-02 as #1638 — while #1646 and #1651 stayed open against them.
+# Both conflicted, because both re-apply changes already present against files that have since
+# moved on: #1651's diff was -38/+26 on rest_v1.py, i.e. merging it would DELETE 38 lines main
+# has. A revert wearing a feature's clothes, and every gate said green because every gate asked
+# about the PR. Evidence is tiered — `merge_ref` (a merge commit naming the task's branch) and
+# `subject` (the id in the commit subject) block; `body` NEVER does, because a body mention is a
+# citation at least as often as a landing. Matching is on a name boundary, so ctx-perf-02 does
+# not match ctx-perf-021 and a parent id does not match its decomposed children's commits.
+# FAIL-OPEN: no git, no origin ref, or a non-id-shaped id all report `checked: false` — an
+# unavailable check can never read as a clean one. Second half: rival PRs. ctx-enf-01 had #1640
+# and #1647 open at once and only the kanban/<task_id> branch can settle the card.
+# Wired at three seams (seed / dispatch / PR-open) and ADVISORY by default; KANBAN_LANDED_CHECK
+# =enforce makes it refuse, =off disables it. Survey it before ever defaulting to enforce.
+
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
 python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
@@ -2122,6 +2231,35 @@ python tools/workflow/coherence_checker.py --check capability_liveness --gate   
 # args/liveness_gate.yaml entirely rather than sitting at 0; an absent class is already
 # budgeted at 0, and a leftover zero is just a number for a future session to edit upward.
 
+python tools/workflow/coherence_checker.py --check substrate_liveness --json                         # Reads a declared substrate that holds nothing (trust-disc-04)
+
+# Substrate Liveness (trust-disc-04) — the same defect one layer down: not a declared
+# capability nobody calls, but a declared SUBSTRATE code is designed AGAINST that holds
+# nothing. An approved plan described kg_ontology as a working SHACL-lite supplying
+# declared (subject_type, predicate, object_type) legality; on the live board kg_nodes
+# held 8,869 rows, kg_edges 16,493, and kg_ontology, ontology_subclass_closure and
+# kg_nodes.ontology_id held nothing at all. One SELECT COUNT(*) would have caught it.
+# WARN, never fail — an empty substrate is a fact about the DATABASE in front of the
+# checker, so failing a per-task code gate on it would block unrelated commits.
+# Scope was measured, not guessed (40-60 commits on main): every table mentioned in a
+# changed file fires on 68% of commits, every table in the added lines 22%, declared
+# substrates mentioned anywhere 30%, and declared substrates READ by a changed .py
+# module 1.7% — the last is what it does. A write-only reference is the FIX for an
+# empty substrate, so `INSERT INTO x` is recorded and not counted.
+
+# Substrate probe (trust-disc-04) — run BEFORE designing against a table/column/config
+python tools/awareness/capability_consumption.py --substrates                                        # Curated declared substrates: which hold rows
+python tools/awareness/capability_consumption.py --probe-substrate kg_ontology                       # One table
+python tools/awareness/capability_consumption.py --probe-substrate kg_nodes.ontology_id              # One column (rows vs non-NULL)
+python tools/awareness/capability_consumption.py --probe-substrate args/llm_config.yaml::routing     # One config block
+python tools/awareness/capability_consumption.py --probe-plan docs/plan.md --substrate-gate          # Every substrate a PLAN names; exit 1 if one is empty
+python tools/awareness/capability_consumption.py --probe-diff origin/main --json                     # Substrates the branch's added lines read
+# `empty` (writer never ran) / `absent` (migration never ran) / `column_unpopulated`
+# (rows exist, column 100% NULL) are never merged — they send you to different fixes.
+# On a database with no operating history the probe reports UNMEASURABLE and the gate
+# exits 0: 1,320 of 1,775 tables on the live board are empty, so a prober that cannot
+# tell a fresh worktree from an unwired writer fabricates findings by the thousand.
+
 # Gate Sentinel Shape (kax-exec-04) — a task whose id is `<card>-gate-<n>` is filtered
 # out of promote_backlog_to_scheduled by tools/kanban/gates.py::is_manual_gate, so work
 # wearing that id is UNDISPATCHABLE and nothing goes red (tsg-gate-01 sat in backlog
@@ -2192,6 +2330,21 @@ python tools/quality/completion_auditor.py --md                                 
 python tools/quality/review_loop.py --json                            # Working-tree mode: ruff + coherence + SIPA, autofix, iterate
 python tools/quality/review_loop.py --base origin/main --max 3 --gate # Branch diff vs base; exit 0=green / 1=not green
 python tools/quality/review_loop.py --no-autofix --json               # Report only (no edits); emit fix_brief for the agent
+
+# Outline contracts — does a draft have every required section, in order, with none invented? (trust-struct-02)
+python tools/quality/outline_contract.py --list --json                       # 32 artifact types with a declared skeleton
+python tools/quality/outline_contract.py --artifact-type ato_ssp             # Show that type's required sections + their source
+python tools/quality/outline_contract.py --artifact-type SOP --json
+# Validate a list_sections payload (a JSON list, or {"sections": [...]})
+python tools/quality/outline_contract.py --artifact-type ato_ssp --sections-file draft.json --json
+python tools/quality/outline_contract.py --artifact-type RUNBOOK --sections-file draft.json --gate   # exit 1 on findings
+# Findings are missing_section | unknown_section | section_out_of_order, in the shared
+# {item_number, issue, detail} shape citation_gate / placeholder_findings / kg_gate use.
+# The skeletons are NOT declared in this module — it reads docgen ATO_DOC_TYPES, DIC
+# TEMPLATE_SECTIONS and the RFI workbench floor. An artifact type with no declared
+# skeleton resolves to None = UNMEASURED; it never fabricates one to fill the gap.
+# RFI questionnaire parts are per-solicitation: use contract_from_sections() on the
+# session's own sections rather than expecting a static skeleton to fit.
 ```
 
 ---
@@ -4047,6 +4200,55 @@ python tools/rag/rag_benchmark.py --toggle rerank --json
 # Control arm + one isolated arm per wired toggle, with per-metric deltas
 python tools/rag/rag_benchmark.py --sweep
 python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
+
+# A/B the served ordering against reflective reranking over the SAME candidates
+# (trust-self-02). One retrieval per query, both arms rank that one list, so the
+# delta is the reordering and nothing else. Records the number; asserts nothing.
+python tools/rag/rag_benchmark.py --reflective-ab --limit 12 --json
+python tools/rag/rag_benchmark.py --reflective-ab --max-candidates 3
+```
+
+```
+# --probe also reports ADOPTION, which is orthogonal to the verdict: WIRED says
+# flipping the toggle COULD change retrieval, not that the committed config ever
+# flips it. reflective_rerank sat at WIRED while enabled:false made it inert on
+# every surface. UNADOPTED / ADOPTED-GLOBAL / ADOPTED [surfaces], read from
+# args/rag_config.yaml on disk — never through $ICDEV_RAG_CONFIG, so a sweep arm
+# cannot report itself as shipped-on.
+#
+# --reflective-ab reports `unmeasurable_reflection_degraded` when the reflection
+# model was never actually reached. That run's 0.0 delta is not evidence of "no
+# benefit", and recording it as one is a DROP decision on evidence that does not
+# exist.
+```
+
+### Adaptive complexity pre-routing measurement (agx-rag-01 / trust-self-03)
+
+```bash
+# Score the skip/single_pass/decompose decision against the committed golden
+# query mix (args/rag/golden_query_set.yaml). Heuristic-only by default, so the
+# numbers are reproducible offline and identical run to run.
+python tools/rag/adaptive_router.py --measure
+python tools/rag/adaptive_router.py --measure --json
+
+# Same mix through the live cheap-tier classifier (rag_complexity_classify)
+python tools/rag/adaptive_router.py --measure --llm
+
+# Measure as a surface that does NOT require citations, so the skip route is
+# available. Cortex is the citation-required case and can never skip.
+python tools/rag/adaptive_router.py --measure --no-citations
+```
+
+```
+# `classifier_sources` in the output reports where each decision ACTUALLY came
+# from, not what --llm asked for: classify_complexity falls back to the keyword
+# heuristic on any LLM failure and says so only in a debug log, so without that
+# tally a fallback run reports heuristic numbers under an LLM label.
+#
+# The consumer is tools/cortex/search_service.py::search_rag, gated on
+# rag.adaptive_routing.enabled (default off = the unchanged single pass). That
+# adoption is what moved the toggle from WRAPPER-UNADOPTED to WIRED — the
+# wrapper sits ABOVE RAGRetriever, so only a caller could ever reach it.
 ```
 
 ```
@@ -4061,6 +4263,14 @@ python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
 #   NOT-WIRED reflective_rerank (agx-rag-02), adaptive_routing (agx-rag-01),
 #             auto_indexer — 0 non-test import sites; auto_indexer is also
 #             ingest-side, so it cannot move a retrieval metric even once wired.
+#
+# Both have since been given callers, so re-run the probe rather than reading
+# the line above as current state:
+#   reflective_rerank  WIRED by oss-meas-01 inside retriever.search() step 5b
+#   adaptive_routing   WIRED by trust-self-03 at tools/cortex/search_service.py
+#                      ::search_rag. It is WRAPPER-shaped, so the probe answers
+#                      "has a caller adopted it?", not "is it in the closure?"
+#   auto_indexer       still CLI-UNSCHEDULED, and correctly so — it is a CLI.
 #
 # Isolation never writes args/rag_config.yaml. It writes a temp config and sets
 # ICDEV_RAG_CONFIG (tools/rag/config_path.py), because this checkout is shared
@@ -5711,6 +5921,52 @@ python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against 
 python tools/ci/gated_test_list.py --check-coverage          # exit 1 on an ungated new test file
 python tools/ci/gated_test_list.py --check-coverage --json   # total/gated/excluded/backlog/unlisted
 python tools/ci/gated_test_list.py --prune-backlog           # drop census lines now gated or gone
+
+# Changed-test isolation run (trust-disc-02) — every changed test file ALONE.
+# The gated suite run above is the IN-SUITE half: all 239 modules in one process,
+# in one fixed order (the order of core.txt). This is the ALONE half. Nothing else
+# in the pipeline randomises or isolates test order — not icdev-ci.yml, not
+# pytest.ini (absent), not pyproject.toml — so an order-dependent pass is invisible
+# until an unrelated allowlist edit reshuffles the run and it surfaces as a failure
+# in whatever PR happened to move the list.
+# Needs full history (`fetch-depth: 0`); a shallow clone has no merge base and the
+# tool exits 2 rather than resolving to "no files changed".
+python tools/ci/isolation_run.py --list                      # which files would run
+python tools/ci/isolation_run.py --json                      # resolution only, no pytest
+python tools/ci/isolation_run.py --run                       # run them; 0 clean / 1 gated failure / 2 unresolvable
+python tools/ci/isolation_run.py --run --base origin/main --timeout 1200
+python tools/ci/isolation_run.py --run -- -x                 # extra args forwarded to each pytest
+# Red-first proof (trust-disc-01) — the two above prove a changed test is RUN;
+# this proves it DISCRIMINATES. For every test file the branch adds or modifies:
+# check out the merge base, apply ONLY that test file on top, and assert it does
+# NOT pass there while it does pass here. A changed test that still passes against
+# the pre-change tree is either asserting current behaviour rather than required
+# behaviour, or is not discriminating at all — ANVIL mandates RED -> GREEN and
+# nothing anywhere recorded the RED. The captured merge-base pytest output in the
+# JSON proof IS the recorded RED; CI uploads it as the `red-first-proof` artifact.
+# Exit codes: 0 clean, 1 a non-discriminating test, 2 the gate COULD NOT RUN
+# (usually a shallow checkout — a gate that cannot run is not one that found
+# nothing). Exemptions need a written reason: args/red_first_gate.yaml.
+python tools/ci/red_first_gate.py                            # report over the PR diff, always exit 0
+python tools/ci/red_first_gate.py --gate                     # the merge gate
+python tools/ci/red_first_gate.py --files tests/test_x.py --gate   # prove one file
+python tools/ci/red_first_gate.py --base origin/main --json --out red-first-proof.json
+# CI SKIP census (trust-disc-03) — a gated test that SKIPS is UNMEASURED, not passing.
+# The ratchet above answers "does CI run this file?" and nothing else. tests/test_app.py's
+# overview test is gated, green on every PR, and has been skipping ("SQLite test DB lacks
+# platform schema ... no such column: classification" — the column the RLS predicate in
+# get_connection() filters on, so every read of kanban_tasks raised).
+# Two halves: the static AST census is the gate you run before committing; the JUnit-XML
+# half sees a skip raised from a conftest fixture that the static scan cannot.
+# Census is ENUMERATED by name in args/ci_skip_census.txt; skip_census.skip_max in
+# args/test_gating_gate.yaml may only go DOWN. Policy: docs/ci/test-gating-policy.md
+python tools/ci/skip_census.py --check                       # exit 1 on an unregistered skip site
+python tools/ci/skip_census.py --json                        # per-file + per-kind site census
+python tools/ci/skip_census.py --check --staged              # pre-commit fast path (staged gated files)
+python tools/ci/skip_census.py --check --changed tests/test_app.py
+python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what the run ACTUALLY skipped
+python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
+python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
 
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require

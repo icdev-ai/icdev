@@ -891,6 +891,21 @@ routing:
     chain: [qwen3-local, gemini-2.0-flash, gpt-4o-mini, llama-local]
     effort: low
 
+  # Adaptive RAG complexity pre-routing (agx-rag-01, adopted trust-self-03).
+  # The model commits only to a 3-value enum {none|simple|complex}, so this is
+  # the cheapest possible structured call — local first, cheap cloud tiers after,
+  # and a deterministic keyword heuristic underneath all of them.
+  #
+  # It was UNDECLARED until trust-self-03, which is not cosmetic: an undeclared
+  # llm_function silently falls back to routing.default, every malformed reply is
+  # swallowed by the heuristic fallback, and `measure_savings --llm` then reports
+  # heuristic numbers labelled "llm". Measured on the 48-query golden mix: the
+  # requested-LLM run and the heuristic run agreed on all 48 decisions, because
+  # not one of them was an LLM decision.
+  rag_complexity_classify:
+    chain: [qwen3-local, kimi-cloud, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
+    effort: low
+
   # Fine-tuning pair generation (D-FT-10 — scanner_function, local only)
   ft_pair_generation:
     chain: [qwen3-local, gemini-2.0-flash, llama-local]
@@ -1339,6 +1354,19 @@ routing:
   gepa_skill_patch:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
+
+  # TRUST self-correction (tools/quality/self_correct.py, trust-self-01) — the
+  # targeted revision call inside the bounded monotone revise-and-recheck loop.
+  # The input is a CUI drafting artifact plus the source evidence it cites, so
+  # this is local-first with a local tail: an air-gapped deployment must be able
+  # to run the whole loop, and an UNDECLARED function silently falls through to
+  # the cloud-first `routing.default` — that is an egress violation, not a
+  # preference. Medium effort: rewriting a named span faithfully while leaving
+  # the rest of the document byte-identical is instruction-following work, and
+  # the loop's monotone check discards a round that gets it wrong anyway.
+  trust_self_correct:
+    chain: [qwen3-local, claude-sonnet, kimi-cloud, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: medium
 agent_effort_defaults:
   orchestrator-agent: high
   architect-agent: max

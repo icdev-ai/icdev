@@ -60,7 +60,7 @@ Perform a thorough code review of the provided code or diff.
 
 ## Instructions
 
-Analyze the code across four dimensions:
+Analyze the code across five dimensions:
 
 **1. Correctness**
 - Logic errors, off-by-one errors, null/undefined handling
@@ -83,6 +83,23 @@ Analyze the code across four dimensions:
 - Are happy paths tested?
 - Are error/edge cases covered?
 - Are mocks appropriate (not masking real behavior)?
+
+**5. Discrimination — the inverse question (MANDATORY)**
+
+For every check the change adds or relies on — test, assertion, guard, gate — answer:
+
+> **Under what condition does this check PASS while the system is BROKEN?**
+
+Dimensions 1-4 all ask the author's own question in different words ("is it covered?").
+This one asks the inverse, and it is the one the author structurally cannot ask: the
+check was written by the same process that wrote the code, in the same session, in the
+environment where the author's mental model holds. A check that cannot fail carries
+zero bits no matter how thorough it reads.
+
+- Where you can name the condition **concretely**, that answer **is a test case** —
+  report it as a finding whose fix is the test to write.
+- "I could not construct one" is a legitimate answer, but it must be **stated per
+  check**. An unanswered question is indistinguishable from one that was never asked.
 
 For each finding: state the location, severity (critical/high/medium/low), and a concrete fix.
 

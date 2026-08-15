@@ -72,6 +72,7 @@ STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
 DEFAULT_REFLEX_TIMEOUT_SECONDS = 300
 
 REFLEX_NAMES = [
+    "cache_warm",
     "research",
     "scout",
     "audit",
@@ -192,6 +193,14 @@ REFLEX_NAMES = [
     # card; reports (never rewrites) done/in_progress. AGOV is exempt by name in
     # args/kanban_policy_drift.yaml — its --draft instruction is deliberate.
     "kanban_policy_drift",
+    # CI gates ~207 of 2,162 test modules; the other ~1,823 are grandfathered and
+    # gate nothing, so one can go pass -> fail with no build ever going red. The
+    # census ratchet (tsg-policy-01/02) stops NEW ungated files appearing but says
+    # nothing about the ones already grandfathered — three tests/test_govcon_*
+    # files accumulated 70 failures over two days in exactly that blind spot.
+    # Samples the set and reports TRANSITIONS only; already-failing files are
+    # known debt and are deliberately not re-reported.
+    "ungated_test_drift",
 ]
 
 # Backward-compat aliases for module-level access used by other code

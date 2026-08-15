@@ -24,11 +24,13 @@ from tools.quality.trust_gate import (
     ALL_GUARDS,
     SEV_BLOCK,
     SEV_WARN,
+    STAGE1_GUARDS,
     STAGE2_DISABLED,
     STAGE2_SKIPPED_BLOCKED,
     STAGE2_UNAVAILABLE,
     STATUS_CLEAN,
     STATUS_FINDINGS,
+    STATUS_NOT_APPLICABLE,
     STATUS_UNAVAILABLE,
     STATUS_UNMEASURABLE,
     Finding,
@@ -386,3 +388,180 @@ def test_kg_guard_is_declared_by_every_profile_and_is_recordable():
     for name in list_profiles():
         assert "kg_guard" in load_profile(name).guards
     assert "kg_guard" in PUBLISH_GATES
+
+
+# --------------------------------------------------------------------------- #
+# structure_guard wiring (trust-struct-03)
+# --------------------------------------------------------------------------- #
+
+_CONTRACT = {
+    "type": "object",
+    "properties": {"label": {"type": "string"}, "score": {"type": "number"}},
+    "required": ["label"],
+}
+
+
+def test_no_contract_is_not_applicable_rather_than_unmeasurable():
+    """The distinction this guard lives or dies on.
+
+    A contract is a DECLARATION that the artifact has a shape. Absent one there
+    is no obligation to measure, so there is nothing unmeasured — unlike
+    claim_guard, where a claim always owes its source. Collapsing the two would
+    make every prose artifact carry a permanent "could not verify".
+    """
+    result = TrustGate("agent_output").evaluate("plain prose").stage1["structure_guard"]
+    assert result.status == STATUS_NOT_APPLICABLE
+    assert result.detail["reason"]
+
+
+def test_a_missing_contract_does_not_refuse_a_compliance_export():
+    """The false-positive trap, pinned.
+
+    compliance_evidence refuses on an unmeasurable guard (invariant 2). An SSP
+    narrative declares no output contract and never will. Had "no contract"
+    been scored unmeasurable, this profile would refuse every compliance
+    artifact it exists to gate — a check with no applicability gate is 100%
+    false positives, which is no more useful than one that never fires.
+    """
+    verdict = TrustGate("compliance_evidence").evaluate(
+        _GROUNDED, sources=_SOURCES, conn=_MeasurableGraph(), run_stage2=False,
+    )
+    assert verdict.stage1["structure_guard"].status == STATUS_NOT_APPLICABLE
+    assert verdict.gate != "structure_guard"
+
+
+def test_a_conforming_payload_is_clean():
+    verdict = TrustGate("agent_output").evaluate(
+        '{"label": "ok", "score": 1}', contract=_CONTRACT,
+    )
+    assert verdict.stage1["structure_guard"].status == STATUS_CLEAN
+    assert verdict.blocked is False
+
+
+def test_a_non_conforming_payload_blocks_agent_output():
+    """The one guard that blocks on an otherwise warn-only profile.
+
+    Conformance is not a judgement call: a caller that asked for an object and
+    got something else cannot use it, whatever a reviewer thinks.
+    """
+    verdict = TrustGate("agent_output").evaluate('{"score": 1}', contract=_CONTRACT)
+    result = verdict.stage1["structure_guard"]
+    assert result.status == STATUS_FINDINGS
+    assert verdict.blocked is True
+    assert verdict.gate == "structure_guard"
+    assert {f.issue for f in result.findings} == {"missing_required"}
+
+
+def test_prose_where_an_object_was_declared_is_a_finding_not_a_pass():
+    """The refusal case — a model that answered in words is not conforming."""
+    verdict = TrustGate("agent_output").evaluate(
+        "I could not complete that request.", contract=_CONTRACT,
+    )
+    assert verdict.stage1["structure_guard"].status == STATUS_FINDINGS
+    assert verdict.gate == "structure_guard"
+
+
+def test_structure_is_reported_before_the_prose_guards():
+    """Shape precedes content. If the artifact is not the declared object, a
+    citation complaint about its braces is noise, and the gate a reviewer sees
+    should name the actual defect."""
+    assert STAGE1_GUARDS[0] == "structure_guard"
+    verdict = TrustGate("agent_output").evaluate("no citations here", contract=_CONTRACT)
+    assert verdict.stage1["citation_guard"].findings   # citation_guard also fired
+    assert verdict.gate == "structure_guard"           # but structure named the gate
+
+
+def test_a_malformed_contract_is_unavailable_not_a_pass():
+    """A contract outside the supported subset is a defect in the DECLARING
+    call site. It must not read as "the artifact passed"."""
+    verdict = TrustGate("agent_output").evaluate(
+        '{"label": "ok"}', contract={"type": "object", "minLength": 3},
+    )
+    result = verdict.stage1["structure_guard"]
+    assert result.status == STATUS_UNAVAILABLE
+    assert "not a supported schema" in result.detail["reason"]
+
+
+def test_prose_profiles_skip_the_guard_entirely():
+    """drafting and chat_rag produce narratives. Declaring a guard they can
+    never exercise is the declared-but-unconsumed defect in miniature."""
+    for name in ("drafting", "chat_rag"):
+        assert "structure_guard" not in load_profile(name).guards
+        result = TrustGate(name).evaluate("x", contract=_CONTRACT).stage1["structure_guard"]
+        assert result.status == "skipped"
+
+
+def test_structure_guard_is_declared_where_it_can_fire_and_is_recordable():
+    for name in ("compliance_evidence", "agent_output"):
+        assert load_profile(name).guards["structure_guard"] == SEV_BLOCK
+    assert "structure_guard" in PUBLISH_GATES
+
+
+def test_an_explained_override_clears_a_structure_block():
+    """A structural refusal is still a HITL decision, and its override has to be
+    recordable — which is what the PUBLISH_GATES widening buys."""
+    verdict = TrustGate("agent_output").evaluate(
+        '{"score": 1}', contract=_CONTRACT,
+        force={"structure_guard": "hand-checked against the source record"},
+    )
+    assert verdict.blocked is False
+    assert verdict.overrides["structure_guard_override"]["reason"]
+
+
+# --------------------------------------------------------------------------- #
+# structure_guard — the outline half (trust-struct-02's wiring)
+# --------------------------------------------------------------------------- #
+
+def _ssp_sections(n=None):
+    from tools.quality.outline_contract import get_contract
+
+    required = get_contract("ato_ssp").required
+    return [{"heading": h} for h in (required if n is None else required[:n])]
+
+
+def test_the_outline_half_reports_through_the_same_guard():
+    """"Structure" is two checks on this platform — a payload's shape and a
+    document's skeleton. Both are deterministic, both emit the same finding
+    shape, and both belong to one verdict; splitting them into two gate names
+    would mean two migrations and two override vocabularies for one concept."""
+    verdict = TrustGate("compliance_evidence").evaluate(
+        "prose", sections=_ssp_sections(), artifact_type="ato_ssp", run_stage2=False,
+    )
+    result = verdict.stage1["structure_guard"]
+    assert result.status == STATUS_CLEAN
+    assert result.detail["outline"]["missing"] == 0
+
+
+def test_a_missing_required_section_blocks_a_compliance_export():
+    verdict = TrustGate("compliance_evidence").evaluate(
+        "prose", sections=_ssp_sections(1), artifact_type="ato_ssp", run_stage2=False,
+    )
+    assert verdict.gate == "structure_guard"
+    assert {f.issue for f in verdict.stage1["structure_guard"].findings} == {"missing_section"}
+
+
+def test_an_artifact_type_with_no_declared_skeleton_is_unmeasurable():
+    """Distinct from not_applicable, and the distinction is the caller's claim.
+
+    Passing ``sections`` asserts this artifact HAS an outline; we simply cannot
+    resolve which one. Reporting not_applicable there would discard the
+    caller's own declaration, and reporting clean would fabricate a pass.
+    """
+    result = TrustGate("compliance_evidence").evaluate(
+        "prose", sections=_ssp_sections(), artifact_type="no_such_artifact_type",
+        run_stage2=False,
+    ).stage1["structure_guard"]
+    assert result.status == STATUS_UNMEASURABLE
+    assert result.detail["reason"]
+
+
+def test_the_two_halves_compose_into_one_verdict():
+    """A caller that declares both gets both sets of findings under one gate."""
+    verdict = TrustGate("agent_output").evaluate(
+        '{"nope": 1}', contract=_CONTRACT,
+        sections=_ssp_sections(1), artifact_type="ato_ssp",
+    )
+    codes = {f.issue for f in verdict.stage1["structure_guard"].findings}
+    assert "missing_required" in codes      # the payload half
+    assert "missing_section" in codes       # the outline half
+    assert verdict.gate == "structure_guard"

@@ -3,12 +3,36 @@ import pytest
 
 
 @pytest.fixture
-def client():
-    """Yield a Flask test client for the dashboard app."""
+def client(icdev_db, monkeypatch):
+    """Yield an AUTHENTICATED Flask test client for the dashboard app.
+
+    The /api/charts/* endpoints require a logged-in session. This fixture never
+    established one, so all three tests here asserted 200 and got 401 - they had
+    been failing on their own merits, not on anything about charts. It stayed
+    invisible because tests/test_app.py is not in args/ci_test_files/core.txt,
+    so CI never ran it.
+
+    Wiring follows the convention conftest already documents next to the
+    dashboard_users seed ("route tests set session[\"user_id\"]=\"test-admin\"")
+    and matches tests/cortex/test_blueprint_routes.py: point auth and storage at
+    the temp DB that carries the seeded user, then log the session in.
+
+    Reads the shared app singleton but never registers on it, so it cannot hit
+    the setup-lock failure that affected the blueprint-registering fixtures.
+    """
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+
+    import tools.dashboard.auth as _auth
+
+    monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
+
     from tools.dashboard.app import app
 
     app.config["TESTING"] = True
     with app.test_client() as tc:
+        with tc.session_transaction() as sess:
+            sess["user_id"] = "test-admin"
         yield tc
 
 

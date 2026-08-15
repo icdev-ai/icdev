@@ -24856,7 +24856,7 @@ CREATE TABLE public.rag_retrieval_log (
     agent_id text DEFAULT ''::text,
     classification text DEFAULT 'CUI'::text NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT rag_retrieval_log_retrieval_mode_check CHECK ((retrieval_mode = ANY (ARRAY['vector'::text, 'bm25'::text, 'hybrid'::text, 'rrf_hybrid'::text, 'reranked'::text])))
+    CONSTRAINT rag_retrieval_log_retrieval_mode_check CHECK ((retrieval_mode = ANY (ARRAY['vector'::text, 'bm25'::text, 'hybrid'::text, 'rrf_hybrid'::text, 'reranked'::text, 'reflective_reranked'::text, 'reflective_degraded'::text])))
 );
 
 
@@ -29791,7 +29791,7 @@ CREATE TABLE public.source_citation_registry (
     project_id text,
     trust_score real DEFAULT 0.0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text, 'cortex'::text, 'asset_token'::text])))
+    CONSTRAINT source_citation_registry_citation_type_check CHECK ((citation_type = ANY (ARRAY['hitl'::text, 'rag'::text, 'prov_entity'::text, 'prov_activity'::text, 'canvas_ai'::text, 'slsa'::text, 'sbom'::text, 'compliance_evidence'::text, 'agent_decision'::text, 'manual'::text, 'web'::text, 'cortex'::text, 'asset_token'::text, 'trust_validation'::text])))
 );
 
 
@@ -63952,7 +63952,7 @@ CREATE TABLE IF NOT EXISTS public.idr_publish_audit (
     -- (cove_guard), 20260814181227 (claim_guard, constitution_guard) and
     -- 20260814201513 (kg_guard).
     gate        TEXT NOT NULL
-                    CHECK (gate IN ('citation_guard','claim_guard','constitution_guard','cove_guard','kg_guard','placeholder_guard')),
+                    CHECK (gate IN ('citation_guard','claim_guard','constitution_guard','cove_guard','kg_guard','placeholder_guard','structure_guard')),
     reviewer    TEXT,
     findings    TEXT,
     tenant_id   TEXT,
@@ -63967,4 +63967,51 @@ CREATE INDEX IF NOT EXISTS idx_idr_artifacts_session    ON public.idr_artifacts(
 CREATE INDEX IF NOT EXISTS idx_idr_publish_audit_session ON public.idr_publish_audit(session_id);
 -- ============================================================================
 -- END ICDEV ADDITIVE SECTION (IDR / DocGen core schema)
+-- ============================================================================
+
+
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Audit hash-chain cutover marker — parity with
+-- tools/db/migrations/20260812041301_audit_chain_genesis_marker/up.sql, whose
+-- header carries the full rationale for the table. (task trust-anchor-03)
+--
+-- WHY IT IS DECLARED HERE AND NOT LEFT TO THE MIGRATION
+--
+-- The migration postdates the snapshot, so bootstrap_pg leaves it pending and
+-- it does run on a fresh install today. What it does NOT survive is the
+-- documented snapshot-regeneration procedure: the dump is taken from the
+-- canonical database, the canonical database has never run this migration, and
+-- bumping through_version to the head migration then marks 20260812041301
+-- applied WITHOUT running it. The table would vanish from every fresh install
+-- at that moment, silently — the same way twelve tables were lost the first
+-- time the snapshot was regenerated (see _CARRIED_FORWARD in
+-- tests/db/test_pg_bootstrap_baseline.py, which now guards this one too).
+--
+-- Losing it is quiet by construction: chain.py::record_chain_start is
+-- deliberately non-fatal and chain_start_id returns None for a missing table,
+-- so the only symptom is chain_sweep reporting cutover.source='derived' —
+-- a boundary that slides up if the first chained row is ever removed, which is
+-- exactly the event the marker exists to expose.
+--
+-- PG-NATIVE dialect: applied RAW by tools/db/bootstrap_pg.py (no translate_sql)
+-- under search_path=''. Schema-qualified public.; all statements idempotent, so
+-- the migration re-running after this snapshot loads is a no-op.
+--
+-- APPEND-ONLY: registered in APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py
+-- alongside audit_trail itself. A re-cutover APPENDS a second row and
+-- chain_start_id takes the MIN, so the earliest boundary still wins.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.audit_chain_genesis (
+    chain_start_id INTEGER PRIMARY KEY,     -- first audit_trail.id written WITH a hash
+    hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
+    note           TEXT,
+    tenant_id      TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    recorded_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (audit hash-chain cutover marker)
 -- ============================================================================

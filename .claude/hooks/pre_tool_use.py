@@ -368,6 +368,16 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "rag_retrieval_log",
         # RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
         "rag_provenance_ledger",
+        # HITL trust deltas (trust-hitl-01, migration 20260815063941). What a
+        # human actually approved when they overrode a TRUST gate: the before and
+        # after text, claim-anchored, with the findings on each side. That is
+        # EVIDENCE — this text became that text at this moment — and editing it
+        # rewrites what a reviewer was shown after they signed off on it. A
+        # correction appends a successor pointing at its predecessor through
+        # supersedes_delta_id, the same rule sbom_records follows. The reviewer's
+        # DISPOSITION is mutable state and lives in approval_items, which is
+        # deliberately NOT in this list.
+        "trust_deltas",
         # ICDEV Cortex governance audit — one append-only row per governed Cortex
         # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
         # (mutable session lifecycle: status/updated_at).

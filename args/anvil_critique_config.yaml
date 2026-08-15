@@ -10,6 +10,21 @@ anvil_critique:
   enabled: true
   max_rounds: 3
 
+  # The one question no author asks themselves (D396/D397, trust-disc-06).
+  #
+  # Every check in this codebase is written by the same process that writes the
+  # code, in the same session, in the environment where the author's mental model
+  # holds.  Nothing asks the inverse question — which is exactly what a second,
+  # differently-motivated reader supplies for free, and the critics ARE that
+  # reader.  A check that cannot fail carries zero bits however thorough it reads.
+  #
+  # Appended to EVERY critic prompt by anvil_critique.py::_dispatch_critics.
+  # Removing the key does not remove the question: the module falls back to
+  # ADVERSARIAL_QUESTION.  Edit the wording here; do not delete the key expecting
+  # the behaviour to stop.
+  adversarial_question: >-
+    Under what condition does this check PASS while the system is BROKEN?
+
   critics:
     - agent: security-agent
       role: security_reviewer

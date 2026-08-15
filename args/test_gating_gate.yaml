@@ -94,4 +94,43 @@ backlog_file: args/ci_test_backlog.txt
 # THIS NUMBER MAY ONLY GO DOWN. Lower it when you gate files; never raise it to
 # get a commit through. Raising it is the visible, reviewable act of deciding to
 # take on more untested-in-CI surface, and it should be argued for in the PR.
-backlog_max: 1819
+backlog_max: 1810
+
+# --------------------------------------------------------------------------- #
+# SKIP CENSUS — a gated test that skips is UNMEASURED, not passing (trust-disc-03)
+# --------------------------------------------------------------------------- #
+# The block above answers "does CI run this file?". It cannot answer "did the
+# file assert anything?", and a skip makes those two different questions. A
+# gated, green, every-PR test can be covering nothing:
+#
+#   SKIPPED [1] tests/test_app.py:46: SQLite test DB lacks platform schema for
+#   overview: no such table: agents
+#
+# That one is live in the tree today. What it was covering is /api/charts/overview
+# against the platform schema, and the reason it could not run is that
+# MINIMAL_ICDEV_SCHEMA lacked the `classification` column the RLS predicate in
+# get_connection() filters on — which turned every read of kanban_tasks into a
+# raise. The skip presented that as coverage for an unknown length of time.
+#
+# Same census discipline as the backlog above, for the same reason: sites are
+# ENUMERATED BY NAME in args/ci_skip_census.txt, each with a written reason, and
+# the ceiling only ever goes DOWN. A bare count can be held constant while the
+# set churns.
+#
+# Consumed by: tools/ci/skip_census.py :: census
+# Gate source:  tools/ci/skip_census.py --check   (the `test` job + .githooks/pre-commit)
+skip_census:
+  census_file: args/ci_skip_census.txt
+
+  # Ceiling on registered skip sites inside gated test files. Equals the count at
+  # adoption — no headroom, deliberately, because headroom is room for unmeasured
+  # surface to grow unobserved.
+  #
+  # THIS NUMBER MAY ONLY GO DOWN. Lower it when you delete a skip and prune its
+  # line; never raise it to get a commit through.
+  skip_max: 81
+
+  # A reason shorter than this is not a reason. Paired with a placeholder list in
+  # tools/ci/skip_census.py (PLACEHOLDER_REASONS) that refuses "flaky", "TBD" and
+  # friends — they record that a skip happened, not why it is acceptable.
+  min_reason_chars: 12

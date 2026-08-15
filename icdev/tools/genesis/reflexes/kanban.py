@@ -1415,6 +1415,13 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             pass
 
 
+#: Statuses a timeout must NOT demote out of. `done` is obvious; `pr_opened`
+#: is the one that was missing — a session whose PR is up has finished the work,
+#: and a timeout after that point is a session that overran, not a task that
+#: failed. Demoting it to `scheduled` rebuilds output that already exists.
+_TIMEOUT_NO_DEMOTE_STATUSES = ("done", "pr_opened", "merged")
+
+
 def _branch_has_unmerged_commits(task_id: str) -> bool:
     """Return True IFF branch ``kanban/<task_id>`` exists locally AND has commits
     that are not yet on ``origin/<default_branch>``.
@@ -1485,6 +1492,28 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
 _ABANDONED_BRANCH_CACHE: dict = {}
 
 
+def timeout_demotion_skip_reason(task_id: str, status: str) -> str:
+    """Why a timed-out task must NOT be demoted to ``scheduled``, or "".
+
+    Extracted from the timeout handler so the decision is testable on its own:
+    the handler is one branch inside a very long dispatch loop, and a rule that
+    can only be exercised by driving the whole loop is a rule nobody checks.
+
+    Returns a human-readable reason (truthy) to skip demotion, or "" to demote
+    normally. Fail-OPEN by construction: any error inside the branch probe
+    surfaces as "" and the ordinary demotion proceeds, because an unreachable
+    git must never wedge the scheduler.
+    """
+    if status in _TIMEOUT_NO_DEMOTE_STATUSES:
+        return f"status is {status!r}"
+    try:
+        if _branch_has_unmerged_commits(task_id):
+            return "branch carries unmerged commits (work exists)"
+    except Exception as exc:  # noqa: BLE001 — see the fail-open note above
+        logger.debug("timeout branch probe failed for %s: %s", task_id, exc)
+    return ""
+
+
 def _branch_is_abandoned(ref: str, repo_root) -> bool:
     """True when this ref's pull request is already CLOSED or MERGED.
 
@@ -1528,7 +1557,35 @@ def _branch_is_abandoned(ref: str, repo_root) -> bool:
     return abandoned
 
 
-def _branches_for_task(task_id: str, repo_root) -> list:
+def all_task_refs(repo_root) -> list:
+    """Every local + origin branch ref, one ``git for-each-ref``. [] on error.
+
+    Split out so a caller that resolves MANY task ids can pay for the ref listing
+    once and hand it to :func:`_branches_for_task`. ``tools/kanban/stranded_audit``
+    walks every terminal task on the board (3,169 of them); at one subprocess per
+    call that alone exceeded the 300s reflex watchdog.
+
+    Deliberately NOT memoised here. This module is imported by the long-lived
+    kanban scheduler, and a cached ref list goes stale the moment a worker pushes
+    a new branch — the gate would then find no refs for that task, fail OPEN, and
+    let work reach `done` unverified. Freshness is the caller's decision because
+    only the caller knows how long its snapshot is allowed to live.
+    """
+    import subprocess as _sp
+    try:
+        out = _sp.run(
+            ["git", "for-each-ref", "--format=%(refname:short)",
+             "refs/heads", "refs/remotes/origin"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode != 0:
+            return []
+        return [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+    except Exception:
+        return []
+
+
+def _branches_for_task(task_id: str, repo_root, refs=None) -> list:
     """Local + remote branch refs whose name contains ``task_id``.
 
     Ordered so the canonical ``kanban/<task_id>`` is checked first. Matching is
@@ -1541,25 +1598,22 @@ def _branches_for_task(task_id: str, repo_root) -> list:
     too strict, tighten the trailing group rather than dropping the boundary.
 
     FAIL-OPEN: returns [] on any git error.
+
+    ``refs`` optionally supplies the branch listing (see :func:`all_task_refs`)
+    so a caller resolving many task ids pays for it once. Omit it and the listing
+    is read fresh, which is the only correct default for the dispatch gate.
     """
     import re
-    import subprocess as _sp
-    try:
-        out = _sp.run(
-            ["git", "for-each-ref", "--format=%(refname:short)",
-             "refs/heads", "refs/remotes/origin"],
-            cwd=str(repo_root), capture_output=True, text=True, timeout=15,
-        )
-        if out.returncode != 0:
-            return []
-    except Exception:
+    if refs is None:
+        refs = all_task_refs(repo_root)
+    if not refs:
         return []
 
     # <task_id> at a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'.
     pat = re.compile(rf"(^|[/_-]){re.escape(task_id)}([/_.-]|$)")
     canonical = f"kanban/{task_id}"
     seen, matches = set(), []
-    for ref in out.stdout.splitlines():
+    for ref in refs:
         ref = ref.strip()
         if not ref or ref.endswith("/HEAD"):
             continue
@@ -1572,6 +1626,51 @@ def _branches_for_task(task_id: str, repo_root) -> list:
         matches.append(ref)
     matches.sort(key=lambda r: (r not in (canonical, f"origin/{canonical}"), r))
     return matches
+
+
+#: task_id -> landed-check report, for one scheduler cycle. The check is two
+#: subprocess calls (~0.3s) and the same task is asked about twice per dispatch
+#: — once by the pre-dispatch gate and once by the prompt writer — so the answer
+#: is memoised. Cleared by :func:`clear_landed_cache` at the top of each cycle:
+#: a cached "not on main" that outlived the merge it was about is exactly the
+#: stale answer this whole module exists to stop reporting.
+_LANDED_CACHE: Dict[str, dict] = {}
+
+
+def clear_landed_cache() -> None:
+    """Drop the per-cycle landed-check memo. Called once per scheduler cycle."""
+    _LANDED_CACHE.clear()
+
+
+def _landed_preflight(task_id: str, with_prs: bool = True) -> dict:
+    """Is this task id ALREADY on origin/<default>, and who else has a PR open?
+
+    The board tracks task -> PR and nothing checked task -> main, which is how
+    ctx-perf-02 (landed as #1641) and ctx-trust-02 (landed as #1638) sat in
+    ``pr_opened`` behind #1646 and #1651 — two PRs that could only ever have
+    landed as reverts. See :mod:`tools.kanban.landed_check`.
+
+    FAIL-OPEN: any error answers "not checked, not landed", so an unreachable
+    git or gh never wedges dispatch.
+    """
+    if task_id in _LANDED_CACHE:
+        return _LANDED_CACHE[task_id]
+    try:
+        from tools.kanban import landed_check as _lc
+
+        report = _lc.preflight(
+            task_id,
+            repo_root=_task_repo_root(task_id),
+            branch=_task_base_branch(task_id),
+            with_prs=with_prs,
+        )
+    except Exception as exc:  # noqa: BLE001 — advisory check, never load-bearing
+        logger.debug("landed preflight failed for %s (fail-open): %s", task_id, exc)
+        report = {"task_id": task_id, "checked": False, "landed": False,
+                  "referenced": False, "confidence": None, "commits": [],
+                  "blocking": False, "prs": None, "reason": str(exc)}
+    _LANDED_CACHE[task_id] = report
+    return report
 
 
 def _push_main(cwd: str) -> bool:
@@ -2181,7 +2280,35 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     except Exception:
         pass
 
+    # task -> main before task -> PR (trust-disc-05). #1646 and #1651 were opened
+    # against tasks whose work had ALREADY merged under a different PR number, so
+    # both re-applied changes already present against files that had moved on —
+    # #1651's diff was -38/+26 on rest_v1.py, i.e. it would have DELETED 38 lines
+    # main currently has. A revert wearing a feature's clothes, and nothing on the
+    # board could see it, because the board only ever asked about the PR.
+    _landed_banner = ""
+    try:
+        from tools.kanban.landed_check import format_warning as _fmt_landed
+
+        _landed = _landed_preflight(task_id)
+        _landed_msg = _fmt_landed(_landed)
+        if _landed_msg:
+            logger.warning("PR flow: landed check fired for %s:\n%s", task_id, _landed_msg)
+            _landed_banner = (
+                "> [!WARNING]\n> **This task id is already on the default branch.**\n"
+                + "\n".join(f"> {ln}" for ln in _landed_msg.splitlines())
+                + "\n>\n> Review this diff as a possible REVERT before merging.\n\n"
+            )
+        if _landed.get("blocking"):
+            logger.warning(
+                "PR flow: NOT opening a PR for %s — its id is already on %s "
+                "(KANBAN_LANDED_CHECK=enforce)", task_id, _landed.get("ref"))
+            return None
+    except Exception as _lc_exc:  # noqa: BLE001 — never block the PR flow
+        logger.debug("PR flow: landed check failed for %s: %s", task_id, _lc_exc)
+
     pr_body = (
+        f"{_landed_banner}"
         f"Autonomous kanban task: **{task_id}**\n\n"
         f"{commit_summary or '_no commit summary_'}\n\n"
         "---\n🤖 Generated by ICDEV Kanban Scheduler\n"
@@ -3947,7 +4074,28 @@ def _write_prompt_file(task: dict):
         if criteria else ""
     )
 
-    prompt = f"""{resume_section}# Kanban Task: {title}
+    # task -> main, not task -> PR (trust-disc-05). The session about to build
+    # this is the one that would re-implement already-merged work, so the
+    # evidence goes where it will actually be read — at the top of its prompt,
+    # above the description that tells it to build.
+    landed_section = ""
+    try:
+        from tools.kanban.landed_check import format_warning as _fmt
+
+        _report = _landed_preflight(task_id)
+        _warning = _fmt(_report)
+        if _warning:
+            landed_section = (
+                "\n> [!WARNING]\n> ## Check this before you build\n"
+                + "\n".join(f"> {ln}" for ln in _warning.splitlines())
+                + "\n>\n> If the work below is already on the default branch, do NOT "
+                  "re-apply it — say so and close the task out instead. Re-applying a "
+                  "diff whose base has moved on deletes lines main currently has.\n\n"
+            )
+    except Exception as _lc_exc:  # noqa: BLE001 — a banner must never block dispatch
+        logger.debug("landed banner skipped for %s: %s", task_id, _lc_exc)
+
+    prompt = f"""{resume_section}{landed_section}# Kanban Task: {title}
 - **ID:** {task_id}
 - **Type:** {task_type}
 - **Priority:** {priority}
@@ -9372,17 +9520,43 @@ def _check_completed():
                     f"TIMEOUT after {int(elapsed)}s "
                     f"(max {task_budget}s) — task exceeded dispatch budget"
                 )
-                # Skip demotion if a task was already marked done externally
-                # (e.g., operator or another agent completed it while this zombie ran).
+                # Skip demotion when the work ALREADY EXISTS. Two ways it can:
+                #
+                #  1. the task reached a terminal-ish status while this zombie
+                #     ran (`done` externally, or `pr_opened` because the session
+                #     got its PR up), or
+                #  2. the session produced commits on kanban/<task_id> and then
+                #     overran the budget before or during the PR wait — the
+                #     status may still read `in_progress`, and the branch is the
+                #     only evidence left.
+                #
+                # Demoting either case to `scheduled` re-dispatches a task whose
+                # output is already sitting in an open, green PR, and the retry
+                # rebuilds it from scratch. Observed 2026-08-15 on
+                # trust-struct-03: PR #1679 was open with EVERY check passing
+                # (E2E included) while the board had the task back in
+                # `scheduled`, counting a failure against it. Nothing reported
+                # the contradiction — a board saying "retry this" and a forge
+                # saying "this is done" are equally confident and only one is
+                # right.
+                #
+                # The branch check is the same merge-verification primitive the
+                # done-gate uses, so dispatch and completion agree on what
+                # "there is work here" means, and it is repo-aware and
+                # fail-OPEN: an unreachable git returns False and the ordinary
+                # demotion proceeds.
                 try:
                     with get_connection() as _done_chk:
                         _done_row = _done_chk.execute(
                             "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,),
                         ).fetchone()
-                    if _done_row and dict(_done_row)["status"] == "done":
+                    _cur_status = dict(_done_row)["status"] if _done_row else ""
+                    _skip_reason = timeout_demotion_skip_reason(task_id, _cur_status)
+                    if _skip_reason:
                         logger.info(
-                            "timeout handler: %s is already done — skipping demotion",
-                            task_id,
+                            "timeout handler: %s not demoted — %s; leaving status %r "
+                            "so the open PR is landed rather than rebuilt",
+                            task_id, _skip_reason, _cur_status,
                         )
                         del _running[task_id]
                         _dispatch_times.pop(task_id, None)
@@ -9578,7 +9752,41 @@ def _check_completed():
             is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)
             if is_exhausted:
                 retry_count = _increment_retry_count(task_id)
-                if retry_count >= TOKEN_MAX_RETRY_COUNT:
+
+                # Decide SIZE here, before deciding when to retry. This is the
+                # moment the system learns a task did not fit in a session, and
+                # it is the only measurement of task size it ever gets.
+                #
+                # The give-up branch below is NOT a substitute: TOKEN_MAX_RETRY_COUNT
+                # is 60 (~5h of retries), so a task can park 46 separate times --
+                # tsr-dash-01-d3 did -- and still be "under budget", never
+                # reaching a branch that reconsiders its size. That is how 240
+                # re-dispatches of already-too-big tasks accumulated while the
+                # LLM decomposer sat idle.
+                #
+                # Counted over the LIFETIME from kanban_status_transitions, not
+                # from retry_count: the give-up branch clears that counter, so a
+                # task returning for its second budget starts at zero and every
+                # pass looks like a first attempt.
+                _lifetime_exh = _lifetime_exhaustion_count(task_id)
+                if _lifetime_exh >= EXHAUSTIONS_BEFORE_DECOMPOSITION:
+                    logger.warning(
+                        "Task %s has exhausted tokens %d times — decomposing "
+                        "instead of parking for retry %d/%d",
+                        task_id, _lifetime_exh, retry_count, TOKEN_MAX_RETRY_COUNT,
+                    )
+                    _move_task(
+                        task_id, "needs_decomposition", actor="scheduler",
+                        reason=(f"token-exhausted {_lifetime_exh}x lifetime "
+                                f"(>= {EXHAUSTIONS_BEFORE_DECOMPOSITION}): too large for one "
+                                f"session — decompose rather than retry unchanged"),
+                    )
+                    _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
+                    _send_notification(task_dict, event="needs_decomposition")
+                    print(f"  Kanban: {task_id} exhausted {_lifetime_exh}x — "
+                          f"flagged needs_decomposition")
+                elif retry_count >= TOKEN_MAX_RETRY_COUNT:
                     # Exceeded max retries — move to backlog, give up
                     _move_task(
                         task_id, "backlog", actor="scheduler",
@@ -9975,6 +10183,160 @@ def _check_completed():
     return completed
 
 
+#: Lifetime token-exhaustions after which a task is decomposed rather than
+#: re-queued unchanged. Override via KANBAN_EXHAUSTIONS_BEFORE_DECOMPOSITION.
+#:
+#: 2, not 3. One exhaustion can be an unlucky session — a long but tractable
+#: task, or a session that spent its budget exploring. The SECOND is a repeat
+#: measurement of the same task against the same budget, and by then the board
+#: has paid twice for the same unfinished work. Set against the measured
+#: distribution: 49 tasks have exhausted at least twice (338 events) and 29 at
+#: least three times (298 events), so a threshold of 3 would still have let ~40
+#: pointless re-dispatches through on this board alone.
+EXHAUSTIONS_BEFORE_DECOMPOSITION = _int_env(
+    "KANBAN_EXHAUSTIONS_BEFORE_DECOMPOSITION", 2)
+
+
+#: How many times a task may be split before a human is asked instead.
+#: Override via KANBAN_MAX_DECOMPOSITION_DEPTH.
+#:
+#: 2 is a real constraint, not a nominal one: depth 3 ALREADY exists on this
+#: board (501 tasks at depth 1, 63 at depth 2, 11 at depth 3, e.g.
+#: ci-fix-27599865917-d3-d3-d1), reached through the older verification-failure
+#: path. Wiring token exhaustion into the decomposer adds a far more frequent
+#: trigger -- 402 exhaustion events historically -- so without a cap the trees
+#: get deeper and wider on exactly the tasks that fire it most.
+#:
+#: A task split twice that still does not fit is not converging, and a third
+#: split is guessing.
+MAX_DECOMPOSITION_DEPTH = _int_env("KANBAN_MAX_DECOMPOSITION_DEPTH", 2)
+
+#: A file this large makes a task context-bound rather than large in scope.
+#: Override via KANBAN_LARGE_FILE_LINES.
+#:
+#: Measured 2026-08-15 across 5,387 files under tools/: only 9 (0.2%) exceed
+#: 5,000 lines, so this flags the genuine context hogs and nothing else. The
+#: largest is tools/db/schema/pg_consolidated.sql at 63,970 lines.
+LARGE_FILE_LINES = _int_env("KANBAN_LARGE_FILE_LINES", 5000)
+
+#: Same vocabulary _complexity_score scans for, plus `sql` — the extension of
+#: the single largest file in the repo, and the one that produced the case this
+#: guard exists for.
+_TASK_FILE_RE = re.compile(r"[\w/\-]+\.(?:py|html|yaml|yml|md|ts|js|go|sql)")
+
+
+def _decomposition_depth(task_id: str) -> int:
+    """How many times this task id has already been split.
+
+    Children are minted as ``f"{parent}-d{i}"`` by _decompose_one_task, so the
+    id carries its own lineage and no extra column is needed:
+    ``ci-fix-27599865917-d3-d3-d1`` is depth 3.
+    """
+    try:
+        return len(re.findall(r"-d\d+", task_id or ""))
+    except Exception:  # noqa: BLE001 — an unparseable id must not block a split
+        return 0
+
+
+def _oversized_files_in(description: str) -> list:
+    """Files named by the task that are too large to load into a session.
+
+    Returns ``[(path, line_count), ...]`` for anything over LARGE_FILE_LINES.
+
+    THE CASE THIS EXISTS FOR: trust-anchor-03 is "add audit_chain_genesis to
+    pg_consolidated.sql" -- 107 words, _complexity_score 0 -- and it exhausted
+    its token budget. pg_consolidated.sql is 63,970 lines. The cost is the
+    context the task must LOAD, not the work it must do, so every child of a
+    split inherits it identically: decomposing that produces subtasks that each
+    open the same file and exhaust the same way, and each of those decomposes
+    again. Splitting cannot help, and saying so is more useful than a fork bomb.
+
+    FAIL-OPEN: an unreadable or missing path is skipped, never counted. A broken
+    probe must not block a legitimate decomposition.
+    """
+    out = []
+    if not description:
+        return out
+    seen = set()
+    for rel in _TASK_FILE_RE.findall(description):
+        rel = rel.strip().lstrip("./")
+        if rel in seen:
+            continue
+        seen.add(rel)
+        try:
+            path = BASE_DIR / rel
+            if not path.is_file():
+                continue
+            with path.open("r", encoding="utf-8", errors="ignore") as fh:
+                n = sum(1 for _ in fh)
+            if n >= LARGE_FILE_LINES:
+                out.append((rel, n))
+        except Exception:  # noqa: BLE001 — probing must never raise
+            continue
+    return out
+
+
+def decomposition_refusal_reason(task_id: str, description: str = "") -> str:
+    """Why this task must NOT be split, or "" when splitting is fine.
+
+    Two deterministic refusals -- no LLM, no network, decided from the id, the
+    description and os.stat:
+
+      * it has already been split MAX_DECOMPOSITION_DEPTH times, or
+      * it names a file too large to fit in a session, so every child would
+        inherit the same cost.
+
+    Both FAIL OPEN: anything unexpected returns "" (no objection), because a
+    guard that errors closed would stop the decomposer working at all.
+    """
+    try:
+        depth = _decomposition_depth(task_id)
+        if depth >= MAX_DECOMPOSITION_DEPTH:
+            return (f"already decomposed {depth}x (max {MAX_DECOMPOSITION_DEPTH}) "
+                    f"— splitting further is guessing, not converging")
+        big = _oversized_files_in(description or "")
+        if big:
+            rel, n = big[0]
+            return (f"context-bound: {rel} is {n:,} lines (>= {LARGE_FILE_LINES:,}) "
+                    f"— every subtask would load it too; needs a targeted script, "
+                    f"not a smaller scope")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("decomposition_refusal_reason(%s) failed: %s", task_id, exc)
+    return ""
+
+
+def _lifetime_exhaustion_count(task_id: str) -> int:
+    """How many times this task has EVER entered ``token_exhausted``.
+
+    Read from ``kanban_status_transitions`` rather than the per-attempt retry
+    counter, which ``_clear_retry_count`` wipes on the give-up path — so the
+    counter is structurally incapable of seeing that a task has been round the
+    loop before. Deriving from the transition log needs no new column and cannot
+    drift from the board's actual history.
+
+    FAIL-OPEN: any error returns 0, which routes the task down the pre-existing
+    backlog path. A missing or unreadable transition log must never turn into a
+    decomposition nobody asked for.
+    """
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM kanban_status_transitions "
+                "WHERE task_id = %s AND to_status = 'token_exhausted'",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return 0
+            val = dict(row).get("n")
+            return int(val) if val is not None else 0
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 — counting must never wedge dispatch
+        logger.debug("lifetime exhaustion count failed for %s: %s", task_id, exc)
+        return 0
+
+
 def _check_token_exhausted_tasks() -> list:
     """Return token-exhausted tasks whose resume_at time has passed.
 
@@ -10058,6 +10420,48 @@ def _check_token_exhausted_tasks() -> list:
             # 4b. Check token-exhaustion retry count — give up after TOKEN_MAX_RETRY_COUNT
             retry_count = _get_retry_count(task_id)
             if retry_count >= TOKEN_MAX_RETRY_COUNT:
+                # Where "give up" sends it decides whether the task ever gets
+                # SMALLER. Sending it to `backlog` and clearing the counter
+                # restarts the identical cycle -- dispatch, exhaust, retry N
+                # times, back to backlog -- with the task unchanged. Measured
+                # 2026-08-15: tsr-dash-01-d3 went round it 46 times, aca-trn-01
+                # 26, and across the board 29 tasks exhausted 3+ times for 298
+                # events. 240 of those dispatches were re-runs of a task already
+                # measured too big, and only 5 of the 29 were ever flagged for
+                # decomposition -- none by this path.
+                #
+                # Token exhaustion is the ONLY ground-truth measurement of task
+                # size this system produces. The pre-dispatch _complexity_score
+                # cannot substitute: it scores description VERBOSITY (words,
+                # bullets, file paths), so on the three tasks that exhausted here
+                # it returned 2, 1 and 0 against a threshold of 7, while the
+                # highest scorer (5) completed successfully. It measures how much
+                # the author wrote, not how much work there is.
+                #
+                # So a repeat offender goes to `needs_decomposition` and gets
+                # LLM-split into subtasks instead. The count comes from
+                # kanban_status_transitions rather than _get_retry_count because
+                # that counter is cleared on this very path and therefore cannot
+                # see a lifetime pattern -- which is exactly why 46 identical
+                # retries never looked like anything but a first attempt.
+                _lifetime = _lifetime_exhaustion_count(task_id)
+                if _lifetime >= EXHAUSTIONS_BEFORE_DECOMPOSITION:
+                    logger.warning(
+                        "Task %s exhausted tokens %d times over its lifetime — "
+                        "flagging needs_decomposition instead of re-queuing it unchanged",
+                        task_id, _lifetime,
+                    )
+                    _move_task(
+                        task_id, "needs_decomposition", actor="scheduler",
+                        reason=(f"token-exhausted {_lifetime}x lifetime "
+                                f"(>= {EXHAUSTIONS_BEFORE_DECOMPOSITION}): too large for one "
+                                f"session — decompose rather than retry unchanged"),
+                    )
+                    _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
+                    _send_notification(task, event="needs_decomposition")
+                    continue
+
                 logger.info(
                     "Task %s exceeded max retries (%d) — moving to backlog",
                     task_id,
@@ -10191,6 +10595,21 @@ def _auto_decompose_stalled_tasks() -> list:
             if is_blocker:
                 _reset_to_backlog(tid, reason="chain-blocker reset by auto_decompose")
                 print(f"  Kanban: chain-blocker {tid!r} reset to backlog (has dependents)")
+                processed.append(tid)
+                continue
+
+            # Splitting is not always the right answer, and splitting FOREVER
+            # never is. Checked after the chain-blocker rule, which keeps its
+            # precedence, and before any LLM call so a refusal costs nothing.
+            refusal = decomposition_refusal_reason(tid, task.get("description"))
+            if refusal:
+                logger.warning("auto_decompose: refusing to split %s — %s", tid, refusal)
+                _move_task(
+                    tid, "suggested", actor="scheduler",
+                    reason=f"not decomposed: {refusal} — needs a human decision",
+                )
+                _send_notification(task, event="decomposition_refused")
+                print(f"  Kanban: {tid} NOT split — {refusal}")
                 processed.append(tid)
                 continue
 
@@ -10593,6 +11012,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     if tier != _current_exec_tier:
         logger.info("Executor tier changed to %s", tier)
         _current_exec_tier = tier
+
+    # Fresh landed-check answers each cycle. This scheduler is long-lived and
+    # main moves under it constantly; a memo that outlived its cycle would report
+    # yesterday's merge state as today's, which is the exact class of staleness
+    # the check exists to catch.
+    clear_landed_cache()
 
     # 0. Promote dep-satisfied backlog tasks to SCHEDULED.
     #
@@ -11045,6 +11470,42 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             logger.debug(
                 "task-lease acquire failed for %s (continuing): %s", task["id"], _lease_exc,
             )
+
+        # Pre-dispatch landed check (trust-disc-05): is this task id ALREADY on
+        # origin/<default>? The board tracks task -> PR and nothing checked
+        # task -> main, so a task whose work merged under a different PR number
+        # got dispatched again and produced a second PR that could only land as
+        # a revert. Advisory by default — it prints, logs, and goes into the
+        # prompt — and refuses only under KANBAN_LANDED_CHECK=enforce.
+        try:
+            _landed = _landed_preflight(task["id"])
+            if _landed.get("landed") or (_landed.get("prs") or {}).get("settles") is False:
+                from tools.kanban.landed_check import format_warning as _fmt_landed
+                _msg = _fmt_landed(_landed)
+                logger.warning("pre-dispatch landed check for %s:\n%s", task["id"], _msg)
+                print(f"  Kanban: pre-dispatch landed check fired for {task['id']!r}\n"
+                      + "\n".join(f"    {ln}" for ln in _msg.splitlines()))
+                if _landed.get("blocking"):
+                    # Skip the dispatch, and deliberately do NOT change the
+                    # task's status. There is no board status meaning "held
+                    # pending human verification": kanban_tasks' CHECK constraint
+                    # has no `blocked` (state_machine.py carries that migration as
+                    # an open TODO), and the statuses that do exist all lie about
+                    # what happened here — `failed` says the work was attempted,
+                    # `backlog` says nobody has got to it. So the task stays put
+                    # and says so every cycle, which is the correct amount of
+                    # noise for work that must not be built until a human looks.
+                    print(f"  Kanban: REFUSING to dispatch {task['id']!r} — its id is "
+                          f"already on the default branch (KANBAN_LANDED_CHECK=enforce); "
+                          f"status left unchanged for a human to reconcile")
+                    logger.warning(
+                        "landed check REFUSED dispatch of %s (%s) — already on %s",
+                        task["id"], _landed.get("confidence"), _landed.get("ref"),
+                    )
+                    continue
+        except Exception as _lc_exc:  # noqa: BLE001 — advisory, never blocks dispatch
+            logger.debug("pre-dispatch landed check failed for %s: %s",
+                         task["id"], _lc_exc)
 
         # Pre-dispatch complexity gate: score the task before spending any tokens.
         # If it looks too big for a single session (score ≥ 7) decompose it now

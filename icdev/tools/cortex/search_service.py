@@ -236,6 +236,78 @@ def _rrf_fuse(results: list, k: int = _DEFAULT_RRF_K, weights: Optional[dict] = 
 
 
 # ---------------------------------------------------------------------------
+# Adaptive complexity pre-routing (agx-rag-01) — adopted here by trust-self-03
+# ---------------------------------------------------------------------------
+#
+# ``AdaptiveRetriever`` WRAPS ``RAGRetriever``, so it can never be reached from
+# inside ``retriever.search()`` without a cycle. ``tools/rag/toggle_harness.py``
+# therefore reported ``adaptive_routing`` as WRAPPER-UNADOPTED: not dead code, but
+# a behaviour with no caller — "a product decision about which surface gets it".
+# This is that caller. ``search_rag`` is the exact site that constructs a
+# tenant-scoped ``RAGRetriever`` and runs its two-stage search, which is what the
+# wrapper wraps.
+#
+# CITATION SAFETY. ``requires_citations`` is True here and is deliberately NOT
+# caller-configurable: every ``CortexSearchResult`` carries a ``Citation`` and
+# the facade suppresses uncited content (tools/cortex/schemas.py), so this IS a
+# citation surface. The wrapper's ``none``/skip route — which answers with no
+# retrieved evidence at all — is consequently unavailable at this seam, enforced
+# in the wrapper rather than documented as a caveat.
+#
+# The consequence is worth stating plainly rather than discovering later: on this
+# surface adaptive routing buys a WIDER candidate set for compositional queries,
+# never a skipped retrieval call. ``measure_savings()`` run with the Cortex
+# posture reports ``retrieval_calls_saved: 0`` by construction — that is the
+# correct number for a citation surface, not a null result.
+_CORTEX_REQUIRES_CITATIONS = True
+
+
+def _rag_retrieve(retriever_mod, query: str, top_k: int, ctx: CortexContext) -> tuple:
+    """Retrieve for the ``rag`` backend, through AdaptiveRetriever when enabled.
+
+    Returns ``(native_results, routing)``; ``routing`` is the wrapper's decision
+    record, or None when ``rag.adaptive_routing.enabled`` is false — in which
+    case this is byte-for-byte the pre-existing ``run_rag_search()`` call.
+    """
+    # Imported statically rather than through _backend() so the adoption is
+    # visible to the AST scan in toggle_harness._repo_importers: a dynamic
+    # importlib call would leave the toggle reading WRAPPER-UNADOPTED while
+    # actually being consumed, which is the exact failure that harness exists to
+    # catch. The retriever INSTANCE is still resolved via _backend(), so tenant
+    # scoping and namespace/monkeypatch consistency are unaffected.
+    from tools.rag.adaptive_router import AdaptiveRetriever
+
+    # Constructed twice on the enabled path, and that is intentional. The first
+    # reads only the (memoized) rag config to answer `enabled`; the second
+    # injects a TENANT-SCOPED retriever, because the wrapper's own lazy
+    # _get_retriever() builds RAGRetriever() with no tenant_id and would drop
+    # the vector-store tenant filter.
+    adaptive = AdaptiveRetriever()
+    if not adaptive.enabled:
+        return run_rag_search(
+            retriever_mod.RAGRetriever, query, tenant_id=ctx.tenant_id, top_k=top_k,
+            surface="chat_rag",
+        ), None
+
+    adaptive = AdaptiveRetriever(
+        retriever=retriever_mod.RAGRetriever(tenant_id=ctx.tenant_id)
+    )
+    outcome = adaptive.retrieve(
+        query, requires_citations=_CORTEX_REQUIRES_CITATIONS, top_k=top_k,
+        # Forwarded verbatim to RAGRetriever.search() through the wrapper's
+        # **kwargs, so the surface scoping survives the adaptive path too.
+        surface="chat_rag",
+    )
+    routing = {
+        "route": outcome.get("route", ""),
+        "complexity": outcome.get("complexity", ""),
+        "source": outcome.get("source", ""),
+        "retrieved": bool(outcome.get("retrieved", True)),
+    }
+    return outcome.get("results") or [], routing
+
+
+# ---------------------------------------------------------------------------
 # Backend adapters
 # ---------------------------------------------------------------------------
 
@@ -256,16 +328,30 @@ def search_rag(
     the failure is now RECORDED on the returned ``BackendResults`` instead of
     vanishing into an empty list, so the caller can distinguish a dead
     embedding provider from a corpus that matched nothing (ctx-perf-04).
+
+    Retrieval runs through ``AdaptiveRetriever`` when ``rag.adaptive_routing``
+    is enabled — see :func:`_rag_retrieve` for the citation-safety posture and
+    why the skip route cannot fire on this surface. Default off, in which case
+    this is the unchanged single-pass call.
     """
     ctx = ctx or CortexContext()
     try:
         retriever_mod = _backend("rag.retriever")
-        native = run_rag_search(
-            retriever_mod.RAGRetriever, query, tenant_id=ctx.tenant_id, top_k=top_k
-        )
+        native, routing = _rag_retrieve(retriever_mod, query, top_k, ctx)
         out = []
         for r in native:
             content = r.content or ""
+            metadata = {
+                "chunk_id": r.chunk_id,
+                "chunk_index": r.chunk_index,
+                "source_type": r.source_type,
+                "tier": r.tier,
+                "tenant_id": ctx.tenant_id,
+            }
+            # Only present when the toggle is on, so an enabled deployment's
+            # routing decision is auditable instead of invisible.
+            if routing:
+                metadata["adaptive_routing"] = dict(routing)
             out.append(
                 CortexSearchResult(
                     content=content,
@@ -287,13 +373,7 @@ def search_rag(
                         "rerank": r.rerank_score,
                         "final": r.final_score,
                     },
-                    metadata={
-                        "chunk_id": r.chunk_id,
-                        "chunk_index": r.chunk_index,
-                        "source_type": r.source_type,
-                        "tier": r.tier,
-                        "tenant_id": ctx.tenant_id,
-                    },
+                    metadata=metadata,
                 )
             )
         return out

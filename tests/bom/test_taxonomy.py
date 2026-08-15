@@ -51,17 +51,29 @@ def _stub(monkeypatch, payload, *, schema_valid=True, boom=None):
     the package — so patching ``sys.modules["tools.cortex.api"]`` misses it
     entirely and the test quietly calls a real LLM over the network. Patch the
     attribute on the package object.
+
+    The double carries ``data["payload"]`` and re-exports ``CortexSchemaError``
+    because the real ``cortex.extract`` does (trust-struct-03): the parsed object
+    now travels beside the text so a caller never re-parses, and a
+    non-conforming payload RAISES instead of arriving with a flag. A double that
+    kept the old surface would let taxonomy's handling of either drift
+    unnoticed.
     """
-    def extract(prompt, schema, ctx=None):
+    def extract(prompt, schema, ctx=None, **kw):
         if boom:
             raise boom
         _stub.last_prompt = prompt
+        parsed = payload if not isinstance(payload, str) else None
         return types.SimpleNamespace(
-            text=json.dumps(payload) if not isinstance(payload, str) else payload,
-            metadata={"schema_valid": schema_valid},
+            text=json.dumps(payload) if parsed is not None else payload,
+            metadata={"schema_valid": schema_valid if parsed is not None else False},
+            data={"payload": parsed},
         )
 
-    fake = types.SimpleNamespace(extract=extract)
+    fake = types.SimpleNamespace(
+        extract=extract,
+        CortexSchemaError=importlib.import_module("tools.cortex.api").CortexSchemaError,
+    )
     monkeypatch.setattr(importlib.import_module("tools.cortex"), "api", fake)
     return fake
 

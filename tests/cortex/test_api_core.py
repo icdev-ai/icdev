@@ -14,6 +14,10 @@ from pathlib import Path
 import pytest
 
 from tools.cortex import CortexContext, CortexResult, classify, complete, extract
+# Reached through the module, not as a from-import: test_airgap_assertion.py
+# reloads tools.cortex.api and mints a new exception class, which a bound name
+# would not follow (the raise would stop matching pytest.raises).
+from tools.cortex import api as _cortex_api
 from tools.llm.provider import LLMResponse
 
 
@@ -224,10 +228,20 @@ def test_extract_parses_fenced_json_content(install_router):
     assert json.loads(result.text) == {"name": "ICDEV"}
 
 
-def test_extract_falls_back_to_raw_content_when_not_json(install_router):
+def test_extract_refuses_rather_than_falling_back_to_raw_content(install_router):
+    """It used to hand the raw completion back as ``result.text`` (trust-struct-03).
+
+    ``{"type": "object"}`` is inside the contract subset, so the payload is held
+    to it: prose is a refusal, not a fallback. The old best-effort return is
+    still reachable, but only by asking for it at the call site.
+    """
     install_router(FakeRouter(response=_response(content="not json at all")))
-    result = extract("text", {"type": "object"})
-    assert result.text == "not json at all"
+    with pytest.raises(_cortex_api.CortexSchemaError):
+        extract("text", {"type": "object"})
+
+    degraded = extract("text", {"type": "object"}, on_invalid="return")
+    assert degraded.text == "not json at all"
+    assert degraded.metadata["schema_valid"] is False
 
 
 def test_extract_threads_context_and_accounting(install_router):
