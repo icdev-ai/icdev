@@ -83,7 +83,13 @@ class LLMResponse:
     cache_read_input_tokens: int = 0      # D-CACHE-10: Anthropic prompt cache read savings
     duration_ms: int = 0
     stop_reason: str = ""
-    cost_usd: float = 0.0                 # Cumulative USD cost (when provider computes it)
+    cost_usd: float = 0.0                 # USD cost, derived by the router
+    #: How cost_usd was arrived at: "priced" | "local_zero" | "unpriced".
+    #: NO provider populates cost_usd (all nine adapters leave the default),
+    #: so the router derives it from the per-model pricing block and records
+    #: the basis alongside - a 0.0 from a local model and a 0.0 from a model
+    #: with no price in the table are different facts.
+    cost_basis: str = ""
     classification: str = "CUI"
 
 

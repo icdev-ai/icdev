@@ -1480,3 +1480,4 @@ tests/workflow/test_playwright_gate.py
 # that is a copy of what instantiation creates is one that goes stale silently.
 # 53 tests, <1s, pure regex/dict: no DB, no LLM, no network.
 tests/test_outline_contract.py
+tests/test_llm_cost_basis.py

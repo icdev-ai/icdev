@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS module_budget_usage (
     project_id TEXT,
     model_id TEXT,
     details_json TEXT,
+    -- How `amount` was arrived at: priced | local_zero | unpriced. NULL on rows
+    -- written before the basis existed, which is a different fact from
+    -- 'unpriced'. See migration 20260815003153.
+    cost_basis TEXT,
     created_at TEXT NOT NULL DEFAULT ''
 );
 """
@@ -488,6 +492,7 @@ def record_module_usage(
     project_id: str = "",
     model_id: str = "",
     details: Optional[Dict] = None,
+    cost_basis: str = "",
 ) -> str:
     """Record resource consumption against a module budget.
 
@@ -520,8 +525,9 @@ def record_module_usage(
         cursor = conn.execute(
             """INSERT INTO module_budget_usage
                (module_name, function_name, resource_type, amount, tokens,
-                operations, project_id, model_id, details_json, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                operations, project_id, model_id, details_json, cost_basis,
+                created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
             (
                 module_name,
@@ -533,6 +539,7 @@ def record_module_usage(
                 project_id,
                 model_id,
                 json.dumps(details) if details else None,
+                cost_basis or None,
                 _now_iso(),
             ),
         )

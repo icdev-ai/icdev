@@ -175,6 +175,54 @@ def _is_local_model(config: dict, model_name: str) -> bool:
     return info.get("provider") in ("ollama", "mistral_vllm")
 
 
+#: Why a cost figure is what it is. A bare 0.0 is ambiguous in the one way that
+#: matters: local inference really is free, and a cloud model with no price in
+#: the table is simply UNMEASURED. Recording both as 0.0 is how
+#: module_budget_usage accumulated 1,391 rows summing to $0.00 - including 557
+#: calls on kimi-k2.6:cloud - while the $150 monthly USD cap sat at 0% and could
+#: never fire. Enforcement then ran entirely on the token proxy.
+COST_BASIS_PRICED = "priced"          # computed from a real per-1k price
+COST_BASIS_LOCAL_ZERO = "local_zero"  # local provider: $0 is the true cost
+COST_BASIS_UNPRICED = "unpriced"      # NO price for a non-local model: unknown
+
+
+def compute_cost_usd(
+    model_name: str,
+    input_tokens: int,
+    output_tokens: int,
+    config: dict | None = None,
+) -> tuple[float, str]:
+    """Return ``(cost_usd, basis)`` for one call.
+
+    ``LLMResponse.cost_usd`` is documented as "when provider computes it" and NO
+    provider computes it - all nine adapters leave the 0.0 default - so the
+    field was dead from the start. Cost is therefore derived centrally here from
+    the per-model ``pricing`` block, which one place can do correctly for every
+    provider.
+
+    The basis is the load-bearing half of the return value. ``unpriced`` is NOT
+    folded into ``local_zero``: 30 of 39 configured models carry
+    ``{input_per_1k: 0.0, output_per_1k: 0.0}``, and for the local ones that is
+    the truth while for claude-opus it plainly is not. A caller that cannot tell
+    them apart is back to the bug this function exists to fix, so the cost is
+    still 0.0 for an unpriced model - inventing a number would be worse - but it
+    is labelled, and therefore countable.
+    """
+    cfg = config if config is not None else _load_config()
+    if _is_local_model(cfg, model_name):
+        return 0.0, COST_BASIS_LOCAL_ZERO
+
+    pricing = (cfg.get("models", {}).get(model_name, {}) or {}).get("pricing", {}) or {}
+    in_per_1k = float(pricing.get("input_per_1k", 0.0) or 0.0)
+    out_per_1k = float(pricing.get("output_per_1k", 0.0) or 0.0)
+    if in_per_1k <= 0.0 and out_per_1k <= 0.0:
+        return 0.0, COST_BASIS_UNPRICED
+
+    cost = (max(0, int(input_tokens or 0)) / 1000.0) * in_per_1k
+    cost += (max(0, int(output_tokens or 0)) / 1000.0) * out_per_1k
+    return round(cost, 6), COST_BASIS_PRICED
+
+
 def _scanner_functions(config: dict) -> list[str]:
     """Return the list of scanner-tier functions from two_tier config."""
     return config.get("two_tier", {}).get("scanner_functions", [])
