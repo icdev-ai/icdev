@@ -23,7 +23,19 @@ def make_client(*, binding=None):
 
     @app.before_request
     def _simulate_auth():
-        g.current_user = {"id": "u1", "role": "service", "tenant_id": "compass"}
+        # Mirror tools/dashboard/auth.py: a SERVICE-KEY caller gets role
+        # "service" plus the binding's tenant; a dashboard SESSION user
+        # gets neither. Measured 2026-08-15: 0 of 13 dashboard_users rows
+        # carry a tenant_id, so a session user takes the canvas guard's
+        # "authenticated but no tenant" early-allow. Giving the session
+        # case a tenant made it a service principal with no service key --
+        # a shape that exists nowhere -- and the guard then denied it on a
+        # grant check no such caller can satisfy.
+        if binding is not None:
+            g.current_user = {"id": "cortex-svc:compass", "role": "service",
+                              "tenant_id": "compass"}
+        else:
+            g.current_user = {"id": "u1", "role": "admin"}
         g.security_context = {
             "tenant_id": "compass", "user_id": "u1", "classification": "CUI",
         }
