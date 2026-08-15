@@ -1586,3 +1586,18 @@ tests/kanban/test_stranded_audit_gate_parity.py
 # a non-existent updated_at, so every UPDATE raised, was swallowed, and nothing drained).
 # 42 tests, <1s. No Fabric peer, no hfc, no network: which/subprocess are patched.
 tests/test_blockchain_transports.py
+# ── trust-hitl-01: the delta is the reviewable unit ───────────────────────────
+# tools/quality/hitl_delta.py turns a force_* override from "someone bypassed a
+# gate" into "this text became that text, and here is what it did to the
+# findings". Gated because three properties are load-bearing and all three are
+# silent when they break: (1) the diff is CLAIM-anchored, so the tests pin the
+# upstream decompose_claims/trailing-citation mismatch AND the local
+# re-anchoring that compensates for it — when citation_grounding is fixed, two
+# of them fail and the compensation can be deleted; (2) trust_deltas is
+# EVIDENCE and approval_items is STATE, so settling issues no UPDATE against
+# the evidence table and a correction leaves its predecessor byte-identical;
+# (3) a delta whose approval-inbox enqueue FAILED still reads pending — the one
+# path where a dropped ask could silently present as an approval. Also asserts
+# no artifact TEXT reaches the chat-mirrored approval_items row. 43 tests, ~1s,
+# sqlite tmp_path + the real migration DDL: no LLM, no network, no live board.
+tests/test_hitl_delta.py
