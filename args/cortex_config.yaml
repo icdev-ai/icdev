@@ -237,6 +237,7 @@ governance:
   #   operation           the wrapped call itself
   #   citation_grounding  [source: N] tags validated against injected sources
   #   content_grounding   semantic claim-vs-context grounding of the output
+  #   kg_grounding        claims validated against GRAPH FACTS       (OPT-IN)
   #   output_redaction    PII/secrets masked out of the response  (MANDATORY)
   #   provenance          registry row + append-only cortex_audit row (MANDATORY)
   #
@@ -246,9 +247,20 @@ governance:
   # optimisation into a compliance hole, so omitting one raises
   # GovernanceProfileError when the profile is resolved — at load, loudly, once.
   #
-  # `default` is NOT declared here: it is built into code as the full chain and
-  # is what every caller that names no profile gets, so a missing or unreadable
-  # config can never silently narrow governance. Redefining it here is an error.
+  # OPT-IN (governance.OPT_IN_GATES): every gate above except kg_grounding is
+  # opt-OUT — `default` runs it and a profile narrows. kg_grounding is the other
+  # way round: it is in the vocabulary but NOT in `default`, so a profile must
+  # name it to get it. It needs a live knowledge-graph connection and builds a
+  # lexicon of that graph's node labels once per call, and — because kg_ontology
+  # ships EMPTY — the schema it validates against is OBSERVED, which may warn but
+  # can never refuse. Putting a DB round-trip on every Cortex caller's
+  # interactive path for a check that cannot currently refuse is not a governance
+  # improvement, so callers ask for it by name.
+  #
+  # `default` is NOT declared here: it is built into code as the full chain minus
+  # the opt-in gates, and is what every caller that names no profile gets, so a
+  # missing or unreadable config can never silently narrow governance.
+  # Redefining it here is an error.
   profiles:
     # Internal diligence: a node reasoning over first-party data already inside
     # the tenant boundary, whose output feeds another node rather than a person.
@@ -270,6 +282,43 @@ governance:
     # named profile a workflow node can declare.
     trusted_ingest:
       gates: [operation, citation_grounding, content_grounding, output_redaction, provenance]
+
+    # The only shipped profile that declares kg_grounding (trust-kg-03): the
+    # full default chain PLUS graph attestation, for a caller emitting an
+    # artifact whose factual claims are about entities the graph indexes
+    # (compliance narratives, agent output about the platform itself — the
+    # surfaces args/trust_gate.yaml gives kg_guard to). Everything else keeps
+    # the default chain and is byte-for-byte unaffected by this card.
+    kg_attested:
+      gates: [pre_check, input_redaction, operation, citation_grounding,
+              content_grounding, kg_grounding, output_redaction, provenance]
+
+  # KG-grounding gate (gate 6) knobs — trust-kg-03. Consumed by
+  # governance._kg_grounding_cfg; the gate itself is
+  # tools/quality/kg_grounding.kg_ground_claims + kg_gate, the SAME pair
+  # trust_gate.py's kg_guard runs, so the "which verdict is worth a finding"
+  # policy has one home and cannot drift between the two callers.
+  #
+  # FAIL-OPEN, STATED EXPLICITLY (the card required this said out loud): this
+  # gate lands behind the same `governance.fail_closed: false` above as every
+  # other non-mandatory gate. A KG finding therefore WARNS and does not refuse
+  # unless a caller sets CortexContext.fail_closed or that key is flipped. That
+  # default is what let citation_type='cortex' raise for the provenance gate's
+  # entire lifetime with 0 of 285 registry rows written and nothing go red, so
+  # the one silence it must not reproduce is closed by construction instead: a
+  # profile that DECLARES kg_grounding and then cannot measure — no graph
+  # connection, or a graph with no nodes — records `fail` and logs at ERROR,
+  # never `warn` and never `pass`. Declared-and-inert is the loudest outcome
+  # this gate has, even though it still does not block.
+  kg_grounding:
+    # Scope validation to one graph. null = every graph in kg_nodes/kg_edges.
+    graph_id: null
+    # Opt into the `unknown_entity` finding — a proper noun in the output that
+    # the graph does not know. OFF by default for the reason kg_gate documents:
+    # the graph indexes a fraction of the world, so an unrecognised name is far
+    # more often out-of-scope than fabricated, and a gate that flags every one
+    # of them gets switched off wholesale.
+    flag_unknown_entities: false
 
   # Content-grounding gate (gate 5) knobs. The gate runs semantic
   # claim-vs-context grounding (tools/quality/content_grounding.ground_content)

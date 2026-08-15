@@ -27,17 +27,38 @@ ad-hoc governance. The chain, in order:
                             confidence bands from ``citation_grounding``
                             (``CONF_ABSTAIN``). When no snippet text is
                             available it falls back to the placeholder scan.
-6. ``output_redaction``   — ``tools/llm/output_redactor`` masks PII/secrets in
+6. ``kg_grounding``       — ``tools/quality/kg_grounding`` KG-to-text constrained
+                            validation (trust-kg-03). The two gates above bind a
+                            claim to the SPAN it cites; this one checks it
+                            against GRAPH FACTS — does the entity exist, is the
+                            asserted relation a shape this graph recognises, is
+                            the edge actually there. **OPT-IN**: it is in the
+                            gate vocabulary but NOT in the ``default`` profile,
+                            so no existing caller's chain changes. See
+                            :data:`OPT_IN_GATES`.
+7. ``output_redaction``   — ``tools/llm/output_redactor`` masks PII/secrets in
                             the response text.
-7. ``provenance``         — ``tools/provenance/registry.register_citation``
+8. ``provenance``         — ``tools/provenance/registry.register_citation``
                             record + one append-only ``cortex_audit`` row
                             (ctx-govern-03) written through the RLS-aware storage
                             shim, plus a structured logger record for observability.
 
-Non-retrieval calls (``retrieval=False``) may skip the two grounding gates —
-NEVER redaction or provenance/audit — and the skip is recorded explicitly in
-the :class:`GovernanceReport` (outcome ``"skip"``) so governance stays
-observable, not implied.
+Non-retrieval calls (``retrieval=False``) may skip the grounding gates — NEVER
+redaction or provenance/audit — and the skip is recorded explicitly in the
+:class:`GovernanceReport` (outcome ``"skip"``) so governance stays observable,
+not implied.
+
+Fail-open posture of ``kg_grounding``, stated explicitly (trust-kg-03): it lands
+behind the SAME ``governance.fail_closed: false`` default as every other
+non-mandatory gate, so a KG finding degrades to ``warn`` and only refuses when a
+caller or the config opts into fail-closed. That default is what let
+``citation_type='cortex'`` raise for the provenance gate's entire lifetime with
+0 of 285 registry rows written and nothing go red, so this gate is built so the
+same silence is not reachable: a profile that DECLARES ``kg_grounding`` and then
+cannot measure — no graph connection, or a graph with no nodes — records
+``fail`` (not ``warn``, not ``pass``) and logs at ERROR, exactly the distinction
+the provenance gate learned in cxo-trust-01. ``fail`` here still never blocks;
+it makes the gap legible, which is the thing that was missing.
 
 Profiles (hgx-gov-01): a caller may name a *governance profile* — a subset of
 the chain declared as data under ``governance.profiles`` in
@@ -94,6 +115,7 @@ GATE_INPUT_REDACTION = "input_redaction"
 GATE_OPERATION = "operation"
 GATE_CITATION_GROUNDING = "citation_grounding"
 GATE_CONTENT_GROUNDING = "content_grounding"
+GATE_KG_GROUNDING = "kg_grounding"
 GATE_OUTPUT_REDACTION = "output_redaction"
 GATE_PROVENANCE = "provenance"
 
@@ -103,6 +125,7 @@ GATE_ORDER = (
     GATE_OPERATION,
     GATE_CITATION_GROUNDING,
     GATE_CONTENT_GROUNDING,
+    GATE_KG_GROUNDING,
     GATE_OUTPUT_REDACTION,
     GATE_PROVENANCE,
 )
@@ -143,11 +166,35 @@ SKIPPABLE_GATES = (
     GATE_INPUT_REDACTION,
     GATE_CITATION_GROUNDING,
     GATE_CONTENT_GROUNDING,
+    GATE_KG_GROUNDING,
 )
 
-#: Profile every caller that names none resolves to: the whole chain. Built into
-#: code, not read from YAML, so a missing/unreadable config cannot silently
-#: narrow governance and an existing caller's behaviour never depends on config.
+#: Gates a profile must OPT INTO: in the vocabulary, out of ``default``.
+#:
+#: Every other gate is opt-OUT — ``default`` runs it and a profile narrows. That
+#: is right for a gate whose inputs the pipeline already holds. ``kg_grounding``
+#: is not one: it needs a live connection to the knowledge graph and loads that
+#: graph's node labels once per call, so folding it into ``default`` would put a
+#: DB round-trip and a lexicon build on the interactive path of every Cortex
+#: caller on the platform — including the ones with no graph, for whom it can
+#: only ever report "unmeasurable". And because ``kg_ontology`` ships empty, the
+#: schema it validates against is OBSERVED, which by
+#: ``kg_grounding.GraphSchema.can_block`` may warn but never refuse. Paying that
+#: cost platform-wide for a check that cannot currently refuse is not a governance
+#: improvement, so a caller declares it: profiles that name it get it, profiles
+#: that do not are byte-for-byte unchanged.
+OPT_IN_GATES = (GATE_KG_GROUNDING,)
+
+#: What ``default`` actually runs: the chain minus the opt-in gates.
+#:
+#: Derived from :data:`GATE_ORDER` rather than written out, so adding a gate to
+#: the vocabulary cannot leave this list behind.
+DEFAULT_GATES = tuple(g for g in GATE_ORDER if g not in OPT_IN_GATES)
+
+#: Profile every caller that names none resolves to: the whole chain bar the
+#: opt-in gates. Built into code, not read from YAML, so a missing/unreadable
+#: config cannot silently narrow governance and an existing caller's behaviour
+#: never depends on config.
 DEFAULT_PROFILE = "default"
 
 
@@ -163,9 +210,11 @@ class GovernanceProfileError(ValueError):
 def load_governance_profiles(config_path=None, config=None) -> dict:
     """Validated ``{profile_name: frozenset(gate_names)}`` from Cortex config.
 
-    ``default`` is always present and is always the full :data:`GATE_ORDER`;
-    operators add named subsets under ``governance.profiles`` in
-    ``args/cortex_config.yaml``::
+    ``default`` is always present and is always :data:`DEFAULT_GATES` — the full
+    :data:`GATE_ORDER` minus :data:`OPT_IN_GATES`; operators add named profiles
+    under ``governance.profiles`` in ``args/cortex_config.yaml``. A named profile
+    is usually a SUBSET of the default chain, but it may also add an opt-in gate
+    the default does not run::
 
         governance:
           profiles:
@@ -180,7 +229,7 @@ def load_governance_profiles(config_path=None, config=None) -> dict:
             caller that names no profile — the one thing profiles must not do).
     """
     raw = (cortex_config(config, config_path).get("governance") or {}).get("profiles")
-    profiles = {DEFAULT_PROFILE: frozenset(GATE_ORDER)}
+    profiles = {DEFAULT_PROFILE: frozenset(DEFAULT_GATES)}
     if raw is None:
         return profiles
     if not isinstance(raw, dict):
@@ -230,16 +279,16 @@ def load_governance_profiles(config_path=None, config=None) -> dict:
 
 
 def resolve_profile(name: str = "", config_path=None, config=None) -> frozenset:
-    """Gates enabled for ``name``; the full chain when it is blank.
+    """Gates enabled for ``name``; :data:`DEFAULT_GATES` when it is blank.
 
     Raises:
         GovernanceProfileError: ``name`` is not declared (a typo'd profile must
-            not silently fall back to the full chain and look like it worked, nor
-            to a narrower one), or the profiles block itself cannot load.
+            not silently fall back to the default chain and look like it worked,
+            nor to a narrower one), or the profiles block itself cannot load.
     """
     key = (name or "").strip()
     if not key or key == DEFAULT_PROFILE:
-        return frozenset(GATE_ORDER)
+        return frozenset(DEFAULT_GATES)
     profiles = load_governance_profiles(config_path, config)
     try:
         return profiles[key]
@@ -267,6 +316,21 @@ def _content_grounding_floor(config_path=None, config=None) -> float:
     ) or {}
     override = cfg.get("min_score")
     return float(override) if override is not None else float(CONF_ABSTAIN)
+
+
+def _kg_grounding_cfg(config=None) -> dict:
+    """``governance.kg_grounding`` knobs, with shipped defaults.
+
+    ``graph_id`` scopes to one graph (None = every graph in the table);
+    ``flag_unknown_entities`` opts into the noisier ``unknown_entity`` finding,
+    OFF by default for the reason ``kg_gate`` documents — a graph indexing a
+    fraction of the world would otherwise flag every proper noun it has not seen.
+    """
+    cfg = (cortex_config(config).get("governance") or {}).get("kg_grounding") or {}
+    return {
+        "graph_id": cfg.get("graph_id") or None,
+        "flag_unknown_entities": bool(cfg.get("flag_unknown_entities")),
+    }
 
 
 class GovernanceBlockedError(RuntimeError):
@@ -364,6 +428,43 @@ def _build_grounding_llm_invoke(cfg: dict, ctx):
     except Exception as exc:  # noqa: BLE001 — heuristic is always the floor
         logger.debug("content grounding LLM invoke unavailable: %s", exc)
         return None
+
+
+def _gate_kg_connection():
+    """Gate 6a: a connection to the knowledge graph, or None.
+
+    ``kg_grounding``'s whole question is "does the graph attest this?", so
+    without a graph there is nothing to attest anything — and a gate that cannot
+    reach its evidence must say so rather than pass. Returns None instead of
+    raising: the caller turns None into a recorded ``fail``, which is the
+    legible outcome; an exception here would land in the generic ``_degrade``
+    path and read as transient.
+    """
+    try:
+        return _mod("db.storage").get_connection()
+    except Exception as exc:  # noqa: BLE001 — reported by the caller as a fail
+        logger.error("cortex kg_grounding: no graph connection: %s", exc)
+        return None
+
+
+def _gate_kg_ground_claims(text: str, conn, graph_id=None) -> dict:
+    """Gate 6b: per-claim KG grounding report for the output text."""
+    return _mod("quality.kg_grounding").kg_ground_claims(
+        text, conn=conn, graph_id=graph_id
+    )
+
+
+def _gate_kg_findings(report: dict, flag_unknown_entities: bool = False) -> list:
+    """Gate 6c: the report's blocking findings, per the SHARED kg_gate policy.
+
+    Deliberately delegated rather than re-derived from ``report["counts"]``: the
+    "which verdicts are worth a finding" decision (``kg_contradicted`` yes,
+    ``kg_unattested`` never, ``unknown_entity`` opt-in) lives in ``kg_gate`` and
+    a second copy of it here would drift from ``trust_gate``'s.
+    """
+    return _mod("quality.kg_grounding").kg_gate(
+        report, flag_unknown_entities=flag_unknown_entities
+    )
 
 
 def _gate_redact_output(text: str) -> tuple:
@@ -626,6 +727,15 @@ class GovernancePipeline:
                 "operation_ms": float(report.operation_ms or 0.0),
                 "governance_ms": report.governance_ms,
                 "gate_ms": dict(report.gate_ms),
+                # KG grounding detail (trust-kg-03). Carried in the same
+                # free-form gates_json blob as the timings for the same reason:
+                # `outcomes` already says pass/warn/fail/skip, and this says WHY
+                # — which schema the verdict came from and what the counts were.
+                # Without it a `fail` from an unmeasurable graph and a `fail`
+                # from a contradicted claim are indistinguishable in the audit,
+                # and telling those two apart is the whole point of this gate
+                # recording `fail` at all.
+                "kg_grounding": dict(report.kg_grounding or {}),
             }
             # Accounting for observability. cost/latency/provider/model live on
             # the CortexResult, not on cortex_audit columns — carry them in the
@@ -642,6 +752,116 @@ class GovernancePipeline:
             _gate_record_audit(payload)
         except Exception as exc:  # audit stub must never mask the real outcome
             logger.error("cortex governance audit record failed: %s", exc)
+
+    # -- gate 6: KG grounding (opt-in) ----------------------------------------
+    def _run_kg_grounding(
+        self,
+        report: GovernanceReport,
+        ctx: CortexContext,
+        text: str,
+        *,
+        clock: Optional[_Stopwatch] = None,
+        config=None,
+    ) -> bool:
+        """Validate the output's claims against GRAPH FACTS. Returns ``grounded``.
+
+        Only runs when the resolved profile DECLARES ``kg_grounding`` (see
+        :data:`OPT_IN_GATES`), so reaching this method means an operator asked
+        for KG attestation on this call.
+
+        That is what decides how an unmeasurable graph is recorded. For a gate
+        the default chain runs anyway, "no evidence to work with" is ordinary and
+        warns. Here the operator named the gate, so a graph that cannot be reached
+        or has no nodes means the profile's promise is not being kept — recorded
+        ``fail`` and logged at ERROR, never ``warn`` and never ``pass``. This is
+        the cxo-trust-01 lesson applied at authoring time rather than after a
+        subsystem writes 0 rows for its whole lifetime: a misconfiguration and a
+        transient degradation must not look alike in the audit.
+
+        ``fail`` still does not block — ``governance.fail_closed`` stays false and
+        is the single platform-wide switch for that. A caller with
+        ``ctx.fail_closed`` set gets the refusal, on a KG finding as on any other.
+        """
+        from tools.quality.kg_grounding import (
+            ISSUE_CONTRADICTED,
+            STATUS_OK,
+            STATUS_UNMEASURABLE,
+        )
+
+        def _unmeasurable(reason: str) -> bool:
+            logger.error(
+                "cortex governance kg_grounding DECLARED BUT UNMEASURABLE (not a "
+                "transient failure): %s", reason,
+            )
+            report.kg_grounding = {
+                **(report.kg_grounding or {}),
+                "status": STATUS_UNMEASURABLE,
+                "reason": reason,
+            }
+            self._record(report, GATE_KG_GROUNDING, OUTCOME_FAIL, reason)
+            return False
+
+        cfg = _kg_grounding_cfg(config)
+        conn = _gate_kg_connection()
+        if conn is None:
+            return _unmeasurable(
+                "no graph connection; a profile declaring kg_grounding cannot "
+                "attest anything without one"
+            )
+        try:
+            kg_report = _gate_kg_ground_claims(text, conn, cfg["graph_id"])
+        except Exception as exc:
+            # A query/import failure IS transient in the way an empty graph is
+            # not, so it takes the normal degrade path (warn, or block under
+            # fail_closed) rather than the misconfiguration path above.
+            self._degrade(report, ctx, GATE_KG_GROUNDING, exc, clock=clock,
+                          config=config)
+            return False
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001 — a fake/pooled conn may not close
+                pass
+
+        report.kg_grounding = {
+            "status": kg_report.get("status"),
+            "schema_source": kg_report.get("schema_source"),
+            "counts": kg_report.get("counts") or {},
+            "unknown_entities": (kg_report.get("unknown_entities") or [])[:10],
+            "findings": [],
+        }
+        if kg_report.get("status") != STATUS_OK:
+            return _unmeasurable(
+                kg_report.get("detail") or str(kg_report.get("status"))
+            )
+
+        findings = _gate_kg_findings(kg_report, cfg["flag_unknown_entities"])
+        report.kg_grounding["findings"] = findings
+        if not findings:
+            self._record(
+                report, GATE_KG_GROUNDING, OUTCOME_PASS,
+                f"schema={kg_report.get('schema_source')} "
+                f"counts={kg_report.get('counts')}",
+            )
+            return True
+
+        detail = (
+            f"kg findings: {findings} "
+            f"(schema_source={kg_report.get('schema_source')})"
+        )
+        if resolve_fail_closed(ctx, config=config):
+            self._block(report, ctx, GATE_KG_GROUNDING, detail, clock=clock)
+        # kg_contradicted is a provable defect — the graph asserts something
+        # incompatible — and is only reachable under a DECLARED schema, which
+        # ships empty (kg_ontology, 0 rows). unknown_entity is opt-in and is a
+        # coverage signal, not a defect, so it warns. Same fail/warn split the
+        # citation gate draws between a hallucinated citation and a missing one.
+        contradicted = any(f.get("issue") == ISSUE_CONTRADICTED for f in findings)
+        self._record(
+            report, GATE_KG_GROUNDING,
+            OUTCOME_FAIL if contradicted else OUTCOME_WARN, detail,
+        )
+        return False
 
     # -- the chain ------------------------------------------------------------
     def wrap(
@@ -933,7 +1153,32 @@ class GovernancePipeline:
                               config=config)
         clock.split(report, GATE_CONTENT_GROUNDING)
 
-        # 6. Output redaction — never skipped, and applied to the CALLER-VISIBLE
+        # 6. KG grounding (trust-kg-03) — claims checked against GRAPH FACTS
+        #    rather than against the span they cite. OPT-IN: the default profile
+        #    does not declare it (OPT_IN_GATES), so for every caller that existed
+        #    before this gate the branch below records `skip` and nothing else
+        #    changes. Runs on retrieval and non-retrieval calls alike: the graph
+        #    is its own evidence set, so unlike the two gates above it has
+        #    something to check even when no sources were injected.
+        if self._profile_skip(report, GATE_KG_GROUNDING, enabled, profile_name):
+            pass
+        elif not (is_cortex_result or isinstance(result, str)):
+            # `text` for any other shape is ``str(result)`` — a Python repr, not
+            # prose. ``search`` returns a LIST, and its repr carries dataclass
+            # field names and ids that the claim decomposer would happily read as
+            # sentences and the lexicon as entity mentions. Grounding that would
+            # manufacture verdicts out of a serialization artifact, which is the
+            # one failure mode kg_grounding is written to avoid. (Output
+            # redaction below handles the list shape properly and is unaffected.)
+            self._record(report, GATE_KG_GROUNDING, OUTCOME_SKIP,
+                         f"result is {type(result).__name__}, not text")
+        elif not (text or "").strip():
+            self._record(report, GATE_KG_GROUNDING, OUTCOME_SKIP, "empty output")
+        elif not self._run_kg_grounding(report, ctx, text, clock=clock, config=config):
+            grounded = False
+        clock.split(report, GATE_KG_GROUNDING)
+
+        # 7. Output redaction — never skipped, and applied to the CALLER-VISIBLE
         #    content of EVERY result shape. Egress PII/CUI masking is not optional
         #    and must NOT depend on `attach` (which only controls whether the
         #    governance report is attached, gate 482): the retrieval facades
@@ -983,7 +1228,7 @@ class GovernancePipeline:
                           config=config)
         clock.split(report, GATE_OUTPUT_REDACTION)
 
-        # 7. Provenance record + audit row — never skipped, never blocking.
+        # 8. Provenance record + audit row — never skipped, never blocking.
         record_id = f"cgov-{uuid.uuid4().hex[:16]}"
         registry_id = ""
         try:
@@ -1030,9 +1275,13 @@ class GovernancePipeline:
 
         if attach and is_cortex_result:
             result.governance = report
+            # A gate the profile did not declare records `skip`, which is not in
+            # (fail, warn) — so adding kg_grounding here cannot change the answer
+            # for any caller that does not run it.
             result.grounded = grounded and not any(
                 report.outcomes.get(g) in (OUTCOME_FAIL, OUTCOME_WARN)
-                for g in (GATE_CITATION_GROUNDING, GATE_CONTENT_GROUNDING)
+                for g in (GATE_CITATION_GROUNDING, GATE_CONTENT_GROUNDING,
+                          GATE_KG_GROUNDING)
             )
         return result, report
 

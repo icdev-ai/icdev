@@ -36,8 +36,6 @@ fail-closed deterministic fallback for malformed structured output.
 """
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,14 +138,32 @@ def classify_rule_verdict(token: Any, *, severity: str = _WARN) -> str:
     return "fail" if severity == _BLOCK else "not_applicable"
 
 
-def _extract_json(raw: str) -> Optional[dict]:
-    if not raw:
-        return None
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    try:
-        return json.loads(m.group(0) if m else raw)
-    except Exception:
-        return None
+def _critique_contract(severity: str):
+    """The declared shape of one rule critique (trust-struct-01).
+
+    The fail-closed sentinel is SEVERITY-DEPENDENT, which is why the contract is
+    built per rule rather than declared once: a malformed judge may not wave a
+    mandatory (BLOCK) control through, but must not manufacture a failure for an
+    advisory (WARN) one. That is the same policy :func:`classify_rule_verdict`
+    already states — declared here so the substitution is recorded, not implied.
+    """
+    from tools.quality.structured_output import OutputContract, enum_field
+
+    return OutputContract(
+        {
+            "type": "object",
+            "required": ["verdict"],
+            "properties": {
+                "verdict": enum_field(
+                    RULE_VERDICT_VOCAB,
+                    fail_closed=classify_rule_verdict(None, severity=severity),
+                ),
+                "offending_span": {"type": "string", "fail_closed": ""},
+                "rationale": {"type": "string", "fail_closed": ""},
+            },
+        },
+        name=f"constitutional_ai.critique[{severity}]",
+    )
 
 
 def _content(resp) -> str:
@@ -164,9 +180,14 @@ def critique_rule(
     """Critique ``artifact`` against ONE ``rule`` (never a monolithic blob prompt).
 
     The LLM commits only to a 3-value enum verdict and cites the offending span;
-    Python owns the aggregation. Fails closed on malformed output.
+    Python owns the aggregation. Fails closed on malformed output: the shape is
+    held to :func:`_critique_contract` (trust-struct-01), and a payload that
+    cannot be repaired from a declared sentinel is REJECTED — the rule then
+    takes the same severity-dependent fallback verdict it always did, but now
+    says in ``rationale`` which defect caused it instead of reporting nothing.
     """
     from tools.llm.provider import LLMRequest
+    from tools.quality.structured_output import coerce_or_reject
 
     prompt = (
         "You are a compliance reviewer. Judge whether the ARTIFACT satisfies this "
@@ -186,10 +207,22 @@ def critique_rule(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=300, temperature=0.0,
         ))
-        data = _extract_json(_content(resp)) or {}
-        verdict = classify_rule_verdict(data.get("verdict"), severity=rule.severity)
+        data, findings = coerce_or_reject(
+            _content(resp), _critique_contract(rule.severity), mode="coerce"
+        )
+        if data is None:
+            # Unparseable / unrepairable. Same fail-closed verdict as before,
+            # with the defect recorded so a reviewer can tell a malformed judge
+            # apart from a genuine violation.
+            codes = ",".join(sorted({f["code"] for f in findings})) or "unknown"
+            return RuleResult(
+                rule_id=rule.id, severity=rule.severity,
+                verdict=classify_rule_verdict(None, severity=rule.severity),
+                rationale=f"contract_violation: {codes}"[:500],
+            )
         return RuleResult(
-            rule_id=rule.id, severity=rule.severity, verdict=verdict,
+            rule_id=rule.id, severity=rule.severity,
+            verdict=classify_rule_verdict(data.get("verdict"), severity=rule.severity),
             offending_span=str(data.get("offending_span", ""))[:500],
             rationale=str(data.get("rationale", ""))[:500],
         )

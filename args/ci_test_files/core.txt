@@ -1415,6 +1415,19 @@ tests/cortex/test_chat_turn_connections.py
 # 17 tests, ~1.5s, tmp_path configs + stub providers: no DB service, no LLM,
 # no network.
 tests/rag/test_retriever_config_and_embedding.py
+# trust-self-02. rag.reflective_rerank shipped WIRED and enabled:false, i.e.
+# reachable and consumed by nothing. These gate the adoption: the toggle fires
+# for chat_rag and for no other surface (an unattributed caller does not inherit
+# a per-document LLM bill), a degraded reflection is distinguishable from a
+# genuine "partial", and the toggle harness reports adoption separately from
+# reachability. The two files that were already green are promoted off the
+# ungated census at the same time — they cover the composition truth table and
+# the reachability probe this card builds on.
+# 70 tests, ~6s, tmp_path configs + stub routers: no DB service, no LLM, no
+# network.
+tests/rag/test_reflective_surface_scoping.py
+tests/rag/test_toggle_harness.py
+tests/test_reflective_reranker.py
 # ctx-reach-03. cortex.govern / cortex.agent were flagged as zero-consumer
 # facades, with args/projects.yaml recording "cortex.agent mode graph. Note the
 # latent bug - mode is unvalidated." The membership check turned out to already
@@ -1481,3 +1494,40 @@ tests/workflow/test_playwright_gate.py
 # 53 tests, <1s, pure regex/dict: no DB, no LLM, no network.
 tests/test_outline_contract.py
 tests/test_llm_cost_basis.py
+# trust-struct-01 — the one contract validator for LLM output. Covers the
+# JSON-schema subset (construction-time keyword rejection, reject vs coerce,
+# fail-closed sentinels, the bounded single repair) AND that the three surfaces
+# whose hand-rolled extractors it replaced still degrade exactly as before:
+# content_grounding falls back to the heuristic floor, critique_rule fails
+# closed per severity, reflect_document lands on neutral. Those three fallbacks
+# were the reason to consolidate; a regression in one is invisible otherwise.
+# 44 tests, <1s, pure stdlib + stub routers: no DB, no LLM, no network.
+tests/test_structured_output.py
+# The bounded MONOTONE revise-and-recheck loop (trust-self-01). Gated because
+# the invariant is load-bearing and silent when broken: a loop that accepts a
+# round which did NOT strictly reduce findings degenerates into optimising for
+# the checker, and nothing downstream would notice -- the report still says
+# "improved". Five mutants were run against this suite and all five died:
+# strict "<" relaxed to "<=", the retention floor removed, a rejected round
+# adopting its candidate anyway, and the two fail-closed paths (initial
+# validation raised / no validators supplied) reporting blocked=False.
+# The retention floor gets its own test because the finding count has a trivial
+# global optimum -- an empty document scores clean -- so the monotone check
+# alone cannot tell "deleted the unsupportable sentence" from "deleted the
+# document".
+# 31 tests, <1s, injected validators + a fake router: no DB, no LLM, no network.
+tests/test_self_correct.py
+
+# ── trust-kg-03: kg_grounding in the Cortex governance chain ─────────────────
+# The first OPT-IN gate GATE_ORDER has had: in the vocabulary, out of `default`,
+# so a profile must name it. Three things worth the gate. (1) Every caller that
+# predates it is byte-for-byte unchanged — the gate records `skip` and its seams
+# are never touched; a regression here would put a DB round-trip and a lexicon
+# build on every Cortex caller's interactive path. (2) A profile that DECLARES
+# it and cannot measure records `fail`, never `warn` and never `pass` — the
+# cxo-trust-01 lesson, where a misconfiguration and a transient outage were
+# recorded identically and provenance wrote 0 of 285 rows for its whole
+# lifetime while looking merely flaky. (3) `fail` still does not block:
+# governance.fail_closed ships false and stays the single platform-wide switch.
+# 21 tests, <1s. Every seam is monkeypatched: no DB, no graph, no LLM.
+tests/cortex/test_governance_kg_gate.py
