@@ -1604,7 +1604,6 @@ tests/test_rls_integration.py
 tests/test_rls_system_catalog_guard.py
 tests/test_roadmap_adaptive_thresholds.py
 tests/test_role_cost_caps.py
-tests/test_route_smoke.py
 tests/test_router_backoff.py
 tests/test_routing_policy.py
 tests/test_routing_policy_enforcement.py
