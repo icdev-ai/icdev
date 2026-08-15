@@ -1537,6 +1537,7 @@ tests/cortex/test_rest_api.py
 # document".
 # 31 tests, <1s, injected validators + a fake router: no DB, no LLM, no network.
 tests/test_self_correct.py
+tests/kanban/test_timeout_no_redispatch.py
 
 # ── trust-kg-03: kg_grounding in the Cortex governance chain ─────────────────
 # The first OPT-IN gate GATE_ORDER has had: in the vocabulary, out of `default`,
