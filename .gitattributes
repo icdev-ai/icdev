@@ -70,6 +70,21 @@ icdev/tools/manifest/*.md merge=union
 args/ci_test_files/*.txt merge=union
 icdev/data/args/ci_test_files/*.txt merge=union
 
+# CI skip census (trust-disc-03)
+#
+# Same shape and same argument as the allowlists above: one independent site per
+# line, `<file>::<qualname>::<kind>[<n>]  # <written reason>`, appended to by
+# every task that registers or removes a skip. Two branches touching different
+# skips would otherwise collide at the same end-of-file offset, and the
+# resolution is always "keep both lines".
+#
+# `tools/ci/skip_census.py --check` catches what union can leave behind: it fails
+# on a duplicated site (tested) and on a malformed line, and a resurrected
+# deletion shows up as a stale entry the next --prune clears. The ceiling
+# `skip_census.skip_max` fails independently if the census grew.
+args/ci_skip_census.txt merge=union
+icdev/data/args/ci_skip_census.txt merge=union
+
 # Binary files
 *.db binary
 *.sqlite binary

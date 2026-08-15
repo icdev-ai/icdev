@@ -148,6 +148,106 @@ Scope is read from `args/test_gating_gate.yaml` — the hook shares `in_scope()`
 census rather than re-deriving `tests/` + `test_*.py`, so the two cannot drift into
 nagging about files the gate ignores.
 
+## A gated test that SKIPS is unmeasured, not passing (`trust-disc-03`)
+
+Everything above answers one question: **does CI run this file?** It cannot answer
+whether the file asserted anything, and `pytest.skip` makes those two different
+questions.
+
+The case this was built from was live in the tree the day it was written — reproduced
+2026-08-15 by running the gated file:
+
+```
+SKIPPED [1] tests/test_app.py:46: SQLite test DB lacks platform schema for
+overview: no such table: agents
+```
+
+That test is on `core.txt`. It has been gated the whole time, ran on every PR, and
+reported green. What it covers is `/api/charts/overview` against the platform schema.
+Its `except OperationalError` catches whatever the route raises **first**, so the message
+moves as `MINIMAL_ICDEV_SCHEMA` in `tests/conftest.py` gains pieces: it read `no such
+column: classification` when the missing piece was the column the RLS predicate in
+`get_connection()` filters on — which turned **every** read of `kanban_tasks` into a
+raise — and today the first missing piece is the `agents` table. Same site, same
+outcome: an unrun route presented as coverage for an unknown length of time. Nothing was
+red. Nothing was measured.
+
+A coverage census counts files. A skipped file is counted and asserts nothing, so the
+census and the truth diverge silently — which is the same shape as a count-based backlog
+whose set churns, and it gets the same instrument.
+
+### The two halves
+
+`tools/ci/skip_census.py` measures skips twice, because neither measurement subsumes the
+other.
+
+| | Static site census (`--check`) | Runtime report (`--from-report`) |
+|---|---|---|
+| Source | AST scan of the gated files | the gated run's JUnit XML |
+| Sees | `pytest.skip`, `pytest.importorskip`, `@pytest.mark.skip[if]`, `unittest.skip*`, `self.skipTest` | whatever actually skipped, however it was spelled |
+| Blind to | a skip raised from a conftest fixture, a plugin, or a rebound alias | a latent site that did not fire in this environment |
+| Cost | ~1s, no test run | free — the suite already ran |
+| Runs | before pytest, and at `git commit` | after pytest |
+
+The static half is the ratchet you can run before you commit. The runtime half is the one
+that cannot be fooled by indirection: a gated file that skipped at runtime while declaring
+no skip site in its own source is reported **unaccounted**, and that is a failure too.
+
+Attribution in the runtime half is per **file**, not per site, on purpose. One site can
+skip many parametrized cases and one case can pass several sites, so a 1:1 map between XML
+entries and AST nodes would be fiction. "This file skipped and owns no registered skip" is
+a claim the data supports.
+
+### The census discipline is the backlog's, for the backlog's reason
+
+`args/ci_skip_census.txt` **enumerates** sites by name, one per line:
+
+```
+<file>::<qualname>::<kind>[<ordinal>]  # <written reason>
+```
+
+A bare count can be held constant while the set churns — delete one skip, add another,
+count unchanged, gate green, and the thing the gate exists to notice has happened
+unobserved. Identity is what gets tracked, exactly as in `args/ci_test_backlog.txt`.
+
+The key deliberately excludes the line number: line numbers churn on every edit above the
+site, which would make the census a merge-conflict generator and every unrelated PR a
+census edit. The ordinal is always present, even for a lone site, so adding a *second*
+skip to a function does not renumber the first and orphan its reason.
+
+**`skip_census.skip_max` may only go down.** It equals the count at adoption — 81 sites
+across 31 gated files — with no headroom, because headroom is room for unmeasured surface
+to grow into. Two independent things fail: registering a new skip breaches the ceiling,
+and *not* registering it breaches the by-name check. There is no third door.
+
+**A reason must be a reason.** Shorter than 12 characters is refused, and so is a
+placeholder from `PLACEHOLDER_REASONS` — `flaky`, `TBD`, `WIP`, `needs investigation`.
+Those record that a skip happened, not why it is acceptable.
+
+### Unlike the backlog, this census is `merge=union`
+
+`args/ci_test_backlog.txt` is a normal three-way merge because it is shrink-only and union
+would resurrect a deletion you had just earned. The skip census is appended to *and*
+deleted from by unrelated branches at the same end-of-file offset, and the resolution for
+two branches registering different skips is always "keep both lines" — so it is union,
+like `args/ci_test_files/*.txt`.
+
+Union's cost is real and is covered: a duplicated site fails `--check` by name (tested), a
+malformed line fails, and a resurrected deletion surfaces as a stale entry that
+`--prune` clears. The ceiling fails independently if the census grew at all.
+
+### What it refuses to do
+
+- **It never registers a skip for you.** Same reasoning as the allowlist: a hook that
+  wrote the census line itself would grant coverage nobody reviewed.
+- **A deleted skip never fails the PR that deleted it.** A census entry whose site is gone
+  is a warning and a `--prune` away, not a red build. The tool's preferred outcome must
+  not carry a penalty.
+- **It does not census ungated files.** A skip in a file CI never runs is already
+  governed by the backlog above; counting it here would double-count the same debt.
+- **An empty run is not a clean run.** `--from-report` fails when the XML holds zero
+  testcases or cannot be read, because 0 skips out of 0 collected is *unknown*, not zero.
+
 ## Why the backlog is not `merge=union`
 
 `args/ci_test_files/*.txt` **is** union-merged (`kax-conflict-07`): it is append-only, so
@@ -167,7 +267,9 @@ a deletion is already non-fatal.
   stops the number falling and makes every increment permanent; it does not make the
   number adequate. Paying down the 1,826 is the rest of the TSG epics.
 - **Green ≠ meaningful.** The census counts files, not assertions. A gated file full of
-  `assert True` passes it. That is a different gate's job.
+  `assert True` passes it. The one form of "gated but asserting nothing" that *is* now
+  governed is the skip — see the `trust-disc-03` section above; the rest is still a
+  different gate's job.
 - **The Windows job is still not required.** `args/ci_test_files/windows.txt` counts
   toward coverage because those files do run, but `Test (Windows)` is deliberately absent
   from branch protection while its stability is characterised. A file gated *only* there

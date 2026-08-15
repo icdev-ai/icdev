@@ -1642,3 +1642,15 @@ tests/test_adversarial_review_question.py
 # govchain_anchor sweep.
 # 33 tests, ~1s. No network, no Fabric: the noop transport queues.
 tests/provenance/test_trust_validation_anchor.py
+# trust-disc-03 — the skip census. `--check-coverage` above answers "does CI run
+# this file?" and nothing else; a gated file can be green on every PR and assert
+# nothing, because it skipped. tests/test_app.py's overview test has been doing
+# exactly that ("SQLite test DB lacks platform schema ... no such column:
+# classification" — the column the RLS predicate in get_connection() filters on,
+# so every read of kanban_tasks raised) for an unknown length of time.
+# Gates both halves of tools/ci/skip_census.py: the static AST census that fails
+# on an unregistered skip site, and the JUnit-XML runtime half that catches a
+# skip raised from a conftest fixture the static scan cannot see. Most of these
+# assert the gate goes RED — a gate only ever observed green is indistinguishable
+# from one that cannot fire (`|| true`). 34 tests, ~6s. No DB, no network.
+tests/test_skip_census.py
