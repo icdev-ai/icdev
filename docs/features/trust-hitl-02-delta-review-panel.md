@@ -138,10 +138,34 @@ each defect was injected and the test written for it failed:
 |---|---|
 | `pending_deltas` trusts the stale `disposition` column | `test_settled_state_is_derived_from_the_successor_not_the_column` |
 | `settle_delta` UPDATEs its predecessor | `test_settlement_appends_and_never_touches_its_predecessor` |
+| a seed query uses `//` comments | `test_every_seed_query_parses_and_names_a_registered_collection` |
 
 The 8-point page-completeness gate was checked the same way: removing
 `tools/iqe/adapters/delta_review.py` makes `check_new_page_completeness` fail
 naming this page, so it is genuinely covered rather than passing vacuously.
+
+### One gate gap found while doing this
+
+The completeness gate counts seed-query FILES. **Nothing has ever parsed one** —
+neither `check_new_page_completeness` nor
+`component_registry.validate_canvas_completeness`. So a canvas can satisfy the
+8-point standard with three `.iqe` files that raise on their first token.
+
+That is not hypothetical: the IQE lexer has no `//` comment form (the supported
+one is `#`), and three of the four seed queries here shipped with `//` headers.
+They are visually indistinguishable from the working one — same extension, same
+body syntax — and the gate passed all four.
+
+Two tests now close it for this canvas: every `*.iqe` must parse and name a
+collection this canvas actually registers, and one is EXECUTED end to end
+through `parse` → `execute_query`. Parsing is not running: a query that parses
+but selects a column no adapter emits is equally silent. Note that the executing
+test passes its connection in **explicitly** — with `conn=None` the adapter
+opens its own via `get_connection()` and the assertion lands on the real
+database rather than the fixture.
+
+Generalising these two tests to every canvas is worth a task of its own; it is
+deliberately not done here.
 
 **End-to-end — real pipeline, real browser, live PostgreSQL.**
 
