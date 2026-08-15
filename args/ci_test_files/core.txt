@@ -1697,3 +1697,15 @@ tests/test_daemon_self_reload.py
 # nobody acts on. 38 tests, ~4s. No network, no gh, no board.
 tests/kanban/test_landed_check.py
 tests/kanban/test_landed_check_wiring.py
+
+# An E2E run must not leave a dashboard holding the port. Measured 2026-08-15:
+# three dashboards from .tmp/worktrees/task-e2e-27e596dc were alive 6+ hours
+# later and one held port 5050 -- the MAIN dashboard's port -- serving a commit
+# eight hours stale, so restarting the real dashboard by hand changed nothing
+# visible. Two leaks: main() stopped it in straight-line code after the
+# try/except (any raise, or a token-exhausted session, skipped teardown), and
+# start_dashboard sent ONE terminate() on the slow-start path then discarded the
+# handle. Pins the terminate->wait->kill escalation, the finally, the atexit, and
+# that we never tear down a dashboard we did not start.
+# 12 tests, <1s, every process is a fake: nothing spawned, nothing killed.
+tests/ci/test_e2e_dashboard_teardown.py
