@@ -332,7 +332,6 @@ tests/rag/test_entitlement_rag.py
 tests/rag/test_rag_server_search.py
 tests/rag/test_retriever_common.py
 tests/rag/test_sqlite_store_hermetic.py
-tests/rag/test_toggle_harness.py
 tests/regulatory_foresight/test_regfore.py
 tests/security/test_anvil_runner.py
 tests/security/test_app_red_team.py
@@ -1577,7 +1576,6 @@ tests/test_redaction_fail_closed.py
 tests/test_redaction_scan_reflex.py
 tests/test_redaction_scope.py
 tests/test_refinement_evidence.py
-tests/test_reflective_reranker.py
 tests/test_reflex_connection_scope.py
 tests/test_reflex_dependency_ordering.py
 tests/test_reflex_dispatch_parity.py

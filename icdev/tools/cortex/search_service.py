@@ -261,7 +261,15 @@ def search_rag(
     try:
         retriever_mod = _backend("rag.retriever")
         native = run_rag_search(
-            retriever_mod.RAGRetriever, query, tenant_id=ctx.tenant_id, top_k=top_k
+            retriever_mod.RAGRetriever,
+            query,
+            tenant_id=ctx.tenant_id,
+            top_k=top_k,
+            # trust-self-02: names the consuming surface so per-surface
+            # retrieval toggles (reflective reranking) can be scoped to it.
+            # Same vocabulary as the args/trust_gate.yaml chat_rag profile,
+            # which is exactly the surface this adapter serves.
+            surface="chat_rag",
         )
         out = []
         for r in native:

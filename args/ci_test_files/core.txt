@@ -1415,6 +1415,19 @@ tests/cortex/test_chat_turn_connections.py
 # 17 tests, ~1.5s, tmp_path configs + stub providers: no DB service, no LLM,
 # no network.
 tests/rag/test_retriever_config_and_embedding.py
+# trust-self-02. rag.reflective_rerank shipped WIRED and enabled:false, i.e.
+# reachable and consumed by nothing. These gate the adoption: the toggle fires
+# for chat_rag and for no other surface (an unattributed caller does not inherit
+# a per-document LLM bill), a degraded reflection is distinguishable from a
+# genuine "partial", and the toggle harness reports adoption separately from
+# reachability. The two files that were already green are promoted off the
+# ungated census at the same time — they cover the composition truth table and
+# the reachability probe this card builds on.
+# 70 tests, ~6s, tmp_path configs + stub routers: no DB service, no LLM, no
+# network.
+tests/rag/test_reflective_surface_scoping.py
+tests/rag/test_toggle_harness.py
+tests/test_reflective_reranker.py
 # ctx-reach-03. cortex.govern / cortex.agent were flagged as zero-consumer
 # facades, with args/projects.yaml recording "cortex.agent mode graph. Note the
 # latent bug - mode is unvalidated." The membership check turned out to already

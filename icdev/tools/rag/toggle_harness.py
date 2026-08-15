@@ -30,6 +30,26 @@ call for three different actions:
 The distinction matters: reporting ``NOT-WIRED`` for a documented CLI reads as
 "dead code, delete it", which is the opposite of true.
 
+Reachability is not adoption (trust-self-02). ``WIRED`` says flipping the toggle
+*could* change retrieval; it says nothing about whether the committed config
+ever flips it. ``reflective_rerank`` sat at ``WIRED`` while ``enabled: false``
+made it inert on every surface — reachable, benchmarkable, and consumed by
+nothing in production, which is this platform's signature defect wearing the
+verdict of a healthy toggle. So each probe also carries an ``adoption`` field
+read from the COMMITTED config, orthogonal to the verdict:
+
+============================  =========================================
+``UNADOPTED``                 committed config leaves it off — no surface
+                              runs it
+``ADOPTED-GLOBAL``            on, with no surface scoping: every caller
+``ADOPTED``                   on for the surfaces it names
+============================  =========================================
+
+Adoption is deliberately read from ``args/rag_config.yaml`` on disk and NOT
+through ``$ICDEV_RAG_CONFIG``: inside an :func:`isolated_config` arm every
+toggle is written True or False artificially, so a benchmark would otherwise
+report the arm it is running as evidence of adoption.
+
 Two independent things happen per toggle:
 
 1. :func:`probe_reachability` — answers "could flipping this possibly change
@@ -200,6 +220,13 @@ class Reachability:
     #: Live vector-store backend, when the toggle restricts to specific ones.
     active_backend: Optional[str] = None
     backend_supported: bool = True
+    #: Adoption, read from the COMMITTED config — orthogonal to the verdict.
+    #: UNADOPTED / ADOPTED-GLOBAL / ADOPTED. See the module docstring.
+    adoption: str = "UNADOPTED"
+    #: Value of the toggle in the committed config (None when the key is absent).
+    committed_enabled: Optional[bool] = None
+    #: Surfaces the committed config scopes the toggle to; [] means all.
+    surfaces: List[str] = field(default_factory=list)
 
     @property
     def measurable(self) -> bool:
@@ -232,6 +259,9 @@ class Reachability:
         return {
             "toggle": self.toggle,
             "verdict": self.verdict,
+            "adoption": self.adoption,
+            "committed_enabled": self.committed_enabled,
+            "surfaces": self.surfaces,
             "reachable": self.reachable,
             "consumer": self.consumer,
             "reason": self.reason,
@@ -390,15 +420,69 @@ def import_closure(entry: str = ENTRY_MODULE, max_depth: int = 6) -> Dict[str, L
     return importers
 
 
+#: The config as COMMITTED, ignoring $ICDEV_RAG_CONFIG — see the module
+#: docstring for why adoption must not be read through the env override.
+COMMITTED_CONFIG = BASE_DIR / "args" / "rag_config.yaml"
+
+
+def load_committed_config() -> dict:
+    """The committed ``args/rag_config.yaml``, or ``{}`` when it is absent."""
+    if not COMMITTED_CONFIG.exists():
+        return {}
+    with open(COMMITTED_CONFIG, encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def probe_adoption(name: str, committed: Optional[dict] = None) -> Dict[str, Any]:
+    """Whether the COMMITTED config actually turns *name* on, and for whom.
+
+    A toggle's sibling ``surfaces`` key (same block as its ``enabled``) scopes it
+    to named consuming surfaces; absent or empty means every caller. Returns
+    ``{adoption, committed_enabled, surfaces}``.
+    """
+    toggle = TOGGLES[name]
+    cfg = committed if committed is not None else load_committed_config()
+    enabled = get_path(cfg, toggle.path)
+    surfaces = get_path(cfg, toggle.path.rsplit(".", 1)[0] + ".surfaces") or []
+    if not isinstance(surfaces, list):
+        surfaces = [str(surfaces)]
+    if enabled is not True:
+        adoption = "UNADOPTED"
+    elif surfaces:
+        adoption = "ADOPTED"
+    else:
+        adoption = "ADOPTED-GLOBAL"
+    return {
+        "adoption": adoption,
+        "committed_enabled": enabled if isinstance(enabled, bool) else None,
+        "surfaces": [str(s) for s in surfaces],
+    }
+
+
 def probe_reachability(
-    name: str, closure: Optional[Dict[str, List[str]]] = None
+    name: str,
+    closure: Optional[Dict[str, List[str]]] = None,
+    committed: Optional[dict] = None,
 ) -> Reachability:
     """Decide whether flipping *name* could change retrieval at all.
 
     This is the check that keeps a benchmark honest. A toggle whose consumer no
     module imports produces the same zero delta as a toggle that is wired and
     useless — and only one of those means "delete the config key".
+
+    The returned probe also carries :func:`probe_adoption`'s orthogonal answer:
+    reachable is not the same as switched on.
     """
+    probe = _probe_wiring(name, closure)
+    for key, value in probe_adoption(name, committed).items():
+        setattr(probe, key, value)
+    return probe
+
+
+def _probe_wiring(
+    name: str, closure: Optional[Dict[str, List[str]]] = None
+) -> Reachability:
+    """Reachability only — the closure/wrapper/backend half of the probe."""
     toggle = TOGGLES[name]
 
     # A standalone CLI is invoked as a process, never imported. Walking the
@@ -508,7 +592,8 @@ def probe_reachability(
 def probe_all() -> List[Reachability]:
     """Reachability for every toggle, computed against one shared closure."""
     closure = import_closure()
-    return [probe_reachability(name, closure) for name in TOGGLES]
+    committed = load_committed_config()
+    return [probe_reachability(name, closure, committed) for name in TOGGLES]
 
 
 # ── Isolation ─────────────────────────────────────────────────────────────────
@@ -750,9 +835,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(json.dumps([r.to_dict() for r in results], indent=2))
         else:
             for r in results:
-                print(f"{r.verdict:18s} {r.toggle:18s} {r.reason}")
+                scope = f" [{', '.join(r.surfaces)}]" if r.surfaces else ""
+                print(f"{r.verdict:18s} {r.adoption:15s}{scope:14s} {r.toggle:18s} {r.reason}")
             wired = sum(1 for r in results if r.measurable)
+            adopted = sum(1 for r in results if r.adoption != "UNADOPTED")
             print(f"\n{wired}/{len(results)} toggles are measurable by a retrieval benchmark.")
+            print(f"{adopted}/{len(results)} are switched on by the committed config.")
         return 0
     return 0
 
