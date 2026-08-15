@@ -1788,3 +1788,4 @@ tests/security/test_canvas_guard_service_key.py
 # failing tenant creation over a grant gap is worse than the lockout it warns of.
 # 11 tests, <1s, registry and grant write injected: no DB, no network.
 tests/security/test_tenant_canvas_seed.py
+tests/genesis/test_code_reload.py

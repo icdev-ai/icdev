@@ -14,9 +14,40 @@ WHY RE-EXEC RATHER THAN EXIT. Exiting relies on a supervisor to restart the
 process, and on this deployment the supervision is uneven: some daemons are
 launched by the dashboard, some by the genesis launcher, some by hand from a
 shell. A daemon that exits under a launcher that is not watching is simply dead —
-strictly worse than running stale. ``os.execv`` replaces the process in place, so
-it works identically whether something is supervising or nothing is. It is
-available on Windows and POSIX alike.
+strictly worse than running stale. Re-exec works identically whether something is
+supervising or nothing is.
+
+WINDOWS IS NOT POSIX HERE, AND THE DIFFERENCE COSTS A SERVER. This module used to
+say ``os.execv`` "replaces the process in place … available on Windows and POSIX
+alike". The first half is false on Windows. There is no image replacement: the
+CRT SPAWNS A NEW PROCESS with ``bInheritHandles=TRUE`` and terminates this one,
+so the replacement starts life holding a duplicate of every INHERITABLE handle
+the old process had.
+
+Ordinarily that is harmless — PEP 446 makes Python sockets non-inheritable by
+default. The exception is the one that matters here: ``werkzeug.serving`` calls
+``srv.socket.set_inheritable(True)`` ON PURPOSE, so its own reloader child can
+reuse the port through ``WERKZEUG_SERVER_FD``. We run with ``use_reloader=False``
+and re-exec ourselves instead, so the replacement never reads that variable — it
+binds a fresh socket while the inherited one stays open in a process that has
+already exited.
+
+What that looks like in production, observed on the dashboard 2026-08-15: the
+listening socket on :5050 was owned by a PID that no longer existed, holding six
+ESTABLISHED and six CLOSE_WAIT connections. The kernel kept routing new
+connections into that socket and nobody ever read them, while the live dashboard
+sat idle in its own ``serve_forever`` accept loop. Every symptom said healthy —
+the log showed a clean boot, ``py-spy`` showed every thread idle and correct, the
+port answered a TCP connect instantly — and not one HTTP request was ever
+answered. Killing the live process released the port, which is what proved it was
+holding the dead parent's handle.
+
+So the re-exec is platform-split. POSIX keeps ``os.execv``, which really is an
+in-place image replacement and is correct as written. Windows spawns the
+replacement with ``close_fds=True`` — no handle inheritance at all — and then
+``os._exit``s, which makes the kernel close the listening socket for real.
+Standard streams are the deliberate exception, passed through explicitly so the
+replacement keeps writing to the same log file.
 
 WHAT COUNTS AS "CHANGED". The mtimes of every already-imported module that lives
 inside the repo — not just the daemon's own file. A change to
@@ -202,6 +233,65 @@ def pull_if_safe(root: Optional[Path] = None, *, runner=None,
         return {"pulled": False, "reason": f"git unavailable: {exc}"}
 
 
+def _inheritable_std_streams() -> Dict[str, Any]:
+    """The std handles to hand the replacement, so its output keeps landing.
+
+    ``close_fds=True`` on Windows sets ``bInheritHandles=False``, which is the
+    entire point — but it also means the child gets NO standard handles unless
+    they are named explicitly. These daemons are started with their stdout and
+    stderr redirected to files (``.tmp/dashboard.log`` and friends), so silently
+    dropping them would trade a hung server for a mute one.
+
+    Only these three are passed. A socket is never among them.
+    """
+    streams: Dict[str, Any] = {"stdin": subprocess.DEVNULL}
+    for name, stream in (("stdout", sys.stdout), ("stderr", sys.stderr)):
+        try:
+            stream.flush()
+            fileno = stream.fileno()
+        except (AttributeError, ValueError, OSError):
+            # No real handle behind it (captured under pytest, or already
+            # closed). Inherit nothing rather than raise: losing the log is
+            # survivable, failing to restart is the bug we are fixing.
+            continue
+        streams[name] = fileno
+    return streams
+
+
+def respawn(argv: list, *, execv=None, popen=None, exit_=None) -> None:
+    """Replace this process with a fresh one running ``argv``. Does not return.
+
+    POSIX: ``os.execv`` — a true in-place image replacement, which is what the
+    original code assumed everywhere.
+
+    Windows: there is no in-place replacement. ``os.execv`` spawns a new process
+    that INHERITS this one's handles and then kills this one, which strands a
+    server's listening socket in a dead process where it silently swallows every
+    connection (see the module docstring). Spawning with ``close_fds=True`` and
+    exiting hard is the same outcome without the inheritance.
+
+    ``os._exit`` rather than ``sys.exit``: this runs on a watcher thread, where
+    ``SystemExit`` would unwind that thread only and leave the old server — and
+    its socket — alive alongside the replacement. That is the bug, twice.
+    """
+    if execv is not None:
+        # The caller supplied the mechanism outright — the seam every
+        # restart_if_code_changed test uses to observe "it decided to restart"
+        # without actually restarting. It must win on EVERY platform: honouring
+        # it only on POSIX meant that on Windows the tests took the real path
+        # and os._exit(0) killed the pytest process mid-run, which surfaces as a
+        # truncated report rather than a failure.
+        execv(argv[0], argv)
+        return
+    if os.name == "nt":
+        spawn = popen or subprocess.Popen
+        leave = exit_ or os._exit
+        spawn(argv, close_fds=True, **_inheritable_std_streams())  # nosec B603
+        leave(0)
+        return
+    os.execv(argv[0], argv)
+
+
 def restart_if_code_changed(
     baseline: Dict[str, float],
     *,
@@ -239,11 +329,10 @@ def restart_if_code_changed(
     logger.warning(
         "code changed on disk (%d file(s), e.g. %s) — re-executing to pick it up",
         len(changed), ", ".join(Path(p).name for p in changed[:3]))
-    runner = execv or os.execv
     try:
         # sys.argv[0] may be a relative path and the cwd may since have changed,
         # so re-exec through the interpreter with the original argv.
-        runner(sys.executable, [sys.executable] + sys.argv)
+        respawn([sys.executable] + sys.argv, execv=execv)
     except Exception as exc:  # noqa: BLE001 — a failed re-exec must not kill it
         logger.error("re-exec failed, continuing with stale code: %s", exc)
     return changed

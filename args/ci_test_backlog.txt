@@ -220,7 +220,6 @@ tests/foundry/test_engine.py
 tests/foundry/test_novelty_gate.py
 tests/foundry/test_spec_generator.py
 tests/foundry/test_task_graph.py
-tests/genesis/test_code_reload.py
 tests/genesis/test_comply_cmmc_anomaly.py
 tests/genesis/test_decide_monitor_constants.py
 tests/genesis/test_discover_constants.py

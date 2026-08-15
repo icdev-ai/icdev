@@ -8,8 +8,15 @@ underlying bug does not help if the fix cannot reach the process that needs it.
 """
 from __future__ import annotations
 
+import contextlib
+import os
+import signal
+import socket
+import subprocess
+import sys
 import time
 from pathlib import Path
+
 
 from tools.genesis import code_reload as cr
 
@@ -254,3 +261,200 @@ def test_a_REAL_edit_is_still_caught_amid_lazy_imports():
     after = {"/repo/scheduler.py": 100.0, "/repo/util.py": 999.0,
              "/repo/lazy.py": 500.0}
     assert cr.changed_files(baseline, after) == ["/repo/util.py"]
+
+
+# --------------------------------------------------------------------------- #
+# Re-exec must not strand the old process's listening socket (Windows)
+# --------------------------------------------------------------------------- #
+# The dashboard was found on 2026-08-15 accepting TCP connections and answering
+# none of them. The listening socket on :5050 was owned by a PID that no longer
+# existed, holding six ESTABLISHED and six CLOSE_WAIT connections, while the live
+# process sat idle in its own serve_forever accept loop. Cause: os.execv on
+# Windows is not an in-place image replacement -- it spawns a new process that
+# INHERITS the caller's handles and then kills the caller. Every health signal
+# said fine; nothing was served.
+
+
+def _record_respawn(monkeypatch, platform):
+    """Capture what respawn() does on a given platform without doing it."""
+    calls = {"popen": [], "exit": [], "execv": []}
+    monkeypatch.setattr(cr.os, "name", platform)
+    monkeypatch.setattr(cr.subprocess, "Popen",
+                        lambda argv, **kw: calls["popen"].append((argv, kw)))
+    monkeypatch.setattr(cr.os, "_exit", lambda code: calls["exit"].append(code))
+    monkeypatch.setattr(cr.os, "execv",
+                        lambda path, argv: calls["execv"].append((path, argv)))
+    return calls
+
+
+def test_windows_respawn_never_lets_the_replacement_inherit_a_socket(monkeypatch):
+    """close_fds=True is the whole fix: no inheritance, no stranded listener."""
+    calls = _record_respawn(monkeypatch, "nt")
+    cr.respawn(["python.exe", "app.py"])
+
+    assert not calls["execv"], (
+        "os.execv on Windows hands the replacement this process's open handles, "
+        "including a server's listening socket — that is the defect"
+    )
+    assert len(calls["popen"]) == 1
+    argv, kwargs = calls["popen"][0]
+    assert argv == ["python.exe", "app.py"]
+    assert kwargs["close_fds"] is True, (
+        "without close_fds the replacement inherits the listening socket and "
+        "the dead parent's copy keeps swallowing connections"
+    )
+    assert calls["exit"] == [0], (
+        "the old process must die hard so the kernel closes its socket; "
+        "sys.exit on a watcher thread would only unwind that thread"
+    )
+
+
+def test_windows_respawn_hands_over_stdout_so_the_replacement_still_logs(monkeypatch):
+    """close_fds=True means NO handles unless named — including the log file.
+
+    These daemons run with stdout redirected to .tmp/*.log. Trading a hung
+    server for a mute one is not a fix.
+    """
+    calls = _record_respawn(monkeypatch, "nt")
+    cr.respawn(["python.exe", "app.py"])
+    _, kwargs = calls["popen"][0]
+
+    assert kwargs.get("stdin") == cr.subprocess.DEVNULL
+    # stdout/stderr are passed when they have a real handle behind them. Under
+    # pytest's capture they may not, and respawn must still proceed.
+    for name in ("stdout", "stderr"):
+        assert name not in kwargs or isinstance(kwargs[name], int)
+
+
+def test_posix_respawn_still_uses_execv(monkeypatch):
+    """POSIX execv IS an in-place replacement and was never the problem.
+
+    Paired with the Windows test on purpose: "just stop using execv everywhere"
+    would break the platform where re-exec works correctly.
+    """
+    calls = _record_respawn(monkeypatch, "posix")
+    cr.respawn(["/usr/bin/python3", "app.py"])
+
+    assert calls["execv"] == [("/usr/bin/python3", ["/usr/bin/python3", "app.py"])]
+    assert not calls["popen"]
+    assert not calls["exit"]
+
+
+def test_a_stream_with_no_real_handle_is_skipped_not_fatal(monkeypatch):
+    """A restart must not fail because stdout was captured."""
+    class _Captured:
+        def flush(self):
+            pass
+
+        def fileno(self):
+            raise ValueError("underlying buffer detached")
+
+    monkeypatch.setattr(cr.sys, "stdout", _Captured())
+    monkeypatch.setattr(cr.sys, "stderr", _Captured())
+    streams = cr._inheritable_std_streams()
+
+    assert streams == {"stdin": cr.subprocess.DEVNULL}
+
+
+_RESPAWN_SERVER = '''
+import pathlib, socket, sys, time
+sys.path.insert(0, {root!r})
+from tools.genesis import code_reload as cr
+
+role, portfile, pidfile = sys.argv[1], pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
+if role == "parent":
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    # Exactly what werkzeug.serving does to its listening socket, so its own
+    # reloader child can reuse the port via WERKZEUG_SERVER_FD. Python makes
+    # sockets NON-inheritable by default (PEP 446), so without this line the
+    # bug does not reproduce and the test would pass against the defect.
+    srv.set_inheritable(True)
+    portfile.write_text(str(srv.getsockname()[1]), encoding="utf-8")
+    # srv is deliberately NOT closed. A real server re-execs with its listening
+    # socket wide open, and that is exactly the handle under test.
+    cr.respawn([sys.executable, __file__, "child", str(portfile), str(pidfile)])
+else:
+    import os
+    pidfile.write_text(str(os.getpid()), encoding="utf-8")
+    time.sleep(20)
+'''
+
+
+def test_a_listening_socket_never_outlives_the_process_that_made_it(tmp_path: Path):
+    """The regression, measured end to end rather than by inspecting kwargs.
+
+    A parent binds a listening socket and re-execs WITHOUT closing it, which is
+    what a real server does. The invariant either way: no listening socket may
+    be left behind in a process that has exited.
+
+    The two platforms satisfy it differently, and BOTH are asserted here rather
+    than skipping one. On POSIX execv is a true in-place replacement -- same
+    PID, one process, so there is no second process to strand anything in. On
+    Windows there are two processes, so the invariant becomes a live claim about
+    the port: once the parent is gone it must REFUSE connections.
+
+    With the defect Windows does not refuse. The replacement inherits the
+    handle, the kernel keeps accepting into a socket nobody reads, and a connect
+    succeeds against a server that will never answer -- which is exactly why the
+    hung dashboard passed every health signal anyone thought to check.
+    """
+    root = Path(cr.__file__).resolve().parents[2]
+    script = tmp_path / "respawn_server.py"
+    script.write_text(_RESPAWN_SERVER.format(root=str(root)), encoding="utf-8")
+    portfile, pidfile = tmp_path / "port.txt", tmp_path / "child.pid"
+
+    parent = subprocess.Popen([sys.executable, str(script), "parent",
+                               str(portfile), str(pidfile)])
+    try:
+        deadline = time.time() + 60
+        while time.time() < deadline and not portfile.exists():
+            time.sleep(0.1)
+        assert portfile.exists(), "the parent never bound a port"
+        port = int(portfile.read_text(encoding="utf-8"))
+
+        assert parent.wait(timeout=60) is not None, "the parent never exited"
+        # The replacement must be up, or "refused" would prove only that
+        # nothing is running -- the fabricated-pass this test exists to avoid.
+        while time.time() < deadline and not pidfile.exists():
+            time.sleep(0.1)
+        assert pidfile.exists(), "the replacement never started"
+        replacement_pid = int(pidfile.read_text(encoding="utf-8").strip())
+
+        if os.name != "nt":
+            # execv replaced the image in place: one process throughout, so the
+            # socket is still held by its own creator and nothing is stranded.
+            assert replacement_pid == parent.pid, (
+                "os.execv did not replace the process in place — there are now "
+                "two processes and the listening socket may be stranded in one"
+            )
+            return
+
+        probe = socket.socket()
+        probe.settimeout(5)
+        try:
+            probe.connect(("127.0.0.1", port))
+            connected = True
+        except OSError:
+            connected = False
+        finally:
+            probe.close()
+
+        assert not connected, (
+            f"port {port} still accepts connections after the parent exited — "
+            "the replacement inherited the listening socket, so every request "
+            "lands in a buffer no one reads"
+        )
+    finally:
+        parent.kill()
+        # On POSIX the replacement IS `parent` (execv kept the PID), so the kill
+        # above already covers it. On Windows it is a separate process that
+        # Popen does not own, and it must not be left sleeping for 20s. Reaping
+        # it needs os.kill, not taskkill: the CI runner is Linux and has no such
+        # binary, so an unconditional call fails the test in the `finally` even
+        # when every assertion passed.
+        if os.name == "nt" and pidfile.exists():
+            with contextlib.suppress(OSError, ValueError):
+                os.kill(int(pidfile.read_text(encoding="utf-8").strip()),
+                        signal.SIGTERM)
