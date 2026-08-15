@@ -1853,6 +1853,27 @@ python tools/kanban/cli.py --set-status <task-id> done --merge --json      # Mer
 # every unknown, and it never reads KANBAN_REQUIRE_MERGE_FOR_DONE — that switch disables the
 # local git heuristic, not a landing check. One task id per invocation; not combinable with
 # --force-done. Marking done records the same actor='manual' audit transition --force-done does.
+# Kanban — is this task id ALREADY on main? task -> main, not task -> PR (trust-disc-05)
+python -m tools.kanban.landed_check --task <task-id> --json
+python -m tools.kanban.landed_check --all --json              # every non-terminal task
+python -m tools.kanban.landed_check --all --status done --no-prs --json   # the fire-rate survey
+python -m tools.kanban.landed_check --task <task-id> --gate    # exit 1 if it is already on main
+# The board tracks task -> PR and NOTHING checked task -> main. On 2026-08-15 two of the five
+# cards in pr_opened had their work already merged under a different PR number — ctx-perf-02
+# landed as #1641 and ctx-trust-02 as #1638 — while #1646 and #1651 stayed open against them.
+# Both conflicted, because both re-apply changes already present against files that have since
+# moved on: #1651's diff was -38/+26 on rest_v1.py, i.e. merging it would DELETE 38 lines main
+# has. A revert wearing a feature's clothes, and every gate said green because every gate asked
+# about the PR. Evidence is tiered — `merge_ref` (a merge commit naming the task's branch) and
+# `subject` (the id in the commit subject) block; `body` NEVER does, because a body mention is a
+# citation at least as often as a landing. Matching is on a name boundary, so ctx-perf-02 does
+# not match ctx-perf-021 and a parent id does not match its decomposed children's commits.
+# FAIL-OPEN: no git, no origin ref, or a non-id-shaped id all report `checked: false` — an
+# unavailable check can never read as a clean one. Second half: rival PRs. ctx-enf-01 had #1640
+# and #1647 open at once and only the kanban/<task_id> branch can settle the card.
+# Wired at three seams (seed / dispatch / PR-open) and ADVISORY by default; KANBAN_LANDED_CHECK
+# =enforce makes it refuse, =off disables it. Survey it before ever defaulting to enforce.
+
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
 python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
