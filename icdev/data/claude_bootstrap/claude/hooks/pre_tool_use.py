@@ -372,6 +372,17 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
         # (mutable session lifecycle: status/updated_at).
         "cortex_audit",
+        # TRUST HITL deltas — the reviewable unit (trust-hitl-01/02, migration
+        # 20260815063956). A delta is an OBSERVATION: this text became that text,
+        # these findings became those findings, at this instant. A human's
+        # approve/deny APPENDS a `settlement` successor pointing at its
+        # predecessor through supersedes_delta_id; the predecessor is never
+        # touched, not even to flag it settled — that is derived at read time by
+        # hitl_delta.delta_chain, the sbom_records.supersedes_sbom_id rule.
+        # Its twin approval_items (migration 20260809203855) is deliberately NOT
+        # here: the human's disposition is short-lived mutable STATE, and
+        # conflating the two leaves "which row is current" with no answer.
+        "trust_deltas",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)

@@ -1044,6 +1044,39 @@ components:
     constants: tools/aisg/constants.py
     iqe_adapter: true
     nav_link: true
+- key: delta_review
+  kind: canvas
+  display_name: Delta Review
+  description: Side-by-side HITL review of TRUST deltas — what the draft said, what it
+    says now, and whether the revision resolved the finding that blocked it (trust-hitl-02).
+  env_flag: ICDEV_DELTA_REVIEW_ENABLED
+  default_enabled: true
+  module: tools.delta_review.blueprint
+  blueprint_attr: create_delta_review_blueprint
+  # Pages mount at /delta-review and the JSON API at /api/delta-review; Flask
+  # cannot serve both from one global prefix, so each route carries its explicit
+  # path — the dominant ICDEV canvas idiom (integrity, supply_chain).
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Security
+    label: Delta Review
+    links:
+    - label: Delta Review
+      href: /delta-review
+  iqe:
+    adapter_module: tools.iqe.adapters.delta_review
+    collections:
+    - delta_review.deltas
+    - delta_review.settlements
+    - delta_review.spans
+  completeness:
+    template: tools/dashboard/templates/delta_review/page.html
+    blueprint: true
+    constants: tools/delta_review/constants.py
+    iqe_adapter: true
+    nav_link: true
 - key: integrity
   kind: canvas
   display_name: SIPA Software Integrity
@@ -2153,6 +2186,10 @@ iqe_path_canvas:
 - {path: /cortex, canvas: cortex}
 - {path: /document-intelligence, canvas: dic}
 - {path: /integrity, canvas: integrity}
+# trust-hitl-02. Explicit rather than auto-appended: the accessor only derives an
+# entry for a canvas with a NON-EMPTY url_prefix, and this canvas declares '' so
+# its pages and its /api/delta-review routes can mount on two different roots.
+- {path: /delta-review, canvas: delta_review}
 - {path: /logs, canvas: logs}
 - {path: /demo-runner, canvas: demo_runner}
 - {path: /innovation, canvas: innovation}
