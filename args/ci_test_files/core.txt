@@ -1517,6 +1517,14 @@ tests/test_structured_output.py
 # document".
 # 31 tests, <1s, injected validators + a fake router: no DB, no LLM, no network.
 tests/test_self_correct.py
+# trust-self-03. AdaptiveRetriever wraps RAGRetriever, so only a CALLER can adopt
+# it — tools/rag/toggle_harness.py called it WRAPPER-UNADOPTED and nothing had.
+# The Cortex rag adapter is now that caller. Gates the three properties an
+# "is the import there?" check cannot see: the skip route stays unavailable on a
+# citation surface, tenant scoping survives the wrapper, and complex_top_k
+# actually widens a caller that already passed top_k (it never used to).
+# 9 tests, ~1s, fake retriever + heuristic classifier: no DB service, no LLM.
+tests/test_adaptive_routing_adoption.py
 tests/kanban/test_timeout_no_redispatch.py
 
 # ── trust-kg-03: kg_grounding in the Cortex governance chain ─────────────────

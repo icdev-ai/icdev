@@ -4084,6 +4084,35 @@ python tools/rag/rag_benchmark.py --reflective-ab --max-candidates 3
 # exist.
 ```
 
+### Adaptive complexity pre-routing measurement (agx-rag-01 / trust-self-03)
+
+```bash
+# Score the skip/single_pass/decompose decision against the committed golden
+# query mix (args/rag/golden_query_set.yaml). Heuristic-only by default, so the
+# numbers are reproducible offline and identical run to run.
+python tools/rag/adaptive_router.py --measure
+python tools/rag/adaptive_router.py --measure --json
+
+# Same mix through the live cheap-tier classifier (rag_complexity_classify)
+python tools/rag/adaptive_router.py --measure --llm
+
+# Measure as a surface that does NOT require citations, so the skip route is
+# available. Cortex is the citation-required case and can never skip.
+python tools/rag/adaptive_router.py --measure --no-citations
+```
+
+```
+# `classifier_sources` in the output reports where each decision ACTUALLY came
+# from, not what --llm asked for: classify_complexity falls back to the keyword
+# heuristic on any LLM failure and says so only in a debug log, so without that
+# tally a fallback run reports heuristic numbers under an LLM label.
+#
+# The consumer is tools/cortex/search_service.py::search_rag, gated on
+# rag.adaptive_routing.enabled (default off = the unchanged single pass). That
+# adoption is what moved the toggle from WRAPPER-UNADOPTED to WIRED — the
+# wrapper sits ABOVE RAGRetriever, so only a caller could ever reach it.
+```
+
 ```
 # Why the probe exists: an UNWIRED toggle and a wired-but-useless toggle both
 # measure as a zero delta. Reporting a number for the first turns "never
@@ -4096,6 +4125,14 @@ python tools/rag/rag_benchmark.py --reflective-ab --max-candidates 3
 #   NOT-WIRED reflective_rerank (agx-rag-02), adaptive_routing (agx-rag-01),
 #             auto_indexer — 0 non-test import sites; auto_indexer is also
 #             ingest-side, so it cannot move a retrieval metric even once wired.
+#
+# Both have since been given callers, so re-run the probe rather than reading
+# the line above as current state:
+#   reflective_rerank  WIRED by oss-meas-01 inside retriever.search() step 5b
+#   adaptive_routing   WIRED by trust-self-03 at tools/cortex/search_service.py
+#                      ::search_rag. It is WRAPPER-shaped, so the probe answers
+#                      "has a caller adopted it?", not "is it in the closure?"
+#   auto_indexer       still CLI-UNSCHEDULED, and correctly so — it is a CLI.
 #
 # Isolation never writes args/rag_config.yaml. It writes a temp config and sets
 # ICDEV_RAG_CONFIG (tools/rag/config_path.py), because this checkout is shared

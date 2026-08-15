@@ -7,9 +7,13 @@ produce a zero delta. ``oss-meas-01`` asks for a KEEP/DROP decision per toggle,
 so a harness that cannot tell those apart would record "DROP — no measurable
 benefit" against modules that were simply never connected.
 
-Three of the five toggles named in that task are in that state today
-(``reflective_rerank``, ``adaptive_routing``, ``auto_indexer``), which is why
-the refusal path below is tested as hard as the measurement path.
+Three of the five toggles named in that task were in that state when this file
+was written (``reflective_rerank``, ``adaptive_routing``, ``auto_indexer``),
+which is why the refusal path below is tested as hard as the measurement path.
+Two have since been given callers — ``reflective_rerank`` inside
+``retriever.search()`` and ``adaptive_routing`` at the Cortex rag adapter — so
+the states they used to demonstrate are now exercised through the
+``unadopted_wrapper`` stand-in rather than dropped.
 """
 from __future__ import annotations
 
@@ -246,10 +250,36 @@ def test_verify_isolation_proves_the_override_reaches_the_loader(name):
     assert result["isolated"] is True, f"{name} bled into {result['bled_into']}"
 
 
+@pytest.fixture
+def unadopted_wrapper(monkeypatch):
+    """A wrapper-shaped toggle that nothing imports.
+
+    ``adaptive_routing`` USED to be this case, and the tests below used it as the
+    live example. trust-self-03 adopted it at the Cortex rag adapter, so without
+    a stand-in the WRAPPER-UNADOPTED verdict — the one that says "give it a
+    caller", not "delete it" — would go untested the moment it stopped
+    reproducing. The consumer module deliberately does not exist, so the
+    repo-wide importer scan finds nothing however the tree changes.
+    """
+    name = "synthetic_unadopted_wrapper"
+    monkeypatch.setitem(
+        th.TOGGLES,
+        name,
+        th.Toggle(
+            name,
+            "rag.synthetic_unadopted_wrapper.enabled",
+            "tools.rag.__no_such_wrapper_module__",
+            "Test-only stand-in for a wrapper with no caller.",
+            shape="wrapper",
+        ),
+    )
+    return name
+
+
 # ── Benchmark refusal path ────────────────────────────────────────────────────
 
 
-def test_sweep_refuses_to_benchmark_unmeasurable_toggles(monkeypatch):
+def test_sweep_refuses_to_benchmark_unmeasurable_toggles(monkeypatch, unadopted_wrapper):
     """The whole point: no number is emitted for dead code."""
     from tools.rag import rag_benchmark
 
@@ -262,31 +292,31 @@ def test_sweep_refuses_to_benchmark_unmeasurable_toggles(monkeypatch):
 
     monkeypatch.setattr(rag_benchmark, "RAGBenchmark", _StubBench)
     sweep = rag_benchmark.run_toggle_sweep(
-        only=["rerank", "adaptive_routing", "auto_indexer"]
+        only=["rerank", unadopted_wrapper, "auto_indexer"]
     )
 
     by_name = {a["toggle"]: a for a in sweep["arms"]}
     assert by_name["rerank"]["benchmarked"] is True
     assert "deltas" in by_name["rerank"]
 
-    for unmeasurable in ("adaptive_routing", "auto_indexer"):
+    for unmeasurable in (unadopted_wrapper, "auto_indexer"):
         arm = by_name[unmeasurable]
         assert arm["benchmarked"] is False
         assert "deltas" not in arm, "an unmeasurable toggle must not carry a delta"
 
     # bucketed by WHY — each state needs a different fix
-    assert sweep["summary"]["wrapper_unadopted"] == ["adaptive_routing"]
+    assert sweep["summary"]["wrapper_unadopted"] == [unadopted_wrapper]
     assert sweep["summary"]["cli_unscheduled"] == ["auto_indexer"]
-    assert set(sweep["summary"]["unmeasurable"]) == {"adaptive_routing", "auto_indexer"}
+    assert set(sweep["summary"]["unmeasurable"]) == {unadopted_wrapper, "auto_indexer"}
 
 
 # ── Toggle shape (oss-meas-01, wire-or-delete pass) ──────────────────────────
 
 
-def test_wrapper_and_cli_get_their_own_verdicts():
+def test_wrapper_and_cli_get_their_own_verdicts(unadopted_wrapper):
     """"Unmeasurable" collapsed three states that need three different actions."""
     results = {r.toggle: r for r in th.probe_all()}
-    assert results["adaptive_routing"].verdict == "WRAPPER-UNADOPTED"
+    assert results[unadopted_wrapper].verdict == "WRAPPER-UNADOPTED"
     assert results["auto_indexer"].verdict == "CLI-UNSCHEDULED"
 
 
@@ -298,10 +328,24 @@ def test_cli_verdict_does_not_read_as_dead_code():
     assert probe.verdict != "NOT-WIRED"
 
 
-def test_wrapper_reason_names_the_actual_blocker():
-    probe = th.probe_reachability("adaptive_routing")
+def test_wrapper_reason_names_the_actual_blocker(unadopted_wrapper):
+    probe = th.probe_reachability(unadopted_wrapper)
     assert "wraps the retriever" in probe.reason
     assert "cycle" in probe.reason
+
+
+def test_adaptive_routing_is_now_adopted():
+    """Regression guard for the adoption added by trust-self-03.
+
+    AdaptiveRetriever sits ABOVE RAGRetriever, so it can only ever be reached by
+    a caller — tools/cortex/search_service.py::search_rag is that caller. If the
+    adoption is removed, the toggle goes back to being a config key that reads as
+    a live capability and does nothing, and this is what says so.
+    """
+    probe = th.probe_reachability("adaptive_routing")
+    assert probe.verdict == "WIRED", "adaptive_routing lost its caller"
+    assert probe.measurable is True
+    assert "tools.cortex.search_service" in probe.importers
 
 
 def test_reflective_rerank_is_now_wired():
