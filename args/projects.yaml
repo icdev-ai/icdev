@@ -151,20 +151,6 @@ projects:
   - key: abc
     title: ABC
     priority: medium
-- key: task
-  name: Task Project
-  description: Auto-registered project for tasks with prefix 'task-'. Update name
-    and description to reflect the project purpose.
-  task_prefix: task-
-  default_open: true
-  briefs: []
-  epics:
-  - key: 0a4389596f
-    title: 0A4389596F
-    priority: medium
-  - key: 3bc9eb0918
-    title: 3BC9EB0918
-    priority: medium
 - key: processify_wfl_f77f
   name: Processify Wfl F77F Project
   description: Auto-registered project for tasks with prefix 'processify-wfl-f77f-'.
@@ -666,6 +652,9 @@ projects:
   - key: opp
     title: OPP
     priority: medium
+  - key: rm
+    title: Roadmap phases (aiify-rm-*)
+    priority: medium
 - key: chyg
   name: Connection-Hygiene Sweep — eliminate leaked PostgreSQL connections
   description: 'Follow-on to the kanban_tasks lock-storm fixes. Convert bare `conn
@@ -793,6 +782,9 @@ projects:
     priority: medium
   - key: handoff
     title: HANDOFF
+    priority: medium
+  - key: nb
+    title: Notebook sessions (dic-nb-*)
     priority: medium
 - key: ci
   name: Ci Project
@@ -2099,6 +2091,24 @@ projects:
     priority: medium
   - key: idc
     title: IDC
+    priority: medium
+  - key: brg
+    title: Bridge
+    priority: medium
+  - key: fix
+    title: Fixes
+    priority: medium
+  - key: gov
+    title: Governance
+    priority: medium
+  - key: perf
+    title: Performance
+    priority: medium
+  - key: qa
+    title: QA
+    priority: medium
+  - key: sql
+    title: SQL
     priority: medium
 - key: cvo
   name: Canvas Orchestration
@@ -6812,6 +6822,9 @@ projects:
   - key: reg
     title: "REG — Pre-session registration & snake draft (promoted, unwired)"
     priority: low
+  - key: vv
+    title: V and V
+    priority: medium
 
 - key: sme
   name: "SME — Chat-Native SME Co-Worker Spawning"
@@ -7294,6 +7307,24 @@ projects:
   - key: reach
     title: REACH — vendored parity and adoption
     priority: high
+  - key: analyst
+    title: Cortex Analyst
+    priority: medium
+  - key: canvas
+    title: Canvas surface
+    priority: medium
+  - key: core
+    title: Core facades
+    priority: medium
+  - key: expose
+    title: Exposure and reach
+    priority: medium
+  - key: govern
+    title: Governance chain
+    priority: medium
+  - key: search
+    title: Retrieval
+    priority: medium
 - key: cxo
   name: 'CXO — Cortex Optimization'
   description: 'Repair and optimize the ICDEV Cortex unified AI facade (tools/cortex/). Root finding, measured against the live DB — the provenance gate has never written a row: governance.py passes citation_type="cortex", which is absent from CITATION_TYPES, so register_citation raises ValueError, the gate swallows it and records warn. 95 warn vs 14 pass in cortex_audit; 0 of 285 source_citation_registry rows are type cortex. The identical bug exists independently in tools/blockchain/asset_ledger.py (citation_type="asset_token"), where GovChain asset tokenization has therefore never anchored to the chain. Two subsystems shipping the same silent failure makes this a missing gate, not two bugs. Three further dead or ungoverned paths were measured: cot_invoke and cod_invoke resolve to error stubs because their module-level handlers do not exist and never have; nlq_query returns a canned string and never invokes an LLM; council_query and chat_router.intent_classifier._llm_classify call providers directly with no gateway check, redaction, provenance or audit. Also covers scoped performance defects (shadow config loader, uncached llm_config parse under air-gap, two DB connections per governed call, unbounded metrics scan, serial governed-LLM loops), the deferred chat_manager adoption that commit 9ec85e124 already built the facade for, and manifest hygiene. Governance stays fail-open — flipping enforcement is a separate decision. MANUAL-ONLY: every task gated behind cxo-gate-00 via depends_on_task_id.'
@@ -8003,6 +8034,9 @@ projects:
   - key: policy
     title: POLICY - decide the CI allowlist policy the fixes have been assuming
     priority: high
+  - key: drift
+    title: Drift findings (tsg-drift-*)
+    priority: medium
 - key: exa
   name: EXA - External Adoption (buzz / omnigent / prime-agent)
   description: |-

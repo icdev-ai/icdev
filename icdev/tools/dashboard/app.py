@@ -43,6 +43,24 @@ _RELOAD_IDLE_SECONDS = float(os.environ.get("ICDEV_DASHBOARD_RELOAD_IDLE", "60")
 _RELOAD_MAX_STALE_SECONDS = float(
     os.environ.get("ICDEV_DASHBOARD_RELOAD_MAX_STALE", "900"))
 
+#: Never re-exec more often than this, whatever the idle or staleness signals
+#: say. Override with ICDEV_DASHBOARD_RELOAD_MIN_INTERVAL.
+#:
+#: code_reload's own MIN_UPTIME_SECONDS is 120 — a restart-loop guard sized for
+#: a DAEMON, whose startup is cheap. This process re-runs PostgreSQL init, the
+#: GovLift schema, every blueprint mount and the DIC freshness daemon on every
+#: re-exec, and serves nothing meanwhile. At a 120s floor with main merging
+#: every few minutes and the UI idle, it re-execed about every two minutes and
+#: was starting up for much of its life — which is what the operator saw as the
+#: dashboard hanging, and what .tmp/dashboard.log recorded as three
+#: "self-reload armed" lines in one sitting.
+#:
+#: 30 minutes trades promptness for availability in the right direction: merged
+#: code still arrives without anyone restarting anything, which was the point,
+#: and the process is up while it waits.
+_RELOAD_MIN_INTERVAL_SECONDS = float(
+    os.environ.get("ICDEV_DASHBOARD_RELOAD_MIN_INTERVAL", "1800"))
+
 #: How often the watcher looks. Cheap: an mtime scan plus a guarded fetch.
 #: code_reload rate-limits its own fetch to MIN_PULL_INTERVAL_SECONDS (300), so
 #: checking more often than that only re-scans mtimes.
@@ -9821,6 +9839,31 @@ def create_app(testing: bool = False) -> Flask:
             if not tid.startswith(epic_pats) and not has_gate_id(tid)
         ) if epic_pats else []
 
+        # How many of those are still OPEN. Visibility keys on this, not on the
+        # orphan count: a finished project must leave the board, and an unclaimed
+        # task that is DONE is a counting defect, not outstanding work.
+        #
+        # The distinction is the whole point. Keying on len(orphans) kept seven
+        # completed projects on screen indefinitely (2026-08-15) — 555 unclaimed
+        # tasks between them, every one done — because no epic claimed them. That
+        # is the same misreport in the other direction: the first version could
+        # not tell "no work" from "work nobody counts", this one could not tell
+        # "unfinished" from "finished but miscounted".
+        #
+        # Nothing is lost by hiding those: the miscount is reported by
+        # coherence_checker.py::check_project_card_coverage, which is a gate and
+        # sees every card whether or not it renders. A dashboard panel is the
+        # wrong place to hold a data-quality finding hostage.
+        open_orphans = 0
+        if orphans:
+            _q = ",".join(["%s"] * len(orphans))
+            _row = conn.execute(
+                f"SELECT COUNT(*) AS n FROM kanban_tasks WHERE id IN ({_q}) "
+                "AND status NOT IN ('done', 'decomposed', 'cancelled', 'merged')",
+                tuple(orphans),
+            ).fetchone()
+            open_orphans = int(dict(_row)["n"]) if _row else 0
+
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
             "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' " + excl_sql +
@@ -9849,13 +9892,22 @@ def create_app(testing: bool = False) -> Flask:
             "done_tasks": done_all,
             "overall_pct": int(round(100 * done_all / total_all)) if total_all else 0,
             "orphaned_tasks": len(orphans),
+            "open_orphaned_tasks": open_orphans,
             "orphaned_sample": orphans[:10],
-            # A card with unclaimed tasks stays visible even at 0 counted work.
-            # "No tasks yet" and "tasks nobody counts" are different facts, and
-            # rendering them identically is what made this cost manual triage
-            # every time. Percentages on such a card are computed over a subset —
-            # `orphaned_tasks` is what tells the operator not to trust them.
-            "visible": (total_all > 0 and done_all < total_all) or bool(orphans),
+            # "In flight" means exactly that: this card renders while it has
+            # OUTSTANDING work, and leaves the board when it does not.
+            #
+            # Unclaimed-but-OPEN tasks still force it visible, which is the case
+            # the orphan check was added for — a card whose every task is
+            # unclaimed counts 0/0, and hiding that made real unfinished work
+            # invisible. Unclaimed-but-DONE tasks do not: the project is
+            # finished, and the miscount is a data-quality finding that belongs
+            # to check_project_card_coverage (a gate that sees every card) rather
+            # than to a panel whose job is showing what is still running.
+            #
+            # `orphaned_tasks` is still reported so a card that IS rendering can
+            # say its percentages are computed over a subset.
+            "visible": (total_all > 0 and done_all < total_all) or open_orphans > 0,
         }
 
     def _compute_triage_summary() -> dict:
@@ -10352,6 +10404,27 @@ def _start_self_reload_watcher() -> None:
                     stale_since[0] = now
                     print(f"[ICDEV™ Dashboard] {len(changed)} changed file(s) "
                           f"pending — will reload when idle")
+
+                # A reload is not free HERE the way it is for a daemon. This
+                # process re-runs the whole startup on re-exec -- PostgreSQL
+                # init, the GovLift schema, every blueprint mount, the DIC
+                # freshness daemon -- and serves nothing for its duration. So
+                # picking up code promptly is worth far less than being up.
+                #
+                # Observed 2026-08-15, and reported by the operator as the
+                # dashboard "hanging": .tmp/dashboard.log carried THREE
+                # "self-reload armed" lines, i.e. two re-execs, because
+                # code_reload only refuses inside MIN_UPTIME_SECONDS (120) and
+                # this watcher checks every 60. With main merging every few
+                # minutes and nobody using the dashboard, "idle" was true on
+                # essentially every check, so it re-execed roughly every two
+                # minutes and spent a large share of its life starting up.
+                #
+                # A floor between reloads is therefore the missing term. It does
+                # NOT replace the idle gate or the staleness backstop; it bounds
+                # how often either may fire.
+                if now - started_at < _RELOAD_MIN_INTERVAL_SECONDS:
+                    continue
 
                 idle = now - _LAST_REQUEST_AT >= _RELOAD_IDLE_SECONDS
                 too_stale = now - stale_since[0] >= _RELOAD_MAX_STALE_SECONDS

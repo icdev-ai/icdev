@@ -180,8 +180,21 @@ _TABLES = [
 ]
 
 
-def up():
-    conn = get_connection(db_path=DB_PATH)
+def up(conn=None):
+    """Accept the runner's connection; open one only when called standalone.
+
+    This was `def up()` with no parameters. MigrationRunner calls `mod.up(conn)`,
+    so promoting the file to a discoverable migration without this would make it
+    run and immediately raise TypeError — a migration that fails on first
+    execution is worse than one that never executes, and it was invisible for
+    long enough that nobody found out.
+
+    Preferring the passed connection also puts the DDL in the runner's
+    transaction and stops this function closing a connection it did not open.
+    """
+    _own = conn is None
+    if _own:
+        conn = get_connection(db_path=DB_PATH)
     try:
         for ddl in DDL:
             conn.execute(ddl)
@@ -190,7 +203,8 @@ def up():
         conn.commit()
         print("[migration 179] integrity_* tables created (5 tables)")
     finally:
-        conn.close()
+        if _own:
+            conn.close()
 
 
 def down():

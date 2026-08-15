@@ -87,7 +87,7 @@ Every user, group, and role requires an explicit entry in `canvas_access_grants`
 SELECT * FROM canvas_access_grants WHERE tenant_id = ? AND principal_id = ?;
 ```
 
-Seed existing tenants: `python tools/db/migrations/168_seed_canvas_grants.py`
+Seed existing tenants: applied automatically by migration `20260815191145_seed_canvas_grants_for_existing_tenants` (`python tools/db/migrate.py --up`). It was previously a bare `168_seed_canvas_grants.py`, which the migration runner skips silently — so it never ran.
 
 ---
 

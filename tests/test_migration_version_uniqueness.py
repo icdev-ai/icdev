@@ -294,7 +294,14 @@ def test_scan_fails_open_when_git_cannot_answer(tmp_path: pathlib.Path):
         # designed: it failed, and the fix was to remove the entry rather than
         # to weaken the check.
         ("282", "282_insider_risk_uba.sql"),
-        ("18", "018_reflex_observations.py"),
+        # 018_reflex_observations.py was pinned here and is removed for the same
+        # reason 283 and 289 were: it stopped being shadowed because it was
+        # promoted out of the legacy numbering, to
+        # 20260815200101_reflex_observations/up.py. It was never merely shadowed
+        # anyway — as a bare NNN_name.py the runner could not discover it at any
+        # version, so it had never executed once. Its up(conn) now runs and was
+        # verified against the live database as a clean no-op (reflex_observations
+        # is already present; the DDL is entirely IF NOT EXISTS).
         ("19", "019_kanban_verifications"),
     ],
 )
@@ -409,9 +416,18 @@ def test_timestamp_versions_cannot_alias_a_legacy_version():
 #:   151  canvas_ai_decisions.decision_hash/previous_decision_hash/signature.
 #:   152  memory_entries.decay_weight/classification/compartment.
 #:   153  kg_nodes.ontology_id + canvas_kg_nodes.ontology_id.
-#:   168  declares NO schema. It seeds canvas_access_grants rows into
-#:        platform.db and has its own --dry-run CLI. Making the runner execute
-#:        it would point a data seed at the wrong database.
+#:   168  RESOLVED 2026-08-15 — promoted to
+#:        20260815191145_seed_canvas_grants_for_existing_tenants and the bare
+#:        file deleted, so this version no longer exists in either discoverer.
+#:        The entry's original reasoning was "making the runner execute it would
+#:        point a data seed at the wrong database", and that turned out not to
+#:        hold: canvas_access.grant_access writes through get_connection() and
+#:        canvas_access_grants is created by init_icdev_db.py, so the grants land
+#:        in the ICDEV database the runner already targets. Only the TENANT LIST
+#:        is read from platform.db, read-only. The seed is an upsert
+#:        (ON CONFLICT DO UPDATE) and a no-op with no tenants, so running it on
+#:        every deployment is safe — and a backfill nobody is told to run is a
+#:        backfill that does not happen, which is what this file was.
 #:   172  declares NO schema in this database. It copies aac_* rows into the
 #:        AI-ify CANVAS db and says so: "any conn passed by a runner is
 #:        ignored". Runner-visibility would be actively misleading.
@@ -430,7 +446,10 @@ def test_timestamp_versions_cannot_alias_a_legacy_version():
 #:   205  kanban_tasks.loop_type + adversarial_enabled — both present.
 RUNNER_INVISIBLE_VERSIONS = frozenset({
     "149", "150", "151", "152", "153",          # dirs with migration.py
-    "168", "172", "173", "177", "178", "179",   # bare .py files
+    # 168 removed 2026-08-15 — promoted to a real migration, see the note above.
+    # This set may only SHRINK: an entry leaves when the gap is fixed, and a new
+    # one is a regression, not a line to add.
+    "172", "173", "177", "178", "179",          # bare .py files
     "205",                                      # bare .py file
 })
 

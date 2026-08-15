@@ -69,15 +69,34 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fnmatch
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
+import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple
+
+#: ``@@ -a,b +c,d @@`` — group 1 is the first line number in the NEW file.
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+#: Token types carrying TEXT rather than executable code — dropped before a
+#: marker is matched. FSTRING_* exists only on Python 3.12+, where an f-string
+#: is no longer one STRING token but START / MIDDLE / expression / END. Without
+#: naming them, ``f"assert {x}"`` leaks its literal half back in as code, which
+#: is the same false positive one layer down. The embedded EXPRESSION tokens are
+#: not listed: those really are code.
+_TEXT_TOKENS = frozenset(
+    {tokenize.COMMENT, tokenize.STRING}
+    | {getattr(tokenize, name) for name in
+       ("FSTRING_START", "FSTRING_MIDDLE", "FSTRING_END")
+       if hasattr(tokenize, name)}
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -399,6 +418,74 @@ def changed_test_files(root: Path, merge_base: str, config: Dict[str, Any]) -> L
     return sorted(rel for rel in changed if in_scope(rel, config))
 
 
+def code_only_lines(path: Path) -> Optional[Dict[int, str]]:
+    """Each line of ``path`` with comments and string literals blanked out.
+
+    A marker must match real CODE. Matching raw text means the word "assert" in
+    a docstring makes a file applicable, and then the file is asked a red-first
+    question it cannot answer — it added no test logic, so of course it passes
+    against the merge base, and the gate reports a fabricated "worthless test".
+    That happened: PR #1700 added one autouse fixture whose docstring reads
+    "they assert the IDENTITY's tenant", and two files failed the gate on it.
+
+    Tokenising is what separates the two, and it is exact rather than heuristic:
+    COMMENT and STRING tokens carry no executable meaning, so they contribute
+    nothing. Tokens are written back at their original column, which keeps
+    dotted and spaced forms intact for substring matching -- ``pytest.raises``,
+    ``self.assertEqual``, ``@pytest.mark.parametrize``, ``def test_foo``.
+
+    Returns None when the file cannot be read or tokenised (a syntax error, a
+    partial write). The caller then falls back to raw matching, which over-
+    reports applicability rather than under-reporting it: asking a redundant
+    question costs a run, skipping a real one lets a worthless test through.
+    """
+    try:
+        source = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+    lines: Dict[int, List[str]] = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type in _TEXT_TOKENS:
+                continue
+            if tok.type in (tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
+                            tokenize.DEDENT, tokenize.ENCODING, tokenize.ENDMARKER):
+                continue
+            (srow, scol), (erow, _) = tok.start, tok.end
+            if srow != erow:  # a multi-line token has no single line to sit on
+                continue
+            row = lines.setdefault(srow, [])
+            if len(row) < scol:
+                row.extend(" " * (scol - len(row)))
+            row.extend(tok.string)
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        return None
+
+    return {n: "".join(chars) for n, chars in lines.items()}
+
+
+def _added_line_numbers(diff: str) -> Set[int]:
+    """Line numbers in the NEW file that this unified diff adds."""
+    added: Set[int] = set()
+    cursor = 0
+    for line in diff.splitlines():
+        hunk = _HUNK_RE.match(line)
+        if hunk:
+            cursor = int(hunk.group(1))
+            continue
+        if line.startswith("+++"):
+            continue
+        if line.startswith("+"):
+            added.add(cursor)
+            cursor += 1
+        elif line.startswith("-") or line.startswith("\\"):
+            continue
+        else:
+            cursor += 1
+    return added
+
+
 def added_test_logic(root: Path, merge_base: str, rel: str, config: Dict[str, Any]) -> bool:
     """True when this file's diff ADDS at least one line that looks like a test.
 
@@ -415,6 +502,9 @@ def added_test_logic(root: Path, merge_base: str, rel: str, config: Dict[str, An
     if not applicability.get("require_added_test_logic", True):
         return True
     markers = [str(m) for m in (applicability.get("markers") or ["assert"])]
+    # Comments and string literals blanked out, so a marker only matches code.
+    # None => the file could not be tokenised; fall back to raw text below.
+    code = code_only_lines(root / rel)
     probe = _git(root, "diff", "--unified=0", merge_base, "--", rel)
     if probe.returncode != 0:
         # Cannot read the diff -> ask the question. Failing OPEN on applicability
@@ -424,11 +514,17 @@ def added_test_logic(root: Path, merge_base: str, rel: str, config: Dict[str, An
         # No diff at all: the file is UNTRACKED (git diff cannot see it) or was
         # named explicitly via --files. Either way every line is new to the merge
         # base, so read the file rather than concluding "nothing was added".
+        if code is not None:
+            return any(marker in text
+                       for text in code.values() for marker in markers)
         try:
             body = (root / rel).read_text(encoding="utf-8", errors="replace")
         except OSError:
             return True
         return any(marker in body for marker in markers)
+    if code is not None:
+        return any(marker in code.get(n, "")
+                   for n in _added_line_numbers(probe.stdout) for marker in markers)
     for line in probe.stdout.splitlines():
         if not line.startswith("+") or line.startswith("+++"):
             continue

@@ -261,21 +261,32 @@ def check_access(
 # Tenant default seeding
 # ---------------------------------------------------------------------------
 
-def seed_tenant_defaults(tenant_id: str, granted_by: str = "system") -> None:
+def seed_tenant_defaults(tenant_id: str, granted_by: str = "system") -> dict:
     """Auto-grant default_roles from args/component_registry.yaml for a tenant.
 
     Called from tenant_manager.py after tenant creation.
+
+    Returns ``{tenant_id, granted, skipped_no_default_roles, failed}`` so the
+    caller can tell a COMPLETE seed from a partial one. It used to return None
+    and log a single "Seeded canvas default grants" line whatever happened,
+    which made the two ways it silently under-grants indistinguishable from
+    success — see the warnings at the end of this function.
     """
+    granted = 0
+    skipped: list[str] = []
+    failed: list[str] = []
     try:
         from tools.config.component_registry import get_registry
 
         registry = get_registry()
     except Exception as exc:
         logger.warning("Cannot load component registry: %s", exc)
-        return
+        return {"tenant_id": tenant_id, "granted": 0,
+                "skipped_no_default_roles": [], "failed": ["<registry unavailable>"]}
 
     for comp in registry.iter_canvases():
         if not comp.default_roles:
+            skipped.append(comp.key)
             continue
         for role in comp.default_roles:
             try:
@@ -288,9 +299,40 @@ def seed_tenant_defaults(tenant_id: str, granted_by: str = "system") -> None:
                     granted_by=granted_by,
                 )
             except Exception as exc:
-                logger.debug("Seed grant failed for %s/%s: %s", comp.key, role, exc)
+                failed.append(f"{comp.key}/{role}")
+                logger.warning("Seed grant failed for %s/%s: %s", comp.key, role, exc)
+            else:
+                granted += 1
 
-    logger.info("Seeded canvas default grants for tenant %s", tenant_id)
+    # Say what was NOT granted. A tenant is created once and then lived in, so a
+    # silent partial seed is discovered later as "I cannot open ACE" — by which
+    # point nobody connects it to tenant creation.
+    #
+    # Both gaps are real and neither used to be reported:
+    #
+    #  * a canvas with no `default_roles` is skipped entirely, and 21 of the 38
+    #    registered canvases declare none (measured 2026-08-15) — ace, slides,
+    #    delta_review, foundry, integrity, demo_runner, mission_canvas and 14
+    #    others. A new tenant is locked out of every one of them.
+    #  * a grant that RAISES was logged at debug, i.e. invisible by default.
+    #
+    # This is reported, not enforced. Declaring default_roles for the other 21
+    # is a product decision about who should see what; failing tenant creation
+    # over it would be worse than the lockout it warns about.
+    if skipped:
+        logger.warning(
+            "Tenant %s seeded %d grant(s); %d canvas(es) declare no default_roles "
+            "and are NOT reachable by any role in this tenant: %s",
+            tenant_id, granted, len(skipped), ", ".join(sorted(skipped)),
+        )
+    if failed:
+        logger.warning(
+            "Tenant %s: %d default grant(s) FAILED to write: %s",
+            tenant_id, len(failed), ", ".join(sorted(failed)),
+        )
+    logger.info("Seeded %d canvas default grant(s) for tenant %s", granted, tenant_id)
+    return {"tenant_id": tenant_id, "granted": granted,
+            "skipped_no_default_roles": sorted(skipped), "failed": sorted(failed)}
 
 
 # ---------------------------------------------------------------------------

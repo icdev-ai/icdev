@@ -64,6 +64,17 @@ scope:
 applicability:
   require_added_test_logic: true
   # Substrings; a diff line counts if it is an addition (+) containing any one.
+  #
+  # Matched against CODE ONLY. The file is tokenised and every COMMENT and
+  # STRING (docstrings and f-string literal text included) is blanked out before
+  # a marker is compared, so prose never makes a file applicable. Without that,
+  # a fixture docstring reading "the tests below assert the identity's tenant"
+  # counted as an added assertion — the file was asked a red-first question it
+  # had not claimed to answer, passed against the merge base because it added no
+  # test logic at all, and was reported as a worthless test. That is the false
+  # positive this whole applicability section exists to prevent, reappearing
+  # inside it. Real code is untouched: `pytest.raises`, `self.assertEqual`,
+  # `@pytest.mark.parametrize` and `def test_` all still match.
   markers:
     - "assert"
     - "pytest.raises"
