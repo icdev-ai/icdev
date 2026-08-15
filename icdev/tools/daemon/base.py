@@ -1198,6 +1198,36 @@ class DaemonBase(abc.ABC):
         self.pid_file.write_text(str(os.getpid()), newline="")
         self._init_states()
 
+        # Pick up our own merged code between cycles.
+        #
+        # Every DaemonBase subclass imports its modules once and then runs for
+        # days, so a merged fix is inert until a human restarts the process --
+        # and the failure is invisible, because a daemon serving hours-old code
+        # looks exactly like a daemon whose fix did not work. Measured
+        # 2026-08-15: kanban_stranded_reflex ran on code from the previous
+        # afternoon, and its fix (plus a reflex timeout raised in
+        # genesis_config.yaml) did nothing until the daemon was bounced by hand.
+        # kanban_scheduler and pr_watcher already did this; the seven daemons on
+        # this base did not, which is the only reason it kept happening here.
+        #
+        # Placed in the BASE rather than in genesis/daemon.py so all seven
+        # subclasses (genesis, appforge, proposal_genesis, evolution,
+        # review_board, companion_sync, trading) get it from one edit and cannot
+        # drift apart on it.
+        #
+        # NOTE ON CONFIG: this reloads CODE. `self.config` was read once in
+        # main() before the loop, so a re-exec is also what picks up a changed
+        # args/*.yaml -- the config arrives because the process restarts, not
+        # because anything re-reads the file.
+        try:
+            from tools.genesis import code_reload as _code_reload
+        except Exception as _cr_imp:  # noqa: BLE001 — reloading is optional
+            _code_reload = None
+            print(f"INFO: code self-reload unavailable ({_cr_imp}); "
+                  f"{self.daemon_name} will run its startup code until restarted")
+        _code_baseline = _code_reload.snapshot() if _code_reload else None
+        _started_at = time.time()
+
         try:
             check_interval = (
                 self.config.get("trust_kernel", {}).get("kill_switch", {}).get("check_interval_seconds", 10)
@@ -1224,6 +1254,16 @@ class DaemonBase(abc.ABC):
                 except Exception as e:
                     print(f"ERROR: Daemon loop error: {e}")
                     self.log_audit(f"{self.event_prefix}.daemon.error", details={"error": str(e)})
+
+                # AFTER the cycle's work, BEFORE the sleep. A re-exec mid-cycle
+                # would abandon a reflex that had already claimed work and taken
+                # its lease. Does not return if it re-execs.
+                if _code_reload is not None:
+                    try:
+                        _code_reload.restart_if_code_changed(
+                            _code_baseline, started_at=_started_at)
+                    except Exception as _cr_exc:  # noqa: BLE001 — watching must not kill the daemon
+                        print(f"WARN: code-change check failed: {_cr_exc}")
 
                 # Sleep in small increments for responsive shutdown
                 for _ in range(check_interval):
