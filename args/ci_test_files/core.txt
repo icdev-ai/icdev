@@ -1642,6 +1642,16 @@ tests/test_adversarial_review_question.py
 # govchain_anchor sweep.
 # 33 tests, ~1s. No network, no Fabric: the noop transport queues.
 tests/provenance/test_trust_validation_anchor.py
+# trust-disc/01 — the red-first proof gate. ANVIL mandates RED -> GREEN and
+# nothing anywhere recorded the RED; this gate re-derives it by checking out the
+# merge base, applying ONLY the changed test file on top, and asserting it does
+# not pass there. The acceptance criterion is empirical, so the suite builds
+# throwaway git repos and runs the real gate over them: `assert True` and an
+# assertion that holds pre-fix must FAIL the gate, a genuine red-first test must
+# clear it. Also pins the decision table shared with
+# tools/security/reproduction_validator.py so the two gates cannot drift apart.
+# ~20 tests, ~40s (it spawns nested pytest runs): no DB, no network, no LLM.
+tests/test_red_first_gate.py
 
 # Token exhaustion is the only ground-truth measurement of task SIZE the board
 # produces, and the give-up path threw it away: it sent the task to `backlog`
