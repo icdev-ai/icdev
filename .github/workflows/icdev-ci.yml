@@ -48,6 +48,12 @@ jobs:
       # exits 2 rather than silently resolving to "no files changed".
       - uses: actions/checkout@v4
         with:
+          # Two independent consumers now need this depth, so it must survive
+          # the removal of either: the isolation run above (trust-disc-02) and
+          # the red-first proof below (trust-disc-01), which checks out the MERGE
+          # BASE of the branch. A merge base cannot be computed from the default
+          # depth-1 clone -- both gates would exit 2 ("could not run") on every
+          # PR, which is honest but useless.
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -125,6 +131,37 @@ jobs:
       - name: Test gating census
         working-directory: ${{ github.workspace }}
         run: python tools/ci/gated_test_list.py --check-coverage
+      # trust-disc-01. The two steps above prove a changed test file is RUN by
+      # CI. This one proves it DISCRIMINATES: for every test file this branch
+      # adds or modifies, check out the merge base, apply ONLY that test file on
+      # top, and assert it does not pass there. A changed test that still passes
+      # against the pre-change tree is either asserting current behaviour rather
+      # than required behaviour, or is not discriminating at all.
+      #
+      # ANVIL mandates RED -> GREEN and nothing anywhere recorded the RED. A
+      # process instruction whose evidence is never captured is the `|| true`
+      # failure of D394 in a second form: the rule is stated, the artifact
+      # proving it fired is absent, and no reader can distinguish a check that
+      # ran from one that did not. So this step re-derives the RED and uploads
+      # the merge-base pytest output as the artifact.
+      #
+      # Exit codes are load-bearing: 0 clean, 1 a non-discriminating test, 2 the
+      # gate could not run (almost always a shallow checkout -- hence
+      # fetch-depth: 0 above). A gate that cannot run is NOT a gate that found
+      # nothing, and 2 must stay red for exactly that reason. Do NOT add
+      # `|| true`: that is the failure mode this step exists to close, and the
+      # escape hatch is an exemption WITH A WRITTEN REASON in
+      # args/red_first_gate.yaml.
+      - name: Red-first proof
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/red_first_gate.py --gate --out red-first-proof.json
+      - name: Upload red-first proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: red-first-proof
+          path: red-first-proof.json
+          if-no-files-found: ignore
       # trust-disc-03. The step above answers "does CI run this file?" and
       # nothing else. A gated file can be run on every PR, report green, and
       # assert NOTHING — because it skipped. tests/test_app.py's overview test

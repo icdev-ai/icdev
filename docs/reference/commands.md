@@ -5936,6 +5936,21 @@ python tools/ci/isolation_run.py --json                      # resolution only, 
 python tools/ci/isolation_run.py --run                       # run them; 0 clean / 1 gated failure / 2 unresolvable
 python tools/ci/isolation_run.py --run --base origin/main --timeout 1200
 python tools/ci/isolation_run.py --run -- -x                 # extra args forwarded to each pytest
+# Red-first proof (trust-disc-01) — the two above prove a changed test is RUN;
+# this proves it DISCRIMINATES. For every test file the branch adds or modifies:
+# check out the merge base, apply ONLY that test file on top, and assert it does
+# NOT pass there while it does pass here. A changed test that still passes against
+# the pre-change tree is either asserting current behaviour rather than required
+# behaviour, or is not discriminating at all — ANVIL mandates RED -> GREEN and
+# nothing anywhere recorded the RED. The captured merge-base pytest output in the
+# JSON proof IS the recorded RED; CI uploads it as the `red-first-proof` artifact.
+# Exit codes: 0 clean, 1 a non-discriminating test, 2 the gate COULD NOT RUN
+# (usually a shallow checkout — a gate that cannot run is not one that found
+# nothing). Exemptions need a written reason: args/red_first_gate.yaml.
+python tools/ci/red_first_gate.py                            # report over the PR diff, always exit 0
+python tools/ci/red_first_gate.py --gate                     # the merge gate
+python tools/ci/red_first_gate.py --files tests/test_x.py --gate   # prove one file
+python tools/ci/red_first_gate.py --base origin/main --json --out red-first-proof.json
 # CI SKIP census (trust-disc-03) — a gated test that SKIPS is UNMEASURED, not passing.
 # The ratchet above answers "does CI run this file?" and nothing else. tests/test_app.py's
 # overview test is gated, green on every PR, and has been skipping ("SQLite test DB lacks
