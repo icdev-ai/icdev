@@ -63968,3 +63968,50 @@ CREATE INDEX IF NOT EXISTS idx_idr_publish_audit_session ON public.idr_publish_a
 -- ============================================================================
 -- END ICDEV ADDITIVE SECTION (IDR / DocGen core schema)
 -- ============================================================================
+
+
+-- ============================================================================
+-- ICDEV ADDITIVE SECTION (post-dump, hand-maintained) — APPEND ONLY
+-- ============================================================================
+-- Audit hash-chain cutover marker — parity with
+-- tools/db/migrations/20260812041301_audit_chain_genesis_marker/up.sql, whose
+-- header carries the full rationale for the table. (task trust-anchor-03)
+--
+-- WHY IT IS DECLARED HERE AND NOT LEFT TO THE MIGRATION
+--
+-- The migration postdates the snapshot, so bootstrap_pg leaves it pending and
+-- it does run on a fresh install today. What it does NOT survive is the
+-- documented snapshot-regeneration procedure: the dump is taken from the
+-- canonical database, the canonical database has never run this migration, and
+-- bumping through_version to the head migration then marks 20260812041301
+-- applied WITHOUT running it. The table would vanish from every fresh install
+-- at that moment, silently — the same way twelve tables were lost the first
+-- time the snapshot was regenerated (see _CARRIED_FORWARD in
+-- tests/db/test_pg_bootstrap_baseline.py, which now guards this one too).
+--
+-- Losing it is quiet by construction: chain.py::record_chain_start is
+-- deliberately non-fatal and chain_start_id returns None for a missing table,
+-- so the only symptom is chain_sweep reporting cutover.source='derived' —
+-- a boundary that slides up if the first chained row is ever removed, which is
+-- exactly the event the marker exists to expose.
+--
+-- PG-NATIVE dialect: applied RAW by tools/db/bootstrap_pg.py (no translate_sql)
+-- under search_path=''. Schema-qualified public.; all statements idempotent, so
+-- the migration re-running after this snapshot loads is a no-op.
+--
+-- APPEND-ONLY: registered in APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py
+-- alongside audit_trail itself. A re-cutover APPENDS a second row and
+-- chain_start_id takes the MIN, so the earliest boundary still wins.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.audit_chain_genesis (
+    chain_start_id INTEGER PRIMARY KEY,     -- first audit_trail.id written WITH a hash
+    hash_algorithm TEXT NOT NULL DEFAULT 'sha256',
+    note           TEXT,
+    tenant_id      TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    recorded_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- ============================================================================
+-- END ICDEV ADDITIVE SECTION (audit hash-chain cutover marker)
+-- ============================================================================

@@ -112,6 +112,13 @@ _CARRIED_FORWARD = (
     "github_inbox", "gitlab_inbox", "skype_inbox", "pipeline_snapshots",
     "dm_policy_audit_log", "dd_mapping_sessions", "dd_field_mappings",
     "dd_mapping_transforms",
+    # audit_chain_genesis (migration 20260812041301) postdates the snapshot, so
+    # it currently reaches a fresh install by *running* rather than from the
+    # dump. That path ends the moment through_version is bumped past it — and
+    # the canonical database has never run the migration, so a straight re-dump
+    # would not emit it either. Carried forward for the same reason as the
+    # twelve above. (task trust-anchor-03)
+    "audit_chain_genesis",
 )
 
 
