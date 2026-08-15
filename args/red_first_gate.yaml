@@ -1,0 +1,135 @@
+# CUI // SP-CTI
+# Red-First Proof Gate (trust-disc-01)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# ANVIL mandates RED -> GREEN and nothing anywhere records the RED. A process
+# instruction whose evidence is never captured is the `|| true` failure of D394
+# in a second form: the rule is stated, the artifact proving it fired is absent,
+# and no reader can distinguish a check that ran from one that did not.
+#
+# So the gate re-derives the RED instead of trusting that it happened. For every
+# test file this PR adds or modifies it checks out the merge base, applies ONLY
+# that test file on top, and runs it. The test must FAIL there and PASS here.
+#
+#   fails before + passes after  -> discriminating. The RED is recorded.
+#   passes before                -> it asserts CURRENT behaviour, not required
+#                                   behaviour. It could never have gone red.
+#   fails after too              -> it is broken, not red-first.
+#
+# The decision table is shared with tools/security/reproduction_validator.py
+# (decide_discrimination) — the same question in a different domain, answered by
+# one primitive so two gates cannot drift apart on it.
+#
+# Consumed by: tools/ci/red_first_gate.py :: load_config
+# Gate source: python tools/ci/red_first_gate.py --gate   (the `test` job)
+# Feature doc: docs/features/phase-trust-disc-01-red-first-proof.md
+version: 1
+
+# enforce | advisory.
+#
+# `advisory` runs everything, prints everything and always exits 0. It exists so
+# the gate can be MEASURED on a tree before it is armed — the pre_tool_use
+# lesson (D394): a check that is nominally enforcing behind something that
+# discards its verdict is unmeasured, not proven, and a check armed without a
+# fire-rate measurement refuses routine work. Do NOT reach for `advisory` to get
+# one commit through; add an exemption with a reason instead.
+mode: enforce
+
+# --------------------------------------------------------------------------- #
+# SCOPE — which changed files the gate considers a "test file"
+# --------------------------------------------------------------------------- #
+# Deliberately identical to args/test_gating_gate.yaml -> scope, which is itself
+# identical to what pytest collects (pyproject.toml testpaths + python_files).
+# Three different answers to "what is a test file" is two too many.
+scope:
+  roots:
+    - tests/
+  patterns:
+    - "test_*.py"
+    - "*_test.py"
+
+# --------------------------------------------------------------------------- #
+# APPLICABILITY — a change with no new assertion has no RED to record
+# --------------------------------------------------------------------------- #
+# Without this the gate fails a docstring fix, an import reorder, or a rename
+# inside a test file: those legitimately behave identically before and after, so
+# they land in `never_established` and read as "you wrote a worthless test". An
+# applicability check with no gate is 100% false positives, and a gate that
+# cries wolf gets a `|| true` bolted onto it.
+#
+# The rule is deliberately crude and readable: the diff for this file must ADD at
+# least one line that looks like test logic. It is a floor, not a classifier —
+# it decides whether to ASK the question, never what the answer is.
+applicability:
+  require_added_test_logic: true
+  # Substrings; a diff line counts if it is an addition (+) containing any one.
+  markers:
+    - "assert"
+    - "pytest.raises"
+    - "def test_"
+    - "@pytest.mark"
+    - "self.assert"
+    - "self.fail"
+
+# --------------------------------------------------------------------------- #
+# RUN — how each proof is executed
+# --------------------------------------------------------------------------- #
+run:
+  # Per pytest invocation. Two invocations per file (before + after). A test
+  # module that cannot finish in this budget is reported `timeout` -> INDECISIVE,
+  # which is neither a pass nor a block: we learned nothing, and saying so is the
+  # whole point of this task.
+  timeout_seconds: 600
+  pytest_args:
+    - "-q"
+    - "--no-header"
+    # The merge-base worktree is disposable; a .pytest_cache in it is litter and
+    # a cache carried between the two runs would make them not independent.
+    - "-p"
+    - "no:cacheprovider"
+  # A PR touching more than this many test files is proven up to the cap and the
+  # remainder is named in the report and printed as a ::warning::. It is NEVER
+  # silently truncated — a cap you cannot see reads as "covered everything".
+  max_files: 25
+  # Lines of pytest output retained per run in the JSON proof. This IS the
+  # recorded RED, so it must be enough to read; it is bounded because ICDEV is a
+  # public repo and an unbounded dump is exposure, not evidence.
+  captured_lines: 40
+
+# --------------------------------------------------------------------------- #
+# EXEMPTIONS — a written reason next to the pattern, never a bare count
+# --------------------------------------------------------------------------- #
+# An exemption says "a red-first proof is not the right question for this file".
+# It does NOT say "this file is allowed to be a bad test". Every entry carries
+# its reason inline, and `--gate` reports an exemption matching nothing in the
+# tree as STALE — a pattern that has quietly stopped matching is how a gate
+# shrinks without anyone deciding to shrink it.
+#
+# There is deliberately no numeric budget here. A count can be held constant
+# while the set churns, which is exactly how a gap regrows behind a green gate
+# (see args/ci_test_backlog.txt, which is enumerated for the same reason).
+exemptions:
+  - pattern: "tests/e2e_selenium/**"
+    reason: >-
+      Requires a live dashboard and a Selenium driver, and the module's autouse
+      fixture SKIPS the whole file when the port does not answer. Both runs
+      would therefore measure the absence of a server rather than the absence
+      of a fix, and a skipped module exits 0 — which would read as "passes
+      against the merge base", i.e. a fabricated finding. Already excluded from
+      the CI gating census for the same reason (args/test_gating_gate.yaml).
+
+  - pattern: "tests/genesis_auto/**"
+    reason: >-
+      Generated, not hand-written. The file set is controlled by the generator,
+      so "did the author write a red-first test" is not a question about this
+      PR's author. The right gate for generated tests is a gate on the
+      generator, per the same exclusion in args/test_gating_gate.yaml.
+
+  - pattern: "tests/*test_*_smoke.py"
+    reason: >-
+      A smoke test asserts that something still imports and still answers. That
+      is CURRENT behaviour ON PURPOSE, so passing against the merge base is the
+      correct outcome for a smoke test, not a defect in it. (`*` crosses `/` in
+      this matcher, as in args/test_gating_gate.yaml, so this covers
+      tests/test_x_smoke.py and tests/security/test_x_smoke.py alike.)

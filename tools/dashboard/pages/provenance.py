@@ -275,12 +275,18 @@ def blockchain_status():
                 for r in recent
             ]
 
-        # Fabric enabled status
+        # Fabric enabled status + which transport is carrying anchors (D-GC-1).
+        # "disabled" on its own never said WHY; the per-transport health does.
         try:
             from tools.blockchain.blockchain_config import get_config
             cfg = get_config()
+            transport = cfg.active_transport()
             result["fabric_enabled"] = cfg.is_enabled()
             result["air_gapped"] = cfg.is_air_gapped()
+            result["active_transport"] = transport.name if transport else None
+            result["transports"] = [
+                h.to_dict() for h in cfg.transport_registry().doctor(force=False)
+            ]
         except Exception:
             pass
 

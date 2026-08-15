@@ -450,6 +450,98 @@ def run_toggle_sweep(
     }
 
 
+def run_reflective_ab_compare(
+    golden_set: Optional[str] = None,
+    top_k: Optional[int] = None,
+    limit: Optional[int] = None,
+    max_candidates: Optional[int] = None,
+) -> Dict[str, Any]:
+    """A/B the current ordering against reflective reranking (trust-self-02).
+
+    Retrieves ONCE per golden query with reflective reranking off, then feeds the
+    same candidate list to both rankers through
+    ``reflective_reranker.ab_compare``:
+
+    * baseline  — the incoming order, i.e. exactly what the surface serves today.
+    * reflective — ``reflective_rerank`` over those same candidates.
+
+    Relevance labels come from the golden set's own ``expect`` targets, so this
+    reuses the ground truth the rest of the harness scores against rather than
+    inventing a second one. Retrieving once (not once per arm) is deliberate:
+    both arms then rank an identical candidate set, so the measured delta is the
+    REORDERING and nothing else — vector-store nondeterminism cannot leak in.
+
+    The output is a record, not a verdict. ``ab_compare`` reports
+    ``unmeasurable_reflection_degraded`` when the reflection model was never
+    actually reached, because that run's 0.0 delta is not evidence of "no
+    benefit".
+    """
+    from tools.rag.reflective_reranker import ab_compare, reflective_rerank
+    from tools.rag.toggle_harness import isolated_config, load_base_config, probe_adoption
+
+    golden = load_golden_set(golden_set)
+    k = top_k or int(golden.get("top_k", _DEFAULT_TOP_K))
+    queries = [q for q in golden.get("queries", []) if q.get("query") and _query_targets(q.get("expect") or {})]
+    if limit:
+        queries = queries[:limit]
+
+    # Candidates are retrieved with EVERY toggle off, so the A arm is the plain
+    # ordering and the B arm differs only by the reflection pass.
+    labeled: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+    with isolated_config(None, base=load_base_config()):
+        from tools.rag.retriever import RAGRetriever
+
+        retriever = RAGRetriever()
+        for q in queries:
+            try:
+                candidates = retriever.search(query=q["query"], top_k=k) or []
+            except Exception as exc:  # a dead backend must not abort the record
+                errors.append({"id": q.get("id", ""), "error": f"{type(exc).__name__}: {exc}"})
+                continue
+            if not candidates:
+                continue
+            targets = _query_targets(q.get("expect") or {})
+            gold = [
+                _attr(r, "chunk_id") or f"idx-{i}"
+                for i, r in enumerate(candidates)
+                if any(_result_matches_target(r, t) for t in targets)
+            ]
+            labeled.append({
+                "query": q["query"],
+                "candidates": candidates,
+                "gold_relevant": gold,
+                "baseline_calls": 0,
+                "reflective_calls": min(len(candidates), max_candidates or len(candidates)),
+            })
+
+    def _identity(_q: str, cands: List[Any]) -> List[Any]:
+        return list(cands)
+
+    def _reflective(query: str, cands: List[Any]) -> List[Any]:
+        return reflective_rerank(query, cands, top_k=k, max_candidates=max_candidates)
+
+    started = time.perf_counter()
+    result = ab_compare(
+        labeled,
+        baseline_rank=_identity,
+        reflective_rank=_reflective,
+        id_of=lambda r: _attr(r, "chunk_id"),
+        k=k,
+    )
+    result.update({
+        "classification": "CUI // SP-CTI",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "golden_set_version": golden.get("version"),
+        "top_k": k,
+        "queries_labeled": len(labeled),
+        "queries_errored": errors,
+        "elapsed_s": round(time.perf_counter() - started, 2),
+        "adoption": probe_adoption("reflective_rerank"),
+    })
+    return result
+
+
 def _delta(baseline: Any, current: Any) -> Dict[str, Any]:
     """Signed delta, tolerant of None metrics (a zeroed or partial run)."""
     if isinstance(baseline, (int, float)) and isinstance(current, (int, float)):
@@ -481,7 +573,41 @@ def main() -> None:
         "--only", metavar="A,B",
         help="Restrict --sweep to these toggles (comma-separated).",
     )
+    parser.add_argument(
+        "--reflective-ab", action="store_true",
+        help="A/B the served ordering against reflective reranking over the SAME "
+             "candidates (trust-self-02). Records the delta; does not assert one.",
+    )
+    parser.add_argument(
+        "--limit", type=int,
+        help="Cap the number of golden queries (--reflective-ab costs one LLM "
+             "call per candidate document).",
+    )
+    parser.add_argument(
+        "--max-candidates", type=int,
+        help="Bound reflected documents per query for --reflective-ab.",
+    )
     args = parser.parse_args()
+
+    if args.reflective_ab:
+        record = run_reflective_ab_compare(
+            args.golden_set, args.top_k, args.limit, args.max_candidates,
+        )
+        if args.json_output:
+            print(json.dumps(record, indent=2))
+        else:
+            print(f"queries labeled : {record['queries_labeled']}")
+            print(f"baseline  P@{record['top_k']}   : {record['baseline_precision_at_k']}")
+            print(f"reflective P@{record['top_k']}  : {record['reflective_precision_at_k']}")
+            print(f"delta           : {record['quality_delta']:+.4f}")
+            print(f"llm calls       : {record['reflective_llm_calls']} "
+                  f"(baseline {record['baseline_llm_calls']})")
+            print(f"documents judged: {record['documents_judged']} "
+                  f"degraded {record['documents_degraded']}")
+            if record.get("degraded_reason"):
+                print(f"degraded reason : {record['degraded_reason']}")
+            print(f"recommendation  : {record['recommendation']}")
+        sys.exit(0)
 
     if args.sweep:
         only = [s.strip() for s in args.only.split(",")] if args.only else None

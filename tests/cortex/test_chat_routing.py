@@ -28,6 +28,34 @@ if str(ROOT) not in sys.path:
 # intent_router unit tests
 # ---------------------------------------------------------------------------
 class TestIntentRouter:
+    """Deterministic rule-engine assertions — the LLM signal is stubbed out.
+
+    ``intent_router.route()`` calls ``_base_signal``, which reaches
+    ``chat_router.intent_classifier.classify`` and, when a model server is
+    reachable, makes a LIVE LLM call. A design-flavoured verdict from that call
+    adds +2 to the agent score, so with Ollama up "draft an email to the
+    security team" was classified `security-design` and routed to `agent`
+    instead of `complete`.
+
+    That made these tests pass or fail on whether a local model server happened
+    to be running, and on what it happened to say. It showed up as an
+    order-dependence: run this file alone and two tests failed; run the whole
+    tests/cortex directory and all 888 passed, because an earlier module left
+    the LLM path unreachable.
+
+    ``_base_signal`` is documented as best-effort ("classifier optional; router
+    still works") and returns {} when it cannot run, so stubbing it asserts the
+    router on exactly the deterministic path it is designed to fall back to.
+    The LLM-influenced path is real behaviour and is not being disabled in
+    production — it simply is not what these unit tests are about.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _deterministic_base_signal(self, monkeypatch):
+        from tools.cortex import intent_router
+
+        monkeypatch.setattr(intent_router, "_base_signal", lambda _msg: {})
+
     def test_search_shaped_routes_to_search(self):
         from tools.cortex import intent_router
 
@@ -108,12 +136,30 @@ def client(icdev_db, monkeypatch):
 
     monkeypatch.setattr(_auth, "DB_PATH", str(icdev_db))
 
-    from tools.cortex.blueprint import cortex_bp
-    from tools.dashboard.app import app
+    # A FRESH app per test, not the shared tools.dashboard.app singleton.
+    #
+    # This used to register onto that singleton behind an
+    # `if "cortex" not in app.blueprints` guard. The guard is backwards for the
+    # case that fails: it skips only when the blueprint is ALREADY there, and
+    # the failure is precisely when it is not. Any earlier module in the run
+    # that drives the shared app without registering cortex_bp locks Flask's
+    # setup phase, and this then raises
+    #
+    #   AssertionError: The setup method 'register_blueprint' can no longer be
+    #   called on the application. It has already handled its first request.
+    #
+    # It went unnoticed while this file was ungated; gating it surfaced the
+    # failure immediately in the full core allowlist. cortex_bp carries its own
+    # before_request, so a bare app suffices and nothing global is mutated.
+    from flask import Flask
 
-    if "cortex" not in app.blueprints:
-        app.register_blueprint(cortex_bp)
+    from tools.cortex.blueprint import cortex_bp
+
+    app = Flask(__name__)
+    app.secret_key = "test-secret"          # session_transaction needs one
     app.config["TESTING"] = True
+    app.register_blueprint(cortex_bp)
+
     with app.test_client() as test_client:
         with test_client.session_transaction() as sess:
             sess["user_id"] = "test-admin"

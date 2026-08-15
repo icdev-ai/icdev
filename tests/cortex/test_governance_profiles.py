@@ -23,10 +23,12 @@ import pytest
 
 from tools.cortex import governance
 from tools.cortex.governance import (
+    DEFAULT_GATES,
     DEFAULT_PROFILE,
     GATE_CITATION_GROUNDING,
     GATE_CONTENT_GROUNDING,
     GATE_INPUT_REDACTION,
+    GATE_KG_GROUNDING,
     GATE_OPERATION,
     GATE_ORDER,
     GATE_OUTPUT_REDACTION,
@@ -113,11 +115,15 @@ def test_egress_and_audit_are_the_non_negotiable_pair():
 # Loading and resolving
 # ══════════════════════════════════════════════════════════════
 
-def test_default_is_the_whole_chain_with_no_config_at_all(tmp_path):
+def test_default_is_the_default_chain_with_no_config_at_all(tmp_path):
+    # DEFAULT_GATES = GATE_ORDER minus OPT_IN_GATES. `default` is built into
+    # code precisely so an unreadable config cannot change it, and that has to
+    # hold for the opt-in gates too: a missing file must not silently ADD
+    # kg_grounding any more than it may silently drop output_redaction.
     missing = tmp_path / "absent.yaml"
-    assert load_governance_profiles(missing) == {DEFAULT_PROFILE: frozenset(GATE_ORDER)}
-    assert resolve_profile("", missing) == frozenset(GATE_ORDER)
-    assert resolve_profile(DEFAULT_PROFILE, missing) == frozenset(GATE_ORDER)
+    assert load_governance_profiles(missing) == {DEFAULT_PROFILE: frozenset(DEFAULT_GATES)}
+    assert resolve_profile("", missing) == frozenset(DEFAULT_GATES)
+    assert resolve_profile(DEFAULT_PROFILE, missing) == frozenset(DEFAULT_GATES)
 
 
 def test_a_declared_profile_resolves_to_its_gate_subset(tmp_path):
@@ -214,18 +220,22 @@ def _run(profile: str = "", **kwargs):
     )
 
 
-def test_naming_no_profile_runs_the_whole_chain(calls):
+def test_naming_no_profile_runs_the_default_chain(calls):
     _, report = _run()
 
     assert report.profile == DEFAULT_PROFILE
-    assert report.gates_run == list(GATE_ORDER)
+    assert report.gates_run == list(DEFAULT_GATES)
     assert set(report.outcomes) == set(GATE_ORDER)
-    assert OUTCOME_SKIP not in report.outcomes.values()
+    # The ONLY skip a default call may have is the opt-in gate (trust-kg-03).
+    assert {g for g, v in report.outcomes.items() if v == OUTCOME_SKIP} == {
+        GATE_KG_GROUNDING
+    }
 
 
 def test_a_minimal_profile_skips_only_the_gates_it_omits(calls):
     _, report = _run(profile="internal_diligence")
-    omitted = {GATE_PRE_CHECK, GATE_CITATION_GROUNDING, GATE_CONTENT_GROUNDING}
+    omitted = {GATE_PRE_CHECK, GATE_CITATION_GROUNDING, GATE_CONTENT_GROUNDING,
+               GATE_KG_GROUNDING}
 
     assert report.profile == "internal_diligence"
     for gate in omitted:
@@ -303,7 +313,7 @@ def test_a_per_call_profile_overrides_the_pipelines(calls):
     )
 
     assert wide.profile == DEFAULT_PROFILE
-    assert wide.gates_run == list(GATE_ORDER)
+    assert wide.gates_run == list(DEFAULT_GATES)
 
 
 def test_an_unknown_profile_fails_before_the_operation_runs(calls):

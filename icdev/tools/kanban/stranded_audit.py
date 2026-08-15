@@ -37,6 +37,9 @@ from tools.logging.icdev_logger import get_logger  # noqa: E402
 logger = get_logger("kanban.stranded_audit")
 
 _TERMINAL_STATES = ("done", "validating")
+
+#: Most `suggested` cards one run may file. See :func:`_file_suggested_cards`.
+_MAX_CARDS_PER_RUN = 25
 _REPORT_PATH = BASE_DIR / ".tmp" / "kanban" / "stranded_audit.json"
 
 
@@ -54,37 +57,213 @@ def _default_branch() -> str:
     return "main"
 
 
-def _branch_unmerged_count(task_id: str, default_branch: str) -> Tuple[bool, int]:
-    """Return (branch_exists, unmerged_commit_count) for ``kanban/<task_id>``.
+#: Set by :func:`prime_pr_state_cache` and reported as ``pr_state_source``.
+#: "bulk" = every branch's PR state is known; "unavailable" = gh could not be
+#: reached, so no branch can be recognised as already-merged and the run WILL
+#: contain the false strandings this module exists to avoid. Never let that read
+#: as a clean audit — the report states the posture instead (the same discipline
+#: chain_sweep uses for `pre_cutover` and capability_consumption for
+#: `telemetry_available: false`).
+_PR_STATE_SOURCE = "unprimed"
 
-    Checks BOTH the local branch and ``origin/kanban/<task_id>`` — a stranded
-    branch may exist only on origin in a fresh checkout. Compares
-    ``origin/<default>..<ref>``. FAIL-OPEN: any git error yields (False, 0) so an
-    unreachable git never fabricates strandedness.
+
+#: Upper bound for the single bulk PR query. Must exceed the repo's lifetime PR
+#: count or the listing silently truncates and every branch beyond it looks
+#: "no PR" -> "not abandoned" -> falsely stranded. Measured 2026-08-15: 1,661
+#: PRs across 1,594 branches, fetched in 3.9s, so this has ~3x headroom. A run
+#: that hits the limit reports ``pr_state_source: "truncated"`` rather than
+#: pretending the tail does not exist.
+_PR_QUERY_LIMIT = 5000
+
+
+def prime_pr_state_cache(refs=None, limit: int = _PR_QUERY_LIMIT) -> int:
+    """Populate the GATE's abandoned-branch cache from ONE ``gh`` call.
+
+    ``reflexes.kanban._branch_is_abandoned`` asks ``gh pr list --head <branch>``
+    per branch and memoises the answer. That is correct but O(branches) network
+    round-trips, and this auditor walks every terminal task — which is why the
+    reflex died on ``watchdog_timeout_300s`` with the circuit breaker open and
+    filed zero cards despite 25 runs. Pre-seeding its cache in bulk gives the
+    audit the gate's exact semantics at one round-trip instead of hundreds.
+
+    Returns the number of branches primed. On any failure returns 0 and leaves
+    the cache alone; callers must then treat "merged" as UNKNOWN rather than
+    assume it, which :func:`_stranded_git_check` does by consulting the cache
+    only for entries that were actually primed.
     """
-    branch = f"kanban/{task_id}"
-    exists_any = False
-    max_unmerged = 0
-    for ref in (branch, f"origin/{branch}"):
-        try:
-            chk = subprocess.run(
-                ["git", "rev-parse", "--verify", "--quiet", ref],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
-            )
-            if chk.returncode != 0:
+    global _PR_STATE_SOURCE
+    try:
+        from tools.genesis.reflexes import kanban as _k
+
+        out = subprocess.run(
+            ["gh", "pr", "list", "--state", "all", "--limit", str(limit),
+             "--json", "headRefName,state"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=120,
+        )
+        if out.returncode != 0 or not out.stdout.strip():
+            _PR_STATE_SOURCE = "unavailable"
+            return 0
+        entries = json.loads(out.stdout)
+        by_branch: Dict[str, set] = {}
+        for entry in entries:
+            name = (entry.get("headRefName") or "").strip()
+            if name:
+                by_branch.setdefault(name, set()).add(entry.get("state"))
+        for name, states in by_branch.items():
+            # setdefault, never overwrite: a value already in the cache came from
+            # the gate's own authoritative per-branch query this process.
+            _k._ABANDONED_BRANCH_CACHE.setdefault(
+                name, bool(states) and states <= {"CLOSED", "MERGED"})
+
+        # Was the listing COMPLETE? This must be decided BEFORE priming negatives:
+        # on a truncated listing "absent" means "unknown", not "has no PR", and
+        # caching those as not-abandoned would manufacture exactly the false
+        # strandings this function exists to remove.
+        truncated = len(entries) >= limit
+        _PR_STATE_SOURCE = "truncated" if truncated else "bulk"
+        if truncated:
+            logger.warning(
+                "stranded_audit: PR listing hit the %d limit — branches beyond it "
+                "cannot be recognised as merged and may report as stranded", limit)
+            return len(by_branch)
+
+        # Prime the NEGATIVES. Without this, every branch that has no PR --
+        # 3,007 of the repo's 5,355 refs, largely abandoned experiments and local
+        # `merge/*` working branches -- misses the cache and falls through to a
+        # live `gh pr list --head <branch>`. At 0.31s each that is 15.5 minutes,
+        # which is how this stayed over the 300s watchdog even after the bulk
+        # query was added. "Absent from a COMPLETE PR listing" and "gh said no
+        # PRs for this branch" are the same fact, so caching False here changes
+        # no answer -- it only stops asking a question already answered.
+        for ref in (refs or []):
+            name = ref.split("origin/", 1)[-1] if ref.startswith("origin/") else ref
+            _k._ABANDONED_BRANCH_CACHE.setdefault(name, False)
+        return len(by_branch)
+    except Exception as exc:  # noqa: BLE001 — priming is an optimisation
+        logger.warning("stranded_audit: PR-state priming failed (%s)", exc)
+        _PR_STATE_SOURCE = "unavailable"
+        return 0
+
+
+def merged_refs(default_branch: str) -> set:
+    """Every ref fully contained in ``origin/<default_branch>``, in ONE git call.
+
+    ``git for-each-ref --merged`` answers for all 5,355 refs at once what
+    ``git rev-list --count origin/main..<ref>`` answers for one. Per-ref it cost
+    ~0.29s/task and projected to 932s; as a set membership test it is free.
+
+    Returns an EMPTY set on any error, which is the safe direction: an empty set
+    means "nothing is known-merged", so every ref falls through to the exact
+    per-ref comparison this is accelerating. Slow, never wrong.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "for-each-ref", f"--merged=origin/{default_branch}",
+             "--format=%(refname:short)", "refs/heads", "refs/remotes/origin"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+        )
+        if out.returncode != 0:
+            return set()
+        return {ln.strip() for ln in out.stdout.splitlines() if ln.strip()}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stranded_audit: merged-ref listing failed (%s)", exc)
+        return set()
+
+
+#: ref -> unmerged patch count, for ONE audit run. `git cherry`'s answer depends
+#: only on (ref, origin/default), never on which task asked, and task ids match
+#: refs many-to-many — a parent id matches every child's branch, so the same ref
+#: is re-costed once per related task. Memoising caps the expensive compare at
+#: the number of DISTINCT unmerged refs instead of the number of task lookups.
+#: Cleared per run by :func:`audit_stranded_tasks`; never persisted, because a
+#: stale entry would report yesterday's merge state as today's.
+_CHERRY_CACHE: Dict[str, int] = {}
+
+
+def _stranded_git_check(task_id: str, default_branch: str, refs=None,
+                        merged=None) -> Tuple[bool, int]:
+    """Return (branch_exists, unmerged_commit_count) using the GATE's semantics.
+
+    This used to be an independent implementation, and it disagreed with the
+    merge-verify gate three ways — every one of which produced a wrong answer:
+
+      * ``git log origin/<default>..<ref>`` counts by ANCESTRY, so a squash-merge
+        (which lands the patch under a new SHA with no ancestry link) and every
+        rebase/cherry-pick re-land read as unmerged. ``git cherry`` compares by
+        patch-id and is what the gate uses.
+      * it never asked whether the branch's PR was already merged, so a finished
+        branch counted forever. The gate skips those via ``_branch_is_abandoned``.
+      * it matched only the exact name ``kanban/<task_id>``, missing the
+        descriptive-suffix branches workers routinely push
+        (``kanban/dwo-mcp-02-d5-audit``) that the gate finds by substring.
+
+    Measured on the live board 2026-08-15 before this change: of 506 tasks
+    reported stranded, 184 (36%) had branches whose PRs were ALL closed or
+    merged — 159 of them MERGED — and the gate skipped every one. That 36% is a
+    LOWER bound; only the most recent 1,000 PRs could be checked, so older
+    merged branches are not even in the count. Six of the eight tasks landed
+    that same day were reported stranded while their work was verifiably on
+    main, and the two that were not are exactly the two merged with a merge
+    commit rather than a squash.
+
+    ``exists`` is deliberately computed BEFORE the already-merged filter: a
+    ``validating`` row whose branch merged still HAS a branch, and reporting it
+    as branchless would move it from one false finding (stranded) to another
+    (orphan_validating).
+    """
+    try:
+        from tools.genesis.reflexes import kanban as _k
+
+        candidates = _k._branches_for_task(task_id, BASE_DIR, refs=refs)
+        if not candidates:
+            return False, 0
+        max_unmerged = 0
+        for ref in candidates:
+            if _k._branch_is_abandoned(ref, BASE_DIR):
                 continue
-            exists_any = True
-            log = subprocess.run(
-                ["git", "log", f"origin/{default_branch}..{ref}", "--oneline"],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
-            )
-            if log.returncode != 0:
+
+            # Fast path FIRST: `git cherry` computes a patch-id for every commit
+            # in the symmetric difference, which measured 1.4s per task here and
+            # projected to 4,503s for the board — an order of magnitude past the
+            # 300s watchdog on its own. A ref fully contained in origin is merged
+            # under any definition, so the expensive compare is never needed for
+            # it. Both fast paths are pure accelerators: they can only skip work
+            # whose answer is already known, never change one.
+            if merged is not None:
+                if ref in merged:
+                    continue
+            else:
+                ahead = subprocess.run(
+                    ["git", "rev-list", "--count", f"origin/{default_branch}..{ref}"],
+                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15,
+                )
+                if ahead.returncode == 0 and ahead.stdout.strip() in ("0", ""):
+                    continue
+
+            # Only now, for refs that genuinely sit ahead by ancestry, pay for
+            # patch-id equivalence — the squash/rebase/cherry-pick re-land case
+            # that ancestry alone gets wrong. Memoised per ref (see _CHERRY_CACHE).
+            if ref in _CHERRY_CACHE:
+                max_unmerged = max(max_unmerged, _CHERRY_CACHE[ref])
                 continue
-            n = len([ln for ln in log.stdout.splitlines() if ln.strip()])
+            cherry = subprocess.run(
+                ["git", "cherry", f"origin/{default_branch}", ref],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15,
+            )
+            if cherry.returncode != 0:
+                continue  # this compare errored — fail-open, and do NOT cache it
+            n = len([ln for ln in cherry.stdout.splitlines() if ln.startswith("+")])
+            _CHERRY_CACHE[ref] = n
             max_unmerged = max(max_unmerged, n)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("stranded_audit: git check %s errored (fail-open): %s", ref, exc)
-    return exists_any, max_unmerged
+        return True, max_unmerged
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stranded_audit: git check %s errored (fail-open): %s", task_id, exc)
+        return False, 0
+
+
+#: Back-compat alias. The old name said "count commits on kanban/<id>", which is
+#: no longer what it does, but external callers should not break on a rename.
+_branch_unmerged_count = _stranded_git_check
 
 
 def audit_stranded_tasks(
@@ -106,7 +285,30 @@ def audit_stranded_tasks(
             )
         except Exception:  # noqa: BLE001
             pass
-    check = git_check or (lambda tid: _branch_unmerged_count(tid, default_branch))
+        # One bulk PR query BEFORE the per-task walk. Without it the gate's
+        # _branch_is_abandoned issues a `gh` round-trip per branch and the run
+        # exceeds the 300s reflex watchdog — which is the state this module was
+        # actually in: circuit breaker open, 0 cards filed, 14 failures in 25 runs.
+    # One ref listing for the whole walk. Per-call it is a subprocess each, and
+    # this loop runs once per terminal task — the second half of the watchdog
+    # timeout. Snapshotting is safe HERE (unlike in the gate) because a branch
+    # pushed mid-audit belongs to work that is still in flight, which this
+    # retrospective audit is not trying to judge.
+    _refs = None
+    _merged = None
+    if git_check is None:
+        try:
+            from tools.genesis.reflexes.kanban import all_task_refs
+            _refs = all_task_refs(BASE_DIR)
+        except Exception as exc:  # noqa: BLE001 — fall back to per-call listing
+            logger.warning("stranded_audit: ref snapshot failed (%s)", exc)
+        # Priming needs the ref list, so it must come after the snapshot.
+        if fetch:
+            prime_pr_state_cache(refs=_refs)
+        _merged = merged_refs(default_branch)
+        _CHERRY_CACHE.clear()  # per-run: merge state changes between runs
+    check = git_check or (
+        lambda tid: _stranded_git_check(tid, default_branch, refs=_refs, merged=_merged))
 
     own = conn is None
     if own:
@@ -156,6 +358,12 @@ def audit_stranded_tasks(
         "stranded": stranded,
         "orphan_validating": orphan_validating,
         "clean_count": clean,
+        # State the posture rather than let an unmeasurable run look clean. When
+        # this is "unavailable" the already-merged filter could not run, so the
+        # stranded list is an UPPER bound carrying the 36% false-positive rate
+        # measured before the fix; "injected" means a caller supplied git_check
+        # and no PR state was consulted at all.
+        "pr_state_source": "injected" if git_check is not None else _PR_STATE_SOURCE,
     }
 
 
@@ -196,6 +404,25 @@ def _file_suggested_cards(findings: Dict) -> List[str]:
             "status": "suggested",
             "idempotency_key": f"stranded-audit-{f['id']}",
         })
+    # Bound the batch. Ids are stable so re-runs dedupe rather than pile up, but
+    # the FIRST run after this fix faces a backlog that had been accumulating
+    # unreported while the reflex sat circuit-broken — ~322 genuine findings on
+    # 2026-08-15. Filing all of them at once buries the board in `suggested`
+    # cards, and a remediation queue nobody can read gets ignored wholesale,
+    # which leaves the findings exactly as invisible as they were. The cap is
+    # per-run, not per-lifetime: the remainder arrives tomorrow, worst-first.
+    _dropped = 0
+    if len(specs) > _MAX_CARDS_PER_RUN:
+        _dropped = len(specs) - _MAX_CARDS_PER_RUN
+        specs = specs[:_MAX_CARDS_PER_RUN]
+        # Never let a cap read as "that was all of them" (CLAUDE.md: no silent
+        # truncation — a bounded run must say what it dropped).
+        logger.warning(
+            "stranded_audit: filed %d cards and DEFERRED %d more to the next run "
+            "(cap=%d); the findings still exist — see the JSON report for the full list",
+            len(specs), _dropped, _MAX_CARDS_PER_RUN)
+        findings["cards_deferred"] = _dropped
+
     if not specs:
         return []
     try:

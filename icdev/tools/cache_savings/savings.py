@@ -20,6 +20,44 @@ _CW  = 3.75 / 1_000_000      # $3.75/MTok cache write (25% premium)
 _CR  = 0.30 / 1_000_000      # $0.30/MTok cache read  (90% discount)
 
 
+#: Why the cache has no live entries. A zero hit rate is reported identically
+#: whether caching is broken, switched off, or simply cold — and on this
+#: platform "cold" is the COMMON case, because llm_response_cache is created
+#: UNLOGGED on PostgreSQL (tools/llm/response_cache.py) and PostgreSQL empties
+#: unlogged tables on any unclean shutdown or crash recovery. That is a
+#: deliberate trade (no WAL, fast cache writes), so the reset is expected
+#: behaviour and must not render as a failure.
+STATE_POPULATED   = "populated"
+STATE_DISABLED    = "disabled"        # response_cache.enabled is false
+STATE_UNREACHABLE = "unreachable"     # the query itself failed
+STATE_COLD        = "cold"            # table exists, zero rows at all
+STATE_EXPIRED     = "expired"         # rows exist but all past expires_at
+
+
+def _cache_state(enabled: bool, live_entries: int, stored_entries: int) -> str:
+    if not enabled:
+        return STATE_DISABLED
+    if live_entries > 0:
+        return STATE_POPULATED
+    return STATE_EXPIRED if stored_entries > 0 else STATE_COLD
+
+
+_STATE_DETAIL = {
+    STATE_POPULATED: "",
+    STATE_DISABLED: "response_cache.enabled is false in args/llm_config.yaml",
+    STATE_UNREACHABLE: "the cache table could not be queried",
+    STATE_COLD: (
+        "cache is cold — no entries at all. llm_response_cache is UNLOGGED on "
+        "PostgreSQL, which empties it on an unclean shutdown or crash recovery; "
+        "it refills from live router traffic, or run "
+        "`python tools/cache_savings/warmer.py --warm` to pre-populate it."
+    ),
+    STATE_EXPIRED: (
+        "every stored entry is past its TTL (response_cache.ttl_seconds); the "
+        "cache is warming rather than broken."
+    ),
+}
+
 def get_savings_stats(conn: Any = None) -> dict:
     """Return aggregated cache savings metrics.
 
@@ -59,7 +97,17 @@ def get_savings_stats(conn: Any = None) -> dict:
         ).fetchall()
     except Exception as exc:
         log.debug("cache savings query failed: %s", exc)
-        return _empty()
+        return _empty(state=STATE_UNREACHABLE)
+
+    # Stored rows IGNORING expiry. Without this, "never written" and "written
+    # and aged out" both present as zero, and only one of them is worth acting
+    # on. Best-effort: a failure here must not lose the numbers above.
+    stored_entries = 0
+    try:
+        _srow = conn.execute("SELECT COUNT(*) FROM llm_response_cache").fetchone()
+        stored_entries = int((_srow[0] if _srow else 0) or 0)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("cache savings stored-count failed: %s", exc)
 
     by_function = []
     t_entries = t_hits = t_avoided = t_cw = t_cr = 0
@@ -125,10 +173,17 @@ def get_savings_stats(conn: Any = None) -> dict:
         enabled, backend = False, "unknown"
 
     total_saved = t_resp_saved + t_ctx_saved
+    state = _cache_state(bool(enabled), t_entries, stored_entries)
     return {
         "enabled":      enabled,
         "backend":      backend,
         "window_hours": 168,
+        # Why the numbers below are what they are. A caller rendering 0% without
+        # this cannot tell a broken cache from a cold one.
+        "state":         state,
+        "state_detail":  _STATE_DETAIL.get(state, ""),
+        "stored_entries": stored_entries,
+        "unlogged":      str(backend).startswith("postgres"),
         "summary": {
             "total_entries":           t_entries,
             "total_hits":              t_hits,
@@ -148,7 +203,7 @@ def get_savings_stats(conn: Any = None) -> dict:
     }
 
 
-def _empty() -> dict:
+def _empty(state: str = STATE_UNREACHABLE) -> dict:
     summary = {
         "total_entries": 0, "total_hits": 0, "hit_count": 0, "miss_count": 0,
         "hit_rate_pct": 0.0, "cache_write_tokens": 0, "cache_read_tokens": 0,
@@ -156,4 +211,6 @@ def _empty() -> dict:
         "total_usd_saved": 0.0, "cost_usd_saved": 0.0, "context_cache_write_premium": 0.0,
     }
     return {"enabled": False, "backend": "unknown", "window_hours": 168,
+            "state": state, "state_detail": _STATE_DETAIL.get(state, ""),
+            "stored_entries": 0, "unlogged": False,
             "summary": summary, "by_function": []}

@@ -21,6 +21,33 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+#: Wall-clock of the last request this process served. Written by the
+#: `_mark_request_activity` after_request hook, read by the self-reload watcher
+#: to find a moment when re-exec drops nothing.
+_LAST_REQUEST_AT = 0.0
+
+#: The dashboard PREFERS to re-exec while quiet. A daemon reloads between
+#: cycles; a web server has no equivalent gap, so idleness is the substitute.
+#: Override with ICDEV_DASHBOARD_RELOAD_IDLE.
+_RELOAD_IDLE_SECONDS = float(os.environ.get("ICDEV_DASHBOARD_RELOAD_IDLE", "60"))
+
+#: ...but idleness alone is NOT a sufficient condition, and relying on it would
+#: have made this a reloader that never reloads. 44 dashboard templates poll on
+#: setInterval, several every 10-15s, so a single open browser tab refreshes
+#: _LAST_REQUEST_AT forever and the idle window never opens. That is the same
+#: declared-but-never-runs defect this whole change exists to remove.
+#:
+#: So once code has been known-stale for this long, reload regardless. Dropping
+#: one in-flight poll (which the page retries on its next tick) beats serving
+#: code from a quarter of an hour ago. Override with ICDEV_DASHBOARD_RELOAD_MAX_STALE.
+_RELOAD_MAX_STALE_SECONDS = float(
+    os.environ.get("ICDEV_DASHBOARD_RELOAD_MAX_STALE", "900"))
+
+#: How often the watcher looks. Cheap: an mtime scan plus a guarded fetch.
+#: code_reload rate-limits its own fetch to MIN_PULL_INTERVAL_SECONDS (300), so
+#: checking more often than that only re-scans mtimes.
+_RELOAD_CHECK_SECONDS = 60.0
+
 # ---------------------------------------------------------------------------
 # Path setup  (so `tools.dashboard.config` is importable when run directly)
 # ---------------------------------------------------------------------------
@@ -2479,6 +2506,18 @@ def create_app(testing: bool = False) -> Flask:
                 _rec(_tenant, "api_call")
         except Exception:
             pass
+        return response
+
+    @app.after_request
+    def _mark_request_activity(response):
+        """Timestamp the last served request, for the self-reload idle gate.
+
+        A daemon re-execs between cycles; a web server has no such moment, so
+        this manufactures one. Without it, picking up merged code would mean
+        dropping whatever requests and WebSocket connections were in flight.
+        """
+        global _LAST_REQUEST_AT
+        _LAST_REQUEST_AT = time.time()
         return response
 
     # ---- Auto-register A2A agents from card files ----
@@ -6156,6 +6195,10 @@ def create_app(testing: bool = False) -> Flask:
                 query=query,
                 top_k=top_k,
                 source_types=source_types,
+                # trust-self-02: knowledge search is a chat_rag surface (see the
+                # args/trust_gate.yaml profile), so per-surface retrieval
+                # toggles apply here.
+                surface="chat_rag",
             )
             return jsonify(
                 {
@@ -6684,7 +6727,8 @@ def create_app(testing: bool = False) -> Flask:
         try:
             from tools.rag.retriever import RAGRetriever
             retriever = RAGRetriever()
-            results = retriever.search(query=query, top_k=top_k)
+            # trust-self-02: /ask-icdev + components-map ask are chat_rag.
+            results = retriever.search(query=query, top_k=top_k, surface="chat_rag")
             hits = []
             for r in results:
                 if hasattr(r, "to_dict"):
@@ -10260,6 +10304,74 @@ def create_app(testing: bool = False) -> Flask:
     return app
 
 
+def _start_self_reload_watcher() -> None:
+    """Re-exec the dashboard when its code changes — but only while idle.
+
+    The dashboard serves code it imported once, so a merged fix is inert here
+    until a human restarts it, exactly as it was for the daemons. The difference
+    is that a daemon has a natural safe point between cycles and a web server
+    does not: re-execing while requests are in flight resets those connections.
+    So this waits for _RELOAD_IDLE_SECONDS of silence and treats that as the
+    equivalent gap.
+
+    Its spawned kanban_scheduler child is NOT orphaned into a duplicate: os.execv
+    replaces this process without killing the child, and the replacement's
+    heartbeat dedup then sees a live scheduler and declines to start another.
+    The child carries its own code_reload, so it updates itself.
+
+    Off by default is deliberately NOT the choice here — an opt-in reloader is
+    one more capability that exists and never runs. Set
+    ICDEV_DASHBOARD_SELF_RELOAD=0 to disable it.
+    """
+    if os.environ.get("ICDEV_DASHBOARD_SELF_RELOAD", "1").strip().lower() in (
+            "0", "false", "no", "off"):
+        print("[ICDEV™ Dashboard] self-reload disabled (ICDEV_DASHBOARD_SELF_RELOAD=0)")
+        return
+    try:
+        from tools.genesis import code_reload as _cr
+    except Exception as exc:  # noqa: BLE001 — reloading is optional
+        print(f"[ICDEV™ Dashboard] self-reload unavailable ({exc})")
+        return
+
+    baseline = _cr.snapshot()
+    started_at = time.time()
+    stale_since = [0.0]  # when code was first observed changed; 0.0 = not stale
+
+    def _watch() -> None:
+        while True:
+            time.sleep(_RELOAD_CHECK_SECONDS)
+            try:
+                now = time.time()
+                # Is there anything to pick up? changed_files() is a pure mtime
+                # comparison; restart_if_code_changed does the guarded fetch.
+                changed = _cr.changed_files(baseline, _cr.snapshot())
+                if not changed:
+                    stale_since[0] = 0.0
+                    continue
+                if not stale_since[0]:
+                    stale_since[0] = now
+                    print(f"[ICDEV™ Dashboard] {len(changed)} changed file(s) "
+                          f"pending — will reload when idle")
+
+                idle = now - _LAST_REQUEST_AT >= _RELOAD_IDLE_SECONDS
+                too_stale = now - stale_since[0] >= _RELOAD_MAX_STALE_SECONDS
+                if not (idle or too_stale):
+                    continue
+                if too_stale and not idle:
+                    print(f"[ICDEV™ Dashboard] code stale "
+                          f"{now - stale_since[0]:.0f}s and never idle "
+                          f"(polling UI) — reloading anyway")
+                # Never mid-request when we can help it. _LAST_REQUEST_AT is 0.0
+                # until the first request, which correctly reads as idle.
+                _cr.restart_if_code_changed(baseline, started_at=started_at)
+            except Exception as exc:  # noqa: BLE001 — watching must not kill the server
+                print(f"[ICDEV™ Dashboard] code-change check failed: {exc}")
+
+    threading.Thread(target=_watch, name="dashboard-self-reload", daemon=True).start()
+    print(f"[ICDEV™ Dashboard] self-reload armed "
+          f"(idle >= {_RELOAD_IDLE_SECONDS:.0f}s)")
+
+
 app = create_app()
 
 if __name__ == "__main__":
@@ -10432,6 +10544,8 @@ if __name__ == "__main__":
         else:
             print("[ICDEV™ Dashboard] TLS enabled (server-only; no client CA)")
         _ssl_context = _ctx
+
+    _start_self_reload_watcher()
 
     # Use SocketIO runner if available (D170), otherwise plain Flask
     # use_reloader=False: prevents Werkzeug's stat-based reloader from spawning

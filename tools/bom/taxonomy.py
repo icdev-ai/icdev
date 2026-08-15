@@ -207,17 +207,27 @@ def propose(
 
     try:
         res = cortex.extract(prompt, PROPOSE_SCHEMA, ctx)
+    except cortex.CortexSchemaError as exc:        # non-conforming after one repair
+        # Distinct from the outage below on purpose: the router answered, the
+        # MODEL did not produce the schema. Both fall to the deterministic
+        # floor, but a note saying "llm unavailable" for a live provider sends
+        # whoever reads it to the wrong subsystem.
+        return Taxonomy(categories=[], derived_by="deterministic",
+                        note=f"model did not return the schema: {exc}")
     except Exception as exc:                       # offline, air-gap, exhausted
         return Taxonomy(categories=[], derived_by="deterministic",
                         note=f"llm unavailable: {exc}")
 
-    if not res.metadata.get("schema_valid", True):
+    # extract now refuses rather than degrading, so reaching here means the
+    # payload conformed -- or that conformance was UNMEASURABLE (schema_valid
+    # is None), which is not a pass. `.get(..., True)` would read a missing key
+    # as valid; None is falsy either way, so both fall through to the floor.
+    if not res.metadata.get("schema_valid"):
         return Taxonomy(categories=[], derived_by="deterministic",
                         note="model did not return the schema")
 
-    try:
-        payload = json.loads(res.text)
-    except (ValueError, TypeError):
+    payload = res.data.get("payload")
+    if not isinstance(payload, dict):
         return Taxonomy(categories=[], derived_by="deterministic",
                         note="model returned unparseable output")
 

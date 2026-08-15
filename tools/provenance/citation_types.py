@@ -59,6 +59,15 @@ CITATION_TYPES: Tuple[str, ...] = (
     # stayed None, anchor_status stayed "skipped", and the registry_id/tx_id
     # back-fill never ran — asset tokenization has never anchored to the chain.
     "asset_token",
+    # trust-anchor-02: one TRUST gate verdict, as anchorable evidence. The
+    # registry row's source_hash is the composed leaf
+    # sha256(artifact_hash|findings_hash|delta_chain_hash|approver) rendered by
+    # tools/provenance/trust_validation.py, and source_doc carries the four
+    # components so the leaf can be RECOMPUTED at anchor time rather than
+    # trusted. Anchoring runs on the existing 30-minute govchain_anchor reflex —
+    # a trust_validation row is swept by ChainAnchor.periodic_anchor like any
+    # other unanchored citation, so no new reflex exists to go inert.
+    "trust_validation",
 )
 
 #: Types whose provenance detail lives in a companion table.

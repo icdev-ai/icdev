@@ -1191,10 +1191,50 @@ def api_publish(session_id: str):
         logger.exception("IDR publish failed: session=%s", session_id)
         return jsonify({"error": "Publish failed — check logs"}), 500
 
+    # ── Anchorable validation record (trust-anchor-02) ────────────────────────
+    # The idr_publish_audit rows above are local: whoever can write this database
+    # can rewrite them, and they say nothing about the artifact's edit history.
+    # This registers ONE citation whose hash binds all four facts —
+    # sha256(artifact_hash | findings_hash | delta_chain_hash | approver) — and
+    # the existing 30-minute govchain_anchor reflex Merkle-anchors it.
+    #
+    # After stage8_publish, deliberately: a validation record for an artifact
+    # that never published would attest something that did not happen.
+    #
+    # A failure here does NOT undo the publish. The approval is already an
+    # accomplished fact recorded in idr_publish_audit, and rolling a published
+    # document back because a provenance write failed would destroy the more
+    # reliable record to protect the weaker one. It is REPORTED instead — in the
+    # response as `validation_anchored` and at warning level — because a
+    # swallowed provenance write is exactly how citation_type='cortex' recorded
+    # 0 of 285 rows without anything going red.
+    validation_anchored = False
+    try:
+        from tools.provenance.trust_validation import record_validation
+
+        record_validation(
+            artifact_id=session_id,
+            approver=reviewer,
+            artifact_text=doc_text,
+            findings=[f for f in ((trust.get("verdict") or {}).get("findings") or [])],
+            classification=classification,
+        )
+        validation_anchored = True
+    except Exception as exc:  # noqa: BLE001 — see comment above
+        logger.warning(
+            "IDR publish: TRUST validation record NOT registered for session=%s "
+            "reviewer=%s — this publish will not be anchored: %s",
+            session_id, reviewer, exc,
+        )
+
     logger.info(
         "IDR publish complete: session=%s artifacts=%d", session_id, len(artifacts)
     )
-    return jsonify({"published": True, "artifacts": artifacts}), 201
+    return jsonify({
+        "published": True,
+        "artifacts": artifacts,
+        "validation_anchored": validation_anchored,
+    }), 201
 
 
 # ─── API — Artifacts ──────────────────────────────────────────────────────────

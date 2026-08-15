@@ -65,8 +65,22 @@ def _quoted_values(text: str) -> set:
     return set(re.findall(r"'([a-z_]+)'", text))
 
 
+def _migration_order_key(path: pathlib.Path) -> tuple:
+    """Oldest-first, matching MigrationRunner.discover_migrations exactly.
+
+    Sorting on the NAME is wrong once both id families exist: '2' < '3', so a
+    lexicographic sort puts every 20260815-style timestamp BEFORE 330_. Sorting
+    on (digit-count, digits) makes every 3-digit legacy version precede every
+    14-digit timestamp, which is the runner's own rule.
+    """
+    stem = path.parent.name if path.name in ("up.sql", "down.sql") else path.name
+    m = re.match(r"^(\d+)_", stem)
+    digits = m.group(1) if m else ""
+    return (len(digits), digits, stem)
+
+
 def _constraint_migrations() -> list:
-    """Every migration that renders the citation_type CHECK, lowest number first.
+    """Every migration that renders the citation_type CHECK, oldest first.
 
     Resolved by content rather than by a hardcoded filename. The previous
     version pinned "295_web_citation_type_and_fetch_provenance.sql"; that file
@@ -74,14 +88,38 @@ def _constraint_migrations() -> list:
     pinning ONE migration is wrong in principle anyway, because each new type
     ships its own migration and every earlier one becomes a historical snapshot
     that must drift.
+
+    BOTH migration shapes are scanned. The flat ``NNN_slug.sql`` sequence is
+    CLOSED — every migration created from 2026-08 onward is a
+    ``YYYYMMDDHHMMSS_slug/`` directory holding ``up.sql`` — so a glob of
+    ``*.sql`` alone stops seeing new migrations entirely, and the "latest"
+    assertion below silently re-checks a historical snapshot forever. That is
+    the same silent-failure shape this helper was already rewritten once to fix.
     """
+    root = REPO / "tools" / "db" / "migrations"
+    candidates = list(root.glob("*.sql")) + list(root.glob("*/up.sql"))
     found = []
-    for path in sorted((REPO / "tools" / "db" / "migrations").glob("*.sql")):
+    for path in sorted(candidates, key=_migration_order_key):
         text = path.read_text(encoding="utf-8")
         m = re.search(r"CHECK \(citation_type IN \(([^)]+)\)\)", text)
         if m:
             found.append((path, m.group(1)))
     return found
+
+
+def test_the_scan_sees_directory_migrations():
+    """A glob that misses the shape new migrations use checks nothing.
+
+    Without this, adding a citation type in a timestamped directory migration
+    leaves `test_latest_constraint_migration_matches_the_constant` comparing
+    against migration 330 forever — green, and blind.
+    """
+    paths = [p for p, _ in _constraint_migrations()]
+    assert any(p.name == "up.sql" for p in paths), (
+        "no directory-shaped migration renders the citation_type CHECK — either "
+        "the glob regressed to *.sql only, or the newest type shipped as a flat "
+        "NNN_ file, which the closed legacy sequence forbids"
+    )
 
 
 def test_latest_constraint_migration_matches_the_constant():
@@ -187,9 +225,12 @@ def test_detail_table_mapping_points_at_a_real_table():
         assert citation_type in ct.CITATION_TYPES, (
             f"DETAIL_TABLES maps {citation_type!r}, which is not a valid citation type"
         )
+        root = REPO / "tools" / "db" / "migrations"
         created = any(
             f"CREATE TABLE IF NOT EXISTS {table}" in p.read_text(encoding="utf-8")
-            for p in (REPO / "tools" / "db" / "migrations").glob("*.sql")
+            # Both shapes — see _constraint_migrations. A *.sql-only glob stops
+            # seeing migrations created from 2026-08 onward.
+            for p in list(root.glob("*.sql")) + list(root.glob("*/up.sql"))
         )
         assert created, (
             f"DETAIL_TABLES[{citation_type!r}] = {table!r} but no migration creates it"

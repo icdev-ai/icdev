@@ -59,6 +59,15 @@ FINDING_TYPES = (
 
 SEVERITY_LEVELS = ("critical", "high", "medium", "low")
 
+# The inverse question, asked of every check the plan introduces or relies on
+# (D396/D397, trust-disc-06).  Every check in this codebase is written by the same
+# process that writes the code, in the same session, in the environment where the
+# author's mental model holds; nothing asks the inverse, which is precisely what a
+# second, differently-motivated reader supplies for free.  Overridable via
+# ``anvil_critique.adversarial_question`` in the YAML — this constant is the
+# fallback, so deleting the key does not silently delete the question.
+ADVERSARIAL_QUESTION = "Under what condition does this check PASS while the system is BROKEN?"
+
 SESSION_STATUSES = (
     "in_progress",
     "go",
@@ -572,6 +581,11 @@ class AtlasCritique:
         """
         critics = self._config.get("critics", [])
         results: List[dict] = []
+        # Falls back to the constant so removing the YAML key cannot silently
+        # drop the question from every critic prompt.
+        adversarial_question = (
+            str(self._config.get("adversarial_question") or "").strip() or ADVERSARIAL_QUESTION
+        )
 
         def _invoke_critic(critic_cfg: dict) -> dict:
             agent = critic_cfg["agent"]
@@ -582,6 +596,14 @@ class AtlasCritique:
             prompt = (
                 f"{prompt_context}\n\n"
                 f"Focus on these finding types: {', '.join(focus_areas)}\n\n"
+                "MANDATORY — ask this of every check, test, gate, or assertion the "
+                "plan introduces or relies on, whatever your focus area:\n"
+                f"  {adversarial_question}\n"
+                "Where you can name the condition concretely, that answer IS a test "
+                'case: report it as a "testing_gap" finding with the condition in '
+                '"evidence" and the test to write in "suggested_fix". If you cannot '
+                "construct one, say so explicitly — an unanswered question is "
+                "indistinguishable from one that was never asked.\n\n"
                 f"Plan to review:\n{phase_output}\n\n"
                 "Return your findings as a JSON array.  Each finding must have:\n"
                 '  "finding_type": one of ' + str(FINDING_TYPES) + "\n"

@@ -1062,6 +1062,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Cache Savings tile renderer
 (function () {
+    // Local — the `esc` further down this file is a var inside a different
+    // IIFE and is NOT in scope here; calling it would throw a ReferenceError
+    // and blank the whole tile. Same shape as that one.
+    var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function (s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+
     function renderCacheTile() {
         fetch('/api/cache-savings/tile').then(function (r) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1071,7 +1078,16 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!el) return;
             var statusColor = d.enabled ? '#22c55e' : '#ef4444';
             var statusLabel = d.enabled ? 'Enabled' : 'Disabled';
-            var hitColor = (d.hit_rate_pct >= 50) ? '#22c55e' : (d.hit_rate_pct >= 20) ? '#f59e0b' : '#ef4444';
+            // A cold or expired cache is NOT a failure and must not render as
+            // one. llm_response_cache is UNLOGGED on PostgreSQL, so the server
+            // empties it on any unclean shutdown — the common reason this tile
+            // reads zero. Only 'populated' earns the red/amber/green hit-rate
+            // scale; every other state gets a neutral colour and says why.
+            var cold = (d.state === 'cold' || d.state === 'expired');
+            var hitColor = cold ? 'var(--text-dim,#6c6c80)'
+                : (d.hit_rate_pct >= 50) ? '#22c55e'
+                : (d.hit_rate_pct >= 20) ? '#f59e0b' : '#ef4444';
+            if (cold) { statusColor = '#f59e0b'; statusLabel = (d.state === 'cold') ? 'Enabled · cold' : 'Enabled · warming'; }
             el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
                 + '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>'
                 + '<span style="font-size:11px;color:var(--text-dim);">' + statusLabel + ' &middot; backend: ' + (d.backend || 'unknown') + '</span>'
@@ -1082,10 +1098,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.total_entries || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Entries</div></div>'
                 + '<div><div style="font-size:16px;font-weight:600;color:#818cf8;">' + (d.tokens_saved || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Read Tokens</div></div>'
                 + '</div>'
+                + (d.state_detail
+                    ? '<div style="font-size:10px;color:var(--text-dim);line-height:1.4;margin-bottom:6px;">'
+                      + esc(d.state_detail) + '</div>'
+                    : '')
                 + '<div style="margin-top:4px;"><a href="/cache-savings" class="btn" style="font-size:11px;padding:3px 10px;">View dashboard</a></div>';
         }).catch(function () {
             var el = document.getElementById('tile-cache');
-            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Cache stats unavailable</div>';
+            // Distinct from a cold cache: this is the endpoint itself failing.
+            if (el) el.innerHTML = '<div style="color:#ef4444;">Cache stats endpoint unreachable</div>';
         });
     }
     document.addEventListener('DOMContentLoaded', renderCacheTile);

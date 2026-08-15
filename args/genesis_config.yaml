@@ -224,6 +224,20 @@ reflexes:
       operator: gte
     targets_file: context/genesis/competitors.yaml
 
+  cache_warm:
+    enabled: true
+    risk_tier: green
+    a2a_eligible: false
+    schedule: every 4h
+    interval_seconds: 14400
+    timeout_seconds: 600
+    description: >-
+      Refill the LLM response cache after it resets. llm_response_cache is
+      UNLOGGED on PostgreSQL, so the server empties it on any unclean shutdown
+      and the cache goes cold until live traffic refills it. The reflex warms
+      ONLY when get_savings_stats() reports state == "cold" — warming makes real
+      LLM calls, so a populated or merely TTL-expired cache is a no-op.
+    success_metric: {name: seeds_warmed, threshold: 0, operator: gte}
   audit:
     enabled: true
     risk_tier: green
@@ -615,6 +629,18 @@ reflexes:
     risk_tier: green
     schedule: "every 24h"
     interval_seconds: 86400
+    # The 300s default was mis-sized for this job, not generous-but-tight: it
+    # walks every terminal task (3,169) and must compare each genuinely-divergent
+    # branch against main by PATCH-ID, which is the only comparison that survives
+    # a squash merge. Measured 2026-08-15: ~280 such branches at ~2.0s each, and
+    # `git rev-list --cherry-pick` costs exactly the same as `git cherry` -- the
+    # work is irreducible, so the budget has to fit it. Everything cheaper was
+    # already removed (one bulk PR query instead of 3,007; one merged-ref listing
+    # instead of one rev-list per ref; per-ref memoisation of the compare), which
+    # is what took a >15min run down to ~10.
+    # It ran 25 times, failed 14, tripped its breaker and filed ZERO cards -- a
+    # daily audit that reports nothing is indistinguishable from a clean board.
+    timeout_seconds: 1200
     description: "Reconcile done/validating kanban tasks vs origin/main; file [STRANDED] suggested cards for branches with unmerged commits (built-but-never-merged)"
     success_metric:
       name: stranded_tasks_found
