@@ -73,6 +73,76 @@ classes:
       Skills queued for GEPA optimization as pending agent_improvement_artifacts.
       Consumption is an artifact GEPA actually applied.
 
+# ---------------------------------------------------------------------------
+# Substrate probing (#trust-disc-04)
+# ---------------------------------------------------------------------------
+# A capability is something the platform says it can DO. A substrate is what a
+# capability is designed AGAINST: a table, a column, a config block. An approved
+# plan described kg_ontology as a working SHACL-lite supplying declared
+# (subject_type, predicate, object_type) legality; on the live board kg_nodes
+# held 8,869 rows, kg_edges 16,493, and kg_ontology, ontology_subclass_closure
+# and kg_nodes.ontology_id held nothing at all. The validator built on the empty
+# half would have answered "unknown" forever while looking like it worked. One
+# SELECT COUNT(*) would have caught it and nothing asked for one.
+substrate_probe:
+  # Proof the database being probed has actually been RUN. ANY satisfied witness
+  # is enough. Below every threshold the probe reports table substrates as
+  # UNMEASURABLE instead of empty — 1,320 of 1,775 tables on the live board hold
+  # zero rows, so a probe that cannot tell "this platform has never run" from
+  # "this writer was never wired" invents findings by the thousand, and the
+  # first place it would do that is a fresh worktree or an ephemeral CI database.
+  history_witnesses:
+    - table: audit_trail
+      min_rows: 1000
+    - table: kg_nodes
+      min_rows: 100
+    - table: kanban_tasks
+      min_rows: 100
+
+  # Table names never read as a substrate reference in prose. A bare word is
+  # already required to carry an underscore (which is what keeps `tasks`,
+  # `users`, `documents`, `groups`, `agents` and `order` — all real tables here —
+  # out of every English sentence), so this list is for the underscore-carrying
+  # names that still read as ordinary words in a design document.
+  ignore_names: []
+
+# Substrates the platform DECLARES as load-bearing: something shipped is
+# designed against each of these, so a zero here is a shipped feature answering
+# from an empty half. Probed by `--substrates`. This list is CURATED, not a
+# schema dump — the value of the probe is that every entry is a claim somebody
+# made, and a claim can be wrong in a way a table count cannot.
+substrates:
+  - ref: kg_ontology
+    note: >-
+      Declared (subject_type, predicate, object_type) legality — the SHACL-lite
+      half of the KG. tools/quality/kg_grounding.py degrades to OBSERVED
+      signatures while this is empty, and upgrades to DECLARED the moment it
+      gains rows.
+  - ref: ontology_subclass_closure
+    note: >-
+      The transitive subclass closure that ontology/federation.py writes and
+      knowledge_graph/ingester.py::_populate_kg_ontology reads to build
+      kg_ontology. Empty upstream is why kg_ontology is empty downstream.
+  - ref: kg_nodes.ontology_id
+    note: >-
+      The per-node link into the ontology. 8,869 nodes, none of them linked —
+      the column exists, the migration ran, nothing populates it.
+  - ref: prompt_versions
+    note: >-
+      The prompt registry's only table. LLMRouter reads it as a supplemental
+      prompt layer, so an unseeded registry is a silently inert read path.
+  - ref: agent_approval_log
+    note: >-
+      Every approval-gate decision. A gate whose decision log is empty has never
+      gated anything — see grandfathered.agent_approval_rule in
+      args/liveness_gate.yaml.
+  - ref: hook_events
+    note: >-
+      PreToolUse hook telemetry. Populated, but it stores tool-input KEY NAMES
+      and never the operand, which is why a fire-rate survey has to be driven
+      from the Claude Code transcripts instead. Listed so that "it has rows"
+      never gets read as "it can answer the question".
+
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,
 # because an unmeasurable capability is exactly the state that let these ship.

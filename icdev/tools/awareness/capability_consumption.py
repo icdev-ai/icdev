@@ -41,12 +41,25 @@ above gets shipped:
    classes, not on inert ones. Inertness is a finding for a human; an
    unmeasurable capability class is a defect in the measurement itself.
 
+The same measurement runs one layer down, on SUBSTRATES — the tables, columns
+and config blocks a capability is designed *against*. That half is probed on
+demand against a named plan or diff, so a design built on an empty substrate is
+reported before the code exists rather than after it ships answering "unknown"
+forever. See the "Substrates" section below for why it is on-demand and not a
+sweep.
+
 CLI:
     python tools/awareness/capability_consumption.py --json
     python tools/awareness/capability_consumption.py --json --window-days 7
     python tools/awareness/capability_consumption.py --json --class reflex
     python tools/awareness/capability_consumption.py --known-inert --json
     python tools/awareness/capability_consumption.py --gate
+
+    # Substrate half — run these BEFORE designing against a substrate
+    python tools/awareness/capability_consumption.py --probe-plan plan.md --substrate-gate
+    python tools/awareness/capability_consumption.py --probe-substrate kg_ontology
+    python tools/awareness/capability_consumption.py --probe-diff origin/main --json
+    python tools/awareness/capability_consumption.py --substrates
 """
 from __future__ import annotations
 
@@ -736,6 +749,736 @@ PROBES: Dict[str, Callable[..., ClassResult]] = {
 
 
 # ---------------------------------------------------------------------------
+# Substrates — the same measurement, one layer down, taken BEFORE the design
+#
+# A capability is something the platform says it can DO. A substrate is what a
+# capability is designed AGAINST: a table, a column, a config block. The defect
+# is the same shape and the measurement is the same shape — declared versus
+# actually there — but a substrate can be checked before a line of code exists,
+# which is the only time checking it is cheap.
+#
+# trust-disc-04: an approved implementation plan described ``kg_ontology`` as a
+# working SHACL-lite supplying declared (subject_type, predicate, object_type)
+# legality. Measured on the live board the same afternoon:
+#
+#     kg_nodes                   8,869 rows   populated
+#     kg_edges                  16,493 rows   populated
+#     kg_ontology                    0 rows   inert
+#     ontology_subclass_closure      0 rows   inert (the source that feeds it)
+#     kg_nodes.ontology_id           0 populated
+#
+# The declared-ontology chain was inert end to end while the graph beneath it
+# was rich, so a validator built on the empty half would have answered
+# "unknown" forever while looking like it worked. One SELECT COUNT(*) would
+# have caught it and nothing asked for one. This asks for one.
+#
+# Three rules, two carried verbatim from the capability half because breaking
+# them is how a measurement tool becomes worse than no measurement:
+#
+#   1. A zero from an empty DATABASE is not a finding. A fresh worktree, an
+#      ephemeral CI database or an unreachable backend makes every substrate on
+#      the platform look inert — on the live PostgreSQL board 1,320 of 1,775
+#      tables are empty, so a probe that cannot tell "nobody has run this
+#      platform" from "nobody wired this writer" fabricates findings by the
+#      thousand. ``operating_history`` draws that line and the whole report
+#      degrades to unmeasurable rather than guessing.
+#   2. ABSENT and EMPTY are different answers and are never merged. A table
+#      that does not exist means a migration has not run in *this* database; a
+#      table that exists with zero rows means a writer has not run anywhere.
+#      Only the second is the defect this was built for.
+#   3. A substrate is probed on demand, against a named plan or diff. It is not
+#      a background sweep: given 1,320 empty tables, "list the empty tables" is
+#      noise, and "does the thing I am about to build on have rows" is an
+#      answer.
+# ---------------------------------------------------------------------------
+
+#: Statuses that mean "code was designed against something that is not there".
+#: ``absent`` is deliberately NOT one of them for a table — see rule 2 above.
+SUBSTRATE_FINDING_STATUSES = frozenset({"empty", "column_unpopulated", "config_absent"})
+
+#: Witness tables proving the database being probed has actually been run.
+#: ANY satisfied witness is enough. The thresholds are high enough that a
+#: conftest schema or a CI run that happened to write a few audit rows does not
+#: clear them — a fabricated finding is worse here than a missed one, because
+#: the whole value of this probe is that its zeroes can be trusted.
+DEFAULT_HISTORY_WITNESSES: Tuple[Dict[str, Any], ...] = (
+    {"table": "audit_trail", "min_rows": 1000},
+    {"table": "kg_nodes", "min_rows": 100},
+    {"table": "kanban_tasks", "min_rows": 100},
+)
+
+#: A bare word is only read as a table name when it carries an underscore.
+#: Without that, ``tasks``, ``users``, ``documents``, ``groups``, ``agents`` and
+#: ``order`` — all real tables in this schema — make every English sentence in
+#: a plan a substrate reference. A name inside SQL context (FROM/JOIN/INTO/…)
+#: needs no such guard, because the context is the evidence.
+_BARE_REF_RE = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)(?:\.([A-Za-z_][A-Za-z0-9_]*))?\b")
+#: The keyword is captured, not discarded, because reading a substrate and
+#: writing one are opposite findings. Code that adds ``INSERT INTO x`` is
+#: populating x — that is the fix, not the defect — so a write-only reference
+#: is recorded and then not counted. The longer forms lead the alternation so
+#: ``DELETE FROM`` is never mistaken for a read of the same table.
+_SQL_CONTEXT_RE = re.compile(
+    r"\b(DELETE\s+FROM|INSERT\s+INTO|CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|"
+    r"FROM|JOIN|INTO|UPDATE|TABLE)\s+[\"'`\[]?([A-Za-z_][A-Za-z0-9_]*)",
+    re.IGNORECASE,
+)
+#: Match kinds that mean "this design consumes the substrate".
+_READ_MATCH_KINDS = frozenset({"read_sql", "bare_name", "declared", "explicit"})
+#: ``kg_nodes.py`` is a module, not a column. So is ``.md``, ``.sql``, ``.json``.
+_NON_COLUMN_ATTRS = frozenset({
+    "py", "md", "sql", "json", "jsonl", "yaml", "yml", "html", "txt", "csv",
+    "js", "ts", "tsx", "sh", "ps1", "ini", "cfg", "toml", "db", "png", "log",
+})
+_CONFIG_REF_SEP = "::"
+
+
+@dataclass
+class SubstrateResult:
+    """One substrate reference and what is actually in it.
+
+    ``status`` is the whole point and its vocabulary is deliberately narrow:
+
+        populated           rows exist (column: non-null values exist)
+        empty               the table exists and holds no rows — THE finding
+        column_unpopulated  the table holds rows, the column is 100% NULL
+        column_absent       the table exists, the column does not
+        absent              no such table in this database
+        config_populated    config key resolves to a non-empty value
+        config_empty        config key resolves to null/[]/{}/''
+        config_absent       config file or key path does not exist
+        unmeasurable        the probe could not answer, and says so
+    """
+
+    ref: str
+    kind: str = "table"  # table | column | config
+    table: str = ""
+    column: Optional[str] = None
+    config_path: str = ""
+    config_key: str = ""
+    status: str = "unmeasurable"
+    rows: Optional[int] = None
+    populated: Optional[int] = None
+    measurable: bool = False
+    unmeasured_reason: Optional[str] = None
+    references: List[str] = field(default_factory=list)
+    #: The subset of ``references`` that are actual reads. A module that names a
+    #: substrate in its docstring and queries it 190 lines later must report the
+    #: query, or the reader looks at prose and concludes the check misfired.
+    read_references: List[str] = field(default_factory=list)
+    match_kinds: List[str] = field(default_factory=list)
+    note: str = ""
+    superseded_by: Optional[str] = None
+
+    @property
+    def is_finding(self) -> bool:
+        """A finding is an empty substrate this change actually READS.
+
+        Two exclusions, both measured rather than guessed. Over the last 40
+        commits on main, whole-file scanning would have fired on 68% of them
+        and diff-scoped scanning on 22%; charging a commit for a table it only
+        writes to — the change that FIXES an empty substrate — is a third of
+        what remained, and a column finding under an already-reported empty
+        table is another third. A check that fires on two commits in three
+        gets switched off, and then it measures nothing at all.
+        """
+        if self.status not in SUBSTRATE_FINDING_STATUSES:
+            return False
+        if self.superseded_by:
+            return False
+        if self.match_kinds and not (set(self.match_kinds) & _READ_MATCH_KINDS):
+            return False
+        return True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "ref": self.ref,
+            "kind": self.kind,
+            "table": self.table,
+            "column": self.column,
+            "config_path": self.config_path,
+            "config_key": self.config_key,
+            "status": self.status,
+            "rows": self.rows,
+            "populated": self.populated,
+            "measurable": self.measurable,
+            "unmeasured_reason": self.unmeasured_reason,
+            "references": self.references,
+            "read_references": self.read_references,
+            "match_kinds": self.match_kinds,
+            "note": self.note,
+            "superseded_by": self.superseded_by,
+            "is_finding": self.is_finding,
+        }
+
+
+def parse_substrate_ref(ref: str) -> SubstrateResult:
+    """Split ``table`` / ``table.column`` / ``file.yaml::key.path`` into a result shell."""
+    ref = str(ref).strip()
+    if _CONFIG_REF_SEP in ref:
+        path, _, key = ref.partition(_CONFIG_REF_SEP)
+        return SubstrateResult(
+            ref=ref, kind="config", config_path=path.strip(), config_key=key.strip()
+        )
+    table, _, column = ref.partition(".")
+    if column:
+        return SubstrateResult(ref=ref, kind="column", table=table, column=column)
+    return SubstrateResult(ref=ref, kind="table", table=table)
+
+
+def _known_tables(conn) -> Optional[set]:
+    """Every table name in the database, or None if the catalogue is unreadable.
+
+    None and ``set()`` are different answers: an empty catalogue would mean
+    "this database has no tables", which is a claim, whereas None means the
+    probe could not look — and an unreadable catalogue must not read as a clean
+    board.
+    """
+    from tools.db.storage import is_pg
+
+    try:
+        if is_pg(conn):
+            rows = conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public'"
+            ).fetchall()
+            return {str(dict(r)["table_name"]) for r in rows}
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        ).fetchall()
+        return {str(dict(r)["name"]) for r in rows}
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("table catalogue unreadable: %s", exc)
+        _rollback(conn)
+        return None
+
+
+def _quoted(identifier: str) -> str:
+    """Double-quote a validated identifier.
+
+    Quoting is not cosmetic: ``order`` is a real table in this schema and a
+    reserved word in both backends, so the unquoted form is a syntax error that
+    would surface as ``unmeasurable`` on a table that is perfectly measurable.
+    The caller has already asserted the identifier is a plain word, so there is
+    nothing inside the quotes to escape.
+    """
+    if not _IDENTIFIER_RE.fullmatch(identifier):
+        raise ValueError(f"not a plain SQL identifier: {identifier!r}")
+    return f'"{identifier}"'
+
+
+def _row_count(conn, table: str) -> int:
+    return int(dict(conn.execute(f"SELECT COUNT(*) AS n FROM {_quoted(table)}").fetchone())["n"] or 0)
+
+
+def _nonnull_count(conn, table: str, column: str) -> int:
+    sql = (
+        f"SELECT COUNT({_quoted(column)}) AS n FROM {_quoted(table)}"
+    )
+    return int(dict(conn.execute(sql).fetchone())["n"] or 0)
+
+
+def operating_history(conn, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Has this database been run enough for a zero to mean anything?
+
+    Returns ``has_history`` plus the per-witness evidence, so a caller that
+    degrades to "unmeasurable" can say exactly which witness it looked at
+    rather than asserting an unexplained warn.
+    """
+    cfg = (config or {}).get("substrate_probe") or {}
+    witnesses = cfg.get("history_witnesses") or DEFAULT_HISTORY_WITNESSES
+    catalogue = _known_tables(conn)
+    if catalogue is None:
+        return {
+            "has_history": False,
+            "witnesses": [],
+            "reason": "table catalogue unreadable — cannot tell an empty platform from an unreachable one",
+        }
+
+    evidence: List[Dict[str, Any]] = []
+    satisfied = False
+    for entry in witnesses:
+        if not isinstance(entry, dict):
+            continue
+        table = str(entry.get("table") or "")
+        try:
+            minimum = max(1, int(entry.get("min_rows") or 1))
+        except (TypeError, ValueError):
+            minimum = 1
+        if not table or not _IDENTIFIER_RE.fullmatch(table):
+            continue
+        rows: Optional[int] = None
+        if table in catalogue:
+            try:
+                rows = _row_count(conn, table)
+            except Exception as exc:  # noqa: BLE001
+                LOG.debug("witness %s unreadable: %s", table, exc)
+                _rollback(conn)
+        met = rows is not None and rows >= minimum
+        satisfied = satisfied or met
+        evidence.append({"table": table, "rows": rows, "min_rows": minimum, "satisfied": met})
+
+    reason = None
+    if not satisfied:
+        reason = (
+            "database has no operating history — no witness table reached its "
+            "minimum ("
+            + ", ".join(
+                f"{e['table']}={'absent' if e['rows'] is None else e['rows']}/{e['min_rows']}"
+                for e in evidence
+            )
+            + "). Every substrate would read as inert here because nothing has "
+            "been recorded, not because nothing is wired."
+        )
+    return {"has_history": satisfied, "witnesses": evidence, "reason": reason}
+
+
+def _probe_config_substrate(res: SubstrateResult) -> SubstrateResult:
+    """Resolve ``file.yaml::dotted.key`` against the repo tree.
+
+    A missing config KEY is a finding while a missing TABLE is not, and the
+    asymmetry is deliberate: the table lives in whichever database is in front
+    of us and may simply be one migration behind, whereas the config file is
+    checked into the tree that is being reviewed. Its absence is a fact about
+    the change, not about the environment.
+    """
+    path = _repo_file(res.config_path)
+    if not path.exists():
+        res.status = "config_absent"
+        res.measurable = True
+        res.note = f"{res.config_path} does not exist"
+        return res
+    try:
+        if path.suffix in (".yaml", ".yml"):
+            import yaml
+
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        elif path.suffix == ".json":
+            data = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            res.unmeasured_reason = f"unsupported config format: {path.suffix or '(none)'}"
+            return res
+    except Exception as exc:  # noqa: BLE001
+        res.unmeasured_reason = f"config unparseable: {exc}"
+        return res
+
+    node: Any = data
+    for part in [p for p in res.config_key.split(".") if p]:
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+            continue
+        res.status = "config_absent"
+        res.measurable = True
+        res.note = f"key path stops at {part!r}"
+        return res
+
+    res.measurable = True
+    if isinstance(node, (list, dict, str)):
+        res.rows = len(node)
+        res.status = "config_populated" if len(node) else "config_empty"
+    elif node is None:
+        res.rows = 0
+        res.status = "config_empty"
+    else:
+        res.rows = 1
+        res.status = "config_populated"
+    return res
+
+
+def probe_substrate(conn, ref: str, catalogue: Optional[set] = None) -> SubstrateResult:
+    """Answer "is there anything in it?" for one substrate reference."""
+    res = parse_substrate_ref(ref)
+    if res.kind == "config":
+        return _probe_config_substrate(res)
+
+    if not _IDENTIFIER_RE.fullmatch(res.table) or (
+        res.column and not _IDENTIFIER_RE.fullmatch(res.column)
+    ):
+        res.unmeasured_reason = f"not a plain identifier: {ref!r}"
+        return res
+
+    if catalogue is None:
+        catalogue = _known_tables(conn)
+    if catalogue is None:
+        res.unmeasured_reason = "table catalogue unreadable"
+        return res
+    if res.table not in catalogue:
+        res.status = "absent"
+        res.measurable = True
+        res.note = "no such table in this database — a migration has not run here"
+        return res
+
+    try:
+        res.rows = _row_count(conn, res.table)
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        res.unmeasured_reason = f"row count failed: {exc}"
+        return res
+
+    res.measurable = True
+    if res.kind == "table":
+        res.status = "populated" if res.rows else "empty"
+        if not res.rows:
+            res.note = "table exists and holds no rows — a writer has not run"
+        return res
+
+    try:
+        res.populated = _nonnull_count(conn, res.table, res.column or "")
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        # The row count succeeded, so the table is fine; the column is not
+        # there. Reported as its own status rather than folded into "empty",
+        # which would send a reader looking for a missing writer instead of a
+        # missing migration.
+        res.status = "column_absent"
+        res.note = f"column not readable on {res.table}: {str(exc).splitlines()[0][:120]}"
+        return res
+
+    if not res.rows:
+        res.status = "empty"
+        res.note = "table exists and holds no rows — a writer has not run"
+    elif res.populated:
+        res.status = "populated"
+    else:
+        res.status = "column_unpopulated"
+        res.note = f"{res.rows} rows, every one NULL in {res.column} — nothing populates it"
+    return res
+
+
+def extract_substrate_refs(
+    text: str,
+    catalogue: set,
+    source: str = "",
+    ignore: Optional[set] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Pull substrate references out of arbitrary text against a real catalogue.
+
+    Matching against the database's own table list — rather than parsing the
+    text for things that look like table names — is what keeps this usable on
+    prose. A plan is English; the only tokens worth reporting are the ones that
+    name something that actually exists.
+
+    Returns ``{ref: {"match_kinds": [...], "references": ["source:line", ...]}}``.
+    """
+    ignore = ignore or set()
+    found: Dict[str, Dict[str, Any]] = {}
+
+    def _record(ref: str, kind: str, lineno: int) -> None:
+        entry = found.setdefault(ref, {"match_kinds": [], "references": [], "read_references": []})
+        if kind not in entry["match_kinds"]:
+            entry["match_kinds"].append(kind)
+        where = f"{source}:{lineno}" if source else str(lineno)
+        if where not in entry["references"]:
+            entry["references"].append(where)
+        if kind == "read_sql" and where not in entry["read_references"]:
+            entry["read_references"].append(where)
+
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        # SQL context first: it is the stronger evidence, and a name it has
+        # already classified must not be re-recorded as a bare mention. Without
+        # that, `INSERT INTO kg_ontology` picks up a bare_name alongside its
+        # write_sql and reads as a design against the table — charging the one
+        # change that POPULATES an empty substrate with the defect.
+        sql_kinds: Dict[str, str] = {}
+        for match in _SQL_CONTEXT_RE.finditer(line):
+            keyword = " ".join(match.group(1).lower().split())
+            name = match.group(2)
+            if name in catalogue and name not in ignore:
+                kind = "read_sql" if keyword in ("from", "join") else "write_sql"
+                # A read anywhere on the line wins: `INSERT INTO x SELECT ... FROM x`
+                # both writes and reads x, and the read is what can be empty.
+                if sql_kinds.get(name) != "read_sql":
+                    sql_kinds[name] = kind
+                _record(name, kind, lineno)
+        for match in _BARE_REF_RE.finditer(line):
+            name, attr = match.group(1), match.group(2)
+            if name not in catalogue or name in ignore:
+                continue
+            kind = sql_kinds.get(name, "bare_name")
+            _record(name, kind, lineno)
+            if attr and attr.lower() not in _NON_COLUMN_ATTRS:
+                _record(f"{name}.{attr}", kind, lineno)
+    return found
+
+
+def merge_ref_entry(
+    target: Dict[str, Any], entry: Dict[str, Any], limit: int = 12
+) -> Dict[str, Any]:
+    """Fold one extraction result into an accumulating ``{ref: entry}`` map.
+
+    Shared by every caller that gathers references from more than one source
+    (several plans, several files in a diff) so the three list keys cannot
+    drift apart — a ``read_references`` entry silently dropped by one caller
+    and kept by another is how a finding ends up pointing at a docstring.
+    """
+    for key in ("match_kinds", "references", "read_references"):
+        merged = list(dict.fromkeys((target.get(key) or []) + (entry.get(key) or [])))
+        target[key] = sorted(merged) if key == "match_kinds" else merged[:limit]
+    return target
+
+
+def _added_lines_by_file(diff_text: str) -> Dict[str, List[Tuple[int, str]]]:
+    """Parse a unified diff into ``{path: [(new_lineno, added_line), ...]}``.
+
+    Only ADDED lines are read. A diff that deletes the last reference to an
+    empty table is the opposite of the defect, and reporting it would train the
+    reader to ignore the output.
+    """
+    by_file: Dict[str, List[Tuple[int, str]]] = {}
+    path = ""
+    lineno = 0
+    for raw in diff_text.splitlines():
+        if raw.startswith("+++ "):
+            target = raw[4:].strip()
+            path = target[2:] if target.startswith("b/") else target
+            continue
+        if raw.startswith("@@"):
+            match = re.search(r"\+(\d+)", raw)
+            lineno = int(match.group(1)) if match else 0
+            continue
+        if raw.startswith("+") and not raw.startswith("+++"):
+            if path and path != "/dev/null":
+                by_file.setdefault(path, []).append((lineno, raw[1:]))
+            lineno += 1
+        elif not raw.startswith("-"):
+            lineno += 1
+    return by_file
+
+
+def diff_refs(base_ref: str, catalogue: set, ignore: Optional[set] = None) -> Tuple[Dict[str, Dict[str, Any]], Optional[str]]:
+    """Substrate references this branch introduces, committed or not.
+
+    Two diffs, unioned: ``<base_ref>...HEAD`` for what the branch has committed
+    and ``HEAD`` for what is still in the working tree. The point of this probe
+    is to answer the question BEFORE the code lands, and a session that has not
+    committed yet is the most likely caller — reading only the committed half
+    would hand that caller a clean report on work it has not saved.
+    """
+    import subprocess  # noqa: PLC0415 — only needed on this path
+
+    diffs: List[str] = []
+    for args in ([f"{base_ref}...HEAD"], ["HEAD"]):
+        try:
+            proc = subprocess.run(
+                ["git", "diff", "--unified=0"] + args,
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {}, f"git diff failed: {exc}"
+        if proc.returncode != 0:
+            return {}, f"git diff exited {proc.returncode}: {(proc.stderr or '').strip()[:200]}"
+        diffs.append(proc.stdout)
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    combined: Dict[str, List[Tuple[int, str]]] = {}
+    for text in diffs:
+        for path, lines in _added_lines_by_file(text).items():
+            combined.setdefault(path, []).extend(lines)
+    for path, lines in combined.items():
+        # The added lines are extracted as one blob, so the extractor's line
+        # numbers are positions within that blob. They are mapped back to real
+        # file line numbers here, so a finding points at the line that
+        # introduced it rather than at the file.
+        blob = "\n".join(text for _, text in lines)
+        numbers = [num for num, _ in lines]
+
+        def _restamp(refs: List[str]) -> List[str]:
+            out = []
+            for where in refs:
+                _, _, local = where.rpartition(":")
+                try:
+                    real: Any = numbers[int(local) - 1]
+                except (ValueError, IndexError):
+                    real = local
+                out.append(f"{path}:{real}")
+            return out
+
+        for ref, entry in extract_substrate_refs(blob, catalogue, source=path, ignore=ignore).items():
+            entry = dict(entry)
+            entry["references"] = _restamp(entry.get("references") or [])
+            entry["read_references"] = _restamp(entry.get("read_references") or [])
+            merge_ref_entry(merged.setdefault(ref, {}), entry)
+    return merged, None
+
+
+def declared_substrates(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """The curated substrate list from args/capability_consumption.yaml."""
+    cfg = config if config is not None else load_config()
+    entries = cfg.get("substrates") or []
+    return [e for e in entries if isinstance(e, dict) and e.get("ref")]
+
+
+def _attach_refs(res: SubstrateResult, meta: Dict[str, Any]) -> SubstrateResult:
+    """Copy the extraction metadata onto a probed result."""
+    res.references = list(meta.get("references") or [])
+    res.read_references = list(meta.get("read_references") or [])
+    res.match_kinds = list(meta.get("match_kinds") or [])
+    return res
+
+
+def probe_substrates(
+    refs: Optional[Dict[str, Dict[str, Any]]] = None,
+    conn=None,
+    config: Optional[Dict[str, Any]] = None,
+    include_declared: bool = False,
+) -> Dict[str, Any]:
+    """Probe a set of substrate references and report what is actually in them.
+
+    Args:
+        refs: ``{ref: {"match_kinds": [...], "references": [...]}}`` — normally
+            the output of :func:`extract_substrate_refs` or :func:`diff_refs`.
+        conn: optional open connection (tests pass a seeded one).
+        config: optional pre-loaded config dict.
+        include_declared: also probe the curated ``substrates:`` list.
+
+    Returns a JSON-serializable report. ``measurable`` false means the answer
+    is "this database cannot tell you", never "everything is fine".
+    """
+    cfg = config if config is not None else load_config()
+    refs = dict(refs or {})
+
+    declared_notes: Dict[str, str] = {}
+    if include_declared:
+        for entry in declared_substrates(cfg):
+            ref = str(entry["ref"])
+            refs.setdefault(ref, {"match_kinds": ["declared"], "references": []})
+            if "declared" not in refs[ref]["match_kinds"]:
+                refs[ref]["match_kinds"].append("declared")
+            declared_notes[ref] = str(entry.get("note") or "").strip()
+
+    now = datetime.now(timezone.utc)
+    owns_conn = conn is None
+    backend = "unknown"
+    results: List[SubstrateResult] = []
+    history: Dict[str, Any] = {"has_history": False, "witnesses": [], "reason": "not probed"}
+
+    try:
+        if owns_conn:
+            from tools.db.storage import get_connection
+
+            conn = get_connection()
+        from tools.db.storage import get_backend
+
+        backend = get_backend()
+    except Exception as exc:  # noqa: BLE001
+        # No database at all. Every table ref is unmeasurable; config refs still
+        # resolve, because they are answered from the tree.
+        for ref, meta in sorted(refs.items()):
+            res = parse_substrate_ref(ref)
+            if res.kind == "config":
+                res = _probe_config_substrate(res)
+            else:
+                res.unmeasured_reason = f"database unreachable: {exc}"
+            _attach_refs(res, meta)
+            results.append(res)
+        history = {"has_history": False, "witnesses": [], "reason": f"database unreachable: {exc}"}
+        return _substrate_report(now, backend, history, results, declared_notes)
+
+    try:
+        history = operating_history(conn, cfg)
+        catalogue = _known_tables(conn)
+        for ref, meta in sorted(refs.items()):
+            if history["has_history"] or parse_substrate_ref(ref).kind == "config":
+                res = probe_substrate(conn, ref, catalogue)
+            else:
+                # Rule 1. Not "populated", not "empty" — unmeasurable, with the
+                # witness evidence attached so the reader can see why.
+                res = parse_substrate_ref(ref)
+                res.unmeasured_reason = history["reason"]
+            _attach_refs(res, meta)
+            results.append(res)
+    finally:
+        if owns_conn:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    return _substrate_report(now, backend, history, results, declared_notes)
+
+
+def _substrate_report(
+    now: datetime,
+    backend: str,
+    history: Dict[str, Any],
+    results: List[SubstrateResult],
+    declared_notes: Dict[str, str],
+) -> Dict[str, Any]:
+    for res in results:
+        note = declared_notes.get(res.ref)
+        if note and not res.note:
+            res.note = note
+    # A column of an empty table is empty by arithmetic, not by its own defect.
+    # Reporting both doubles every finding and points the reader at a column
+    # when the answer is "the whole table has no writer".
+    empty_tables = {r.table for r in results if r.kind == "table" and r.status == "empty"}
+    for res in results:
+        if res.kind == "column" and res.table in empty_tables:
+            res.superseded_by = res.table
+    findings = [r for r in results if r.is_finding]
+    measured = [r for r in results if r.measurable]
+    by_status: Dict[str, int] = {}
+    for res in results:
+        key = res.status if res.measurable else "unmeasurable"
+        by_status[key] = by_status.get(key, 0) + 1
+    return {
+        "generated_at": now.isoformat(),
+        "backend": backend,
+        "operating_history": history,
+        "measurable": bool(history.get("has_history")),
+        "substrates": [r.to_dict() for r in results],
+        "findings": [r.to_dict() for r in findings],
+        "totals": {
+            "probed": len(results),
+            "measured": len(measured),
+            "unmeasurable": len(results) - len(measured),
+            "findings": len(findings),
+            "by_status": by_status,
+        },
+    }
+
+
+def format_substrate_text(report: Dict[str, Any]) -> str:
+    lines = [
+        "CUI // SP-CTI",
+        f"Substrate probe — backend={report['backend']}, "
+        f"{report['totals']['probed']} reference(s)",
+        "",
+    ]
+    if not report["operating_history"]["has_history"]:
+        lines += [
+            f"WARN: {report['operating_history']['reason']}",
+            "      Table substrates are reported UNMEASURABLE rather than empty.",
+            "",
+        ]
+    lines += [
+        f"{'substrate':<44} {'status':<19} {'rows':>10}  where",
+        "-" * 100,
+    ]
+    for s in report["substrates"]:
+        status = s["status"] if s["measurable"] else "UNMEASURABLE"
+        rows = "?" if s["rows"] is None else str(s["rows"])
+        if s["kind"] == "column" and s["populated"] is not None:
+            rows = f"{s['populated']}/{s['rows']}"
+        where = ", ".join(s["references"][:2]) or ("(declared)" if "declared" in s["match_kinds"] else "")
+        lines.append(f"{s['ref']:<44} {status:<19} {rows:>10}  {where}")
+    lines += [
+        "-" * 100,
+        f"Findings: {report['totals']['findings']}",
+    ]
+    for s in report["findings"]:
+        lines.append(f"  {s['ref']}: {s['status']} — {s['note']}")
+        for where in (s["read_references"] or s["references"])[:5]:
+            lines.append(f"      designed against at {where}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 
@@ -745,6 +1488,7 @@ def collect(
     only: Optional[List[str]] = None,
     conn=None,
     config: Optional[Dict[str, Any]] = None,
+    include_substrates: bool = False,
 ) -> Dict[str, Any]:
     """Measure consumption for every enabled capability class.
 
@@ -753,11 +1497,20 @@ def collect(
         only: Restrict to these capability class names.
         conn: Optional open connection (tests pass a seeded one).
         config: Optional pre-loaded config dict.
+        include_substrates: Also probe the curated ``substrates:`` list and
+            attach it under ``substrates``. OFF by default, and deliberately:
+            ``check_capability_liveness`` calls this twice per commit and its
+            fast-tier budget is ~0.75s, so a COUNT(*) fan-out it does not read
+            would be a per-commit cost for nothing. The substrate CLI flags
+            (``--substrates``, ``--probe-*``) probe them directly instead of
+            through here.
 
     Returns:
         A JSON-serializable report. ``totals.unmeasurable_classes`` is the
         number that matters for --gate: a class nobody can count is worse than
-        a class counted at zero.
+        a class counted at zero. The substrate half never feeds that number —
+        a zero-row substrate is a finding for a human, and folding it into the
+        liveness budget would couple that ratchet to the size of the schema.
     """
     cfg = config if config is not None else load_config()
     days = int(window_days or cfg.get("window_days") or DEFAULT_WINDOW_DAYS)
@@ -792,6 +1545,21 @@ def collect(
             if isinstance(entry, dict):
                 res.description = str(entry.get("description") or "").strip()
             results.append(res)
+        substrate_report: Optional[Dict[str, Any]] = None
+        if include_substrates:
+            try:
+                substrate_report = probe_substrates(conn=conn, config=cfg, include_declared=True)
+            except Exception as exc:  # noqa: BLE001 — same rule as a probe: a
+                # failure here is reported as unmeasurable, never as clean.
+                LOG.warning("substrate probe failed: %s", exc)
+                _rollback(conn)
+                substrate_report = {
+                    "measurable": False,
+                    "operating_history": {"has_history": False, "witnesses": [], "reason": str(exc)},
+                    "substrates": [],
+                    "findings": [],
+                    "totals": {"probed": 0, "measured": 0, "unmeasurable": 0, "findings": 0, "by_status": {}},
+                }
     finally:
         if owns_conn:
             try:
@@ -835,7 +1603,7 @@ def collect(
 
     from tools.db.storage import get_backend
 
-    return {
+    report: Dict[str, Any] = {
         "generated_at": now.isoformat(),
         "window_days": days,
         "window_start": since.isoformat(),
@@ -856,6 +1624,10 @@ def collect(
             ),
         },
     }
+    if substrate_report is not None:
+        report["substrates"] = substrate_report
+        report["totals"]["substrate_findings"] = substrate_report["totals"]["findings"]
+    return report
 
 
 def format_text(report: Dict[str, Any]) -> str:
@@ -899,6 +1671,103 @@ def format_text(report: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _run_substrate_mode(args: argparse.Namespace) -> int:
+    """CLI glue for the substrate half: gather references, probe, report, gate.
+
+    The catalogue is read once and every source is matched against it, so a
+    reference is only ever reported when it names something that genuinely
+    exists in the database in front of us.
+    """
+    cfg = load_config()
+    ignore = {str(n) for n in ((cfg.get("substrate_probe") or {}).get("ignore_names") or [])}
+    refs: Dict[str, Dict[str, Any]] = {}
+    errors: List[str] = []
+
+    for ref in args.probe_substrate or []:
+        refs.setdefault(str(ref), {"match_kinds": ["explicit"], "references": []})
+
+    catalogue: Optional[set] = None
+    if args.probe_plan or args.probe_diff:
+        conn = None
+        try:
+            from tools.db.storage import get_connection
+
+            conn = get_connection()
+            catalogue = _known_tables(conn)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"catalogue unreadable: {exc}")
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    if catalogue is None and (args.probe_plan or args.probe_diff):
+        # Without the catalogue every token in a plan is a candidate, so the
+        # honest move is to report that we could not look rather than to guess
+        # at table names out of prose.
+        errors.append(
+            "cannot extract references from a plan or diff without the database "
+            "table catalogue — reporting nothing found rather than guessing"
+        )
+        catalogue = set()
+
+    for path_str in args.probe_plan or []:
+        path = Path(path_str)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        if not path.exists():
+            errors.append(f"plan not found: {path_str}")
+            continue
+        found = extract_substrate_refs(
+            path.read_text(encoding="utf-8", errors="replace"),
+            catalogue or set(),
+            source=path_str,
+            ignore=ignore,
+        )
+        for ref, entry in found.items():
+            merge_ref_entry(refs.setdefault(ref, {}), entry)
+
+    if args.probe_diff:
+        found, err = diff_refs(args.probe_diff, catalogue or set(), ignore=ignore)
+        if err:
+            errors.append(err)
+        for ref, entry in found.items():
+            merge_ref_entry(refs.setdefault(ref, {}), entry)
+
+    report = probe_substrates(refs, config=cfg, include_declared=bool(args.substrates))
+    report["errors"] = errors
+
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+    else:
+        print(format_substrate_text(report))
+        for err in errors:
+            print(f"ERROR: {err}", file=sys.stderr)
+
+    if not args.substrate_gate:
+        return 0
+    if not report["measurable"]:
+        # Rule 1, at the exit code. A database with no operating history cannot
+        # fail this gate, because every substrate on it reads as inert and a
+        # gate that fails on a fresh worktree gets switched off within a week.
+        print(
+            f"GATE WARN: {report['operating_history']['reason']} — substrate gate not enforced",
+            file=sys.stderr,
+        )
+        return 0
+    if report["totals"]["findings"]:
+        print(
+            "GATE FAIL: designed against "
+            f"{report['totals']['findings']} zero-row substrate(s): "
+            + ", ".join(f["ref"] for f in report["findings"]),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Count consumption per declared capability class over a recent window."
@@ -918,7 +1787,32 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--gate", action="store_true",
         help="Exit 1 if any capability class could not be measured at all",
     )
+    parser.add_argument(
+        "--probe-substrate", dest="probe_substrate", action="append", default=None,
+        metavar="REF",
+        help="Probe one substrate: TABLE, TABLE.COLUMN or file.yaml::key.path (repeatable)",
+    )
+    parser.add_argument(
+        "--probe-plan", dest="probe_plan", action="append", default=None, metavar="PATH",
+        help="Probe every substrate a plan/spec/source file references (repeatable)",
+    )
+    parser.add_argument(
+        "--probe-diff", dest="probe_diff", nargs="?", const="origin/main", default=None,
+        metavar="REF",
+        help="Probe substrates introduced by `git diff REF...HEAD` (default origin/main)",
+    )
+    parser.add_argument(
+        "--substrates", action="store_true",
+        help="Probe the curated substrate list in args/capability_consumption.yaml",
+    )
+    parser.add_argument(
+        "--substrate-gate", action="store_true",
+        help="Exit 1 if a probed substrate is empty (never on an unmeasurable database)",
+    )
     args = parser.parse_args(argv)
+
+    if args.probe_substrate or args.probe_plan or args.probe_diff or args.substrates:
+        return _run_substrate_mode(args)
 
     report = collect(window_days=args.window_days, only=args.classes)
 
