@@ -1,0 +1,28 @@
+{
+  "n": 12,
+  "baseline_precision_at_k": 0.9167,
+  "reflective_precision_at_k": 0.9167,
+  "quality_delta": 0.0,
+  "baseline_llm_calls": 0,
+  "reflective_llm_calls": 60,
+  "cost_multiplier": null,
+  "documents_judged": 0,
+  "documents_degraded": 24,
+  "recommendation": "unmeasurable_reflection_degraded",
+  "vocabulary_version": "reflect-1.0",
+  "degraded_reason": "ModuleBudgetExceededError: Module 'generative_intelligence' budget exceeded for function 'rag_rerank': Token cap: 418979 would exceed 400000",
+  "classification": "CUI // SP-CTI",
+  "generated_at": "2026-08-15T00:17:22.395698+00:00",
+  "golden_set_version": 2,
+  "top_k": 5,
+  "queries_labeled": 12,
+  "queries_errored": [],
+  "elapsed_s": 5.15,
+  "adoption": {
+    "adoption": "ADOPTED",
+    "committed_enabled": true,
+    "surfaces": [
+      "chat_rag"
+    ]
+  }
+}

@@ -262,6 +262,15 @@ def _rrf_fuse(results: list, k: int = _DEFAULT_RRF_K, weights: Optional[dict] = 
 _CORTEX_REQUIRES_CITATIONS = True
 
 
+#: The consuming surface, named so per-surface retrieval toggles (reflective
+#: reranking) can be scoped to it (trust-self-02). Same vocabulary as the
+#: args/trust_gate.yaml chat_rag profile, which is exactly what this adapter
+#: serves. It must be threaded through BOTH branches below: passing it on the
+#: plain path only would mean enabling adaptive routing silently turned
+#: reflective reranking off for chat_rag, with nothing reporting the change.
+_CORTEX_SEARCH_SURFACE = "chat_rag"
+
+
 def _rag_retrieve(retriever_mod, query: str, top_k: int, ctx: CortexContext) -> tuple:
     """Retrieve for the ``rag`` backend, through AdaptiveRetriever when enabled.
 
@@ -285,14 +294,18 @@ def _rag_retrieve(retriever_mod, query: str, top_k: int, ctx: CortexContext) -> 
     adaptive = AdaptiveRetriever()
     if not adaptive.enabled:
         return run_rag_search(
-            retriever_mod.RAGRetriever, query, tenant_id=ctx.tenant_id, top_k=top_k
+            retriever_mod.RAGRetriever, query, tenant_id=ctx.tenant_id, top_k=top_k,
+            surface=_CORTEX_SEARCH_SURFACE,
         ), None
 
     adaptive = AdaptiveRetriever(
         retriever=retriever_mod.RAGRetriever(tenant_id=ctx.tenant_id)
     )
     outcome = adaptive.retrieve(
-        query, requires_citations=_CORTEX_REQUIRES_CITATIONS, top_k=top_k
+        query, requires_citations=_CORTEX_REQUIRES_CITATIONS, top_k=top_k,
+        # Forwarded verbatim to RAGRetriever.search() through the wrapper's
+        # **kwargs, so the surface scoping survives the adaptive path too.
+        surface=_CORTEX_SEARCH_SURFACE,
     )
     routing = {
         "route": outcome.get("route", ""),
