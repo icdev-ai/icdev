@@ -30,6 +30,32 @@ from tools.cortex.schemas import (
     GovernanceReport,
 )
 
+
+@pytest.fixture(autouse=True)
+def _canvas_grant_provisioned(monkeypatch):
+    """These tests use a TENANT-SCOPED human, which needs a canvas grant.
+
+    Real principals in this deployment are many human users with no tenant
+    (0 of 13 dashboard_users rows carry one) plus service keys, which always
+    do. A tenant-scoped HUMAN only appears in a multi-tenant deployment -- and
+    there it would be provisioned with a canvas grant, because the canvas guard
+    grant-checks exactly that shape.
+
+    The tests below need that shape on purpose: they assert the IDENTITY's
+    tenant beats a spoofed tenant in the request body, which is only meaningful
+    when the identity has one. So the fixture supplies the provisioning rather
+    than the tests dropping the tenant and weakening the assertion to "not the
+    spoofed value".
+
+    Scoped to this module and to the grant lookup only. Whether the guard
+    ADMITS a principal is covered by tests/security/test_canvas_guard_service_key.py;
+    these are REST contract tests and must not fail on provisioning state.
+    """
+    from tools.security import canvas_access
+
+    monkeypatch.setattr(canvas_access, "check_access", lambda *a, **kw: True)
+
+
 SESSION_TENANT = "tenant-real"
 SESSION_USER = "user-real"
 SPOOFED_TENANT = "tenant-evil"

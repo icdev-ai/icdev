@@ -1777,3 +1777,18 @@ tests/ci/test_e2e_dashboard_teardown.py
 # check for this principal is safe.
 # 10 tests, <1s, binding and grant lookup injected: no DB, no network.
 tests/security/test_canvas_guard_service_key.py
+
+# The Cortex REST surface. 105 of these failed for as long as the canvas guard
+# has applied a human grant model to machine principals, and NOTHING RAN THEM:
+# not one was gated, so neither Test nor Test (PostgreSQL) ever saw it, and they
+# pass in isolation because the guard only attaches once the dashboard is
+# imported. Gating them is the half of the fix that keeps it fixed.
+tests/cortex/test_rest_agent.py
+tests/cortex/test_rest_award.py
+tests/cortex/test_rest_cost_volume.py
+tests/cortex/test_rest_dashboard.py
+tests/cortex/test_rest_intake.py
+tests/cortex/test_rest_scopes.py
+tests/cortex/test_rest_slides.py
+tests/cortex/test_rest_staffing_matrix.py
+tests/cortex/test_rest_win_themes.py

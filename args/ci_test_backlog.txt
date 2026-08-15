@@ -132,15 +132,6 @@ tests/cortex/test_metrics.py
 tests/cortex/test_provenance_gate.py
 tests/cortex/test_provenance_swallow.py
 tests/cortex/test_reason_facade.py
-tests/cortex/test_rest_agent.py
-tests/cortex/test_rest_award.py
-tests/cortex/test_rest_cost_volume.py
-tests/cortex/test_rest_dashboard.py
-tests/cortex/test_rest_intake.py
-tests/cortex/test_rest_scopes.py
-tests/cortex/test_rest_slides.py
-tests/cortex/test_rest_staffing_matrix.py
-tests/cortex/test_rest_win_themes.py
 tests/cortex/test_schemas.py
 tests/cortex/test_search_adapters.py
 tests/cortex/test_search_crag.py
