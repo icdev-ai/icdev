@@ -261,10 +261,33 @@ def _embed_chunks(chunks, provider, batch_size: "int | None" = None) -> int:
 
     batch_size defaults to the adaptive/configured value (see
     _compute_ingestion_thresholds); falls back to _EMBED_BATCH_SIZE.
+
+    PER-CHUNK FAILURES ARE STILL SWALLOWED, DELIBERATELY. One malformed chunk
+    must not abort a 10k-row ingest, so the ``continue`` stays.
+
+    WHAT CHANGED (fli-ing-02) IS THAT A TOTAL FAILURE IS NO LONGER SILENT. The
+    old loop discarded the exception entirely — not even its type — so an error
+    hitting EVERY chunk was indistinguishable from an empty input. That is not
+    hypothetical: rce-ctx-01 added the ``chunk.text_for_embedding()`` call below,
+    the anomaly test's stub chunk never grew the method, and the resulting
+    AttributeError was eaten on every chunk for weeks. The test asserted 0 == 5
+    and no log line anywhere said why.
+
+    The same shape reaches production, because the failure is systematic by
+    nature: a renamed method, a provider outage, a wrong model name. Every chunk
+    fails, ``embeddable`` comes out empty, the row is skipped, and the ingest
+    reports success having stored nothing — invisible in retrieval too, since
+    those chunks simply never come back.
+
+    So: count the failures, keep the FIRST exception, and say so. Partial is a
+    warning (some chunks are legitimately bad); total is an error, because
+    "every single one failed" is a broken pipeline, not bad data.
     """
     if not provider or not chunks:
         return 0
     embedded = 0
+    failed = 0
+    first_error: "Exception | None" = None
     batch_size = batch_size or _EMBED_BATCH_SIZE
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i : i + batch_size]
@@ -280,8 +303,23 @@ def _embed_chunks(chunks, provider, batch_size: "int | None" = None) -> int:
                     resp = provider.embeddings.create(input=embed_input, model="nomic-embed-text")
                     chunk.embedding = resp.data[0].embedding
                 embedded += 1
-            except Exception:
+            except Exception as exc:  # noqa: BLE001 — one bad chunk must not abort the ingest
+                failed += 1
+                if first_error is None:
+                    first_error = exc
                 continue
+
+    if failed:
+        detail = f"{type(first_error).__name__}: {first_error}"
+        if embedded:
+            logger.warning(
+                "embedding: %d of %d chunk(s) failed and were dropped; first error was %s",
+                failed, len(chunks), detail)
+        else:
+            logger.error(
+                "embedding: ALL %d chunk(s) failed — nothing will be stored for this "
+                "source and it will never appear in retrieval. First error was %s",
+                failed, detail)
     return embedded
 
 
@@ -503,6 +541,7 @@ def ingest_source(
     total_chunks = 0
     total_skipped = 0
     total_embedded = 0
+    rows_embedding_failed = 0
     total_masked = 0
     total_contextualized = 0
     ingestion_mode = mode or cfg.get("mode", "batch")
@@ -567,6 +606,12 @@ def ingest_source(
         # Embed new chunks
         embedded = _embed_chunks(new_chunks, provider, batch_size=embed_batch_size)
         total_embedded += embedded
+        # fli-ing-02: this loop skips the row when nothing embedded, and the
+        # summary below reported only what SUCCEEDED — so a sweep in which every
+        # row failed to embed returned the same shape as a sweep with nothing to
+        # do. Count the rows dropped that way and report them.
+        if new_chunks and not embedded:
+            rows_embedding_failed += 1
 
         # Filter to only chunks that got embeddings
         embeddable = [c for c in new_chunks if c.embedding is not None]
@@ -605,6 +650,7 @@ def ingest_source(
         "chunks_created": total_chunks,
         "chunks_skipped": total_skipped,
         "chunks_embedded": total_embedded,
+        "rows_embedding_failed": rows_embedding_failed,
         "mode": ingestion_mode,
         "chunking_template": chunking_template or "default",
         "embed_batch_size": embed_batch_size,
@@ -776,6 +822,15 @@ def ingest_single_record(
     embed_batch_size = _compute_ingestion_thresholds(_load_anomaly_cfg())["embed_batch_size"]
     _embed_chunks(new_chunks, provider, batch_size=embed_batch_size)
     embeddable = [c for c in new_chunks if c.embedding is not None]
+
+    # fli-ing-02: chunks existed and NONE embedded. Returning the bare
+    # {"ingested": 0, ...} below made that indistinguishable from the dedup
+    # early-return above — both say "nothing was stored" and only one of them is
+    # a working system. Name it, so a caller and a log reader can tell them apart.
+    if new_chunks and not embeddable:
+        return {"ingested": 0, "embedded": 0, "skipped": len(chunks),
+                "reason": "embedding_failed"}
+
     inserted = store.upsert(embeddable) if embeddable else 0
 
     _kg_enrich_chunks(embeddable)

@@ -219,7 +219,6 @@ tests/genesis/test_evolve_anomaly_detection.py
 tests/genesis/test_fulfill_constants.py
 tests/genesis/test_heal_anomaly_detection.py
 tests/genesis/test_ingest_anomaly_detection.py
-tests/genesis/test_ingestion_manager_anomaly.py
 tests/genesis/test_inspect_adapt_constants.py
 tests/genesis/test_kanban_bypass_exemption.py
 tests/genesis/test_kanban_message_injection.py
