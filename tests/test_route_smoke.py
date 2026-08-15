@@ -328,6 +328,13 @@ def test_the_hook_reports_a_timeout_as_NOT_RUN_rather_than_OK(monkeypatch, capsy
     # there rather than on pre_commit_check.
     monkeypatch.setattr(rs, "_routes_for_changed_files", lambda files: ["/x", "/y"])
     monkeypatch.setattr(rs, "_server_up", lambda *a, **kw: True)
+    # There is a THIRD guard after those two — a raw socket connect to
+    # 127.0.0.1:5050 — and it is the one that matters on a CI runner, which has
+    # no dashboard. Without this the test passed locally (dashboard up) and
+    # failed in CI on "port 5050 closed — skipped", never reaching the timeout
+    # branch it exists to cover. `import socket as _socket` inside the hook
+    # resolves to this same stdlib module object.
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **kw: _DummySock())
     monkeypatch.setattr(
         pcc.subprocess, "run",
         lambda *a, **kw: (_ for _ in ()).throw(_sp.TimeoutExpired(cmd="route_smoke", timeout=120)))
