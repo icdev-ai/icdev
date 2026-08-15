@@ -5901,6 +5901,21 @@ python tools/ci/gated_test_list.py --check-coverage          # exit 1 on an unga
 python tools/ci/gated_test_list.py --check-coverage --json   # total/gated/excluded/backlog/unlisted
 python tools/ci/gated_test_list.py --prune-backlog           # drop census lines now gated or gone
 
+# Changed-test isolation run (trust-disc-02) — every changed test file ALONE.
+# The gated suite run above is the IN-SUITE half: all 239 modules in one process,
+# in one fixed order (the order of core.txt). This is the ALONE half. Nothing else
+# in the pipeline randomises or isolates test order — not icdev-ci.yml, not
+# pytest.ini (absent), not pyproject.toml — so an order-dependent pass is invisible
+# until an unrelated allowlist edit reshuffles the run and it surfaces as a failure
+# in whatever PR happened to move the list.
+# Needs full history (`fetch-depth: 0`); a shallow clone has no merge base and the
+# tool exits 2 rather than resolving to "no files changed".
+python tools/ci/isolation_run.py --list                      # which files would run
+python tools/ci/isolation_run.py --json                      # resolution only, no pytest
+python tools/ci/isolation_run.py --run                       # run them; 0 clean / 1 gated failure / 2 unresolvable
+python tools/ci/isolation_run.py --run --base origin/main --timeout 1200
+python tools/ci/isolation_run.py --run -- -x                 # extra args forwarded to each pytest
+
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
 # all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored
