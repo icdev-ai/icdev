@@ -302,7 +302,12 @@ def test_scan_fails_open_when_git_cannot_answer(tmp_path: pathlib.Path):
         # version, so it had never executed once. Its up(conn) now runs and was
         # verified against the live database as a clean no-op (reflex_observations
         # is already present; the DDL is entirely IF NOT EXISTS).
-        ("19", "019_kanban_verifications"),
+        # 019_kanban_verifications was pinned here because the entry sorting
+        # first at v19 was 019_backlog_task_reassign.py — a bare .py the runner
+        # could not discover, so v19 ran this one instead. That file has been
+        # promoted to 20260815210101_backlog_task_reassign, which leaves
+        # 019_kanban_verifications alone at v19 and no longer shadowed by
+        # anything. Both now run, which is the outcome the pin was asking for.
     ],
 )
 def test_known_shadowed_migrations_are_visible(version: str, shadowed_file: str):
@@ -408,50 +413,48 @@ def test_timestamp_versions_cannot_alias_a_legacy_version():
 #: control case: same shape, same era, but it exists — which is what made the
 #: other five visible as an anomaly rather than a design.
 #:
-#: KEPT, and why each is benign (verified present on the live database):
+#: CLEARED 2026-08-15. The 2026-08-03 triage found the KEPT entries benign —
+#: their objects were present on the live database, having arrived via
+#: pg_consolidated.sql (a pg_dump of a database where each had been applied BY
+#: HAND through its ``if __name__ == "__main__"`` block). That made them
+#: harmless, not correct: "benign on the database we happen to have" is a
+#: property of one host, and any database built by migrating forward rather than
+#: restoring that snapshot never gets them. So they were promoted rather than
+#: left pinned, each to a timestamp directory with a real ``up.py``:
 #:
-#:   149  source_citation_registry + govchain_pending_operations — both present;
-#:        also in pg_consolidated.sql and tools/integrity/provenance.py.
-#:   150  wf_citations.source_hash — column present.
-#:   151  canvas_ai_decisions.decision_hash/previous_decision_hash/signature.
-#:   152  memory_entries.decay_weight/classification/compartment.
-#:   153  kg_nodes.ontology_id + canvas_kg_nodes.ontology_id.
-#:   168  RESOLVED 2026-08-15 — promoted to
-#:        20260815191145_seed_canvas_grants_for_existing_tenants and the bare
-#:        file deleted, so this version no longer exists in either discoverer.
-#:        The entry's original reasoning was "making the runner execute it would
-#:        point a data seed at the wrong database", and that turned out not to
-#:        hold: canvas_access.grant_access writes through get_connection() and
-#:        canvas_access_grants is created by init_icdev_db.py, so the grants land
-#:        in the ICDEV database the runner already targets. Only the TENANT LIST
-#:        is read from platform.db, read-only. The seed is an upsert
-#:        (ON CONFLICT DO UPDATE) and a no-op with no tenants, so running it on
-#:        every deployment is safe — and a backfill nobody is told to run is a
-#:        backfill that does not happen, which is what this file was.
-#:   172  declares NO schema in this database. It copies aac_* rows into the
-#:        AI-ify CANVAS db and says so: "any conn passed by a runner is
-#:        ignored". Runner-visibility would be actively misleading.
-#:   173  TWO files, and the only split verdict. 173_cpmp_obligation_periods.py
-#:        is benign (cpmp_contract_periods + three cpmp_contracts columns all
-#:        present). 173_white_team_review_type.py was a REAL gap — the live
-#:        CHECK constraint rejected 'white_team' while the dashboard API offered
-#:        it — fixed by 20260803201015_proposal_reviews_white_team_review_type.
-#:        173 stays here because promoting either file to a directory would make
-#:        version 173 a DUPLICATE, which is the collision the tests above exist
-#:        to prevent, and because the legacy 3-digit range is closed.
-#:   177  cpmp_contract_mods — present.
-#:   178  cpmp_budget_allocations/_obligations/_tier_history — all present.
-#:   179  integrity_{assessments,capabilities,findings,verdicts,authorizations}
-#:        and kanban_task_revivals — all present.
-#:   205  kanban_tasks.loop_type + adversarial_enabled — both present.
-RUNNER_INVISIBLE_VERSIONS = frozenset({
-    "149", "150", "151", "152", "153",          # dirs with migration.py
-    # 168 removed 2026-08-15 — promoted to a real migration, see the note above.
-    # This set may only SHRINK: an entry leaves when the gap is fixed, and a new
-    # one is a regression, not a line to add.
-    "172", "173", "177", "178", "179",          # bare .py files
-    "205",                                      # bare .py file
-})
+#:   149-153  were DIRECTORIES holding ``migration.py`` — discover_migrations
+#:            only records a directory when ``up.sql``/``up.py`` exists, so it
+#:            dropped them without a word -> 20260815210105-09.
+#:   177-179  bare .py -> 202608152001xx (previous PR).
+#:   205      bare .py -> 20260815210103.
+#:   173      the only split verdict. 173_cpmp_obligation_periods.py was benign
+#:            -> 20260815210104. 173_white_team_review_type.py was a REAL gap
+#:            (the live CHECK rejected 'white_team' while the dashboard API
+#:            offered it) already fixed by
+#:            20260803201015_proposal_reviews_white_team_review_type, so it was
+#:            DELETED as superseded rather than promoted. The old note said
+#:            promoting either would make 173 a duplicate; that was only true of
+#:            the closed 3-digit range — a timestamp id has no such collision.
+#:
+#: Two were NOT promoted, because for them "never runs" is the correct
+#: behaviour and runner-visibility would be actively misleading — each points at
+#: a DIFFERENT database than the one the runner drives:
+#:
+#:   172  copies aac_* rows into the AI-ify CANVAS db and says so ("any conn
+#:        passed by a runner is ignored"). Moved OUT of migrations/ to
+#:        tools/aiify/maintenance/aac_to_aiify_rename.py — an operator script.
+#:   168  seeds canvas_access_grants into platform.db. Replaced by
+#:        20260815191145_seed_canvas_grants_for_existing_tenants, which calls
+#:        canvas_access.seed_tenant_defaults instead of writing rows directly.
+#:        Landed as #1705 while this branch was open, which is what
+#:        empties this set.
+#:
+#: EMPTY, and it must stay that way. It held 17 entries when it was frozen on
+#: 2026-08-02 and 12 after the 2026-08-03 triage; every one is now either a
+#: discoverable migration or an operator script that was never a migration.
+#: Shrink this list; never grow it. A new entry is a migration that will never
+#: run — fix its shape instead of recording it here.
+RUNNER_INVISIBLE_VERSIONS: frozenset = frozenset()
 
 
 def test_runner_and_gate_agree_on_what_a_migration_is():

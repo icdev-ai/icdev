@@ -35,12 +35,8 @@ grandfathered:
   "10":
     - 010_kanban_executor_schema: "RUNS — sorts first at v10, so this is the entry MigrationRunner applies"
     - 010_network_intelligence_schema: "benign — ni_analyses, ni_devices, ni_state_snapshots present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
-  "19":
-    - 019_backlog_task_reassign.py: "RUNS — sorts first at v19, so this is the entry MigrationRunner applies"
-    - 019_kanban_verifications: "not actually shadowed — the runner never discovers the entry that sorts first, so this one is what runs at v19"
   "20":
     - 020_kanban_failure_count: "RUNS — sorts first at v20, so this is the entry MigrationRunner applies"
-    - 020_nc_topologies_schema.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
     - 020_options_coach_events: "benign — ad_options_coach_events present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
   "21":
     - 021_ad_macro_regimes: "RUNS — sorts first at v21, so this is the entry MigrationRunner applies"
@@ -128,9 +124,6 @@ grandfathered:
   "163":
     - 163_domain_coverage: "RUNS — sorts first at v163, so this is the entry MigrationRunner applies"
     - 163_groups_canvas_access.sql: "benign — canvas_access_grants, group_members, group_roles present on a fresh build; declared by tools/db/init_icdev_db.py"
-  "173":
-    - 173_cpmp_obligation_periods.py: "RUNS — sorts first at v173, so this is the entry MigrationRunner applies"
-    - 173_white_team_review_type.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "184":
     - 184_coworkers_canvas_tables.sql: "RUNS — sorts first at v184, so this is the entry MigrationRunner applies"
     - 184_creative_gap_innovation_signal.sql: "benign — creative_gap, innovation_signal present on a fresh build; declared by tools/db/init_icdev_db.py"

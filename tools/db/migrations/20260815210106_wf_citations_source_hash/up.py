@@ -122,6 +122,11 @@ def migrate():
         conn.close()
 
 
+
+def up(conn=None):  # noqa: ARG001 — migrate() manages its own connection
+    """Runner entry point. See the note in the sibling 149 migration."""
+    return migrate()
+
 if __name__ == "__main__":
     ok = migrate()
     sys.exit(0 if ok else 1)
