@@ -60,6 +60,7 @@ from flask import (
 )
 
 from tools.document_intelligence.collection_registry import ensure_collection
+from tools.document_intelligence.constants import TEMPLATE_SECTIONS
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -3267,40 +3268,11 @@ def api_section_edit_history(section_id: str):
 
 # ── API: Template Instantiation ─────────────────────────────────────────────
 
-_TEMPLATE_SECTIONS: dict[str, list[str]] = {
-    "acoic": ["Impact Assessment", "Affected Controls", "Regeneration Plan", "SSP Fragment", "Approval Gate"],
-    "freshness-audit": ["Audit Scope", "Stale Document Inventory", "Remediation Plan", "Owner Assignments", "Timeline"],
-    "airgap-ingest": ["Source Directory", "Ingest Pipeline Steps", "Verification Checklist", "Rollback Plan"],
-    "hitl-review": ["Review Queue", "Reviewer Assignments", "Acceptance Criteria", "Escalation Path"],
-    "sop-refresh": ["Current Procedure", "Change Summary", "Updated Steps", "Validation Criteria", "Rollback Plan"],
-    "knowledge-handoff": ["SME Profile", "Knowledge Areas", "Interview Agenda", "Captured Artifacts", "Successor Onboarding"],
-    # Tech Writer templates (migration 230)
-    "STANDARD_GUIDE": [
-        "Executive Summary", "Scope and Applicability", "Cloud Provider Overview",
-        "Connectivity Patterns", "Security Controls", "Implementation Steps",
-        "Operational Procedures", "Troubleshooting", "References",
-    ],
-    "SOP": [
-        "Purpose", "Scope", "Responsibilities", "Prerequisites",
-        "Procedure", "Verification", "Rollback", "References",
-    ],
-    "RUNBOOK": [
-        "Overview", "Prerequisites", "Pre-flight Checks",
-        "Procedure", "Verification Steps", "Rollback", "Escalation Path",
-    ],
-    "ARCH_NETWORK": [
-        "Architecture Overview", "Network Topology", "Segmentation Strategy",
-        "Traffic Flows", "Security Controls", "Diagrams", "Decision Log",
-    ],
-    "ARCH_APPLICATION": [
-        "System Context", "Component Diagram", "API Contracts",
-        "Data Flow", "Security Considerations", "Deployment Architecture", "Decision Log",
-    ],
-    "ARCH_SYSTEM": [
-        "Mission and Goals", "Stakeholders", "System Boundary",
-        "Key Components", "Interfaces", "Quality Attributes", "Decision Log",
-    ],
-}
+# The skeleton moved to tools/document_intelligence/constants.py (trust-struct-02)
+# so tools/quality/outline_contract.py can read it without importing Flask. It is
+# the same object, not a copy — the required-section contract for a doc type and
+# the sections instantiation actually creates must never be two lists that drift.
+_TEMPLATE_SECTIONS: dict[str, list[str]] = TEMPLATE_SECTIONS
 
 
 @dic_bp.route("/api/templates/<template_id>/instantiate", methods=["POST"])

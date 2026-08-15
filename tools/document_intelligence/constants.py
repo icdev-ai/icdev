@@ -124,3 +124,45 @@ DOCGEN_DOCTYPE_TO_TEMPLATE: dict[str, str] = {
     "evidence_package": "STANDARD_GUIDE",
 }
 DOCGEN_DEFAULT_TEMPLATE: str = "ARCH_SYSTEM"
+
+# Template id -> the section skeleton instantiation creates for it. Lives here
+# rather than in blueprint.py (trust-struct-02) because it is now read by two
+# consumers: the /api/templates/<id>/instantiate route, and
+# tools/quality/outline_contract.py, which validates a draft against the same
+# skeleton and must not import Flask to do it. One declaration, two readers —
+# a required-section contract that is a COPY of what instantiation creates is
+# a contract that goes stale the first time either side is edited.
+TEMPLATE_SECTIONS: dict[str, list[str]] = {
+    "acoic": ["Impact Assessment", "Affected Controls", "Regeneration Plan", "SSP Fragment", "Approval Gate"],
+    "freshness-audit": ["Audit Scope", "Stale Document Inventory", "Remediation Plan", "Owner Assignments", "Timeline"],
+    "airgap-ingest": ["Source Directory", "Ingest Pipeline Steps", "Verification Checklist", "Rollback Plan"],
+    "hitl-review": ["Review Queue", "Reviewer Assignments", "Acceptance Criteria", "Escalation Path"],
+    "sop-refresh": ["Current Procedure", "Change Summary", "Updated Steps", "Validation Criteria", "Rollback Plan"],
+    "knowledge-handoff": ["SME Profile", "Knowledge Areas", "Interview Agenda", "Captured Artifacts", "Successor Onboarding"],
+    # Tech Writer templates (migration 230)
+    "STANDARD_GUIDE": [
+        "Executive Summary", "Scope and Applicability", "Cloud Provider Overview",
+        "Connectivity Patterns", "Security Controls", "Implementation Steps",
+        "Operational Procedures", "Troubleshooting", "References",
+    ],
+    "SOP": [
+        "Purpose", "Scope", "Responsibilities", "Prerequisites",
+        "Procedure", "Verification", "Rollback", "References",
+    ],
+    "RUNBOOK": [
+        "Overview", "Prerequisites", "Pre-flight Checks",
+        "Procedure", "Verification Steps", "Rollback", "Escalation Path",
+    ],
+    "ARCH_NETWORK": [
+        "Architecture Overview", "Network Topology", "Segmentation Strategy",
+        "Traffic Flows", "Security Controls", "Diagrams", "Decision Log",
+    ],
+    "ARCH_APPLICATION": [
+        "System Context", "Component Diagram", "API Contracts",
+        "Data Flow", "Security Considerations", "Deployment Architecture", "Decision Log",
+    ],
+    "ARCH_SYSTEM": [
+        "Mission and Goals", "Stakeholders", "System Boundary",
+        "Key Components", "Interfaces", "Quality Attributes", "Decision Log",
+    ],
+}

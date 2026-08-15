@@ -2192,6 +2192,21 @@ python tools/quality/completion_auditor.py --md                                 
 python tools/quality/review_loop.py --json                            # Working-tree mode: ruff + coherence + SIPA, autofix, iterate
 python tools/quality/review_loop.py --base origin/main --max 3 --gate # Branch diff vs base; exit 0=green / 1=not green
 python tools/quality/review_loop.py --no-autofix --json               # Report only (no edits); emit fix_brief for the agent
+
+# Outline contracts — does a draft have every required section, in order, with none invented? (trust-struct-02)
+python tools/quality/outline_contract.py --list --json                       # 32 artifact types with a declared skeleton
+python tools/quality/outline_contract.py --artifact-type ato_ssp             # Show that type's required sections + their source
+python tools/quality/outline_contract.py --artifact-type SOP --json
+# Validate a list_sections payload (a JSON list, or {"sections": [...]})
+python tools/quality/outline_contract.py --artifact-type ato_ssp --sections-file draft.json --json
+python tools/quality/outline_contract.py --artifact-type RUNBOOK --sections-file draft.json --gate   # exit 1 on findings
+# Findings are missing_section | unknown_section | section_out_of_order, in the shared
+# {item_number, issue, detail} shape citation_gate / placeholder_findings / kg_gate use.
+# The skeletons are NOT declared in this module — it reads docgen ATO_DOC_TYPES, DIC
+# TEMPLATE_SECTIONS and the RFI workbench floor. An artifact type with no declared
+# skeleton resolves to None = UNMEASURED; it never fabricates one to fill the gap.
+# RFI questionnaire parts are per-solicitation: use contract_from_sections() on the
+# session's own sections rather than expecting a static skeleton to fit.
 ```
 
 ---
