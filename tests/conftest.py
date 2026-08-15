@@ -775,6 +775,32 @@ CREATE TABLE IF NOT EXISTS agent_unattended_sessions (
     set_at TEXT,
     updated_at TEXT
 );
+-- trust-hitl-01 / migration 20260815063941. What a human actually approved when
+-- they overrode a TRUST gate: before/after text, claim-anchored spans, and the
+-- gate findings on each side. APPEND-ONLY EVIDENCE, registered in
+-- APPEND_ONLY_TABLES; a correction appends a successor through
+-- supersedes_delta_id and never edits its predecessor. The reviewer's
+-- disposition is MUTABLE state and lives in approval_items above, which is
+-- deliberately not append-only -- the same split approval_inbox.py already made.
+CREATE TABLE IF NOT EXISTS trust_deltas (
+    delta_id TEXT PRIMARY KEY,
+    artifact_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    before_hash TEXT NOT NULL,
+    after_hash TEXT NOT NULL,
+    before_text TEXT,
+    after_text TEXT,
+    findings_before TEXT,
+    findings_after TEXT,
+    spans TEXT,
+    actor TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    approval_item_id TEXT,
+    supersedes_delta_id TEXT,
+    session_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
