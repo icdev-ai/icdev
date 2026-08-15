@@ -1625,3 +1625,20 @@ tests/test_coherence_substrate_liveness.py
 # too, since `icdev init` scaffolds the packaged ones.
 # 14 tests, <1s. No LLM, no network: _call_agent is patched; DB is a tmp_path sqlite.
 tests/test_adversarial_review_question.py
+
+# trust-anchor-02 — a TRUST gate verdict, Merkle-anchored. The leaf is
+# sha256(artifact_hash|findings_hash|delta_chain_hash|approver); the components
+# ride in source_doc so ChainAnchor RE-DERIVES the leaf at anchor time and
+# refuses a row that disagrees with itself — anchoring an unverified value wraps
+# tamper-evidence around a lie and reads as proof. Every test writes to a real
+# SQLite database and asserts a row count moved, because a mocked
+# register_citation proves the caller was reached and nothing about whether
+# anything landed: that is how citation_type='cortex' recorded 0 of 285 rows and
+# 'asset_token' never anchored once, both with coverage. The fixture pins
+# get_connection on BOTH module namespaces (tools.* and icdev.tools.* are
+# distinct objects), and test_every_alias_is_pinned asserts the redirect took —
+# otherwise the suite writes to the live board and still passes. Also pins the
+# card's own constraint: no second reflex, these ride the existing 30-minute
+# govchain_anchor sweep.
+# 33 tests, ~1s. No network, no Fabric: the noop transport queues.
+tests/provenance/test_trust_validation_anchor.py
