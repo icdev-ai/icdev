@@ -1,0 +1,6 @@
+// The mandatory-rationale rule (trust_gate invariant 4) is supposed to make
+// this query return nothing. It is here so that claim is CHECKABLE rather than
+// asserted — a guardrail nobody can query is a guardrail nobody can falsify.
+foreach s in delta_review.settlements
+  where s.disposition == "approved" and s.rationale == ""
+  select s.delta_id, s.supersedes_delta_id, s.artifact_id, s.actor, s.created_at

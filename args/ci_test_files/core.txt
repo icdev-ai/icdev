@@ -1586,3 +1586,16 @@ tests/kanban/test_stranded_audit_gate_parity.py
 # a non-existent updated_at, so every UPDATE raised, was swallowed, and nothing drained).
 # 42 tests, <1s. No Fabric peer, no hfc, no network: which/subprocess are patched.
 tests/test_blockchain_transports.py
+# trust-hitl-01/02 — the delta as the reviewable unit, and its side-by-side panel.
+# Gated in the PR that adds it (test-gating policy). Pure in-memory sqlite via a
+# patched hitl_delta._connect, so no DB, no network, no Flask app context.
+# Both invariants are verified to DISCRIMINATE, not merely to pass: injecting
+# "pending_deltas trusts the stale column" and "settle_delta UPDATEs its
+# predecessor" each fail the test written for them.
+tests/test_hitl_delta.py
+# trust-hitl-02 — route + IQE-adapter seams for the Delta Review canvas: the
+# mandatory rationale, the caller-cannot-name-the-actor rule (nav-comp-06), the
+# 409-not-overwrite second settle, and the two ctx-trust-03/04 adapter
+# properties (does not close a caller-owned connection; emits no draft text).
+# Flask test_client + in-memory sqlite; no DB, no network.
+tests/test_delta_review_blueprint.py

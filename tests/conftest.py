@@ -775,6 +775,37 @@ CREATE TABLE IF NOT EXISTS agent_unattended_sessions (
     set_at TEXT,
     updated_at TEXT
 );
+-- trust-hitl-01/02 / migration 20260815063956. The DELTA as the reviewable unit.
+-- APPEND-ONLY EVIDENCE (registered in APPEND_ONLY_TABLES): a delta is an
+-- observation, and observations are not edited. A human's approve/deny APPENDS a
+-- `settlement` successor via supersedes_delta_id; whether a row has been settled
+-- is DERIVED at read time by hitl_delta.delta_chain, never stored back on the
+-- predecessor. The mutable half of the split is approval_items above.
+CREATE TABLE IF NOT EXISTS trust_deltas (
+    delta_id TEXT PRIMARY KEY,
+    artifact_id TEXT NOT NULL,
+    artifact_type TEXT,
+    stage TEXT NOT NULL,
+    gate TEXT,
+    before_hash TEXT NOT NULL,
+    after_hash TEXT NOT NULL,
+    before_text TEXT,
+    after_text TEXT,
+    findings_before TEXT,
+    findings_after TEXT,
+    findings_before_n INTEGER DEFAULT 0,
+    findings_after_n INTEGER DEFAULT 0,
+    spans TEXT,
+    actor TEXT,
+    rationale TEXT,
+    disposition TEXT NOT NULL DEFAULT 'pending',
+    approval_item_id TEXT,
+    supersedes_delta_id TEXT,
+    session_id TEXT,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,

@@ -1,0 +1,6 @@
+// Which TRUST guard is actually doing the blocking. A guard that never appears
+// here is a guard that has never refused anything on this deployment — the
+// declared-but-unconsumed shape, measured rather than assumed.
+foreach d in delta_review.deltas
+  where d.gate == "claim_guard"
+  select d.delta_id, d.artifact_id, d.stage, d.findings_before_n, d.findings_after_n, d.disposition, d.created_at

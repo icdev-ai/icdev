@@ -1,0 +1,3 @@
+foreach d in delta_review.deltas
+  where d.disposition == "pending"
+  select d.delta_id, d.artifact_id, d.stage, d.gate, d.findings_before_n, d.findings_after_n, d.created_at

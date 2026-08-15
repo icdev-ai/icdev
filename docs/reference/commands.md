@@ -5913,3 +5913,70 @@ semantics do not survive being flattened into one item with one `resolved_by`.
 # session is reported under `unresolved_event_ids` and never pulls that event in.
 # Two runs over the same rows are byte-identical — import canonical_timeline /
 # canonical_json / timeline_digest from session_timeline to check that yourself.
+
+## TRUST HITL Deltas — the delta as the reviewable unit (trust-hitl-01/02)
+
+A `force_*` override records THAT a human overrode, never WHAT CHANGED. These
+make the diff itself the thing a reviewer is shown and the thing that is stored.
+
+```bash
+python tools/quality/hitl_delta.py --list --json
+python tools/quality/hitl_delta.py --list --disposition pending --stage self_correction
+python tools/quality/hitl_delta.py --show <delta_id> --json
+python tools/quality/hitl_delta.py --chain <artifact_id> --json      # oldest first, settlement derived
+python tools/quality/hitl_delta.py --summary --json
+python tools/quality/hitl_delta.py --settle <delta_id> --approve \
+    --rationale "checked the revised figure against the cited SSP section" --json
+```
+
+`--settle` requires **exactly one** of `--approve` / `--deny` and a **non-empty
+`--rationale`**. An unexplained disposition is unauditable after the fact and
+indistinguishable from a bug (`trust_gate` invariant 4); an empty rationale
+settles nothing and returns exit 1.
+
+**The storage split is deliberate — do not conflate the halves.** `trust_deltas`
+(migration `20260815063956`) is append-only EVIDENCE and is registered in
+`APPEND_ONLY_TABLES`. The human's disposition is mutable STATE and lands in the
+existing `approval_items` inbox (migration `20260809203855`), which is
+deliberately NOT append-only. Settling APPENDS a `settlement` successor through
+`supersedes_delta_id` and never edits its predecessor, the same rule
+`sbom_revision.apply_correction` follows — so a predecessor still SAYS `pending`
+forever, and "has it been settled" is DERIVED at read time. Never read that
+column to build a queue: `pending_deltas()` filters on the successor, and a
+naive read re-queues every settled delta indefinitely.
+
+The diff is **claim-anchored, never a raw text diff**: spans align on
+`citation_grounding.decompose_claims` offsets, which is the same decomposition
+every TRUST guard numbers its `item_number` findings against. That is what makes
+a claim which was *reworded but still carries its finding* visible — a case
+`self_correct`'s monotone finding COUNT cannot see, because it hides whenever
+another span cleared in the same round.
+
+### Delta Review panel (trust-hitl-02)
+
+```bash
+# UI: http://localhost:5050/delta-review            queue
+#     http://localhost:5050/delta-review?delta_id=<id>   side-by-side panel
+# Toggle: ICDEV_DELTA_REVIEW_ENABLED=true  (icdev enable delta_review)
+```
+
+| Endpoint | Method | Body / query |
+|---|---|---|
+| `/api/delta-review/deltas` | GET | `?limit=` |
+| `/api/delta-review/delta/<delta_id>` | GET | — |
+| `/api/delta-review/artifact/<artifact_id>` | GET | `?limit=` |
+| `/api/delta-review/delta/<delta_id>/settle` | POST | `{approved: bool, rationale: str}` |
+| `/delta-review/api/iqe-query` | POST | `{question: str}` |
+
+`settle` binds the actor to the **authenticated user**; a body-supplied `actor`
+is ignored, so a caller cannot attribute a disposition to someone else. A
+rationale shorter than 10 characters is a 400, and a second settle on the same
+delta is a 409 rather than an overwrite.
+
+IQE collections: `delta_review.deltas`, `delta_review.settlements`,
+`delta_review.spans`. Seed queries live in `context/iqe/queries/delta_review/`
+— including `02_approvals_without_rationale.iqe`, which exists so the
+mandatory-rationale rule is *checkable* rather than merely asserted. No draft
+text leaves the IQE seam: the spans collection emits claim indices and verdicts,
+never claim strings, because IQE results travel into analyst answers and chat
+replies while the artifact itself stays behind the panel's auth.

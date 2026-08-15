@@ -1,0 +1,11 @@
+{
+  "id": "20260815063956_trust_hitl_deltas",
+  "description": "trust-hitl-01/02 — append-only trust_deltas evidence: the delta becomes the reviewable unit. A correction/settlement APPENDS a successor via supersedes_delta_id and never edits its predecessor (the sbom_records.supersedes_sbom_id rule). The human's mutable disposition lives in approval_items (migration 20260809203855), joined here by approval_item_id.",
+  "date": "2026-08-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "tables_affected": [
+    "trust_deltas"
+  ],
+  "reversible": true
+}
