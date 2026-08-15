@@ -162,6 +162,23 @@ jobs:
           name: red-first-proof
           path: red-first-proof.json
           if-no-files-found: ignore
+      # trust-disc-03. The step above answers "does CI run this file?" and
+      # nothing else. A gated file can be run on every PR, report green, and
+      # assert NOTHING — because it skipped. tests/test_app.py's overview test
+      # has been doing exactly that ("SQLite test DB lacks platform schema ... no
+      # such column: classification" — the column the RLS predicate in
+      # get_connection() filters on, so every read of kanban_tasks raised), and
+      # the skip presented it as coverage for an unknown length of time.
+      #
+      # Static half, so it runs BEFORE pytest and costs ~1s: every skip site in a
+      # gated test file must be enumerated by name in args/ci_skip_census.txt
+      # with a written reason, and `skip_census.skip_max` may only go DOWN. The
+      # runtime half runs after the suite, below.
+      #
+      # Do NOT add `|| true`. The failure names the site and the line to append.
+      - name: Skip census (static)
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/skip_census.py --check
       - name: Run core unit tests
         working-directory: ${{ github.workspace }}
         run: |
@@ -195,7 +212,35 @@ jobs:
             exit 1
           fi
           echo "Running ${#CI_TESTS[@]} gated test targets from args/ci_test_files/core.txt"
-          pytest "${CI_TESTS[@]}" -v --tb=short -x
+          # --junitxml feeds the runtime half of the skip census in the next step
+          # (trust-disc-03). Workspace-relative on purpose: a $RUNNER_TEMP path is
+          # a backslash path on the Windows runner and a /tmp path means one thing
+          # to bash and another to Python, and this file is handed between both.
+          mkdir -p .tmp
+          pytest "${CI_TESTS[@]}" -v --tb=short -x --junitxml=.tmp/ci-junit.xml
+      # trust-disc-03, runtime half. The static census above reads source text and
+      # therefore cannot see a skip raised from a conftest fixture, a plugin, or a
+      # rebound alias — all three silence a gated file without its own source
+      # saying so. This reads what the run ACTUALLY skipped out of the JUnit XML
+      # and prints it per file, so the gated suite's skip count is a number in the
+      # log of every build rather than a thing nobody has ever looked at.
+      #
+      # SURVEYED BEFORE ARMING, per the CLAUDE.md rule that a check enabled without
+      # a measured fire rate is unmeasured rather than proven. Full gated allowlist
+      # run 2026-08-15 (240 targets, 6,864 collected, 9m36s): 45 skipped (0.66%),
+      # and every one attributed to a file that owns a registered site — ZERO
+      # unaccounted, so `--check` refuses nothing that exists today. The measurement
+      # also showed why attribution is per FILE and not per site:
+      # tests/test_ski_roles_lifecycle.py produced 37 of those 45 skips, 82% of the
+      # total, from exactly 2 static sites — one parametrized guard over a skill
+      # pack that is not vendored.
+      #
+      # `if: always()` because a suite that failed still skipped, and the skip
+      # count is often how you find out WHY it failed.
+      - name: Skip census (runtime)
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check
       # trust-disc-02. The step above is the IN-SUITE half: every gated module in
       # one process, in one fixed order (the order of core.txt). This is the ALONE
       # half, and the two catch different defects.

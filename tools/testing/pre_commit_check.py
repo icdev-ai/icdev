@@ -5,8 +5,10 @@
 Called by .githooks/pre-commit. Blocks the commit if:
   1. This commit adds or renames a test file that no allowlist and no exclusion
      covers (tsg-policy-02 — the same census the CI `test` job runs)
-  2. Any blueprint.py fails to import (would cause 500 on all its routes)
-  3. Any nav route returns non-200 or contains error text (catches runtime failures
+  2. This commit adds an unregistered `pytest.skip` to a CI-gated test file
+     (trust-disc-03 — a skipped test is UNMEASURED, not passing)
+  3. Any blueprint.py fails to import (would cause 500 on all its routes)
+  4. Any nav route returns non-200 or contains error text (catches runtime failures
      that CodeLens + Coherence cannot detect)
 
 Exit 0 = all checks pass (commit proceeds).
@@ -37,6 +39,10 @@ DASHBOARD_PATTERNS = (
 #: message an author reads here is the message CI would have printed, by
 #: construction rather than by convention.
 CENSUS_TOOL = Path("tools") / "ci" / "gated_test_list.py"
+
+#: The skip census CLI (trust-disc-03). Same shell-out discipline, same reason:
+#: the author reads the message CI would have printed.
+SKIP_CENSUS_TOOL = Path("tools") / "ci" / "skip_census.py"
 
 
 def _get_staged_name_status(root: Path = BASE_DIR) -> list[tuple[str, str]]:
@@ -238,6 +244,59 @@ def _run_test_gating_census(new_tests: list[str], root: Path = BASE_DIR) -> bool
     return False
 
 
+# --------------------------------------------------------------------------- #
+# Skip census (trust-disc-03)
+# --------------------------------------------------------------------------- #
+# The gate above asks whether CI RUNS a file. This one asks whether the file
+# ASSERTS anything, and a `pytest.skip` makes those different questions. It fires
+# on MODIFIED files too, not just added ones — adding a skip to an existing gated
+# test is the whole failure mode, and it never adds a file, so the `--diff-filter=AR`
+# trigger the census above uses would miss every single instance of it.
+#
+# Scoped with `--changed` to the gated files THIS commit touches, so the author is
+# never blocked by a skip somebody else left unregistered elsewhere in the tree.
+
+
+def _run_skip_census(root: Path = BASE_DIR) -> bool:
+    """Refuse a commit that adds an unregistered skip to a gated test file.
+
+    Returns True (allow) whenever the census cannot be resolved. A fast path that
+    cannot read its own policy must not block a commit — CI runs the same check
+    and will not be so forgiving.
+    """
+    tool = BASE_DIR / SKIP_CENSUS_TOOL
+    if not tool.is_file():
+        return True
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), "--check", "--staged", "--root", str(root)],
+            capture_output=True, text=True, cwd=str(root), timeout=120,
+            # EXPLICIT, not text=True's default: the census message carries em
+            # dashes, and `locale.getencoding()` on a Windows dev box is cp1252.
+            encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[pre-commit] Skip census: SKIPPED — could not run ({exc})")
+        return True
+
+    if result.returncode == 0:
+        out = (result.stdout or "").strip()
+        if "touches no gated test file" not in out:
+            print("[pre-commit] Skip census: OK")
+        return True
+
+    print("[pre-commit] BLOCKED: this commit adds a skip to a CI-gated test file.")
+    print("[pre-commit] A skipped test satisfies the coverage claim while asserting nothing.")
+    if result.stderr and result.stderr.strip():
+        print(result.stderr.strip())
+    print(
+        "[pre-commit] Delete the skip and make the test run, or register it in "
+        "args/ci_skip_census.txt with a written reason AND lower "
+        "skip_census.skip_max only when you remove one."
+    )
+    return False
+
+
 def _run_blueprint_import_check() -> bool:
     """Run the coherence blueprint_imports check."""
     print("[pre-commit] Checking blueprint imports...")
@@ -344,6 +403,13 @@ def main() -> int:
     # policy config, so it pays no measurable time.
     new_tests = _staged_new_test_files(name_status)
     if new_tests and not _run_test_gating_census(new_tests):
+        failed = True
+
+    # Skip census — fires on any staged change to a GATED test file, added or
+    # modified. Its own --staged mode returns immediately when none of the staged
+    # paths is in scope, so a commit touching no gated test pays one subprocess
+    # and no scan.
+    if any(f.endswith(".py") for f in staged) and not _run_skip_census():
         failed = True
 
     # Always run blueprint import check when Python files change

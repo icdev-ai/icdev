@@ -5951,6 +5951,22 @@ python tools/ci/red_first_gate.py                            # report over the P
 python tools/ci/red_first_gate.py --gate                     # the merge gate
 python tools/ci/red_first_gate.py --files tests/test_x.py --gate   # prove one file
 python tools/ci/red_first_gate.py --base origin/main --json --out red-first-proof.json
+# CI SKIP census (trust-disc-03) — a gated test that SKIPS is UNMEASURED, not passing.
+# The ratchet above answers "does CI run this file?" and nothing else. tests/test_app.py's
+# overview test is gated, green on every PR, and has been skipping ("SQLite test DB lacks
+# platform schema ... no such column: classification" — the column the RLS predicate in
+# get_connection() filters on, so every read of kanban_tasks raised).
+# Two halves: the static AST census is the gate you run before committing; the JUnit-XML
+# half sees a skip raised from a conftest fixture that the static scan cannot.
+# Census is ENUMERATED by name in args/ci_skip_census.txt; skip_census.skip_max in
+# args/test_gating_gate.yaml may only go DOWN. Policy: docs/ci/test-gating-policy.md
+python tools/ci/skip_census.py --check                       # exit 1 on an unregistered skip site
+python tools/ci/skip_census.py --json                        # per-file + per-kind site census
+python tools/ci/skip_census.py --check --staged              # pre-commit fast path (staged gated files)
+python tools/ci/skip_census.py --check --changed tests/test_app.py
+python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what the run ACTUALLY skipped
+python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
+python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
 
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
