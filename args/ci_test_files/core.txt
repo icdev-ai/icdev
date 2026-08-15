@@ -1642,3 +1642,12 @@ tests/test_adversarial_review_question.py
 # govchain_anchor sweep.
 # 33 tests, ~1s. No network, no Fabric: the noop transport queues.
 tests/provenance/test_trust_validation_anchor.py
+# trust-disc-02. Gates tools/ci/isolation_run.py, which runs every test file the
+# PR changed ALONE — the half of "both alone and in-suite" that this pipeline
+# never had. Builds a throwaway git repo carrying a real order-dependent pair
+# (the follower passes only when the leader was collected into the same process,
+# the reduced form of the shared tools.dashboard.app blueprint defect) and asserts
+# the runner turns red on it when the file is gated and warns when it is not.
+# Also asserts the workflow actually calls the tool, without `|| true`, on a
+# fetch-depth: 0 checkout — an unmounted gate is decoration.
+tests/test_ci_isolation_run.py
