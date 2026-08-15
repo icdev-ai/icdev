@@ -11,10 +11,17 @@
 # constant — so a guard name that is not in PUBLISH_GATES cannot be recorded and
 # must not appear here. tests/test_trust_gate.py asserts the two agree.
 #
-# ONLY implemented guards are declared. structure_guard (phase 3) is added by
-# the phase that ships it, together with the migration that widens the CHECK.
-# Declaring a guard before it can fire is the declared-but-unconsumed defect
-# this framework exists to catch.
+# ONLY implemented guards are declared, each by the phase that ships it together
+# with the migration that widens the CHECK. Declaring a guard before it can fire
+# is the declared-but-unconsumed defect this framework exists to catch.
+#
+# structure_guard (phase 3) checks the artifact against a DECLARED output
+# contract. That declaration is its applicability gate: a surface that passes no
+# contract gets `not_applicable`, NOT `unmeasurable`. The difference decides
+# whether compliance_evidence — which refuses on an unmeasurable guard — would
+# refuse every SSP narrative for the crime of not being JSON. So it is declared
+# only on the two profiles whose artifacts can carry a contract, and it is
+# absent (i.e. skipped) on drafting and chat_rag, which produce prose.
 #
 # kg_guard needs a graph connection AND a populated graph. It reports
 # `unmeasurable` without either, and under the OBSERVED schema (kg_ontology
@@ -60,6 +67,7 @@ trust_gate:
         audit failure, so this is the only profile that refuses on an
         unmeasurable guard or an unavailable stage 2.
       guards:
+        structure_guard: block
         placeholder_guard: block
         citation_guard: block
         claim_guard: block
@@ -76,7 +84,13 @@ trust_gate:
         ANVIL builds, agent adapters, MCP tool output. Claims here are about the
         system itself and are usually assertion-shaped rather than cited prose,
         so claim_guard is off and kg_guard carries the entity-level checking.
+        structure_guard is the one guard that BLOCKS on this otherwise
+        warn-only profile: conformance to a declared contract is not a
+        judgement call, and a caller that asked for an object cannot use prose.
+        It bites only when a contract was actually declared — no contract is
+        `not_applicable`, so no existing caller changes behaviour.
       guards:
+        structure_guard: block
         placeholder_guard: warn
         citation_guard: warn
         claim_guard: skip

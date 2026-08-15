@@ -31,6 +31,10 @@ _MIGRATION_300 = _ROOT / "tools" / "db" / "migrations" / "300_idr_publish_audit_
 # historical snapshots and are asserted to be widening-only, not exhaustive.
 _MIGRATION = (
     _ROOT / "tools" / "db" / "migrations"
+    / "20260814235530_idr_publish_audit_structure_guard" / "up.sql"
+)
+_MIGRATION_KG = (
+    _ROOT / "tools" / "db" / "migrations"
     / "20260814201513_idr_publish_audit_kg_guard" / "up.sql"
 )
 
@@ -85,21 +89,31 @@ def test_kg_guard_is_a_recognised_gate():
     assert "kg_guard" in PUBLISH_GATES
 
 
-def test_unshipped_guards_are_not_declared_early():
-    """kg_guard (phase 2) and structure_guard (phase 3) must not appear yet.
+def test_structure_guard_is_a_recognised_gate():
+    """TRUST v2 phase 3 wired output-contract validation (trust-struct-03)."""
+    assert "structure_guard" in PUBLISH_GATES
+
+
+def test_a_declared_gate_is_one_a_guard_can_actually_emit():
+    """The invariant the removed `structure_guard not in PUBLISH_GATES` test was
+    holding until this phase shipped.
 
     A gate value nothing can emit is the declared-but-unconsumed defect this
-    framework exists to catch. Each ships with its own widening migration.
-    structure_guard is phase 3.
+    framework exists to catch, and it would also make idr_publish_audit.gate
+    accept a value no reviewer can produce. So the constant is asserted against
+    the guards the gate actually runs, in both directions: every recordable gate
+    is a real guard, and every real guard is recordable.
     """
-    assert "structure_guard" not in PUBLISH_GATES
+    from tools.quality.trust_gate import ALL_GUARDS
+
+    assert set(PUBLISH_GATES) == set(ALL_GUARDS)
 
 
 def test_rendered_sql_is_deterministic():
     """Sorted, so the constant and the SQL can be compared literally."""
     assert publish_gate_check_sql() == (
         "gate IN ('citation_guard','claim_guard','constitution_guard',"
-        "'cove_guard','kg_guard','placeholder_guard')"
+        "'cove_guard','kg_guard','placeholder_guard','structure_guard')"
     )
     assert publish_gate_check_sql("g").startswith("g IN (")
 
@@ -109,7 +123,7 @@ def test_rendered_sql_is_deterministic():
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("path", [_CONSOLIDATED, _MIGRATION], ids=["consolidated", "migration_300"])
+@pytest.mark.parametrize("path", [_CONSOLIDATED, _MIGRATION], ids=["consolidated", "current_migration"])
 def test_sql_matches_the_python_constant(path: pathlib.Path):
     """The actual guard.
 
@@ -138,7 +152,8 @@ def test_sql_matches_the_python_constant(path: pathlib.Path):
 
 
 @pytest.mark.parametrize(
-    "path", [_MIGRATION_300, _MIGRATION], ids=["migration_300", "trust_v2"]
+    "path", [_MIGRATION_300, _MIGRATION_KG, _MIGRATION],
+    ids=["migration_300", "trust_v2_kg", "trust_v2_structure"],
 )
 def test_migration_widens_rather_than_replaces(path: pathlib.Path):
     """An override already recorded must not be invalidated by a widening.

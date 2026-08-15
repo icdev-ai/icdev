@@ -78,6 +78,21 @@ CORTEX_CLASSIFY_FUNCTION = "cortex_classify"
 CORTEX_EXTRACT_FUNCTION = "cortex_extract"
 CORTEX_SEARCH_REWRITE_FUNCTION = "cortex_search_rewrite"
 CORTEX_ANALYST_FUNCTION = "cortex_analyst"
+
+
+class CortexSchemaError(RuntimeError):
+    """``extract`` could not obtain output conforming to the caller's schema.
+
+    Raised after ONE bounded repair attempt has already failed. It carries the
+    validator's findings so the caller can log WHICH field was wrong rather
+    than "extraction failed" — and so a refusal is distinguishable from a
+    router outage, which raises its own error type.
+    """
+
+    def __init__(self, message: str, *, findings=None, attempts: int = 1):
+        super().__init__(message)
+        self.findings = list(findings or [])
+        self.attempts = int(attempts)
 CORTEX_REASON_FUNCTION = "cortex_complete"  # reasoning reuses complete's routing
 # analyst.ask(summarize=True) prose summary. Declared as its OWN routing
 # function rather than reusing "summarization": that name exists only under
@@ -551,17 +566,26 @@ def _parse_json_payload(content: str) -> Optional[Any]:
 
 
 def _validate_against_schema(payload: Any, schema: Optional[Dict]) -> tuple:
-    """Best-effort JSON-Schema conformance check for cortex.extract.
+    """Fallback JSON-Schema conformance check for cortex.extract.
 
-    Returns (ok, error_message). If jsonschema is unavailable or no schema was
-    supplied, returns (True, "") — validation is a check, never a hard dependency.
+    Returns ``(ok, error_message)`` where ``ok`` is True / False / **None**.
+    ``None`` means UNMEASURED: no schema was supplied, or ``jsonschema`` is not
+    installed, so nothing was checked. It used to return ``(True, "")`` in both
+    of those cases, which is how an air-gapped deployment validated nothing and
+    reported that everything conformed — the same "a check that reports fine
+    when it did not run" defect the TRUST guards exist to remove. The caller
+    distinguishes the three states; it must never collapse None into True.
+
+    This is the SECOND-choice checker. ``structured_output.OutputContract``
+    handles the closed subset deterministically with no dependency at all; this
+    covers the caller-supplied schemas that fall outside it.
     """
     if not schema:
-        return True, ""
+        return None, "no schema supplied; conformance not checked"
     try:
         import jsonschema  # noqa: PLC0415 — optional dependency
     except Exception:  # noqa: BLE001
-        return True, ""
+        return None, "jsonschema is not installed; conformance not checked"
     try:
         jsonschema.validate(instance=payload, schema=schema)
         return True, ""
@@ -569,6 +593,52 @@ def _validate_against_schema(payload: Any, schema: Optional[Dict]) -> tuple:
         return False, (str(exc).splitlines()[0] if str(exc) else "schema mismatch")[:200]
     except Exception as exc:  # noqa: BLE001 — malformed schema, etc.
         return False, f"schema validation error: {exc}"[:200]
+
+
+def _contract_for(schema: Optional[Dict]):
+    """Build an ``OutputContract`` for ``schema``, or None when it has no shape here.
+
+    None means "this schema is not expressible in the validator's closed
+    subset" (or the module is unavailable) — the caller then falls back to
+    jsonschema. It never means "valid".
+    """
+    if not schema:
+        return None
+    try:
+        from tools.quality.structured_output import ContractError, OutputContract
+    except Exception as exc:  # noqa: BLE001 — validator absent is a posture, not a crash
+        logger.warning("cortex.extract: structured_output unavailable (%s)", exc)
+        return None
+    try:
+        return OutputContract(schema, name="cortex.extract")
+    except ContractError as exc:
+        # An arbitrary caller schema (minLength, oneOf, $ref, …) is outside the
+        # subset by design. Not a defect — just not this checker's job.
+        logger.debug("cortex.extract: schema outside the contract subset (%s)", exc)
+        return None
+
+
+class _RepairRouter:
+    """Router adapter so ``repair_once``'s retry travels cortex's own path.
+
+    ``repair_once`` builds a bare ``LLMRequest`` and calls ``router.invoke``.
+    Handing it the raw router would drop the air-gap model exclusions and the
+    tenant / classification / budget attribution that ``_build_request`` +
+    ``_invoke`` apply to every other Cortex call — i.e. the repair attempt would
+    be the one LLM call in this module that egresses ungoverned.
+    """
+
+    __slots__ = ("_context",)
+
+    def __init__(self, context: CortexContext):
+        self._context = context
+
+    def invoke(self, function: str, request):
+        ctx = self._context
+        request.tenant_id = ctx.tenant_id
+        request.classification = ctx.classification or "CUI"
+        request.agent_id = ctx.agent_id or f"cortex:{ctx.tenant_id or 'default'}"
+        return _invoke(function, request, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -762,15 +832,50 @@ def extract(
     schema: Dict,
     ctx: Union[CortexContext, dict, None] = None,
     function: str = CORTEX_EXTRACT_FUNCTION,
+    on_invalid: str = "raise",
+    repair: bool = True,
 ) -> CortexResult:
     """Extract structured data from ``text`` conforming to a JSON ``schema``.
 
     The schema is passed both as ``LLMRequest.output_schema`` (for providers
     with native structured output) and inline in the prompt (for providers
-    without). Returns a CortexResult whose ``text`` is the extracted JSON
-    object serialized as a string; falls back to the raw completion text when
-    no JSON payload can be parsed. Router errors propagate.
+    without).
+
+    **This no longer degrades silently (trust-struct-03).** It previously
+    returned the raw completion as ``result.text`` with ``schema_valid=False``
+    tucked into ``metadata`` — a caller that did the obvious thing and ran
+    ``json.loads(result.text)`` got prose, and one of the two in-repo callers
+    never read that flag at all. Now the payload is held to the declared shape
+    by ``tools.quality.structured_output``:
+
+      1. ``coerce_or_reject`` in ``reject`` mode — a partly-valid object is
+         never returned.
+      2. On failure, ONE bounded ``repair_once`` re-prompt (``repair=False`` to
+         skip it), showing the model its own output and the specific defects.
+         Bounded by construction, not by a counter a later edit can raise.
+      3. Still non-conforming -> :class:`CortexSchemaError`. Pass
+         ``on_invalid="return"`` to keep the old best-effort behaviour, which is
+         now an explicit choice at the call site rather than the default.
+
+    Schemas outside the validator's closed subset (``oneOf``, ``minLength``,
+    ``$ref``, …) fall back to ``jsonschema``, and when THAT cannot run the
+    result is reported ``schema_valid=None`` / ``schema_status="unmeasurable"``
+    — never ``True``. Unmeasurable is a stated posture here rather than a
+    refusal: it says nothing about the payload, so refusing on it would fail
+    every arbitrary-schema call in a deployment without ``jsonschema`` while
+    proving nothing. Non-conformance is what refuses.
+
+    Returns:
+        CortexResult whose ``text`` is the conforming JSON object serialized as
+        a string, and whose ``data["payload"]`` is that object already parsed.
+
+    Raises:
+        CortexSchemaError: the model's output did not conform and
+            ``on_invalid="raise"`` (the default). Router errors propagate.
     """
+    if on_invalid not in ("raise", "return"):
+        raise ValueError(f"on_invalid must be 'raise' or 'return', got {on_invalid!r}")
+
     prompt = (
         "Extract structured data from the text below as a single JSON object "
         "conforming to the JSON schema. Respond with the JSON object only.\n\n"
@@ -783,28 +888,82 @@ def extract(
     response = _invoke(function, request, context)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
-    payload = response.structured_output
-    if payload is None:
-        payload = _parse_json_payload(response.content)
-    text_out = json.dumps(payload, ensure_ascii=False) if payload is not None else (response.content or "")
-    result = _result_from_response(response, text=text_out, elapsed_ms=elapsed_ms)
+    # Normalise both provider shapes to one raw string so a single validation
+    # path covers native structured output and plain text alike.
+    native = getattr(response, "structured_output", None)
+    raw_text = (
+        json.dumps(native, ensure_ascii=False) if native is not None
+        else (getattr(response, "content", "") or "")
+    )
 
-    # Validate conformance to the caller's JSON schema. DEGRADE-not-refuse (TRUST):
-    # a non-conforming / unparseable payload sets schema_valid=False + grounded=False
-    # + a schema_error note, rather than raising — the caller still gets the
-    # best-effort output but is told, in-band, that it did not conform.
+    contract = _contract_for(schema)
+    if contract is not None:
+        payload, findings, attempts = _extract_via_contract(
+            raw_text, contract, context=context, function=function, repair=repair
+        )
+        checker = "contract"
+    else:
+        payload = native if native is not None else _parse_json_payload(response.content)
+        findings, attempts, checker = [], 1, "jsonschema"
+
+    result = _result_from_response(
+        response,
+        text=json.dumps(payload, ensure_ascii=False) if payload is not None else "",
+        elapsed_ms=elapsed_ms,
+    )
     result.metadata = dict(result.metadata or {})
-    if payload is None:
-        result.metadata["schema_valid"] = False
-        result.metadata["schema_error"] = "no JSON object could be parsed from the completion"
-        result.grounded = False
+    result.metadata["schema_checker"] = checker
+    result.metadata["schema_attempts"] = attempts
+    result.metadata["structure_repaired"] = attempts > 1 and payload is not None
+
+    if contract is not None:
+        ok = payload is not None
+        err = "" if ok else "output did not conform to the declared contract"
+    elif payload is None:
+        ok, err = False, "no JSON object could be parsed from the completion"
     else:
         ok, err = _validate_against_schema(payload, schema)
-        result.metadata["schema_valid"] = ok
-        if not ok:
-            result.metadata["schema_error"] = err
-            result.grounded = False
+
+    result.metadata["schema_valid"] = ok
+    result.metadata["schema_status"] = (
+        "valid" if ok is True else ("unmeasurable" if ok is None else "invalid")
+    )
+    if findings:
+        result.metadata["structure_findings"] = findings[:20]
+    if ok is True:
+        result.data["payload"] = payload
+        return result
+
+    result.metadata["schema_error"] = err
+    result.grounded = False
+    if ok is None:
+        # Unmeasured, and said so. Nothing was checked, so nothing is claimed;
+        # the payload still travels because the caller may have its own floor.
+        logger.warning("cortex.extract: conformance unmeasured — %s", err)
+        result.data["payload"] = payload
+        return result
+
+    if on_invalid == "raise":
+        raise CortexSchemaError(err, findings=findings, attempts=attempts)
+    # Explicit best-effort: the caller asked for whatever came back, and the
+    # in-band flags say what it is worth.
+    result.text = raw_text if payload is None else result.text
     return result
+
+
+def _extract_via_contract(
+    raw_text: str, contract, *, context: CortexContext, function: str, repair: bool
+) -> tuple:
+    """Validate, and re-prompt exactly once. Returns ``(obj|None, findings, attempts)``."""
+    from tools.quality.structured_output import coerce_or_reject, repair_once
+
+    payload, findings = coerce_or_reject(raw_text, contract, mode="reject")
+    if payload is not None or not repair:
+        return payload, findings, 1
+    payload, findings = repair_once(
+        raw_text, contract, router=_RepairRouter(context), function=function
+    )
+    return payload, findings, 2
 
 
 # ---------------------------------------------------------------------------

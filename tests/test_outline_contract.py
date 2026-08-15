@@ -386,16 +386,34 @@ def test_check_outline_on_a_clean_draft():
     assert report["present"] == report["required"] == 3
 
 
-# ── The guard is not registered yet — trust-struct-03 owns that ───────────────
+# ── The guard is registered — trust-struct-03 wired it ────────────────────────
 
 
-def test_structure_guard_is_not_declared_before_it_is_wired():
+def test_structure_guard_is_declared_now_that_it_is_wired():
     # PUBLISH_GATES gains a value only in the phase that can EMIT it, together
-    # with the migration widening idr_publish_audit.gate. Declaring it here
-    # would be the declared-but-unconsumed defect this epic exists to close.
+    # with the migration widening idr_publish_audit.gate. trust-struct-03 is
+    # that phase: this module is now reachable from stage 1, so the gate value
+    # its findings would be recorded under has to exist.
     from tools.quality.citation_grounding import PUBLISH_GATES
 
-    assert "structure_guard" not in PUBLISH_GATES
+    assert "structure_guard" in PUBLISH_GATES
+
+
+def test_this_module_is_reachable_from_the_gate():
+    """The registration above is only honest if something actually calls in.
+
+    A gate value whose module nothing consumes is the declared-but-unconsumed
+    defect wearing the fix's clothes, so this asserts the path end to end
+    rather than the constant alone.
+    """
+    from tools.quality.trust_gate import TrustGate
+
+    contract = get_contract("ato_ssp")
+    sections = [{"heading": h} for h in contract.required[:1]]
+    result = TrustGate("compliance_evidence").evaluate(
+        "prose", sections=sections, artifact_type="ato_ssp", run_stage2=False,
+    ).stage1["structure_guard"]
+    assert {f.issue for f in result.findings} == {ISSUE_MISSING}
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
