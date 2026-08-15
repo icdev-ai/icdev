@@ -13,9 +13,11 @@ import pytest
 
 from tools.cortex import governance
 from tools.cortex.governance import (
+    DEFAULT_GATES,
     GATE_CITATION_GROUNDING,
     GATE_CONTENT_GROUNDING,
     GATE_INPUT_REDACTION,
+    GATE_KG_GROUNDING,
     GATE_OPERATION,
     GATE_ORDER,
     GATE_OUTPUT_REDACTION,
@@ -95,9 +97,18 @@ def test_all_gates_run_in_order_on_retrieval_call(calls):
 
     assert result == CITED_TEXT
     assert isinstance(report, GovernanceReport)
-    assert report.gates_run == list(GATE_ORDER)
+    # DEFAULT_GATES, not GATE_ORDER: kg_grounding (trust-kg-03) is in the gate
+    # vocabulary but opt-in, so a caller naming no profile does not run it. It
+    # is still ACCOUNTED for — outcomes carries its `skip`, which is the whole
+    # point of recording skips rather than omitting them.
+    assert report.gates_run == list(DEFAULT_GATES)
     assert set(report.outcomes) == set(GATE_ORDER)
-    assert all(v == OUTCOME_PASS for v in report.outcomes.values())
+    assert report.outcomes[GATE_KG_GROUNDING] == OUTCOME_SKIP
+    assert all(
+        v == OUTCOME_PASS
+        for g, v in report.outcomes.items()
+        if g != GATE_KG_GROUNDING
+    )
     assert not report.blocked
     assert report.redactions_applied == 0
 

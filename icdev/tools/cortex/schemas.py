@@ -108,9 +108,21 @@ class GovernanceReport:
     # {"score": float, "method": "heuristic"|"llm"|"no_context"|"placeholder",
     #  "ungrounded_claims": [...], "floor": float}. Empty until that gate runs.
     content_grounding: dict = field(default_factory=dict)
+    # KG-grounding detail for the kg_grounding gate (trust-kg-03):
+    # {"status": "ok"|"kg_unmeasurable", "schema_source": "declared"|"observed"|
+    #  "unavailable", "counts": {...}, "unknown_entities": [...],
+    #  "findings": [...]}. Empty until that gate runs — and it is OPT-IN, so it
+    # stays empty for every profile that does not declare it.
+    #
+    # `schema_source` is the field that decides what the verdict is worth:
+    # kg_ontology ships empty, so in practice the schema is OBSERVED, under which
+    # an unrecognised triple is UNATTESTED (warns) and never CONTRADICTED
+    # (fails). A consumer reading a clean kg verdict without reading this key is
+    # reading more assurance than the gate offered.
+    kg_grounding: dict = field(default_factory=dict)
     # Governance profile this call ran under (hgx-gov-01). "default" is the full
-    # gate chain — what every caller that names no profile gets. A narrower
-    # profile shows up as `skip` outcomes whose detail names it.
+    # gate chain minus the opt-in gates — what every caller that names no profile
+    # gets. A narrower profile shows up as `skip` outcomes whose detail names it.
     profile: str = "default"
     # Wall-clock cost of the governed call, in milliseconds (ctx-obs-02).
     # ``CortexResult.latency_ms`` times the LLM call ONLY, so until these fields
