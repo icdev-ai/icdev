@@ -59,13 +59,18 @@ CREATE TABLE IF NOT EXISTS source_citation_registry (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Migration 149's columns, verbatim. This fixture previously invented an
+-- `updated_at` column that exists in neither the PostgreSQL nor the SQLite
+-- DDL, which is precisely what hid flush_pending()'s broken UPDATE: it passed
+-- here and silently failed against every real database.
 CREATE TABLE IF NOT EXISTS govchain_pending_operations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     operation_type TEXT NOT NULL,
     payload_hash TEXT NOT NULL,
     status TEXT DEFAULT 'pending',
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    submitted_at TIMESTAMP,
+    error_message TEXT
 );
 """
 
@@ -235,14 +240,20 @@ class TestBlockchainConfig:
             cfg = BlockchainConfig({"fabric": {"channel_default": "govchain-channel"}})
             assert not cfg.is_enabled()
 
-    def test_enabled_env_var_requires_sdk(self):
-        from tools.blockchain.blockchain_config import BlockchainConfig, HAS_FABRIC, reset_config
+    def test_enabled_env_var_requires_a_healthy_transport(self):
+        """is_enabled() asks the transport registry, not HAS_FABRIC.
+
+        It used to be ``self._enabled and HAS_FABRIC``; since hfc is in neither
+        requirements.txt nor pyproject.toml that constant was permanently False
+        and every anchor in the platform reached the no-op. See
+        tests/test_blockchain_transports.py for the transport-level coverage.
+        """
+        from tools.blockchain.blockchain_config import BlockchainConfig, reset_config
 
         reset_config()
         with patch.dict("os.environ", {"ICDEV_BLOCKCHAIN_ENABLED": "true"}):
             cfg = BlockchainConfig({"fabric": {"channel_default": "govchain-channel"}})
-            # is_enabled() returns True only if HAS_FABRIC is also True
-            assert cfg.is_enabled() == HAS_FABRIC
+            assert cfg.is_enabled() == (cfg.active_transport() is not None)
 
     def test_air_gap_flag(self):
         from tools.blockchain.blockchain_config import BlockchainConfig, reset_config

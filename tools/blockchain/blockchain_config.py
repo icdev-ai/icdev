@@ -3,22 +3,27 @@
 # CUI // SP-CTI
 """Blockchain configuration loader for ICDEV GovChain integration.
 
-Loads args/blockchain_config.yaml and provides air-gap graceful degradation.
-When blockchain is disabled, all ledger operations are no-ops that queue
-intent to govchain_pending_operations.
+Loads args/blockchain_config.yaml and resolves which anchor transport to use.
+When no transport is healthy, ledger operations degrade to queueing intent in
+govchain_pending_operations — retained, never dropped.
+
+Transports (D-GC-1) live in ``tools/blockchain/transports/`` and are selected by
+``tools/blockchain/transport_registry.py`` in priority order. ``HAS_FABRIC`` is
+retained for backward compatibility but is NO LONGER the switch: fabric-sdk-py
+(``hfc``) is in neither requirements.txt nor pyproject.toml, so it was
+permanently False and routed every anchor in the platform to a no-op. A missing
+optional dependency is now one unhealthy backend among several.
 
 Usage:
     from tools.blockchain.blockchain_config import get_config
 
     cfg = get_config()
+    client = cfg.get_fabric_client()   # best healthy transport, else no-op
     if cfg.is_enabled():
-        client = cfg.get_fabric_client()
-    else:
-        print("Blockchain disabled — operating in air-gap mode")
+        ...                            # a real transport is up
 """
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -29,6 +34,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.blockchain.transports.noop import NoOpTransport  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("blockchain.config")
@@ -41,46 +47,28 @@ try:
 except ImportError:
     pass
 
-HAS_FABRIC = False
+#: Retained so existing callers/tests importing it keep working, and so
+#: ``--test`` can still report whether the SDK is present. It is NOT consulted
+#: when choosing a transport — ``FabricSdkTransport.health()`` is.
+#: find_spec rather than an import: this is a presence question, and importing
+#: an optional SDK at module scope to answer it makes every importer pay for it.
 try:
-    from hfc.fabric import Client as FabricClient
+    from importlib.util import find_spec
 
-    HAS_FABRIC = True
-except ImportError:
-    pass
+    HAS_FABRIC = find_spec("hfc") is not None and find_spec("hfc.fabric") is not None
+except Exception:  # noqa: BLE001 — a broken hfc install is "not usable", not fatal
+    HAS_FABRIC = False
 
 
-class NoOpFabricClient:
-    """Mock Fabric client for air-gapped or disabled mode."""
+class NoOpFabricClient(NoOpTransport):
+    """Backward-compatible alias for :class:`NoOpTransport`.
+
+    Kept because ``NoOpFabricClient(queue_to_db=...)`` is referenced by existing
+    callers and tests. New code should use the transport directly.
+    """
 
     def __init__(self, queue_to_db: bool = True):
-        self.queue_to_db = queue_to_db
-
-    def _queue(self, operation_type: str, payload_hash: str):
-        """Log intent to govchain_pending_operations."""
-        if not self.queue_to_db:
-            logger.info(f"[NO-OP] Would anchor: {operation_type} = {payload_hash}")
-            return
-        try:
-            from tools.db.storage import get_connection
-
-            conn = get_connection()
-            conn.execute(
-                "INSERT INTO govchain_pending_operations (operation_type, payload_hash, status) VALUES (%s, %s, %s)",
-                (operation_type, payload_hash, "pending"),
-            )
-            conn.commit()
-            conn.close()
-            logger.info(f"[QUEUED] {operation_type} = {payload_hash}")
-        except Exception as e:
-            logger.warning(f"Failed to queue blockchain operation: {e}")
-
-    def chaincode_invoke(self, channel: str, chaincode: str, fcn: str, args: list, cc_pattern: str = None):
-        self._queue(f"invoke:{chaincode}:{fcn}", hashlib.sha256(str(args).encode()).hexdigest())
-        return {"status": "queued", "tx_id": None}
-
-    def chaincode_query(self, channel: str, chaincode: str, fcn: str, args: list):
-        return {"status": "queued", "result": None}
+        super().__init__(queue_to_db=queue_to_db, healthy=False)
 
 
 class BlockchainConfig:
@@ -89,6 +77,7 @@ class BlockchainConfig:
     def __init__(self, raw: dict):
         self.raw = raw or {}
         self._enabled = self._compute_enabled()
+        self._registry = None
 
     def _compute_enabled(self) -> bool:
         # Environment override takes precedence
@@ -110,7 +99,13 @@ class BlockchainConfig:
         return True
 
     def is_enabled(self) -> bool:
-        return self._enabled and HAS_FABRIC
+        """True when the config permits anchoring AND a transport is healthy.
+
+        Previously ``self._enabled and HAS_FABRIC``, which was permanently False
+        because ``hfc`` is an undeclared dependency. Now it asks the registry,
+        so a ``peer`` binary on PATH is sufficient and no Python SDK is needed.
+        """
+        return self._enabled and self.active_transport() is not None
 
     def is_air_gapped(self) -> bool:
         return self.raw.get("air_gapped", {}).get("enabled", False)
@@ -138,15 +133,44 @@ class BlockchainConfig:
         hsm = crypto.get("hsm", {})
         return hsm.get("required_for_il5_plus", False)
 
+    # -- transports (D-GC-1) -------------------------------------------------
+
+    def transport_registry(self):
+        """The registry of anchor transports built from this config."""
+        if self._registry is None:
+            from tools.blockchain.transport_registry import build_registry_from_config
+
+            self._registry = build_registry_from_config(self.raw)
+        return self._registry
+
+    def active_transport(self, force: bool = False):
+        """The best healthy transport, or ``None`` when every backend is down.
+
+        ``None`` is a real answer: the caller must queue to
+        ``govchain_pending_operations`` rather than drop the anchor.
+        """
+        if not self._enabled:
+            return None
+        return self.transport_registry().best_healthy(force=force)
+
+    def transport_health(self, force: bool = True) -> dict:
+        """Per-transport health report, for ``--doctor`` and the dashboard."""
+        report = self.transport_registry().to_dict(force=force)
+        report["config_enabled"] = self._enabled
+        report["has_fabric_sdk"] = HAS_FABRIC
+        return report
+
     def get_fabric_client(self):
-        if self.is_enabled():
-            # Real Fabric client instantiation
-            try:
-                return FabricClient()
-            except Exception as e:
-                logger.warning(f"Fabric client failed: {e}, falling back to no-op")
-                return NoOpFabricClient()
-        return NoOpFabricClient(queue_to_db=self.is_air_gapped())
+        """Return the best healthy transport, else a queueing no-op.
+
+        Never returns ``None`` — every caller in ``tools/blockchain/`` treats
+        this as a client object, and a ``None`` here would surface as an
+        AttributeError inside an ``except Exception`` and vanish.
+        """
+        transport = self.active_transport()
+        if transport is not None:
+            return transport
+        return NoOpTransport(queue_to_db=self.is_air_gapped(), healthy=False)
 
 
 _CONFIG: Optional[BlockchainConfig] = None
@@ -172,28 +196,48 @@ def get_config(config_path: Optional[Path] = None) -> BlockchainConfig:
 
 
 def reset_config():
-    """Reset cached config (useful for testing)."""
+    """Reset cached config and the transport registry (useful for testing)."""
     global _CONFIG
     _CONFIG = None
+    try:
+        from tools.blockchain.transport_registry import reset_transport_registry
+
+        reset_transport_registry()
+    except Exception:  # noqa: BLE001 — reset must never be the thing that fails
+        pass
 
 
 def main():
     parser = argparse.ArgumentParser(description="Blockchain Config Loader")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--test", action="store_true", help="Test config loading")
+    parser.add_argument("--doctor", action="store_true", help="Probe every anchor transport")
     args = parser.parse_args()
 
     if args.test:
         cfg = get_config()
+        transport = cfg.active_transport()
         info = {
             "enabled": cfg.is_enabled(),
             "air_gapped": cfg.is_air_gapped(),
             "channel": cfg.channel(),
             "orderer": cfg.orderer(),
+            "active_transport": transport.name if transport else None,
             "has_fabric_sdk": HAS_FABRIC,
             "has_yaml": HAS_YAML,
         }
         print(json.dumps(info, indent=2) if args.json else info)
+        return
+
+    if args.doctor:
+        report = get_config().transport_health()
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(f"Active transport: {report['active_transport'] or '(none — anchors queue)'}")
+            for entry in report["transports"]:
+                mark = "OK " if entry["healthy"] else "-- "
+                print(f"  {mark}{entry['transport_name']:<28} {entry['status']:<12} {entry['message']}")
         return
 
     parser.print_help()
