@@ -1507,3 +1507,4 @@ tests/test_outline_contract.py
 # document".
 # 31 tests, <1s, injected validators + a fake router: no DB, no LLM, no network.
 tests/test_self_correct.py
+tests/kanban/test_timeout_no_redispatch.py
