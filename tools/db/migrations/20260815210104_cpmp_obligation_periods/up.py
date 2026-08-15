@@ -90,6 +90,17 @@ def downgrade(conn=None):
             conn.close()
 
 
+
+def up(conn=None):
+    """Runner entry point.
+
+    The work lives in ``upgrade``; MigrationRunner calls ``up(conn)`` and would
+    otherwise find no entry point at all and run NOTHING while recording the
+    migration as applied — worse than the bare .py this was promoted from,
+    because it would then look done.
+    """
+    return upgrade(conn)
+
 if __name__ == "__main__":
     result = upgrade()
     print(result)

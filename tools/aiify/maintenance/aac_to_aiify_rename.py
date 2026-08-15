@@ -1,5 +1,17 @@
 # CUI // SP-CTI
-"""Migration 172: AAC -> AI-ify canvas table rename (data-preserving).
+"""AAC -> AI-ify canvas table rename (data-preserving). OPERATOR SCRIPT.
+
+MOVED OUT OF tools/db/migrations/ 2026-08-15. It sat there as a bare
+``172_aiify_rename.py``, which MigrationRunner cannot discover, so it looked like
+a migration and had never run. The fix for its siblings was to promote them into
+discoverable directories; the fix for THIS one is the opposite, because it is not
+a migration for the database the runner drives.
+
+It writes to the AI-ify CANVAS database (AIIFY_PG_DATABASE), not to icdev, and
+its own note says any connection passed by a runner is ignored. Making the runner
+execute it would point a data move at the wrong database and record success
+against a schema it never touched. Run it deliberately instead.
+
 
 The AI Augmentation Canvas (AAC) was renamed to "AI-ify". This migration copies
 existing data from the legacy ``aac_*`` tables into the new ``aiify_*`` tables

@@ -1,0 +1,7 @@
+{
+  "description": "nc_topologies_schema (promoted from the never-discovered 020_nc_topologies_schema.py)",
+  "date": "2026-08-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}

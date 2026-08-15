@@ -303,6 +303,18 @@ def migrate():
         conn.close()
 
 
+
+def up(conn=None):  # noqa: ARG001 — migrate() manages its own connection
+    """Runner entry point.
+
+    The work lives in ``migrate``, which opens and closes its own connection
+    against DB_PATH. The runner's ``conn`` is accepted and deliberately not
+    forwarded: rewiring that function's connection handling is a behaviour
+    change, and this promotion is about making it RUN, not about changing what
+    it does.
+    """
+    return migrate()
+
 if __name__ == "__main__":
     ok = migrate()
     sys.exit(0 if ok else 1)
