@@ -223,6 +223,18 @@ def run(ctx: dict, _trigger) -> Dict[str, Any]:
     if anchor_result.get("status") == "error":
         print(f"[govchain_anchor] ERROR: {anchor_result.get('error')}")
 
+    # trust-anchor-02: a TRUST validation record whose leaf does not re-derive
+    # from its own components was REFUSED, not anchored. That is a tamper or
+    # corruption signal about provenance evidence, and it must not disappear
+    # into a summary that otherwise reads "provenance_batches: 1".
+    rejected = int(anchor_result.get("trust_validations_rejected") or 0)
+    result["trust_validations_rejected"] = rejected
+    if rejected:
+        print(
+            f"[govchain_anchor] WARNING: {rejected} TRUST validation record(s) refused "
+            "— stored leaf disagrees with its own components"
+        )
+
     if _LLM_ENABLED:
         print("[govchain_anchor] Running LLM anomaly assessment...")
         anomaly = _llm_assess_anomaly(anchor_result, pending)
