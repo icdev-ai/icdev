@@ -198,6 +198,32 @@ skip many parametrized cases and one case can pass several sites, so a 1:1 map b
 entries and AST nodes would be fiction. "This file skipped and owns no registered skip" is
 a claim the data supports.
 
+### What the first full survey measured
+
+Arming a check without measuring its fire rate first is how this repo got eight
+PreToolUse checks refusing routine work — a check enabled behind an unmeasured assumption
+is *unmeasured*, not proven. So the runtime half was surveyed against the whole allowlist
+before `--check` went into the workflow.
+
+Full gated run, 2026-08-15 — 240 targets, 6,864 tests collected, 9m36s:
+
+| | |
+|---|---|
+| Skipped | **45 (0.66%)** |
+| Attributed to a gated file | 45 |
+| **Unaccounted** (skipped, owns no registered site) | **0** |
+| Static sites in the census | 81 across 31 files |
+
+Zero unaccounted, so the gate refuses nothing that exists today — it is a ratchet against
+the next one, not a bulk cleanup.
+
+The survey also settled the per-file-vs-per-site question with data.
+`tests/test_ski_roles_lifecycle.py` produced **37 of the 45 skips — 82% of the runtime
+total — from exactly 2 static sites**: one parametrized guard over a skill pack that is
+not vendored in this checkout. Site counts and skip counts are not the same quantity and
+never will be, which is why both halves report their own and neither pretends to be the
+other.
+
 ### The census discipline is the backlog's, for the backlog's reason
 
 `args/ci_skip_census.txt` **enumerates** sites by name, one per line:

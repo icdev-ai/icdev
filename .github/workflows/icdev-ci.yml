@@ -181,6 +181,16 @@ jobs:
       # and prints it per file, so the gated suite's skip count is a number in the
       # log of every build rather than a thing nobody has ever looked at.
       #
+      # SURVEYED BEFORE ARMING, per the CLAUDE.md rule that a check enabled without
+      # a measured fire rate is unmeasured rather than proven. Full gated allowlist
+      # run 2026-08-15 (240 targets, 6,864 collected, 9m36s): 45 skipped (0.66%),
+      # and every one attributed to a file that owns a registered site — ZERO
+      # unaccounted, so `--check` refuses nothing that exists today. The measurement
+      # also showed why attribution is per FILE and not per site:
+      # tests/test_ski_roles_lifecycle.py produced 37 of those 45 skips, 82% of the
+      # total, from exactly 2 static sites — one parametrized guard over a skill
+      # pack that is not vendored.
+      #
       # `if: always()` because a suite that failed still skipped, and the skip
       # count is often how you find out WHY it failed.
       - name: Skip census (runtime)
