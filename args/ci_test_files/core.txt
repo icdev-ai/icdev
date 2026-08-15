@@ -1573,3 +1573,16 @@ tests/cortex/test_governance_kg_gate.py
 # that an unmeasurable run reports its posture instead of reading clean.
 # 16 tests, <2s, all git/PR facts injected: no DB, no network, no gh.
 tests/kanban/test_stranded_audit_gate_parity.py
+
+# trust-anchor-01 — the D-GC-1 peer-CLI anchor transport. args/blockchain_config.yaml
+# declared `fabric.cli_path: peer` under "Fabric CLI via subprocess" since GovChain
+# shipped, and there was zero subprocess usage in tools/blockchain/; meanwhile hfc is
+# in neither requirements.txt nor pyproject.toml, so HAS_FABRIC was permanently False
+# and every anchor on the platform reached NoOpFabricClient. Gates the transport ABC,
+# the peer-CLI/fabric-sdk/no-op backends, priority-ordered failover, and the acceptance
+# path that had never once run: all transports unhealthy -> a pending row + {'status':
+# 'queued','tx_id':None} (never a silent drop) -> flip one healthy -> flush drains it.
+# Also pins flush_pending's UPDATE to migration 149's real submitted_at column (it wrote
+# a non-existent updated_at, so every UPDATE raised, was swallowed, and nothing drained).
+# 42 tests, <1s. No Fabric peer, no hfc, no network: which/subprocess are patched.
+tests/test_blockchain_transports.py

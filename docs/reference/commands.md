@@ -1221,6 +1221,51 @@ python tools/db/seeds/seed_sdc_demo.py --all
 
 ---
 
+## GovChain Anchor Transports (trust-anchor-01, D-GC-1)
+
+`args/blockchain_config.yaml` declared `fabric.cli_path: peer` under the comment
+"Fabric CLI via subprocess" since GovChain shipped, and there was zero subprocess
+usage anywhere in `tools/blockchain/`. Separately, `hfc`/fabric-sdk-py is in
+neither `requirements.txt` nor `pyproject.toml`, so `blockchain_config.HAS_FABRIC`
+was permanently `False` and every anchor on the platform reached
+`NoOpFabricClient`. Anchoring is now routed by a transport registry.
+
+```bash
+# Which backend is carrying anchors right now, and why the others are not
+python tools/blockchain/transport_registry.py --doctor --json
+python tools/blockchain/blockchain_config.py --doctor          # same report via config
+python tools/blockchain/blockchain_config.py --test --json     # adds active_transport
+
+# The queue is the fall-through, not a failure: with no healthy transport every
+# anchor lands in govchain_pending_operations and is replayed later.
+python tools/blockchain/chain_anchor.py --anchor-provenance scr-001 --json
+python tools/blockchain/chain_anchor.py --flush-pending --json
+```
+
+Transports are tried in ascending `priority` and the first HEALTHY one wins
+(`fabric_sdk` 10 -> `peer_cli` 20 -> `noop` 90). Registering one `peer_cli`
+entry per endpoint under `fabric.transports.peer_cli.peers` is how peer failover
+works. Health is cached for `fabric.transport_health_ttl_seconds` (60s) because
+`is_enabled()` is on the dashboard render path.
+
+| Status | Healthy? | Meaning |
+|---|---|---|
+| `ok` | yes | backend answered and is worth using |
+| `degraded` | yes | answered, but something is missing (e.g. no orderer -> invokes will fail) |
+| `unreachable` | no | configured but did not answer |
+| `unavailable` | no | not installed / not configured (e.g. `hfc` absent, `peer` not on PATH) |
+
+- `hfc` remains an **undeclared dependency**. Nothing in `tools/blockchain/transports/`
+  imports it at module scope; absent, `FabricSdkTransport` reports `unavailable`
+  and the registry skips it.
+- The no-op is **unhealthy by default** — it is the absence of a backend, and
+  saying so is what makes the queue fall-through fire. `ICDEV_BLOCKCHAIN_NOOP_HEALTHY=1`
+  turns it into a simulation sink whose `noop-` tx ids are **not** chain
+  commitments.
+- A transport reports failure by RETURNING `status: failed`, not by raising.
+  `ChainAnchor` queues on anything that is not `anchored`, and `flush_pending()`
+  drains a row only on `anchored`.
+
 ## AI Security Commands
 ```bash
 python tools/security/prompt_injection_detector.py --text "input" --json

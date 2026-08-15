@@ -2237,3 +2237,36 @@ that.
   a code string rather than a registered name, `state_updates` gains an action
   that does anything other than store a value, or a fourth level is added that is
   evaluated after `server`.
+
+### Gap 64 — Fabric `peer` CLI transport (`tools/blockchain/transports/peer_cli.py`)
+- **File:** `tools/blockchain/transports/peer_cli.py` (trust-anchor-01, D-GC-1)
+- **Risk:** Spawns the vendor `peer` binary via `subprocess` and parses its
+  stdout/stderr for a transaction id. Two ingress questions: what reaches the
+  child process's argv, and what the parent does with the child's output.
+- **Decision:** **trusted-first-party**
+- **Rationale:** Same shape ICDEV already uses to wrap `bandit` and `git`, and
+  the shape `args/blockchain_config.yaml` has declared under D-GC-1 since
+  GovChain shipped ("Fabric CLI via subprocess (same as SAST wrapping bandit)").
+  The binary is operator-installed, not fetched; the operands are ICDEV-computed
+  Merkle roots and JSON metadata, not user prose.
+- **Guardrails:**
+  - argv form with `shell=False` and a fixed subcommand vector
+    (`peer chaincode invoke|query`). Chaincode arguments are JSON-encoded into a
+    single `-c` operand, so no argument can become an additional argv entry —
+    pinned by `test_invoke_builds_argv_form_and_parses_txid`.
+  - Bounded timeout from `fabric.cli_timeout_seconds` (60s), with the health
+    probe capped at 15s separately so `is_enabled()` cannot stall a page render.
+  - `health()` short-circuits on `shutil.which()` and spawns **no** subprocess
+    when the binary is absent, which is every CI run
+    (`test_health_probe_spawns_no_subprocess_when_binary_absent`).
+  - Child output is only regex-scanned for a hex tx id and truncated into a
+    reason string; it is never `eval`'d, never executed, and never written to
+    disk. An unparseable id yields `tx_id_confirmed: False` rather than a
+    fabricated id.
+  - The env passed to the child is the ambient environment plus explicitly
+    configured `CORE_PEER_ADDRESS` / `env` entries from
+    `args/blockchain_config.yaml` — a first-party file.
+- **Revisit if:** peer endpoints or `env` blocks become tenant-supplied rather
+  than operator-supplied, or if `chaincode_query` output is ever fed to a parser
+  richer than `json.loads` / an LLM prompt.
+

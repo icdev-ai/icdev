@@ -18,6 +18,7 @@ Usage:
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
@@ -58,13 +59,24 @@ class ChainAnchor:
         self._cfg = None
         self._client = None
 
-    def _lazy_init(self):
+    def _ensure_config(self):
+        """Resolve config + transport WITHOUT the auto-flush side effect.
+
+        Split out of ``_lazy_init`` so ``flush_pending()`` can initialise
+        itself: calling ``_lazy_init`` there would re-enter ``flush_pending``,
+        drain the queue in the nested call, and leave the outer call reporting
+        ``flushed: 0`` against an empty queue.
+        """
         if self._cfg is None and HAS_DEPS:
             self._cfg = get_config()
             self._client = self._cfg.get_fabric_client()
-            # Auto-flush pending ops when Fabric is now reachable
-            if self._cfg.is_enabled():
-                self.flush_pending()
+
+    def _lazy_init(self):
+        first_init = self._cfg is None
+        self._ensure_config()
+        # Auto-flush pending ops when a transport is now reachable
+        if first_init and self._cfg is not None and self._cfg.is_enabled():
+            self.flush_pending()
 
     def _get_db(self):
         return get_connection(db_path=str(self.db_path))
@@ -83,16 +95,30 @@ class ChainAnchor:
                     fcn="StoreMerkleRoot",
                     args=[merkle_root, json.dumps(metadata)],
                 )
-                logger.info(f"Anchored Merkle root {merkle_root[:16]}... tx={result.get('tx_id')}")
-                return {
-                    "status": "anchored",
-                    "merkle_root": merkle_root,
-                    "tx_id": result.get("tx_id"),
-                    "channel": self._cfg.channel(),
-                }
             except Exception as e:
-                logger.warning(f"Anchor failed, queuing: {e}")
+                logger.warning(f"Anchor raised, queuing: {e}")
                 return self._queue_operation("anchor_merkle_root", merkle_root, metadata)
+
+            # A transport reports failure by RETURNING it, not by raising.
+            # Treating any returned dict as success is how an anchor gets
+            # silently dropped — queue it instead.
+            if (result or {}).get("status") != "anchored":
+                logger.warning(
+                    "Anchor not accepted by transport (%s), queuing: %s",
+                    (result or {}).get("transport"),
+                    (result or {}).get("reason") or (result or {}).get("status"),
+                )
+                return self._queue_operation("anchor_merkle_root", merkle_root, metadata)
+
+            logger.info(f"Anchored Merkle root {merkle_root[:16]}... tx={result.get('tx_id')}")
+            return {
+                "status": "anchored",
+                "merkle_root": merkle_root,
+                "tx_id": result.get("tx_id"),
+                "tx_id_confirmed": result.get("tx_id_confirmed", result.get("tx_id") is not None),
+                "transport": result.get("transport"),
+                "channel": self._cfg.channel(),
+            }
         else:
             return self._queue_operation("anchor_merkle_root", merkle_root, metadata)
 
@@ -192,10 +218,45 @@ class ChainAnchor:
             conn.commit()
             conn.close()
             logger.info(f"[QUEUED] {operation_type} = {payload_hash[:16]}...")
-            return {"status": "queued", "operation_type": operation_type, "payload_hash": payload_hash}
+            # tx_id is explicit and None: a queued anchor has no transaction,
+            # and a caller reading result["tx_id"] must not get a KeyError and
+            # fall into an except-branch that discards the anchor.
+            return {
+                "status": "queued",
+                "tx_id": None,
+                "operation_type": operation_type,
+                "payload_hash": payload_hash,
+            }
         except Exception as e:
             logger.warning(f"Queue failed: {e}")
-            return {"status": "error", "reason": str(e)}
+            return {"status": "error", "tx_id": None, "reason": str(e)}
+
+    @staticmethod
+    def _mark_pending_operation(conn, op_id, new_status: str, error_message: str = None) -> bool:
+        """Update one govchain_pending_operations row's outcome.
+
+        Writes ``submitted_at`` / ``error_message`` — the columns migration 149
+        actually creates. The previous statement set ``updated_at``, which
+        exists in neither the PostgreSQL nor the SQLite DDL, so every UPDATE
+        raised, was swallowed, and the row stayed 'pending' forever: the flush
+        reported success while draining nothing.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            conn.execute(
+                "UPDATE govchain_pending_operations "
+                "SET status=%s, submitted_at=%s, error_message=%s WHERE id=%s",
+                (new_status, now, error_message, op_id),
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.warning(f"[FLUSH] could not mark op {op_id} as {new_status}: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False
 
     def periodic_anchor(self) -> dict:
         """Background scan for unanchored entries and anchor them.
@@ -257,6 +318,7 @@ class ChainAnchor:
         if not HAS_DEPS:
             return {"status": "disabled", "flushed": 0, "failed": 0, "skipped": 0}
 
+        self._ensure_config()
         if not self._cfg or not self._cfg.is_enabled():
             return {"status": "fabric_unavailable", "flushed": 0, "failed": 0, "skipped": 0}
 
@@ -279,26 +341,35 @@ class ChainAnchor:
                 # operation_type may encode metadata as "op_name:{json}"
                 metadata = {"source": "flush", "original_operation": row["operation_type"][:200]}
 
+                error_message = None
                 try:
                     result = self.anchor_merkle_root(payload_hash, metadata)
-                    new_status = "flushed" if result.get("status") in ("anchored", "queued") else "failed"
+                    status = (result or {}).get("status")
+                    # ONLY 'anchored' drains a row. 'queued' means the anchor
+                    # did not reach the chain and _queue_operation just wrote a
+                    # NEW pending row — marking this one flushed would both lie
+                    # and grow the queue by one on every cycle.
+                    if status == "anchored":
+                        new_status = "flushed"
+                    elif status == "queued":
+                        new_status = "pending"  # leave it for the next attempt
+                        error_message = "transport unavailable at flush time"
+                    else:
+                        new_status = "failed"
+                        error_message = str((result or {}).get("reason") or status)[:500]
                 except Exception as e:
                     logger.warning(f"[FLUSH] op {op_id} failed: {e}")
                     new_status = "failed"
+                    error_message = str(e)[:500]
 
-                try:
-                    conn.execute(
-                        "UPDATE govchain_pending_operations SET status=%s, updated_at=%s WHERE id=%s",
-                        (new_status, __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), op_id),
-                    )
-                    conn.commit()
-                except Exception:
-                    pass
+                self._mark_pending_operation(conn, op_id, new_status, error_message)
 
                 if new_status == "flushed":
                     summary["flushed"] += 1
                 elif new_status == "failed":
                     summary["failed"] += 1
+                else:
+                    summary["skipped"] += 1
 
             logger.info(f"[FLUSH] done: {summary}")
             return summary
