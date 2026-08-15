@@ -1,7 +1,7 @@
-// The panel's central insight, asked in bulk: a claim that was REWORDED but
-// still carries a finding. self_correct's monotone invariant only measures the
-// TOTAL finding count, so a span like this hides whenever some other span's
-// finding cleared in the same round.
+# The panel's central insight, asked in bulk: a claim that was REWORDED but
+# still carries a finding. self_correct's monotone invariant only measures the
+# TOTAL finding count, so a span like this hides whenever some other span's
+# finding cleared in the same round.
 foreach s in delta_review.spans
   where s.finding_verdict == "persisting"
   select s.delta_id, s.artifact_id, s.gate, s.span_number, s.kind, s.findings_before_n, s.findings_after_n

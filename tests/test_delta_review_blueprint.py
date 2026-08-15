@@ -267,6 +267,72 @@ def test_spans_collection_flattens_and_labels_each_span(store):
     assert all(s["artifact_id"] == "art-spans" for s in spans)
 
 
+def test_every_seed_query_parses_and_names_a_registered_collection():
+    """Seed queries ship as documentation of what this canvas can answer, and
+    nothing was validating them.
+
+    Caught a real defect: three of the four were written with ``//`` comments,
+    which the IQE lexer does not accept — the supported form is ``#``. All four
+    looked fine in review and three would have failed the moment anyone ran
+    them. This is the shape of check that has to exist for the artifact to be
+    worth shipping at all.
+    """
+    from pathlib import Path
+
+    from tools.delta_review.constants import IQE_COLLECTIONS
+    from tools.iqe.parser import IQESyntaxError, parse
+
+    seeds = sorted(
+        (Path(__file__).resolve().parents[1]
+         / "context" / "iqe" / "queries" / "delta_review").glob("*.iqe")
+    )
+    assert len(seeds) >= 3, "the completeness gate requires at least 3 seed queries"
+
+    for seed in seeds:
+        text = seed.read_text(encoding="utf-8")
+        try:
+            parse(text)
+        except IQESyntaxError as exc:  # pragma: no cover - the assertion is the report
+            raise AssertionError(f"{seed.name} does not parse: {exc}") from exc
+        body = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("#")
+        )
+        assert any(c in body for c in IQE_COLLECTIONS), (
+            f"{seed.name} names no registered delta_review collection"
+        )
+
+
+def test_a_seed_query_actually_executes_against_the_collections(store):
+    """Parsing is not running. A query that parses but names a column no adapter
+    emits returns nothing and is indistinguishable from an empty board."""
+    from pathlib import Path
+
+    from tools.iqe.adapters import delta_review as _adapter  # noqa: F401  registers
+    from tools.iqe.executor import execute_query
+    from tools.iqe.parser import parse
+
+    _seed("art-seed")
+
+    class _Conn:
+        """Supplied explicitly: with ``conn=None`` the adapter opens its own via
+        ``get_connection()`` and reaches the real database, not this fixture."""
+
+        def execute(self, sql, params=()):
+            return store.execute(sql.replace("%s", "?"), params)
+
+        def close(self):
+            pass
+
+    seed = (
+        Path(__file__).resolve().parents[1]
+        / "context" / "iqe" / "queries" / "delta_review" / "01_pending_deltas.iqe"
+    )
+    rows = execute_query(parse(seed.read_text(encoding="utf-8")), conn=_Conn())
+    assert len(rows) == 1
+    assert rows[0]["artifact_id"] == "art-seed"
+    assert rows[0]["gate"] == "claim_guard"
+
+
 def test_settlements_collection_exposes_the_rationale(store):
     """So that "were any approved without a stated reason" is ASKABLE. A
     guardrail nobody can query is one nobody can falsify."""
