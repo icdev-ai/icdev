@@ -439,6 +439,37 @@ def guard_component_access(
         if not tenant_id:
             return
 
+        # MACHINE SURFACE: authorized by service-key SCOPES, not canvas grants.
+        #
+        # A canvas blueprint carries two surfaces with two authentication models.
+        # `tools/cortex/rest_v1.py::register_rest_v1` deliberately attaches
+        # /cortex/api/v1/* to the SAME blueprint as the web canvas ("so the
+        # machine surface and the web canvas share a single Blueprint"), and this
+        # guard is attached blueprint-wide in dashboard/app.py — so it cannot
+        # tell a browser page request from an external API call, and applied a
+        # human's grant model to a machine principal.
+        #
+        # The consequence was total, not partial: tools/dashboard/auth.py sets
+        # `role: "service"` with the key's tenant for every Cortex service-key
+        # caller, and check_access() returns False for that principal on every
+        # tenant (measured 2026-08-15: service/admin/user x compass/idea_lab, all
+        # False). So EVERY external call to the Cortex REST surface got a bare
+        # HTML 403 from here — never reaching the endpoint, never reaching its
+        # scope check, never producing the JSON envelope the client parses.
+        # Canvas enforcement is fail-closed BY DEFAULT (cnr-plat-03), so this was
+        # the default posture, and the surface exists precisely to be called by
+        # compass and idea_lab.
+        #
+        # Exempting on the BINDING and not on a path prefix is deliberate: a path
+        # list is the "enumerate the paths" antipattern, and the binding is the
+        # actual security fact — it exists only when auth.py resolved a service
+        # key, and `rest_v1._scope_denied` then requires `cortex:<operation>`
+        # from that key's row for every endpoint. Dropping the grant check here
+        # removes NO enforcement from this principal; it removes a check that
+        # structurally cannot pass and was never the control for it.
+        if getattr(g, "cortex_binding", None) is not None:
+            return
+
         if not _has_sufficient_il(min_il, user.get("impact_level", "")):
             logger.warning(
                 "Canvas access denied (IL): %s user=%s required=%s got=%s",
