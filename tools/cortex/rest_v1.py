@@ -842,7 +842,11 @@ def api_v1_dashboard(data):
 
     Scope: ``cortex:dashboard`` — NOT in the default grant.
     """
-    from tools.bi_dashboard.export import export_dashboard, supported_formats
+    from tools.bi_dashboard.export import (
+        export_dashboard,
+        supported_formats,
+        unavailable_format_reason,
+    )
 
     if not isinstance(data, dict):
         raise validators.CortexValidationError("body must be a JSON object")
@@ -856,8 +860,15 @@ def api_v1_dashboard(data):
 
     fmt = str(data.get("format") or "html").strip().lower()
     if fmt not in supported_formats():
+        # fli-exp-01: distinguish "no such format" from "this deployment cannot
+        # produce that format". Both are a 400 — the caller cannot have it either
+        # way — but only one of them is fixed by a pip install, and the operator
+        # needs to be told WHICH package. Before this, a missing reportlab
+        # surfaced as a 500 with no clue in the body.
+        reason = unavailable_format_reason(fmt)
         raise validators.CortexValidationError(
-            f"format must be one of {supported_formats()}, got {fmt!r}")
+            reason if reason
+            else f"format must be one of {supported_formats()}, got {fmt!r}")
 
     clean_tiles = []
     for index, tile in enumerate(tiles):
