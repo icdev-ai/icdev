@@ -208,3 +208,92 @@ def test_the_client_has_an_export_method():
     from tools.cortex.client import CortexClient
 
     assert hasattr(CortexClient, "export_dashboard")
+
+
+# ---------------------------------------------------------------------------
+# An optional format that cannot run must be a 400 that NAMES the package
+# ---------------------------------------------------------------------------
+# supported_formats() used to be a hardcoded ["html", "pptx", "pdf"] that nothing
+# ever checked. dashboard_to_pdf imports reportlab, which was in NO requirements
+# file until #1700 -- so on a clean install "pdf" was advertised here, raised
+# ImportError at render, and _cortex_api turned that into a 500. The endpoint
+# reported a server fault for a package the operator had simply never installed,
+# and the body never said which one. Found when this very file was first CI-gated
+# and the pdf case came back 500 on a runner that had never had reportlab.
+
+
+@pytest.fixture()
+def missing(monkeypatch):
+    """Make a named distribution look absent, the way a trimmed install would."""
+    from tools.bi_dashboard import export as export_mod
+
+    def _make(distribution: str):
+        import importlib.util
+
+        real = importlib.util.find_spec
+        monkeypatch.setattr(
+            importlib.util, "find_spec",
+            lambda name, *a, **kw: None if name == distribution else real(name, *a, **kw))
+        # The probe is cached, deliberately — clear it so the fake takes effect.
+        monkeypatch.setattr(export_mod, "_format_availability", None)
+        return export_mod
+
+    return _make
+
+
+def test_pdf_is_offered_when_reportlab_is_installed():
+    """The other direction. A test that only covers the ABSENT case cannot go red
+    if the probe is wired backwards and reports everything missing."""
+    from tools.bi_dashboard.export import supported_formats, unavailable_format_reason
+
+    assert "pdf" in supported_formats()
+    assert "pptx" in supported_formats()
+    assert unavailable_format_reason("pdf") is None
+
+
+def test_an_unavailable_format_is_not_advertised(missing):
+    export_mod = missing("reportlab")
+    formats = export_mod.supported_formats()
+
+    assert "pdf" not in formats, "a format that cannot run must not be advertised"
+    assert "html" in formats, "html is pure stdlib and can never be unavailable"
+    assert "pptx" in formats, "only the missing package's format drops out"
+
+
+def test_asking_for_it_is_a_400_naming_the_package_not_a_500(exported, missing):
+    """The whole point. 500 says 'the server is broken'; this says 'pip install'."""
+    missing("reportlab")
+    client = make_client(binding=_binding([SCOPE]))
+    resp = client.post("/cortex/api/v1/dashboard",
+                       json={"title": "T", "tiles": [{"spec": CHART}], "format": "pdf"})
+
+    assert resp.status_code == 400, (
+        "an uninstalled optional dependency is not a server fault — it was a 500, "
+        "which is what sent this to a bug report instead of a pip install"
+    )
+    body = resp.get_json()
+    assert "reportlab" in body["error"], (
+        f"the message must NAME the missing package, got {body['error']!r}. "
+        "'format must be one of [html]' is baffling on a platform whose own "
+        "docstring calls reportlab 'the PDF library this platform actually has "
+        "installed'."
+    )
+    assert exported == [], "nothing may be exported when the renderer is absent"
+
+
+def test_a_genuinely_unknown_format_still_says_what_is_allowed(exported, missing):
+    """The two 400s must not collapse into one message.
+
+    'docx' is not a missing dependency and never will be; telling an operator to
+    install something would send them off to look for a package that does not
+    exist.
+    """
+    missing("reportlab")
+    client = make_client(binding=_binding([SCOPE]))
+    resp = client.post("/cortex/api/v1/dashboard",
+                       json={"title": "T", "tiles": [{"spec": CHART}], "format": "docx"})
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert "reportlab" not in body["error"]
+    assert "must be one of" in body["error"]
