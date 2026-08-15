@@ -1651,3 +1651,14 @@ tests/provenance/test_trust_validation_anchor.py
 # Also asserts the workflow actually calls the tool, without `|| true`, on a
 # fetch-depth: 0 checkout — an unmounted gate is decoration.
 tests/test_ci_isolation_run.py
+
+# trust-disc-05: the board tracked task -> PR and nothing checked task -> main, so two of five
+# cards in pr_opened had already-merged work and their open PRs could only land as reverts
+# (#1651 was -38/+26 on rest_v1.py). Gated in the PR that adds them. test_landed_check.py builds
+# a REAL git repo per case — the defect class is "what git says vs what the board believes", so
+# stubbing git would test the belief. It pins the two directions that matter: a subject/merge-ref
+# mention IS a landing, and a body-only citation is NOT. test_landed_check_wiring.py pins the
+# three consumers (seed / dispatch prompt / PR body) so the check cannot become a computed answer
+# nobody acts on. 38 tests, ~4s. No network, no gh, no board.
+tests/kanban/test_landed_check.py
+tests/kanban/test_landed_check_wiring.py
