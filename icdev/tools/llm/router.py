@@ -2161,10 +2161,30 @@ class LLMRouter:
                         record_module_usage,
                     )
 
-                    _resp_cost = getattr(response, "cost_usd", 0.0) or 0.0
                     _resp_tokens = (getattr(response, "input_tokens", 0) or 0) + (
                         getattr(response, "output_tokens", 0) or 0
                     )
+                    # Derive the cost. No provider adapter sets cost_usd, so
+                    # reading it straight off the response recorded $0.00 for
+                    # every call ever made - 1,391 usage rows summing to zero,
+                    # including 557 cloud calls - which left the USD budget cap
+                    # permanently at 0% and unable to fire.
+                    _resp_cost = getattr(response, "cost_usd", 0.0) or 0.0
+                    _cost_basis = getattr(response, "cost_basis", "") or ""
+                    if not _resp_cost:
+                        try:
+                            from tools.llm.cost_intelligence import compute_cost_usd
+
+                            _resp_cost, _cost_basis = compute_cost_usd(
+                                model_id,
+                                getattr(response, "input_tokens", 0) or 0,
+                                getattr(response, "output_tokens", 0) or 0,
+                                config=self._config,
+                            )
+                            response.cost_usd = _resp_cost
+                            response.cost_basis = _cost_basis
+                        except Exception as _cost_exc:  # noqa: BLE001
+                            logger.debug("cost derivation skipped: %s", _cost_exc)
 
                     record_module_usage(
                         "generative_intelligence",
@@ -2173,6 +2193,7 @@ class LLMRouter:
                         function=function,
                         project_id=getattr(request, "project_id", None),
                         model_id=getattr(response, "model_id", model_id),
+                        cost_basis=_cost_basis,
                     )
 
                     # Also record predictive_analysis usage for simulation functions
