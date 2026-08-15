@@ -1654,3 +1654,12 @@ tests/provenance/test_trust_validation_anchor.py
 # with outcome on this sample (exhausted tasks scored 2/1/0, the success 5).
 # 16 tests, <1s, count and board writes injected: no DB, no LLM, no network.
 tests/kanban/test_exhaustion_triggers_decomposition.py
+# trust-disc-02. Gates tools/ci/isolation_run.py, which runs every test file the
+# PR changed ALONE — the half of "both alone and in-suite" that this pipeline
+# never had. Builds a throwaway git repo carrying a real order-dependent pair
+# (the follower passes only when the leader was collected into the same process,
+# the reduced form of the shared tools.dashboard.app blueprint defect) and asserts
+# the runner turns red on it when the file is gated and warns when it is not.
+# Also asserts the workflow actually calls the tool, without `|| true`, on a
+# fetch-depth: 0 checkout — an unmounted gate is decoration.
+tests/test_ci_isolation_run.py
