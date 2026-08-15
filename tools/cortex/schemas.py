@@ -146,6 +146,13 @@ class GovernanceReport:
     total_ms: float = 0.0
     operation_ms: float = 0.0
     gate_ms: dict = field(default_factory=dict)
+    # Provider spend the RESULT does not carry (ctx-obs-01). `search` returns a
+    # list and `govern` returns a str, so keying accounting on
+    # isinstance(result, CortexResult) left the most expensive facade there is
+    # contributing nothing to cost_usd or by_model - the spend panel was missing
+    # its biggest consumer. GovernancePipeline populates this from every router
+    # call made inside the governed operation; {} when nothing was attributed.
+    llm_tally: dict = field(default_factory=dict)
 
     @property
     def governance_ms(self) -> float:
