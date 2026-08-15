@@ -1557,7 +1557,35 @@ def _branch_is_abandoned(ref: str, repo_root) -> bool:
     return abandoned
 
 
-def _branches_for_task(task_id: str, repo_root) -> list:
+def all_task_refs(repo_root) -> list:
+    """Every local + origin branch ref, one ``git for-each-ref``. [] on error.
+
+    Split out so a caller that resolves MANY task ids can pay for the ref listing
+    once and hand it to :func:`_branches_for_task`. ``tools/kanban/stranded_audit``
+    walks every terminal task on the board (3,169 of them); at one subprocess per
+    call that alone exceeded the 300s reflex watchdog.
+
+    Deliberately NOT memoised here. This module is imported by the long-lived
+    kanban scheduler, and a cached ref list goes stale the moment a worker pushes
+    a new branch — the gate would then find no refs for that task, fail OPEN, and
+    let work reach `done` unverified. Freshness is the caller's decision because
+    only the caller knows how long its snapshot is allowed to live.
+    """
+    import subprocess as _sp
+    try:
+        out = _sp.run(
+            ["git", "for-each-ref", "--format=%(refname:short)",
+             "refs/heads", "refs/remotes/origin"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode != 0:
+            return []
+        return [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+    except Exception:
+        return []
+
+
+def _branches_for_task(task_id: str, repo_root, refs=None) -> list:
     """Local + remote branch refs whose name contains ``task_id``.
 
     Ordered so the canonical ``kanban/<task_id>`` is checked first. Matching is
@@ -1570,25 +1598,22 @@ def _branches_for_task(task_id: str, repo_root) -> list:
     too strict, tighten the trailing group rather than dropping the boundary.
 
     FAIL-OPEN: returns [] on any git error.
+
+    ``refs`` optionally supplies the branch listing (see :func:`all_task_refs`)
+    so a caller resolving many task ids pays for it once. Omit it and the listing
+    is read fresh, which is the only correct default for the dispatch gate.
     """
     import re
-    import subprocess as _sp
-    try:
-        out = _sp.run(
-            ["git", "for-each-ref", "--format=%(refname:short)",
-             "refs/heads", "refs/remotes/origin"],
-            cwd=str(repo_root), capture_output=True, text=True, timeout=15,
-        )
-        if out.returncode != 0:
-            return []
-    except Exception:
+    if refs is None:
+        refs = all_task_refs(repo_root)
+    if not refs:
         return []
 
     # <task_id> at a name boundary: end of ref, or followed by '-'/'_'/'.'/'/'.
     pat = re.compile(rf"(^|[/_-]){re.escape(task_id)}([/_.-]|$)")
     canonical = f"kanban/{task_id}"
     seen, matches = set(), []
-    for ref in out.stdout.splitlines():
+    for ref in refs:
         ref = ref.strip()
         if not ref or ref.endswith("/HEAD"):
             continue

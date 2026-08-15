@@ -1561,3 +1561,15 @@ tests/kanban/test_timeout_no_redispatch.py
 # governance.fail_closed ships false and stays the single platform-wide switch.
 # 21 tests, <1s. Every seam is monkeypatched: no DB, no graph, no LLM.
 tests/cortex/test_governance_kg_gate.py
+
+# kph/stranded — the audit and the merge-verify GATE must decide "is this work
+# landed?" the same way. They did not: the gate compares by patch-id (git cherry)
+# and skips branches whose PR already merged; the audit compared by ANCESTRY and
+# never asked about the PR, so every squash-merge read as stranded. Measured on
+# the live board: 184 of 506 reported strandings (36%) had all-closed/merged PRs,
+# including 6 of the 8 tasks landed that day. Also pins the accelerators added to
+# bring the run back inside the reflex watchdog (bulk PR prime, merged-ref set,
+# per-ref memoisation) as pure accelerators that cannot change an answer, and
+# that an unmeasurable run reports its posture instead of reading clean.
+# 16 tests, <2s, all git/PR facts injected: no DB, no network, no gh.
+tests/kanban/test_stranded_audit_gate_parity.py
