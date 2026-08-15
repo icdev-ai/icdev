@@ -165,6 +165,14 @@ def test_a_concrete_answer_is_routed_to_a_finding_type_that_exists(tmp_path, cap
     `_parse_findings` drops any finding whose type is outside the critic's focus
     list, so naming a type that no critic is focused on would send every answer
     straight to the floor.
+
+    The assertion is scoped to the INSTRUCTION BLOCK, not the whole prompt. The
+    first draft asserted ``"testing_gap" in prompt``, which was the only one of
+    these 14 tests to pass against the pre-change tree: every prompt already
+    enumerates FINDING_TYPES verbatim, so the routing sentence could have named a
+    type no critic focuses on — every answer silently floored — and the test would
+    still have been green. Found by asking this card's own question of this card's
+    own tests.
     """
     cfg = _write_config(tmp_path / "cfg.yaml", _MINIMAL_CRITICS.format(extra=""))
     critique = AtlasCritique(db_path=tmp_path / "t.db", config_path=cfg)
@@ -172,7 +180,14 @@ def test_a_concrete_answer_is_routed_to_a_finding_type_that_exists(tmp_path, cap
     critique._dispatch_critics("some plan text")
 
     assert captured_prompts
-    assert any("testing_gap" in p for p in captured_prompts)
+    for prompt in captured_prompts:
+        assert QUESTION in prompt
+        instruction_block = prompt.split(QUESTION, 1)[1].split("Plan to review:", 1)[0]
+        assert "testing_gap" in instruction_block, (
+            "the routing instruction must name the finding type by which a concrete "
+            "answer is recorded"
+        )
+
     focus_areas = [
         f for c in critique._config.get("critics", []) for f in (c.get("focus") or [])
     ]
