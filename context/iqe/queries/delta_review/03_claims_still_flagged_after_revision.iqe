@@ -1,0 +1,3 @@
+foreach p in delta_review.spans
+  where p.finding_verdict == "persisting"
+  select p.delta_id, p.artifact_id, p.stage, p.span_number, p.op, p.before_index, p.after_index

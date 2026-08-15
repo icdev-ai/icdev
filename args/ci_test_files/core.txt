@@ -1710,6 +1710,15 @@ tests/test_daemon_self_reload.py
 tests/kanban/test_landed_check.py
 tests/kanban/test_landed_check_wiring.py
 
+# trust-hitl-02 — the Delta Review canvas. The side-by-side HITL panel over the
+# trust-hitl-01 delta store: findings anchored to spans by item_number, the
+# reworded-but-still-flagged case the monotone invariant cannot see, review state
+# derived from approval_items (trust_deltas has no disposition column), the
+# mandatory-rationale settle route, and no drafted CUI leaving the IQE seam.
+# Also parses and EXECUTES the seed queries, which the 8-point completeness gate
+# only counts. 72 tests, ~3s. In-memory sqlite off the real migrations; no
+# network, no live board.
+tests/test_delta_review.py
 # An E2E run must not leave a dashboard holding the port. Measured 2026-08-15:
 # three dashboards from .tmp/worktrees/task-e2e-27e596dc were alive 6+ hours
 # later and one held port 5050 -- the MAIN dashboard's port -- serving a commit

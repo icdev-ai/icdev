@@ -1,0 +1,455 @@
+{# CUI // SP-CTI — Delta Review: side-by-side HITL delta panel (trust-hitl-02) #}
+{% extends "base.html" %}
+{% block title %}{{ app_name }} — Delta Review{% endblock %}
+{% block content %}
+
+<h1>Delta Review</h1>
+
+<div class="intro-panel">
+    <h2>The delta is the reviewable unit</h2>
+    <p>A <code>force_*</code> override records <em>that</em> a human overrode, never <em>what changed</em>.
+    Each row below is one claim-anchored diff: what the draft said, what it says now, and — for every
+    sentence — whether the revision actually resolved the finding that blocked it, or merely reworded it.
+    The diff is append-only evidence in <code>trust_deltas</code>; your decision moves the matching
+    <code>approval_items</code> ask and is written permanently to <code>agent_approval_log</code> with the
+    rationale you give.</p>
+</div>
+
+{% if not telemetry_available %}
+<div class="alert alert-warning" role="alert" style="margin-top:16px;">
+    <strong>Nothing can be known yet.</strong> The <code>trust_deltas</code> table is unreachable on this
+    database, so this is <em>not</em> an empty review queue — it is an unmeasured one. Run
+    <code>python tools/db/migrate.py --up</code> (migration <code>20260815063941_trust_hitl_deltas</code>).
+</div>
+{% endif %}
+
+<!-- Stat Grid -->
+<div class="stat-grid" role="region" aria-label="Delta review statistics">
+    <div class="stat-card">
+        <div class="stat-value" id="dr-stat-pending">{{ summary.get('pending', 0) }}</div>
+        <div class="stat-label">Awaiting Review</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--color-success, #388e3c);">{{ summary.get('approved', 0) }}</div>
+        <div class="stat-label">Approved</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--color-error, #d32f2f);">{{ summary.get('denied', 0) }}</div>
+        <div class="stat-label">Denied</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--color-error, #d32f2f);">{{ summary.get('regressions', 0) }}</div>
+        <div class="stat-label">Introduced Findings</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ summary.get('no_op', 0) }}</div>
+        <div class="stat-label">Changed Nothing</div>
+    </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+{% if not_found %}
+<div class="alert alert-warning" role="alert" style="margin-top:16px;">
+    <strong>Delta not found:</strong> <code>{{ not_found }}</code>. It may be on another tenant, or the link
+    is stale. The queue below is unaffected.
+</div>
+{% endif %}
+
+<!-- Review Queue -->
+<div class="section-card" style="margin-top:20px;">
+    <h2>Review Queue</h2>
+    <p style="color:var(--text-secondary); margin-bottom:12px;">
+        Deltas whose approval item is still pending, and which no later correction supersedes.
+        Select one to open its side-by-side panel.
+    </p>
+    <div class="table-container">
+        <table class="data-table" id="dr-queue-table" aria-label="Deltas awaiting review">
+            <thead>
+                <tr>
+                    <th>Artifact</th>
+                    <th>Stage</th>
+                    <th>Findings</th>
+                    <th>Claims Changed</th>
+                    <th>Recorded By</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in queue %}
+                <tr class="dr-queue-row{% if selected and selected.delta_id == d.delta_id %} dr-queue-row--active{% endif %}"
+                    data-delta-id="{{ d.delta_id }}">
+                    <td>
+                        <strong>{{ d.artifact_id }}</strong>
+                        {% if d.is_no_op %}<br><span class="badge badge-warning" title="Byte-identical before and after">no-op</span>{% endif %}
+                        {% if d.review.no_ask %}<br><span class="badge" title="The approval ask never queued — this cannot be settled from the panel">no ask</span>{% endif %}
+                    </td>
+                    <td>{{ d.stage_label }}</td>
+                    <td>
+                        {{ d.findings_before_n }} &rarr; {{ d.findings_after_n }}
+                        {% if d.net_findings < 0 %}
+                        <span class="badge badge-success" title="Findings decreased">{{ d.net_findings }}</span>
+                        {% elif d.net_findings > 0 %}
+                        <span class="badge badge-danger" title="Findings increased">+{{ d.net_findings }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ d.changed_span_count }}</td>
+                    <td>{{ d.actor or '—' }}</td>
+                    <td>{{ d.created_at }}</td>
+                    <td><a class="btn btn-sm" href="/delta-review?delta_id={{ d.delta_id }}">Review</a></td>
+                </tr>
+                {% endfor %}
+                {% if not queue %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">
+                    {% if telemetry_available %}
+                    No deltas awaiting review.
+                    {% else %}
+                    Queue not readable &mdash; see the notice above.
+                    {% endif %}
+                </td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if selected %}
+<!-- ── Side-by-side panel ───────────────────────────────────────────────── -->
+<div class="section-card" id="dr-panel" style="margin-top:20px;" data-delta-id="{{ selected.delta_id }}">
+    <h2>
+        {{ selected.artifact_id }}
+        <span class="badge {{ selected.review.badge.css }}">{{ selected.review.badge.label }}</span>
+    </h2>
+    <p style="color:var(--text-secondary); margin-bottom:12px;">
+        <strong>{{ selected.stage_label }}</strong>
+        &mdash; recorded by {{ selected.actor or '(unattributed)' }}
+        &mdash; delta <code>{{ selected.delta_id }}</code>
+        {% if selected.supersedes_delta_id %}
+        &mdash; corrects <a href="/delta-review?delta_id={{ selected.supersedes_delta_id }}"><code>{{ selected.supersedes_delta_id }}</code></a>
+        {% endif %}
+    </p>
+    {% if selected.rationale %}
+    <p style="margin-bottom:12px;"><strong>Stated reason for the change:</strong> {{ selected.rationale }}</p>
+    {% endif %}
+
+    {% if selected.is_no_op %}
+    <div class="alert alert-warning" role="alert">
+        <strong>This override changed nothing.</strong> The artifact is byte-identical before and after
+        (<code>{{ selected.before_hash[:16] }}</code>). A human was shown findings, cleared the gate, and the
+        text went out exactly as it was &mdash; which is the one thing today's audit line cannot say.
+    </div>
+    {% endif %}
+
+    <div class="stat-grid" role="region" aria-label="Delta outcome">
+        <div class="stat-card">
+            <div class="stat-value">{{ selected.findings_before_n }} &rarr; {{ selected.findings_after_n }}</div>
+            <div class="stat-label">Findings</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--color-success, #388e3c);">{{ selected.resolved_count }}</div>
+            <div class="stat-label">Claims Resolved</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--color-warning, #f57c00);">{{ selected.persisting_count }}</div>
+            <div class="stat-label">Still Flagged</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--color-error, #d32f2f);">{{ selected.regressed_count }}</div>
+            <div class="stat-label">Newly Flagged</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ selected.changed_span_count }}</div>
+            <div class="stat-label">Claims Changed</div>
+        </div>
+    </div>
+
+    {% if selected.persisting_count > 0 %}
+    <div class="alert alert-warning" role="alert" style="margin-top:12px;">
+        <strong>{{ selected.persisting_count }} claim(s) were reworded but still carry a finding.</strong>
+        The total finding count can fall while a specific defect survives &mdash; that is precisely what the
+        monotone self-correction invariant cannot see, and it is why this is shown per claim.
+    </div>
+    {% endif %}
+
+    {% if selected.regressed_count > 0 %}
+    <div class="alert alert-danger" role="alert" style="margin-top:12px;">
+        <strong>{{ selected.regressed_count }} claim(s) carry a finding they did not carry before.</strong>
+        This revision made the artifact worse in at least one place.
+    </div>
+    {% endif %}
+
+    {% if selected.document_findings_before or selected.document_findings_after %}
+    <div class="section-card" style="margin-top:12px;">
+        <h3>Document-level findings</h3>
+        <p style="color:var(--text-secondary); font-size:13px;">
+            These anchor to no single claim &mdash; <code>placeholder_guard</code> and
+            <code>citation_guard</code> report at document level. A panel showing only claim-anchored
+            findings would render a blocked draft with nothing wrong with it.
+        </p>
+        <div class="dr-side-by-side">
+            <div class="dr-col">
+                <div class="dr-col__head">Before</div>
+                {% for f in selected.document_findings_before %}
+                <div class="dr-doc-finding"><code>{{ f.issue }}</code>{% if f.detail %} &mdash; {{ f.detail }}{% endif %}</div>
+                {% else %}
+                <div class="dr-doc-finding dr-doc-finding--none">none</div>
+                {% endfor %}
+            </div>
+            <div class="dr-col">
+                <div class="dr-col__head">After</div>
+                {% for f in selected.document_findings_after %}
+                <div class="dr-doc-finding"><code>{{ f.issue }}</code>{% if f.detail %} &mdash; {{ f.detail }}{% endif %}</div>
+                {% else %}
+                <div class="dr-doc-finding dr-doc-finding--none">none</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <h3 style="margin-top:20px;">Claim-by-claim diff</h3>
+    <p style="color:var(--text-secondary); margin-bottom:12px;">
+        Aligned on <code>anchored_claims</code> offsets &mdash; the same decomposition every TRUST guard
+        numbers its findings against &mdash; so each row is a claim and its verdict, not a line of text.
+    </p>
+    <div class="dr-side-by-side dr-side-by-side--head">
+        <div class="dr-col"><div class="dr-col__head">Before</div></div>
+        <div class="dr-col"><div class="dr-col__head">After</div></div>
+    </div>
+    <div id="dr-spans">
+        {% for s in selected.spans %}
+        <div class="dr-span {{ s.op_css }} dr-span--v-{{ s.finding_verdict }}"
+             data-op="{{ s.op }}" data-verdict="{{ s.finding_verdict }}">
+            <div class="dr-span__meta">
+                <span class="badge">{{ s.op_label }}</span>
+                {% if s.verdict_label %}
+                <span class="badge {{ s.verdict_css }}">{{ s.verdict_label }}</span>
+                {% endif %}
+                {% if s.similarity is defined and s.similarity is not none %}
+                <span class="dr-similarity" title="How alike the two sides are, citations excluded">{{ s.similarity }}</span>
+                {% endif %}
+            </div>
+            <div class="dr-side-by-side">
+                <div class="dr-col dr-col--before">
+                    {% if s.before_claim %}
+                    <div class="dr-claim">{{ s.before_claim }}</div>
+                    <div class="dr-verdict">verdict: <code>{{ s.before_verdict }}</code></div>
+                    {% for f in s.findings_before %}
+                    <div class="dr-finding"><code>{{ f.issue }}</code>{% if f.detail %} &mdash; {{ f.detail }}{% endif %}</div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="dr-claim dr-claim--absent">(not present)</div>
+                    {% endif %}
+                </div>
+                <div class="dr-col dr-col--after">
+                    {% if s.after_claim %}
+                    <div class="dr-claim">{{ s.after_claim }}</div>
+                    <div class="dr-verdict">verdict: <code>{{ s.after_verdict }}</code></div>
+                    {% for f in s.findings_after %}
+                    <div class="dr-finding"><code>{{ f.issue }}</code>{% if f.detail %} &mdash; {{ f.detail }}{% endif %}</div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="dr-claim dr-claim--absent">(removed)</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <p style="color:var(--text-secondary);">This delta decomposed into no claims.</p>
+        {% endfor %}
+    </div>
+
+    <!-- ── Decision ─────────────────────────────────────────────────────── -->
+    {% if selected.can_settle %}
+    <div class="section-card" id="dr-settle" style="margin-top:20px;">
+        <h3>Decision</h3>
+        <p style="color:var(--text-secondary); margin-bottom:12px;">
+            A rationale is <strong>mandatory</strong> (minimum {{ min_rationale_chars }} characters). An
+            unexplained decision is unauditable after the fact and indistinguishable from a bug. Your answer
+            moves this delta's approval item &mdash; the diff above is never rewritten &mdash; and appends a
+            permanent <code>agent_approval_log</code> record carrying what you write here.
+        </p>
+        <textarea id="dr-rationale" class="dr-rationale" rows="3"
+                  aria-label="Rationale for this decision"
+                  placeholder="Why are you approving or denying this diff? e.g. 'checked the revised figure against the cited SSP section'"></textarea>
+        <div id="dr-settle-status" class="dr-status" role="status" style="display:none;"></div>
+        <div style="margin-top:12px; display:flex; gap:12px;">
+            <button class="btn btn-sm" id="dr-approve" onclick="drSettle(true)">Approve</button>
+            <button class="btn btn-sm" id="dr-deny" onclick="drSettle(false)">Deny</button>
+        </div>
+    </div>
+    {% elif selected.review.key == 'pending' %}
+    <div class="section-card" style="margin-top:20px;">
+        <h3>Cannot be settled here</h3>
+        <p>
+            This delta is <strong>pending</strong>, but it has no readable approval item, so there is nothing
+            for a decision to move. That means the ask failed to queue when the delta was recorded, or the
+            mutable row has been pruned. It is reported pending rather than settled deliberately: a failed
+            enqueue must not read as a silent approval.
+        </p>
+    </div>
+    {% elif selected.review.item %}
+    <div class="section-card" style="margin-top:20px;">
+        <h3>Settled</h3>
+        <p>
+            <span class="badge {{ selected.review.badge.css }}">{{ selected.review.badge.label }}</span>
+            by <strong>{{ selected.review.item.resolved_by or '(unattributed)' }}</strong>
+            {% if selected.review.item.resolved_at %}on {{ selected.review.item.resolved_at }}{% endif %}
+        </p>
+        <p style="color:var(--text-secondary); font-size:13px;">
+            Approval item <code>{{ selected.review.item.item_id }}</code>, state
+            <code>{{ selected.review.item.state }}</code>. The rationale lives in the append-only
+            <code>agent_approval_log</code> record this decision wrote &mdash; query it with the
+            <code>delta_review.decisions</code> collection above. The diff stays on screen because it is
+            evidence, not a receipt.
+        </p>
+    </div>
+    {% elif selected.review.key == 'superseded' %}
+    <div class="section-card" style="margin-top:20px;">
+        <h3>Superseded</h3>
+        <p>A later correction replaced this delta, so it is no longer the thing to review. Its evidence
+        stands; find the correction in the timeline below.</p>
+    </div>
+    {% endif %}
+
+    <!-- ── Correction chain ─────────────────────────────────────────────── -->
+    {% if selected.chain and selected.chain|length > 1 %}
+    <div class="section-card" style="margin-top:20px;">
+        <h3>Correction chain</h3>
+        <p style="color:var(--text-secondary); font-size:13px;">
+            This delta's own corrections, walked through <code>supersedes_delta_id</code>. Not the
+            artifact's history &mdash; that is below.
+        </p>
+        <div class="table-container">
+            <table class="data-table" aria-label="Correction chain for this delta">
+                <thead><tr><th>Delta</th><th>Stage</th><th>Findings</th><th>Reason</th><th>When</th></tr></thead>
+                <tbody>
+                    {% for c in selected.chain %}
+                    <tr{% if c.delta_id == selected.delta_id %} class="dr-queue-row--active"{% endif %}>
+                        <td><a href="/delta-review?delta_id={{ c.delta_id }}"><code>{{ c.delta_id[:12] }}</code></a></td>
+                        <td>{{ c.stage_label }}</td>
+                        <td>{{ c.findings_before_n }} &rarr; {{ c.findings_after_n }}</td>
+                        <td>{{ c.rationale or '—' }}</td>
+                        <td>{{ c.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ── Artifact timeline ────────────────────────────────────────────── -->
+    {% if selected.timeline and selected.timeline|length > 1 %}
+    <div class="section-card" style="margin-top:20px;">
+        <h3>Every delta on this artifact</h3>
+        <div class="table-container">
+            <table class="data-table" aria-label="Delta timeline for this artifact">
+                <thead>
+                    <tr><th>Delta</th><th>Stage</th><th>Findings</th><th>State</th><th>Recorded By</th><th>When</th></tr>
+                </thead>
+                <tbody>
+                    {% for h in selected.timeline %}
+                    <tr{% if h.delta_id == selected.delta_id %} class="dr-queue-row--active"{% endif %}>
+                        <td><a href="/delta-review?delta_id={{ h.delta_id }}"><code>{{ h.delta_id[:12] }}</code></a></td>
+                        <td>{{ h.stage_label }}</td>
+                        <td>{{ h.findings_before_n }} &rarr; {{ h.findings_after_n }}</td>
+                        <td><span class="badge {{ h.review.badge.css }}">{{ h.review.badge.label }}</span></td>
+                        <td>{{ h.actor or '—' }}</td>
+                        <td>{{ h.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<style>
+.dr-side-by-side { display:flex; gap:12px; }
+.dr-side-by-side .dr-col { flex:1; min-width:0; }
+.dr-col__head { font-weight:600; font-size:13px; color:var(--text-secondary); padding:4px 8px; }
+.dr-span { border:1px solid var(--border-color, #ddd); border-radius:6px; margin-bottom:8px; padding:8px; }
+.dr-span__meta { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+.dr-span--unchanged { opacity:0.6; }
+.dr-span--modified { border-left:4px solid var(--color-info, #1976d2); }
+.dr-span--removed { border-left:4px solid var(--color-error, #d32f2f); }
+.dr-span--added { border-left:4px solid var(--color-success, #388e3c); }
+.dr-span--v-persisting { background:rgba(245,124,0,0.06); }
+.dr-span--v-regressed { background:rgba(211,47,47,0.06); }
+.dr-claim { padding:6px 8px; font-size:14px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.dr-claim--absent { color:var(--text-secondary); font-style:italic; }
+.dr-verdict { padding:0 8px; font-size:12px; color:var(--text-secondary); }
+.dr-similarity { font-size:12px; color:var(--text-secondary); }
+.dr-finding { margin:4px 8px; padding:4px 8px; font-size:12px; border-radius:4px;
+              background:rgba(211,47,47,0.08); color:var(--color-error, #d32f2f); }
+.dr-doc-finding { margin:4px 8px; font-size:13px; }
+.dr-doc-finding--none { color:var(--text-secondary); font-style:italic; }
+.dr-rationale { width:100%; padding:8px; border-radius:4px; border:1px solid var(--border-color, #ddd);
+                font-family:inherit; font-size:14px; }
+.dr-status { margin-top:8px; padding:8px 12px; border-radius:4px; font-size:13px; }
+.dr-status--error { background:rgba(211,47,47,0.1); color:var(--color-error, #d32f2f); }
+.dr-status--ok { background:rgba(56,142,60,0.1); color:var(--color-success, #388e3c); }
+.dr-queue-row--active { background:rgba(25,118,210,0.08); }
+</style>
+
+<script>
+// The rationale is enforced server-side (400 on an empty or too-short one) —
+// this only spares the round trip and names the rule before the click. Never
+// treat a client-side check as the gate: this page is one caller of that API.
+var DR_MIN_RATIONALE = {{ min_rationale_chars }};
+
+function drStatus(message, kind) {
+    var el = document.getElementById('dr-settle-status');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'dr-status dr-status--' + kind;
+    el.style.display = 'block';
+}
+
+function drSettle(approved) {
+    var panel = document.getElementById('dr-panel');
+    var box = document.getElementById('dr-rationale');
+    if (!panel || !box) return;
+    var rationale = (box.value || '').trim();
+    if (rationale.length < DR_MIN_RATIONALE) {
+        drStatus('A rationale of at least ' + DR_MIN_RATIONALE + ' characters is required — an '
+                 + 'unexplained decision is unauditable after the fact.', 'error');
+        box.focus();
+        return;
+    }
+    var approve = document.getElementById('dr-approve');
+    var deny = document.getElementById('dr-deny');
+    approve.disabled = true;
+    deny.disabled = true;
+    drStatus('Recording…', 'ok');
+
+    // The base.html CSRF shim adds X-CSRF-Token to same-origin mutating fetches.
+    fetch('/api/delta-review/delta/' + encodeURIComponent(panel.dataset.deltaId) + '/settle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({approved: approved, rationale: rationale})
+    })
+    .then(function (r) { return r.json().then(function (b) { return {ok: r.ok, body: b}; }); })
+    .then(function (res) {
+        if (!res.ok) {
+            drStatus(res.body.error || 'The decision was refused.', 'error');
+            approve.disabled = false;
+            deny.disabled = false;
+            return;
+        }
+        drStatus('Recorded as ' + res.body.resolution + '. Reloading…', 'ok');
+        setTimeout(function () { window.location.reload(); }, 900);
+    })
+    .catch(function (err) {
+        drStatus('Request failed: ' + err, 'error');
+        approve.disabled = false;
+        deny.disabled = false;
+    });
+}
+</script>
+
+{% endblock %}
