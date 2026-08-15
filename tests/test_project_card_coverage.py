@@ -47,12 +47,49 @@ _APP = _ROOT / "tools" / "dashboard" / "app.py"
 # --------------------------------------------------------------------------- #
 
 def test_visibility_no_longer_depends_on_counted_tasks_alone():
-    """`visible` must consider orphans, or a fully-orphaned card disappears."""
+    """`visible` must consider unclaimed tasks — but only ones still OPEN.
+
+    Two failures, opposite directions, and the rule has to avoid both.
+
+    Counting only claimed tasks made a fully-orphaned card compute 0/0 and
+    vanish, so unfinished work nobody counted looked like a project with no work.
+
+    Counting ANY orphan then kept FINISHED projects on the board forever: seven
+    of them on 2026-08-15, 555 unclaimed tasks between them and every one done.
+    "In flight" has to mean outstanding work, or the panel stops meaning
+    anything.
+
+    So visibility keys on OPEN orphans. A done-but-unclaimed task is a counting
+    defect, and that is reported by check_project_card_coverage — a gate that
+    sees every card whether or not it renders.
+    """
     src = _APP.read_text(encoding="utf-8", errors="replace")
-    assert '"visible": (total_all > 0 and done_all < total_all) or bool(orphans),' in src, (
-        "visible must stay True when a project owns tasks no epic claims — "
-        "otherwise a misconfigured card is indistinguishable from an empty one"
+    assert '"visible": (total_all > 0 and done_all < total_all) or open_orphans > 0,' in src, (
+        "visible must stay True for unclaimed tasks that are still OPEN, and "
+        "must go False once every task is done"
     )
+    # ...and open_orphans must actually exclude terminal states, or it is just
+    # len(orphans) wearing a different name.
+    assert "status NOT IN ('done', 'decomposed', 'cancelled', 'merged')" in src
+
+
+def test_a_finished_project_leaves_the_board():
+    """The rule, as a decision table, independent of the source text."""
+    def visible(total, done, orphans, open_orphans):
+        return (total > 0 and done < total) or open_orphans > 0
+
+    # unfinished counted work -> shows
+    assert visible(10, 3, 0, 0) is True
+    # finished, nothing unclaimed -> gone
+    assert visible(10, 10, 0, 0) is False
+    # finished, but unclaimed tasks still OPEN -> shows (the original bug)
+    assert visible(10, 10, 5, 5) is True
+    # fully orphaned and open -> shows even though counted work is 0/0
+    assert visible(0, 0, 150, 150) is True
+    # fully orphaned and ALL DONE -> gone (the seven cards)
+    assert visible(0, 0, 150, 0) is False
+    # finished, unclaimed tasks all done -> gone
+    assert visible(83, 83, 324, 0) is False
 
 
 def test_the_payload_reports_orphans():
