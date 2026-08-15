@@ -35,9 +35,6 @@ grandfathered:
   "10":
     - 010_kanban_executor_schema: "RUNS — sorts first at v10, so this is the entry MigrationRunner applies"
     - 010_network_intelligence_schema: "benign — ni_analyses, ni_devices, ni_state_snapshots present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
-  "18":
-    - 018_memory_db_consolidation: "RUNS — sorts first at v18, so this is the entry MigrationRunner applies"
-    - 018_reflex_observations.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "19":
     - 019_backlog_task_reassign.py: "RUNS — sorts first at v19, so this is the entry MigrationRunner applies"
     - 019_kanban_verifications: "not actually shadowed — the runner never discovers the entry that sorts first, so this one is what runs at v19"
@@ -48,16 +45,6 @@ grandfathered:
   "21":
     - 021_ad_macro_regimes: "RUNS — sorts first at v21, so this is the entry MigrationRunner applies"
     - 021_dispatch_source: "no DDL — nothing for a shadowed entry to lose"
-    - 021_sg_sigint_events.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
-  "22":
-    - 022_ad_event_stack_tables: "RUNS — sorts first at v22, so this is the entry MigrationRunner applies"
-    - 022_sg_eo_signals.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
-  "23":
-    - 023_ad_news_patterns: "RUNS — sorts first at v23, so this is the entry MigrationRunner applies"
-    - 023_sg_socmint_signals.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
-  "24":
-    - 024_ad_news_catalysts: "RUNS — sorts first at v24, so this is the entry MigrationRunner applies"
-    - 024_telegram_inbox.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "27":
     - 027_ad_coach_alerts: "RUNS — sorts first at v27, so this is the entry MigrationRunner applies"
     - 027_compliance_snapshots: "benign — compliance_snapshots present on a fresh build; declared by tools/db/schema/pg_consolidated.sql"
@@ -144,9 +131,6 @@ grandfathered:
   "173":
     - 173_cpmp_obligation_periods.py: "RUNS — sorts first at v173, so this is the entry MigrationRunner applies"
     - 173_white_team_review_type.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
-  "179":
-    - 179_integrity_tables.py: "RUNS — sorts first at v179, so this is the entry MigrationRunner applies"
-    - 179_kanban_task_revivals.py: "the runner never discovers this entry at all (bare NNN_name.py) — dead for a different reason, not shadowing"
   "184":
     - 184_coworkers_canvas_tables.sql: "RUNS — sorts first at v184, so this is the entry MigrationRunner applies"
     - 184_creative_gap_innovation_signal.sql: "benign — creative_gap, innovation_signal present on a fresh build; declared by tools/db/init_icdev_db.py"

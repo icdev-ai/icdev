@@ -1,0 +1,7 @@
+{
+  "description": "sg_socmint_signals (promoted from the never-discovered 023_sg_socmint_signals.py)",
+  "date": "2026-08-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}
