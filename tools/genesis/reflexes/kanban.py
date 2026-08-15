@@ -1415,6 +1415,13 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             pass
 
 
+#: Statuses a timeout must NOT demote out of. `done` is obvious; `pr_opened`
+#: is the one that was missing — a session whose PR is up has finished the work,
+#: and a timeout after that point is a session that overran, not a task that
+#: failed. Demoting it to `scheduled` rebuilds output that already exists.
+_TIMEOUT_NO_DEMOTE_STATUSES = ("done", "pr_opened", "merged")
+
+
 def _branch_has_unmerged_commits(task_id: str) -> bool:
     """Return True IFF branch ``kanban/<task_id>`` exists locally AND has commits
     that are not yet on ``origin/<default_branch>``.
@@ -1483,6 +1490,28 @@ def _branch_has_unmerged_commits(task_id: str) -> bool:
 #: branch name -> True when its PR is closed/merged. Populated per process;
 #: a branch's PR state does not change often enough to be worth re-asking.
 _ABANDONED_BRANCH_CACHE: dict = {}
+
+
+def timeout_demotion_skip_reason(task_id: str, status: str) -> str:
+    """Why a timed-out task must NOT be demoted to ``scheduled``, or "".
+
+    Extracted from the timeout handler so the decision is testable on its own:
+    the handler is one branch inside a very long dispatch loop, and a rule that
+    can only be exercised by driving the whole loop is a rule nobody checks.
+
+    Returns a human-readable reason (truthy) to skip demotion, or "" to demote
+    normally. Fail-OPEN by construction: any error inside the branch probe
+    surfaces as "" and the ordinary demotion proceeds, because an unreachable
+    git must never wedge the scheduler.
+    """
+    if status in _TIMEOUT_NO_DEMOTE_STATUSES:
+        return f"status is {status!r}"
+    try:
+        if _branch_has_unmerged_commits(task_id):
+            return "branch carries unmerged commits (work exists)"
+    except Exception as exc:  # noqa: BLE001 — see the fail-open note above
+        logger.debug("timeout branch probe failed for %s: %s", task_id, exc)
+    return ""
 
 
 def _branch_is_abandoned(ref: str, repo_root) -> bool:
@@ -9372,17 +9401,43 @@ def _check_completed():
                     f"TIMEOUT after {int(elapsed)}s "
                     f"(max {task_budget}s) — task exceeded dispatch budget"
                 )
-                # Skip demotion if a task was already marked done externally
-                # (e.g., operator or another agent completed it while this zombie ran).
+                # Skip demotion when the work ALREADY EXISTS. Two ways it can:
+                #
+                #  1. the task reached a terminal-ish status while this zombie
+                #     ran (`done` externally, or `pr_opened` because the session
+                #     got its PR up), or
+                #  2. the session produced commits on kanban/<task_id> and then
+                #     overran the budget before or during the PR wait — the
+                #     status may still read `in_progress`, and the branch is the
+                #     only evidence left.
+                #
+                # Demoting either case to `scheduled` re-dispatches a task whose
+                # output is already sitting in an open, green PR, and the retry
+                # rebuilds it from scratch. Observed 2026-08-15 on
+                # trust-struct-03: PR #1679 was open with EVERY check passing
+                # (E2E included) while the board had the task back in
+                # `scheduled`, counting a failure against it. Nothing reported
+                # the contradiction — a board saying "retry this" and a forge
+                # saying "this is done" are equally confident and only one is
+                # right.
+                #
+                # The branch check is the same merge-verification primitive the
+                # done-gate uses, so dispatch and completion agree on what
+                # "there is work here" means, and it is repo-aware and
+                # fail-OPEN: an unreachable git returns False and the ordinary
+                # demotion proceeds.
                 try:
                     with get_connection() as _done_chk:
                         _done_row = _done_chk.execute(
                             "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,),
                         ).fetchone()
-                    if _done_row and dict(_done_row)["status"] == "done":
+                    _cur_status = dict(_done_row)["status"] if _done_row else ""
+                    _skip_reason = timeout_demotion_skip_reason(task_id, _cur_status)
+                    if _skip_reason:
                         logger.info(
-                            "timeout handler: %s is already done — skipping demotion",
-                            task_id,
+                            "timeout handler: %s not demoted — %s; leaving status %r "
+                            "so the open PR is landed rather than rebuilt",
+                            task_id, _skip_reason, _cur_status,
                         )
                         del _running[task_id]
                         _dispatch_times.pop(task_id, None)
