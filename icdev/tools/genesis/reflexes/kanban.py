@@ -10055,6 +10055,52 @@ def _check_completed():
     return completed
 
 
+#: Lifetime token-exhaustions after which a task is decomposed rather than
+#: re-queued unchanged. Override via KANBAN_EXHAUSTIONS_BEFORE_DECOMPOSITION.
+#:
+#: 2, not 3. One exhaustion can be an unlucky session — a long but tractable
+#: task, or a session that spent its budget exploring. The SECOND is a repeat
+#: measurement of the same task against the same budget, and by then the board
+#: has paid twice for the same unfinished work. Set against the measured
+#: distribution: 49 tasks have exhausted at least twice (338 events) and 29 at
+#: least three times (298 events), so a threshold of 3 would still have let ~40
+#: pointless re-dispatches through on this board alone.
+EXHAUSTIONS_BEFORE_DECOMPOSITION = _int_env(
+    "KANBAN_EXHAUSTIONS_BEFORE_DECOMPOSITION", 2)
+
+
+def _lifetime_exhaustion_count(task_id: str) -> int:
+    """How many times this task has EVER entered ``token_exhausted``.
+
+    Read from ``kanban_status_transitions`` rather than the per-attempt retry
+    counter, which ``_clear_retry_count`` wipes on the give-up path — so the
+    counter is structurally incapable of seeing that a task has been round the
+    loop before. Deriving from the transition log needs no new column and cannot
+    drift from the board's actual history.
+
+    FAIL-OPEN: any error returns 0, which routes the task down the pre-existing
+    backlog path. A missing or unreadable transition log must never turn into a
+    decomposition nobody asked for.
+    """
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM kanban_status_transitions "
+                "WHERE task_id = %s AND to_status = 'token_exhausted'",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return 0
+            val = dict(row).get("n")
+            return int(val) if val is not None else 0
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 — counting must never wedge dispatch
+        logger.debug("lifetime exhaustion count failed for %s: %s", task_id, exc)
+        return 0
+
+
 def _check_token_exhausted_tasks() -> list:
     """Return token-exhausted tasks whose resume_at time has passed.
 
@@ -10138,6 +10184,48 @@ def _check_token_exhausted_tasks() -> list:
             # 4b. Check token-exhaustion retry count — give up after TOKEN_MAX_RETRY_COUNT
             retry_count = _get_retry_count(task_id)
             if retry_count >= TOKEN_MAX_RETRY_COUNT:
+                # Where "give up" sends it decides whether the task ever gets
+                # SMALLER. Sending it to `backlog` and clearing the counter
+                # restarts the identical cycle -- dispatch, exhaust, retry N
+                # times, back to backlog -- with the task unchanged. Measured
+                # 2026-08-15: tsr-dash-01-d3 went round it 46 times, aca-trn-01
+                # 26, and across the board 29 tasks exhausted 3+ times for 298
+                # events. 240 of those dispatches were re-runs of a task already
+                # measured too big, and only 5 of the 29 were ever flagged for
+                # decomposition -- none by this path.
+                #
+                # Token exhaustion is the ONLY ground-truth measurement of task
+                # size this system produces. The pre-dispatch _complexity_score
+                # cannot substitute: it scores description VERBOSITY (words,
+                # bullets, file paths), so on the three tasks that exhausted here
+                # it returned 2, 1 and 0 against a threshold of 7, while the
+                # highest scorer (5) completed successfully. It measures how much
+                # the author wrote, not how much work there is.
+                #
+                # So a repeat offender goes to `needs_decomposition` and gets
+                # LLM-split into subtasks instead. The count comes from
+                # kanban_status_transitions rather than _get_retry_count because
+                # that counter is cleared on this very path and therefore cannot
+                # see a lifetime pattern -- which is exactly why 46 identical
+                # retries never looked like anything but a first attempt.
+                _lifetime = _lifetime_exhaustion_count(task_id)
+                if _lifetime >= EXHAUSTIONS_BEFORE_DECOMPOSITION:
+                    logger.warning(
+                        "Task %s exhausted tokens %d times over its lifetime — "
+                        "flagging needs_decomposition instead of re-queuing it unchanged",
+                        task_id, _lifetime,
+                    )
+                    _move_task(
+                        task_id, "needs_decomposition", actor="scheduler",
+                        reason=(f"token-exhausted {_lifetime}x lifetime "
+                                f"(>= {EXHAUSTIONS_BEFORE_DECOMPOSITION}): too large for one "
+                                f"session — decompose rather than retry unchanged"),
+                    )
+                    _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
+                    _send_notification(task, event="needs_decomposition")
+                    continue
+
                 logger.info(
                     "Task %s exceeded max retries (%d) — moving to backlog",
                     task_id,
