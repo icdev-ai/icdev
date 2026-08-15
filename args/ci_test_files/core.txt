@@ -1642,6 +1642,18 @@ tests/test_adversarial_review_question.py
 # govchain_anchor sweep.
 # 33 tests, ~1s. No network, no Fabric: the noop transport queues.
 tests/provenance/test_trust_validation_anchor.py
+
+# Token exhaustion is the only ground-truth measurement of task SIZE the board
+# produces, and the give-up path threw it away: it sent the task to `backlog`
+# and cleared the only counter, so the identical task re-entered the identical
+# cycle with no memory it had been round before. Measured: tsr-dash-01-d3 went
+# round 46 times, 29 tasks exhausted 3+ times (298 events), 240 dispatches were
+# re-runs of a task already measured too big, and only 5 of the 29 were ever
+# flagged for decomposition. Also pins WHY the pre-dispatch _complexity_score
+# cannot substitute -- it scores description verbosity and was anti-correlated
+# with outcome on this sample (exhausted tasks scored 2/1/0, the success 5).
+# 16 tests, <1s, count and board writes injected: no DB, no LLM, no network.
+tests/kanban/test_exhaustion_triggers_decomposition.py
 # trust-disc-02. Gates tools/ci/isolation_run.py, which runs every test file the
 # PR changed ALONE — the half of "both alone and in-suite" that this pipeline
 # never had. Builds a throwaway git repo carrying a real order-dependent pair
