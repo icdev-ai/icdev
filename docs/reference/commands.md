@@ -952,6 +952,49 @@ argument key **names** — is the only sanctioned way to build a deliverable bod
 
 ---
 
+## HITL Trust Deltas — the Delta is the Reviewable Unit (trust-hitl-01)
+
+A `force_*` override records THAT a human bypassed a TRUST gate and never WHAT
+CHANGED. `approve_draft` writes "promoted despite 3 citation defect(s)" and the
+draft text — the thing actually approved — appears nowhere. A reviewer cannot
+review a count.
+
+```bash
+python tools/quality/hitl_delta.py --pending --json
+python tools/quality/hitl_delta.py --pending --artifact-id draft-42
+python tools/quality/hitl_delta.py --show <delta_id> --json
+python tools/quality/hitl_delta.py --show <delta_id> --with-text
+python tools/quality/hitl_delta.py --settle <delta_id> --approve \
+    --reason "verified against the source PDF" --json
+python tools/quality/hitl_delta.py --chain <delta_id> --json
+```
+
+The diff is **claim-anchored, not textual**: `compute_delta` runs over
+`citation_grounding` claim offsets, so each changed span carries a start/end into
+its own text plus the `verify_claim` verdict on both sides. A claim that could
+not be checked is `unknown` — never `supported`.
+
+**Same storage split as the approval inbox above.** `trust_deltas` (migration
+`20260815063941`) is append-only EVIDENCE and is in `APPEND_ONLY_TABLES`; the
+human's disposition is mutable STATE and lands in the existing `approval_items`.
+`settle_delta` issues no UPDATE against `trust_deltas` — it resolves through
+`approval_inbox.resolve()`, which writes the permanent `agent_approval_log` row.
+A correction **appends** a successor through `supersedes_delta_id` and never
+edits its predecessor, the rule `sbom_revision.apply_correction` already follows;
+`revision_chain()` derives supersession at read time.
+
+Artifact **text is never delivered**. It lives in `trust_deltas` behind the RLS
+predicate; `render_delta_summary()` builds the inbox body from counts, hashes and
+the delta id, because those rows are mirrored to Slack.
+
+**A delta whose enqueue failed still reads pending.** Evidence is written before
+the ask, so a dropped ask surfaces as unanswered rather than as an approval.
+
+Consumers: the side-by-side panel is trust-hitl-02, the `force_*` call sites are
+trust-hitl-03. Until those land the CLI above is the operable surface.
+
+---
+
 ## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
 
 Mirrors a pending item to a messaging channel and turns the human's reply back
