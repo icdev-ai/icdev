@@ -1493,6 +1493,15 @@ tests/workflow/test_playwright_gate.py
 # that is a copy of what instantiation creates is one that goes stale silently.
 # 53 tests, <1s, pure regex/dict: no DB, no LLM, no network.
 tests/test_outline_contract.py
+# trust-struct-01 — the one contract validator for LLM output. Covers the
+# JSON-schema subset (construction-time keyword rejection, reject vs coerce,
+# fail-closed sentinels, the bounded single repair) AND that the three surfaces
+# whose hand-rolled extractors it replaced still degrade exactly as before:
+# content_grounding falls back to the heuristic floor, critique_rule fails
+# closed per severity, reflect_document lands on neutral. Those three fallbacks
+# were the reason to consolidate; a regression in one is invisible otherwise.
+# 44 tests, <1s, pure stdlib + stub routers: no DB, no LLM, no network.
+tests/test_structured_output.py
 # The bounded MONOTONE revise-and-recheck loop (trust-self-01). Gated because
 # the invariant is load-bearing and silent when broken: a loop that accepts a
 # round which did NOT strictly reduce findings degenerates into optimising for

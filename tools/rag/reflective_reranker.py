@@ -50,8 +50,6 @@ hardcoded model IDs. Opt-in via ``args/rag_config.yaml`` ``rag.reflective_rerank
 """
 from __future__ import annotations
 
-import json
-import re
 from typing import Any, Callable, List, Optional
 
 from tools.logging.icdev_logger import get_logger
@@ -121,10 +119,31 @@ def reflect_document(
     ``yes`` — and ``degraded`` is True so a caller can tell that verdict apart
     from a model that genuinely answered "partial" on every axis. Those two
     produce the identical score, and only one of them means anything.
+
+    The shape is held to the shared contract validator (trust-struct-01) with
+    ``partial`` as each axis's DECLARED fail-closed sentinel, so the neutral
+    degrade is stated in one place instead of being an implicit consequence of
+    "token not in AXIS_VALUES, leave the default".
     """
+    from tools.quality.structured_output import (
+        OutputContract,
+        coerce_or_reject,
+        enum_field,
+    )
+
     axes = {"relevant": "partial", "useful": "partial"}
     if claim is not None:
         axes["supports"] = "partial"
+    contract = OutputContract(
+        {
+            "type": "object",
+            "required": sorted(axes),
+            "properties": {
+                axis: enum_field(AXIS_VALUES, fail_closed="partial") for axis in axes
+            },
+        },
+        name="reflective_reranker.reflect_document",
+    )
     parsed = 0
     reason = ""
     try:
@@ -149,15 +168,30 @@ def reflect_document(
             max_tokens=60, temperature=0.0,
         ))
         content = (getattr(resp, "content", "") or "").strip()
-        match = re.search(r"\{.*\}", content, re.DOTALL)
-        data = json.loads(match.group(0)) if match else {}
-        for axis in list(axes):
-            token = str(data.get(axis, "")).strip().lower()
-            if token in AXIS_VALUES:
-                axes[axis] = token
-                parsed += 1
-        if not parsed:
-            reason = "no axis parsed from response"
+        # coerce: every axis declares "partial" as its sentinel, so an unknown
+        # token, a wrong type, or an absent axis all land on neutral — and each
+        # one is a recorded finding rather than a silently-kept default. An
+        # unparseable payload is a rejection; the neutral axes below stand.
+        data, findings = coerce_or_reject(content, contract, mode="coerce")
+        if data is None:
+            reason = ",".join(sorted({f["code"] for f in findings})) or "output rejected"
+            logger.debug(
+                "reflective_reranker: output rejected (%s), neutral used", reason,
+            )
+        else:
+            # Count only axes the model GENUINELY supplied. Coercion is what
+            # makes this necessary: with a declared sentinel, a response whose
+            # every axis is garbage still returns an object with every axis on
+            # "partial", so counting axes rather than PARSED axes would report
+            # degraded=False for a response nothing was read from — erasing the
+            # exact distinction `degraded` exists to draw (trust-self-02).
+            coerced = {str(f.get("path", "")).lstrip("$.") for f in findings}
+            for axis in list(axes):
+                axes[axis] = str(data[axis]).strip().lower()
+                if axis not in coerced:
+                    parsed += 1
+            if not parsed:
+                reason = ",".join(sorted({f["code"] for f in findings})) or "no axis parsed"
     except Exception as exc:  # noqa: BLE001 — neutral fallback is the floor
         reason = f"{type(exc).__name__}: {exc}"
         logger.debug("reflective_reranker: reflect failed, neutral used: %s", exc)
