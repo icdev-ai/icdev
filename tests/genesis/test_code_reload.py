@@ -8,7 +8,9 @@ underlying bug does not help if the fix cannot reach the process that needs it.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -446,6 +448,13 @@ def test_a_listening_socket_never_outlives_the_process_that_made_it(tmp_path: Pa
         )
     finally:
         parent.kill()
-        if pidfile.exists():
-            subprocess.run(["taskkill", "/F", "/PID", pidfile.read_text(encoding="utf-8").strip()],
-                           capture_output=True, check=False)
+        # On POSIX the replacement IS `parent` (execv kept the PID), so the kill
+        # above already covers it. On Windows it is a separate process that
+        # Popen does not own, and it must not be left sleeping for 20s. Reaping
+        # it needs os.kill, not taskkill: the CI runner is Linux and has no such
+        # binary, so an unconditional call fails the test in the `finally` even
+        # when every assertion passed.
+        if os.name == "nt" and pidfile.exists():
+            with contextlib.suppress(OSError, ValueError):
+                os.kill(int(pidfile.read_text(encoding="utf-8").strip()),
+                        signal.SIGTERM)
