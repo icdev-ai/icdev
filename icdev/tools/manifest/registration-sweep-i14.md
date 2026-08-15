@@ -22,7 +22,7 @@ module's docstring.
 | Product Registry | tools/data_canvas/data_mesh/product_registry.py | Data Mesh — Product Registry. | `--json` / (library) | JSON / objects |
 | Servicenow Connector | tools/databridge/connectors/servicenow_connector.py | ServiceNow CMDB DataBridge Connector. | `--json` / (library) | JSON / objects |
 | 024 Telegram Inbox | tools/db/migrations/024_telegram_inbox.py | Migration 024 — telegram_inbox table for durable Telegram message receipt. | `--json` / (library) | JSON / objects |
-| 168 Seed Canvas Grants | tools/db/migrations/168_seed_canvas_grants.py | Migration 168 — Seed canvas_access_grants for existing tenants. | `--json` / (library) | JSON / objects |
+| Seed Canvas Grants (migration) | tools/db/migrations/20260815191145_seed_canvas_grants_for_existing_tenants/up.py | Backfills canvas_access_grants for tenants predating G-02. Runs via the migration runner; idempotent (grant_access upserts) and a no-op with no tenants. Replaces the bare 168_seed_canvas_grants.py, which discover_migrations skipped silently and which therefore never ran. | (migration runner) | none |
 | 172 Aiify Rename | tools/db/migrations/172_aiify_rename.py | Migration 172: AAC -> AI-ify canvas table rename (data-preserving). | `--json` / (library) | JSON / objects |
 | 173 White Team Review Type | tools/db/migrations/173_white_team_review_type.py | Migration 173: Add 'white_team' to proposal_reviews review_type CHECK constraint. | `--json` / (library) | JSON / objects |
 | 177 Cpmp Contract Mods | tools/db/migrations/177_cpmp_contract_mods.py | Migration 177: Add cpmp_contract_mods table + status history support. | `--json` / (library) | JSON / objects |
