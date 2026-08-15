@@ -58,6 +58,26 @@ _BM25_WEIGHT_DEFAULT      = 0.30   # BM25 boost weight for weighted-sum fusion
 _MIN_SCORE_THRESHOLD      = 0.10   # minimum score to include in results
 _RESULT_PREVIEW_CHARS     = 120    # max chars in result preview/logging
 
+#: Every value ``search()`` can write to ``rag_retrieval_log.retrieval_mode``.
+#: The CHECK constraint is derived from THIS list (CLAUDE.md: constraints come
+#: from a Python constant, never a hardcoded SQL list) — in
+#: ``tools/db/init_icdev_db.py`` for a fresh database, in
+#: ``tools/db/schema/pg_consolidated.sql``, and in migration 20260815002727 for
+#: an existing one. They must agree, because ``_log_retrieval``'s INSERT is
+#: best-effort inside a try/except: a mode outside the constraint does not
+#: raise, it silently drops the row. That is how every reflectively reranked
+#: retrieval went unlogged after oss-meas-01 added a value no DDL allowed.
+#: ``tests/rag/test_reflective_surface_scoping.py`` asserts the four agree.
+RETRIEVAL_MODES = (
+    "vector",
+    "bm25",
+    "hybrid",
+    "rrf_hybrid",
+    "reranked",
+    "reflective_reranked",
+    "reflective_degraded",
+)
+
 
 #: Parsed RAG config keyed by path -> (mtime, config). See _load_rag_config().
 _rag_config_cache: Dict[str, tuple] = {}
@@ -378,6 +398,28 @@ class RAGRetriever:
         """Alias for search() — backward compat with router._rag_augment()."""
         return self.search(query, **kwargs)
 
+    def _reflective_enabled_for(self, surface: Optional[str]) -> bool:
+        """Whether reflective reranking (step 5b) fires for *surface*.
+
+        ``rag.reflective_rerank.surfaces`` scopes an expensive per-document LLM
+        pass to the surfaces that opted in. Three cases, deliberately distinct:
+
+        * toggle off                     -> never, as before.
+        * on, ``surfaces`` absent/empty  -> every surface (the pre-scoping
+          semantics, so an existing deployment that set ``enabled: true`` does
+          not silently lose the behaviour).
+        * on, ``surfaces`` declared      -> only those. A caller that states no
+          surface is NOT one of them: the cost is per-document LLM calls on an
+          interactive path, and defaulting an unattributed caller into paying it
+          is how a scoped toggle becomes a global one again.
+        """
+        if not self._reflective_cfg.get("enabled", False):
+            return False
+        surfaces = self._reflective_cfg.get("surfaces") or []
+        if not surfaces:
+            return True
+        return surface in surfaces
+
     def search(
         self,
         query: str,
@@ -386,6 +428,7 @@ class RAGRetriever:
         project_id: str = "",
         rerank: Optional[bool] = None,
         query_label: Optional[str] = None,
+        surface: Optional[str] = None,
     ) -> List[SearchResult]:
         """Execute full two-stage retrieval pipeline.
 
@@ -395,6 +438,11 @@ class RAGRetriever:
             source_types: Filter by source types.
             project_id: Optional project filter.
             rerank: Override re-ranking enabled/disabled.
+            surface: Consuming surface, in the ``args/trust_gate.yaml`` profile
+                vocabulary (``chat_rag``, ``drafting``, ``compliance_evidence``,
+                ``agent_output``). Only read by per-surface toggles — today just
+                reflective reranking (step 5b). Unset means "unattributed", and
+                a per-surface toggle does not fire for it.
 
         Returns:
             List of SearchResult sorted by final_score descending.
@@ -513,31 +561,52 @@ class RAGRetriever:
             results = results[:final_top_k]
 
         # Step 5b: Self-RAG per-document reflective reranking (agx-rag-02).
-        # Default OFF → this branch is skipped entirely and the path above is
-        # byte-for-byte unchanged.
-        #
         # Wired by oss-meas-01. It shipped with a config block, a test file and
         # zero callers, so `rag.reflective_rerank.enabled` read as a live
         # capability and did nothing — and a benchmark flipping it measured a
         # 0.0 delta indistinguishable from "wired and useless".
         #
+        # Adopted for `chat_rag` ONLY by trust-self-02: `surfaces` scopes the
+        # spend to the surfaces that opted in, so drafting and compliance
+        # retrieval keep the byte-for-byte previous path. An unattributed call
+        # (surface=None) does not fire it — a per-document LLM cost should be
+        # charged to a surface that asked for it, not to whoever forgot to say.
+        #
         # Runs AFTER the cross-encoder rather than instead of it: this scores
         # each surviving candidate on separate RELEVANT/SUPPORTS/USEFUL axes and
         # composes the ordering in Python, so it refines a shortlist rather than
-        # replacing the cheap ranker. `max_candidates` bounds the per-document
-        # LLM calls — the cost lives here, which is why it stays default OFF
-        # until measured (see docs/features/oss-meas-01-*.md).
-        if self._reflective_cfg.get("enabled", False) and results:
+        # replacing the cheap ranker. `results` is already truncated to
+        # final_top_k above, so the per-query cost is at most that many calls.
+        if results and self._reflective_enabled_for(surface):
             try:
                 from tools.rag.reflective_reranker import reflective_rerank
 
+                report: dict = {}
                 results = reflective_rerank(
                     query,
                     results,
                     top_k=final_top_k,
                     max_candidates=self._reflective_cfg.get("max_candidates"),
+                    report=report,
                 )
-                retrieval_mode = "reflective_reranked"
+                # Only claim the mode when a document was actually judged. An
+                # unreachable model falls back to neutral on every axis, which
+                # returns the incoming order — labelling that "reflective" is
+                # how a dead capability reports itself as live.
+                # Both values are in the rag_retrieval_log.retrieval_mode CHECK
+                # (migration 20260815002727). Do NOT compose a new string here:
+                # _log_retrieval's INSERT is best-effort inside a try/except, so
+                # a value outside the constraint drops the row silently.
+                if report.get("effective"):
+                    retrieval_mode = "reflective_reranked"
+                else:
+                    retrieval_mode = "reflective_degraded"
+                    logger.warning(
+                        "reflective rerank judged nothing for surface %s (%s of %s "
+                        "documents degraded: %s); keeping order",
+                        surface, report.get("degraded"), report.get("reflected"),
+                        report.get("reason", "unknown"),
+                    )
             except Exception as exc:
                 # Same posture as the cross-encoder above: a reranker failure
                 # must degrade to the existing ordering, never drop results.
