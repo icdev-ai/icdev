@@ -32,6 +32,9 @@ Checks:
                       + match the committed args/vendor_api_manifest.json, which is the half CI can run (ctx-enf-01)
  22. capability_liveness — a declared capability with ZERO lifetime consumption fails; budgets in args/liveness_gate.yaml (exa-live-02)
  23. substrate_liveness  — WARN when a changed module READS a declared substrate that holds zero rows (trust-disc-04)
+ 24. external_only_surfaces — the sanctioned exception to 22: a module with no in-repo caller BY DESIGN must carry a
+                      decision doc its docstring names, zero production importers, a vendor pin and a gated test.
+                      Obligations, not a budget — args/external_only_surfaces.yaml (ctx-reach-02)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -8943,6 +8946,301 @@ def check_vendor_parity(changed_files: Optional[List[Path]] = None) -> Coherence
     )
 
 
+# ---------------------------------------------------------------------------
+# check_external_only_surfaces (ctx-reach-02) — modules with no in-repo caller
+# BY DESIGN, and the obligations that keep that claim honest
+# ---------------------------------------------------------------------------
+
+_EXTERNAL_ONLY_CONFIG = "args/external_only_surfaces.yaml"
+
+
+def _external_only_config() -> Dict[str, Any]:
+    """Declared external-only surfaces. Empty dict when absent/unreadable."""
+    cfg = PROJECT_ROOT / _EXTERNAL_ONLY_CONFIG
+    if not cfg.exists():
+        return {}
+    try:
+        import yaml  # lazy — yaml isn't a top-level import here
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — a malformed gate must not crash the run
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _module_dotted_names(source: str) -> Set[str]:
+    """Import spellings that reach *source*, e.g. ``tools/cortex/client.py`` ->
+    ``{tools.cortex.client, icdev.tools.cortex.client}``.
+
+    Both namespaces are generated because the root ``tools/`` package is a
+    backward-compat shim onto ``icdev.tools.*`` (CLAUDE.md, Import Conventions):
+    a consumer importing either spelling is a real consumer, and a scan that
+    knew only one would read half the repo as empty.
+    """
+    stem = source[: -len(".py")] if source.endswith(".py") else source
+    dotted = stem.replace("/", ".")
+    names = {dotted}
+    if dotted.startswith("tools."):
+        names.add("icdev." + dotted)
+    elif dotted.startswith("icdev.tools."):
+        names.add(dotted[len("icdev.") :])
+    return names
+
+
+def _production_importers(source: str) -> List[str]:
+    """Repo-relative ``path:line`` of every non-test module importing *source*.
+
+    Parses imports rather than grepping, so the module's own docstring, the
+    kanban seed descriptions that quote it, and ``docs/`` command examples do
+    not register as callers — only an actual ``import`` does. Tests are excluded
+    on purpose: they are the evidence an external-only surface still works, not
+    consumers of it, and counting them would make the declaration trivially
+    self-satisfying.
+    """
+    targets = _module_dotted_names(source)
+    self_paths = {source} | {
+        name.replace(".", "/") + ".py" for name in _module_dotted_names(source)
+    }
+    # Cheap prefilter before the AST. Every spelling that reaches the module —
+    # `from a.b.mod import X`, `from a.b import mod`, `import a.b.mod` — contains
+    # BOTH the module basename and its parent package segment as literal text,
+    # so a file containing neither cannot import it. Sound (no false negatives)
+    # and it takes the full-repo scan from ~20s to well inside the fast tier's
+    # budget, which matters because this check runs on every per-task gate.
+    stem = source[: -len(".py")] if source.endswith(".py") else source
+    segments = stem.split("/")
+    required = {segments[-1]}
+    if len(segments) > 1:
+        required.add(segments[-2])
+
+    hits: List[str] = []
+    for path in PROJECT_ROOT.rglob("*.py"):
+        try:
+            rel = path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:  # pragma: no cover — rglob roots are always relative
+            continue
+        if rel in self_paths:
+            continue
+        if rel.startswith((".tmp/", ".git/", "tests/", "build/", "dist/")):
+            continue
+        if "/tests/" in rel or "/.tmp/" in rel:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not all(token in text for token in required):
+            continue
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        for node in ast.walk(tree):
+            names: List[str] = []
+            if isinstance(node, ast.ImportFrom):
+                # Both `from tools.cortex.client import X` and the equally common
+                # `from tools.cortex import client` reach the module; checking
+                # only node.module would silently miss the second.
+                base = node.module or ""
+                names = [base] + [
+                    f"{base}.{alias.name}" if base else alias.name for alias in node.names
+                ]
+            elif isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            if any(
+                name in targets or any(name.startswith(t + ".") for t in targets)
+                for name in names
+            ):
+                hits.append(f"{rel}:{node.lineno}")
+    return sorted(set(hits))
+
+
+def check_external_only_surfaces(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Hold declared external-only modules to the obligations that justify them.
+
+    A module nothing in this repo calls is normally ICDEV's signature defect —
+    declared, importable, catalogued, consumed by nobody, and nothing goes red
+    (args/liveness_gate.yaml). A very small number are that way ON PURPOSE:
+    ``tools/cortex/client.py`` is an SDK whose callers live in other git repos,
+    and the only ICDEV host that could import it IS the server it talks to
+    (ctx-reach-02). Dead code and a vendored SDK look identical from inside the
+    repo, so the third state has to be declared — and a declaration nothing
+    checks is just a comment.
+
+    So each entry in ``args/external_only_surfaces.yaml`` carries obligations
+    rather than a budget. There is no number here to raise:
+
+      * the decision doc exists, and the module docstring names it, so a reader
+        who opens the file asking "why does nothing call this?" finds the answer
+        in the file rather than in a config they do not know about;
+      * ZERO production importers — checked in BOTH directions. A production
+        importer appearing is a FAIL whose fix is to DELETE the entry: the
+        module became an ordinary in-repo capability and capability_liveness
+        should govern it from then on. A stale external-only claim is the same
+        defect wearing a new costume;
+      * the external contract is pinned by args/vendor_parity.yaml (and through
+        it args/vendor_api_manifest.json), because ICDEV CI never checks out the
+        consumer repos — without the manifest "external-only" is unfalsifiable;
+      * behaviour is covered by a test in args/ci_test_files/core.txt. An
+        external-only surface whose only tests are ungated is a module no merge
+        has ever verified, which is what this one was: 542 lines, 23 public
+        methods, and tests/cortex/test_client.py sat in args/ci_test_backlog.txt.
+
+    FAILs in both tiers. Everything it reads is in-repo and machine-independent,
+    so unlike check_vendor_parity's consumer half it cannot skip or go flaky,
+    and every way it can fail is a change that genuinely needs stopping.
+    """
+    check_id = "external_only_surfaces"
+    check_name = "External-Only Surfaces"
+    expected = [
+        "Each declared external-only module has a decision doc its docstring names",
+        "Each has ZERO production importers in this repo (tests excluded)",
+        "Each is pinned as a vendor-parity source and covered by a gated test",
+    ]
+
+    config = _external_only_config()
+    entries = [e for e in (config.get("surfaces") or []) if isinstance(e, dict)]
+    if not entries:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="pass",
+            expected=expected,
+            actual=["no external-only surfaces declared"],
+            missing=[],
+            extra=[],
+            message=f"No surfaces declared in {_EXTERNAL_ONLY_CONFIG}.",
+        )
+
+    vendor_sources = set(vendor_parity_sources())
+    # Reuse the allowlist's OWN parser rather than re-implementing comment and
+    # inline-comment stripping — a second reader of these files would drift from
+    # the one CI actually gates on.
+    try:
+        from tools.ci import gated_test_list
+
+        gated = set(gated_test_list.parse(
+            (PROJECT_ROOT / "args" / "ci_test_files" / "core.txt").read_text(encoding="utf-8")
+        ))
+        backlog = set(gated_test_list.parse(
+            (PROJECT_ROOT / "args" / "ci_test_backlog.txt").read_text(encoding="utf-8")
+        ))
+    except Exception as exc:  # noqa: BLE001 — report it, never crash the sweep
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=[],
+            missing=[f"CI test allowlist could not be read: {exc}"],
+            extra=[],
+            message="The CI test allowlist is unreadable, so gated-test coverage "
+                    "cannot be verified — fix the allowlist before relying on this check.",
+        )
+
+    violations: List[str] = []
+    verified: List[str] = []
+
+    for entry in entries:
+        source = str(entry.get("path") or "").strip()
+        if not source:
+            violations.append("<unnamed>: entry has no `path`")
+            continue
+        module = PROJECT_ROOT / source
+        if not module.exists():
+            violations.append(f"{source}: declared external-only but the file does not exist")
+            continue
+
+        decision = str(entry.get("decision") or "").strip()
+        if not decision:
+            violations.append(f"{source}: no `decision` doc declared")
+        elif not (PROJECT_ROOT / decision).exists():
+            violations.append(f"{source}: decision doc {decision} does not exist")
+
+        try:
+            text = module.read_text(encoding="utf-8", errors="replace")
+            docstring = ast.get_docstring(ast.parse(text)) or ""
+        except (OSError, SyntaxError, ValueError) as exc:
+            violations.append(f"{source}: could not be parsed ({exc})")
+            continue
+
+        reference = str(entry.get("docstring_must_reference") or "").strip()
+        if reference and reference not in docstring:
+            violations.append(
+                f"{source}: module docstring does not reference {reference} — a reader "
+                "of this file must be able to see that the missing caller is deliberate"
+            )
+
+        limit = entry.get("max_in_repo_importers")
+        if isinstance(limit, int):
+            importers = _production_importers(source)
+            if len(importers) > limit:
+                shown = ", ".join(importers[:6]) + (" …" if len(importers) > 6 else "")
+                violations.append(
+                    f"{source}: declared external-only (max {limit} in-repo importers) but "
+                    f"{len(importers)} production module(s) import it: {shown} — DELETE the "
+                    f"entry in {_EXTERNAL_ONLY_CONFIG}; this is an in-repo capability now"
+                )
+            else:
+                verified.append(f"{source}: 0 production importers, as declared")
+
+        if entry.get("must_be_vendor_parity_source") and source not in vendor_sources:
+            violations.append(
+                f"{source}: not declared in {_VENDOR_PARITY_CONFIG} — an external contract "
+                "nothing pins cannot be checked from this repo"
+            )
+
+        for test in entry.get("gated_tests") or []:
+            test = str(test).strip()
+            if not test:
+                continue
+            if not (PROJECT_ROOT / test).exists():
+                violations.append(f"{source}: declared gated test {test} does not exist")
+            elif test not in gated:
+                violations.append(
+                    f"{source}: {test} is not in args/ci_test_files/core.txt — an "
+                    "external-only surface whose tests CI never runs is unverified"
+                )
+            elif test in backlog:
+                violations.append(
+                    f"{source}: {test} is in BOTH core.txt and args/ci_test_backlog.txt — "
+                    "remove the backlog line; the census only ever shrinks"
+                )
+            else:
+                verified.append(f"{source}: {test} gated in core.txt")
+
+    if violations:
+        return CoherenceCheck(
+            check_id=check_id,
+            check_name=check_name,
+            status="fail",
+            expected=expected,
+            actual=verified,
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} external-only declaration(s) are not backed by their "
+                f"obligations — satisfy them, or remove the entry from "
+                f"{_EXTERNAL_ONLY_CONFIG} and wire the module to a real consumer."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id=check_id,
+        check_name=check_name,
+        status="pass",
+        expected=expected,
+        actual=verified,
+        missing=[],
+        extra=[],
+        message=(
+            f"{len(entries)} external-only surface(s) documented, importer-free, "
+            "vendor-pinned and covered by a gated test."
+        ),
+    )
+
+
 _BOOTSTRAP_PARITY_PATH = PROJECT_ROOT / "args" / "bootstrap_parity.yaml"
 
 
@@ -9369,6 +9667,7 @@ CHECK_REGISTRY = {
     "migration_numbering": check_migration_numbering,
     "icdev_mirror_parity": check_icdev_mirror_parity,
     "vendor_parity": check_vendor_parity,
+    "external_only_surfaces": check_external_only_surfaces,
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
     "insert_schema_parity": check_insert_schema_parity,
@@ -9522,6 +9821,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "doc_command_paths": "skip",  # build the tool or delete the doc line — both need human judgment
     "insert_schema_parity": "skip",  # drop the column or write a migration — the choice is the fix
     "capability_liveness": "skip",  # wiring a capability to a consumer is the fix; a budget bump is not
+    "external_only_surfaces": "skip",  # satisfy the obligation or drop the declaration — both are decisions
     "gate_sentinel_shape": "skip",  # rename the task or make it a real gate — both are decisions
 }
 

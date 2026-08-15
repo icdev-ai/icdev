@@ -118,7 +118,6 @@ tests/cortex/test_api_core.py
 tests/cortex/test_api_governed.py
 tests/cortex/test_audit_persistence.py
 tests/cortex/test_audit_selfheal.py
-tests/cortex/test_client.py
 tests/cortex/test_complete_multiturn.py
 tests/cortex/test_domain_lenses.py
 tests/cortex/test_domain_triage.py

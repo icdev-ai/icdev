@@ -10,6 +10,23 @@ is an allowlist. What you vendor is THIS FILE, not Cortex. That doc also spells
 out the degradation contract below, why this file is stdlib-only, and the
 standing decision that no in-repo apps/ consumer should call Cortex over REST.
 
+EXTERNAL-ONLY SURFACE — nothing in ICDEV imports this file, ON PURPOSE. That is
+not decay, and you should not "fix" it by adding a caller: the only ICDEV
+process that could call this IS the Cortex server it talks to, and it reaches
+the same operations in-process through tools/cortex/api.py. An in-repo consumer
+would be a loopback HTTP round trip into the process already holding the callee
+— a caller manufactured to satisfy a metric, which would also put constant
+pressure on the stdlib-only contract below. Full reasoning, and the rejected
+alternative, in docs/design/ctx-reach-02-cortex-client-external-only.md.
+
+The status is DECLARED, not merely asserted: args/external_only_surfaces.yaml
+makes it carry obligations that coherence_checker.check_external_only_surfaces
+enforces on every commit — this docstring must name that decision doc, the file
+must have ZERO production importers, it must stay pinned in vendor_parity.yaml,
+and tests/cortex/test_client.py must stay in args/ci_test_files/core.txt. There
+is no budget to raise. If a real in-repo consumer ever appears, the check fails
+and the fix is to DELETE the declaration, not to widen it (ctx-reach-02).
+
 CANONICAL SOURCE: icdev tools/cortex/client.py. Standalone apps (compass,
 idea_lab) vendor this file verbatim into tools/integrations/cortex_client.py
 with a provenance header — keep it importable with ZERO icdev dependencies
