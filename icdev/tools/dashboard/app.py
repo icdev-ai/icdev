@@ -6156,6 +6156,10 @@ def create_app(testing: bool = False) -> Flask:
                 query=query,
                 top_k=top_k,
                 source_types=source_types,
+                # trust-self-02: knowledge search is a chat_rag surface (see the
+                # args/trust_gate.yaml profile), so per-surface retrieval
+                # toggles apply here.
+                surface="chat_rag",
             )
             return jsonify(
                 {
@@ -6684,7 +6688,8 @@ def create_app(testing: bool = False) -> Flask:
         try:
             from tools.rag.retriever import RAGRetriever
             retriever = RAGRetriever()
-            results = retriever.search(query=query, top_k=top_k)
+            # trust-self-02: /ask-icdev + components-map ask are chat_rag.
+            results = retriever.search(query=query, top_k=top_k, surface="chat_rag")
             hits = []
             for r in results:
                 if hasattr(r, "to_dict"):

@@ -26,9 +26,11 @@ from .api import (
     search,
 )
 from .governance import (
+    DEFAULT_GATES,
     DEFAULT_PROFILE,
     GATE_ORDER,
     MANDATORY_GATES,
+    OPT_IN_GATES,
     SKIPPABLE_GATES,
     GovernanceBlockedError,
     GovernancePipeline,
@@ -84,9 +86,11 @@ __all__ = [
     "CortexResult",
     "CortexSchemaError",
     "CortexSearchResult",
+    "DEFAULT_GATES",
     "DEFAULT_PROFILE",
     "GATE_ORDER",
     "MANDATORY_GATES",
+    "OPT_IN_GATES",
     "SKIPPABLE_GATES",
     "GovernanceBlockedError",
     "GovernancePipeline",

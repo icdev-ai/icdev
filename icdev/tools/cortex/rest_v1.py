@@ -44,6 +44,44 @@ from .schemas import CortexContext, CortexResult
 
 logger = get_logger("icdev.cortex.rest_v1")
 
+# Schema-refusal classes, resolved at RAISE time rather than import time.
+#
+# Two independent things break `except CortexSchemaError` when the class is
+# captured by a module-level `from .api import ...`:
+#
+#  * `tools.cortex.api` and `icdev.tools.cortex.api` are DISTINCT module objects
+#    holding DISTINCT classes — the shim does not alias sys.modules — so an
+#    error raised through one namespace is invisible to a handler bound to the
+#    other.
+#  * `importlib.reload()` REPLACES the class object. Anything that already did
+#    `from .api import CortexSchemaError` keeps the pre-reload class forever;
+#    the reloading test's "restore a cleanly-imported module" cannot undo that,
+#    because a reload restores the module's contents and not the bindings other
+#    modules took from it.
+#
+# Either way the refusal falls through to the generic `except Exception` and
+# returns the 500 this endpoint exists to avoid — visible as an order-dependent
+# test failure, and in production as an intermittent 500 for a request the
+# server handled correctly.
+#
+# Python evaluates an `except` expression when the exception propagates, so
+# calling this per-raise costs nothing on the happy path and is immune to both.
+def _schema_error_classes() -> tuple:
+    """Every live CortexSchemaError class, across namespaces and reloads."""
+    import importlib as _il
+
+    found = []
+    for _mod in ("tools.cortex.api", "icdev.tools.cortex.api"):
+        try:
+            _cls = getattr(_il.import_module(_mod), "CortexSchemaError", None)
+        except Exception:  # noqa: BLE001 — a missing namespace is not an error
+            continue
+        if isinstance(_cls, type) and _cls not in found:
+            found.append(_cls)
+    if CortexSchemaError not in found:
+        found.append(CortexSchemaError)
+    return tuple(found)
+
 _API_V1 = "/api/v1"
 
 # Deck-spec allowlist for the /slides surface. Content only — no path-bearing
@@ -196,7 +234,7 @@ def _cortex_api(func: Callable) -> Callable:
                 "error": str(exc),
                 "governance": exc.governance.to_dict(),
             }), 422
-        except CortexSchemaError as exc:
+        except _schema_error_classes() as exc:
             # 422, not 500. The server did its job; the MODEL could not produce
             # output conforming to the caller's schema, even after one bounded
             # repair. Falling through to the generic handler would have logged

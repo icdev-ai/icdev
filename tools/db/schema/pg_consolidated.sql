@@ -24856,7 +24856,7 @@ CREATE TABLE public.rag_retrieval_log (
     agent_id text DEFAULT ''::text,
     classification text DEFAULT 'CUI'::text NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT rag_retrieval_log_retrieval_mode_check CHECK ((retrieval_mode = ANY (ARRAY['vector'::text, 'bm25'::text, 'hybrid'::text, 'rrf_hybrid'::text, 'reranked'::text])))
+    CONSTRAINT rag_retrieval_log_retrieval_mode_check CHECK ((retrieval_mode = ANY (ARRAY['vector'::text, 'bm25'::text, 'hybrid'::text, 'rrf_hybrid'::text, 'reranked'::text, 'reflective_reranked'::text, 'reflective_degraded'::text])))
 );
 
 

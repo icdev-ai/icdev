@@ -347,6 +347,14 @@ def record_audit(payload: dict, conn=None) -> str:
                         "operation_ms": float(payload.get("operation_ms") or 0.0),
                         "governance_ms": float(payload.get("governance_ms") or 0.0),
                         "gate_ms": payload.get("gate_ms") or {},
+                        # KG-grounding detail (trust-kg-03). `outcomes` above
+                        # carries the gate's pass/warn/fail/skip; this carries
+                        # WHY — schema_source, verdict counts, findings — so a
+                        # `fail` from an unmeasurable graph is distinguishable
+                        # from a `fail` from a contradicted claim. Absent ({})
+                        # on every row whose profile did not declare the gate,
+                        # which is every row before this card.
+                        "kg_grounding": payload.get("kg_grounding") or {},
                     },
                     default=str,
                 ),

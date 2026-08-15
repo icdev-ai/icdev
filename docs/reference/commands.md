@@ -4062,6 +4062,26 @@ python tools/rag/rag_benchmark.py --toggle rerank --json
 # Control arm + one isolated arm per wired toggle, with per-metric deltas
 python tools/rag/rag_benchmark.py --sweep
 python tools/rag/rag_benchmark.py --sweep --only rerank,binary_prefilter --json
+
+# A/B the served ordering against reflective reranking over the SAME candidates
+# (trust-self-02). One retrieval per query, both arms rank that one list, so the
+# delta is the reordering and nothing else. Records the number; asserts nothing.
+python tools/rag/rag_benchmark.py --reflective-ab --limit 12 --json
+python tools/rag/rag_benchmark.py --reflective-ab --max-candidates 3
+```
+
+```
+# --probe also reports ADOPTION, which is orthogonal to the verdict: WIRED says
+# flipping the toggle COULD change retrieval, not that the committed config ever
+# flips it. reflective_rerank sat at WIRED while enabled:false made it inert on
+# every surface. UNADOPTED / ADOPTED-GLOBAL / ADOPTED [surfaces], read from
+# args/rag_config.yaml on disk — never through $ICDEV_RAG_CONFIG, so a sweep arm
+# cannot report itself as shipped-on.
+#
+# --reflective-ab reports `unmeasurable_reflection_degraded` when the reflection
+# model was never actually reached. That run's 0.0 delta is not evidence of "no
+# benefit", and recording it as one is a DROP decision on evidence that does not
+# exist.
 ```
 
 ```

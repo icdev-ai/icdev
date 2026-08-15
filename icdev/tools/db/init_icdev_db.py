@@ -6834,8 +6834,14 @@ CREATE TABLE IF NOT EXISTS rag_retrieval_log (
     query_text TEXT DEFAULT '',
     results_count INTEGER NOT NULL DEFAULT 0,
     top_score REAL DEFAULT 0.0,
+    -- 'reflective_reranked' (step 5b judged the candidates) and
+    -- 'reflective_degraded' (step 5b ran and judged nothing, so the incoming
+    -- order stands) are widened onto an EXISTING database by migration
+    -- 20260815002727 — CREATE TABLE IF NOT EXISTS never alters one. Keep the
+    -- two lists in step.
     retrieval_mode TEXT DEFAULT 'hybrid'
-        CHECK(retrieval_mode IN ('vector', 'bm25', 'hybrid', 'rrf_hybrid', 'reranked')),
+        CHECK(retrieval_mode IN ('vector', 'bm25', 'hybrid', 'rrf_hybrid', 'reranked',
+                                 'reflective_reranked', 'reflective_degraded')),
     vector_top_k INTEGER DEFAULT 50,
     final_top_k INTEGER DEFAULT 5,
     rerank_used INTEGER DEFAULT 0,

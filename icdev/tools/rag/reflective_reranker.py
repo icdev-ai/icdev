@@ -31,6 +31,19 @@ routed cheap-tier. If it does not beat the current reranker per dollar on a
 held-out set, the honest recommendation is to leave it disabled — a negative
 result is a valid outcome (see :func:`ab_compare`).
 
+Degraded is not the same as neutral (trust-self-02). The neutral fallback keeps
+retrieval safe when the model is unreachable, but it is *indistinguishable in
+the output* from a model that genuinely judged every document "partial": both
+give every candidate 0.5, the stable sort preserves the incoming order, and the
+caller sees a zero delta. That is the same laundering ``toggle_harness`` exists
+to stop, one layer down — "wired, on, and doing nothing" reading as "measured,
+no benefit". So every reflection now carries ``degraded`` (and a ``reason``),
+:func:`reflective_rerank` reports the counts to its caller, and
+:func:`ab_compare` refuses to call a run a negative result when nothing was
+actually judged. It also stops calling after two consecutive degraded documents
+— an unreachable model does not become reachable on document three, and on an
+interactive surface each of those failures still costs its full timeout.
+
 LLM-agnostic: inference via ``LLMRouter`` only; no vendor SDK imports, no
 hardcoded model IDs. Opt-in via ``args/rag_config.yaml`` ``rag.reflective_rerank``
 (default disabled = current behavior).
@@ -46,6 +59,12 @@ logger = get_logger("icdev.rag.reflective_reranker")
 VOCABULARY_VERSION = "reflect-1.0"
 AXIS_VALUES = ("yes", "partial", "no")
 _AXIS_MAP = {"yes": 1.0, "partial": 0.5, "no": 0.0}
+
+#: Consecutive degraded documents after which reflection gives up for a query.
+#: Two, not one: a single malformed response is plausibly this document; two in
+#: a row is the provider. Bounds the worst case on an interactive surface to two
+#: timeouts instead of ``max_candidates`` of them.
+DEGRADE_BAILOUT = 2
 
 # Axis weights when a claim IS provided (SUPPORTS is meaningful).
 _W_WITH_CLAIM = {"relevant": 0.4, "supports": 0.4, "useful": 0.2}
@@ -94,9 +113,12 @@ def reflect_document(
 ) -> dict:
     """Return per-axis enum verdicts for one document (one cheap-tier call).
 
-    Returns ``{relevant, useful, supports?, score, vocabulary_version}``. On any
-    LLM/parse failure every axis degrades to ``partial`` (neutral) — the
-    deterministic fallback, never a silent ``yes``.
+    Returns ``{relevant, useful, supports?, score, degraded, vocabulary_version}``
+    plus ``reason`` when degraded. On any LLM/parse failure every axis degrades
+    to ``partial`` (neutral) — the deterministic fallback, never a silent
+    ``yes`` — and ``degraded`` is True so a caller can tell that verdict apart
+    from a model that genuinely answered "partial" on every axis. Those two
+    produce the identical score, and only one of them means anything.
 
     The shape is held to the shared contract validator (trust-struct-01) with
     ``partial`` as each axis's DECLARED fail-closed sentinel, so the neutral
@@ -122,6 +144,8 @@ def reflect_document(
         },
         name="reflective_reranker.reflect_document",
     )
+    parsed = 0
+    reason = ""
     try:
         if router is None:
             from tools.llm.router import LLMRouter
@@ -150,20 +174,40 @@ def reflect_document(
         # unparseable payload is a rejection; the neutral axes below stand.
         data, findings = coerce_or_reject(content, contract, mode="coerce")
         if data is None:
+            reason = ",".join(sorted({f["code"] for f in findings})) or "output rejected"
             logger.debug(
-                "reflective_reranker: output rejected (%s), neutral used",
-                ",".join(sorted({f["code"] for f in findings})),
+                "reflective_reranker: output rejected (%s), neutral used", reason,
             )
         else:
+            # Count only axes the model GENUINELY supplied. Coercion is what
+            # makes this necessary: with a declared sentinel, a response whose
+            # every axis is garbage still returns an object with every axis on
+            # "partial", so counting axes rather than PARSED axes would report
+            # degraded=False for a response nothing was read from — erasing the
+            # exact distinction `degraded` exists to draw (trust-self-02).
+            coerced = {str(f.get("path", "")).lstrip("$.") for f in findings}
             for axis in list(axes):
                 axes[axis] = str(data[axis]).strip().lower()
+                if axis not in coerced:
+                    parsed += 1
+            if not parsed:
+                reason = ",".join(sorted({f["code"] for f in findings})) or "no axis parsed"
     except Exception as exc:  # noqa: BLE001 — neutral fallback is the floor
+        reason = f"{type(exc).__name__}: {exc}"
         logger.debug("reflective_reranker: reflect failed, neutral used: %s", exc)
 
     score = compose_reflection_score(
         axes["relevant"], axes["useful"], supports=axes.get("supports")
     )
-    return {**axes, "score": score, "vocabulary_version": VOCABULARY_VERSION}
+    out = {
+        **axes,
+        "score": score,
+        "degraded": parsed == 0,
+        "vocabulary_version": VOCABULARY_VERSION,
+    }
+    if parsed == 0:
+        out["reason"] = reason or "unknown"
+    return out
 
 
 def reflective_rerank(
@@ -175,6 +219,7 @@ def reflective_rerank(
     router=None,
     reflect_function: str = "rag_rerank",
     max_candidates: Optional[int] = None,
+    report: Optional[dict] = None,
 ) -> List[Any]:
     """Rerank candidates by composed reflection score (Python-composed ordering).
 
@@ -183,23 +228,50 @@ def reflective_rerank(
     ``max_candidates`` (default: all passed, which is already the post-vector
     set). Each result is annotated with ``reflection`` (the per-axis verdicts)
     so the citation layer can read the ``supports`` signal. Returns top_k.
+
+    Pass a dict as ``report`` to be told what actually happened: ``reflected``,
+    ``degraded``, ``bounded_out`` and ``effective`` (False when nothing was
+    judged, so the returned order is the incoming one). A caller that labels its
+    output "reflectively reranked" needs that flag — otherwise an unreachable
+    model produces the same list under a name that claims a decision was made.
+
+    After :data:`DEGRADE_BAILOUT` consecutive degraded documents the whole
+    reflection is abandoned and the INCOMING order is returned untouched. A
+    partial ordering is worse than none: an unjudged document sits at neutral
+    0.5 and would leapfrog a document the model actually scored below that.
     """
     if not results:
+        if report is not None:
+            report.update({"reflected": 0, "degraded": 0, "bounded_out": 0,
+                           "effective": False, "vocabulary_version": VOCABULARY_VERSION})
         return []
     limit = max_candidates or len(results)
     scored = []
+    reflected = degraded = bounded_out = 0
+    streak = 0
+    reason = ""
     for i, r in enumerate(results):
         content = getattr(r, "content", None)
         if content is None and isinstance(r, dict):
             content = r.get("content", "")
-        if i < limit:
+        if i < limit and streak < DEGRADE_BAILOUT:
             reflection = reflect_document(
                 query, str(content or ""), claim=claim, router=router,
                 reflect_function=reflect_function,
             )
+            reflected += 1
+            if reflection.get("degraded"):
+                degraded += 1
+                streak += 1
+                reason = reason or reflection.get("reason", "")
+            else:
+                streak = 0
         else:
-            # Beyond the bounded set: keep but score neutral (no LLM spend).
+            # Beyond the bounded set (or after the bail-out): keep but score
+            # neutral (no LLM spend).
+            bounded_out += 1
             reflection = {"relevant": "partial", "useful": "partial", "score": 0.5,
+                          "degraded": False, "bounded_out": True,
                           "vocabulary_version": VOCABULARY_VERSION}
         # Attach for downstream (citation/CoVe) consumption; don't fabricate.
         try:
@@ -208,6 +280,22 @@ def reflective_rerank(
         except Exception:  # dict / immutable — carry alongside
             pass
         scored.append((reflection["score"], i, r))
+
+    judged = reflected - degraded
+    if report is not None:
+        report.update({
+            "reflected": reflected,
+            "degraded": degraded,
+            "bounded_out": bounded_out,
+            "effective": judged > 0,
+            "vocabulary_version": VOCABULARY_VERSION,
+        })
+        if degraded:
+            report["reason"] = reason or "unknown"
+    if judged == 0:
+        # Nothing was judged — hand back exactly what came in rather than an
+        # ordering derived from uniform fallbacks.
+        return list(results[:top_k])
     # Stable sort: score desc, original index asc for ties (reproducible).
     scored.sort(key=lambda t: (-t[0], t[1]))
     return [r for _, _, r in scored[:top_k]]
@@ -237,21 +325,48 @@ def ab_compare(
     each ranker plus the LLM-call cost proxy, so a reviewer can see quality AND
     cost. An honest negative result (reflective not worth the cost) is a valid
     conclusion. Live cross-model numbers are graded by agx-bench-01.
+
+    A run in which the model was never actually reached is NOT a negative
+    result. Every reflection then falls back to neutral, the ordering is the
+    incoming one, and the delta is 0.0 — arithmetically identical to "we
+    measured it and it did not help", which is the one conclusion the numbers do
+    not support. So the ranked documents are inspected for degraded reflections
+    (:func:`reflect_document` marks them) and a run with no judged document
+    reports ``unmeasurable_reflection_degraded`` instead.
+
+    ``reflective_llm_calls`` is the caller's DECLARED cost proxy, i.e. an upper
+    bound: the bail-out means a degraded run makes fewer calls than that. The
+    observed count is ``documents_judged + documents_degraded``.
     """
     base_p, refl_p = [], []
     base_calls = refl_calls = 0
+    judged = degraded = 0
+    reason = ""
     for item in labeled_queries:
         q = item["query"]
         cands = item["candidates"]
         gold = set(item.get("gold_relevant", []))
+        ranked = reflective_rank(q, cands)
         base_p.append(_relevant_at_k(baseline_rank(q, cands), gold, k, id_of))
-        refl_p.append(_relevant_at_k(reflective_rank(q, cands), gold, k, id_of))
+        refl_p.append(_relevant_at_k(ranked, gold, k, id_of))
+        for doc in ranked:
+            reflection = getattr(doc, "reflection", None)
+            if not isinstance(reflection, dict) or reflection.get("bounded_out"):
+                continue
+            if reflection.get("degraded"):
+                degraded += 1
+                reason = reason or reflection.get("reason", "")
+            else:
+                judged += 1
         base_calls += int(item.get("baseline_calls", 0))
         refl_calls += int(item.get("reflective_calls", len(cands)))
     n = len(labeled_queries) or 1
     base_mean = round(sum(base_p) / n, 4)
     refl_mean = round(sum(refl_p) / n, 4)
-    return {
+    # No reflection metadata at all (a plain callable, as in the unit fixtures)
+    # is not evidence of degradation — only an observed degraded reflection is.
+    unmeasurable = degraded > 0 and judged == 0
+    out = {
         "n": len(labeled_queries),
         "baseline_precision_at_k": base_mean,
         "reflective_precision_at_k": refl_mean,
@@ -259,8 +374,15 @@ def ab_compare(
         "baseline_llm_calls": base_calls,
         "reflective_llm_calls": refl_calls,
         "cost_multiplier": round(refl_calls / base_calls, 2) if base_calls else None,
+        "documents_judged": judged,
+        "documents_degraded": degraded,
         "recommendation": (
-            "enable" if refl_mean > base_mean else "leave_disabled_negative_result"
+            "unmeasurable_reflection_degraded" if unmeasurable
+            else "enable" if refl_mean > base_mean
+            else "leave_disabled_negative_result"
         ),
         "vocabulary_version": VOCABULARY_VERSION,
     }
+    if degraded:
+        out["degraded_reason"] = reason or "unknown"
+    return out
