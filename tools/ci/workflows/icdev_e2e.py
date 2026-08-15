@@ -38,6 +38,36 @@ def check_dashboard_running(base_url: str = "http://localhost:5050") -> bool:
         return False
 
 
+def stop_dashboard(proc: subprocess.Popen | None) -> None:
+    """Stop a dashboard we started, and make sure it is actually gone.
+
+    ``terminate()`` alone is a REQUEST. On Windows it maps to TerminateProcess
+    for the child but the call returns without waiting, and a dashboard mid
+    DB-init can outlive it — so the escalation to ``kill()`` is not belt and
+    braces, it is the part that works.
+
+    Observed 2026-08-15: three dashboards from an E2E worktree
+    (.tmp/worktrees/task-e2e-27e596dc) were still running 6+ hours later, and
+    one of them held port 5050 — the MAIN dashboard's port — serving code from a
+    commit eight hours stale. Restarting the real dashboard by hand did nothing
+    visible, because the orphan owned the socket and the new process could not
+    bind it. That looked exactly like "Flask does not auto-reload".
+    """
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        proc.kill()
+        proc.wait(timeout=5)
+    except Exception as exc:  # noqa: BLE001 — teardown must not mask the result
+        print(f"WARNING: could not stop dashboard pid={proc.pid}: {exc}")
+
+
 def start_dashboard() -> subprocess.Popen | None:
     """Start the dashboard in the background."""
     app_path = PROJECT_ROOT / "tools" / "dashboard" / "app.py"
@@ -60,8 +90,12 @@ def start_dashboard() -> subprocess.Popen | None:
         if check_dashboard_running():
             return proc
 
+    # Slow start is the DANGEROUS branch, not the harmless one. The caller gets
+    # None and therefore no handle, so anything left alive here can never be
+    # stopped by this program again — it just keeps holding the port. The old
+    # code sent one terminate() and returned; stop_dashboard waits and escalates.
     print("WARNING: Dashboard did not start within 15 seconds")
-    proc.terminate()
+    stop_dashboard(proc)
     return None
 
 
@@ -145,37 +179,48 @@ def main():
         dashboard_proc = start_dashboard()
         if dashboard_proc:
             print("Dashboard started (PID: {})".format(dashboard_proc.pid))
+            # Registered the moment we own the process. The finally below covers
+            # the normal and exception paths; atexit additionally covers a
+            # sys.exit() raised from deeper code. Neither covers SIGKILL, which
+            # is why stop_dashboard escalates rather than trusting terminate().
+            import atexit
+
+            atexit.register(stop_dashboard, dashboard_proc)
         else:
             print("WARNING: Could not start dashboard — E2E tests may fail")
     else:
         print("\nDashboard already running")
 
-    # Step 3: Run E2E tests
-    print(f"\n{'=' * 40}")
-    print("  Running E2E Tests")
-    print(f"{'=' * 40}")
-
+    # Everything from here runs under a finally, because the teardown used to be
+    # straight-line code after the try/except: ANY exception raised between
+    # starting the dashboard and reaching it skipped teardown and left the
+    # process running forever. A kanban session that exhausts its token budget
+    # mid-E2E takes exactly that path. Observed 2026-08-15: three dashboards from
+    # .tmp/worktrees/task-e2e-27e596dc were still alive 6+ hours later and one
+    # held port 5050 — the MAIN dashboard's port — serving a commit eight hours
+    # stale, so restarting the real dashboard by hand changed nothing visible.
     try:
-        results = run_e2e_tests(validate_screenshots=True)
-    except subprocess.TimeoutExpired:
-        results = {"status": "failed", "reason": "E2E tests timed out (600s)"}
+        # Step 3: Run E2E tests
+        print(f"\n{'=' * 40}")
+        print("  Running E2E Tests")
+        print(f"{'=' * 40}")
 
-    # Step 4: Report results
-    print(f"\nE2E Result: {results['status'].upper()}")
-    if results.get("output") and isinstance(results["output"], dict):
-        if "total" in results["output"]:
-            print(f"  Total: {results['output'].get('total', 'N/A')}")
-            print(f"  Passed: {results['output'].get('passed', 'N/A')}")
-            print(f"  Failed: {results['output'].get('failed', 'N/A')}")
-
-    # Cleanup
-    if dashboard_proc:
-        print("\nStopping dashboard...")
-        dashboard_proc.terminate()
         try:
-            dashboard_proc.wait(timeout=5)
+            results = run_e2e_tests(validate_screenshots=True)
         except subprocess.TimeoutExpired:
-            dashboard_proc.kill()
+            results = {"status": "failed", "reason": "E2E tests timed out (600s)"}
+
+        # Step 4: Report results
+        print(f"\nE2E Result: {results['status'].upper()}")
+        if results.get("output") and isinstance(results["output"], dict):
+            if "total" in results["output"]:
+                print(f"  Total: {results['output'].get('total', 'N/A')}")
+                print(f"  Passed: {results['output'].get('passed', 'N/A')}")
+                print(f"  Failed: {results['output'].get('failed', 'N/A')}")
+    finally:
+        if dashboard_proc:
+            print("\nStopping dashboard...")
+            stop_dashboard(dashboard_proc)
 
     # Exit code
     if results["status"] == "passed":
