@@ -1654,3 +1654,23 @@ tests/provenance/test_trust_validation_anchor.py
 # assert the gate goes RED — a gate only ever observed green is indistinguishable
 # from one that cannot fire (`|| true`). 34 tests, ~6s. No DB, no network.
 tests/test_skip_census.py
+# trust-disc-02. Gates tools/ci/isolation_run.py, which runs every test file the
+# PR changed ALONE — the half of "both alone and in-suite" that this pipeline
+# never had. Builds a throwaway git repo carrying a real order-dependent pair
+# (the follower passes only when the leader was collected into the same process,
+# the reduced form of the shared tools.dashboard.app blueprint defect) and asserts
+# the runner turns red on it when the file is gated and warns when it is not.
+# Also asserts the workflow actually calls the tool, without `|| true`, on a
+# fetch-depth: 0 checkout — an unmounted gate is decoration.
+tests/test_ci_isolation_run.py
+
+# trust-disc-05: the board tracked task -> PR and nothing checked task -> main, so two of five
+# cards in pr_opened had already-merged work and their open PRs could only land as reverts
+# (#1651 was -38/+26 on rest_v1.py). Gated in the PR that adds them. test_landed_check.py builds
+# a REAL git repo per case — the defect class is "what git says vs what the board believes", so
+# stubbing git would test the belief. It pins the two directions that matter: a subject/merge-ref
+# mention IS a landing, and a body-only citation is NOT. test_landed_check_wiring.py pins the
+# three consumers (seed / dispatch prompt / PR body) so the check cannot become a computed answer
+# nobody acts on. 38 tests, ~4s. No network, no gh, no board.
+tests/kanban/test_landed_check.py
+tests/kanban/test_landed_check_wiring.py

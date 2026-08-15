@@ -41,7 +41,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
+      # fetch-depth: 0, for the isolation run at the end of this job
+      # (trust-disc-02). It diffs this branch against the merge base to work out
+      # which test files the PR touched; the default depth-1 checkout has no
+      # common ancestor with the base, so `git merge-base` fails and the step
+      # exits 2 rather than silently resolving to "no files changed".
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -197,6 +204,39 @@ jobs:
         if: always()
         working-directory: ${{ github.workspace }}
         run: python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check
+      # trust-disc-02. The step above is the IN-SUITE half: every gated module in
+      # one process, in one fixed order (the order of core.txt). This is the ALONE
+      # half, and the two catch different defects.
+      #
+      # There is no test-order randomisation and no isolation run anywhere else in
+      # this pipeline — not here, not in pytest.ini (absent), not in pyproject.toml.
+      # So an order-dependent pass is INVISIBLE: a file is green because of what
+      # ran before it, and stays green until an unrelated allowlist edit reshuffles
+      # the run, at which point it presents as a failure in whatever PR happened to
+      # move the list. Four files had exactly that shape in a single session
+      # (tests/cortex/test_chat_routing.py failed alone; test_chat_turn_connections
+      # .py, test_blueprint_routes.py and tests/test_cnr_mission_canvas.py failed
+      # in-suite), all four registering a blueprint onto the shared
+      # tools.dashboard.app singleton behind an `if "x" not in app.blueprints`
+      # guard that skips only when the blueprint is already there — i.e. never in
+      # the case that fails.
+      #
+      # Scope is the files THIS PR touched, so the marginal cost is one extra
+      # process per changed test file and a PR that changes no test pays nothing.
+      # Only files that are in an allowlist can fail the job: those are already
+      # green in-suite, so a standalone failure is real news. A changed file in no
+      # allowlist has never gated a merge and may be red for reasons that predate
+      # the PR, so it is run and reported as a warning instead — failing on those
+      # would red-light PRs for pre-existing debt, and this step would acquire a
+      # `|| true` within a week.
+      #
+      # Exit codes: 0 clean or nothing changed, 1 a gated file fails alone, 2 the
+      # changed set could not be resolved (shallow checkout — see fetch-depth
+      # above). All three are honoured by not swallowing the status. Do NOT add
+      # `|| true`: a gate whose exit code the shell discards is decoration.
+      - name: Isolation run — changed test files, alone
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/isolation_run.py --run
       - name: Verify /knowledge-search route (retry on slow endpoint)
         # The /knowledge-search page can be slow because it issues 60+ PG queries
         # via the RAG ingestion status probe. Run it in isolation with a tight

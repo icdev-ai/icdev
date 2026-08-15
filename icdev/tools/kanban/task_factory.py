@@ -157,6 +157,46 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
             "runner builds the card unattended."
         )
 
+    # trust-disc-05: is any of these ids ALREADY on the default branch? The board
+    # tracks task -> PR and nothing checked task -> main, so a card could be
+    # re-seeded for work that had already landed — and every downstream gate would
+    # say green, because every downstream gate asks about the PR. Seeding is the
+    # cheapest place to find out: the id is still a keystroke rather than a row,
+    # and one `git log` answers for the whole batch.
+    #
+    # Reports by default and refuses only under KANBAN_LANDED_CHECK=enforce, and
+    # the check runs BEFORE any insert so a refusal cannot half-land a batch.
+    # FAIL-OPEN: any git error leaves seeding exactly as it was.
+    _already_landed: list[dict] = []
+    try:
+        from tools.kanban import landed_check as _lc
+
+        if _lc.mode() != "off":
+            _ids = [str(t.get("id") or "").strip() for t in task_specs]
+            for _rep in _lc.check_landed_bulk([i for i in _ids if i]).values():
+                if _rep.get("landed"):
+                    _already_landed.append(_rep)
+    except Exception as _lc_exc:  # noqa: BLE001 — advisory; never break seeding
+        logger.debug("task_factory: landed check unavailable (%s)", _lc_exc)
+
+    if _already_landed:
+        _named = "; ".join(
+            f"{r['task_id']} ({r['confidence']}: "
+            f"{r['commits'][0]['sha'] if r['commits'] else '?'})"
+            for r in sorted(_already_landed, key=lambda r: r["task_id"])
+        )
+        _detail = (
+            f"seeding {len(_already_landed)} task id(s) that ALREADY appear in a "
+            f"commit on the default branch: {_named}. The board tracks task -> PR "
+            f"and nothing checks task -> main; a task whose work has landed will be "
+            f"dispatched again and produce a PR that can only merge as a revert. "
+            f"Verify before building, or reuse a fresh id."
+        )
+        from tools.kanban.landed_check import mode as _lc_mode
+        if _lc_mode() == "enforce":
+            raise ValueError(f"refusing to seed — {_detail}")
+        logger.warning("task_factory: %s", _detail)
+
     from tools.db.storage import get_connection
     from tools.kanban.init_db import init_kanban_tables
     from tools.kanban import policy_drift
