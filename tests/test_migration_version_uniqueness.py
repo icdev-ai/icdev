@@ -446,13 +446,15 @@ def test_timestamp_versions_cannot_alias_a_legacy_version():
 #:   168  seeds canvas_access_grants into platform.db. Replaced by
 #:        20260815191145_seed_canvas_grants_for_existing_tenants, which calls
 #:        canvas_access.seed_tenant_defaults instead of writing rows directly.
-#:        Removed from this set by that PR, not this one.
+#:        Landed as #1705 while this branch was open, which is what
+#:        empties this set.
 #:
-#: Shrink this list; never grow it. A new entry means a migration that will
-#: never run — fix its shape instead.
-RUNNER_INVISIBLE_VERSIONS = frozenset({
-    "168",   # bare .py; promoted by the seed_canvas_grants PR
-})
+#: EMPTY, and it must stay that way. It held 17 entries when it was frozen on
+#: 2026-08-02 and 12 after the 2026-08-03 triage; every one is now either a
+#: discoverable migration or an operator script that was never a migration.
+#: Shrink this list; never grow it. A new entry is a migration that will never
+#: run — fix its shape instead of recording it here.
+RUNNER_INVISIBLE_VERSIONS: frozenset = frozenset()
 
 
 def test_runner_and_gate_agree_on_what_a_migration_is():
