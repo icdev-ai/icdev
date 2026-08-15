@@ -305,6 +305,33 @@ This phase is **optional** and controlled by `anvil_critique.enabled` in `args/a
 
 4. If CONDITIONAL, the architect revises and resubmits. Up to `max_rounds` (default 3) revision cycles.
 
+### The Mandatory Question (D397)
+
+Every critic — whatever its focus area — is also asked one question about every check,
+test, gate, or assertion the plan introduces or leans on:
+
+> **Under what condition does this check PASS while the system is BROKEN?**
+
+This is the cheapest thing in the critique phase and the only question in it that the
+plan's author structurally cannot ask. Every check in this codebase is written by the
+same process that writes the code, in the same session, in the environment where the
+author's mental model holds; the three critics exist precisely to be a second,
+differently-motivated reader, and this is the question that reader supplies for free.
+A check that cannot fail carries zero bits (D396).
+
+- Where a critic can name the condition **concretely**, that answer **is a test case**.
+  It is recorded as a `testing_gap` finding with the condition in `evidence` and the
+  test to write in `suggested_fix`.
+- "No condition constructed" is a legitimate answer and must be said out loud. Silence
+  is not an answer — it reads exactly like a question that was never asked.
+
+The question text lives in `args/anvil_critique_config.yaml` under
+`anvil_critique.adversarial_question` and is appended to **every** critic prompt by
+`tools/agent/anvil_critique.py::_dispatch_critics`, with the module constant
+`ADVERSARIAL_QUESTION` as the fallback if the key is removed. It is wired rather than
+merely written down because D394/D397 both record what happens to an instruction whose
+firing leaves no artifact.
+
 ### Running the Critique
 
 ```bash

@@ -1617,3 +1617,11 @@ tests/test_substrate_probe.py
 # fails, and that a fresh database suppresses the finding instead of fabricating it.
 # 9 tests, <1s. get_connection patched to a seeded temp SQLite board.
 tests/test_coherence_substrate_liveness.py
+# trust-disc-06 — the inverse question ("under what condition does this check PASS
+# while the system is BROKEN?") on every review surface. Guards the WIRED half: the
+# question is appended to every ANVIL critic prompt at runtime, so a prose-only
+# regression (someone deletes the config key, or the prompt builder stops reading it)
+# is caught rather than assumed. Prose surfaces + their packaged copies are asserted
+# too, since `icdev init` scaffolds the packaged ones.
+# 14 tests, <1s. No LLM, no network: _call_agent is patched; DB is a tmp_path sqlite.
+tests/test_adversarial_review_question.py
