@@ -10103,6 +10103,114 @@ EXHAUSTIONS_BEFORE_DECOMPOSITION = _int_env(
     "KANBAN_EXHAUSTIONS_BEFORE_DECOMPOSITION", 2)
 
 
+#: How many times a task may be split before a human is asked instead.
+#: Override via KANBAN_MAX_DECOMPOSITION_DEPTH.
+#:
+#: 2 is a real constraint, not a nominal one: depth 3 ALREADY exists on this
+#: board (501 tasks at depth 1, 63 at depth 2, 11 at depth 3, e.g.
+#: ci-fix-27599865917-d3-d3-d1), reached through the older verification-failure
+#: path. Wiring token exhaustion into the decomposer adds a far more frequent
+#: trigger -- 402 exhaustion events historically -- so without a cap the trees
+#: get deeper and wider on exactly the tasks that fire it most.
+#:
+#: A task split twice that still does not fit is not converging, and a third
+#: split is guessing.
+MAX_DECOMPOSITION_DEPTH = _int_env("KANBAN_MAX_DECOMPOSITION_DEPTH", 2)
+
+#: A file this large makes a task context-bound rather than large in scope.
+#: Override via KANBAN_LARGE_FILE_LINES.
+#:
+#: Measured 2026-08-15 across 5,387 files under tools/: only 9 (0.2%) exceed
+#: 5,000 lines, so this flags the genuine context hogs and nothing else. The
+#: largest is tools/db/schema/pg_consolidated.sql at 63,970 lines.
+LARGE_FILE_LINES = _int_env("KANBAN_LARGE_FILE_LINES", 5000)
+
+#: Same vocabulary _complexity_score scans for, plus `sql` — the extension of
+#: the single largest file in the repo, and the one that produced the case this
+#: guard exists for.
+_TASK_FILE_RE = re.compile(r"[\w/\-]+\.(?:py|html|yaml|yml|md|ts|js|go|sql)")
+
+
+def _decomposition_depth(task_id: str) -> int:
+    """How many times this task id has already been split.
+
+    Children are minted as ``f"{parent}-d{i}"`` by _decompose_one_task, so the
+    id carries its own lineage and no extra column is needed:
+    ``ci-fix-27599865917-d3-d3-d1`` is depth 3.
+    """
+    try:
+        return len(re.findall(r"-d\d+", task_id or ""))
+    except Exception:  # noqa: BLE001 — an unparseable id must not block a split
+        return 0
+
+
+def _oversized_files_in(description: str) -> list:
+    """Files named by the task that are too large to load into a session.
+
+    Returns ``[(path, line_count), ...]`` for anything over LARGE_FILE_LINES.
+
+    THE CASE THIS EXISTS FOR: trust-anchor-03 is "add audit_chain_genesis to
+    pg_consolidated.sql" -- 107 words, _complexity_score 0 -- and it exhausted
+    its token budget. pg_consolidated.sql is 63,970 lines. The cost is the
+    context the task must LOAD, not the work it must do, so every child of a
+    split inherits it identically: decomposing that produces subtasks that each
+    open the same file and exhaust the same way, and each of those decomposes
+    again. Splitting cannot help, and saying so is more useful than a fork bomb.
+
+    FAIL-OPEN: an unreadable or missing path is skipped, never counted. A broken
+    probe must not block a legitimate decomposition.
+    """
+    out = []
+    if not description:
+        return out
+    seen = set()
+    for rel in _TASK_FILE_RE.findall(description):
+        rel = rel.strip().lstrip("./")
+        if rel in seen:
+            continue
+        seen.add(rel)
+        try:
+            path = BASE_DIR / rel
+            if not path.is_file():
+                continue
+            with path.open("r", encoding="utf-8", errors="ignore") as fh:
+                n = sum(1 for _ in fh)
+            if n >= LARGE_FILE_LINES:
+                out.append((rel, n))
+        except Exception:  # noqa: BLE001 — probing must never raise
+            continue
+    return out
+
+
+def decomposition_refusal_reason(task_id: str, description: str = "") -> str:
+    """Why this task must NOT be split, or "" when splitting is fine.
+
+    Two deterministic refusals -- no LLM, no network, decided from the id, the
+    description and os.stat:
+
+      * it has already been split MAX_DECOMPOSITION_DEPTH times, or
+      * it names a file too large to fit in a session, so every child would
+        inherit the same cost.
+
+    Both FAIL OPEN: anything unexpected returns "" (no objection), because a
+    guard that errors closed would stop the decomposer working at all.
+    """
+    try:
+        depth = _decomposition_depth(task_id)
+        if depth >= MAX_DECOMPOSITION_DEPTH:
+            return (f"already decomposed {depth}x (max {MAX_DECOMPOSITION_DEPTH}) "
+                    f"— splitting further is guessing, not converging")
+        big = _oversized_files_in(description or "")
+        if big:
+            rel, n = big[0]
+            return (f"context-bound: {rel} is {n:,} lines (>= {LARGE_FILE_LINES:,}) "
+                    f"— every subtask would load it too; needs a targeted script, "
+                    f"not a smaller scope")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("decomposition_refusal_reason(%s) failed: %s", task_id, exc)
+    return ""
+
+
 def _lifetime_exhaustion_count(task_id: str) -> int:
     """How many times this task has EVER entered ``token_exhausted``.
 
@@ -10393,6 +10501,21 @@ def _auto_decompose_stalled_tasks() -> list:
             if is_blocker:
                 _reset_to_backlog(tid, reason="chain-blocker reset by auto_decompose")
                 print(f"  Kanban: chain-blocker {tid!r} reset to backlog (has dependents)")
+                processed.append(tid)
+                continue
+
+            # Splitting is not always the right answer, and splitting FOREVER
+            # never is. Checked after the chain-blocker rule, which keeps its
+            # precedence, and before any LLM call so a refusal costs nothing.
+            refusal = decomposition_refusal_reason(tid, task.get("description"))
+            if refusal:
+                logger.warning("auto_decompose: refusing to split %s — %s", tid, refusal)
+                _move_task(
+                    tid, "suggested", actor="scheduler",
+                    reason=f"not decomposed: {refusal} — needs a human decision",
+                )
+                _send_notification(task, event="decomposition_refused")
+                print(f"  Kanban: {tid} NOT split — {refusal}")
                 processed.append(tid)
                 continue
 
