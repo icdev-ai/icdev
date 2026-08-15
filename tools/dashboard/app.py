@@ -43,6 +43,24 @@ _RELOAD_IDLE_SECONDS = float(os.environ.get("ICDEV_DASHBOARD_RELOAD_IDLE", "60")
 _RELOAD_MAX_STALE_SECONDS = float(
     os.environ.get("ICDEV_DASHBOARD_RELOAD_MAX_STALE", "900"))
 
+#: Never re-exec more often than this, whatever the idle or staleness signals
+#: say. Override with ICDEV_DASHBOARD_RELOAD_MIN_INTERVAL.
+#:
+#: code_reload's own MIN_UPTIME_SECONDS is 120 — a restart-loop guard sized for
+#: a DAEMON, whose startup is cheap. This process re-runs PostgreSQL init, the
+#: GovLift schema, every blueprint mount and the DIC freshness daemon on every
+#: re-exec, and serves nothing meanwhile. At a 120s floor with main merging
+#: every few minutes and the UI idle, it re-execed about every two minutes and
+#: was starting up for much of its life — which is what the operator saw as the
+#: dashboard hanging, and what .tmp/dashboard.log recorded as three
+#: "self-reload armed" lines in one sitting.
+#:
+#: 30 minutes trades promptness for availability in the right direction: merged
+#: code still arrives without anyone restarting anything, which was the point,
+#: and the process is up while it waits.
+_RELOAD_MIN_INTERVAL_SECONDS = float(
+    os.environ.get("ICDEV_DASHBOARD_RELOAD_MIN_INTERVAL", "1800"))
+
 #: How often the watcher looks. Cheap: an mtime scan plus a guarded fetch.
 #: code_reload rate-limits its own fetch to MIN_PULL_INTERVAL_SECONDS (300), so
 #: checking more often than that only re-scans mtimes.
@@ -10352,6 +10370,27 @@ def _start_self_reload_watcher() -> None:
                     stale_since[0] = now
                     print(f"[ICDEV™ Dashboard] {len(changed)} changed file(s) "
                           f"pending — will reload when idle")
+
+                # A reload is not free HERE the way it is for a daemon. This
+                # process re-runs the whole startup on re-exec -- PostgreSQL
+                # init, the GovLift schema, every blueprint mount, the DIC
+                # freshness daemon -- and serves nothing for its duration. So
+                # picking up code promptly is worth far less than being up.
+                #
+                # Observed 2026-08-15, and reported by the operator as the
+                # dashboard "hanging": .tmp/dashboard.log carried THREE
+                # "self-reload armed" lines, i.e. two re-execs, because
+                # code_reload only refuses inside MIN_UPTIME_SECONDS (120) and
+                # this watcher checks every 60. With main merging every few
+                # minutes and nobody using the dashboard, "idle" was true on
+                # essentially every check, so it re-execed roughly every two
+                # minutes and spent a large share of its life starting up.
+                #
+                # A floor between reloads is therefore the missing term. It does
+                # NOT replace the idle gate or the staleness backstop; it bounds
+                # how often either may fire.
+                if now - started_at < _RELOAD_MIN_INTERVAL_SECONDS:
+                    continue
 
                 idle = now - _LAST_REQUEST_AT >= _RELOAD_IDLE_SECONDS
                 too_stale = now - stale_since[0] >= _RELOAD_MAX_STALE_SECONDS

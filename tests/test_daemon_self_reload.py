@@ -280,3 +280,59 @@ def test_staleness_resets_when_there_is_nothing_pending():
 
     src = inspect.getsource(dash._start_self_reload_watcher)
     assert "stale_since[0] = 0.0" in src
+
+
+# --------------------------------------------------------------------------- #
+# Reload frequency — the dashboard's restart is NOT cheap
+# --------------------------------------------------------------------------- #
+
+def test_the_dashboard_will_not_reload_more_often_than_the_floor():
+    """Reported as the dashboard "hanging", 2026-08-15.
+
+    code_reload's MIN_UPTIME_SECONDS (120) is a restart-loop guard sized for a
+    DAEMON. This process re-runs PostgreSQL init, the GovLift schema, every
+    blueprint mount and the DIC freshness daemon on re-exec, and serves nothing
+    meanwhile. At a 120s floor with main merging every few minutes and the UI
+    idle, it re-execed roughly every two minutes -- .tmp/dashboard.log carried
+    three "self-reload armed" lines in one sitting -- and spent much of its life
+    starting up.
+    """
+    from tools.dashboard import app as dash
+
+    src = inspect.getsource(dash._start_self_reload_watcher)
+    assert "_RELOAD_MIN_INTERVAL_SECONDS" in src
+    guard = "now - started_at < _RELOAD_MIN_INTERVAL_SECONDS"
+    assert guard in src, "the floor must be enforced in the loop"
+    # ...and it must gate BOTH signals, not sit after them.
+    assert src.find(guard) < src.find("idle = now - _LAST_REQUEST_AT")
+
+
+def test_the_floor_is_far_longer_than_the_daemon_restart_guard():
+    from tools.genesis import code_reload
+    from tools.dashboard import app as dash
+
+    assert dash._RELOAD_MIN_INTERVAL_SECONDS >= 10 * code_reload.MIN_UPTIME_SECONDS, (
+        "a floor near the daemon's 120s guard is what produced the thrash"
+    )
+
+
+def test_the_floor_is_configurable():
+    from tools.dashboard import app as dash
+
+    assert "ICDEV_DASHBOARD_RELOAD_MIN_INTERVAL" in pathlib.Path(
+        dash.__file__).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("uptime,changed,idle,expected", [
+    (60,    True, True,  False),   # inside the floor -> never
+    (119,   True, True,  False),
+    (1799,  True, True,  False),   # still inside 30min
+    (1801,  True, True,  True),    # past the floor and idle
+    (1801,  True, False, False),   # past the floor but busy -> wait for stale
+    (5000, False, True,  False),   # nothing changed
+])
+def test_reload_frequency_decision_table(uptime, changed, idle, expected):
+    from tools.dashboard import app as dash
+
+    past_floor = uptime >= dash._RELOAD_MIN_INTERVAL_SECONDS
+    assert (changed and past_floor and idle) is expected
