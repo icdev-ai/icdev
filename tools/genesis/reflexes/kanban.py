@@ -9752,7 +9752,41 @@ def _check_completed():
             is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)
             if is_exhausted:
                 retry_count = _increment_retry_count(task_id)
-                if retry_count >= TOKEN_MAX_RETRY_COUNT:
+
+                # Decide SIZE here, before deciding when to retry. This is the
+                # moment the system learns a task did not fit in a session, and
+                # it is the only measurement of task size it ever gets.
+                #
+                # The give-up branch below is NOT a substitute: TOKEN_MAX_RETRY_COUNT
+                # is 60 (~5h of retries), so a task can park 46 separate times --
+                # tsr-dash-01-d3 did -- and still be "under budget", never
+                # reaching a branch that reconsiders its size. That is how 240
+                # re-dispatches of already-too-big tasks accumulated while the
+                # LLM decomposer sat idle.
+                #
+                # Counted over the LIFETIME from kanban_status_transitions, not
+                # from retry_count: the give-up branch clears that counter, so a
+                # task returning for its second budget starts at zero and every
+                # pass looks like a first attempt.
+                _lifetime_exh = _lifetime_exhaustion_count(task_id)
+                if _lifetime_exh >= EXHAUSTIONS_BEFORE_DECOMPOSITION:
+                    logger.warning(
+                        "Task %s has exhausted tokens %d times — decomposing "
+                        "instead of parking for retry %d/%d",
+                        task_id, _lifetime_exh, retry_count, TOKEN_MAX_RETRY_COUNT,
+                    )
+                    _move_task(
+                        task_id, "needs_decomposition", actor="scheduler",
+                        reason=(f"token-exhausted {_lifetime_exh}x lifetime "
+                                f"(>= {EXHAUSTIONS_BEFORE_DECOMPOSITION}): too large for one "
+                                f"session — decompose rather than retry unchanged"),
+                    )
+                    _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
+                    _send_notification(task_dict, event="needs_decomposition")
+                    print(f"  Kanban: {task_id} exhausted {_lifetime_exh}x — "
+                          f"flagged needs_decomposition")
+                elif retry_count >= TOKEN_MAX_RETRY_COUNT:
                     # Exceeded max retries — move to backlog, give up
                     _move_task(
                         task_id, "backlog", actor="scheduler",
@@ -10149,6 +10183,160 @@ def _check_completed():
     return completed
 
 
+#: Lifetime token-exhaustions after which a task is decomposed rather than
+#: re-queued unchanged. Override via KANBAN_EXHAUSTIONS_BEFORE_DECOMPOSITION.
+#:
+#: 2, not 3. One exhaustion can be an unlucky session — a long but tractable
+#: task, or a session that spent its budget exploring. The SECOND is a repeat
+#: measurement of the same task against the same budget, and by then the board
+#: has paid twice for the same unfinished work. Set against the measured
+#: distribution: 49 tasks have exhausted at least twice (338 events) and 29 at
+#: least three times (298 events), so a threshold of 3 would still have let ~40
+#: pointless re-dispatches through on this board alone.
+EXHAUSTIONS_BEFORE_DECOMPOSITION = _int_env(
+    "KANBAN_EXHAUSTIONS_BEFORE_DECOMPOSITION", 2)
+
+
+#: How many times a task may be split before a human is asked instead.
+#: Override via KANBAN_MAX_DECOMPOSITION_DEPTH.
+#:
+#: 2 is a real constraint, not a nominal one: depth 3 ALREADY exists on this
+#: board (501 tasks at depth 1, 63 at depth 2, 11 at depth 3, e.g.
+#: ci-fix-27599865917-d3-d3-d1), reached through the older verification-failure
+#: path. Wiring token exhaustion into the decomposer adds a far more frequent
+#: trigger -- 402 exhaustion events historically -- so without a cap the trees
+#: get deeper and wider on exactly the tasks that fire it most.
+#:
+#: A task split twice that still does not fit is not converging, and a third
+#: split is guessing.
+MAX_DECOMPOSITION_DEPTH = _int_env("KANBAN_MAX_DECOMPOSITION_DEPTH", 2)
+
+#: A file this large makes a task context-bound rather than large in scope.
+#: Override via KANBAN_LARGE_FILE_LINES.
+#:
+#: Measured 2026-08-15 across 5,387 files under tools/: only 9 (0.2%) exceed
+#: 5,000 lines, so this flags the genuine context hogs and nothing else. The
+#: largest is tools/db/schema/pg_consolidated.sql at 63,970 lines.
+LARGE_FILE_LINES = _int_env("KANBAN_LARGE_FILE_LINES", 5000)
+
+#: Same vocabulary _complexity_score scans for, plus `sql` — the extension of
+#: the single largest file in the repo, and the one that produced the case this
+#: guard exists for.
+_TASK_FILE_RE = re.compile(r"[\w/\-]+\.(?:py|html|yaml|yml|md|ts|js|go|sql)")
+
+
+def _decomposition_depth(task_id: str) -> int:
+    """How many times this task id has already been split.
+
+    Children are minted as ``f"{parent}-d{i}"`` by _decompose_one_task, so the
+    id carries its own lineage and no extra column is needed:
+    ``ci-fix-27599865917-d3-d3-d1`` is depth 3.
+    """
+    try:
+        return len(re.findall(r"-d\d+", task_id or ""))
+    except Exception:  # noqa: BLE001 — an unparseable id must not block a split
+        return 0
+
+
+def _oversized_files_in(description: str) -> list:
+    """Files named by the task that are too large to load into a session.
+
+    Returns ``[(path, line_count), ...]`` for anything over LARGE_FILE_LINES.
+
+    THE CASE THIS EXISTS FOR: trust-anchor-03 is "add audit_chain_genesis to
+    pg_consolidated.sql" -- 107 words, _complexity_score 0 -- and it exhausted
+    its token budget. pg_consolidated.sql is 63,970 lines. The cost is the
+    context the task must LOAD, not the work it must do, so every child of a
+    split inherits it identically: decomposing that produces subtasks that each
+    open the same file and exhaust the same way, and each of those decomposes
+    again. Splitting cannot help, and saying so is more useful than a fork bomb.
+
+    FAIL-OPEN: an unreadable or missing path is skipped, never counted. A broken
+    probe must not block a legitimate decomposition.
+    """
+    out = []
+    if not description:
+        return out
+    seen = set()
+    for rel in _TASK_FILE_RE.findall(description):
+        rel = rel.strip().lstrip("./")
+        if rel in seen:
+            continue
+        seen.add(rel)
+        try:
+            path = BASE_DIR / rel
+            if not path.is_file():
+                continue
+            with path.open("r", encoding="utf-8", errors="ignore") as fh:
+                n = sum(1 for _ in fh)
+            if n >= LARGE_FILE_LINES:
+                out.append((rel, n))
+        except Exception:  # noqa: BLE001 — probing must never raise
+            continue
+    return out
+
+
+def decomposition_refusal_reason(task_id: str, description: str = "") -> str:
+    """Why this task must NOT be split, or "" when splitting is fine.
+
+    Two deterministic refusals -- no LLM, no network, decided from the id, the
+    description and os.stat:
+
+      * it has already been split MAX_DECOMPOSITION_DEPTH times, or
+      * it names a file too large to fit in a session, so every child would
+        inherit the same cost.
+
+    Both FAIL OPEN: anything unexpected returns "" (no objection), because a
+    guard that errors closed would stop the decomposer working at all.
+    """
+    try:
+        depth = _decomposition_depth(task_id)
+        if depth >= MAX_DECOMPOSITION_DEPTH:
+            return (f"already decomposed {depth}x (max {MAX_DECOMPOSITION_DEPTH}) "
+                    f"— splitting further is guessing, not converging")
+        big = _oversized_files_in(description or "")
+        if big:
+            rel, n = big[0]
+            return (f"context-bound: {rel} is {n:,} lines (>= {LARGE_FILE_LINES:,}) "
+                    f"— every subtask would load it too; needs a targeted script, "
+                    f"not a smaller scope")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("decomposition_refusal_reason(%s) failed: %s", task_id, exc)
+    return ""
+
+
+def _lifetime_exhaustion_count(task_id: str) -> int:
+    """How many times this task has EVER entered ``token_exhausted``.
+
+    Read from ``kanban_status_transitions`` rather than the per-attempt retry
+    counter, which ``_clear_retry_count`` wipes on the give-up path — so the
+    counter is structurally incapable of seeing that a task has been round the
+    loop before. Deriving from the transition log needs no new column and cannot
+    drift from the board's actual history.
+
+    FAIL-OPEN: any error returns 0, which routes the task down the pre-existing
+    backlog path. A missing or unreadable transition log must never turn into a
+    decomposition nobody asked for.
+    """
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM kanban_status_transitions "
+                "WHERE task_id = %s AND to_status = 'token_exhausted'",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return 0
+            val = dict(row).get("n")
+            return int(val) if val is not None else 0
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 — counting must never wedge dispatch
+        logger.debug("lifetime exhaustion count failed for %s: %s", task_id, exc)
+        return 0
+
+
 def _check_token_exhausted_tasks() -> list:
     """Return token-exhausted tasks whose resume_at time has passed.
 
@@ -10232,6 +10420,48 @@ def _check_token_exhausted_tasks() -> list:
             # 4b. Check token-exhaustion retry count — give up after TOKEN_MAX_RETRY_COUNT
             retry_count = _get_retry_count(task_id)
             if retry_count >= TOKEN_MAX_RETRY_COUNT:
+                # Where "give up" sends it decides whether the task ever gets
+                # SMALLER. Sending it to `backlog` and clearing the counter
+                # restarts the identical cycle -- dispatch, exhaust, retry N
+                # times, back to backlog -- with the task unchanged. Measured
+                # 2026-08-15: tsr-dash-01-d3 went round it 46 times, aca-trn-01
+                # 26, and across the board 29 tasks exhausted 3+ times for 298
+                # events. 240 of those dispatches were re-runs of a task already
+                # measured too big, and only 5 of the 29 were ever flagged for
+                # decomposition -- none by this path.
+                #
+                # Token exhaustion is the ONLY ground-truth measurement of task
+                # size this system produces. The pre-dispatch _complexity_score
+                # cannot substitute: it scores description VERBOSITY (words,
+                # bullets, file paths), so on the three tasks that exhausted here
+                # it returned 2, 1 and 0 against a threshold of 7, while the
+                # highest scorer (5) completed successfully. It measures how much
+                # the author wrote, not how much work there is.
+                #
+                # So a repeat offender goes to `needs_decomposition` and gets
+                # LLM-split into subtasks instead. The count comes from
+                # kanban_status_transitions rather than _get_retry_count because
+                # that counter is cleared on this very path and therefore cannot
+                # see a lifetime pattern -- which is exactly why 46 identical
+                # retries never looked like anything but a first attempt.
+                _lifetime = _lifetime_exhaustion_count(task_id)
+                if _lifetime >= EXHAUSTIONS_BEFORE_DECOMPOSITION:
+                    logger.warning(
+                        "Task %s exhausted tokens %d times over its lifetime — "
+                        "flagging needs_decomposition instead of re-queuing it unchanged",
+                        task_id, _lifetime,
+                    )
+                    _move_task(
+                        task_id, "needs_decomposition", actor="scheduler",
+                        reason=(f"token-exhausted {_lifetime}x lifetime "
+                                f"(>= {EXHAUSTIONS_BEFORE_DECOMPOSITION}): too large for one "
+                                f"session — decompose rather than retry unchanged"),
+                    )
+                    _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
+                    _send_notification(task, event="needs_decomposition")
+                    continue
+
                 logger.info(
                     "Task %s exceeded max retries (%d) — moving to backlog",
                     task_id,
@@ -10365,6 +10595,21 @@ def _auto_decompose_stalled_tasks() -> list:
             if is_blocker:
                 _reset_to_backlog(tid, reason="chain-blocker reset by auto_decompose")
                 print(f"  Kanban: chain-blocker {tid!r} reset to backlog (has dependents)")
+                processed.append(tid)
+                continue
+
+            # Splitting is not always the right answer, and splitting FOREVER
+            # never is. Checked after the chain-blocker rule, which keeps its
+            # precedence, and before any LLM call so a refusal costs nothing.
+            refusal = decomposition_refusal_reason(tid, task.get("description"))
+            if refusal:
+                logger.warning("auto_decompose: refusing to split %s — %s", tid, refusal)
+                _move_task(
+                    tid, "suggested", actor="scheduler",
+                    reason=f"not decomposed: {refusal} — needs a human decision",
+                )
+                _send_notification(task, event="decomposition_refused")
+                print(f"  Kanban: {tid} NOT split — {refusal}")
                 processed.append(tid)
                 continue
 
