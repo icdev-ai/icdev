@@ -1493,6 +1493,15 @@ tests/workflow/test_playwright_gate.py
 # that is a copy of what instantiation creates is one that goes stale silently.
 # 53 tests, <1s, pure regex/dict: no DB, no LLM, no network.
 tests/test_outline_contract.py
+# trust-struct-01 — the one contract validator for LLM output. Covers the
+# JSON-schema subset (construction-time keyword rejection, reject vs coerce,
+# fail-closed sentinels, the bounded single repair) AND that the three surfaces
+# whose hand-rolled extractors it replaced still degrade exactly as before:
+# content_grounding falls back to the heuristic floor, critique_rule fails
+# closed per severity, reflect_document lands on neutral. Those three fallbacks
+# were the reason to consolidate; a regression in one is invisible otherwise.
+# 44 tests, <1s, pure stdlib + stub routers: no DB, no LLM, no network.
+tests/test_structured_output.py
 # The bounded MONOTONE revise-and-recheck loop (trust-self-01). Gated because
 # the invariant is load-bearing and silent when broken: a loop that accepts a
 # round which did NOT strictly reduce findings degenerates into optimising for
@@ -1508,3 +1517,17 @@ tests/test_outline_contract.py
 # 31 tests, <1s, injected validators + a fake router: no DB, no LLM, no network.
 tests/test_self_correct.py
 tests/kanban/test_timeout_no_redispatch.py
+
+# ── trust-kg-03: kg_grounding in the Cortex governance chain ─────────────────
+# The first OPT-IN gate GATE_ORDER has had: in the vocabulary, out of `default`,
+# so a profile must name it. Three things worth the gate. (1) Every caller that
+# predates it is byte-for-byte unchanged — the gate records `skip` and its seams
+# are never touched; a regression here would put a DB round-trip and a lexicon
+# build on every Cortex caller's interactive path. (2) A profile that DECLARES
+# it and cannot measure records `fail`, never `warn` and never `pass` — the
+# cxo-trust-01 lesson, where a misconfiguration and a transient outage were
+# recorded identically and provenance wrote 0 of 285 rows for its whole
+# lifetime while looking merely flaky. (3) `fail` still does not block:
+# governance.fail_closed ships false and stays the single platform-wide switch.
+# 21 tests, <1s. Every seam is monkeypatched: no DB, no graph, no LLM.
+tests/cortex/test_governance_kg_gate.py

@@ -287,10 +287,15 @@ def _ground_content_llm(
     families, and an unknown/malformed token is treated as UNGROUNDED (fail
     closed) rather than silently upgrading an unsupported claim. Anything
     unparseable returns None so the caller falls back to the heuristic floor.
-    """
-    import json
 
+    The shape check is delegated to ``tools/quality/structured_output.py``
+    (trust-struct-01) rather than re-derived here: the enum vocabulary and its
+    fail-closed sentinel are DECLARED in the contract, so the substitution that
+    used to be implicit in ``compose_grounding``'s unknown-token handling is now
+    recorded as a finding.
+    """
     from tools.quality.categorical_scoring import GROUNDING_VOCAB, compose_grounding
+    from tools.quality.structured_output import OutputContract, coerce_or_reject, enum_field
 
     claims = _sentences(output_text)
     if not claims:
@@ -307,18 +312,32 @@ def _ground_content_llm(
         'order:\n{"labels": ["grounded"|"partial"|"ungrounded", ...]}\n\n'
         f"CONTEXT:\n{context_block}\n\nCLAIMS:\n{claim_block}\n"
     )
+    contract = OutputContract(
+        {
+            "type": "object",
+            "required": ["labels"],
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": enum_field(GROUNDING_VOCAB, fail_closed="ungrounded"),
+                },
+            },
+        },
+        name="content_grounding.grounding_labels",
+    )
     try:
         raw = llm_invoke(prompt)
-        if not raw:
-            return None
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        data = json.loads(match.group(0) if match else raw)
-        labels = data.get("labels")
-        if not isinstance(labels, list) or not labels:
+        # coerce: an out-of-vocabulary token becomes "ungrounded" (the declared
+        # sentinel). A missing/short/non-list "labels" has no declared sentinel,
+        # so it is a REJECTION — the caller falls back to the heuristic floor.
+        data, _findings = coerce_or_reject(raw, contract, mode="coerce")
+        if data is None:
             return None
         # Align labels to claims: pad short lists with "ungrounded" (fail closed),
-        # truncate long ones. compose_grounding maps unknown tokens to ungrounded.
-        labels = [str(x) for x in labels][: len(claims)]
+        # truncate long ones. How many labels there SHOULD be is caller knowledge
+        # (the claim count this module segmented), so it stays out of the contract.
+        labels = [str(x) for x in data["labels"]][: len(claims)]
         if len(labels) < len(claims):
             labels += ["ungrounded"] * (len(claims) - len(labels))
         composed = compose_grounding(labels)
