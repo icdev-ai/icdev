@@ -111,6 +111,19 @@ faker>=33.0              # Realistic surrogate generation for reversible anonymi
 # vision provider needs Ollama running with llava pulled.
 pypdf>=4.0               # Pure-Python PDF text extraction — air-gap baseline
 fpdf2>=2.7               # Pure-Python PDF generation — network migration phase reports (air-gap safe, no C)
+reportlab>=4.0           # PDF generation for EIGHT modules that already import it and
+                         # never declared it: tools/bi_dashboard/export.py,
+                         # tools/agentic_ai_canvas/export_pdf.py,
+                         # tools/dashboard/api/writeguard.py,
+                         # tools/migration_canvas/network_migration.py and their icdev/
+                         # mirrors. export.py even documents it as "the PDF library this
+                         # platform actually has installed" — true only of dev boxes where
+                         # something else pulled it in. On a clean install every one of
+                         # those exports raised ImportError, which the REST layer turns
+                         # into a 500, so `format: "pdf"` was an advertised capability
+                         # (supported_formats() lists it) that could not run. Found when
+                         # tests/cortex/test_rest_dashboard.py was first CI-gated and the
+                         # PDF case came back 500 on a runner that had never had it.
 
 # === Presentation & Document Export ===
 # Required by tools/slides/pptx_builder.py, tools/viz/svg_to_pptx.py,
