@@ -1043,7 +1043,7 @@ def check_trust_coverage() -> CoherenceCheck:
 
     # TRUST v2 (trust-spine-01): the two-stage gate ships in both trees with its
     # profile config, and every guard it can name is recordable.
-    for _mod in ("trust_gate.py", "kg_grounding.py"):
+    for _mod in ("trust_gate.py", "kg_grounding.py", "self_correct.py"):
         checks[f"tools/quality/{_mod}"] = (
             PROJECT_ROOT / "tools/quality" / _mod
         ).is_file()
