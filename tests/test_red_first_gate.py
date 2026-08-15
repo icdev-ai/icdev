@@ -363,6 +363,109 @@ def test_docstring_only_edit_that_adds_an_assertion_is_still_proven(sample_repo:
     assert _proof(report, "tests/test_existing.py")["status"] == rfg.ProofStatus.not_discriminating
 
 
+def test_a_marker_in_prose_does_not_make_a_file_applicable(sample_repo: Path):
+    """The word "assert" in a DOCSTRING is not test logic.
+
+    The regression, from PR #1700: one autouse fixture was added whose docstring
+    reads "they assert the IDENTITY's tenant beats a spoofed tenant". No
+    assertion, no test function -- but raw substring matching saw `assert` on an
+    added line, called the file applicable, and then asked it a question it
+    could not answer. It added no test logic, so of course it passed against the
+    merge base, and the gate reported `not_discriminating`: a fabricated
+    "worthless test" finding against a file that had not claimed to prove
+    anything. Two files failed the required Test job on it.
+
+    That is the exact failure this config warns about in its own comments -- an
+    applicability check with no gate is 100% false positives -- reappearing
+    INSIDE the applicability check.
+    """
+    base = _base_sha(sample_repo)
+    _write(sample_repo / "tests" / "test_existing.py",
+           "from pkg.thing import thing\n\n\n"
+           "def _fixture():\n"
+           '    """Provisioning only.\n\n'
+           "    The tests below assert the identity's tenant, and this must not\n"
+           "    fail on provisioning state.\n"
+           '    """\n'
+           "    return None\n\n\n"
+           "def test_existing():\n    assert thing() == 'old'\n")
+    _git(sample_repo, "add", "-A")
+    _git(sample_repo, "commit", "-qm", "add a fixture whose docstring says assert")
+
+    report = rfg.enforce(sample_repo, base_ref=base, config=CONFIG)
+    assert _proof(report, "tests/test_existing.py")["status"] == rfg.ProofStatus.not_applicable, (
+        "a marker occurring only in prose made the file applicable — the gate "
+        "will now report a fabricated not_discriminating finding against it"
+    )
+
+
+def test_a_marker_in_a_trailing_comment_does_not_make_a_file_applicable(sample_repo: Path):
+    """Same defect, the other half of what tokenising removes."""
+    base = _base_sha(sample_repo)
+    _write(sample_repo / "tests" / "test_existing.py",
+           "from pkg.thing import thing\n\n\n"
+           "MODE = 'strict'  # assert nothing here; def test_ is not a test either\n\n\n"
+           "def test_existing():\n    assert thing() == 'old'\n")
+    _git(sample_repo, "add", "-A")
+    _git(sample_repo, "commit", "-qm", "comment mentioning assert")
+
+    report = rfg.enforce(sample_repo, base_ref=base, config=CONFIG)
+    assert _proof(report, "tests/test_existing.py")["status"] == rfg.ProofStatus.not_applicable
+
+
+def test_a_real_added_assertion_is_still_applicable(sample_repo: Path):
+    """The other direction, which is what stops this being a hole.
+
+    Blanking comments and strings must not blank CODE. If it did, every file
+    would go not_applicable and the gate would pass everything while looking
+    green -- strictly worse than the false positive it replaces. Deliberately
+    paired with the test above: they fail in opposite directions.
+    """
+    base = _base_sha(sample_repo)
+    _write(sample_repo / "tests" / "test_existing.py",
+           "from pkg.thing import thing\n\n\ndef test_existing():\n"
+           "    assert thing() == 'old'\n"
+           "    assert thing() != ''  # a real assertion, with a comment\n")
+    _git(sample_repo, "add", "-A")
+    _git(sample_repo, "commit", "-qm", "a genuinely added assertion")
+
+    report = rfg.enforce(sample_repo, base_ref=base, config=CONFIG)
+    assert _proof(report, "tests/test_existing.py")["status"] == rfg.ProofStatus.not_discriminating
+
+
+@pytest.mark.parametrize("source, present, absent", [
+    # dotted and decorated forms must survive column-accurate reconstruction
+    ("import pytest\n\n\n@pytest.mark.parametrize('x', [1])\ndef test_a(x):\n"
+     "    with pytest.raises(ValueError):\n        raise ValueError\n",
+     ["@pytest.mark", "def test_", "pytest.raises"], []),
+    # a string CONTAINING code-looking text contributes nothing
+    ("SQL = '''\ndef test_fake():\n    assert 1\n'''\n", [], ["def test_", "assert"]),
+    # an f-string is still a string
+    ('MSG = f"assert {1 + 1}"\n', [], ["assert"]),
+])
+def test_code_only_lines_keeps_code_and_drops_text(tmp_path: Path, source, present, absent):
+    """Marker matching is substring-based, so the reconstruction must be faithful."""
+    path = tmp_path / "sample.py"
+    _write(path, source)
+    joined = "\n".join(rfg.code_only_lines(path).values())
+    for marker in present:
+        assert marker in joined, f"{marker!r} is real code and must survive"
+    for marker in absent:
+        assert marker not in joined, f"{marker!r} is not executable and must be dropped"
+
+
+def test_unparseable_file_falls_back_rather_than_going_silent(tmp_path: Path):
+    """A file that will not tokenise must over-report applicability, not under-report.
+
+    Asking a redundant question costs one run. Skipping a real one lets a
+    worthless test through, which is the whole defect this gate exists for.
+    """
+    path = tmp_path / "broken.py"
+    _write(path, "def test_x(:\n    assert True\n")
+    assert rfg.code_only_lines(path) is None
+    assert rfg.code_only_lines(tmp_path / "does_not_exist.py") is None
+
+
 def test_files_above_max_files_are_named_not_dropped(sample_repo: Path):
     """A cap you cannot see reads as "covered everything"."""
     base = _base_sha(sample_repo)
