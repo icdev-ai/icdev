@@ -9658,7 +9658,41 @@ def _check_completed():
             is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)
             if is_exhausted:
                 retry_count = _increment_retry_count(task_id)
-                if retry_count >= TOKEN_MAX_RETRY_COUNT:
+
+                # Decide SIZE here, before deciding when to retry. This is the
+                # moment the system learns a task did not fit in a session, and
+                # it is the only measurement of task size it ever gets.
+                #
+                # The give-up branch below is NOT a substitute: TOKEN_MAX_RETRY_COUNT
+                # is 60 (~5h of retries), so a task can park 46 separate times --
+                # tsr-dash-01-d3 did -- and still be "under budget", never
+                # reaching a branch that reconsiders its size. That is how 240
+                # re-dispatches of already-too-big tasks accumulated while the
+                # LLM decomposer sat idle.
+                #
+                # Counted over the LIFETIME from kanban_status_transitions, not
+                # from retry_count: the give-up branch clears that counter, so a
+                # task returning for its second budget starts at zero and every
+                # pass looks like a first attempt.
+                _lifetime_exh = _lifetime_exhaustion_count(task_id)
+                if _lifetime_exh >= EXHAUSTIONS_BEFORE_DECOMPOSITION:
+                    logger.warning(
+                        "Task %s has exhausted tokens %d times — decomposing "
+                        "instead of parking for retry %d/%d",
+                        task_id, _lifetime_exh, retry_count, TOKEN_MAX_RETRY_COUNT,
+                    )
+                    _move_task(
+                        task_id, "needs_decomposition", actor="scheduler",
+                        reason=(f"token-exhausted {_lifetime_exh}x lifetime "
+                                f"(>= {EXHAUSTIONS_BEFORE_DECOMPOSITION}): too large for one "
+                                f"session — decompose rather than retry unchanged"),
+                    )
+                    _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
+                    _send_notification(task_dict, event="needs_decomposition")
+                    print(f"  Kanban: {task_id} exhausted {_lifetime_exh}x — "
+                          f"flagged needs_decomposition")
+                elif retry_count >= TOKEN_MAX_RETRY_COUNT:
                     # Exceeded max retries — move to backlog, give up
                     _move_task(
                         task_id, "backlog", actor="scheduler",

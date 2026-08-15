@@ -192,3 +192,42 @@ def test_a_chain_blocker_is_reset_rather_than_split():
 
     src = inspect.getsource(k._auto_decompose_stalled_tasks)
     assert "_is_chain_blocker" in src and "_reset_to_backlog" in src
+
+
+# --------------------------------------------------------------------------- #
+# WHERE the check runs — the part I got wrong the first time
+# --------------------------------------------------------------------------- #
+
+def test_the_size_check_runs_at_the_PARK_not_only_at_give_up():
+    """Placement is the whole fix, and the obvious spot is the wrong one.
+
+    TOKEN_MAX_RETRY_COUNT is 60 (~5h of retries), so a task parks up to 60 times
+    before any give-up branch runs. tsr-dash-01-d3 parked 46 times and never got
+    there. A size check that lives only on the give-up path is therefore
+    unreachable for exactly the tasks it exists to catch.
+    """
+    import inspect
+
+    src = inspect.getsource(k._execute_task_with_claude) if hasattr(
+        k, "_execute_task_with_claude") else ""
+    if not src:
+        # Fall back to a module-wide scan: the park site must consult the count
+        # BEFORE the retry-budget branch.
+        src = inspect.getsource(k)
+    park_marker = "token exhaustion: parked for retry"
+    assert park_marker in src
+    lifetime_at = src.find("_lifetime_exhaustion_count(task_id)")
+    park_at = src.find(park_marker)
+    assert lifetime_at != -1, "the park path must consult the lifetime count"
+    assert lifetime_at < park_at, (
+        "the size decision must come BEFORE the park/retry decision, or a task "
+        "under its 60-retry budget never gets reconsidered"
+    )
+
+
+def test_the_retry_budget_is_large_enough_to_hide_the_problem():
+    """Documents WHY placement matters, so a future reader sees the trap."""
+    assert k.TOKEN_MAX_RETRY_COUNT >= 20, (
+        "with a large retry budget, a give-up-only check is unreachable; this "
+        "test exists to explain the placement above"
+    )
