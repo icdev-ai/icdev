@@ -1642,6 +1642,28 @@ tests/test_adversarial_review_question.py
 # govchain_anchor sweep.
 # 33 tests, ~1s. No network, no Fabric: the noop transport queues.
 tests/provenance/test_trust_validation_anchor.py
+# trust-disc/01 — the red-first proof gate. ANVIL mandates RED -> GREEN and
+# nothing anywhere recorded the RED; this gate re-derives it by checking out the
+# merge base, applying ONLY the changed test file on top, and asserting it does
+# not pass there. The acceptance criterion is empirical, so the suite builds
+# throwaway git repos and runs the real gate over them: `assert True` and an
+# assertion that holds pre-fix must FAIL the gate, a genuine red-first test must
+# clear it. Also pins the decision table shared with
+# tools/security/reproduction_validator.py so the two gates cannot drift apart.
+# ~20 tests, ~40s (it spawns nested pytest runs): no DB, no network, no LLM.
+tests/test_red_first_gate.py
+
+# Token exhaustion is the only ground-truth measurement of task SIZE the board
+# produces, and the give-up path threw it away: it sent the task to `backlog`
+# and cleared the only counter, so the identical task re-entered the identical
+# cycle with no memory it had been round before. Measured: tsr-dash-01-d3 went
+# round 46 times, 29 tasks exhausted 3+ times (298 events), 240 dispatches were
+# re-runs of a task already measured too big, and only 5 of the 29 were ever
+# flagged for decomposition. Also pins WHY the pre-dispatch _complexity_score
+# cannot substitute -- it scores description verbosity and was anti-correlated
+# with outcome on this sample (exhausted tasks scored 2/1/0, the success 5).
+# 16 tests, <1s, count and board writes injected: no DB, no LLM, no network.
+tests/kanban/test_exhaustion_triggers_decomposition.py
 # trust-disc-02. Gates tools/ci/isolation_run.py, which runs every test file the
 # PR changed ALONE — the half of "both alone and in-suite" that this pipeline
 # never had. Builds a throwaway git repo carrying a real order-dependent pair
@@ -1652,6 +1674,19 @@ tests/provenance/test_trust_validation_anchor.py
 # fetch-depth: 0 checkout — an unmounted gate is decoration.
 tests/test_ci_isolation_run.py
 
+# A merged fix must reach the process that runs it. Every long-lived process
+# imports its modules once and runs for days, so a fix is inert until someone
+# restarts it -- and a daemon serving hours-old code looks exactly like a daemon
+# whose fix did not work. kanban_scheduler and pr_watcher already re-exec via
+# code_reload; DaemonBase.run_forever (SEVEN subclasses), poll_trigger and the
+# dashboard did not, which cost two manual bounces on 2026-08-15. Config rides
+# along: DaemonBase reads self.config once, so a changed args/*.yaml arrives
+# because the process re-execs. Pins the ordering (reload AFTER the cycle's work,
+# never mid-claim), the dashboard's idle gate standing in for a daemon's
+# between-cycles gap, and that the dashboard default is ON.
+# 19 tests, ~14s, source inspection + injected clocks: no daemon started, no
+# re-exec, no network.
+tests/test_daemon_self_reload.py
 # trust-disc-05: the board tracked task -> PR and nothing checked task -> main, so two of five
 # cards in pr_opened had already-merged work and their open PRs could only land as reverts
 # (#1651 was -38/+26 on rest_v1.py). Gated in the PR that adds them. test_landed_check.py builds
@@ -1672,3 +1707,14 @@ tests/kanban/test_landed_check_wiring.py
 # only counts. 72 tests, ~3s. In-memory sqlite off the real migrations; no
 # network, no live board.
 tests/test_delta_review.py
+# An E2E run must not leave a dashboard holding the port. Measured 2026-08-15:
+# three dashboards from .tmp/worktrees/task-e2e-27e596dc were alive 6+ hours
+# later and one held port 5050 -- the MAIN dashboard's port -- serving a commit
+# eight hours stale, so restarting the real dashboard by hand changed nothing
+# visible. Two leaks: main() stopped it in straight-line code after the
+# try/except (any raise, or a token-exhausted session, skipped teardown), and
+# start_dashboard sent ONE terminate() on the slow-start path then discarded the
+# handle. Pins the terminate->wait->kill escalation, the finally, the atexit, and
+# that we never tear down a dashboard we did not start.
+# 12 tests, <1s, every process is a fake: nothing spawned, nothing killed.
+tests/ci/test_e2e_dashboard_teardown.py

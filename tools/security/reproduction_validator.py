@@ -792,6 +792,88 @@ class DiscriminationProof:
         }
 
 
+@dataclass(frozen=True)
+class DiscriminationVocabulary:
+    """Prose for the five verdicts of a before/after discrimination test.
+
+    The *decision* is domain-free — a probe discriminates iff it fires against
+    the before-state and stops firing against the after-state — so it is stated
+    exactly once, in :func:`decide_discrimination`, and worded per domain here.
+
+    Two consumers today: HTTP replay (this module, :data:`REPLAY_VOCABULARY`)
+    and red-first test proof (``tools/ci/red_first_gate.py``, where "fires"
+    means "the test FAILS" and the two states are the merge-base tree and the
+    post-change tree). Adding a third means adding a vocabulary, not a second
+    copy of the decision table — a copy is how two gates end up disagreeing
+    about the same question.
+    """
+
+    discriminating: str
+    """Fired before, did not fire after — the probe proves what it claims."""
+
+    tautology: str
+    """Fired in both states, so it distinguishes nothing."""
+
+    inverted: str
+    """Fired only in the AFTER state — the polarity is backwards."""
+
+    never_established: str
+    """Fired in neither state — it never demonstrated anything."""
+
+    indecisive: str
+    """Format string; ``{before}`` and ``{after}`` receive the raw outcomes."""
+
+
+REPLAY_VOCABULARY = DiscriminationVocabulary(
+    discriminating=(
+        "reproduction fired against the vulnerable target and stopped firing once the fix was applied"
+    ),
+    tautology="reproduction fires against the fixed target too — it is a tautology, not a proof",
+    inverted="reproduction fires only against the FIXED target — the predicate is inverted",
+    never_established="reproduction fires against neither target — it never established the finding",
+    indecisive=(
+        "indecisive replay (vulnerable={before}, fixed={after}) — discrimination cannot be established"
+    ),
+)
+
+
+def decide_discrimination(
+    *,
+    before_fired: bool,
+    before_decisive: bool,
+    before_outcome: str,
+    after_fired: bool,
+    after_decisive: bool,
+    after_outcome: str,
+    vocabulary: DiscriminationVocabulary = REPLAY_VOCABULARY,
+) -> tuple[bool, str]:
+    """The discrimination decision table, once, for every domain that needs it.
+
+    Args:
+        before_fired: The probe fired against the state that should trigger it.
+        before_decisive: The before-run actually told us something either way.
+            An indecisive run is *absence of evidence*, never evidence of
+            absence, so it can never yield ``discriminating``.
+        before_outcome: Raw outcome name, for the indecisive message.
+        after_fired / after_decisive / after_outcome: The same, for the state
+            in which the probe must go quiet.
+        vocabulary: Domain wording.
+
+    Returns:
+        ``(discriminating, reason)``. ``discriminating`` is True only for
+        fired-before-and-not-after with BOTH runs decisive.
+    """
+    if not before_decisive or not after_decisive:
+        return False, vocabulary.indecisive.format(before=before_outcome, after=after_outcome)
+    if before_fired and not after_fired:
+        return True, vocabulary.discriminating
+    if before_fired and after_fired:
+        return False, vocabulary.tautology
+    if after_fired:
+        return False, vocabulary.inverted
+    return False, vocabulary.never_established
+
+
 def verify_discrimination(
     repro: Reproduction,
     *,
@@ -812,33 +894,18 @@ def verify_discrimination(
     vulnerable = replay(repro, target=vulnerable_target)
     fixed = replay(repro, target=fixed_target)
 
-    if not vulnerable.decisive or not fixed.decisive:
-        return DiscriminationProof(
-            discriminating=False,
-            reason=(
-                f"indecisive replay (vulnerable={vulnerable.outcome}, fixed={fixed.outcome}) — "
-                "discrimination cannot be established"
-            ),
-            vulnerable=vulnerable,
-            fixed=fixed,
-        )
-
-    if vulnerable.reproduced and not fixed.reproduced:
-        return DiscriminationProof(
-            discriminating=True,
-            reason="reproduction fired against the vulnerable target and stopped firing once the fix was applied",
-            vulnerable=vulnerable,
-            fixed=fixed,
-        )
-
-    if vulnerable.reproduced and fixed.reproduced:
-        reason = "reproduction fires against the fixed target too — it is a tautology, not a proof"
-    elif not vulnerable.reproduced and fixed.reproduced:
-        reason = "reproduction fires only against the FIXED target — the predicate is inverted"
-    else:
-        reason = "reproduction fires against neither target — it never established the finding"
-
-    return DiscriminationProof(discriminating=False, reason=reason, vulnerable=vulnerable, fixed=fixed)
+    discriminating, reason = decide_discrimination(
+        before_fired=vulnerable.reproduced,
+        before_decisive=vulnerable.decisive,
+        before_outcome=vulnerable.outcome,
+        after_fired=fixed.reproduced,
+        after_decisive=fixed.decisive,
+        after_outcome=fixed.outcome,
+        vocabulary=REPLAY_VOCABULARY,
+    )
+    return DiscriminationProof(
+        discriminating=discriminating, reason=reason, vulnerable=vulnerable, fixed=fixed
+    )
 
 
 # ---------------------------------------------------------------------------

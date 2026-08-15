@@ -213,6 +213,18 @@ def main():
     except (OSError, AttributeError):
         pass  # SIGTERM not available on Windows
 
+    # Pick up our own merged code between polls — see tools/genesis/code_reload.
+    # This process runs for days off a single import, so without it every fix to
+    # the trigger (or to anything it imports, e.g. the VCS client or the event
+    # router) stays inert until someone notices and restarts it by hand.
+    try:
+        from tools.genesis import code_reload as _code_reload
+    except Exception as _cr_imp:  # noqa: BLE001 — reloading is optional
+        _code_reload = None
+        print(f"INFO: code self-reload unavailable ({_cr_imp})")
+    _code_baseline = _code_reload.snapshot() if _code_reload else None
+    _started_at = time.time()
+
     # Run initial check immediately
     check_and_process_issues(vcs)
 
@@ -222,6 +234,14 @@ def main():
         time.sleep(POLL_INTERVAL)
         if not shutdown_requested:
             check_and_process_issues(vcs)
+            # AFTER the poll's work: a re-exec mid-check would drop an issue
+            # this pass had already picked up. Does not return if it re-execs.
+            if _code_reload is not None:
+                try:
+                    _code_reload.restart_if_code_changed(
+                        _code_baseline, started_at=_started_at)
+                except Exception as _cr_exc:  # noqa: BLE001
+                    print(f"WARN: code-change check failed: {_cr_exc}")
 
     print("INFO: Shutdown complete")
 
