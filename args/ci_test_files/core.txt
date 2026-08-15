@@ -1489,3 +1489,17 @@ tests/test_outline_contract.py
 # were the reason to consolidate; a regression in one is invisible otherwise.
 # 44 tests, <1s, pure stdlib + stub routers: no DB, no LLM, no network.
 tests/test_structured_output.py
+# The bounded MONOTONE revise-and-recheck loop (trust-self-01). Gated because
+# the invariant is load-bearing and silent when broken: a loop that accepts a
+# round which did NOT strictly reduce findings degenerates into optimising for
+# the checker, and nothing downstream would notice -- the report still says
+# "improved". Five mutants were run against this suite and all five died:
+# strict "<" relaxed to "<=", the retention floor removed, a rejected round
+# adopting its candidate anyway, and the two fail-closed paths (initial
+# validation raised / no validators supplied) reporting blocked=False.
+# The retention floor gets its own test because the finding count has a trivial
+# global optimum -- an empty document scores clean -- so the monotone check
+# alone cannot tell "deleted the unsupportable sentence" from "deleted the
+# document".
+# 31 tests, <1s, injected validators + a fake router: no DB, no LLM, no network.
+tests/test_self_correct.py
