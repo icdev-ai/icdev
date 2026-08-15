@@ -361,11 +361,25 @@ def provision_tenant(tenant_id):
 
         conn.commit()
 
+        # Canvas grants are what make a tenant's users able to open anything.
+        # This stays best-effort — a seeding problem must not roll back a tenant
+        # that is otherwise created — but the OUTCOME is now reported instead of
+        # assumed. A seed that grants nothing produces a tenant whose users are
+        # locked out of every canvas, and that used to look identical to success.
         try:
             from tools.security.canvas_access import seed_tenant_defaults
-            seed_tenant_defaults(tenant_id, granted_by="system")
+            _seed = seed_tenant_defaults(tenant_id, granted_by="system") or {}
+            if not _seed.get("granted"):
+                logger.error(
+                    "Tenant %s created but seeded ZERO canvas grants — its users "
+                    "cannot open any canvas. skipped=%s failed=%s",
+                    tenant_id, _seed.get("skipped_no_default_roles"),
+                    _seed.get("failed"),
+                )
         except Exception as _seed_exc:
-            logger.warning("seed_tenant_defaults failed for %s: %s", tenant_id, _seed_exc)
+            logger.error(
+                "Tenant %s created but seed_tenant_defaults RAISED (%s) — its "
+                "users have no canvas grants at all", tenant_id, _seed_exc)
 
         # Wire Prometheus metrics — best-effort
         try:

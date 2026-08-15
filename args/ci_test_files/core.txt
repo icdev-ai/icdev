@@ -1777,3 +1777,14 @@ tests/ci/test_e2e_dashboard_teardown.py
 # check for this principal is safe.
 # 10 tests, <1s, binding and grant lookup injected: no DB, no network.
 tests/security/test_canvas_guard_service_key.py
+
+# A tenant seeded with ZERO canvas grants must not look like success.
+# canvas_access_grants being empty is CORRECT here -- grants are per-tenant and
+# there are none -- but seed_tenant_defaults skips any canvas with no
+# default_roles, and 21 of 38 registered canvases declare none. It returned None
+# and logged one success line whatever happened, and tenant_manager swallowed the
+# call into a warning, so a tenant whose users could open NOTHING was reported as
+# fine and surfaced days later as "I cannot open ACE". Reported, never enforced:
+# failing tenant creation over a grant gap is worse than the lockout it warns of.
+# 11 tests, <1s, registry and grant write injected: no DB, no network.
+tests/security/test_tenant_canvas_seed.py
