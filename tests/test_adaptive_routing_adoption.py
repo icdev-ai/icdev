@@ -260,3 +260,52 @@ def test_measure_savings_reports_a_real_number_on_the_real_mix():
     # correct number for this seam, not a missing measurement.
     assert result["retrieval_calls_saved"] == 0
     assert result["skip_rate"] == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# Surface scoping must survive the adaptive path (trust-self-02 x trust-self-03)
+# --------------------------------------------------------------------------- #
+
+def test_both_retrieval_paths_declare_the_same_surface():
+    """`_rag_retrieve` has two branches and BOTH must name the surface.
+
+    trust-self-02 scoped reflective reranking per surface by passing
+    `surface="chat_rag"` to the adapter's retrieval call. trust-self-03 then put
+    AdaptiveRetriever in front of that call, creating a second path. If only the
+    plain path carries the surface, enabling `rag.adaptive_routing` silently
+    turns reflective reranking OFF for chat_rag — a config toggle disabling an
+    unrelated feature, with nothing reporting the change and every test still
+    green.
+
+    Asserted at PARSE time and on LITERALS, matching
+    tests/rag/test_reflective_surface_scoping.py: a name reference would degrade
+    the guarantee to "some identifier we hope equals chat_rag".
+    """
+    import ast
+    import pathlib
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "tools/cortex/search_service.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+
+    fn = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == "_rag_retrieve"),
+        None,
+    )
+    assert fn is not None, "_rag_retrieve not found — did the adapter get renamed?"
+
+    surfaces = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if name not in ("run_rag_search", "retrieve"):
+            continue
+        surfaces.append(next(
+            (kw.value.value for kw in node.keywords
+             if kw.arg == "surface" and isinstance(kw.value, ast.Constant)),
+            None,
+        ))
+
+    assert len(surfaces) == 2, f"expected both retrieval branches, found {surfaces}"
+    assert all(s == "chat_rag" for s in surfaces), surfaces
