@@ -303,5 +303,77 @@ def export_dashboard(dashboard: Dict[str, Any], fmt: str, *,
     )
 
 
+#: format -> (import to probe, distribution to install). ``html`` is absent on
+#: purpose: it is pure stdlib + string building, so it can never be unavailable
+#: and probing it would only invite someone to add a way for it to fail.
+_FORMAT_REQUIREMENTS = {
+    "pptx": ("pptx", "python-pptx"),
+    "pdf": ("reportlab", "reportlab"),
+}
+
+#: Probe result cache. importlib.util.find_spec walks the path finders, which is
+#: far cheaper than an import but still not free per request.
+_format_availability: "Dict[str, str | None] | None" = None
+
+
+def _availability() -> "Dict[str, str | None]":
+    """Each optional format mapped to the distribution it needs, or None if usable.
+
+    find_spec rather than a real import: it answers "is this installed" without
+    executing the module, so probing cannot itself fail or cost import time. A
+    package present but broken still reports available and raises at render —
+    that is a genuinely different failure and should not be disguised as absent.
+    """
+    global _format_availability
+    if _format_availability is None:
+        import importlib.util
+
+        result: "Dict[str, str | None]" = {}
+        for fmt, (module, distribution) in _FORMAT_REQUIREMENTS.items():
+            try:
+                found = importlib.util.find_spec(module) is not None
+            except (ImportError, ValueError):
+                found = False
+            result[fmt] = None if found else distribution
+        _format_availability = result
+    return _format_availability
+
+
 def supported_formats() -> List[str]:
-    return ["html", "pptx", "pdf"]
+    """Formats this deployment can ACTUALLY produce, not the ones it wishes it could.
+
+    This used to be a hardcoded ``["html", "pptx", "pdf"]`` — a claim nothing ever
+    checked. ``dashboard_to_pdf`` imports reportlab, which was absent from every
+    requirements file until #1700, so on a clean install ``format: "pdf"`` was
+    advertised here, raised ImportError at render, and ``_cortex_api`` turned that
+    into a **500** (it maps anything unrecognised to 500). The endpoint reported a
+    server fault for a dependency the operator had simply never installed, and the
+    response said nothing about which one.
+
+    Declaring reportlab made the capability real. It did not make the failure mode
+    honest — a deployment that trims optional dependencies, or an air-gap image
+    built before that pin, still hits it. So the list is now derived.
+
+    The payoff is that the route needs no new branch: it already validates
+    ``fmt not in supported_formats()`` and raises CortexValidationError, which is a
+    400. An unavailable format becomes a clean 400 for free; see
+    ``unavailable_format_reason`` for the half that makes the message actionable.
+    """
+    unavailable = _availability()
+    return ["html"] + [f for f in ("pptx", "pdf") if not unavailable.get(f)]
+
+
+def unavailable_format_reason(fmt: str) -> "str | None":
+    """Why *fmt* is missing, naming the package — or None if it is fine.
+
+    Without this the 400 reads "format must be one of ['html'], got 'pdf'", which
+    is baffling on a platform whose own docstring calls reportlab "the PDF library
+    this platform actually has installed". Naming the distribution turns a
+    dead end into one ``pip install`` — the difference between a bug report and a
+    fix.
+    """
+    distribution = _availability().get((fmt or "").strip().lower())
+    if not distribution:
+        return None
+    return (f"{fmt} export needs the {distribution!r} package, which is not "
+            f"installed in this deployment")
