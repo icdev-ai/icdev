@@ -294,7 +294,14 @@ def test_scan_fails_open_when_git_cannot_answer(tmp_path: pathlib.Path):
         # designed: it failed, and the fix was to remove the entry rather than
         # to weaken the check.
         ("282", "282_insider_risk_uba.sql"),
-        ("18", "018_reflex_observations.py"),
+        # 018_reflex_observations.py was pinned here and is removed for the same
+        # reason 283 and 289 were: it stopped being shadowed because it was
+        # promoted out of the legacy numbering, to
+        # 20260815200101_reflex_observations/up.py. It was never merely shadowed
+        # anyway — as a bare NNN_name.py the runner could not discover it at any
+        # version, so it had never executed once. Its up(conn) now runs and was
+        # verified against the live database as a clean no-op (reflex_observations
+        # is already present; the DDL is entirely IF NOT EXISTS).
         ("19", "019_kanban_verifications"),
     ],
 )

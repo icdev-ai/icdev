@@ -1,0 +1,7 @@
+{
+  "description": "integrity_tables (promoted from the never-discovered 179_integrity_tables.py)",
+  "date": "2026-08-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}
