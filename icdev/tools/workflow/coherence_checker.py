@@ -31,6 +31,7 @@ Checks:
  21. vendor_parity   — declared stdlib-only modules stay a subset of their OUT-OF-REPO vendored copies (cxo-doc-03)
                       + match the committed args/vendor_api_manifest.json, which is the half CI can run (ctx-enf-01)
  22. capability_liveness — a declared capability with ZERO lifetime consumption fails; budgets in args/liveness_gate.yaml (exa-live-02)
+ 23. substrate_liveness  — WARN when a changed module READS a declared substrate that holds zero rows (trust-disc-04)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -3257,6 +3258,202 @@ def check_capability_liveness() -> CoherenceCheck:
 
     evaluation = _evaluate_capability_liveness(window_report, lifetime_report, corpus_rows, gate)
     return _liveness_check_result(evaluation, int(gate["window_days"]))
+
+
+_SUBSTRATE_CHECK_ID = "substrate_liveness"
+_SUBSTRATE_CHECK_NAME = "Substrate Liveness (trust-disc-04)"
+_SUBSTRATE_EXPECTED = [
+    "no changed module reads a DECLARED substrate that holds zero rows "
+    "(declared list: args/capability_consumption.yaml :: substrates)"
+]
+
+
+def _substrate_check(status: str, message: str, actual: List[str], missing: List[str] = None) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_SUBSTRATE_CHECK_ID,
+        check_name=_SUBSTRATE_CHECK_NAME,
+        status=status,
+        expected=_SUBSTRATE_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_substrate_liveness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """trust-disc-04 — code that READS a substrate nothing has ever written.
+
+    ``check_capability_liveness`` measures a declared capability nobody calls.
+    This is the same defect one layer down: a declared SUBSTRATE — a table, a
+    column, a config block — that code is designed against and that holds
+    nothing. An approved plan described ``kg_ontology`` as a working SHACL-lite
+    supplying declared (subject_type, predicate, object_type) legality; on the
+    live board ``kg_nodes`` held 8,869 rows, ``kg_edges`` 16,493, and
+    ``kg_ontology``, ``ontology_subclass_closure`` and ``kg_nodes.ontology_id``
+    held nothing at all. A validator built on the empty half would have answered
+    "unknown" forever while looking like it worked.
+
+    THE SCOPE IS THE WHOLE DESIGN, and it was measured rather than guessed.
+    Over the last 40-60 commits on main:
+
+        every table mentioned in a changed file            68% of commits fire
+        every table in the added lines of the diff         22%
+        declared substrates, mentioned anywhere            30%   (manifest rows
+                                                                  and schema
+                                                                  dumps, not
+                                                                  designs)
+        declared substrates READ by a changed .py module    2%   — 1 commit,
+                                                                  and it is
+                                                                  kg_grounding.py
+
+    So this check fires on the last of those. Three narrowings, each earning
+    its place: the substrate must be on the CURATED declared list (1,320 of the
+    1,775 tables on the live board are empty simply because nobody has used
+    that feature yet — "empty" alone is not a defect); the reference must be a
+    READ (``FROM``/``JOIN``), because a change that adds ``INSERT INTO`` is the
+    fix, not the defect; and it must be in a changed Python module, not a
+    manifest row or a schema dump that merely names the table.
+
+    Reported as ``warn``: an empty substrate is a fact about the DATABASE in
+    front of the checker, and failing a per-commit code gate on it would block
+    commits that have nothing to do with it. On a database with no operating
+    history — a fresh worktree, an ephemeral CI database — the finding is
+    suppressed entirely rather than fabricated, which is the same rule
+    ``capability_consumption`` applies to a missing telemetry table.
+
+    The full CLI probe is broader and belongs to a human reading a plan:
+    ``python tools/awareness/capability_consumption.py --probe-plan <plan.md>``.
+    """
+    try:
+        from tools.awareness.capability_consumption import (
+            _known_tables,
+            declared_substrates,
+            extract_substrate_refs,
+            load_config,
+            merge_ref_entry,
+            probe_substrates,
+        )
+        from tools.db.storage import get_connection
+    except Exception as exc:  # noqa: BLE001
+        return _substrate_check(
+            "warn", f"capability_consumption unavailable ({exc}) — substrates NOT verified",
+            [f"import failed: {exc}"],
+        )
+
+    cfg = load_config()
+    declared = declared_substrates(cfg)
+    if not declared:
+        return _substrate_check(
+            "warn",
+            "no substrates declared in args/capability_consumption.yaml — nothing to verify. "
+            "An empty declared list is not a clean board; it is an unasked question.",
+            ["substrates: (empty)"],
+        )
+    declared_tables = {str(entry["ref"]).split(".")[0] for entry in declared}
+
+    conn = None
+    try:
+        conn = get_connection()
+        catalogue = _known_tables(conn)
+        census = probe_substrates(conn=conn, config=cfg, include_declared=True)
+    except Exception as exc:  # noqa: BLE001
+        return _substrate_check(
+            "warn", f"substrate probe failed ({exc}) — substrates NOT verified",
+            [f"probe failed: {exc}"],
+        )
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    status_line = [
+        f"{s['ref']}: {s['status'] if s['measurable'] else 'unmeasurable'}"
+        + (f" ({s['rows']} rows)" if s["rows"] is not None else "")
+        for s in census["substrates"]
+    ]
+
+    if not census["measurable"]:
+        return _substrate_check(
+            "warn",
+            f"{census['operating_history']['reason']} Substrate liveness NOT verified — "
+            "reported as warn rather than a fabricated finding.",
+            status_line,
+        )
+
+    empty_refs = {s["ref"] for s in census["substrates"] if s["is_finding"]}
+    if not changed_files:
+        # No diff to attribute anything to. The census still goes in the report
+        # so a full sweep shows the standing state, but a check that went yellow
+        # every night for a substrate no one touched would be tuned out inside a
+        # week — and then the one commit that matters would be tuned out with it.
+        return _substrate_check(
+            "pass",
+            f"{len(empty_refs)}/{len(census['substrates'])} declared substrate(s) hold no rows "
+            f"({', '.join(sorted(empty_refs)) or 'none'}). No diff supplied, so nothing is "
+            "attributed to a change; run --probe-plan/--probe-diff to check a specific design.",
+            status_line,
+        )
+
+    if not empty_refs or catalogue is None:
+        return _substrate_check(
+            "pass",
+            f"every declared substrate holds rows ({len(census['substrates'])} probed)."
+            if catalogue is not None
+            else "table catalogue unreadable — no code scan performed.",
+            status_line,
+        )
+
+    refs: Dict[str, Dict[str, Any]] = {}
+    for target in _scan_targets(changed_files, "tools") + _scan_targets(changed_files, "icdev/tools"):
+        try:
+            source = str(target.relative_to(PROJECT_ROOT))
+        except ValueError:
+            source = str(target)  # a target outside the checkout still gets named
+        found = extract_substrate_refs(
+            _read_text(target), catalogue, source=source.replace("\\", "/")
+        )
+        for ref, entry in found.items():
+            if ref.split(".")[0] not in declared_tables:
+                continue
+            if "read_sql" not in entry["match_kinds"]:
+                continue  # a docstring mention is not a design
+            merge_ref_entry(refs.setdefault(ref, {}), entry, limit=6)
+
+    if not refs:
+        return _substrate_check(
+            "pass",
+            f"no changed module reads a declared substrate. "
+            f"{len(empty_refs)} declared substrate(s) hold no rows and nothing in this diff "
+            f"depends on them ({', '.join(sorted(empty_refs))}).",
+            status_line,
+        )
+
+    attributed = probe_substrates(refs, config=cfg)
+    findings = attributed["findings"]
+    if not findings:
+        return _substrate_check(
+            "pass",
+            f"{len(refs)} declared substrate read(s) in this diff, all populated.",
+            status_line,
+        )
+
+    detail = [
+        f"{f['ref']} ({f['status']}, {f['rows']} rows) read at "
+        + ", ".join((f["read_references"] or f["references"])[:3])
+        for f in findings
+    ]
+    return _substrate_check(
+        "warn",
+        f"{len(findings)} declared substrate(s) read by this change hold nothing: "
+        + "; ".join(detail)
+        + ". Code designed against an empty substrate answers 'unknown' forever while "
+        "looking like it works — wire the writer, or design against what is there.",
+        status_line,
+        missing=detail,
+    )
 
 
 _SENTINEL_CHECK_ID = "gate_sentinel_shape"
@@ -9137,6 +9334,7 @@ CHECK_REGISTRY = {
     "swallowed_persistence": check_swallowed_persistence,
     "reflex_registry": check_reflex_registry,
     "capability_liveness": check_capability_liveness,
+    "substrate_liveness": check_substrate_liveness,
     "gate_sentinel_shape": check_gate_sentinel_shape,
     "project_card_coverage": check_project_card_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,

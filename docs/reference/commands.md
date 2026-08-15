@@ -2210,6 +2210,35 @@ python tools/workflow/coherence_checker.py --check capability_liveness --gate   
 # args/liveness_gate.yaml entirely rather than sitting at 0; an absent class is already
 # budgeted at 0, and a leftover zero is just a number for a future session to edit upward.
 
+python tools/workflow/coherence_checker.py --check substrate_liveness --json                         # Reads a declared substrate that holds nothing (trust-disc-04)
+
+# Substrate Liveness (trust-disc-04) — the same defect one layer down: not a declared
+# capability nobody calls, but a declared SUBSTRATE code is designed AGAINST that holds
+# nothing. An approved plan described kg_ontology as a working SHACL-lite supplying
+# declared (subject_type, predicate, object_type) legality; on the live board kg_nodes
+# held 8,869 rows, kg_edges 16,493, and kg_ontology, ontology_subclass_closure and
+# kg_nodes.ontology_id held nothing at all. One SELECT COUNT(*) would have caught it.
+# WARN, never fail — an empty substrate is a fact about the DATABASE in front of the
+# checker, so failing a per-task code gate on it would block unrelated commits.
+# Scope was measured, not guessed (40-60 commits on main): every table mentioned in a
+# changed file fires on 68% of commits, every table in the added lines 22%, declared
+# substrates mentioned anywhere 30%, and declared substrates READ by a changed .py
+# module 1.7% — the last is what it does. A write-only reference is the FIX for an
+# empty substrate, so `INSERT INTO x` is recorded and not counted.
+
+# Substrate probe (trust-disc-04) — run BEFORE designing against a table/column/config
+python tools/awareness/capability_consumption.py --substrates                                        # Curated declared substrates: which hold rows
+python tools/awareness/capability_consumption.py --probe-substrate kg_ontology                       # One table
+python tools/awareness/capability_consumption.py --probe-substrate kg_nodes.ontology_id              # One column (rows vs non-NULL)
+python tools/awareness/capability_consumption.py --probe-substrate args/llm_config.yaml::routing     # One config block
+python tools/awareness/capability_consumption.py --probe-plan docs/plan.md --substrate-gate          # Every substrate a PLAN names; exit 1 if one is empty
+python tools/awareness/capability_consumption.py --probe-diff origin/main --json                     # Substrates the branch's added lines read
+# `empty` (writer never ran) / `absent` (migration never ran) / `column_unpopulated`
+# (rows exist, column 100% NULL) are never merged — they send you to different fixes.
+# On a database with no operating history the probe reports UNMEASURABLE and the gate
+# exits 0: 1,320 of 1,775 tables on the live board are empty, so a prober that cannot
+# tell a fresh worktree from an unwired writer fabricates findings by the thousand.
+
 # Gate Sentinel Shape (kax-exec-04) — a task whose id is `<card>-gate-<n>` is filtered
 # out of promote_backlog_to_scheduled by tools/kanban/gates.py::is_manual_gate, so work
 # wearing that id is UNDISPATCHABLE and nothing goes red (tsg-gate-01 sat in backlog

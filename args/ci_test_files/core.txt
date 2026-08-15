@@ -1601,3 +1601,19 @@ tests/test_blockchain_transports.py
 # no artifact TEXT reaches the chat-mirrored approval_items row. 43 tests, ~1s,
 # sqlite tmp_path + the real migration DDL: no LLM, no network, no live board.
 tests/test_hitl_delta.py
+
+# trust-disc-04 — the substrate half of capability_consumption.py. Headline test probes a
+# PLAN (not finished code) and must report kg_ontology/ontology_subclass_closure empty and
+# kg_nodes.ontology_id 100% NULL beside a populated kg_nodes/kg_edges. Its twin pins the
+# rule that keeps the measurement honest: a database with no operating history reports
+# UNMEASURABLE, never a fabricated finding — 1,320 of 1,775 tables on the live board are
+# empty. Also pins the noise controls (write-only refs, prose nouns, superseded columns).
+# 16 tests, <1s. Seeded SQLite via get_connection; never touches the live board.
+tests/test_substrate_probe.py
+
+# trust-disc-04 — the consumer half: coherence_checker::check_substrate_liveness. Pins the
+# measured scope (declared substrates READ by a changed .py module = 1.7% fire rate over 60
+# commits, vs 68% for every table mentioned in a changed file), that it warns rather than
+# fails, and that a fresh database suppresses the finding instead of fabricating it.
+# 9 tests, <1s. get_connection patched to a seeded temp SQLite board.
+tests/test_coherence_substrate_liveness.py
