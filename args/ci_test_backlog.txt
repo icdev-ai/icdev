@@ -123,7 +123,6 @@ tests/cortex/test_complete_multiturn.py
 tests/cortex/test_domain_lenses.py
 tests/cortex/test_domain_triage.py
 tests/cortex/test_egress_redaction.py
-tests/cortex/test_extract_validation.py
 tests/cortex/test_governance_hardening.py
 tests/cortex/test_governance_pipeline.py
 tests/cortex/test_governance_profiles.py
@@ -135,7 +134,6 @@ tests/cortex/test_provenance_gate.py
 tests/cortex/test_provenance_swallow.py
 tests/cortex/test_reason_facade.py
 tests/cortex/test_rest_agent.py
-tests/cortex/test_rest_api.py
 tests/cortex/test_rest_award.py
 tests/cortex/test_rest_cost_volume.py
 tests/cortex/test_rest_dashboard.py

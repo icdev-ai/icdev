@@ -1489,3 +1489,24 @@ tests/test_outline_contract.py
 # were the reason to consolidate; a regression in one is invisible otherwise.
 # 44 tests, <1s, pure stdlib + stub routers: no DB, no LLM, no network.
 tests/test_structured_output.py
+
+# trust-struct-03 — cortex.extract stops degrading silently. Pins the posture
+# change end to end: a non-conforming payload now RAISES CortexSchemaError
+# instead of handing the raw completion back as result.text with a flag in
+# metadata that one of the two in-repo callers never read; the repair is bounded
+# at exactly one re-prompt and that retry carries the caller's tenant and
+# classification rather than egressing bare; and "unmeasured" (no schema, or no
+# jsonschema installed) reports schema_valid=None, never True -- the case where
+# an air-gapped deployment validated nothing and said everything conformed.
+# 21 tests, <2s, stub router only: no DB, no LLM, no network.
+tests/cortex/test_extract_validation.py
+
+# trust-struct-03 — the HTTP contract for a schema refusal. extract now raises
+# CortexSchemaError, and without an explicit handler it falls to the generic
+# `except Exception` and returns 500 "internal error": the caller pages an
+# operator about a healthy server and loses the one thing they can act on. This
+# file also covers the other five v1 endpoints' governance envelopes, auth
+# rejection and server-side tenant derivation, all of which the 422 handler sits
+# beside.
+# 25 tests, <1s, monkeypatched facades + Flask test client: no DB, no LLM, no network.
+tests/cortex/test_rest_api.py

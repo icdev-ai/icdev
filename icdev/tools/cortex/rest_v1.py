@@ -38,7 +38,7 @@ from .analyst import CortexAnalystError, CortexQueryBlocked
 # gateway screen, redaction, grounding, provenance, append-only audit). Importing
 # ask/search from .analyst/.search_service would reach the RAW ungoverned impls,
 # so the REST /api/v1/search + /ask endpoints would bypass governance entirely.
-from .api import agent, ask, classify, complete, extract, reason, search
+from .api import CortexSchemaError, agent, ask, classify, complete, extract, reason, search
 from .governance import GovernanceBlockedError, GovernancePipeline
 from .schemas import CortexContext, CortexResult
 
@@ -195,6 +195,18 @@ def _cortex_api(func: Callable) -> Callable:
             return jsonify({
                 "error": str(exc),
                 "governance": exc.governance.to_dict(),
+            }), 422
+        except CortexSchemaError as exc:
+            # 422, not 500. The server did its job; the MODEL could not produce
+            # output conforming to the caller's schema, even after one bounded
+            # repair. Falling through to the generic handler would have logged
+            # it as an internal fault and returned "internal error", hiding the
+            # one thing the caller can act on -- which field was wrong.
+            return jsonify({
+                "error": str(exc),
+                "schema_valid": False,
+                "attempts": exc.attempts,
+                "findings": exc.findings[:20],
             }), 422
         except Exception as exc:  # pragma: no cover - defensive 500
             logger.exception("cortex REST endpoint failed: %s", exc)

@@ -11,7 +11,8 @@ id? A fluent, well-cited, entirely invented sentence passed.
 This module runs the existing guards in two stages and composes ONE verdict:
 
   STAGE 1 — deterministic. No LLM, ever. Runs air-gapped, runs offline, runs in
-  CI. ``placeholder_guard`` → ``citation_guard`` → ``claim_guard``.
+  CI. ``structure_guard`` → ``placeholder_guard`` → ``citation_guard`` →
+  ``claim_guard`` → ``kg_guard``.
 
   STAGE 2 — semantic. LLM-backed and optional. ``cove_guard`` (independent
   interrogation of each claim) → ``constitution_guard`` (rule-by-rule critique).
@@ -63,8 +64,12 @@ GATE_VERSION = "trust-2.0"
 # Guard order within each stage IS the reporting order: the first blocking guard
 # becomes ``TrustVerdict.gate``, which is persisted to idr_publish_audit.gate.
 # Placeholder before citation matches the pre-existing docgen ordering.
+#
+# ``structure_guard`` leads because shape precedes content: if the artifact is
+# not the object the caller declared, a citation complaint about its braces is
+# noise and the gate a reviewer sees should name the actual defect.
 STAGE1_GUARDS: tuple[str, ...] = (
-    "placeholder_guard", "citation_guard", "claim_guard", "kg_guard",
+    "structure_guard", "placeholder_guard", "citation_guard", "claim_guard", "kg_guard",
 )
 STAGE2_GUARDS: tuple[str, ...] = ("cove_guard", "constitution_guard")
 ALL_GUARDS: tuple[str, ...] = STAGE1_GUARDS + STAGE2_GUARDS
@@ -77,6 +82,15 @@ STATUS_FINDINGS = "findings"
 STATUS_UNMEASURABLE = "unmeasurable"   # guard had no evidence to work with
 STATUS_UNAVAILABLE = "unavailable"     # guard could not run (no router, import error)
 STATUS_SKIPPED = "skipped"             # profile turned it off
+#: The guard has nothing to check on THIS artifact — there is no obligation to
+#: measure, so there is nothing unmeasured. Distinct from ``unmeasurable``, and
+#: the distinction is load-bearing: an SSP narrative declares no output
+#: contract, and treating that as "could not verify" would refuse every
+#: compliance export under a profile whose whole posture is to refuse on an
+#: unmeasurable guard. A compliance check with no applicability gate is 100%
+#: false positives, which is the twin of the declared-but-unconsumed defect this
+#: framework exists to catch — so applicability is named, not inferred.
+STATUS_NOT_APPLICABLE = "not_applicable"
 
 STAGE2_RAN = "ran"
 STAGE2_DISABLED = "disabled"
@@ -319,6 +333,129 @@ def _findings_from(guard: str, raw: Sequence[Mapping], severity: str) -> List[Fi
     return out
 
 
+def _run_structure_guard(
+    text: str, severity: str, *, contract: Any, sections: Any, artifact_type: Any
+) -> GuardResult:
+    """Hold the artifact to a DECLARED shape (trust-struct-03).
+
+    "Structure" has two halves on this platform and this guard carries both,
+    dispatching on what the caller declared:
+
+      * ``contract=`` — a machine payload's shape. An ``OutputContract`` (or the
+        schema dict for one) from ``structured_output``: is this the object the
+        caller asked for?
+      * ``sections=`` (+ ``artifact_type=``) — a document's skeleton, via
+        ``outline_contract``: does the draft have every section it owes, in
+        order, with nothing it invented?
+
+    Both are deterministic, LLM-free and emit the same
+    ``{item_number, issue, detail}`` shape, so they compose into one verdict.
+
+    THE APPLICABILITY GATE. Declaring either is what makes the artifact subject
+    to structural checking:
+
+      * neither declared  -> ``not_applicable``. Prose has no shape to violate.
+        Reporting ``unmeasurable`` here instead would refuse every
+        ``compliance_evidence`` export — the profile blocks on unmeasurable —
+        for the crime of being a narrative. That is a check with no
+        applicability gate, i.e. 100% false positives.
+      * declared          -> validated. Not parseable as the declared root type
+        is a FINDING, never a pass: this guard exists because a caller that
+        asked for an object and got prose was handed the prose back with a note.
+      * declared but this platform knows no skeleton for that artifact type ->
+        ``unmeasurable``. The caller DID assert the artifact has an outline; we
+        simply cannot check which one. That is a different fact from "no outline
+        was ever claimed", and ``check_outline`` reports it as ``measurable:
+        False`` for exactly this reason.
+
+    ``mode="reject"`` deliberately: ``coerce`` substitutes declared
+    ``fail_closed`` sentinels, which is a *repair* decision for the call site
+    that owns the fallback policy. A gate does not repair, it reports.
+    """
+    if contract is None and sections is None:
+        return GuardResult(
+            guard="structure_guard",
+            status=STATUS_NOT_APPLICABLE,
+            severity=severity,
+            detail={"reason": "no output contract or section outline declared"},
+        )
+
+    findings: List[Finding] = []
+    detail: Dict[str, Any] = {}
+
+    if contract is not None:
+        from tools.quality.structured_output import (
+            ContractError, OutputContract, coerce_or_reject,
+        )
+
+        if not isinstance(contract, OutputContract):
+            try:
+                contract = OutputContract(contract, name="trust_gate")
+            except ContractError as exc:
+                # The CONTRACT is malformed, not the output. That is a defect in
+                # the declaring call site, and it must not read as "the artifact
+                # passed".
+                return GuardResult(
+                    guard="structure_guard",
+                    status=STATUS_UNAVAILABLE,
+                    severity=severity,
+                    detail={"reason": f"contract is not a supported schema: {exc}"},
+                )
+        obj, raw = coerce_or_reject(text, contract, mode="reject")
+        findings.extend(_findings_from("structure_guard", _as_gate_findings(raw), severity))
+        detail["contract"] = contract.name or ""
+        detail["conforms"] = obj is not None
+
+    if sections is not None:
+        from tools.quality.outline_contract import check_outline, get_contract
+
+        outline = get_contract(str(artifact_type or ""))
+        report = check_outline(list(sections), outline)
+        if not report.get("measurable"):
+            return GuardResult(
+                guard="structure_guard",
+                status=STATUS_UNMEASURABLE,
+                severity=severity,
+                detail={"reason": report.get("reason") or "outline not measurable",
+                        "artifact_type": str(artifact_type or "")},
+            )
+        findings.extend(
+            _findings_from("structure_guard", report.get("findings") or [], severity)
+        )
+        detail["outline"] = {
+            k: report[k] for k in ("required", "present", "missing", "unknown", "out_of_order")
+        }
+
+    detail["codes"] = sorted({str(f.issue) for f in findings})
+    return GuardResult(
+        guard="structure_guard",
+        status=STATUS_FINDINGS if findings else STATUS_CLEAN,
+        severity=severity,
+        findings=findings,
+        detail=detail,
+    )
+
+
+def _as_gate_findings(raw: Sequence[Mapping]) -> List[dict]:
+    """Adapt ``structured_output``'s ``{code, path, message}`` to the guard shape.
+
+    The two validators report in different vocabularies — ``outline_contract``
+    already speaks ``{item_number, issue, detail}`` because it was written to
+    sit beside ``citation_gate``; ``structured_output`` speaks JSON-pointer.
+    Translating here rather than in either module keeps both free of a
+    gate-specific shape.
+    """
+    return [
+        {
+            "item_number": str(item.get("path") or "$"),
+            "issue": str(item.get("code") or "structure_violation"),
+            "detail": item.get("message"),
+        }
+        for item in raw or []
+        if isinstance(item, Mapping)
+    ]
+
+
 def _run_placeholder_guard(text: str, severity: str) -> GuardResult:
     from tools.quality.content_grounding import placeholder_findings
     raw = placeholder_findings([{"item_number": "document", "content": text}])
@@ -535,6 +672,13 @@ class TrustGate:
         mistaken for a pass — that is the whole shape of this bug class.
         """
         try:
+            if guard == "structure_guard":
+                return _run_structure_guard(
+                    kw["text"], severity,
+                    contract=kw.get("contract"),
+                    sections=kw.get("sections"),
+                    artifact_type=kw.get("artifact_type"),
+                )
             if guard == "placeholder_guard":
                 return _run_placeholder_guard(kw["text"], severity)
             if guard == "citation_guard":
@@ -590,6 +734,8 @@ class TrustGate:
         conn: Any = None,
         graph_id: Optional[str] = None,
         flag_unknown_entities: bool = False,
+        contract: Any = None,
+        sections: Any = None,
     ) -> TrustVerdict:
         """Evaluate ``text`` and return a composed :class:`TrustVerdict`.
 
@@ -603,6 +749,15 @@ class TrustGate:
             conn: a database connection for ``kg_guard``. Without it that guard
                 reports ``unmeasurable`` rather than passing silently.
             graph_id: scope KG validation to one graph.
+            contract: an ``OutputContract`` (or the schema dict for one) for
+                ``structure_guard``'s payload half.
+            sections: a ``list_sections`` payload for ``structure_guard``'s
+                outline half, checked against the skeleton ``artifact_type``
+                resolves to. Supplying ``contract`` or ``sections`` is what
+                makes the artifact subject to structural checking at all;
+                without either that guard reports ``not_applicable`` — prose has
+                no declared shape to violate, and refusing it would be a check
+                with no applicability gate.
             router: an ``LLMRouter``. Stage 2 cannot run without one.
             force: ``{guard: reason}`` HITL overrides. A reason is mandatory
                 unless ``overrides.require_reason`` is disabled (invariant 4).
@@ -619,6 +774,7 @@ class TrustGate:
             "artifact_type": artifact_type, "judge": judge,
             "conn": conn, "graph_id": graph_id,
             "flag_unknown_entities": flag_unknown_entities,
+            "contract": contract, "sections": sections,
         }
 
         # ── STAGE 1 — deterministic, no LLM, always runs ────────────────────

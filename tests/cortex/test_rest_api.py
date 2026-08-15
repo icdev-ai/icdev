@@ -265,6 +265,32 @@ def test_extract_is_governed(monkeypatch, patch_pipeline):
     assert patch_pipeline.captured[0]["operation"] == "cortex.extract"
 
 
+def test_a_schema_refusal_is_422_not_500(monkeypatch, patch_pipeline):
+    """The model missed the schema; the server did not fail (trust-struct-03).
+
+    extract now raises CortexSchemaError instead of handing back the raw
+    completion. Without an explicit handler it falls to the generic
+    `except Exception` and returns 500 "internal error" — which tells the caller
+    to page an operator about a healthy server, and discards the one thing they
+    can act on: which field was wrong.
+    """
+    def _boom(text, schema, ctx=None, **kw):
+        raise _api.CortexSchemaError(
+            "output did not conform to the declared contract",
+            findings=[{"code": "missing_required", "path": "$.n", "message": "required"}],
+            attempts=2,
+        )
+
+    monkeypatch.setattr(bp, "extract", _governed_fake("cortex.extract", "text", _boom))
+    client = make_client()
+    resp = client.post("/cortex/api/v1/extract", json={"text": "one", "schema": {"type": "object"}})
+    assert resp.status_code == 422
+    body = resp.get_json()
+    assert body["schema_valid"] is False
+    assert body["attempts"] == 2
+    assert body["findings"][0]["path"] == "$.n"
+
+
 def test_govern_returns_report(patch_pipeline):
     client = make_client()
     resp = client.post("/cortex/api/v1/govern", json={"text": "some text to govern", "retrieval": False})
