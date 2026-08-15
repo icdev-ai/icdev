@@ -1761,3 +1761,19 @@ tests/test_delta_review.py
 # that we never tear down a dashboard we did not start.
 # 12 tests, <1s, every process is a fake: nothing spawned, nothing killed.
 tests/ci/test_e2e_dashboard_teardown.py
+
+# The Cortex machine surface shares a Blueprint with the Cortex web canvas
+# (register_rest_v1, deliberately), and the canvas-access guard is attached
+# blueprint-wide -- so it applied a HUMAN grant model to a MACHINE principal.
+# auth.py gives every service-key caller role="service" + the key's tenant, and
+# check_access() is False for that principal on every tenant (canvas_access_grants
+# holds ZERO rows), with enforcement fail-closed BY DEFAULT. Every external call
+# to /cortex/api/v1/* therefore got a bare HTML 403 from a before_request --
+# never reaching its scope check, never producing the JSON envelope client.py
+# parses. Pins that the exemption keys on the BINDING (not a URL prefix), that
+# it does not weaken the no-binding path, that unauthenticated still fails
+# closed, that the tier gate still precedes it, and that _scope_denied still
+# enforces cortex:<operation> -- which is the only reason dropping the grant
+# check for this principal is safe.
+# 10 tests, <1s, binding and grant lookup injected: no DB, no network.
+tests/security/test_canvas_guard_service_key.py
