@@ -1901,3 +1901,12 @@ tests/test_ai_telemetry_cache_tokens.py
 # findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
 # network, no LLM.
 tests/test_identity_survey.py
+# hcx-post-02 — posture selection recorded as operator intent. Gated because
+# every property it holds fails SILENTLY: a selection that stopped appending an
+# event, one that appended after applying instead of before, one that started
+# overwriting the per-knob env vars an operator exported, or one that widened to
+# danger-full-access with the audit log down -- all four leave the knobs reading
+# exactly right and every other test green. 27 tests, ~2s; the appender is
+# injected and the environment is a dict, so no DB, no network, and no write to
+# os.environ (the snapshot fixture explains why that one matters in-suite).
+tests/agent_runtime/test_posture_selection.py

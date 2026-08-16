@@ -1163,6 +1163,72 @@ works and it is tested. This is the audit / fork / replay path running beside it
 
 ---
 
+## Permission Posture Selection — Operator Intent, Separately From the Knobs (hcx-post-02)
+
+hcx-post-01 named the combination of safety knobs. This is the half that records
+a *choice* of one.
+
+```bash
+python -m tools.agent_runtime.posture_selection --json            # what is in force
+python -m tools.agent_runtime.posture_selection --list            # selectable postures
+python -m tools.agent_runtime.posture_selection \
+    --select workspace-write --session <ctx-id> --actor <who>
+```
+
+In the chat REPL:
+
+```
+/posture                 # the posture in force, its source, and its four knobs
+/posture list            # selectable postures
+/posture <name>          # select it — records the decision
+/usage                   # token/cost stats, and the posture in force
+```
+
+**Why a separate event.** The resolved knobs say what the posture *is*; they can
+never say who decided it, or when, or what it was before. `approval_mode == "off"`
+read out of a running process does not distinguish a deployment default nobody
+looked at from something a named operator turned off eleven minutes ago — and
+those call for different responses. So selection appends a `permission_posture`
+event to `agent_session_events` carrying the posture, the actor and the resolved
+knob values, in the same `seq` ordering as the turns it governs. "The posture
+widened, and then these four tool calls happened" is one `ORDER BY seq`.
+
+**The event is log-only, and it is written first.** Nothing reads it back to
+decide a knob; deleting every row would change no behaviour. It is appended
+*before* anything is applied, so an intent survives a crash during the act, and a
+reader who finds an intent with no following change learns the apply failed.
+
+**Re-selecting the effective posture appends nothing.** Same name and no knob
+delta is a look, not a decision.
+
+**It writes one variable and never the four per-knob ones.** Selection sets
+`ICDEV_PERMISSION_POSTURE`; the knobs follow through hcx-post-01's chain
+(`argument > env > agent_runtime.yaml > posture > built-in`). A knob already
+pinned by `ICDEV_SAG_APPROVAL_MODE` or an explicit config key therefore does
+**not** move — including when the operator is tightening. That is reported, not
+worked around:
+
+```
+Posture: workspace-write -> danger-full-access (actor: alice)
+  sandbox: 'workspace-write' -> 'danger-full-access'
+  NOT MOVED  approval_mode stays 'manual'; the posture asks for 'off' but
+             ICDEV_SAG_APPROVAL_MODE pins it. Unset it to let the posture govern.
+```
+
+Having the selection overwrite those variables was rejected: it reverses an
+intent stated at a layer hcx-post-01 put *above* this one, and it would do so
+invisibly. Under-delivering loudly is recoverable; over-delivering silently is
+not.
+
+**An unwritable log refuses to widen, and only to widen.** A posture flagged
+`requires_explicit_selection` is refused when the event cannot be appended —
+there is no unaudited `danger-full-access`. Any other posture is applied with
+`logged: false` and a warning, because refusing in the tightening direction too
+would strand an operator in the *looser* posture whenever the database is
+unreachable.
+
+---
+
 ## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
 
 Mirrors a pending item to a messaging channel and turns the human's reply back

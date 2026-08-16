@@ -50,11 +50,18 @@ payload_retention:
   max_classification: CUI
 
   # Event types whose payload is NEVER stored, whatever the two settings above
-  # say. Empty by default: the six-type vocabulary is deliberately small and no
-  # member of it is inherently more sensitive than the others, so blanket-
-  # excluding one would be a guess. It exists so a deployment that finds, say,
+  # say. Empty by default: the vocabulary is deliberately small and no member of
+  # it is inherently more sensitive than the others, so blanket-excluding one
+  # would be a guess. It exists so a deployment that finds, say,
   # `request_context` too large or too sensitive to retain can drop that one
   # without dropping the log.
+  #
+  # One member is worth naming before you add it here. `permission_posture`
+  # (hcx-post-02) is the only type that records an OPERATOR's act rather than
+  # something the model saw, and its payload IS the record — the posture, the
+  # actor, the resolved knobs. Suppressing it leaves the hash, which proves a
+  # posture decision happened and cannot say who made it or what it was, which
+  # is the exact question the event was added to answer.
   #
   # Names are validated against EVENT_TYPES in event_log.py — an entry that
   # matches no event type is a typo that would silently retain everything, so it
