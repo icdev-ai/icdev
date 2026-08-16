@@ -1860,3 +1860,9 @@ tests/kanban/test_task_identity.py
 # same migration-derived fixture; the two end-to-end cases drive the REAL loop
 # with a scripted provider -- no DB, no network, no LLM.
 tests/agent_runtime/test_event_recorder.py
+# hcx-post-01 — permission postures. Gated because the two properties it holds
+# are precedence properties, and a precedence regression is silent: a posture
+# that started overruling an exported ICDEV_SAG_APPROVAL_MODE, or a config file
+# that could name danger-full-access, would keep every other test green.
+# 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
+tests/agent_runtime/test_permission_postures.py
