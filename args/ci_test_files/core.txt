@@ -1825,3 +1825,9 @@ tests/test_canvas_dedicated_pg_database.py
 # an extension controls, turns a drop-in extension file into a permission
 # bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
 tests/agent_runtime/test_dispatch_extension_point.py
+# hcx-evt-01 -- the append-only agent event log (agent_session_events). Added in
+# the PR that makes it pass, per the test-gating policy. 39 tests, ~1s, no DB and
+# no network: the fixture builds the table from the migration's own up.sql behind
+# tests/_sql_compat.translating, so a column added to one and not the other fails
+# here rather than at runtime inside somebody's except.
+tests/test_agent_event_log.py
