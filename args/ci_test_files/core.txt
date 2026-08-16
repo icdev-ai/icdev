@@ -1820,3 +1820,11 @@ tests/test_canvas_dedicated_pg_database.py
 # catch_handler_exceptions. 23 tests, <1s: isolated managers, no builtins
 # loaded except in the one signature test, SQLite temp file for the telemetry.
 tests/test_extension_dispatch_governance.py
+# hcx-live-01 pins TOOL_EXECUTE_BEFORE to a production dispatcher. The hook
+# point had ten declared siblings and no caller outside tests -- the GATING
+# point, and the whole reason the behavioral tier exists. The seven ordering
+# tests are the reason this is gated rather than merely written: dispatching
+# after the safety gate, or reading tool_name/read_only back out of a context
+# an extension controls, turns a drop-in extension file into a permission
+# bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
+tests/agent_runtime/test_dispatch_extension_point.py
