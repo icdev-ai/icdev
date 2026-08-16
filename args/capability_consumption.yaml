@@ -72,6 +72,15 @@ classes:
     description: >-
       Skills queued for GEPA optimization as pending agent_improvement_artifacts.
       Consumption is an artifact GEPA actually applied.
+  extension_hook_point:
+    enabled: true
+    description: >-
+      Extension hook points present in both the ExtensionPoint enum and an
+      enabled args/extension_config.yaml hook_points block. Consumption is a
+      recorded ExtensionManager.dispatch on the 'extension' surface of
+      runtime_invocations. Ten declared; before hcx-live-02 nothing counted a
+      dispatch at all, so a point with no call site read exactly like a point on
+      the chat hot path.
 
 # ---------------------------------------------------------------------------
 # Substrate probing (#trust-disc-04)

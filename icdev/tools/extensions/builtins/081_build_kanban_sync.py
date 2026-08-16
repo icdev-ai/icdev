@@ -70,8 +70,17 @@ def _detect_canvas(content: str) -> str:
     return ""
 
 
-def handle_chat_message_after(event: dict, ctx: object | None) -> None:
-    """Fire after each assistant message is stored."""
+def handle_chat_message_after(event: dict, ctx: object | None = None) -> None:
+    """Fire after each assistant message is stored.
+
+    ``ctx`` is unused and defaulted. The extension contract is
+    ``handler(context) -> dict | None`` — every other builtin spells it
+    ``handle(context)`` — so while this took a second REQUIRED positional it
+    raised ``TypeError`` on every chat message the platform served and never
+    once ran. ``catch_handler_exceptions`` swallowed it and nothing counted the
+    failure, which is the defect hcx-live-02 exists to make visible; this is the
+    first thing the new telemetry found.
+    """
     context_id = event.get("context_id", "")
     role = event.get("role", "")
     content = event.get("content", "")

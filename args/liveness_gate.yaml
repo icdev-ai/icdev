@@ -146,6 +146,34 @@ grandfathered:
   # once enforcement is on; lower it then rather than waiting for a task.
   mcp_tool_authorization: 4
 
+  # Extension hook points. 10 declared, 10 never consumed — measured 2026-08-16
+  # against the live PostgreSQL board (audit_trail: 100,265 rows, well clear of
+  # the anchor) with
+  # `python tools/awareness/capability_consumption.py --class extension_hook_point --json`.
+  #
+  # This class is ARGUING ITS WAY IN, as the note above requires of a new one,
+  # and the argument is that the 10 is a measurement artefact of its own first
+  # day rather than an accommodation. hcx-live-02 is the commit that made a
+  # dispatch countable at all: before it, `ExtensionManager.dispatch` wrote
+  # nothing anywhere, so every point's lifetime count is necessarily zero on the
+  # day the counter lands, however busy the seam is. Two points
+  # (chat_message_before, chat_message_after) have a live call site in
+  # tools/dashboard/chat_manager.py and nine registered handlers between them, so
+  # they drain on the first chat message the platform serves.
+  #
+  # The other EIGHT are the real finding and the reason the class is here rather
+  # than deferred: they have no dispatch call site anywhere in the tree.
+  # tool_execute_after is the sharpest — tools/awareness/hooks.py registers a
+  # handler on it at process start and nothing has ever dispatched it, which is
+  # the "no handlers ever fired" incident this class exists to make visible.
+  # hcx-live-01 (PR #1723) wires tool_execute_before; that one drains when it
+  # lands and its first tool call runs.
+  #
+  # Lower this as they drain — it should reach 8 within a day and 7 when #1723
+  # merges. Do NOT raise it: a new hook point added to the enum without a
+  # dispatch call site is precisely the defect, and it should trip the check.
+  extension_hook_point: 10
+
   # GEPA. 124 pending agent_improvement_artifacts, 0 applied, and 0 that satisfy
   # its own selection predicate — every queued artifact has
   # composite_score == baseline_score, so the >= 0.05 delta filter can never
