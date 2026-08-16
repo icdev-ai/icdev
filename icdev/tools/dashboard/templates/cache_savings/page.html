@@ -58,6 +58,12 @@
         resp: ${{ "%.4f"|format(stats.summary.resp_cache_usd_saved) }} +
         ctx: ${{ "%.4f"|format(stats.summary.context_cache_usd_saved) }}
       </div>
+      {% if stats.summary.local_providers %}
+      <div style="font-size:10px; color:var(--text-dim); margin-top:6px; line-height:1.4;">
+        Excludes ${{ "%.4f"|format(stats.summary.usd_withheld_local) }} from
+        {{ stats.summary.local_providers|join(", ") }} — locally hosted, never billed.
+      </div>
+      {% endif %}
     </div>
 
   </div>
@@ -102,6 +108,61 @@
   {% else %}
   <div class="card" style="padding:32px; text-align:center; color:var(--text-dim); margin-bottom:24px;">
     No cached entries yet. Cache activates after the first LLM invocation on an enabled function.
+  </div>
+  {% endif %}
+
+  <!-- Per-provider breakdown: what each provider DECLARES about prefix caching -->
+  {% if stats.by_provider %}
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-label" style="padding:14px 18px; border-bottom:1px solid var(--border); font-weight:600;">
+      By Provider
+      <span style="font-weight:400; color:var(--text-dim); font-size:11px;">
+        — savings are shown only where dollars are the right unit
+      </span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg-hover);">
+            <th style="padding:8px 14px; text-align:left;  color:var(--text-dim); font-weight:500;">Provider</th>
+            <th style="padding:8px 14px; text-align:left;  color:var(--text-dim); font-weight:500;">Prefix Cache</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Entries</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Avoided Calls</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Read Tokens</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Cost Saved</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in stats.by_provider %}
+          <tr style="border-top:1px solid var(--border);">
+            <td style="padding:8px 14px; color:var(--text-primary); font-family:monospace; font-size:12px;">{{ p.provider }}</td>
+            <td style="padding:8px 14px;">
+              <span style="font-family:monospace; font-size:11px; padding:2px 6px; border-radius:3px;
+                           background:var(--bg-hover); color:var(--text-dim);"
+                    title="{{ p.prefix_cache_reason }}">{{ p.prefix_cache_support }}</span>
+            </td>
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(p.total_entries) }}</td>
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(p.avoided_calls) }}</td>
+            <td style="padding:8px 14px; text-align:right; color:#818cf8;">{{ "{:,}".format(p.cache_read_tokens) }}</td>
+            {% if p.usd_saved is none %}
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim); font-style:italic;"
+                title="{{ p.prefix_cache_reason }}">not applicable</td>
+            {% else %}
+            <td style="padding:8px 14px; text-align:right; color:#f59e0b; font-weight:600;">${{ "%.4f"|format(p.usd_saved) }}</td>
+            {% endif %}
+          </tr>
+          {% if p.usd_saved is none %}
+          <tr>
+            <td colspan="6" style="padding:0 14px 10px 14px; color:var(--text-dim); font-size:11px; line-height:1.5;">
+              {{ p.prefix_cache_reason }}
+              Measure it with <code>python tools/llm/ollama_prefix_latency.py --json</code>.
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
   {% endif %}
 

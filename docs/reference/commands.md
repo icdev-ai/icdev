@@ -36,6 +36,23 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
+python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
+python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
+python tools/llm/ollama_prefix_latency.py --base-url http://gpu-box:11434
+# A local model has no per-token price, so cache_read_input_tokens stays 0 however
+# well caching works. The honest metric is server-side prompt-eval (prefill) time.
+# Measured 2026-08-16, ~1.9k-token prefix, 3 consecutive runs of n=5:
+#   qwen3:4b   440-471 -> 20-21 ms  (21.8-22.7x)
+#   qwen3:0.6b 103-278 -> 16-23 ms  (4.6-16.8x; noisier, short prefill, GPU load)
+# The cold seed is a per-run NONCE: Ollama's KV cache outlives the process, so a
+# fixed seed measures correctly once and then compares warm against warm.
+# prompt_eval_count is NOT the hit signal — it reports full prompt length on every
+# call, cached or not (constant at 1,914 across one cold and four warm). Only the
+# duration moves. Reports status=unmeasurable, never a number, when Ollama is down.
+# The /cache-savings card reads the DECLARED capability and shows "not applicable"
+# for a local provider instead of a dollar figure.
+
 # Semantic loop detection for the agent loop (ars-loop-01)
 # Library: tools/llm/loop_detector.py — detect_semantic_loop(records, config=) -> LoopDetection
 #   Config: args/llm_config.yaml -> agent_loop.loop_detection (enabled, window, similarity_threshold,
