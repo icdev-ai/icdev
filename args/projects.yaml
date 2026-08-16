@@ -8251,3 +8251,41 @@ projects:
   - key: bench
     title: BENCH - real harness adapters, then a capability matrix
     priority: medium
+- key: fli
+  name: FLI - Flagged Items from the 2026-08-15 Migration and Self-Reload Sweep
+  description: >-
+    Five items surfaced while closing out the invisible-migration work (PRs
+    #1700, #1705-#1709) and deliberately NOT bundled into those PRs, because
+    each is a distinct defect and folding them in would have been a drive-by.
+    Four are real defects; the fifth is two stale PRs that must be closed
+    rather than merged. Common thread with the sweep that found them: a check
+    or a capability that reports success while doing nothing - a swallowed
+    exception, a hardcoded capability list, a gate that stands down on
+    timeout, and two branches whose merge would silently revert main.
+  task_prefix: fli-
+  default_open: true
+  briefs:
+    - "ING: tests/genesis/test_ingestion_manager_anomaly.py::TestEmbedChunks has failed on main since the contextual-retrieval change (rce-ctx-01) added chunk.text_for_embedding(); the test's _StubChunk never grew the method, so every embed raises AttributeError, _embed_chunks swallows it via `except Exception: continue` and returns 0. Nobody noticed because the file has never been CI-gated. The stale stub is the small half. The large half is that NO caller compares the returned count against len(chunks) - both call sites filter to `embeddable` and carry on - so a systematic embedding failure (exactly what a method rename is) ingests a document with zero vectors and reports success (fli-ing-01..02)"
+    - "EXP: supported_formats() in tools/bi_dashboard/export.py returns a hardcoded ['html','pptx','pdf'] that is never checked against what can actually be imported. reportlab was absent from requirements.txt entirely (fixed in #1700), so `format: pdf` was advertised and returned 500 on every clean install. Declaring the dependency made the capability real; it did not make the failure mode honest. An optional format that cannot run must not be advertised, and asking for it must produce a 400 that NAMES the missing dependency, not a 500 (fli-exp-01)"
+    - "PRS: #1654 (kanban/ctx-trust-04) and #1640 (fix/ctx-enf-01-vendor-api-manifest) are both 104 commits behind main and CONFLICTING. Both are superseded duplicates - ctx-trust-04 landed via #1650 and ctx-enf-01 via #1647 - and merging either would REVERT main (#1640's copy of tests/workflow/test_vendor_api_manifest.py is 110 lines against main's 196). CONFLICTING is the interlock that stopped this, not a problem to rebase away. Close both with the landing evidence recorded (fli-prs-01)"
+    - "SMK: the route-smoke pre-commit gate returns True on subprocess.TimeoutExpired with a warning, so it stops gating in exactly the case where it matters most - a change touching many routes. Same shape as the `|| true` on the PreToolUse hook: nominally enforcing, silently inert. Measure the fire and timeout rate FIRST, then either scale the timeout to the affected-route count or bound the route set explicitly and report what was dropped - never a silent cap (fli-smk-01)"
+    - "FLK: tests/test_cpmp_overdue_deliverable_state.py computes _TODAY = datetime.now(timezone.utc).date() at MODULE IMPORT and derives _LATE = _TODAY - 44 days, then asserts days_overdue == 44 against a value the production code computes at RUN time. Cross midnight UTC between the import and the assertion and it is 45. Caught in CI at 2026-08-16T00:01:47Z on PR #1712 as 'assert 45 == 44' - a red gate on a PR that had nothing to do with CPMP. The file is CI-gated, so this blocks unrelated merges once a night (fli-flk-01)"
+  epics:
+    - key: gate
+      title: Manual Gate
+      priority: critical
+    - key: ing
+      title: Ingestion embedding failures are silent
+      priority: high
+    - key: exp
+      title: Export advertises formats it cannot run
+      priority: high
+    - key: prs
+      title: Close superseded PRs that would revert main
+      priority: medium
+    - key: smk
+      title: Route-smoke gate fails open on timeout
+      priority: medium
+    - key: flk
+      title: Date-dependent tests flake at midnight UTC
+      priority: medium
