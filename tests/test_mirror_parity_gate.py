@@ -102,6 +102,76 @@ def test_unchanged_drift_within_budget_still_passes(monkeypatch):
     assert result.status == "pass"
 
 
+class TestIntentionalShimsAreNotDrift:
+    """A re-export shim is the OPPOSITE of the defect this gate exists for.
+
+    The gate's premise is that `tools/x` and `icdev/tools/x` are separate module
+    objects, so a fix in one leaves the other silently running old code. For a
+    shim they are the SAME object — `tools/llm/agent_loop.py` is 98 lines that
+    `import *` from the 2,672-line canonical module — so there is no stale half.
+    Byte-comparing them reports permanent drift whose only "fix" is copying the
+    body back, recreating the physically-separate stale copy the shim was
+    written to delete.
+
+    `_is_mirror_shim` existed and its docstring already named this exact file as
+    one that "must never be flagged as drift" — but only `check_mirror_drift`
+    (report-only) applied it, so touching the CANONICAL module failed the GATE
+    on its shim, via the suffix match in rule 2 (rem-cap-04).
+    """
+
+    def test_the_canonical_shim_is_recognised_as_one(self):
+        assert checker._is_mirror_shim(REPO_ROOT / "tools" / "llm" / "agent_loop.py")
+
+    def test_a_real_mirrored_module_is_not_mistaken_for_a_shim(self):
+        """The predicate must not launder a genuine stale copy into an exemption."""
+        assert not checker._is_mirror_shim(
+            REPO_ROOT / "tools" / "workflow" / "coherence_checker.py"
+        )
+
+    def test_the_shim_is_excluded_from_the_gate_feed(self):
+        drifted = checker._mirror_drifted_files([".py"])
+        assert "tools/llm/agent_loop.py" not in drifted
+
+    def test_changing_the_canonical_module_does_not_fail_on_its_shim(self):
+        """The end-to-end case: rule 2 matches by suffix, so `icdev/tools/llm/
+        agent_loop.py` matched the drifted `tools/llm/agent_loop.py`."""
+        result = checker.check_mirror_parity(
+            changed_files=[Path("icdev/tools/llm/agent_loop.py")]
+        )
+        assert result.status == "pass", f"{result.message} | {result.extra[:5]}"
+
+    def test_a_genuinely_drifted_changed_file_still_fails(self, monkeypatch):
+        """The exemption must not blunt the rule that catches a #1542."""
+        monkeypatch.setattr(
+            checker, "_load_mirror_gate", lambda: {"extensions": [".py"], "budget": 999}
+        )
+        monkeypatch.setattr(
+            checker, "_mirror_drifted_files", lambda exts: ["tools/genesis/reflexes/kanban.py"]
+        )
+        result = checker.check_mirror_parity(
+            changed_files=[Path("tools/genesis/reflexes/kanban.py")]
+        )
+        assert result.status == "fail"
+
+
+def test_the_budget_matches_what_the_tree_actually_carries():
+    """The ratchet only ratchets if the ceiling tracks reality.
+
+    A budget far above the real count silently re-opens the backlog: drift can
+    grow for free until it reaches the ceiling, which is the state this gate was
+    written to end. Lower it when drift is reconciled; never raise it.
+    """
+    gate = checker._load_mirror_gate()
+    actual = len(checker._mirror_drifted_files(gate["extensions"]))
+    assert actual <= gate["budget"], (
+        f"{actual} drifted files exceeds the declared budget {gate['budget']}"
+    )
+    assert gate["budget"] - actual <= 2, (
+        f"budget {gate['budget']} is {gate['budget'] - actual} above the actual "
+        f"{actual}; lower it to match — headroom is drift you have pre-approved"
+    )
+
+
 def test_registered_in_the_check_registry():
     """Otherwise the gate is itself declared-but-unconsumed — the whole point."""
     assert checker.CHECK_REGISTRY["mirror_parity"] is checker.check_mirror_parity

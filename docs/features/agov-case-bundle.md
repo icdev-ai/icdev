@@ -38,16 +38,29 @@ Neither can express agent **behaviour**, because neither is keyed by
 
 ```
 <bundle>/
-  manifest.json                    # SHA-256 of every other member
-  context.json                     # endpoint/context header + classification
-  timeline.json                    # the ordered join (session_timeline)
-  records/hook_events.json         # raw stored values, HMAC-signed
-  records/audit_trail.json         # raw stored values + chain_context anchor
-  records/agent_findings.json      # present once agov-det-05 lands
-  records/agent_approval_log.json  # enforcement decisions, free text redacted
-  artifacts.json                   # paths referenced, not their contents
-  provenance/prov.json             # W3C PROV-JSON, when a project resolves
+  manifest.json                      # SHA-256 of every other member
+  context.json                       # endpoint/context header + classification
+  timeline.json                      # the ordered join (session_timeline)
+  records/hook_events.json           # raw stored values, HMAC-signed
+  records/audit_trail.json           # raw stored values + chain_context anchor
+  records/agent_session_events.json  # the event log, WITHOUT payload_json
+  records/agent_findings.json        # present once agov-det-05 lands
+  records/agent_approval_log.json    # enforcement decisions, free text redacted
+  artifacts.json                     # paths referenced, not their contents
+  provenance/prov.json               # W3C PROV-JSON, when a project resolves
 ```
+
+`records/agent_session_events.json` (hcx-evt-04) is the case the table-level
+transcript exclusion cannot express: the table **is** exported, and one of its
+columns holds verbatim model input. `session_timeline.SOURCES` leaves
+`payload_json` out of that table's column allowlist so the export never selects
+it; `payload_hash` travels instead, computed by the same
+`tools/audit/row_hash.py` recipe the migration-149 chain uses, so a recipient
+holding the payload can still prove what it was. The omission is declared in
+`case_bundler.EXCLUDED_COLUMNS` and surfaces in `context.json` under
+`sources.excluded_columns` — an absence nobody wrote down is indistinguishable
+from an oversight, and a guard fails at import if the allowlist ever selects the
+column again.
 
 The manifest never covers itself: it is the root of trust and a self-referential
 digest is not computable.

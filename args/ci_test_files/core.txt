@@ -646,6 +646,17 @@ tests/test_agent_policy_composition.py
 # same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
 tests/test_capability_consumption.py
 
+# rem-cap-05 -- the two narrowings on probe_agent_approval_rule. Gated because
+# both failure modes are silent and point in opposite directions: counting all
+# four policy tiers as declared pinned the liveness budget at >= 37 forever (the
+# 37 auto-allowed tools can never produce a row, so a wired gate and an absent
+# one measure identically), and counting agent_approval_log without the `tier`
+# discriminator would report FALSE consumption the first time hitl_delta's
+# record_decision() reuse picked a tool name the policy enumerates. The headline
+# test is a review-tier row on a declared tool name. Seeded temp SQLite, no DB
+# service, LLM or network, <1s.
+tests/test_capability_consumption_approval_tiers.py
+
 # rem-cap-01 -- GEPA decision recording, the last known-inert capability. The
 # defect was invisible to every existing test because GEPA's cycle SUCCEEDED
 # while recording nothing: the only outcome it could write was status='applied',
@@ -1867,6 +1878,18 @@ tests/agent_runtime/test_event_recorder.py
 # that could name danger-full-access, would keep every other test green.
 # 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
 tests/agent_runtime/test_permission_postures.py
+
+# hcx-vv-02 — coherence check_log_standard_compliance, narrowed to allow the
+# prefer-get_logger-then-fall-back shape. The gate failed on
+# 20260815191145_seed_canvas_grants_for_existing_tenants/up.py, which prefers
+# get_logger() and drops to stdlib logging only when that import fails — correct
+# for a migration that may run before tools.logging is importable. Three of the
+# nine tests are the guard rather than the coverage: a bare fallback that never
+# tried get_logger, and a raw call sitting OUTSIDE the handler in a module that
+# merely imports get_logger, must both still fail. Pre-existing file, moved off
+# the backlog census in the PR that makes it gate. 9 tests, ~2.5s, tmp_path
+# only: no DB, no network.
+tests/test_coherence_log_standard.py
 # cch-tel-01: prompt-cache tokens are recorded durably, per call. LLMResponse
 # has carried cache_creation_input_tokens/cache_read_input_tokens since
 # D-CACHE-10 and four adapters populate them, but nothing durable recorded them,
@@ -1883,3 +1906,79 @@ tests/agent_runtime/test_permission_postures.py
 # 16 tests, <1s: temp SQLite files only, no network, no shared board.
 tests/test_ai_telemetry_cache_tokens.py
 tests/test_raw_insert_census.py
+# rem-hyg-03: the fire-rate survey that must run BEFORE rem-hyg-04 arms the
+# identity check. Guards the three properties that fail while looking like
+# success — an unmeasurable survey reporting a 0% rate, a gate sentinel counted
+# as an orphan, and the narrowed rate laundering opaque machine ids into
+# findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
+# network, no LLM.
+tests/test_identity_survey.py
+tests/ci/test_pr_watcher_budgets.py
+# rem-hyg-04: arming that check behind KANBAN_IDENTITY_CHECK. Gated in the PR
+# that adds it. Every property here fails while looking correct: a kill switch
+# nothing reads (the inert hook_points: block in args/extension_config.yaml), a
+# typo like KANBAN_IDENTITY_CHECK=enforced resolving silently to the default so
+# an operator believes it is armed, the survey's NARROWED column and the seeder's
+# refusal drifting into two different populations, and a refusal raised after the
+# first insert half-landing a batch. 35 tests, <1s, registry injected and every
+# get_connection alias stubbed: no board, no network, no LLM.
+tests/kanban/test_identity_check_arming.py
+# hcx-post-02 — posture selection recorded as operator intent. Gated because
+# every property it holds fails SILENTLY: a selection that stopped appending an
+# event, one that appended after applying instead of before, one that started
+# overwriting the per-knob env vars an operator exported, or one that widened to
+# danger-full-access with the audit log down -- all four leave the knobs reading
+# exactly right and every other test green. 27 tests, ~2s; the appender is
+# injected and the environment is a dict, so no DB, no network, and no write to
+# os.environ (the snapshot fixture explains why that one matters in-suite).
+tests/agent_runtime/test_posture_selection.py
+
+# rem-hyg-07: sibling file contention detected at SEED time, not after the PR.
+# pr_watcher's guard runs on OPEN PRs, which is after both sessions have built —
+# #1684 dispatched a producer and its consumer together and 1,058 lines of the
+# loser's branch were discarded. Pins the two dependency mechanisms (scalar AND
+# junction, because _deps_satisfied ANDs them), the live/latent ranking, and the
+# six prose suppressions — including the three found by running the check
+# against the live board, where every string asserted is real text from a real
+# row. Also pins the residual hole, so a reader sees the edge of the heuristic
+# instead of assuming prose parsing is solved. 44 tests, ~1s, synthetic rows and
+# a stub git runner: no board, no network, no LLM.
+tests/kanban/test_lane_conflicts.py
+# cch-cap-01: providers DECLARE prefix-cache support (none | automatic |
+# explicit | managed_object | local) and the router consults the declaration
+# instead of stamping Anthropic's cache_control on a provider-neutral request.
+# No SDK, key, network or DB — pure declaration + translation.
+tests/test_prefix_cache_capability.py
+# rem-cap-04: the approval gate is ARMED by configuration, not only by an env
+# var. Gated because the defect it pins was invisible for the gate's entire
+# life: `_resolve_approval_gate` read ICDEV_AGENT_APPROVAL_MODE straight out of
+# os.environ and returned None -- no gate at all -- whenever it was unset, so
+# args/agent_runtime.yaml could say `enforce`, resolve_mode() could agree, and
+# all eleven default call sites still ran ungated. Every existing test passed
+# throughout; the gate had evaluated ZERO tool calls against 3,214 dispatched
+# builds. The property is a JOIN between two modules that were not talking, so
+# nothing that tests either one alone can see it. Also pins the escape hatch
+# (env `off` beats a config that enforces), the asymmetry when the gate module
+# is unimportable (an explicit `True` denies everything, an unasked-for default
+# does not), and the SHIPPED value in BOTH copies -- if only args/ said dry_run,
+# a wheel resolving icdev/data/args/ would fall through to the posture's
+# `enforce` and refuse 81% of tool calls in the deployment nobody tests locally.
+# 15 tests, <1s, tmp_path YAML and an injected import failure: no board, no
+# network, no LLM.
+tests/test_approval_gate_arming.py
+# hcx-evt-05 — forking a session at a seq. Gated because the refusals are the
+# feature: a fork boundary that started rounding into an open turn, or a
+# projection that stopped ordering an assistant tool_use ahead of the
+# tool_result answering it, produces a seeded session that looks right until the
+# next provider call rejects it -- and a seed linked as a resume_session_id
+# without being read back produces one that looks continued and remembers
+# nothing. 21 tests, ~1s; the table is built from the migration's own DDL into a
+# tmp sqlite file and the chat manager, saver and loader are injected, so no
+# board, no canvas DB, no network, no LLM.
+tests/agent_runtime/test_fork.py
+# cch-prov-03: Ollama's prefix cache pays in LATENCY, so the savings card must
+# report "not applicable" for a local provider rather than a dollar figure — it
+# was reporting a fabricated NON-ZERO one ($0.0040 against Anthropic's rate card
+# for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
+# absent. No Ollama process, no network, no DB.
+tests/test_ollama_prefix_latency.py

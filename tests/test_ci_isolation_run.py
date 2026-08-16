@@ -14,8 +14,10 @@ criterion, expressed as a test rather than as a claim.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -339,3 +341,232 @@ def test_isolation_run_job_checks_out_full_history() -> None:
     """A shallow checkout has no merge base, so the runner would exit 2 every time."""
     workflow = (ROOT / ".github" / "workflows" / "icdev-ci.yml").read_text(encoding="utf-8")
     assert "fetch-depth: 0" in workflow
+
+
+# --------------------------------------------------------------------------- #
+# `run_one(env_extra=...)` and its one consumer, the ungated census (rem-tst-01)
+# --------------------------------------------------------------------------- #
+# These live HERE rather than in a `tests/test_ungated_test_census.py` of their
+# own on purpose. CLAUDE.md requires a NEW test file to be added to
+# `args/ci_test_files/core.txt` in the PR that adds it, and rem-tst-01 forbids
+# touching either allowlist — the whole point of that task is that it MEASURES
+# and promotes nothing. A new file would therefore have been gated by nothing,
+# which is the exact debt the census exists to size. This file is already gated,
+# and the census is the sole consumer of the `env_extra` hook below, so the
+# coverage lands in the one place where CI actually runs it.
+
+
+def test_env_extra_reaches_the_child_process(repo: Path) -> None:
+    """The hook the census needs: per-child environment, or the measurement is noise.
+
+    Concurrent pytest children all writing one `data/icdev.db` produce `database
+    is locked` failures that belong to the harness, not the test. The census
+    gives each child its own `ICDEV_DB_PATH`; this asserts the value actually
+    arrives rather than being silently dropped.
+    """
+    _write(
+        repo / "tests" / "test_reads_env.py",
+        "import os\n\n\ndef test_env():\n"
+        "    assert os.environ['ICDEV_CENSUS_PROBE'] == 'per-child'\n",
+    )
+    result = isolation_run.run_one(
+        repo, "tests/test_reads_env.py", timeout=180,
+        env_extra={"ICDEV_CENSUS_PROBE": "per-child"},
+    )
+    assert result["status"] == "passed", result["output"]
+
+
+def test_env_extra_overrides_an_inherited_value(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It must WIN over the inherited environment, not be merged behind it.
+
+    The census overrides PYTHONPATH this way: these sessions run with PYTHONPATH
+    pointing at the SHARED checkout, so an unpinned child resolves `import
+    tools.x` there and the census would silently measure another worktree's
+    source while other sessions edit it.
+    """
+    monkeypatch.setenv("ICDEV_CENSUS_PROBE", "inherited")
+    _write(
+        repo / "tests" / "test_reads_env.py",
+        "import os\n\n\ndef test_env():\n"
+        "    assert os.environ['ICDEV_CENSUS_PROBE'] == 'override'\n",
+    )
+    result = isolation_run.run_one(
+        repo, "tests/test_reads_env.py", timeout=180,
+        env_extra={"ICDEV_CENSUS_PROBE": "override"},
+    )
+    assert result["status"] == "passed", result["output"]
+
+
+def test_run_one_without_env_extra_is_unchanged(repo: Path) -> None:
+    """The default stays None so the changed-test isolation run is untouched."""
+    _write(repo / "tests" / "test_plain.py", "def test_plain():\n    assert True\n")
+    assert isolation_run.run_one(repo, "tests/test_plain.py", timeout=180)["status"] == "passed"
+
+
+def test_census_never_reports_no_tests_as_passed() -> None:
+    """pytest exit 5 exits 0-ish to anything that only reads "did it fail?".
+
+    A module that collects nothing would look green to a promotion batch and
+    widen the allowlist without widening coverage — the same error as counting a
+    skip as coverage. `classify` must keep them apart.
+    """
+    from tools.ci import ungated_test_census as census
+
+    assert census.classify(0, "3 passed in 1.0s") == census.STATUS_PASSED
+    assert census.classify(5, "no tests ran in 0.1s") == census.STATUS_NO_TESTS
+    assert census.classify(1, "1 failed in 1.0s") == census.STATUS_FAILED
+
+
+def test_census_keeps_collection_errors_out_of_failed() -> None:
+    """A module that does not IMPORT is a different promotion job from a red assert."""
+    from tools.ci import ungated_test_census as census
+
+    output = "ERROR collecting tests/test_x.py\nModuleNotFoundError: No module named 'nope'\n"
+    assert census.classify(2, output) == census.STATUS_COLLECTION_ERROR
+    assert census.classify(1, output) == census.STATUS_COLLECTION_ERROR
+    assert census.first_failure_line(output).startswith("ModuleNotFoundError")
+
+
+def test_census_arithmetic_cannot_claim_more_than_it_measured() -> None:
+    """A partial census that looks complete is the defect the whole task is about."""
+    from tools.ci import ungated_test_census as census
+
+    honest = {
+        "backlog_size": 10, "measured": 4, "not_reached_count": 6,
+        "out_of_scope_count": 0,
+        "counts": {census.STATUS_PASSED: 4, census.STATUS_NOT_REACHED: 6},
+        "results": [{"file": f"tests/test_{i}.py", "status": census.STATUS_PASSED}
+                    for i in range(4)],
+    }
+    assert census.verify(honest) == []
+
+    overclaiming = {**honest, "not_reached_count": 0}
+    assert census.verify(overclaiming), "a census missing 6 modules must not verify clean"
+
+    # The most honest partial report there is: the deadline expired before any
+    # file finished. measured=0 is a real value, not a missing one.
+    nothing_measured = {
+        "backlog_size": 10, "measured": 0, "not_reached_count": 10,
+        "out_of_scope_count": 0,
+        "counts": {census.STATUS_NOT_REACHED: 10},
+        "results": [],
+    }
+    assert census.verify(nothing_measured) == [], (
+        "a census that reached nothing and says so must verify clean"
+    )
+
+
+def test_census_run_by_path_imports_siblings_from_this_checkout() -> None:
+    """`python tools/ci/ungated_test_census.py` must not measure another checkout.
+
+    The defect this pins, found by running the census for real: invoked as a
+    script, `sys.path[0]` is `tools/ci/` and the repo root is not on the path at
+    all, so `import tools.ci.isolation_run` resolves through an installed
+    `icdev`/`.pth` to the SHARED checkout at `C:\\AI\\ICDev`. The guard it was
+    written with — `try: import … except ImportError: sys.path.insert(…)` — never
+    fires, because that import SUCCEEDS; it just succeeds against the wrong tree.
+    Two consequences, one loud and one silent: `run_one` there has no `env_extra`
+    (a TypeError), and `repo_root()` returns the shared checkout, so a census
+    would report on this branch while measuring a tree other sessions are editing.
+
+    Asserted in a subprocess with `sys.path[0]` set to the script's own directory,
+    because that is the condition the interpreter creates for a script and it
+    cannot be reproduced in-process (this test module already puts ROOT on the
+    path, which is exactly what masks the bug).
+    """
+    script = ROOT / "tools" / "ci" / "ungated_test_census.py"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # A DECOY `tools` package standing in for the shared checkout that a
+        # `.pth`/installed `icdev` really does make importable on this machine.
+        # Injected rather than relied upon, so the test is deterministic on a
+        # clean runner where no foreign `tools` happens to be importable.
+        decoy = Path(tmp) / "decoy"
+        (decoy / "tools" / "ci").mkdir(parents=True)
+        (decoy / "tools" / "__init__.py").write_text("", encoding="utf-8")
+        (decoy / "tools" / "ci" / "__init__.py").write_text("", encoding="utf-8")
+        (decoy / "tools" / "ci" / "isolation_run.py").write_text(
+            "def run_one(root, rel, timeout=300, extra=()):\n"
+            "    raise AssertionError('decoy checkout was used')\n",
+            encoding="utf-8",
+        )
+        (decoy / "tools" / "ci" / "gated_test_list.py").write_text(
+            "from pathlib import Path\n"
+            "def repo_root(start=None):\n"
+            "    return Path(__file__).resolve().parents[2]\n",
+            encoding="utf-8",
+        )
+
+        launcher = Path(tmp) / "launcher.py"
+        launcher.write_text(
+            "import importlib.util, sys\n"
+            "from pathlib import Path\n"
+            # Exactly what the interpreter gives a script: its OWN directory, and
+            # not the repo root. The decoy sits ahead of it, as the shared
+            # checkout effectively does. The stdlib entries are kept — only the
+            # repo root is withheld, since its presence is what masks the bug.
+            f"_root = Path({str(ROOT)!r}).resolve()\n"
+            "_rest = [p for p in sys.path if p and Path(p).resolve() != _root]\n"
+            f"sys.path[:] = [{str(decoy)!r}, {str(script.parent)!r}] + _rest\n"
+            f"spec = importlib.util.spec_from_file_location('census_probe', {str(script)!r})\n"
+            "mod = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(mod)\n"
+            "print(sys.modules['tools.ci.isolation_run'].__file__)\n"
+            "print(sys.modules['tools.ci.gated_test_list'].__file__)\n",
+            encoding="utf-8",
+        )
+
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        proc = subprocess.run(
+            [sys.executable, str(launcher)],
+            capture_output=True, text=True, timeout=180, env=env,
+        )
+
+    assert proc.returncode == 0, f"census failed to import by path:\n{proc.stderr}"
+
+    printed = [ln for ln in proc.stdout.strip().splitlines() if ln.strip()]
+    assert len(printed) == 2, f"expected both sibling paths, got: {proc.stdout!r}"
+    for line in printed:
+        resolved = Path(line.strip()).resolve()
+        assert resolved.is_relative_to(ROOT), (
+            f"census imported {resolved}, which is outside this checkout ({ROOT}). "
+            "It would measure another worktree's source while reporting on this branch."
+        )
+
+
+def test_census_refuses_a_sibling_already_bound_to_another_checkout() -> None:
+    """A path insert loses to `sys.modules`, so the mismatch is checked, not assumed.
+
+    If a parent process or an eagerly-importing `.pth` already bound
+    `tools.ci.isolation_run` to a different tree, no `sys.path` change can
+    dislodge it. Measuring the wrong tree silently is the one outcome forbidden
+    here, so the census must raise rather than proceed.
+    """
+    import types
+
+    from tools.ci import ungated_test_census as census
+
+    foreign = types.ModuleType("tools.ci.isolation_run")
+    foreign.__file__ = str(Path(tempfile.gettempdir()) / "elsewhere" / "isolation_run.py")
+    saved = sys.modules.get("tools.ci.isolation_run")
+    sys.modules["tools.ci.isolation_run"] = foreign
+    try:
+        with pytest.raises(census.CensusError, match="refusing to run"):
+            census._assert_siblings_are_local()
+    finally:
+        if saved is not None:
+            sys.modules["tools.ci.isolation_run"] = saved
+        else:  # pragma: no cover - the module is always imported by now
+            del sys.modules["tools.ci.isolation_run"]
+
+
+def test_census_reads_the_real_backlog_and_measures_nothing_by_default() -> None:
+    """The census input is the live file, and `--run` is opt-in."""
+    from tools.ci import ungated_test_census as census
+
+    backlog = census.read_backlog(ROOT)
+    assert len(backlog) > 1000
+    assert all(entry.startswith("tests/") for entry in backlog)
+    assert census.main(["--root", str(ROOT)]) == 0

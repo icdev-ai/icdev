@@ -447,10 +447,20 @@ class TestFailuresSurface:
         # Deliberately smaller than DSH's vocabulary: ICDEV's loop does not
         # stream into the log, so a chunk row would record the transport's
         # framing at one row per token.
-        assert EVENT_TYPES == (
+        #
+        # The six MODEL-VISIBLE types, in order and complete. Asserted as a
+        # slice rather than as the whole tuple: hcx-post-02 appended
+        # `permission_posture` and hcx-evt-05 appended `session_fork`, neither of
+        # which records something the model saw, and an equality check on the
+        # whole tuple made "the model-visible vocabulary changed"
+        # indistinguishable from "a non-model-visible type was added beside it".
+        # Both are still caught — the slice pins the first six exactly, and the
+        # set below pins the rest.
+        assert EVENT_TYPES[:6] == (
             "turn_start", "request_context", "assistant_message",
             "tool_call", "tool_result", "turn_end",
         )
+        assert set(EVENT_TYPES[6:]) == {"permission_posture", "session_fork"}
         assert not any("chunk" in t for t in EVENT_TYPES)
 
 

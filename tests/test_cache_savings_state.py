@@ -391,3 +391,109 @@ def test_the_response_carries_provider_neutral_cache_fields():
             "(Anthropic/Bedrock), automatic (OpenAI/Azure) or managed (Gemini) — "
             "has to converge for the savings card to be provider-agnostic"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Gemini (cch-prov-01) — the reporting half only
+# --------------------------------------------------------------------------- #
+# Gemini returns cachedContentTokenCount in usageMetadata for BOTH its implicit
+# caching and its explicit cachedContents API. The provider read
+# prompt_token_count and candidates_token_count and dropped that field, so any
+# caching Gemini did on this platform's behalf was indistinguishable from none.
+# Nothing is requested here — cachedContents is cch-prov-02.
+#
+# Driven through the real invoke() against a fake SDK object, so it is the
+# PARSE that is under test, not a source grep — and through BOTH module copies,
+# because `tools.llm.gemini_provider` and `icdev.tools.llm.gemini_provider` are
+# two distinct module objects and a fix landed in only one of them is a fix the
+# other half of the platform does not have.
+
+_GEMINI_MODULES = ["tools.llm.gemini_provider", "icdev.tools.llm.gemini_provider"]
+
+
+def _invoke_gemini(monkeypatch, usage_fields, module_path="tools.llm.gemini_provider"):
+    """Run GeminiProvider.invoke() against a stand-in for the SDK response."""
+    import importlib
+    from types import SimpleNamespace
+
+    from tools.llm.provider import LLMRequest
+
+    gp = importlib.import_module(module_path)
+
+    usage = SimpleNamespace(**usage_fields) if usage_fields is not None else None
+    fake_response = SimpleNamespace(candidates=[], usage_metadata=usage)
+
+    class _FakeModel:
+        def __init__(self, **kwargs):
+            pass
+
+        def generate_content(self, messages):
+            return fake_response
+
+    monkeypatch.setattr(gp, "genai", SimpleNamespace(GenerativeModel=_FakeModel))
+
+    provider = gp.GeminiProvider(api_key="test-key")
+    provider._configured = True  # the fake stands in for genai.configure()
+    request = LLMRequest(messages=[{"role": "user", "content": "hello"}])
+    return provider.invoke(request, "gemini-2.0-flash", {})
+
+
+@pytest.mark.parametrize("module_path", _GEMINI_MODULES)
+@pytest.mark.parametrize("cached_field", [
+    "cached_content_token_count",   # google-generativeai / google-genai SDK
+    "cachedContentTokenCount",      # the raw REST spelling
+])
+def test_gemini_reports_the_cached_tokens_it_already_receives(
+    monkeypatch, cached_field, module_path
+):
+    resp = _invoke_gemini(monkeypatch, {
+        "prompt_token_count": 1200,
+        "candidates_token_count": 40,
+        cached_field: 1024,
+    }, module_path)
+
+    assert resp.cache_read_input_tokens == 1024, (
+        "Gemini sent the count and the provider dropped it — caching that "
+        "fires and is not recorded reads exactly like caching that never fired"
+    )
+    assert resp.input_tokens == 1200
+    assert resp.output_tokens == 40
+
+
+@pytest.mark.parametrize("module_path", _GEMINI_MODULES)
+def test_gemini_reports_zero_when_nothing_was_cached(monkeypatch, module_path):
+    """A response with no cache field is 0, not a raise and not a None."""
+    resp = _invoke_gemini(monkeypatch, {
+        "prompt_token_count": 300,
+        "candidates_token_count": 10,
+    }, module_path)
+
+    assert resp.cache_read_input_tokens == 0
+    assert resp.input_tokens == 300
+
+
+@pytest.mark.parametrize("module_path", _GEMINI_MODULES)
+def test_gemini_survives_a_response_with_no_usage_metadata_at_all(monkeypatch, module_path):
+    """Every token field stays 0; the parse must not depend on usage existing."""
+    resp = _invoke_gemini(monkeypatch, None, module_path)
+
+    assert resp.cache_read_input_tokens == 0
+    assert resp.input_tokens == 0
+    assert resp.output_tokens == 0
+
+
+def test_gemini_does_not_claim_a_cache_WRITE_it_cannot_observe(monkeypatch):
+    """cachedContentTokenCount is a READ count.
+
+    Gemini bills cache storage by time, not by a creation-token count, and
+    reports no equivalent of Anthropic's cache_creation_input_tokens. Filling
+    that field from the read count would invent a write cost the vendor never
+    charged and double the apparent cache volume on the savings card.
+    """
+    resp = _invoke_gemini(monkeypatch, {
+        "prompt_token_count": 1200,
+        "cached_content_token_count": 1024,
+    })
+
+    assert resp.cache_read_input_tokens == 1024
+    assert resp.cache_creation_input_tokens == 0
