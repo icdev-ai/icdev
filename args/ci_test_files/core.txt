@@ -1882,3 +1882,4 @@ tests/agent_runtime/test_permission_postures.py
 # function, so router.invoke() returned before ever reaching the telemetry seam.
 # 16 tests, <1s: temp SQLite files only, no network, no shared board.
 tests/test_ai_telemetry_cache_tokens.py
+tests/test_raw_insert_census.py
