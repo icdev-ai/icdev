@@ -345,3 +345,49 @@ def test_the_warmer_runs_by_path_without_PYTHONPATH():
         f"the documented command fails without PYTHONPATH:\n{combined[-500:]}"
     )
     assert proc.returncode == 0, f"exit {proc.returncode}:\n{combined[-500:]}"
+
+
+# ---------------------------------------------------------------------------
+# Cache-token parity across providers — ICDEV is LLM-agnostic
+# ---------------------------------------------------------------------------
+# Caching is a provider CAPABILITY expressed four different ways, not an
+# Anthropic feature other vendors lack. OpenAI and Azure cache prefixes
+# AUTOMATICALLY (>=1024 tokens) with nothing to request — the only job is
+# reading the count back. Azure did not, so every cached token it served was
+# invisible, and prefix caching that works but is unrecorded is
+# indistinguishable from prefix caching that never fired.
+
+
+@pytest.mark.parametrize("module_path", [
+    "tools.llm.openai_provider",
+    "tools.llm.azure_openai_provider",
+])
+def test_openai_family_providers_read_cached_tokens(module_path):
+    """Both use the same SDK object and report caching in the same place."""
+    import importlib
+    import inspect
+
+    src = inspect.getsource(importlib.import_module(module_path))
+    assert "prompt_tokens_details" in src, (
+        f"{module_path} never reads prompt_tokens_details — automatic prefix "
+        "caching is invisible, so the platform cannot tell it from no caching"
+    )
+    assert "cache_read_input_tokens" in src, (
+        f"{module_path} must normalise into the shared LLMResponse field so "
+        "savings are computed the same way for every provider"
+    )
+
+
+def test_the_response_carries_provider_neutral_cache_fields():
+    """The normalisation point: every provider reports into the SAME fields."""
+    import inspect
+
+    from tools.llm.provider import LLMResponse
+
+    params = inspect.signature(LLMResponse.__init__).parameters
+    for field in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+        assert field in params, (
+            f"LLMResponse.{field} is where every provider's caching — explicit "
+            "(Anthropic/Bedrock), automatic (OpenAI/Azure) or managed (Gemini) — "
+            "has to converge for the savings card to be provider-agnostic"
+        )
