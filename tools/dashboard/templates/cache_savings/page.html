@@ -11,6 +11,8 @@
     {"label": "Hit rate by function",    "query": "SELECT function, hit_rate_pct FROM cache.stats ORDER BY hit_rate_pct DESC"},
     {"label": "Top functions by hits",   "query": "SELECT function, total_hits, avoided_calls FROM cache.stats ORDER BY total_hits DESC LIMIT 10"},
     {"label": "Cost savings breakdown",  "query": "SELECT function, cost_usd_saved FROM cache.stats ORDER BY cost_usd_saved DESC"},
+    {"label": "Prefix cache by provider", "query": "SELECT provider, status, cached_share_pct, usd_saved FROM cache.by_provider ORDER BY calls DESC"},
+    {"label": "Providers with no traffic", "query": "SELECT provider, capability FROM cache.by_provider WHERE status = 'no_data'"},
 ] %}
 
 {% block content %}
@@ -104,6 +106,128 @@
     No cached entries yet. Cache activates after the first LLM invocation on an enabled function.
   </div>
   {% endif %}
+
+  {# ------------------------------------------------------------------
+     Per-provider PREFIX cache effectiveness (cch-obs-01).
+
+     Everything above this point describes the RESPONSE cache — calls avoided
+     outright — which is legitimately one number. This section describes
+     PREFIX caching, which is not: the providers do different things, so one
+     rate over the mix is a blur rather than a summary.
+
+     The colour rules are the whole point. Only `caching` and `no_cache_hits`
+     are on a red/amber/green scale, because only they measured something.
+     `no data` and `not reported` are neutral and say why — a provider with no
+     traffic and a provider that reports no counters are not failing caches.
+  ------------------------------------------------------------------ #}
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-label" style="padding:14px 18px; border-bottom:1px solid var(--border); font-weight:600; display:flex; align-items:center; gap:10px;">
+      <span>Prefix Cache by Provider</span>
+      {% if by_provider and by_provider.measurable %}
+      <span style="font-size:11px; font-weight:400; color:var(--text-dim);">
+        last {{ by_provider.window_days }}d &middot; {{ by_provider.window_start }} to {{ by_provider.window_end }}
+      </span>
+      {% endif %}
+      <a href="/api/cache-savings/by-provider" target="_blank" style="margin-left:auto; font-size:12px; color:var(--accent-blue-light);">JSON API &#8599;</a>
+    </div>
+
+    {% if not by_provider or not by_provider.measurable %}
+    <div style="padding:24px 18px; color:var(--text-dim); font-size:13px; line-height:1.6;">
+      <strong style="color:#f59e0b;">Unmeasurable.</strong>
+      {{ by_provider.unmeasurable_reason if by_provider else "the per-provider view did not load." }}
+      <div style="margin-top:8px; font-size:12px;">
+        This is deliberately not shown as 0% on every provider &mdash; a database with no
+        operating history and a platform where caching is broken would look identical.
+      </div>
+    </div>
+    {% else %}
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg-hover);">
+            <th style="padding:8px 14px; text-align:left;  color:var(--text-dim); font-weight:500;">Provider</th>
+            <th style="padding:8px 14px; text-align:left;  color:var(--text-dim); font-weight:500;">Caching</th>
+            <th style="padding:8px 14px; text-align:left;  color:var(--text-dim); font-weight:500;">Status</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Calls</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Cached In</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Uncached In</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Cached Share</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Trend</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Saved</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in by_provider.providers %}
+          {% set measured = p.status in ['caching', 'no_cache_hits'] %}
+          <tr style="border-top:1px solid var(--border);{% if not measured %} opacity:0.75;{% endif %}">
+            <td style="padding:8px 14px; color:var(--text-primary); font-family:monospace; font-size:12px;">{{ p.provider }}</td>
+            <td style="padding:8px 14px; color:var(--text-dim); font-size:12px;">{{ p.capability|replace('_', ' ') }}</td>
+            <td style="padding:8px 14px;">
+              <span title="{{ p.status_detail }}" style="font-size:11px; padding:2px 8px; border-radius:4px; font-weight:600;
+                {%- if p.status == 'caching' %} background:#14532d; color:#86efac;
+                {%- elif p.status == 'no_cache_hits' %} background:#7f1d1d; color:#fca5a5;
+                {%- else %} background:var(--bg-card); color:var(--text-dim); border:1px solid var(--border);{% endif %}">
+                {{ p.status_label }}
+              </span>
+            </td>
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(p.calls) }}</td>
+            <td style="padding:8px 14px; text-align:right; color:#818cf8;">{{ "{:,}".format(p.cached_input_tokens) }}</td>
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(p.uncached_input_tokens) }}</td>
+            <td style="padding:8px 14px; text-align:right;">
+              {%- if p.cached_share_pct is none %}
+                {# NOT 0%. There is no rate to report here, and printing one would
+                   be the exact conflation this card was opened to remove. #}
+                <span style="color:var(--text-dim);" title="{{ p.status_detail }}">&mdash;</span>
+              {%- else %}
+                <span style="font-weight:600; color:{% if p.cached_share_pct >= 50 %}#22c55e{% elif p.cached_share_pct >= 20 %}#f59e0b{% else %}#ef4444{% endif %};">
+                  {{ p.cached_share_pct }}%
+                </span>
+              {%- endif %}
+            </td>
+            <td style="padding:8px 14px; text-align:right; font-size:12px;">
+              {%- if p.trend.direction == 'improved' %}
+                <span style="color:#22c55e;" title="vs the previous {{ by_provider.window_days }}d">&#9650; {{ p.trend.delta_pct_points }} pp</span>
+              {%- elif p.trend.direction == 'worsened' %}
+                <span style="color:#ef4444;" title="vs the previous {{ by_provider.window_days }}d">&#9660; {{ p.trend.delta_pct_points }} pp</span>
+              {%- elif p.trend.direction == 'flat' %}
+                <span style="color:var(--text-dim);" title="vs the previous {{ by_provider.window_days }}d">flat</span>
+              {%- else %}
+                <span style="color:var(--text-dim);" title="no comparable measurement in the previous {{ by_provider.window_days }}d">no baseline</span>
+              {%- endif %}
+            </td>
+            <td style="padding:8px 14px; text-align:right; font-size:12px;">
+              {%- if p.usd_saved is none %}
+                {# A local provider has no bill, so it has no dollars to save.
+                   $0.00 here would read as "caching failed" for a cache that is
+                   working fine and simply is not billed. Latency instead. #}
+                <span style="color:var(--text-dim);" title="{{ p.usd_detail }}">
+                  {%- if p.usd_basis == 'local' %}{{ p.avg_latency_ms|round(0)|int }} ms avg{% else %}not priced{% endif -%}
+                </span>
+              {%- else %}
+                <span style="color:#f59e0b; font-weight:600;">${{ "%.4f"|format(p.usd_saved) }}</span>
+              {%- endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:12px 18px; border-top:1px solid var(--border); font-size:11px; color:var(--text-dim); line-height:1.6;">
+      {{ by_provider.totals.providers_caching }} caching &middot;
+      {{ by_provider.totals.providers_no_cache_hits }} measured zero &middot;
+      {{ by_provider.totals.providers_unreported }} not reported &middot;
+      {{ by_provider.totals.providers_no_data }} no data.
+      Total saved ${{ "%.4f"|format(by_provider.totals.usd_saved_total or 0) }}
+      &mdash; {{ by_provider.totals.usd_saved_basis }}.
+      <br>
+      There is deliberately no combined hit rate on this table. Providers disagree on
+      whether reported input tokens already include the cached ones (Anthropic and Bedrock
+      report them separately; OpenAI and Azure report cached tokens as a subset), so one
+      average over the mix would double-count every cached token from half of them.
+      Claims live in <code>args/cache_effectiveness.yaml</code>.
+    </div>
+    {% endif %}
+  </div>
 
   <!-- IQE Query Widget -->
   {% include "includes/iqe_query_widget.html" %}

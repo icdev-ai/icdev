@@ -1069,6 +1069,45 @@ document.addEventListener('DOMContentLoaded', function() {
         return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     };
 
+    // cch-obs-01: prefix-cache state per provider, as counts plus the busiest
+    // few by name. Deliberately NOT a blended rate: the providers cache by
+    // different mechanisms with different token accounting, so one average
+    // over them is a blur. A provider with zero traffic renders 'no data' and
+    // a provider that reports no counters renders 'not reported' — neither
+    // renders as 0%, which is the distinction this whole card exists for.
+    function renderProviderBlock(bp) {
+        if (!bp) { return ''; }
+        if (!bp.measurable) {
+            return '<div style="font-size:10px;color:var(--text-dim);line-height:1.4;margin-bottom:6px;">'
+                + 'Prefix cache: unmeasurable (no telemetry history yet).</div>';
+        }
+        var chip = function (n, label, color) {
+            if (!n) { return ''; }
+            return '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--bg-card);'
+                + 'border:1px solid var(--border);color:' + color + ';margin-right:4px;">'
+                + n + ' ' + esc(label) + '</span>';
+        };
+        var top = (bp.top || []).map(function (p) {
+            // Only a measured provider gets a percentage; the rest get their
+            // state spelled out instead of a number they never produced.
+            var val = (p.cached_share_pct === null || p.cached_share_pct === undefined)
+                ? (p.status === 'no_data' ? 'no data' : 'not reported')
+                : p.cached_share_pct.toFixed(1) + '%';
+            return '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);">'
+                + '<span style="font-family:monospace;">' + esc(p.provider) + '</span>'
+                + '<span>' + esc(val) + '</span></div>';
+        }).join('');
+        return '<div style="margin-bottom:6px;">'
+            + '<div style="font-size:10px;color:var(--text-dim);margin-bottom:3px;">Prefix cache by provider ('
+            + (bp.window_days || 0) + 'd)</div>'
+            + '<div style="margin-bottom:4px;">'
+            + chip(bp.caching, 'caching', '#22c55e')
+            + chip(bp.no_cache_hits, 'zero', '#ef4444')
+            + chip(bp.unreported, 'unreported', 'var(--text-dim)')
+            + chip(bp.no_data, 'no data', 'var(--text-dim)')
+            + '</div>' + top + '</div>';
+    }
+
     function renderCacheTile() {
         fetch('/api/cache-savings/tile').then(function (r) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1107,6 +1146,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     ? '<div style="font-size:10px;color:var(--text-dim);line-height:1.4;margin-bottom:6px;">'
                       + esc(d.state_detail) + '</div>'
                     : '')
+                // cch-obs-01: prefix caching, per provider. The four counts are
+                // shown separately on purpose — "no data" and "not reported"
+                // are not zero hit rates, and folding them into one figure is
+                // what made the old single number unanswerable.
+                + renderProviderBlock(d.by_provider)
                 + '<div style="margin-top:4px;"><a href="/cache-savings" class="btn" style="font-size:11px;padding:3px 10px;">View dashboard</a></div>';
         }).catch(function () {
             var el = document.getElementById('tile-cache');
