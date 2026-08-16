@@ -6079,6 +6079,29 @@ python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what 
 python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
 python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
 
+# MERGE READINESS (kpr-watch-01) — which open PRs are awaiting merge, and WHY is
+# each one not merging? `pr_watcher._sweep_unlinked_prs` decided eligibility as a
+# ladder of bare `continue` statements: every refusal SILENT except the hold
+# label, and the whole sweep returning immediately under --dry-run. The actor
+# existed; the observer did not. The ladder now lives in one PURE function,
+# `classify_merge_readiness(pr, *, default_branch, linked_urls) -> (state,
+# reason)`, and the sweep CONSUMES it — one table, two consumers, so the report
+# can never describe a merge policy the merger does not have (the same shape
+# CLAUDE.md mandates for `decide_discrimination`). Do NOT write a second copy.
+# States: merged | linked | draft | held_label | wrong_base | conflicting |
+# no_checks | ci_failed | awaiting_ci | changes_requested | ready (+ unknown).
+# `no_checks` (empty rollup, nothing ever reported) is NOT `awaiting_ci` (checks
+# running), and mergeable=UNKNOWN carries a different REASON from CONFLICTING so
+# nobody rebases a branch that has no conflict.
+# READ-ONLY, proven by AST in tests/test_merge_readiness.py: exactly one
+# subprocess reference and one argv, which must be `gh pr list`. It never merges,
+# pushes, un-drafts or closes. Exit 0 = reported, 2 = COULD NOT BE PRODUCED (an
+# unreadable `gh pr list` must not print the same empty table as a quiet repo).
+python -m tools.ci.merge_readiness                           # human table
+python -m tools.ci.merge_readiness --json
+python -m tools.ci.merge_readiness --state awaiting_ci --state conflicting
+python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
+
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
 # all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored

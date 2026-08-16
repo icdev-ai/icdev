@@ -1858,3 +1858,18 @@ tests/kanban/test_task_identity.py
 # that could name danger-full-access, would keep every other test green.
 # 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
 tests/agent_runtime/test_permission_postures.py
+
+# kpr-watch-01. Gates the merge-eligibility decision table that pr_watcher's
+# unlinked sweep and `python -m tools.ci.merge_readiness` BOTH read. The point
+# of the extraction is that the report can never describe a merge policy the
+# merger does not have, and only a test can hold that: the parity case
+# transcribes the pre-extraction `continue` ladder verbatim and asserts
+# `state == "ready"` agrees with it across 2,880 combinations of the seven
+# signals it read (verified live the same day against all 9 open PRs, 0
+# mismatches). Also pins the two distinctions the table refuses to blur --
+# no_checks (empty rollup, nothing ever reported) vs awaiting_ci (checks
+# running), and mergeable=UNKNOWN (GitHub still computing) vs CONFLICTING (go
+# rebase) -- and the read-only property of the CLI, by AST: exactly one
+# subprocess reference and exactly one argv, which must be `gh pr list`. Pure
+# functions and tmp_path JSON: no DB, no network, no gh. 26 tests, <1s.
+tests/test_merge_readiness.py
