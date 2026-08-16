@@ -1037,14 +1037,27 @@ class LLMRouter:
                 input_tokens=getattr(response, "input_tokens", 0) or 0,
                 output_tokens=getattr(response, "output_tokens", 0) or 0,
                 thinking_tokens=getattr(response, "thinking_tokens", 0) or 0,
+                # cch-tel-01: the prompt-cache counts this call actually
+                # returned. `or 0` collapses only None to 0 — a genuine 0 from
+                # the provider is written as 0, which is the whole point: an
+                # absent row and a zero row must not mean the same thing.
+                cache_creation_input_tokens=getattr(
+                    response, "cache_creation_input_tokens", 0
+                ) or 0,
+                cache_read_input_tokens=getattr(
+                    response, "cache_read_input_tokens", 0
+                ) or 0,
                 latency_ms=float(latency_ms),
                 cost_usd=getattr(response, "cost_usd", 0.0) or 0.0,
                 project_id=getattr(request, "project_id", None),
                 function=function,
                 api_key_source=getattr(request, "api_key_source", "system") or "system",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # Best-effort — a served LLM call is never failed on bookkeeping.
+            # But say so: a silent `pass` here is how a broken ledger looks
+            # exactly like an idle one.
+            logger.warning("AI telemetry logging failed: %s", exc)
 
     def _scan_for_injection(self, request: LLMRequest) -> Optional[str]:
         """Scan request messages for prompt injection patterns.
@@ -1401,7 +1414,11 @@ class LLMRouter:
     # -------------------------------------------------------------------
 
     def _invoke_model_direct(
-        self, model_name: str, request: LLMRequest, function: str = ""
+        self,
+        model_name: str,
+        request: LLMRequest,
+        function: str = "",
+        telemetry_function: str = "",
     ) -> Optional[LLMResponse]:
         """Invoke a specific named model without chain fallback.
 
@@ -1412,6 +1429,26 @@ class LLMRouter:
         (CoT/CoD) path: it carries real content, and before this it carried no
         function name at all, so a force_local function's content could arrive
         here anonymous.
+
+        ``telemetry_function`` is the LABEL written to ai_telemetry and NOTHING
+        else. It is deliberately separate from ``function``: passing a name in
+        ``function`` also arms the routing policy's force_local rung, which the
+        two-tier call sites below do not currently do. Relabelling a ledger row
+        must not silently change which provider a request is allowed to reach —
+        that is a routing decision, not a telemetry one. (That two-tier does not
+        arm force_local is a real and separate gap; it is reported, not changed
+        here.) Falls back to ``function`` when not given.
+
+        cch-tel-01: this method is where two-tier makes its REAL provider calls
+        — the qwen3 draft and the tier2 review, one each — and it recorded
+        nothing. Measured on this deployment 2026-08-16: two_tier.enabled is
+        true and code_generation is a worker function, so a plain
+        ``router.invoke("code_generation", ...)`` returned from
+        ``_maybe_invoke_two_tier`` before ever reaching ``_log_telemetry`` and
+        wrote ZERO rows to ai_telemetry. Per-call, at the call, is the only
+        granularity that gives honest token counts here: the aggregate the
+        two-tier path returns is the REVIEW response alone, so a single row at
+        the return would undercount the draft's tokens entirely.
         """
         model_cfg = self._get_model_config(model_name)
         if not model_cfg:
@@ -1424,7 +1461,23 @@ class LLMRouter:
             return None
         model_id = model_cfg.get("model_id", "")
         try:
-            return self._provider_invoke(provider, request, model_id, model_cfg, function=function)
+            _start = time.time()
+            response = self._provider_invoke(
+                provider, request, model_id, model_cfg, function=function
+            )
+            _latency = int((time.time() - _start) * 1000)
+            try:
+                self._log_telemetry(
+                    function=telemetry_function or function,
+                    request=request,
+                    response=response,
+                    model_id=model_id,
+                    provider_name=provider_name,
+                    latency_ms=_latency,
+                )
+            except Exception as _tel_exc:  # noqa: BLE001
+                logger.warning("AI telemetry logging failed: %s", _tel_exc)
+            return response
         except (ForceLocalViolation, RedactionUnavailableError):
             # NEVER swallow an egress refusal into a None. The `return None` below
             # means "this model failed, try the next one" — turning a policy
@@ -1889,7 +1942,9 @@ class LLMRouter:
             # Claude plans directly (or degraded fallback)
             logger.debug("Two-tier: %s → planner (%s direct)", function, effective_tier2)
             try:
-                result = self._invoke_model_direct(effective_tier2, request)
+                result = self._invoke_model_direct(
+                    effective_tier2, request, telemetry_function=function
+                )
             except Exception as exc:
                 # D-AUTO-DEGRADE: Detect rate limit during invocation
                 if self._is_rate_limit_error(exc):
@@ -1903,7 +1958,9 @@ class LLMRouter:
                         fallback,
                         datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
                     )
-                    result = self._invoke_model_direct(fallback, request)
+                    result = self._invoke_model_direct(
+                        fallback, request, telemetry_function=function
+                    )
                 else:
                     raise
             if result is not None:
@@ -1936,12 +1993,16 @@ class LLMRouter:
             else:
                 # Default: qwen3 drafts
                 logger.debug("Two-tier: %s → worker (qwen3 draft → %s review)", function, effective_tier2)
-                draft = self._invoke_model_direct(tier1, self._draft_request(augmented))
+                draft = self._invoke_model_direct(
+                    tier1, self._draft_request(augmented), telemetry_function=function
+                )
 
             if draft is not None:
                 review_req = self._review_request(request, draft, function)
                 try:
-                    reviewed = self._invoke_model_direct(effective_tier2, review_req)
+                    reviewed = self._invoke_model_direct(
+                        effective_tier2, review_req, telemetry_function=function
+                    )
                 except Exception as exc:
                     # D-AUTO-DEGRADE: Detect rate limit during review
                     if self._is_rate_limit_error(exc):
@@ -1976,7 +2037,9 @@ class LLMRouter:
                 overrides = {**overrides, **dm_overrides}
             scanner_model = overrides.get(function, tier1)
             logger.debug("Two-tier: %s → scanner (%s only)", function, scanner_model)
-            result = self._invoke_model_direct(scanner_model, request)
+            result = self._invoke_model_direct(
+                scanner_model, request, telemetry_function=function
+            )
             if result is not None:
                 return result
             # Fall through to chain on failure

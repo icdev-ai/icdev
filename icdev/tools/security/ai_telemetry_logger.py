@@ -15,6 +15,7 @@ CLI:
 import argparse
 import hashlib
 import json
+import logging
 import math
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -34,6 +35,8 @@ from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+logger = logging.getLogger(__name__)
 
 
 class AITelemetryLogger:
@@ -58,6 +61,8 @@ class AITelemetryLogger:
         input_tokens: int = 0,
         output_tokens: int = 0,
         thinking_tokens: int = 0,
+        cache_creation_input_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
         latency_ms: float = 0.0,
         cost_usd: float = 0.0,
         agent_id: Optional[str] = None,
@@ -72,8 +77,14 @@ class AITelemetryLogger:
 
         Append-only per D6 — no UPDATE/DELETE.
 
+        cch-tel-01: ``cache_creation_input_tokens`` / ``cache_read_input_tokens``
+        are the prompt-cache counts the provider reported for THIS call. They
+        default to 0 and are always written, so "the provider returned no cached
+        tokens" is a recorded 0 rather than an omitted row — a provider that
+        stops caching must not look identical to one that was never asked.
+
         Returns:
-            Entry ID or None if DB unavailable.
+            Entry ID, or None if the DB is unavailable or the INSERT failed.
         """
         if not self._db_path.exists():
             return None
@@ -97,9 +108,10 @@ class AITelemetryLogger:
                    (id, project_id, user_id, agent_id, model_id, provider,
                     function, prompt_hash, response_hash,
                     input_tokens, output_tokens, thinking_tokens,
+                    cache_creation_input_tokens, cache_read_input_tokens,
                     latency_ms, cost_usd, classification, api_key_source,
                     injection_scan_result, logged_at)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     entry_id,
                     project_id,
@@ -113,6 +125,8 @@ class AITelemetryLogger:
                     input_tokens,
                     output_tokens,
                     thinking_tokens,
+                    int(cache_creation_input_tokens or 0),
+                    int(cache_read_input_tokens or 0),
                     latency_ms,
                     cost_usd,
                     classification,
@@ -123,7 +137,13 @@ class AITelemetryLogger:
             )
             conn.commit()
             return entry_id
-        except Exception:
+        except Exception as exc:
+            # Log it. A bare `return None` here is indistinguishable from "no
+            # DB", and that is exactly how a column named in this INSERT but
+            # missing from the LIVE schema stays invisible while the ledger
+            # quietly stops filling (module_budget_usage sat at 0 rows that
+            # way). Still best-effort — telemetry never fails a served call.
+            logger.warning("ai_telemetry insert failed: %s", exc)
             self._rollback_quietly(conn)
             return None
         finally:

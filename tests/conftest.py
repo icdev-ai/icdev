@@ -83,6 +83,35 @@ os.environ.setdefault("ICDEV_SLIDES_ENABLED", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+-- Per-call LLM telemetry (D218). The prompt-cache columns are cch-tel-01
+-- (migration 20260816135136): NOT NULL DEFAULT 0, so a call that returned no
+-- cached tokens records 0 rather than NULL. Mirrors the live schema including
+-- bridge_bypassed (migration 185), which drifted from init_icdev_db.py's DDL.
+CREATE TABLE IF NOT EXISTS ai_telemetry (
+    id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    prompt_hash TEXT NOT NULL,
+    response_hash TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    thinking_tokens INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    cost_usd REAL,
+    agent_id TEXT,
+    user_id TEXT,
+    project_id TEXT,
+    function TEXT,
+    api_key_source TEXT,
+    injection_scan_result TEXT,
+    bridge_bypassed INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    logged_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Runtime invocation telemetry (migration 341). Present here so any test that
 -- exercises an instrumented path (MCP dispatch, execute_agent, an ACE role
 -- step) records rather than tripping the recorder's missing-table latch.
