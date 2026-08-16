@@ -505,6 +505,17 @@ def main() -> None:
               "that the route is out of scope HERE, never that a failure is "
               "acceptable; it is enumerated so a reader can see the coverage "
               "they are actually getting."))
+    parser.add_argument(
+        "--expect-fail", default="",
+        help=("Comma-separated routes allowed to fail WITHOUT failing the run. "
+              "Unlike --exclude these are still CHECKED, which is the point: a "
+              "route that starts working is reported as a STALE entry to remove, "
+              "so the list cleans itself. Use this where the run must still be "
+              "able to go red (CI); use --exclude only where not checking saves "
+              "something that matters, such as the pre-commit hook's time "
+              "budget. An entry here is a statement about the ENVIRONMENT — a "
+              "canvas this deployment does not enable — never about a route "
+              "being allowed to be broken."))
     parser.add_argument("--base", default="http://localhost:5050")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--json", action="store_true", dest="as_json")
@@ -571,6 +582,35 @@ def main() -> None:
 
     failures = [r for r in all_results if not r["ok"]]
 
+    # --expect-fail: a route this ENVIRONMENT cannot serve. Still checked, so
+    # the list can clean itself — an entry that starts passing is reported as
+    # STALE rather than quietly costing coverage forever, which is how a gate
+    # shrinks without anyone deciding to shrink it.
+    expected_fail = {r.strip() for r in (args.expect_fail or "").split(",") if r.strip()}
+    # A route is "/something". Anything else is almost always MSYS path
+    # conversion: Git Bash rewrites a leading-slash argument into a Windows
+    # path, so `--expect-fail "/network/ask,..."` arrives as
+    # "C:/Program Files/Git/network/ask,..." and that route is silently NOT
+    # tolerated. Observed while verifying this very command. It would still be
+    # reported below as an entry matching no route, but only among the
+    # legitimately-stale ones, so say plainly what happened.
+    mangled = sorted(r for r in expected_fail if not r.startswith("/"))
+    if mangled and verbose:
+        print(f"  --expect-fail entries that are not route paths: {', '.join(mangled)}"
+              f"\n    (on Git Bash / MSYS, prefix the command with MSYS_NO_PATHCONV=1)")
+    tolerated: List[str] = []
+    stale_expect_fail: List[str] = []
+    if expected_fail:
+        checked = {str(r["route"]) for r in all_results}
+        tolerated = sorted(str(r["route"]) for r in failures
+                           if str(r["route"]) in expected_fail)
+        failures = [r for r in failures if str(r["route"]) not in expected_fail]
+        # Passed, or never ran at all — either way the entry no longer earns
+        # its place and someone should say so out loud.
+        stale_expect_fail = sorted(
+            (expected_fail & checked) - set(tolerated)) + sorted(expected_fail - checked)
+        overall_passed = not failures
+
     if args.as_json:
         print(json.dumps({
             "passed": overall_passed,
@@ -580,10 +620,19 @@ def main() -> None:
             # from "20 checked and the other 59 never looked at".
             "skipped_by_cap": skipped_by_cap,
             "excluded": excluded,
+            "tolerated": tolerated,
+            "stale_expect_fail": stale_expect_fail,
             "results": all_results,
         }))
     else:
         print(f"\n{'PASS' if overall_passed else 'FAIL'} — {len(all_results) - len(failures)}/{len(all_results)} checks OK")
+        if tolerated:
+            print(f"  TOLERATED for this environment ({len(tolerated)}): "
+                  f"{', '.join(tolerated)}")
+        if stale_expect_fail:
+            print(f"  STALE --expect-fail ({len(stale_expect_fail)}): "
+                  f"{', '.join(stale_expect_fail)} — these no longer fail here; "
+                  f"remove them so the gate covers them again")
         if skipped_by_cap:
             print(f"  ({len(skipped_by_cap)} route(s) were NOT checked — see the "
                   f"--max-routes line above; this is not full coverage)")
