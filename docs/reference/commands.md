@@ -6345,6 +6345,24 @@ python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what 
 python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
 python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
 
+# UNGATED test census (rem-tst-01) — which of the backlog modules are GREEN today?
+# The ratchet above stops the ungated census GROWING and the drift reflex watches for
+# regressions inside it, but a promotion batch has to start from a different question:
+# of the 1,794 modules in args/ci_test_backlog.txt, which already pass? They cannot be
+# bulk-added — an unknown fraction are red, a red file turns main red, and a red main
+# gets the gate disabled, which is strictly worse than the debt. So MEASURE FIRST.
+# Runs each backlog module ALONE via isolation_run.run_one (same execution path, so
+# "alone" cannot mean two things), each child pinned to its own scratch ICDEV_DB_PATH
+# and a root-only PYTHONPATH. no-tests (pytest exit 5) is NOT counted as passed, and
+# collection-error is NOT merged into failed — they are different promotion jobs.
+# MEASURES ONLY: edits no allowlist and exits 0 whatever it finds.
+python tools/ci/ungated_test_census.py                       # backlog size + cost estimate
+python tools/ci/ungated_test_census.py --run --out docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --run --limit 50 --workers 4    # sample the prefix
+python tools/ci/ungated_test_census.py --run --deadline-s 3600 --timeout 240   # unstarted -> not-reached
+python tools/ci/ungated_test_census.py --verify docs/testing/ungated_test_census.json  # measured + not-reached + out-of-scope == backlog
+python tools/ci/ungated_test_census.py --summarize docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
 # all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored
