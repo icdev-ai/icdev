@@ -646,6 +646,17 @@ tests/test_agent_policy_composition.py
 # same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
 tests/test_capability_consumption.py
 
+# rem-cap-05 -- the two narrowings on probe_agent_approval_rule. Gated because
+# both failure modes are silent and point in opposite directions: counting all
+# four policy tiers as declared pinned the liveness budget at >= 37 forever (the
+# 37 auto-allowed tools can never produce a row, so a wired gate and an absent
+# one measure identically), and counting agent_approval_log without the `tier`
+# discriminator would report FALSE consumption the first time hitl_delta's
+# record_decision() reuse picked a tool name the policy enumerates. The headline
+# test is a review-tier row on a declared tool name. Seeded temp SQLite, no DB
+# service, LLM or network, <1s.
+tests/test_capability_consumption_approval_tiers.py
+
 # rem-cap-01 -- GEPA decision recording, the last known-inert capability. The
 # defect was invisible to every existing test because GEPA's cycle SUCCEEDED
 # while recording nothing: the only outcome it could write was status='applied',

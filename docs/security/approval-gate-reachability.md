@@ -248,6 +248,25 @@ not a gate fix, and it must land **with or before** any wiring work — otherwis
 whoever wires the gate will watch the number refuse to move and reasonably
 conclude the wiring failed.
 
+> **RESOLVED — rem-cap-05, 2026-08-16.** `probe_agent_approval_rule` now reads
+> `require_approval_tiers` from the policy (never a hardcoded tier list, so an
+> operator who adds `recoverable` moves those 13 tools into the measurable set on
+> the next run) and enumerates the excluded tools in
+> `extra.not_measurable_by_design` — count, tiers and tool names, so a tier change
+> is visible rather than a quietly shrunken denominator. `declared` is now **25**,
+> and `args/liveness_gate.yaml`'s budget was lowered 62 → 25. A policy with an
+> empty `require_approval_tiers`, and an `agent_approval_log` without the `tier`
+> column, both report **UNMEASURABLE** rather than a clean zero. The gate itself
+> is unchanged: an auto-allowed call still writes no row, which is the correct
+> design for an audit trail of decisions. Findings 1–4 remain open.
+>
+> The same commit fixed §4's near-miss: the probe filters
+> `agent_approval_log` on `tier IN (reversible, recoverable, irreversible,
+> unknown)`, so `hitl_delta`'s `review` / `trust_delta` rows can no longer be
+> counted as gate consumption if one of them ever reuses a tool name the policy
+> enumerates. Pinned by
+> `tests/test_capability_consumption_approval_tiers.py`.
+
 ## 6. Why "just arm it" is the wrong remediation
 
 `default_tier: unknown`, `require_approval_tiers: [irreversible, unknown]`, and
