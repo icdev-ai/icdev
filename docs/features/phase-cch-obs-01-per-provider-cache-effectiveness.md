@@ -155,7 +155,7 @@ python tools/cache_savings/by_provider.py --provider anthropic --json
 
 ## Tests
 
-`tests/test_cache_effectiveness_by_provider.py` — 21 tests, in-memory SQLite
+`tests/test_cache_effectiveness_by_provider.py` — 22 tests, in-memory SQLite
 driven through the real `translate_sql`, no board / network / LLM. The first
 three are the acceptance criteria: a provider with zero traffic and one with
 zero cache hits must differ in `status`, in `status_label`, and in

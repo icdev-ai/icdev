@@ -494,6 +494,28 @@ def test_page_renders_all_four_states_distinctly():
     assert "$0.0108" in html
 
 
+def test_a_local_provider_with_no_traffic_shows_no_latency_either():
+    """'0 ms avg' would be the same fabricated zero, one column over."""
+    html = _render_page({
+        "measurable": True, "window_days": 7,
+        "window_start": "", "window_end": "",
+        "providers": [
+            {"provider": "vllm", "capability": "server_kv", "status": bp.STATUS_NO_DATA,
+             "status_label": "no data", "status_detail": "nobody called it", "calls": 0,
+             "cached_input_tokens": 0, "uncached_input_tokens": 0,
+             "cached_share_pct": None, "usd_saved": None, "usd_basis": bp.USD_LOCAL,
+             "usd_detail": "not billed per token", "avg_latency_ms": 0.0,
+             "trend": {"direction": bp.TREND_NO_BASELINE, "delta_pct_points": None,
+                       "previous_cached_share_pct": None}},
+        ],
+        "totals": {"providers_caching": 0, "providers_no_cache_hits": 0,
+                   "providers_unreported": 0, "providers_no_data": 1,
+                   "usd_saved_total": 0.0, "usd_saved_basis": "priced providers only"},
+    })
+
+    assert "0 ms avg" not in html
+
+
 def test_page_renders_the_unmeasurable_state_without_a_table():
     """No history must produce a stated reason, not an empty table of zeroes."""
     html = _render_page({

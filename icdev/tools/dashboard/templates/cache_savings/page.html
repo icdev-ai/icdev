@@ -200,8 +200,14 @@
                 {# A local provider has no bill, so it has no dollars to save.
                    $0.00 here would read as "caching failed" for a cache that is
                    working fine and simply is not billed. Latency instead. #}
+                {# A local provider's latency is its only observable effect —
+                   but only when it was actually called. "0 ms avg" for a
+                   provider with no traffic is the same fabricated zero this
+                   table exists to remove, one column over. #}
                 <span style="color:var(--text-dim);" title="{{ p.usd_detail }}">
-                  {%- if p.usd_basis == 'local' %}{{ p.avg_latency_ms|round(0)|int }} ms avg{% else %}not priced{% endif -%}
+                  {%- if p.usd_basis == 'local' and p.calls > 0 %}{{ p.avg_latency_ms|round(0)|int }} ms avg
+                  {%- elif p.usd_basis == 'local' %}&mdash;
+                  {%- else %}not priced{% endif -%}
                 </span>
               {%- else %}
                 <span style="color:#f59e0b; font-weight:600;">${{ "%.4f"|format(p.usd_saved) }}</span>

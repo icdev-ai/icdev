@@ -1918,6 +1918,6 @@ tests/test_identity_survey.py
 # preserve the null share instead of coercing it to 0, and that all four states
 # RENDER distinctly -- `no_cache_hits` was absent from the live 7d window the
 # day this shipped, so that branch is proven by a stubbed-parent Jinja render
-# rather than by waiting for a real cache miss. 21 tests, <1s, in-memory sqlite
+# rather than by waiting for a real cache miss. 22 tests, <1s, in-memory sqlite
 # through the real translate_sql: no board, no network, no LLM.
 tests/test_cache_effectiveness_by_provider.py
