@@ -28,9 +28,11 @@ import time
 from typing import Any, Dict, Iterator, List
 
 from tools.llm.provider import (
+    PREFIX_CACHE_NONE,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
 )
 
 logger = get_logger("icdev.llm.oci_genai")
@@ -164,6 +166,21 @@ class OCIGenAIProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "oci_genai"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """None, and explicitly unverified — not the same as 'no caching exists'."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_NONE,
+            reason=(
+                "OCI Generative AI (Cohere Command R/R+, Meta Llama) exposes no "
+                "prefix-cache request field this adapter can set and returns no "
+                "cached-token counter it can read. Vendor support was NOT checked "
+                "in the 2026-08-16 assessment — verify before declaring anything "
+                "else (assessment section 4.6)."
+            ),
+            verified=False,
+        )
 
     def _get_client(self):
         """Lazy-init OCI GenerativeAiInferenceClient."""

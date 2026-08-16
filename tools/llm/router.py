@@ -26,7 +26,14 @@ try:
 except ImportError:
     yaml = None
 
-from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
+from tools.llm.provider import (
+    LLMProvider,
+    LLMRequest,
+    LLMResponse,
+    EmbeddingProvider,
+    apply_prefix_cache,
+    wants_prefix_cache,
+)
 from tools.llm import cost_budget
 
 try:
@@ -1615,7 +1622,7 @@ class LLMRouter:
             # the original system prompt so AnthropicLLMProvider can split the system
             # into separate blocks with cache_control breakpoints on the static portion.
             separator = ""
-            if request.cache_control == "ephemeral" and (request.system_prompt or "").strip():
+            if wants_prefix_cache(request) and (request.system_prompt or "").strip():
                 separator = "\n<!-- cache_breakpoint -->\n"
             req = copy.copy(request)
             req.system_prompt = context_block + citation_block + separator + (request.system_prompt or "")
@@ -1851,9 +1858,18 @@ class LLMRouter:
             logger.debug("Cache store failed (non-blocking): %s", exc)
 
     def _apply_context_cache(self, function: str, request: LLMRequest) -> None:
-        """Set request.cache_control for functions/canvases configured for context caching.
+        """Mark the request's prefix as worth caching, for configured functions/canvases.
 
         Context caching (provider-level KV prefix reuse) is additive to response caching.
+
+        cch-cap-01: this sets the provider-NEUTRAL ``cache_prefix`` intent and
+        nothing else. It runs before the chain is routed, so the provider — and
+        therefore what "cache this" means — is not yet known; stamping
+        Anthropic's ``cache_control`` here made every other vendor deal with a
+        foreign vocabulary. The translation happens in :func:`apply_prefix_cache`
+        at the invoke seam, against the provider's declared capability.
+
+        Enablement semantics (which canvases, which functions) are unchanged.
         """
         rcfg = self._config.get("response_cache", {})
         if not rcfg.get("enabled", False):
@@ -1862,12 +1878,12 @@ class LLMRouter:
         canvas_prefix = function.split("_")[0] if "_" in function else ""
         per_canvas = rcfg.get("per_canvas", {}).get(canvas_prefix, {})
         if per_canvas.get("context_cache", False):
-            request.cache_control = "ephemeral"
+            request.cache_prefix = True
             return
 
         per_fn = rcfg.get("per_function", {}).get(function, {})
         if per_fn.get("context_cache", False):
-            request.cache_control = "ephemeral"
+            request.cache_prefix = True
 
     def _maybe_invoke_two_tier(self, function: str, request: LLMRequest) -> Optional[LLMResponse]:
         """Apply two-tier routing if function is configured for it.
@@ -2456,6 +2472,7 @@ class LLMRouter:
         """
         self._enforce_routing_policy(function, request, model_id, model_cfg)
         self._apply_network_guard(provider)
+        request = apply_prefix_cache(provider, request)
         mp, pmin, pmax = resolve_rate_limit(self._config)
         lease_backend, lease_name, lease_timeout = resolve_lease_config(self._config)
         with rate_gate(
@@ -2477,6 +2494,7 @@ class LLMRouter:
         """
         self._enforce_routing_policy(function, request, model_id, model_cfg)
         self._apply_network_guard(provider)
+        request = apply_prefix_cache(provider, request)
         mp, pmin, pmax = resolve_rate_limit(self._config)
         if mp <= 0:
             return provider.invoke_streaming(request, model_id, model_cfg)

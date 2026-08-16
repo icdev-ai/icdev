@@ -15,11 +15,15 @@ native image format: {"role": "user", "content": "text", "images": ["base64"]}.
 import json
 import time
 from typing import Any, Dict, Iterator, List
+from urllib.parse import urlparse
 
 from tools.llm.provider import (
+    PREFIX_CACHE_LOCAL,
+    PREFIX_CACHE_NONE,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
     tools_to_openai,
 )
 
@@ -176,6 +180,48 @@ class OllamaProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "ollama"
+
+    @property
+    def _is_local_endpoint(self) -> bool:
+        """True when this instance talks to a locally hosted Ollama.
+
+        The same class serves the ``ollama`` (loopback) and ``ollama_cloud``
+        (ollama.com, billed) providers, and their answers differ — "latency
+        only, nothing to bill" is FALSE for a hosted endpoint.
+        """
+        host = urlparse(self._base_url).hostname or ""
+        host = host.lower()
+        return (
+            host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal")
+            or "." not in host  # bare LAN hostname, e.g. http://gpu-box:11434
+        )
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Local: server-side KV reuse. A latency win, never a billing one."""
+        if not self._is_local_endpoint:
+            return PrefixCacheCapability(
+                support=PREFIX_CACHE_NONE,
+                reason=(
+                    "A hosted Ollama endpoint (e.g. ollama.com) IS billed per token, "
+                    "so the local 'latency only, nothing to bill' answer does not "
+                    "apply to it. Whether it reuses a prefix, and whether it would "
+                    "report that, is unverified — and the /api/chat response carries "
+                    "no cached-token counter to read."
+                ),
+                verified=False,
+            )
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_LOCAL,
+            reason=(
+                "Ollama keeps the model loaded and reuses the KV cache for a shared "
+                "prompt prefix, so a repeated prefix costs less prompt-eval time. "
+                "There is nothing to request and nothing to bill: a local model has "
+                "no per-token price, so cache_read_input_tokens is the wrong unit "
+                "and stays 0. The honest metric here is prompt-eval duration "
+                "(assessment section 4.5)."
+            ),
+        )
 
     def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Ollama via native /api/chat (non-streaming)."""

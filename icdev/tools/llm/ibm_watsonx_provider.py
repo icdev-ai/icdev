@@ -20,7 +20,13 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse  # noqa: E402
+from tools.llm.provider import (  # noqa: E402
+    PREFIX_CACHE_NONE,
+    LLMProvider,
+    LLMRequest,
+    LLMResponse,
+    PrefixCacheCapability,
+)
 
 logger = get_logger("icdev.llm.ibm_watsonx")
 
@@ -61,6 +67,21 @@ class IBMWatsonxProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "ibm_watsonx"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """None, and explicitly unverified — not the same as 'no caching exists'."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_NONE,
+            reason=(
+                "watsonx.ai foundation-model inference exposes no prefix-cache "
+                "request field this adapter can set and returns no cached-token "
+                "counter it can read. Vendor support was NOT checked in the "
+                "2026-08-16 assessment — verify before declaring anything else "
+                "(assessment section 4.6)."
+            ),
+            verified=False,
+        )
 
     def _get_credentials(self):
         """Get or create watsonx credentials."""

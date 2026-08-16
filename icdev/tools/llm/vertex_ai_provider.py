@@ -30,9 +30,11 @@ import time
 from typing import Any, Dict, Iterator, List
 
 from tools.llm.provider import (
+    PREFIX_CACHE_MANAGED_OBJECT,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
 )
 
 logger = get_logger("icdev.llm.vertex_ai")
@@ -160,6 +162,22 @@ class VertexAIProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "vertex_ai"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Managed object: Vertex serves Gemini, so it is Gemini's shape."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_MANAGED_OBJECT,
+            reason=(
+                "Vertex AI serves Gemini models and caches the same way — a stored "
+                "CachedContent resource with its own TTL, referenced by handle. No "
+                "per-request marker exists to set. Vertex was outside the "
+                "2026-08-16 assessment's eight-provider table; the level follows "
+                "from the model family, and neither handle creation nor "
+                "cachedContentTokenCount reading is implemented here."
+            ),
+            verified=False,
+        )
 
     def _ensure_initialized(self):
         """Initialize Vertex AI SDK (once)."""
