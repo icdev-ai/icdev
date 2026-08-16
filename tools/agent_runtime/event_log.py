@@ -80,8 +80,11 @@ hcx-evt-04 reads them back: ``tools/agent_case/session_timeline.py`` joins this
 table as a fourth source and ``case_bundler.py`` carries it in every case bundle
 — WITHOUT ``payload_json``, which can hold verbatim model input a forensic
 bundle must not travel with. ``payload_hash`` goes instead, so a holder of the
-payload can still prove what it was. hcx-evt-03, 05 and 06 (context injection,
-fork, the gate registrations) build on the same rows.
+payload can still prove what it was. hcx-evt-05 is the third consumer and the
+one the ``seq`` ordering was built for: ``tools/agent_runtime/fork.py`` projects
+a prefix back into a message list and seeds a new session from it, refusing a
+boundary that lands inside an open turn. hcx-evt-03 and 06 (context injection,
+the gate registrations) build on the same rows.
 
 CLI::
 
@@ -133,10 +136,17 @@ MIGRATION = "20260816122036_agent_session_events"
 #: governs share one ``seq`` ordering: "the posture widened, and then these four
 #: tool calls happened" is a single ORDER BY, not a join across two clocks.
 #:
+#: ``session_fork`` (hcx-evt-05) is the second such member, and like the first it
+#: is not model-visible: it is written at ``seq`` 1 of a session SEEDED from
+#: another session's prefix, and records which parent, at which boundary, how
+#: many events were seeded and the digest over their hashes. It carries no
+#: model-visible document at all, so a forensic reader that must not touch
+#: ``payload_json`` can still establish the lineage of a forked session.
+#:
 #: Validated in Python rather than by a CHECK constraint — the call migrations
 #: 20260803002224, 20260809203855 and 20260815063941 all made. A CHECK is a
 #: second copy of this tuple and it drifts the first time a type is added.
-#: Adding this one required no migration, which is that decision paying off.
+#: Adding these required no migration, which is that decision paying off.
 EVENT_TYPES = (
     "turn_start",
     "request_context",
@@ -145,6 +155,7 @@ EVENT_TYPES = (
     "tool_result",
     "turn_end",
     "permission_posture",
+    "session_fork",
 )
 
 #: Column order. The INSERT names every one of these explicitly, and every one

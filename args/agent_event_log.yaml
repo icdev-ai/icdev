@@ -63,6 +63,17 @@ payload_retention:
   # posture decision happened and cannot say who made it or what it was, which
   # is the exact question the event was added to answer.
   #
+  # `session_fork` (hcx-evt-05) is worth naming for the opposite reason: its
+  # payload holds no model-visible text at all — a parent session id, a boundary
+  # seq, a seed length and a digest — so suppressing it buys no confidentiality
+  # and costs a forked session the record of where it came from. It is also the
+  # type most affected by the two settings ABOVE: a fork PROJECTS turn_start,
+  # assistant_message and tool_result back into a message list, so hash-only
+  # mode (or a ceiling that withholds them) makes a session unforkable. That is
+  # deliberate — `fork.py` refuses rather than seeding a new session with
+  # messages the model never saw — but it means turning retention off turns
+  # forking off with it.
+  #
   # Names are validated against EVENT_TYPES in event_log.py — an entry that
   # matches no event type is a typo that would silently retain everything, so it
   # is reported rather than ignored.
