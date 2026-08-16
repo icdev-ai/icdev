@@ -8289,3 +8289,35 @@ projects:
     - key: flk
       title: Date-dependent tests flake at midnight UTC
       priority: medium
+- key: rem
+  name: REM - Platform Remediation Debt (measured 2026-08-16)
+  description: >-
+    The board reached 3,194/3,194 done with zero open PRs, CI green and
+    coherence 59/59 - so what remains is not queued work but debt held in the
+    gates' own registers, where it is enumerated and therefore fixable. Measured
+    2026-08-16: 1,794 test modules that have never gated a merge, 536 of 632
+    declared capability units with zero lifetime consumption, and 36 kanban rows
+    that no epic key claims. Every defect this platform shipped recently came
+    out of one of those three buckets - a test red for weeks because its file
+    was ungated, a dependency missing from requirements because the file that
+    needed it had never run in CI, a capability registered and never called.
+  task_prefix: rem-
+  default_open: true
+  briefs:
+    - "TST: only ~291 of 2,217 collectible test modules gate a merge; args/ci_test_backlog.txt enumerates 1,794 that do not. This is the single largest register and the one that keeps producing real defects - TestEmbedChunks was red for weeks purely because its file was ungated, and the missing reportlab dependency surfaced only when cortex tests were gated for the first time. An earlier isolated sweep found 531 failure lines across 87 of these files, so an unknown fraction are RED and bulk-widening would turn main red and get the gate disabled. Census first, then gate the green ones in small serialised batches (rem-tst-01..04)"
+    - "CAP: 536 of 632 declared capability units have zero lifetime consumption - mcp_dispatch_tool 471 declared / 4 consumed, agent_approval_rule 62 / 0, skill_optimizer 3 / 0. Four of the five tracked known-inert cases are now resolved (audit chain 1,595 events, prompt registry 14, MCP authorizer 8); GEPA is the last one still at literal zero. Declared-but-unconsumed is this codebase's signature defect and each of these needs the same verdict: wire it to a consumer, or stop declaring it (rem-cap-01..03)"
+    - "HYG: 13 project cards own 36 kanban rows that no epic key matches, pgrt alone holding 23. Every number on a card comes from epic patterns, never from task_prefix alone, so those rows are counted by nothing and each card's percentage silently describes a subset. All 36 are done, so this is a reporting defect rather than lost work - which is exactly why it will never be noticed unless it is fixed deliberately (rem-hyg-01)"
+    - "E2E: tests/e2e_selenium/{test_ndc_ask_graphrag,test_canvas_ask_fanout} report 12 failed / 6 passed when run from a git worktree, where the suite's autouse fixture finds a live dashboard instead of skipping. Proven pre-existing by reverting unrelated modules in place and getting the identical 12/6. That tree is excluded from CI gating, so nothing reports it (rem-e2e-01)"
+  epics:
+    - key: tst
+      title: CI test-gating backlog (1,794 ungated modules)
+      priority: high
+    - key: cap
+      title: Declared capabilities with zero consumption
+      priority: high
+    - key: hyg
+      title: Project-card counting hygiene
+      priority: medium
+    - key: e2e
+      title: Selenium suite fails from a worktree
+      priority: low
