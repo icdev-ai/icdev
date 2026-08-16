@@ -1955,3 +1955,13 @@ tests/test_prefix_cache_capability.py
 # 15 tests, <1s, tmp_path YAML and an injected import failure: no board, no
 # network, no LLM.
 tests/test_approval_gate_arming.py
+# hcx-evt-05 — forking a session at a seq. Gated because the refusals are the
+# feature: a fork boundary that started rounding into an open turn, or a
+# projection that stopped ordering an assistant tool_use ahead of the
+# tool_result answering it, produces a seeded session that looks right until the
+# next provider call rejects it -- and a seed linked as a resume_session_id
+# without being read back produces one that looks continued and remembers
+# nothing. 21 tests, ~1s; the table is built from the migration's own DDL into a
+# tmp sqlite file and the chat manager, saver and loader are injected, so no
+# board, no canvas DB, no network, no LLM.
+tests/agent_runtime/test_fork.py

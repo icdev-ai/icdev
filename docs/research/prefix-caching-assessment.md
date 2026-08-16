@@ -40,7 +40,7 @@ That single choice produces the whole current picture:
 | `bedrock` | yes | yes | explicit, same model |
 | `openai` | n/a | **yes** | **automatic** ≥1024-token prefixes; nothing to request |
 | `azure_openai` | n/a | yes *(fixed here)* | identical to OpenAI, same SDK object |
-| `gemini` | no | no | `cachedContents` API + implicit caching |
+| `gemini` | no | yes *(cch-prov-01)* | `cachedContents` API + implicit caching |
 | `ollama` | no | no | server-side KV reuse; **latency only, no billing** |
 | `ibm_watsonx` | no | no | unverified |
 | `oci_genai` | no | no | unverified |
@@ -152,8 +152,10 @@ Ordered by value per unit of work:
    vendor translation at the invoke seam. See
    [docs/features/cch-cap-01-provider-declared-prefix-cache.md](../features/cch-cap-01-provider-declared-prefix-cache.md).
 3. **Read cached tokens wherever the provider already reports them** — the cheapest real
-   wins, because no caching has to be *requested*. Azure is **done in this PR**; Gemini
-   reports `cachedContentTokenCount` in `usageMetadata`.
+   wins, because no caching has to be *requested*. Azure is **done** (#1725); Gemini's
+   `cachedContentTokenCount` from `usageMetadata` is **done** (cch-prov-01), reporting
+   only — `cache_creation_input_tokens` stays 0 there because Gemini bills cache storage
+   by time and reports no creation-token count.
 4. **Gemini explicit caching** via `cachedContents`, mapped onto `managed_object`.
 5. **Ollama**: declare `local` and measure **latency**, not dollars. Prompt-eval time
    with and without a shared prefix is the honest metric for a local model.
