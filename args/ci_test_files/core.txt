@@ -1894,3 +1894,15 @@ tests/test_coherence_log_standard.py
 # function, so router.invoke() returned before ever reaching the telemetry seam.
 # 16 tests, <1s: temp SQLite files only, no network, no shared board.
 tests/test_ai_telemetry_cache_tokens.py
+
+# hcx-vv-02 — coherence check_log_standard_compliance, narrowed to allow the
+# prefer-get_logger-then-fall-back shape. The gate failed on
+# 20260815191145_seed_canvas_grants_for_existing_tenants/up.py, which prefers
+# get_logger() and drops to stdlib logging only when that import fails — correct
+# for a migration that may run before tools.logging is importable. Three of the
+# nine tests are the guard rather than the coverage: a bare fallback that never
+# tried get_logger, and a raw call sitting OUTSIDE the handler in a module that
+# merely imports get_logger, must both still fail. Pre-existing file, moved off
+# the backlog census in the PR that makes it gate. 9 tests, ~2.5s, tmp_path
+# only: no DB, no network.
+tests/test_coherence_log_standard.py
