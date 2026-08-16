@@ -7510,6 +7510,9 @@ projects:
   - key: stale
     title: STALE — Refresh green PRs gone stale against main
     priority: medium
+  - key: watch
+    title: WATCH — Report what is AWAITING MERGE, and why each PR is not merging
+    priority: high
 - key: sdt
   name: SDT - Slides Deck-Type Vocabulary Repair
   description: 'Carded out of TSR. tsr-dash-01-d5 found, and its merged report
