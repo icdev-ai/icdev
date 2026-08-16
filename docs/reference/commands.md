@@ -2132,7 +2132,26 @@ python -m tools.kanban.identity_survey --env-file /path/to/.env --json   # run f
 # Two zeroes that are NEVER a clean bill of health — both report measured:false, never 0%:
 # an unreadable args/projects.yaml (no_registry) and an empty board (empty_board, the worktree
 # trap where a missing .env silently reads a throwaway SQLite DB — use --env-file).
-# REPORT ONLY: no --gate, no writes, one SELECT. Arming is rem-hyg-04.
+# REPORT ONLY: no --gate, no writes, one SELECT. This module never refuses anything.
+
+# Kanban — the armed identity check and its kill switch (rem-hyg-04)
+KANBAN_IDENTITY_CHECK=report    # DEFAULT — log every unclaimed id, seed anyway
+KANBAN_IDENTITY_CHECK=enforce   # refuse the NARROWED population, before any insert
+KANBAN_IDENTITY_CHECK=off       # do not run the check at all
+# Read by tools/kanban/task_identity.py::mode (accepts the KANBAN_LANDED_CHECK spellings:
+# 1/true/yes => enforce, 0/false/no/none => off, warn => report). An UNRECOGNISED value
+# resolves to `report` and LOGS that it did — KANBAN_IDENTITY_CHECK=enforced is one keystroke
+# from enforce and must not read as armed. Consulted by task_factory.create_tasks BEFORE the
+# first INSERT, so a refusal can never half-land a batch; a broken check leaves seeding
+# exactly as it was. The refusal names each id, the id it should have carried
+# (`<prefix><epic>-<N>`), args/projects.yaml, and the way to stand it down.
+# WHY THE DEFAULT IS report: the rem-hyg-03 survey above. Refuse-everything = 35.17%;
+# narrowed (exempt opaque machine ids) = 10.85% lifetime but 15.81% over the last 30 days,
+# ten times the rate CLAUDE.md already calls refusing routine work. Both the survey's
+# NARROWED column and the seeder's refusal call ONE predicate, task_identity.is_enforceable,
+# so the measured rate is the enforced rate. Re-survey before changing the default; never
+# widen an exemption list to compensate, and never drop no_card — that is the HCX case.
+python -m tools.kanban.identity_survey --json | python -c "import json,sys; print(json.load(sys.stdin)['enforcement'])"
 
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
