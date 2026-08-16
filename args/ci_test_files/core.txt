@@ -1806,3 +1806,4 @@ tests/genesis/test_code_reload.py
 tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py
 tests/test_project_prefix_scope.py
+tests/test_canvas_dedicated_pg_database.py

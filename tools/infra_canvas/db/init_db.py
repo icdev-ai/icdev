@@ -23,14 +23,32 @@ def get_connection():
     cvx-sql-03: infra canvas tables (infra_designs, idc_templates, ...) have no
     tenant_id column, so the storage-global RLS predicate would raise
     UndefinedColumn. Disable RLS on the returned connection, mirroring
-    get_canvas_connection(). This wrapper keeps the dedicated IDC_PG_DATABASE
-    contract (get_canvas_connection() cannot target a per-canvas PG database).
+    get_canvas_connection().
+
+    ON POSTGRESQL THIS CANVAS USES THE SHARED icdev DATABASE. It used to pass
+    ``db_path=IDC_PG_DATABASE`` and describe that as "the dedicated
+    IDC_PG_DATABASE contract", which was never true: ``get_connection()`` honours
+    db_path as a SQLite file ONLY when the backend is sqlite and the name ends in
+    '.db'. On PostgreSQL it ignores db_path entirely and connects to the shared
+    database — its own comment says so ("the '.db' path is ignored and the
+    connection goes to the shared icdev database (canvas tables are namespaced by
+    table-name prefix to avoid collisions)"). Measured 2026-08-16:
+    ``get_connection(db_path='infra_canvas')`` reports ``current_database() =
+    icdev``.
+
+    That is fine — table-prefix namespacing IS the platform's design — so the
+    behaviour is unchanged and only the claim is. Passing the name was worse than
+    useless: on a SQLite backend a bare name does not end in '.db', so it fell
+    through to a connection literally named ``infra_canvas``, creating an
+    extension-less database file in whatever directory the process started from,
+    which ``data/*.db`` does not ignore.
     """
     from tools.db.storage import get_connection as _storage_conn
     conn = None
     if _IDC_BACKEND == "postgresql":
         try:
-            conn = _storage_conn(db_path=os.environ.get("IDC_PG_DATABASE", "infra_canvas"))
+            # No db_path: the shared icdev database is what this returns anyway.
+            conn = _storage_conn()
         except Exception:
             conn = None
     if conn is None:
