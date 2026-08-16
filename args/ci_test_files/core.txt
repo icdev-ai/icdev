@@ -1912,6 +1912,15 @@ tests/test_ai_telemetry_cache_tokens.py
 # findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
 # network, no LLM.
 tests/test_identity_survey.py
+# rem-hyg-04: arming that check behind KANBAN_IDENTITY_CHECK. Gated in the PR
+# that adds it. Every property here fails while looking correct: a kill switch
+# nothing reads (the inert hook_points: block in args/extension_config.yaml), a
+# typo like KANBAN_IDENTITY_CHECK=enforced resolving silently to the default so
+# an operator believes it is armed, the survey's NARROWED column and the seeder's
+# refusal drifting into two different populations, and a refusal raised after the
+# first insert half-landing a batch. 35 tests, <1s, registry injected and every
+# get_connection alias stubbed: no board, no network, no LLM.
+tests/kanban/test_identity_check_arming.py
 # hcx-post-02 — posture selection recorded as operator intent. Gated because
 # every property it holds fails SILENTLY: a selection that stopped appending an
 # event, one that appended after applying instead of before, one that started

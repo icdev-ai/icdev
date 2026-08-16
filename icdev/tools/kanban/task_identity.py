@@ -26,13 +26,41 @@ This module is the shared answer, so the seeder, the survey (rem-hyg-03), the
 autonomous writers (rem-hyg-06) and the coherence check all ask it the same way
 and cannot drift apart.
 
+ARMING, AND WHY THE DEFAULT IS ``report`` (rem-hyg-04)
+=====================================================
+:func:`mode` reads ``KANBAN_IDENTITY_CHECK`` — ``enforce`` | ``report`` | ``off``,
+mirroring ``KANBAN_LANDED_CHECK`` — and ``report`` is the default because
+rem-hyg-03's survey says so, not because arming was left half-done.
+
+Measured against the live PostgreSQL board on 2026-08-16 (3,244 rows, 164 cards)::
+
+    refuse every unclaimed id      1,141 / 3,244   35.17%   lifetime
+    exempt opaque machine ids        352 / 3,244   10.85%   lifetime
+                                     248 / 1,569   15.81%   last 30d
+                                       0 /   190    0.00%   last 7d
+
+CLAUDE.md's rule is that a check enabled without a survey is UNMEASURED rather
+than proven, and the PreToolUse precedent it was learned from considered 4.86%
+— narrowed to 1.63% — to be refusing routine work. 15.81% over the window
+arming would actually hit is ten times that, so ``enforce`` is offered and
+documented but not defaulted. The findings are real (16 unregistered card
+prefixes, 330 card-shaped rows), which is exactly why they are still REPORTED at
+the default; what is not defensible is turning 248 correct observations a month
+into 248 blocked seeds without anyone choosing that.
+
+Two narrowings are deliberately NOT applied, because each would be widening an
+exemption to make the number look better rather than making the check right:
+dropping :data:`REASON_NO_CARD` would gut the HCX case the whole card exists for,
+and exempting the 16 unregistered prefixes by name would exempt the defect.
+
 WHAT IT IS NOT
 ==============
-Pure functions. No database, no Flask, no environment, no LLM, no writes — the
-only I/O is reading ``args/projects.yaml``, and that is confined to
-:func:`load_cards`, which fails OPEN (returns ``[]``) on anything it cannot
-parse. Nothing here refuses anything: arming is rem-hyg-04, and only after
-rem-hyg-03 has measured the fire rate.
+Pure functions. No database, no Flask, no LLM, no writes — the I/O is reading
+``args/projects.yaml``, confined to :func:`load_cards`, which fails OPEN
+(returns ``[]``) on anything it cannot parse, plus one environment read in
+:func:`mode`. Nothing here raises: the refusal is the SEEDER's, built from these
+findings in ``task_factory.create_tasks`` before any insert, so a batch can never
+half-land.
 
 THE THREE ZEROES THAT ARE NOT FINDINGS
 ======================================
@@ -50,15 +78,18 @@ each call site; a second copy of that set is how the two halves drift.
 
 Usage::
 
-    from tools.kanban.task_identity import check_batch, load_cards, resolve
+    from tools.kanban.task_identity import check_batch, load_cards, mode, resolve
 
     cards = load_cards()                    # read the registry ONCE
     resolve("rem-hyg-02", cards)            # -> {..., 'claimed': True}
     check_batch([{"id": "hcx-live-01"}])    # -> [finding]
     unregistered_prefixes(board_ids, cards) # -> {'hcx-': ['hcx-live-01', ...]}
+    mode()                                  # -> 'report' (KANBAN_IDENTITY_CHECK)
 """
 from __future__ import annotations
 
+import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -122,6 +153,106 @@ REASON_NO_REGISTRY = "no_registry"
 #: honest answer is "not measured" or "not applicable", and folding them in is
 #: how a check that cannot run comes to read as a check that found something.
 ACTIONABLE_REASONS = (REASON_NO_CARD, REASON_NO_EPIC)
+
+# --- id shape ---------------------------------------------------------------
+#: The id follows the card contract ``<...>-<N>``, so a card is genuinely missing.
+SHAPE_CARD = "card_shaped"
+#: An opaque machine id — ``task-fd99a9c8ae``, ``mc-reflex-0f01f09f``. Never card work.
+SHAPE_OPAQUE = "opaque"
+
+# A decomposed child carries one or more ``-d<N>`` suffixes: ``mvs-audit-03-d1``,
+# ``chore-yaml-dupkeys-de15d6f3-d3-d1``. The suffix says nothing about whether the
+# work is card work — the PARENT does — so it is stripped before classifying.
+_DECOMPOSED_SUFFIX = re.compile(r"(-d\d+)+$")
+# The card contract's tail: at least three "-"-separated segments ending in a
+# small integer, i.e. <task_prefix><epic_key>-<N>. The 1-3 digit bound is what
+# separates "-01" from a 10-character hex token that happens to be all digits.
+_CARD_SHAPED = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+-\d{1,3}$", re.IGNORECASE)
+
+
+def classify_shape(task_id: str) -> str:
+    """Does this id LOOK like card work? A named heuristic, not a declaration.
+
+    Only ever applied to :data:`REASON_NO_CARD` rows, and it never decides
+    whether an id is CLAIMED — that is :func:`resolve`'s job alone. It decides
+    only whether an unclaimed id is one an armed check may refuse.
+
+    ``task-<hex>`` is the shape the dashboard's own task-creation API and
+    ``awareness/suggested_card_writer`` generate (``f"task-{uuid4().hex[:10]}"``);
+    those rows are not card work and were never meant to be counted by a card.
+    Refusing them would be refusing routine work, which is precisely how eight of
+    the twelve PreToolUse checks came to refuse 4.86% of all tool calls.
+
+    Lives here rather than in ``identity_survey`` (rem-hyg-03, which is where it
+    was written) because rem-hyg-04 refuses on it: a second copy would let the
+    surveyed rate and the enforced rate drift, and the survey's whole purpose is
+    to be the number the armed check carries.
+    """
+    base = _DECOMPOSED_SUFFIX.sub("", str(task_id or "").strip())
+    return SHAPE_CARD if _CARD_SHAPED.match(base) else SHAPE_OPAQUE
+
+
+# --- enforcement posture (rem-hyg-04) ---------------------------------------
+#: Auditable named kill switch, the same shape as ``KANBAN_LANDED_CHECK``. An env
+#: var is chosen over a config key for the reason CLAUDE.md gives about shell
+#: operators: it is greppable, it appears in a process environment, and unlike
+#: the inert ``hook_points:`` block in ``args/extension_config.yaml`` it is READ
+#: by the code — :func:`mode` is the only reader and every consumer calls it.
+MODE_ENV = "KANBAN_IDENTITY_CHECK"
+
+#: ``off`` measures nothing, ``report`` logs every finding, ``enforce`` refuses
+#: the enforceable subset. ``warn`` is accepted as a synonym for ``report``
+#: because the sibling switch spells it that way.
+VALID_MODES = ("off", "report", "enforce")
+
+#: Survey-backed default — see the module docstring. Raising this to ``enforce``
+#: is an operator decision that must be preceded by a fresh
+#: ``python -m tools.kanban.identity_survey --env-file <.env>``.
+DEFAULT_MODE = "report"
+
+_MODE_ALIASES = {
+    "0": "off", "false": "off", "no": "off", "none": "off", "": DEFAULT_MODE,
+    "1": "enforce", "true": "enforce", "yes": "enforce",
+    "warn": "report",
+}
+
+
+def mode() -> str:
+    """Current posture: ``off`` | ``report`` | ``enforce``. Default ``report``.
+
+    An unrecognised value resolves to the DEFAULT and says so. Falling back
+    silently is how ``KANBAN_IDENTITY_CHECK=enforced`` (one keystroke from
+    ``enforce``) would leave an operator believing the check was armed when it
+    was not — the same class of failure as a config key nothing reads.
+    """
+    raw = (os.environ.get(MODE_ENV) or "").strip().lower()
+    resolved = _MODE_ALIASES.get(raw, raw)
+    if resolved in VALID_MODES:
+        return resolved
+    logger.warning(
+        "task_identity: %s=%r is not one of %s — falling back to %r. The check is "
+        "NOT armed.", MODE_ENV, raw, list(VALID_MODES), DEFAULT_MODE,
+    )
+    return DEFAULT_MODE
+
+
+def is_enforceable(reason: str, task_id: str) -> bool:
+    """May an armed check REFUSE this finding? The narrowing, in one place.
+
+    Actionable and enforceable are different questions and the gap between them
+    is the survey's finding: 789 of 1,119 unclaimed ids on the live board are
+    opaque machine ids that no card was ever meant to count. They are reported —
+    the row really is counted by nothing — but refusing them would block the
+    dashboard's create-task API and every autonomous writer.
+
+    ``no_epic`` is enforceable whatever the id looks like: a registered card owns
+    the prefix, so somebody is already treating this as card work.
+    """
+    if reason not in ACTIONABLE_REASONS:
+        return False
+    if reason == REASON_NO_CARD and classify_shape(task_id) == SHAPE_OPAQUE:
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -328,12 +459,18 @@ def check_batch(task_specs: Iterable, cards: Optional[Sequence] = None) -> list:
 
     Returns one finding per ACTIONABLE id::
 
-        {task_id, reason, card, prefix, epic, suggestion, detail}
+        {task_id, reason, card, prefix, epic, shape, enforced, suggestion, detail}
+
+    ``enforced`` is :func:`is_enforceable` — whether ``KANBAN_IDENTITY_CHECK=enforce``
+    would REFUSE this one, as opposed to merely reporting it. Every finding is
+    returned either way: the seeder logs them all and refuses on the subset, so
+    the narrowing is visible in the log rather than hidden by omission.
 
     An empty list means either "everything is claimed" or "nothing could be
     measured" — the two are distinguished in the log, never by an empty return
     value, because the caller of a batch check cannot tell them apart from the
-    outside. Raises nothing: every caller is advisory until rem-hyg-04.
+    outside. Raises nothing, in any mode: the refusal belongs to the seeder,
+    which is the only caller that knows nothing has been inserted yet.
     """
     registry = list(cards) if cards is not None else load_cards()
     if not registry:
@@ -366,12 +503,20 @@ def check_batch(task_specs: Iterable, cards: Optional[Sequence] = None) -> list:
                 f"nothing and no card would show it. Register the card in "
                 f"args/projects.yaml, or reuse an existing card's prefix."
             )
+        enforced = is_enforceable(report["reason"], tid)
+        if not enforced:
+            detail += (
+                " (REPORT ONLY — an opaque machine id is never refused, however "
+                f"{MODE_ENV} is set.)"
+            )
         findings.append({
             "task_id": tid,
             "reason": report["reason"],
             "card": report["card"],
             "prefix": report["prefix"],
             "epic": report["epic"],
+            "shape": classify_shape(tid) if report["reason"] == REASON_NO_CARD else None,
+            "enforced": enforced,
             "suggestion": suggested_id(tid, owner),
             "detail": detail,
         })
