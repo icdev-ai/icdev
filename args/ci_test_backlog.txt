@@ -1502,7 +1502,6 @@ tests/test_production_audit.py
 tests/test_production_remediate.py
 tests/test_profile_llm_keys_route.py
 tests/test_project_create.py
-tests/test_project_prefix_scope.py
 tests/test_prompt_chain_executor.py
 tests/test_prompt_context_caching.py
 tests/test_prop_citation_validation.py

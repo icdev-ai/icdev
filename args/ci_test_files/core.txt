@@ -1805,3 +1805,4 @@ tests/security/test_tenant_canvas_seed.py
 tests/genesis/test_code_reload.py
 tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py
+tests/test_project_prefix_scope.py
