@@ -357,3 +357,45 @@ class _DummySock:
 
     def __exit__(self, *exc):
         return False
+
+
+# ── --exclude: routes an ENVIRONMENT cannot serve, named not silent ───────────
+#
+# CI disables the network canvas (ICDEV_NETWORK_ENABLED=false), so /network/*
+# returns 404 there and always will. An exclusion says the route is out of scope
+# HERE — never that a failure is acceptable — so it is enumerated in the output
+# and in the JSON, exactly like --max-routes.
+
+
+def test_excluded_routes_are_not_checked_and_are_named(smoke_base):
+    report = _run_cli(smoke_base, "--routes", "/a,/b,/c", "--exclude", "/b")
+
+    assert report["total"] == 2, "an excluded route must not be attempted"
+    assert report["excluded"] == ["/b"], (
+        "the excluded routes must be NAMED — a count cannot tell a reader which "
+        "pages this environment never looked at"
+    )
+    assert [r["route"] for r in report["results"]] == ["/a", "/c"]
+
+
+def test_exclusion_happens_before_the_cap(smoke_base):
+    """Order matters: the budget must be spent on routes worth checking.
+
+    Cap-then-exclude would let a route this environment cannot serve consume one
+    of the 20 slots the pre-commit gate can afford, and silently reduce real
+    coverage by one.
+    """
+    report = _run_cli(smoke_base, "--routes", "/a,/b,/c,/d",
+                      "--exclude", "/a", "--max-routes", "2")
+
+    assert report["excluded"] == ["/a"]
+    assert [r["route"] for r in report["results"]] == ["/b", "/c"], (
+        "the cap must apply to what REMAINS after exclusion"
+    )
+    assert report["skipped_by_cap"] == ["/d"]
+
+
+def test_no_exclusions_means_the_list_is_empty_not_absent(smoke_base):
+    """A consumer reading the JSON must not have to guess whether the key exists."""
+    report = _run_cli(smoke_base, "--routes", "/a,/b")
+    assert report["excluded"] == []
