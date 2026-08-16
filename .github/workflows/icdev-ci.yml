@@ -720,30 +720,48 @@ jobs:
       # makes it finish but is explicitly NOT full coverage. This is the only
       # place a full sweep can run, because it needs a live dashboard.
       #
-      # MEASURING, NOT YET ENFORCING. CLAUDE.md forbids arming a check without
-      # a fire-rate survey first, and this environment is not the dev box: the
-      # network canvas is off here (ICDEV_NETWORK_ENABLED=false), and there is
-      # already a non-blocking step above conceding that /ai-wizard and
-      # /ai-patterns may not answer. Turning on a 79-route blocking gate on an
-      # unmeasured pass rate is how a gate earns a `|| true` in its first week.
-      # The JSON is uploaded so the run is EVIDENCE rather than scrollback, and
-      # the exclusions get enumerated from it before this flips to blocking.
-      - name: Route smoke — full nav sweep (measuring, non-blocking)
+      # ARMED, on a measured pass rate. The survey ran on #1716 and reported
+      # 81/89 OK with 8 failing — every one a 404, and every one a canvas this
+      # job does not enable:
+      #
+      #   /network/ask, /network/diagram-analysis   ICDEV_NETWORK_ENABLED=false,
+      #                                             set explicitly above pending
+      #                                             the PGP migration
+      #   /observability, /observability/ask        no ICDEV_OBSERVABILITY_ENABLED
+      #   /devops/ask, /boundary/ask,               no flag set for those
+      #   /data/ask, /infra/ask                     canvases in this job's env
+      #
+      # A 404 from a disabled canvas is correct behaviour. A 500 is not, and is
+      # exactly what this gate is for — so the eight are listed as --expect-fail
+      # rather than --exclude: they are still CHECKED, and if one starts passing
+      # the run says STALE and names it, so the list cleans itself instead of
+      # quietly costing coverage forever.
+      #
+      # Anything else failing now fails the job. That is the point: this gate
+      # had never once run to completion anywhere (fli-smk-01), so until now a
+      # route could 500 on every PR and nothing would say so.
+      - name: Route smoke — full nav sweep
         run: |
+          set -o pipefail
           python tools/testing/route_smoke.py --all --json \
             --base http://localhost:5050 \
+            --expect-fail "/network/ask,/network/diagram-analysis,/observability,/observability/ask,/devops/ask,/boundary/ask,/data/ask,/infra/ask" \
             > route-smoke.json || true
           python - <<'PY'
-          import json
+          import json, sys
           r = json.load(open("route-smoke.json"))
-          bad = [x for x in r["results"] if not x["ok"]]
-          print(f"route smoke: {r['total'] - r['failures']}/{r['total']} OK, "
-                f"{r['failures']} failing")
+          bad = [x for x in r["results"] if not x["ok"]
+                 and x["route"] not in r.get("tolerated", [])]
+          print(f"route smoke: {r['total'] - r['failures']}/{r['total']} enforced OK, "
+                f"{len(r.get('tolerated', []))} tolerated (canvas off here)")
+          for name in r.get("stale_expect_fail", []):
+              print(f"::warning::route smoke: --expect-fail {name} no longer fails — "
+                    f"remove it so the gate covers it again")
           for x in bad:
-              print(f"::warning::route smoke {x['route']} -> "
-                    f"status={x['status']} {x.get('error') or x.get('error_signal') or ''}")
+              print(f"::error::route smoke {x['route']} -> status={x['status']} "
+                    f"{x.get('error') or x.get('error_signal') or ''}")
+          sys.exit(1 if bad else 0)
           PY
-        continue-on-error: true
       - name: Upload route-smoke evidence
         uses: actions/upload-artifact@v4
         if: always()

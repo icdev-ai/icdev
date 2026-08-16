@@ -399,3 +399,87 @@ def test_no_exclusions_means_the_list_is_empty_not_absent(smoke_base):
     """A consumer reading the JSON must not have to guess whether the key exists."""
     report = _run_cli(smoke_base, "--routes", "/a,/b")
     assert report["excluded"] == []
+
+
+# ── --expect-fail: checked, tolerated, and SELF-CLEANING ─────────────────────
+#
+# The CI sweep runs against a dashboard with several canvases switched off, so
+# 8 of 89 routes 404 there — measured on #1716. A 404 from a disabled canvas is
+# correct behaviour; a 500 is not, and is what the gate exists for. So those 8
+# are --expect-fail rather than --exclude: still CHECKED, so an entry that
+# starts passing is reported as STALE and can be removed. An exclusion nobody
+# revisits is how a gate shrinks without anyone deciding to shrink it.
+
+
+def test_an_expected_failure_does_not_fail_the_run(smoke_base):
+    """/nope 404s against the fixture server; tolerating it must not mask others."""
+    report = _run_cli(smoke_base, "--routes", "/nope,/health", "--expect-fail", "/nope")
+
+    assert report["passed"] is True, "a tolerated route must not fail the run"
+    assert report["tolerated"] == ["/nope"]
+    assert report["failures"] == 0, "the tolerated route is not counted as a failure"
+
+
+def test_it_is_still_CHECKED_not_skipped(smoke_base):
+    """The difference from --exclude, and the reason the list can self-clean."""
+    report = _run_cli(smoke_base, "--routes", "/nope,/health", "--expect-fail", "/nope")
+
+    assert report["total"] == 2, "an expect-fail route is still attempted"
+    assert "/nope" in [r["route"] for r in report["results"]]
+    assert report["excluded"] == [], "--expect-fail is not --exclude"
+
+
+def test_an_entry_that_starts_passing_is_reported_STALE(smoke_base):
+    """The self-cleaning half. Without it, coverage is lost permanently."""
+    report = _run_cli(smoke_base, "--routes", "/health", "--expect-fail", "/health")
+
+    assert report["passed"] is True
+    assert report["tolerated"] == [], "it did not fail, so nothing was tolerated"
+    assert report["stale_expect_fail"] == ["/health"], (
+        "a route that no longer fails must be named so the entry can be removed "
+        "— an exclusion nobody revisits silently costs coverage forever"
+    )
+
+
+def test_an_entry_naming_a_route_never_checked_is_also_STALE(smoke_base):
+    """A typo'd or renamed route must not sit in the list looking meaningful."""
+    report = _run_cli(smoke_base, "--routes", "/health", "--expect-fail", "/typo")
+    assert report["stale_expect_fail"] == ["/typo"]
+
+
+def test_a_real_failure_still_fails_when_others_are_tolerated(smoke_base):
+    """The one that matters: tolerating the known must not tolerate the unknown."""
+    report = _run_cli(smoke_base, "--routes", "/nope,/alsobad,/health",
+                      "--expect-fail", "/nope")
+
+    assert report["passed"] is False, (
+        "an untolerated failure must still fail the run — otherwise --expect-fail "
+        "is just a `|| true` with better manners"
+    )
+    assert report["tolerated"] == ["/nope"]
+    assert [r["route"] for r in report["results"] if not r["ok"]] == ["/nope", "/alsobad"]
+
+
+def test_a_path_mangled_expect_fail_entry_is_called_out(smoke_base, capsys):
+    """Git Bash rewrites a leading-slash argument into a Windows path.
+
+    Observed while verifying the CI command by hand: `--expect-fail
+    "/network/ask,..."` arrived as "C:/Program Files/Git/network/ask,...", so
+    that route was silently NOT tolerated. It would still surface below as an
+    entry matching no route, but only mixed in with the legitimately stale ones.
+    """
+    import subprocess as _sp
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parents[1]
+    proc = _sp.run(
+        [_sys.executable, str(root / "tools" / "testing" / "route_smoke.py"),
+         "--routes", "/health", "--base", smoke_base, "--timeout", "5",
+         "--expect-fail", "C:/Program Files/Git/network/ask"],
+        capture_output=True, text=True, cwd=str(root), timeout=300,
+    )
+    assert "not route paths" in proc.stdout, (
+        f"a mangled entry must be named as such, got:\n{proc.stdout}"
+    )
+    assert "MSYS_NO_PATHCONV" in proc.stdout, "say how to fix it"
