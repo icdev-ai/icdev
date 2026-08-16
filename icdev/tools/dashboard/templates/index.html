@@ -1079,10 +1079,15 @@ document.addEventListener('DOMContentLoaded', function() {
             var statusColor = d.enabled ? '#22c55e' : '#ef4444';
             var statusLabel = d.enabled ? 'Enabled' : 'Disabled';
             // A cold or expired cache is NOT a failure and must not render as
-            // one. llm_response_cache is UNLOGGED on PostgreSQL, so the server
-            // empties it on any unclean shutdown — the common reason this tile
-            // reads zero. Only 'populated' earns the red/amber/green hit-rate
-            // scale; every other state gets a neutral colour and says why.
+            // one. Only 'populated' earns the red/amber/green hit-rate scale;
+            // every other state gets a neutral colour and says why.
+            //
+            // Until migration 20260816123233 the usual reason this tile read
+            // zero was that llm_response_cache was UNLOGGED, so PostgreSQL
+            // emptied it on any unclean shutdown — and since every figure here
+            // is derived from that one table, a restart also zeroed the
+            // cumulative dollars-saved. It is LOGGED now, so a cold reading
+            // means genuinely new or expired rather than "we restarted".
             var cold = (d.state === 'cold' || d.state === 'expired');
             var hitColor = cold ? 'var(--text-dim,#6c6c80)'
                 : (d.hit_rate_pct >= 50) ? '#22c55e'
