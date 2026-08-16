@@ -131,7 +131,7 @@ class _FileScan:
     declares_enum: bool = False                   # this file defines ExtensionPoint
 
 
-def _iter_python_files(root: Path) -> "Iterable[Path]":
+def _iter_python_files(root: Path) -> Iterable[Path]:
     # Skip-dir matching is done on the path RELATIVE to the root. Matching on
     # absolute parts would make the whole scan depend on where the checkout
     # happens to live — a worktree under ``.tmp/worktrees/`` would skip every
