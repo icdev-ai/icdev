@@ -198,3 +198,112 @@ def test_the_escalate_branch_CONSULTS_prior_escalations_before_re_alerting():
     assert src.index("_count_audit_actions", head) < alert, (
         "the prior-escalation check must run BEFORE the HITL alert is re-sent"
     )
+
+
+# ---------------------------------------------------------------------------
+# The resume budget is refunded when a phantom conflict spent it (2026-08-16)
+# ---------------------------------------------------------------------------
+# The rebase budget already had this protection; the resume budget did not. A
+# stale CONFLICTING verdict keeps the PR classified MERGE_CONFLICT, so it takes
+# the resume path too — and once the cap is reached it escalates to "manual
+# intervention required" PERMANENTLY, because nothing ever gave a resume back.
+# #1742 and #1744 sat there fully green, 0 of 10 checks failing, merging cleanly
+# under `git merge-tree`.
+
+
+class _ActionAwareConn(_Conn):
+    """A fake that honours the `action IN (...)` filter the real query applies.
+
+    The simpler fake returns every row for every query, so a test using it
+    cannot tell a `resume` row from a `resume_refund` one — it would pass
+    whatever the arithmetic did. That is the vacuous-test trap, so this one
+    filters the way audit_trail does.
+    """
+
+    def execute(self, sql, params=None):
+        self._sql = sql
+        if not sql.strip().upper().startswith("SELECT"):
+            self.inserts.append((sql, params))
+            return self
+        wanted = {p for p in (params or ()) if isinstance(p, str) and p.startswith("pr_watcher.")}
+        self._filtered = [
+            r for r in self._rows
+            if not wanted or json.loads(r["d"]).get("action") in {w.split(".", 1)[1] for w in wanted}
+            or json.loads(r["d"]).get("action") in wanted
+        ]
+        return self
+
+    def fetchall(self):
+        return getattr(self, "_filtered", self._rows)
+
+
+def _act_row(task_id, pr_url, action):
+    return {"d": json.dumps({"task_id": task_id, "pr_url": pr_url, "action": action})}
+
+
+def test_one_refund_restores_one_full_budget_not_one_cycle():
+    """A single extra poll against a stale verdict achieves nothing."""
+    rows = [_act_row("t1", "p1", "pr_watcher.resume") for _ in range(5)]
+    rows.append(_act_row("t1", "p1", "pr_watcher.resume_refund"))
+    w = pw.PRWatcher(config={"max_resume_cycles_per_task": 5},
+                     get_connection=lambda: _ActionAwareConn(rows))
+    assert w._resume_cycle("t1", pr_url="p1") == 0, (
+        "5 spent minus a 5-cycle refund must be 0 — a full second run, not one poll"
+    )
+
+
+def test_the_refund_is_floored_at_zero():
+    """A refund restores a budget; it never grants one."""
+    rows = [_act_row("t1", "p1", "pr_watcher.resume"),
+            _act_row("t1", "p1", "pr_watcher.resume_refund")]
+    w = pw.PRWatcher(config={"max_resume_cycles_per_task": 5},
+                     get_connection=lambda: _ActionAwareConn(rows))
+    assert w._resume_cycle("t1", pr_url="p1") == 0
+
+
+def test_without_a_refund_the_count_is_unchanged():
+    """Guards the arithmetic against over-crediting the common case."""
+    rows = [_act_row("t1", "p1", "pr_watcher.resume") for _ in range(3)]
+    w = pw.PRWatcher(config={"max_resume_cycles_per_task": 5},
+                     get_connection=lambda: _ActionAwareConn(rows))
+    assert w._resume_cycle("t1", pr_url="p1") == 3
+
+
+def test_the_call_site_refunds_ONLY_when_the_budget_is_exhausted():
+    """The one-shot must not be spent on a PR that still has cycles left.
+
+    Asserted on the call site, not the helper: a refund method nothing calls at
+    the right moment is the defect this codebase ships most.
+    """
+    import inspect
+
+    src = inspect.getsource(pw.PRWatcher.poll_once)
+    call = src.find("_refund_resume_budget")
+    assert call != -1, "poll_once never refunds the resume budget"
+
+    guard = src[max(0, call - 700):call]
+    assert "max_resume_cycles_per_task" in guard, (
+        "the refund must be gated on the budget actually being exhausted"
+    )
+    assert "pr_watcher.resume_refund" in guard, (
+        "the refund must be once per PR — bounded, so a forge that keeps lying "
+        "cannot buy unlimited attempts"
+    )
+    # It has to happen before the cycle count that decides escalate-vs-resume.
+    decide = src.index("cycle = self._resume_cycle(")
+    assert call < decide, (
+        "the refund must be issued BEFORE the cycle is recomputed, or it cannot "
+        "take effect until the next poll"
+    )
+
+
+def test_the_refund_only_fires_for_a_conflict_proved_phantom():
+    """Never refund on a REAL conflict — that would loop forever on real work."""
+    import inspect
+
+    src = inspect.getsource(pw.PRWatcher.poll_once)
+    phantom = src.index("_conflict_is_real")
+    call = src.index("_refund_resume_budget")
+    assert phantom < call, (
+        "the refund must sit inside the branch guarded by _conflict_is_real"
+    )

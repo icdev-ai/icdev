@@ -1269,9 +1269,44 @@ class PRWatcher:
                 pass
 
     def _resume_cycle(self, task_id: str, pr_url: Optional[str] = None) -> int:
-        """Prior pr_watcher resume events for this task, on THIS PR."""
-        return self._count_audit_actions(
+        """Prior resume events for this task on THIS PR, net of refunds.
+
+        Cycles spent on a conflict the forge only IMAGINED are refunded, for the
+        same reason the rebase budget is: a PR that merges cleanly must not be
+        locked out of recovery by a verdict we have disproved. Without this a
+        phantom drove the PR to the cap and it escalated to "manual intervention
+        required" permanently, because nothing ever gave a resume back.
+
+        ONE refund restores ONE FULL budget, not one cycle. A single extra poll
+        against a stale verdict achieves nothing; a full budget is a genuine
+        second run at the problem. Floored at zero — a refund can restore a
+        budget, never grant one — and issued at most once per PR, so a forge
+        that keeps lying cannot buy unlimited attempts.
+        """
+        spent = self._count_audit_actions(
             task_id, ("pr_watcher.resume",), pr_url=pr_url)
+        refunds = self._count_audit_actions(
+            task_id, ("pr_watcher.resume_refund",), pr_url=pr_url)
+        if not refunds:
+            return spent
+        per_refund = int(self.config.get("max_resume_cycles_per_task", 5))
+        return max(0, spent - refunds * per_refund)
+
+    def _refund_resume_budget(self, task_id: str, pr_url: str,
+                              classification: str = "") -> None:
+        """Cancel the resume cycles a phantom conflict consumed.
+
+        Written through _audit like every other action: the audit trail is
+        append-only (NIST AU), so a refund is a row the counter subtracts, never
+        a mutation of the rows it refunds.
+        """
+        self._audit(WatcherAction(
+            task_id=task_id, pr_url=pr_url, classification=classification,
+            action="resume_refund",
+            reason="resume budget was spent on a conflict that does not exist",
+        ))
+        logger.info(
+            "pr_watcher: refunded resume budget for %s (stale conflict)", pr_url)
 
     def _seconds_since_last_resume(
         self, task_id: str, pr_url: Optional[str] = None,
@@ -1855,6 +1890,30 @@ class PRWatcher:
                 logger.warning(
                     "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
                     "rebasing to force the forge to recompute", pr_url)
+
+                # THE RESUME BUDGET NEEDS THE SAME PROTECTION THE REBASE BUDGET
+                # ALREADY HAS. A phantom conflict does not only cost rebases: the
+                # PR stays classified MERGE_CONFLICT, so it takes the resume path
+                # too, and every cycle spent there was spent on a conflict we can
+                # prove does not exist. Once the cap is reached the PR escalates
+                # to "manual intervention required" — permanently, because
+                # nothing gives a resume back — while merging cleanly under
+                # `git merge-tree`. Measured 2026-08-16: #1742 and #1744 both sat
+                # there, fully green, 0 of 10 checks failing.
+                #
+                # Refunded only when the budget is actually EXHAUSTED. Refunding
+                # a PR that still has cycles left would spend the one-shot on a
+                # PR that did not need it, and this is a one-shot on purpose:
+                # bounded so a forge that keeps lying cannot buy unlimited
+                # attempts. One refund restores one full budget, so the PR gets
+                # a genuine second run at the problem rather than a single extra
+                # poll.
+                spent = self._resume_cycle(task["id"], pr_url=pr_url)
+                if spent >= int(self.config.get(
+                        "max_resume_cycles_per_task", 5)) and self._count_audit_actions(
+                        task["id"], ("pr_watcher.resume_refund",), pr_url=pr_url) == 0:
+                    self._refund_resume_budget(
+                        task["id"], pr_url, classification=classification.value)
 
             cycle = self._resume_cycle(task["id"], pr_url=pr_url)
 
