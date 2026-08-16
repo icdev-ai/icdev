@@ -1852,6 +1852,14 @@ tests/test_agent_event_log.py
 # reporting. 26 tests, ~1s, registry injected in every case except one deliberate
 # end-to-end read of args/projects.yaml — no board, no network, no LLM.
 tests/kanban/test_task_identity.py
+# hcx-evt-02 -- the CONSUMPTION proof for that log: run_turn wires it through the
+# four lifecycle hooks run_agent_loop already exposes. Asserts the gate's block
+# still wins through the loop's own _compose_pre_tool_hooks, that an unwritable
+# log degrades to a warning instead of ending the turn, and that a gate-blocked
+# call (whose pre-hook never runs) still gets a tool_call event. 38 tests, ~25s,
+# same migration-derived fixture; the two end-to-end cases drive the REAL loop
+# with a scripted provider -- no DB, no network, no LLM.
+tests/agent_runtime/test_event_recorder.py
 # hcx-post-01 — permission postures. Gated because the two properties it holds
 # are precedence properties, and a precedence regression is silent: a posture
 # that started overruling an exported ICDEV_SAG_APPROVAL_MODE, or a config file
