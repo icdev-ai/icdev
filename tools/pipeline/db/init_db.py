@@ -25,15 +25,33 @@ def get_connection():
     """Get a database connection — SQLite or PostgreSQL.
 
     cvx-sql-03: this is the canvas-connection pattern — it already disables RLS
-    via set_security_context(None) below. It is NOT renamed to
-    get_canvas_connection() because that helper targets the shared icdev DB on PG,
-    which would break this canvas's dedicated PC_PG_DATABASE=pipeline_canvas contract.
+    via set_security_context(None) below.
+
+    ON POSTGRESQL THIS CANVAS USES THE SHARED icdev DATABASE. The note here used
+    to say it was NOT renamed to get_canvas_connection() "because that helper
+    targets the shared icdev DB on PG, which would break this canvas's dedicated
+    PC_PG_DATABASE=pipeline_canvas contract" — but there was no such contract to
+    break. ``get_connection()`` honours db_path as a SQLite file ONLY when the
+    backend is sqlite and the name ends in '.db'; on PostgreSQL it ignores
+    db_path and connects to the shared database, as its own comment states.
+    Measured 2026-08-16: ``get_connection(db_path='pipeline_canvas')`` reports
+    ``current_database() = icdev``. The reason given for keeping this wrapper was
+    exactly the thing that was not happening.
+
+    Behaviour is therefore unchanged and only the claim is — table-prefix
+    namespacing IS the platform's design for canvas tables on PG. Passing the
+    name was worse than useless: on a SQLite backend a bare name does not end in
+    '.db', so it created an extension-less database file called
+    ``pipeline_canvas`` in whatever directory the process started from, outside
+    the ``data/*.db`` ignore rule. One appeared in a repo checkout while this
+    canvas was being enabled for CI.
     """
     if _PC_BACKEND == "postgresql":
         try:
             from tools.db.storage import get_connection as _icdev_conn
 
-            conn = _icdev_conn(db_path=os.environ.get("PC_PG_DATABASE", "pipeline_canvas"))
+            # No db_path: the shared icdev database is what this returns anyway.
+            conn = _icdev_conn()
             # Canvas tables (pipelines, pc_templates, pc_snippets, etc.) have no
             # tenant_id/classification columns — disable RLS so the global
             # row-level predicate does not raise UndefinedColumn on every query.

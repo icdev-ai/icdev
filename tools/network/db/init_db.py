@@ -89,16 +89,36 @@ def get_connection():
     auto-translates SQLite SQL to PostgreSQL (? → %s, PRAGMA → no-op, etc.)
 
     cvx-sql-03: this is the canvas-connection pattern — it already disables RLS
-    by clearing the security context below (see the annotated call). It is NOT renamed to
-    get_canvas_connection() because that helper targets the shared icdev DB on PG,
-    which would break this canvas's dedicated NC_PG_DATABASE=network_canvas contract.
+    by clearing the security context below (see the annotated call).
+
+    ON POSTGRESQL THIS CANVAS USES THE SHARED icdev DATABASE, and always has.
+    The note here used to say it was NOT renamed to get_canvas_connection()
+    "because that helper targets the shared icdev DB on PG, which would break
+    this canvas's dedicated NC_PG_DATABASE=network_canvas contract". There was no
+    such contract: ``get_connection()`` honours db_path as a SQLite file ONLY
+    when the backend is sqlite and the name ends in '.db'; on PostgreSQL it
+    ignores db_path and connects to the shared database, exactly as its own
+    comment says.
+
+    This canvas is the proof, because here the dedicated database was actually
+    created. Measured 2026-08-16 on the live box: database ``network_canvas``
+    exists and holds ZERO tables, while ``icdev`` holds 139 ``nc_*`` tables.
+    Someone followed .env.example, created it, and not one row ever landed in
+    it — the canvas has been writing to the shared database the whole time.
+
+    So behaviour is unchanged and only the claim is; table-prefix namespacing IS
+    the platform's design for canvas tables on PG. Passing the name was worse
+    than useless: on a SQLite backend a bare name does not end in '.db', so it
+    created an extension-less database file called ``network_canvas`` in whatever
+    directory the process started from, outside the ``data/*.db`` ignore rule.
     """
     if _NC_BACKEND == "postgresql":
         try:
             from tools.db.storage import get_connection as _icdev_conn
 
-            # Use ICDEV's storage layer which handles PG translation
-            conn = _icdev_conn(db_path=os.environ.get("NC_PG_DATABASE", "network_canvas"))
+            # Use ICDEV's storage layer which handles PG translation. No db_path:
+            # the shared icdev database is what this returns anyway.
+            conn = _icdev_conn()
             # Canvas tables have no tenant_id/classification columns — disable
             # RLS so the global row-level predicate does not raise UndefinedColumn.
             conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification columns; RLS predicate would raise UndefinedColumn (ndc program)
