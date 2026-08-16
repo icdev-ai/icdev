@@ -78,3 +78,123 @@ def test_omitting_pr_url_keeps_the_old_lifetime_count():
     conn = _Conn([_row("t-1", "https://x/pull/1"), _row("t-2", "https://x/pull/2")])
     w = _watcher(conn)
     assert w._count_audit_actions("t-1", ("pr_watcher.resume",)) == 2
+
+
+# ---------------------------------------------------------------------------
+# A resume must be given time to work before the next one is spent (2026-08-16)
+# ---------------------------------------------------------------------------
+# max_resume_cycles_per_task is a budget of ATTEMPTS. Nothing stopped it being
+# spent at POLL speed: the watcher injected context, the next poll ~45s later
+# saw the same classification and injected again, and the whole budget was gone
+# in about three minutes. Measured on the live board — #1742 burned 17:17:43 ->
+# 17:20:56 and #1744 17:54:20 -> 17:57:29, both then escalating to "manual
+# intervention required" while fully green and merging cleanly under
+# `git merge-tree`. No agent reads a message and pushes a fix in 45 seconds, so
+# those were not five attempts; they were one attempt and four wasted entries.
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+
+class _StampedConn(_Conn):
+    """A connection whose rows carry created_at, as audit_trail's do."""
+
+
+def _stamped_row(task_id, pr_url, age_seconds, action="pr_watcher.resume"):
+    return {
+        "d": json.dumps({"task_id": task_id, "pr_url": pr_url, "action": action}),
+        "created_at": datetime.now(timezone.utc) - timedelta(seconds=age_seconds),
+    }
+
+
+def test_age_of_the_last_resume_is_reported():
+    conn = _StampedConn([_stamped_row("t1", "http://pr/1", 120)])
+    age = _watcher(conn)._seconds_since_last_resume("t1", pr_url="http://pr/1")
+    assert age is not None and 100 < age < 200, age
+
+
+def test_a_resume_for_another_PR_does_not_count_as_this_one(): 
+    """The budget is per-PR; so is the cooldown, or a busy task starves."""
+    conn = _StampedConn([_stamped_row("t1", "http://pr/OTHER", 5)])
+    assert _watcher(conn)._seconds_since_last_resume("t1", pr_url="http://pr/1") is None
+
+
+def test_no_prior_resume_means_no_wait():
+    """A first attempt must never be delayed."""
+    conn = _StampedConn([])
+    assert _watcher(conn)._seconds_since_last_resume("t1", pr_url="http://pr/1") is None
+
+
+def test_an_unreadable_clock_does_not_block_recovery():
+    """Fail toward acting. A watcher that cannot read a timestamp must still work."""
+    class _Broken(_Conn):
+        def execute(self, sql, params=None):
+            raise RuntimeError("audit_trail unavailable")
+
+    assert _watcher(_Broken([]))._seconds_since_last_resume("t1", pr_url="p") is None
+
+
+def test_the_cooldown_default_is_long_enough_to_be_an_attempt():
+    """45 seconds is a poll interval; it is not an opportunity to fix a PR.
+
+    Pinned as a floor rather than an exact value: the number may be tuned, but
+    dropping it back to poll speed reintroduces the defect — five cycles gone in
+    three minutes.
+    """
+    assert pw.RESUME_COOLDOWN_SECONDS >= 300, (
+        "a resume budget spent faster than an agent can respond is not a budget"
+    )
+
+
+def test_the_call_site_CONSULTS_the_cooldown_before_injecting():
+    """A helper nothing calls is the defect this codebase ships most.
+
+    An earlier version of this test only proved _seconds_since_last_resume
+    EXISTS — and passed with the call site deleted. Assert the ordering that
+    makes it load-bearing: the cooldown is consulted before the resume context
+    is prepared, and a hit takes the `continue` instead of injecting.
+    """
+    import inspect
+
+    src = inspect.getsource(pw.PRWatcher.poll_once)
+    consult = src.find("_seconds_since_last_resume")
+    inject = src.find("prepare_resume_context")
+    assert consult != -1, "poll_once never consults the resume cooldown"
+    assert inject != -1
+    assert consult < inject, (
+        "the cooldown must be checked BEFORE the resume is prepared, or the "
+        "budget is spent at poll speed again"
+    )
+    window = src[consult:inject]
+    assert "continue" in window, (
+        "a cooldown hit must skip the injection, not merely be measured"
+    )
+    assert "resume_cooldown_seconds" in src, "the interval must be configurable"
+
+
+def test_the_escalate_branch_CONSULTS_prior_escalations_before_re_alerting():
+    """Escalate once per PR, not once per poll.
+
+    The branch re-fired every cycle: #1742 and #1744 were re-escalated every
+    ~42s for hours, and pr_watcher.escalate stood at 42,902 rows — nearly all of
+    it a handful of PRs re-announcing, each one re-sending the HITL alert, which
+    is how a "manual intervention required" notification stops being read.
+
+    Asserted as ordering, not presence: the count must be taken BEFORE the alert
+    fires, and guard the path to it.
+    """
+    import inspect
+
+    src = inspect.getsource(pw.PRWatcher.poll_once)
+    cap = src.index("resume cap reached")
+    head = src.rindex("if cycle >= max_cycles", 0, cap)
+    block = src[head:cap]
+    assert "_count_audit_actions" in block, (
+        "the escalate branch must consult prior escalations for this PR"
+    )
+    assert "continue" in block, (
+        "an already-escalated PR must return quietly rather than re-alerting"
+    )
+    alert = src.index("_hitl_alert", cap)
+    assert src.index("_count_audit_actions", head) < alert, (
+        "the prior-escalation check must run BEFORE the HITL alert is re-sent"
+    )

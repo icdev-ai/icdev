@@ -86,7 +86,6 @@ tests/ci/modules/test_vcs.py
 tests/ci/modules/test_workflow_ops.py
 tests/ci/test_bom_corpus_leak_guard.py
 tests/ci/test_pr_watcher.py
-tests/ci/test_pr_watcher_budgets.py
 tests/ci/test_pr_watcher_ci_never_fired.py
 tests/ci/test_pr_watcher_dotenv.py
 tests/ci/test_pr_watcher_draft_ready.py
