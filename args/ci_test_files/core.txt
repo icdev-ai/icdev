@@ -1927,3 +1927,9 @@ tests/kanban/test_lane_conflicts.py
 # instead of stamping Anthropic's cache_control on a provider-neutral request.
 # No SDK, key, network or DB — pure declaration + translation.
 tests/test_prefix_cache_capability.py
+# cch-prov-03: Ollama's prefix cache pays in LATENCY, so the savings card must
+# report "not applicable" for a local provider rather than a dollar figure — it
+# was reporting a fabricated NON-ZERO one ($0.0040 against Anthropic's rate card
+# for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
+# absent. No Ollama process, no network, no DB.
+tests/test_ollama_prefix_latency.py

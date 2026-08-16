@@ -177,6 +177,14 @@ class LLMResponse:
     cache_creation_input_tokens: int = 0  # D-CACHE-10: Anthropic prompt cache write cost
     cache_read_input_tokens: int = 0      # D-CACHE-10: Anthropic prompt cache read savings
     duration_ms: int = 0
+    #: Server-side time spent evaluating the PROMPT (prefill), in ms — the honest
+    #: prefix-cache metric for a `local` provider, where there is no per-token
+    #: price for cached tokens to discount (cch-prov-03).
+    #:
+    #: ``None`` means the provider does not report it, which is a DIFFERENT fact
+    #: from a measured 0.0. Only Ollama populates it today; every other adapter
+    #: leaves it None rather than reporting a zero nobody measured.
+    prompt_eval_ms: Optional[float] = None
     stop_reason: str = ""
     cost_usd: float = 0.0                 # USD cost, derived by the router
     #: How cost_usd was arrived at: "priced" | "local_zero" | "unpriced".
@@ -334,6 +342,25 @@ def apply_prefix_cache(provider: Any, request: LLMRequest) -> LLMRequest:
         req.cache_control = ""
         return req
     return request
+
+
+def prefix_cache_savings_are_monetary(cap: PrefixCacheCapability) -> bool:
+    """Is this provider's prefix-cache payoff denominated in DOLLARS? (cch-prov-03)
+
+    False for ``local`` only. A locally hosted model has no per-token price, so
+    a cached prefix costs less TIME and exactly zero less money — there is no
+    bill for a discount to apply to. Reporting ``$0.0000`` for it is not a
+    conservative estimate, it is the wrong unit: the reader cannot tell it from
+    a cloud provider whose caching is broken.
+
+    ``none`` IS monetary and legitimately zero: a billed provider that caches
+    nothing really did save nothing, and $0.00 is the correct answer there.
+
+    Callers that render money should show "not applicable" plus
+    :attr:`PrefixCacheCapability.reason` when this returns False, and must not
+    substitute a fabricated figure to keep a table looking uniform.
+    """
+    return cap.support != PREFIX_CACHE_LOCAL
 
 
 # ---------------------------------------------------------------------------
