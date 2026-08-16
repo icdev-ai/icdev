@@ -24,7 +24,11 @@ def logger(tmp_path):
             model_id TEXT NOT NULL, provider TEXT NOT NULL, function TEXT,
             prompt_hash TEXT NOT NULL, response_hash TEXT,
             input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,
-            thinking_tokens INTEGER DEFAULT 0, latency_ms REAL DEFAULT 0.0,
+            thinking_tokens INTEGER DEFAULT 0,
+            -- cch-tel-01 (migration 20260816135136): prompt-cache accounting.
+            cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+            latency_ms REAL DEFAULT 0.0,
             cost_usd REAL DEFAULT 0.0, classification TEXT DEFAULT 'CUI',
             api_key_source TEXT DEFAULT 'system', injection_scan_result TEXT,
             logged_at TEXT NOT NULL
