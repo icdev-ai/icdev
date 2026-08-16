@@ -801,6 +801,30 @@ CREATE TABLE IF NOT EXISTS trust_deltas (
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- hcx-evt-01 / migration 20260816122036. One append-only row per model-visible
+-- agent event, ordered by `seq` (UNIQUE per session, which is what lets two
+-- writers allocate optimistically) rather than by the clock. payload_hash is
+-- NOT NULL and always written; payload_json is NULL exactly when the
+-- classification policy in args/agent_event_log.yaml withheld the document.
+-- Registered in APPEND_ONLY_TABLES. In the MAIN db and not the ACE canvas db --
+-- deliberately, so tenant_id/classification make it RLS-eligible and so it can
+-- be joined to hook_events/audit_trail by session_timeline.py.
+CREATE TABLE IF NOT EXISTS agent_session_events (
+    event_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    payload_json TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    correlation_id TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_session_events_seq
+    ON agent_session_events (session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_agent_session_events_session
+    ON agent_session_events (session_id);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
