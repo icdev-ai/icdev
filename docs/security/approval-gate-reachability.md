@@ -334,6 +334,19 @@ What deliberately stays out of scope: the `--dangerously-skip-permissions` flag,
 `args/agent_approval_policy.yaml`'s tiers, and the `agent_executor.py` wiring,
 which is already correct.
 
+**A second candidate wiring point, noted and not chosen.** hcx-live-01
+(`dd9f6c6`, merged 2026-08-16) added a `TOOL_EXECUTE_BEFORE` extension-point
+dispatch to `tools/agent_runtime/dispatch.py`, so every SAG tool call now passes
+a behavioral-tier hook that may refuse. That is a legitimate place to hang the
+reversibility gate, and it would cover the SAG surface without touching
+`agent_loop.py` at all. It is not the smallest change, for two reasons: it
+reaches only the SAG dispatch path (not ACE, Cortex, GameDay or the kanban
+rubric loop, which call `run_agent_loop` directly), and it would make the gate's
+arming depend on extension registration rather than on the mode the operator set
+in `args/agent_runtime.yaml` — a second declared-vs-consumed hop of exactly the
+kind this finding is about. Fix the resolver first; that covers all eleven sites
+with one function.
+
 ---
 
 ## Provenance
