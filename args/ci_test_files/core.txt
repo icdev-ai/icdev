@@ -1948,3 +1948,9 @@ tests/test_prefix_cache_capability.py
 # tmp sqlite file and the chat manager, saver and loader are injected, so no
 # board, no canvas DB, no network, no LLM.
 tests/agent_runtime/test_fork.py
+# cch-prov-03: Ollama's prefix cache pays in LATENCY, so the savings card must
+# report "not applicable" for a local provider rather than a dollar figure — it
+# was reporting a fabricated NON-ZERO one ($0.0040 against Anthropic's rate card
+# for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
+# absent. No Ollama process, no network, no DB.
+tests/test_ollama_prefix_latency.py

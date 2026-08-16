@@ -31,7 +31,10 @@ from tools.llm.provider import (
     LLMRequest,
     LLMResponse,
     EmbeddingProvider,
+    PrefixCacheCapability,
+    UNDECLARED_PREFIX_CACHE,
     apply_prefix_cache,
+    resolve_prefix_cache_capability,
     wants_prefix_cache,
 )
 from tools.llm import cost_budget
@@ -3501,3 +3504,32 @@ class LLMRouter:
             chain = [target]
         default_route["chain"] = chain
         logger.info("Core profile promoted '%s' to first model in default chain", target)
+
+
+# ---------------------------------------------------------------------------
+# Name -> declared prefix-cache capability (cch-prov-03)
+# ---------------------------------------------------------------------------
+def prefix_cache_capability_for_provider(provider_name: str) -> PrefixCacheCapability:
+    """Resolve a provider NAME to the capability that provider DECLARES.
+
+    Analytics surfaces (the cache-savings card) hold provider *strings* from the
+    database, while :func:`resolve_prefix_cache_capability` needs an *instance* —
+    because the answer is instance-dependent. ``ollama`` and ``ollama_cloud`` are
+    the same class pointed at different base_urls and give opposite answers: one
+    is ``local`` (latency only, nothing to bill), the other is a billed endpoint.
+    So this goes through the router's own construction rather than a second
+    hand-maintained name->capability table that would drift from the adapters.
+
+    Construction only — no network call, no credential check, and no invocation.
+    Fails SAFE: an unknown name, a missing SDK, or any construction error yields
+    UNDECLARED (reported as ``none``, ``verified=False``), never an exception on
+    a page render, and never a guess.
+    """
+    try:
+        provider = LLMRouter()._get_provider(provider_name)
+    except Exception as exc:  # noqa: BLE001 - a dashboard must not 500 on this
+        logger.debug("prefix-cache capability lookup failed for %r: %s", provider_name, exc)
+        return UNDECLARED_PREFIX_CACHE
+    if provider is None:
+        return UNDECLARED_PREFIX_CACHE
+    return resolve_prefix_cache_capability(provider)

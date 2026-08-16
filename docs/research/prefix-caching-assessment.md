@@ -157,6 +157,15 @@ Ordered by value per unit of work:
 4. **Gemini explicit caching** via `cachedContents`, mapped onto `managed_object`.
 5. **Ollama**: declare `local` and measure **latency**, not dollars. Prompt-eval time
    with and without a shared prefix is the honest metric for a local model.
+   **Done — cch-prov-03.** Measured 2026-08-16 with
+   `tools/llm/ollama_prefix_latency.py` on a ~1.9k-token prefix: `qwen3:0.6b`
+   64.5 -> 9.1 ms (7.1x), `qwen3:4b` 299.0 -> 18.0 ms (16.6x, 281 ms/call). The
+   card now reads **not applicable** for a `local` provider — it had been
+   crediting `ollama` **$0.0040** of Anthropic-priced "savings" for inference
+   nobody was billed for. Note `prompt_eval_count` is NOT a hit signal: it
+   reports full prompt length on every call (constant at 1,914 across one cold
+   and four warm), so only the duration moves. See
+   [docs/features/cch-prov-03-ollama-latency-not-dollars.md](../features/cch-prov-03-ollama-latency-not-dollars.md).
 6. **watsonx / OCI**: verify vendor support before declaring anything.
 
 **Re-run section 3 when either input changes** — cloud-provider traffic appears, or

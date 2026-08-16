@@ -14,7 +14,7 @@ native image format: {"role": "user", "content": "text", "images": ["base64"]}.
 
 import json
 import time
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Optional
 from urllib.parse import urlparse
 
 from tools.llm.provider import (
@@ -157,6 +157,46 @@ def _convert_messages_to_ollama(messages: List[Dict[str, Any]], system_prompt: s
 # ---------------------------------------------------------------------------
 
 
+#: Hostnames that mean "this Ollama runs on the machine making the call".
+#: These are COMPARED against a configured base_url's host. Nothing in this module
+#: opens a socket or binds an address — the adapter is an HTTP *client*.
+_LOCAL_HOSTNAMES = (
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "0.0.0.0",  # nosec B104 — a hostname to match, not an interface to bind
+    "host.docker.internal",
+)
+
+
+def _prompt_eval_ms(data: Dict[str, Any]) -> Optional[float]:
+    """Ollama's ``prompt_eval_duration`` (nanoseconds) as milliseconds.
+
+    This is the prefill time — how long the server spent evaluating the prompt
+    before emitting a token — and it is the honest prefix-cache metric for a
+    local model (cch-prov-03). On a KV-cache hit the server skips re-evaluating
+    the shared prefix and this number collapses.
+
+    Measured 2026-08-16, qwen3:0.6b, ~1.9k-token prefix, model already warm:
+    a unique prefix costs ~78ms of prompt-eval, a repeated one ~8ms.
+
+    ``prompt_eval_count`` is deliberately NOT used as the hit signal: it reports
+    the FULL prompt length on every call, cached or not (measured constant at
+    1,914 tokens across a cold call and four warm ones). Only the DURATION
+    moves, so a count-based "cached tokens" figure here would be fiction.
+
+    Returns None when the field is absent or unparseable — the provider not
+    reporting a number is a different fact from it reporting zero.
+    """
+    raw = data.get("prompt_eval_duration")
+    if raw is None:
+        return None
+    try:
+        return float(raw) / 1e6
+    except (TypeError, ValueError):
+        return None
+
+
 class OllamaProvider(LLMProvider):
     """Native Ollama provider using the Ollama REST API.
 
@@ -192,7 +232,7 @@ class OllamaProvider(LLMProvider):
         host = urlparse(self._base_url).hostname or ""
         host = host.lower()
         return (
-            host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal")
+            host in _LOCAL_HOSTNAMES
             or "." not in host  # bare LAN hostname, e.g. http://gpu-box:11434
         )
 
@@ -358,6 +398,10 @@ class OllamaProvider(LLMProvider):
         response.input_tokens = data.get("prompt_eval_count", 0) or 0
         response.output_tokens = data.get("eval_count", 0) or 0
 
+        # Prompt-eval (prefill) time — the ONLY prefix-cache signal a local
+        # model gives, and it was being dropped on the floor (cch-prov-03).
+        response.prompt_eval_ms = _prompt_eval_ms(data)
+
         # Try parsing structured output
         if response.content.strip().startswith(("{", "[")):
             try:
@@ -441,10 +485,13 @@ class OllamaProvider(LLMProvider):
                     yield {"type": "text", "text": content}
 
                 if chunk.get("done", False):
+                    # The final chunk carries the same timing block as a
+                    # non-streaming response (cch-prov-03).
                     yield {
                         "type": "message_stop",
                         "model_id": model_id,
                         "duration_ms": int((time.time() - start_time) * 1000),
+                        "prompt_eval_ms": _prompt_eval_ms(chunk),
                     }
 
         except requests.ConnectionError:
