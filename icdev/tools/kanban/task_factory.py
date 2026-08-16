@@ -119,9 +119,11 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
     land in a throwaway local database — all BEFORE anything is inserted, so a
     batch never half-lands.
 
-    Two further checks REPORT and never refuse: whether the id has already landed
-    on the default branch (``landed_check``, unless ``KANBAN_LANDED_CHECK=enforce``)
-    and whether any epic claims the id (``task_identity``, rem-hyg-02).
+    Three further checks REPORT and never refuse: whether the id has already
+    landed on the default branch (``landed_check``, unless
+    ``KANBAN_LANDED_CHECK=enforce``), whether any epic claims the id
+    (``task_identity``, rem-hyg-02), and whether the batch puts two unserialized
+    tasks on the same file (``lane_conflicts``, rem-hyg-07).
     """
     if not task_specs:
         return []
@@ -223,6 +225,30 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
             logger.warning("task_factory: unclaimed task id — %s", _f["detail"])
     except Exception as _ti_exc:  # noqa: BLE001 — advisory; never break seeding
         logger.debug("task_factory: identity check unavailable (%s)", _ti_exc)
+
+    # rem-hyg-07: will two of these tasks — or one of these and something already
+    # on the board — fight over the same file? pr_watcher already answers that,
+    # but only for OPEN PRs, which is after both sessions have built: #1684
+    # dispatched a producer and its consumer together and 1,058 lines of the
+    # loser's branch were discarded. Measured on the live board 2026-08-16, 54
+    # pairs shared a file with no dependency path between them and 16 of those
+    # were dispatchable simultaneously; two had already been serialized by hand
+    # that day and a third had turned PR #1730 DIRTY against main.
+    #
+    # REPORT ONLY, and the report says which grade of evidence it rests on:
+    # seed-time contention can only be read out of PROSE, and telling "this task
+    # will WRITE this file" from "this task MENTIONS this file" is a heuristic,
+    # not a fact. Arming it needs a fire-rate survey first, exactly as
+    # rem-hyg-03/04 do for the identity check. Evaluated BEFORE any insert so the
+    # eventual refusal cannot half-land a batch, and FAIL-OPEN — an unreachable
+    # board leaves seeding exactly as it was.
+    try:
+        from tools.kanban import lane_conflicts as _lcf
+
+        for _c in _lcf.check_batch(task_specs):
+            logger.warning("task_factory: sibling file contention — %s", _c["detail"])
+    except Exception as _lcf_exc:  # noqa: BLE001 — advisory; never break seeding
+        logger.debug("task_factory: lane-conflict check unavailable (%s)", _lcf_exc)
 
     from tools.db.storage import get_connection
     from tools.kanban.init_db import init_kanban_tables
