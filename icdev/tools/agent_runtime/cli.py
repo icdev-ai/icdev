@@ -11,6 +11,10 @@ Subcommands::
     icdev chat                     Interactive REPL (full slash-command set).
     icdev chat -q "query"          Single-shot: run one turn, print, exit.
     icdev chat --resume <ctx-id>   Resume an existing conversation.
+    icdev chat --fork <ctx-id> --at <seq>
+                                   Branch a NEW session from that one's state at
+                                   ``seq`` in ``agent_session_events`` (hcx-evt-05).
+                                   Without --at, the legal boundaries are listed.
     icdev sessions list            List this user's conversations (newest first).
     icdev sessions export <ctx-id> Export a transcript as JSONL.
 
@@ -46,6 +50,24 @@ def chat_main(argv: list[str] | None = None) -> int:
         "--resume",
         metavar="CTX_ID",
         help="Resume an existing conversation by its chat context id.",
+    )
+    parser.add_argument(
+        "--fork",
+        metavar="CTX_ID",
+        help=(
+            "Branch a NEW session from an existing one at --at, seeded from that "
+            "session's agent_session_events prefix. Without --at, the legal fork "
+            "boundaries are printed and nothing is created."
+        ),
+    )
+    parser.add_argument(
+        "--at",
+        type=int,
+        metavar="SEQ",
+        help=(
+            "With --fork: the inclusive boundary seq. Resolved against the event "
+            "log, never rounded — a boundary inside an open turn is refused."
+        ),
     )
     parser.add_argument("--user", default=None, help="Operator user id (RLS).")
     parser.add_argument("--tenant", default=None, help="Tenant slug (RLS).")
@@ -97,6 +119,17 @@ def chat_main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    if args.fork and args.resume:
+        print(
+            "icdev chat: --fork and --resume are mutually exclusive — one "
+            "continues a session, the other branches a new one from it.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.at is not None and not args.fork:
+        print("icdev chat: --at is only meaningful with --fork.", file=sys.stderr)
+        return 2
+
     # Master switch (hgx-cfg-01): `icdev disable sag` / ICDEV_SAG_ENABLED=false.
     # Refuse up front rather than starting a runtime the operator turned off —
     # and name both the flag and the file, so the message is actionable.
@@ -141,6 +174,11 @@ def chat_main(argv: list[str] | None = None) -> int:
             print(f"icdev chat: cannot resume {args.resume!r}: {exc}", file=sys.stderr)
             return 2
 
+    if args.fork:
+        rc = _apply_fork(runtime, args)
+        if rc != 0:
+            return rc
+
     # agov-inbox-04. Resolved AFTER --resume, because the flag is keyed on the
     # session and a resumed session carries the one it was started with.
     if _apply_unattended(runtime, args) != 0:
@@ -150,6 +188,89 @@ def chat_main(argv: list[str] | None = None) -> int:
         return _single_shot(runtime, args)
 
     runtime.loop(banner=not args.no_banner, stream=args.stream)
+    return 0
+
+
+def _apply_fork(runtime: Any, args: argparse.Namespace) -> int:
+    """Branch a new session from ``--fork`` at ``--at`` and bind the runtime to it.
+
+    Three properties, in this order:
+
+    1. **No ``--at`` is a survey, not a default.** The legal boundaries are
+       printed and NOTHING is created. Picking one — the last turn, say — would
+       be this CLI choosing a fork point on the operator's behalf, and a fork at
+       the wrong seq is indistinguishable from a fork at the right one until the
+       new session answers the wrong question.
+    2. **A refusal is actionable.** ``ForkRefused`` names the reason and the
+       legal boundaries either side, and both are printed verbatim.
+    3. **Everything goes to stderr.** ``-q --json`` writes a machine-readable
+       result to stdout; a fork banner on the same stream would break it.
+
+    Returns 0 to continue into the session, non-zero to abort.
+    """
+    from tools.agent_runtime.event_log import EventLogUnavailable
+    from tools.agent_runtime.fork import ForkRefused, describe, fork_session
+
+    if args.at is None:
+        try:
+            report = describe(args.fork)
+        except (EventLogUnavailable, ValueError) as exc:
+            print(f"icdev chat: cannot survey {args.fork!r}: {exc}", file=sys.stderr)
+            return 2
+        legal = report["legal_boundaries"]
+        print(
+            f"icdev chat: --fork needs --at. Session {args.fork} holds "
+            f"{report['events']} event(s) across {report['turns']} turn(s).",
+            file=sys.stderr,
+        )
+        print(
+            "  legal boundaries: "
+            + (", ".join(str(s) for s in legal) if legal else "(none yet)"),
+            file=sys.stderr,
+        )
+        if report["open_turn"]:
+            print(
+                f"  a turn is open from seq {report['open_turn']} and cannot be "
+                "forked until it ends.",
+                file=sys.stderr,
+            )
+        return 2
+
+    try:
+        result = fork_session(
+            args.fork,
+            args.at,
+            user_id=args.user,
+            tenant_id=args.tenant,
+            actor=args.user or "",
+        )
+    except ForkRefused as exc:
+        print(f"icdev chat: fork refused ({exc.reason}): {exc}", file=sys.stderr)
+        return 2
+    except (EventLogUnavailable, ValueError) as exc:
+        print(f"icdev chat: cannot fork {args.fork!r}: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        runtime.resume_session(result.context_id)
+    except Exception as exc:  # noqa: BLE001 — the fork exists; binding to it failed
+        print(
+            f"icdev chat: the fork was created as {result.context_id} but could "
+            f"not be opened ({exc}). Resume it with "
+            f"`icdev chat --resume {result.context_id}`.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if not args.no_banner:
+        print(result.summary(), file=sys.stderr)
+    else:
+        # --no-banner suppresses the greeting, never a warning: every entry here
+        # is something the fork could not do (an unwritten seed, a missing
+        # provenance event), and a silent one leaves the operator with a session
+        # that is quietly less than it looks.
+        for warning in result.warnings:
+            print(f"icdev chat: fork warning: {warning}", file=sys.stderr)
     return 0
 
 

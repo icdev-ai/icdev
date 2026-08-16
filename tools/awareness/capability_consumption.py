@@ -454,26 +454,72 @@ def probe_mcp_dispatch_tool(conn, since: datetime, threshold: int, max_listed: i
 
 
 def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed: int) -> ClassResult:
-    """Tools the approval policy enumerates by tier vs. gate decisions recorded."""
+    """Tools the approval policy REQUIRES APPROVAL FOR vs. gate decisions recorded.
+
+    Two narrowings, both rem-cap-05, both because the naive reading of this class
+    could never reach zero even with a perfectly wired gate.
+
+    1. ``declared`` is scoped to the tiers in ``require_approval_tiers``. The hook
+       ``build_approval_hook`` returns early for a call that does not require
+       approval (approval_gate.py, "allowed without ceremony and without a row"),
+       which is the right design for an audit trail of DECISIONS — but it means
+       the 37 tools in the ``reversible``/``recoverable`` tiers could be
+       classified ten thousand times a day and ``agent_approval_log`` would still
+       hold nothing for any of them. Counting them as declared-and-inert made a
+       working gate indistinguishable from an absent one, in the direction that
+       pins the budget at >= 37 forever. They are reported in
+       ``extra.not_measurable_by_design``, ENUMERATED rather than merely counted,
+       so a tier change or a policy edit is visible — a class that quietly shrank
+       its own denominator would be the same dishonesty pointed the other way.
+       The tier list is read from the policy, never hardcoded: an operator who
+       adds ``recoverable`` to ``require_approval_tiers`` moves those 13 tools
+       into the measurable set on the next run.
+
+    2. Events are filtered on ``tier``. ``tools/quality/hitl_delta.py``
+       legitimately reuses ``record_decision()`` and this table for a different
+       kind of decision (tiers ``review`` / ``trust_delta``, rules
+       ``claim_guard`` / ``hitl_delta``) — tiers ``classify()`` can never emit.
+       The probe previously reported zero only because those rows' ``tool_name``
+       values happened not to collide with a policy-enumerated tool; a collision
+       would have reported FALSE consumption for a gate that has never run.
+    """
     res = ClassResult(
         capability_class="agent_approval_rule",
-        declaration_source="args/agent_approval_policy.yaml (tools.*)",
-        telemetry_table="agent_approval_log",
+        declaration_source="args/agent_approval_policy.yaml (tools.* in require_approval_tiers)",
+        telemetry_table="agent_approval_log (tier IN approval_gate.TIERS)",
     )
     try:
         from tools.agent_runtime.approval_gate import TIERS, load_policy
 
         policy = load_policy()
         tools_by_tier = policy.get("tools") or {}
+        require = {
+            str(t).strip().lower() for t in (policy.get("require_approval_tiers") or [])
+        }
+        measurable = tuple(t for t in TIERS if t in require)
         declared = [
             str(name).lower()
-            for tier in TIERS
+            for tier in measurable
             for name in (tools_by_tier.get(tier) or [])
         ]
+        excluded_by_tier = {
+            tier: sorted({str(n).lower() for n in (tools_by_tier.get(tier) or [])})
+            for tier in TIERS
+            if tier not in require and (tools_by_tier.get(tier) or [])
+        }
     except Exception as exc:  # noqa: BLE001
         return _unmeasured(
             "agent_approval_rule", res.declaration_source, res.telemetry_table,
             f"declaration source unreadable: {exc}",
+        )
+
+    if not measurable:
+        # No tier requires approval, so the hook records nothing for any tool.
+        # Reporting a clean 0 declared / 0 inert here would launder a gate that
+        # cannot write a row into a gate with nothing left to prove.
+        return _unmeasured(
+            "agent_approval_rule", res.declaration_source, res.telemetry_table,
+            "require_approval_tiers is empty — no call can produce a decision row",
         )
 
     from tools.db.storage import table_exists
@@ -483,8 +529,20 @@ def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed:
             "agent_approval_rule", res.declaration_source, res.telemetry_table,
             "agent_approval_log does not exist",
         )
+    if _column_type(conn, "agent_approval_log", "tier") is None:
+        # Without the discriminator the count cannot exclude hitl_delta's rows,
+        # and an over-count here reads as a live gate. Say so instead.
+        return _unmeasured(
+            "agent_approval_rule", res.declaration_source, res.telemetry_table,
+            "agent_approval_log has no tier column — consumption is indistinguishable "
+            "from other record_decision() writers",
+        )
     try:
-        counts = _count_by_key(conn, "agent_approval_log", "tool_name", "decided_at", since)
+        counts = _count_by_key(
+            conn, "agent_approval_log", "tool_name", "decided_at", since,
+            extra_sql="AND LOWER(tier) IN (" + ", ".join(["%s"] * len(TIERS)) + ")",
+            extra_params=tuple(TIERS),
+        )
     except Exception as exc:  # noqa: BLE001
         _rollback(conn)
         return _unmeasured(
@@ -492,7 +550,22 @@ def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed:
             f"query failed: {exc}",
         )
     counts = {str(k).lower(): v for k, v in counts.items()}
-    return _finish(res, declared, counts, threshold, max_listed)
+    res = _finish(res, declared, counts, threshold, max_listed)
+    excluded_flat = sorted({n for names in excluded_by_tier.values() for n in names})
+    res.extra["require_approval_tiers"] = sorted(require)
+    res.extra["not_measurable_by_design"] = {
+        "count": len(excluded_flat),
+        "tiers": sorted(excluded_by_tier),
+        "tools_by_tier": {
+            tier: names[:max_listed] for tier, names in sorted(excluded_by_tier.items())
+        },
+        "truncated": any(len(names) > max_listed for names in excluded_by_tier.values()),
+        "why": (
+            "build_approval_hook auto-allows a tier outside require_approval_tiers "
+            "without writing a row; these tools can never appear in agent_approval_log"
+        ),
+    }
+    return res
 
 
 def probe_mcp_tool_authorization(

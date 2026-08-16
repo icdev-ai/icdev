@@ -646,6 +646,17 @@ tests/test_agent_policy_composition.py
 # same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
 tests/test_capability_consumption.py
 
+# rem-cap-05 -- the two narrowings on probe_agent_approval_rule. Gated because
+# both failure modes are silent and point in opposite directions: counting all
+# four policy tiers as declared pinned the liveness budget at >= 37 forever (the
+# 37 auto-allowed tools can never produce a row, so a wired gate and an absent
+# one measure identically), and counting agent_approval_log without the `tier`
+# discriminator would report FALSE consumption the first time hitl_delta's
+# record_decision() reuse picked a tool name the policy enumerates. The headline
+# test is a review-tier row on a declared tool name. Seeded temp SQLite, no DB
+# service, LLM or network, <1s.
+tests/test_capability_consumption_approval_tiers.py
+
 # rem-cap-01 -- GEPA decision recording, the last known-inert capability. The
 # defect was invisible to every existing test because GEPA's cycle SUCCEEDED
 # while recording nothing: the only outcome it could write was status='applied',
@@ -1927,6 +1938,16 @@ tests/kanban/test_lane_conflicts.py
 # instead of stamping Anthropic's cache_control on a provider-neutral request.
 # No SDK, key, network or DB — pure declaration + translation.
 tests/test_prefix_cache_capability.py
+# hcx-evt-05 — forking a session at a seq. Gated because the refusals are the
+# feature: a fork boundary that started rounding into an open turn, or a
+# projection that stopped ordering an assistant tool_use ahead of the
+# tool_result answering it, produces a seeded session that looks right until the
+# next provider call rejects it -- and a seed linked as a resume_session_id
+# without being read back produces one that looks continued and remembers
+# nothing. 21 tests, ~1s; the table is built from the migration's own DDL into a
+# tmp sqlite file and the chat manager, saver and loader are injected, so no
+# board, no canvas DB, no network, no LLM.
+tests/agent_runtime/test_fork.py
 # cch-prov-03: Ollama's prefix cache pays in LATENCY, so the savings card must
 # report "not applicable" for a local provider rather than a dollar figure — it
 # was reporting a fabricated NON-ZERO one ($0.0040 against Anthropic's rate card
