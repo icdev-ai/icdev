@@ -573,16 +573,62 @@ jobs:
       ICDEV_AISG_ENABLED: "true"
       ICDEV_ACE_ENABLED: "true"
       ICDEV_SLIDES_ENABLED: "true"
-      # Network canvas disabled in E2E until PGP migration resolves shared-DB
-      # table collisions (simulation_results/topologies schema mismatch).
-      ICDEV_NDC_ENABLED: "false"
-      ICDEV_NETWORK_ENABLED: "false"
+      # SIX CANVASES WERE OFF HERE, so the armed route smoke TOLERATED their 8
+      # routes instead of covering them. Tolerated is not tested: a 500 on any
+      # of them would have gone unnoticed exactly as before. Turning them on is
+      # what converts the concession into coverage.
+      #
+      #   odc  /observability, /observability/ask   ICDEV_ODC_ENABLED
+      #   pdc  /devops/ask                          ICDEV_PDC_ENABLED
+      #   bdc  /boundary/ask                        ICDEV_BDC_ENABLED
+      #   ddc  /data/ask                            ICDEV_DDC_ENABLED
+      #   idc  /infra/ask                           ICDEV_IDC_ENABLED
+      #   ndc  /network/ask, /network/diagram-analysis
+      #
+      # Five simply defaulted to false and were never named here. The sixth was
+      # switched off deliberately — "until PGP migration resolves shared-DB
+      # table collisions (simulation_results/topologies schema mismatch)" —
+      # which is a statement about sharing ONE database, and is answered below
+      # by giving it its own.
+      ICDEV_ODC_ENABLED: "true"
+      ICDEV_PDC_ENABLED: "true"
+      ICDEV_BDC_ENABLED: "true"
+      ICDEV_DDC_ENABLED: "true"
+      ICDEV_IDC_ENABLED: "true"
+      ICDEV_NDC_ENABLED: "true"
+      ICDEV_NETWORK_ENABLED: "true"
       # Force canvas-specific DBs to SQLite — their tables (security_designs,
       # migration_designs, aiml_designs) are not in the consolidated PG schema
       # yet; using SQLite lets init_db() create them fresh so routes return 200.
       SC_STORAGE_BACKEND: sqlite
       MC_STORAGE_BACKEND: sqlite
       AIMC_STORAGE_BACKEND: sqlite
+      # Same treatment, same reason, and MEASURED rather than assumed — each
+      # canvas's CREATE TABLE set was diffed against
+      # tools/db/schema/pg_consolidated.sql (1,331 tables):
+      #
+      #   odc  15 of 16 tables absent    -> its own SQLite db
+      #   bdc  12 of 12 tables absent    -> its own SQLite db
+      #   ndc  ~137 of 147 tables absent -> its own SQLite db, which also ends
+      #        the shared-DB collision the comment above described
+      OC_STORAGE_BACKEND: sqlite
+      BDC_STORAGE_BACKEND: sqlite
+      NC_STORAGE_BACKEND: sqlite
+      # pdc, ddc and idc declare ZERO tables missing from the snapshot, so they
+      # stay on PostgreSQL deliberately. Pointing every canvas at SQLite would
+      # have been the easy uniform answer and would have thrown away the better
+      # coverage: these three exercise the backend the platform actually runs on.
+      #
+      # pdc and idc do each name a DEDICATED database (PC_PG_DATABASE and
+      # IDC_PG_DATABASE), which this job's container does not create — and it
+      # does not matter here, because they never get one. get_connection() only
+      # honours db_path as a SQLite file when the backend IS sqlite and the name
+      # ends in '.db'; on PostgreSQL it ignores db_path and returns the shared
+      # icdev connection (tools/db/storage.py, "the '.db' path is ignored and the
+      # connection goes to the shared icdev database"). So both land on the
+      # database this job already builds, and their tables are in it. The
+      # dedicated-database contract being fiction on PG is a real finding, but a
+      # pre-existing one, and not this change's to fix.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -720,32 +766,21 @@ jobs:
       # makes it finish but is explicitly NOT full coverage. This is the only
       # place a full sweep can run, because it needs a live dashboard.
       #
-      # ARMED, on a measured pass rate. The survey ran on #1716 and reported
-      # 81/89 OK with 8 failing — every one a 404, and every one a canvas this
-      # job does not enable:
+      # FULLY ENFORCED. The survey on #1716 found 8 of 89 failing, all 404s from
+      # canvases this job did not enable, and #1717 tolerated them via
+      # --expect-fail. Tolerated is not tested — a 500 on any of those eight
+      # would have gone unnoticed exactly as before — so the six canvases are
+      # now enabled in the job env above and the concession is gone.
       #
-      #   /network/ask, /network/diagram-analysis   ICDEV_NETWORK_ENABLED=false,
-      #                                             set explicitly above pending
-      #                                             the PGP migration
-      #   /observability, /observability/ask        no ICDEV_OBSERVABILITY_ENABLED
-      #   /devops/ask, /boundary/ask,               no flag set for those
-      #   /data/ask, /infra/ask                     canvases in this job's env
-      #
-      # A 404 from a disabled canvas is correct behaviour. A 500 is not, and is
-      # exactly what this gate is for — so the eight are listed as --expect-fail
-      # rather than --exclude: they are still CHECKED, and if one starts passing
-      # the run says STALE and names it, so the list cleans itself instead of
-      # quietly costing coverage forever.
-      #
-      # Anything else failing now fails the job. That is the point: this gate
-      # had never once run to completion anywhere (fli-smk-01), so until now a
-      # route could 500 on every PR and nothing would say so.
+      # There is deliberately no --expect-fail list left. If one has to come
+      # back it must name the route and say which canvas and why, the way the
+      # env block above does; an empty list is the only state that needs no
+      # justification.
       - name: Route smoke — full nav sweep
         run: |
           set -o pipefail
           python tools/testing/route_smoke.py --all --json \
             --base http://localhost:5050 \
-            --expect-fail "/network/ask,/network/diagram-analysis,/observability,/observability/ask,/devops/ask,/boundary/ask,/data/ask,/infra/ask" \
             > route-smoke.json || true
           python - <<'PY'
           import json, sys
