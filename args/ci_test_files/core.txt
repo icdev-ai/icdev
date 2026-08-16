@@ -1919,3 +1919,15 @@ tests/kanban/test_identity_check_arming.py
 # injected and the environment is a dict, so no DB, no network, and no write to
 # os.environ (the snapshot fixture explains why that one matters in-suite).
 tests/agent_runtime/test_posture_selection.py
+
+# rem-hyg-07: sibling file contention detected at SEED time, not after the PR.
+# pr_watcher's guard runs on OPEN PRs, which is after both sessions have built —
+# #1684 dispatched a producer and its consumer together and 1,058 lines of the
+# loser's branch were discarded. Pins the two dependency mechanisms (scalar AND
+# junction, because _deps_satisfied ANDs them), the live/latent ranking, and the
+# six prose suppressions — including the three found by running the check
+# against the live board, where every string asserted is real text from a real
+# row. Also pins the residual hole, so a reader sees the edge of the heuristic
+# instead of assuming prose parsing is solved. 44 tests, ~1s, synthetic rows and
+# a stub git runner: no board, no network, no LLM.
+tests/kanban/test_lane_conflicts.py

@@ -2153,6 +2153,36 @@ KANBAN_IDENTITY_CHECK=off       # do not run the check at all
 # widen an exemption list to compensate, and never drop no_card — that is the HCX case.
 python -m tools.kanban.identity_survey --json | python -c "import json,sys; print(json.load(sys.stdin)['enforcement'])"
 
+# Kanban — will two tasks fight over the same file? Asked at SEED time (rem-hyg-07)
+python -m tools.kanban.lane_conflicts --json
+python -m tools.kanban.lane_conflicts                  # table grouped by shared file
+python -m tools.kanban.lane_conflicts --live-only      # only pairs BOTH dispatchable now
+python -m tools.kanban.lane_conflicts --from-branches  # exact paths, where a branch exists
+python -m tools.kanban.lane_conflicts --task <task-id>
+# pr_watcher's hold_on_sibling_conflict already asks this — about OPEN PRs, which is after both
+# sessions have BUILT. #1684 dispatched a producer and its consumer together, the loser's PR was
+# unlandable, and 1,058 lines were discarded. Measured 2026-08-16 across 44 non-terminal tasks:
+# 54 pairs shared a file with NO dependency path between them, 16 dispatchable simultaneously.
+# Reads BOTH dependency mechanisms (scalar depends_on_task_id AND the kanban_task_deps junction)
+# because _deps_satisfied ANDs them — either alone serializes, so consulting one would report a
+# hand-serialized pair as a live race. Ranks live vs latent: a task whose dependency is
+# unsatisfied cannot race today, and reporting the two identically buries the real finding.
+# Gate sentinels are excluded (gates.is_manual_gate) — a path in a RISK: description is not work.
+# TWO EVIDENCE GRADES, never merged: prose (seed-time, the only time it helps, and a heuristic)
+# and branch (git diff origin/main...kanban/<id>, exact but late). Where a branch exists its
+# paths REPLACE the prose guess. Each branch is compared to origin/main and NEVER to another
+# branch: merge-tree between two task tips reports conflicts the forge never sees, since the
+# forge merges each into main in sequence (hcx-live-02 vs hcx-live-03 said CONFLICT while
+# against main hcx-live-03 was CLEAN). Six suppressions, every one found by RUNNING it: command
+# (a path inside `python tools/...` is a tool to run), evidence (a specimen in a caps-led
+# MEASURED paragraph — deliberately NOT rescued by a write verb, since such a paragraph narrates
+# writes that already happened), precedent ("Follow args/ci_test_backlog.txt"), citation ("see X"
+# or a docs/ path with no write verb), negated ("Do NOT change ..."), coordination (the shared
+# list in tools/git/coordination_paths.py, which pr_watcher's merge-time guard also imports —
+# a second divergent copy is worse than none). Those took the board from 3 live findings of
+# which 0 were real to 0 live / 8 latent. REPORT ONLY at the create_tasks seam; arming it needs
+# a fire-rate survey first, exactly as rem-hyg-03/04 do for the identity check.
+
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
 python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
