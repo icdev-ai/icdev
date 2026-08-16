@@ -1825,6 +1825,7 @@ tests/test_canvas_dedicated_pg_database.py
 # an extension controls, turns a drop-in extension file into a permission
 # bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
 tests/agent_runtime/test_dispatch_extension_point.py
+tests/test_kanban_suggested_decay.py
 
 # hcx-live-03 — AGENT_START/AGENT_END are dispatched from AgentRuntime.run_turn,
 # and the four points that still cannot fire are named with evidence. Gated for

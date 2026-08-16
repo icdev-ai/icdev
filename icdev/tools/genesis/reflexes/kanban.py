@@ -8319,6 +8319,55 @@ def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
 
 _SUGGESTED_DECAY_HOURS = _int_env("KANBAN_SUGGESTED_DECAY_HOURS", 48)
 
+#: How often the 'suggested' recovery sweep is allowed to run, in seconds.
+#:
+#: It used to be a COIN FLIP: the call site read ``if _rr.random() < 0.004``,
+#: commented "once every ~4 h (1/240 cycles)". A probability is not a schedule —
+#: 0.4% per cycle has an expected wait of ~250 cycles and NO UPPER BOUND, so a
+#: task could sit far longer than four hours and nothing would be wrong.
+#:
+#: That mattered because of WHAT the sweep recovers. ``_unblock_dep_chain``
+#: revives tasks parked with "no executor available" — a task that was never
+#: attempted, carries failure_count = 0, and is parked for an infrastructure
+#: reason ``failure_triage`` already classifies as "nothing in the repo is
+#: broken". 369 such rows exist on this board. That function's own docstring
+#: says the churn "is deliberate — it is cheap (a status write; no branch, no
+#: PR, no merge)" and describes reviving "each cycle", so it was written to run
+#: often; only the call site disagreed.
+#:
+#: A SHORTER INTERVAL CANNOT PROMOTE ANYTHING THAT WAS NOT ALREADY ELIGIBLE.
+#: Each pass owns its own criteria and they are untouched here: the decay pass
+#: still requires ``updated_at`` older than _SUGGESTED_DECAY_HOURS, the
+#: quarantine revive still requires its cooldown and per-task cap, and
+#: _unblock_dep_chain still only selects blocked or no-executor rows. The only
+#: thing that changes is how promptly an ALREADY-eligible task is picked up.
+#:
+#: 300s matches the "five-minute executor degrade" the unblock docstring is
+#: written around, and bounds the churn it warns about: a long outage now
+#: revives-and-requarantines ~12 times an hour per task rather than ~250 times.
+#: Measured cost of one sweep on this board: 6.5 ms (decay select) + 1.8 ms
+#: (unblock select).
+_SUGGESTED_SWEEP_INTERVAL_SEC = _int_env("KANBAN_SUGGESTED_SWEEP_INTERVAL_SEC", 300)
+
+#: Monotonic timestamp of the last sweep. Process-local on purpose, matching
+#: `_degraded_executors`: a fresh scheduler should sweep promptly rather than
+#: inherit a suppression window from the process it replaced.
+_last_suggested_sweep_at: float = 0.0
+
+
+def _suggested_sweep_due(now: Optional[float] = None) -> bool:
+    """True when the recovery sweep is due, and records that it ran.
+
+    Deterministic and bounded, which a probability is not. Uses a monotonic
+    clock so a system time change cannot postpone recovery indefinitely.
+    """
+    global _last_suggested_sweep_at
+    current = time.monotonic() if now is None else now
+    if current - _last_suggested_sweep_at < _SUGGESTED_SWEEP_INTERVAL_SEC:
+        return False
+    _last_suggested_sweep_at = current
+    return True
+
 #: Why a decay promotion happened. Recorded on the ``kanban_status_transitions``
 #: row — never on ``last_failure_reason``, which is a *triage input*, not a
 #: general-purpose note field (see ``_promote_stale_suggested``).
@@ -11109,9 +11158,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     except Exception as _cf_exc:
         logger.warning("CI failure detection failed: %s", _cf_exc)
 
-    # Suggested-decay: re-queue soft-stuck tasks once every ~4 h (1/240 cycles).
+    # Suggested-recovery sweep, on a deterministic interval (was a 0.4% coin
+    # flip per cycle — an expected ~4 h wait with no upper bound, for tasks that
+    # were never attempted). See _SUGGESTED_SWEEP_INTERVAL_SEC.
     try:
-        if _rr.random() < 0.004:  # noqa: S311
+        if _suggested_sweep_due():
             _promote_stale_suggested()
     except Exception as _pss_exc:
         logger.warning("suggested-decay sweep failed: %s", _pss_exc)
