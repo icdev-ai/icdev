@@ -3229,11 +3229,20 @@ python tools/skills/gepa_optimizer.py --json                             # Run o
 python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
 # MCP tool: gepa_optimizer
 #   Parameters: dry_run (bool, default false) — when true, scan runs but no DB writes are committed.
-#   Returns:    {applied: [{capability_id, action, fitness, dry_run}],
-#                skipped: [{capability_id, reason, fitness}],
-#                errors:  [str]}
+#   Returns:    {applied:  [{capability_id, action, fitness, dry_run}],
+#                declined: [{artifact_id, decision}],
+#                skipped:  [{capability_id, reason, fitness}],
+#                errors:   [str]}
 #   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
 #   Skill:      tools/skills/gepa_optimizer.py::run()
+# rem-cap-01 — GEPA records a decision against EVERY artifact it evaluates, in
+# agent_improvement_artifacts.gepa_decision / gepa_decided_at (migration
+# 20260816125047_gepa_decision_columns). Terminal, so the artifact leaves the
+# queue: declined_no_delta, declined_low_score, declined_unmappable_skill.
+# Retried next cycle: declined_skill_file_missing, declined_rubric,
+# declined_empty_patch. `capability_consumption`'s skill_optimizer class counts
+# a recorded decision — applied OR declined — because counting applies alone
+# made a correct decline indistinguishable from never having run.
 # Genesis daemon 24h trigger — GEPA reflex fires daily via the genesis daemon loop:
 #   Config:     args/genesis_config.yaml — add a "gepa_optimizer" entry with interval_seconds: 86400
 #   Interval:   86400 s (24 h); controlled by interval_seconds / interval_hours in genesis_config.yaml
