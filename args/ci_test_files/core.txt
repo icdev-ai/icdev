@@ -1948,3 +1948,9 @@ tests/test_prefix_cache_capability.py
 # tmp sqlite file and the chat manager, saver and loader are injected, so no
 # board, no canvas DB, no network, no LLM.
 tests/agent_runtime/test_fork.py
+
+# cch-prov-02: Gemini explicit caching as the managed_object capability —
+# create / reuse / expire a cachedContents object, and the economics gate in
+# front of it (default OFF, size floor, never on a prefix's first sighting).
+# Fake SDK: no vendor package, key, network or DB.
+tests/test_gemini_managed_object_cache.py
