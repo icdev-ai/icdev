@@ -141,6 +141,19 @@ def _positive_int(value: Any) -> Optional[int]:
 # No new table: `runtime_invocations` already exists for exactly this shape and
 # already enforces the rules that matter here (never raises, stores argument KEY
 # NAMES only, degrades before its migration has run).
+#
+# COST, measured rather than assumed. One dispatch costs ~8ms wall-clock for the
+# open/close pair (SQLite, warm; ~2.4ms of that is two `get_connection()` round
+# trips and the rest is the commit). That is the same price `record()` has been
+# charging the MCP surface per tool call since migration 341, so this doubles an
+# accepted cost rather than introducing a new class of one — but since
+# hcx-live-01 it lands on EVERY tool call in the SAG runtime, which is worth
+# knowing before you register a handler here. Two named, auditable switches turn
+# it off: `ICDEV_OBS_INVOCATIONS=0` for all invocation telemetry, or
+# `hook_points.<point>.enabled: false` for one point (which skips the dispatch
+# entirely, telemetry included — ~0.002ms). Never a code edit that drops the
+# row while leaving the point live: that is how the seam became unmeasurable in
+# the first place.
 
 
 def _record_dispatch(hook_point: "ExtensionPoint", context: dict):

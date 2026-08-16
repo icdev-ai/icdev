@@ -60,6 +60,17 @@ Two deliberate choices:
   down should not keep paying two SQL statements per call for it. The
   suppression is counted in `ExtensionManager.stats()` instead.
 
+**Cost, measured rather than assumed.** One dispatch costs ~8 ms wall-clock for
+the open/close pair (SQLite, warm; ~2.4 ms of that is two `get_connection()`
+round trips, the rest the commit). That is the same price `record()` has charged
+the MCP surface per tool call since migration 341, so this doubles an accepted
+cost rather than introducing a new class of one — but since hcx-live-01 it lands
+on **every tool call in the SAG runtime**. Two named, auditable switches turn it
+off: `ICDEV_OBS_INVOCATIONS=0` for all invocation telemetry, or
+`hook_points.<point>.enabled: false` for one point, which skips the dispatch
+entirely at ~0.002 ms. Never a code edit that drops the row while leaving the
+point live — that is how the seam became unmeasurable in the first place.
+
 `stats()` is the in-process half: per point, `dispatches`, `suppressed`,
 `handlers_run`, `handler_failures`, `handlers_dropped`, `timeouts`,
 `modifications_suppressed`, and `last_error` verbatim. It is what a caller with
