@@ -6659,3 +6659,44 @@ project-root `extensions/` directory outside this repository, so a removal is an
 ```bash
 pytest tests/test_extension_point_liveness.py -v   # AGENT_START/END wiring + the census (12 tests)
 ```
+
+---
+
+## Prompt-Cache Regression Signal (cch-obs-02)
+
+`cch-tel-01` made the per-call cache counts exist; nothing watched them CHANGE.
+A provider that was serving cached tokens and stops renders identically to one
+that was never enabled — both are zero — which is how Azure discarded its
+cached-token count for its entire life with nothing going red.
+
+```bash
+python -m tools.cache_savings.regression                       # per-provider table + verdicts
+python -m tools.cache_savings.regression --json
+python -m tools.cache_savings.regression --window-end 2026-08-01T00:00:00+00:00   # replay a past window
+python -m tools.cache_savings.regression --gate                # 0 clean / 1 regression / 2 unmeasurable
+python -m tools.genesis.reflexes.cache_regression_reflex --dry-run   # detect, file no cards
+```
+
+Three rungs: `stopped` (cache reads across the baseline window, exactly zero
+across the recent one), `collapsed` (share fell past `collapse_drop_ratio`) and
+`never_cached` (a mechanism that bills cached tokens, a real sample, never one
+read). The comparative rungs ignore the mechanism declaration — a provider that
+DID report cache reads was caching whatever any config claims.
+
+Every non-finding is NAMED, because a zero here has four meanings:
+`mechanism_no_billing` (Ollama's KV reuse bills nothing back — a permanent zero
+is correct), `pre_instrumentation_unknown`, `mechanism_unknown`,
+`insufficient_calls`, `no_traffic`. Rows predating `instrumented_since` hold a
+BACKFILLED zero and are excluded from the `never_cached` rung; an empty or
+unmigrated ledger reports `unmeasurable`, never a clean bill.
+
+`collapse_drop_ratio: 0.7` was fitted against 79 historical window pairs out of
+this ledger — 0.00% false-fire, against 8.86% at 0.5 and 29.27% at 0.3. **Never
+widen a threshold to silence a finding**; re-measure and say what you measured.
+Thresholds and the mechanism map: `args/cache_regression.yaml`. The genesis
+reflex `cache_regression_reflex` runs it every 6h and files one card per finding
+with an id deterministic in (rung, provider).
+
+```bash
+pytest tests/test_cache_regression.py -v   # both directions: fires, and does not (28 tests)
+```
