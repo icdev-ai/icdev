@@ -1163,6 +1163,84 @@ works and it is tested. This is the audit / fork / replay path running beside it
 
 ---
 
+## Forking a Session at a `seq` (hcx-evt-05)
+
+The branching primitive ICDEV did not have. `parent_session_id` on
+`run_agent_loop` records sub-agent *lineage*; this is "this session is that one
+up to turn N, and then something else".
+
+```bash
+icdev chat --fork <ctx-id>                  # survey: the legal boundaries, creates nothing
+icdev chat --fork <ctx-id> --at 12          # branch here, then drop into the REPL
+icdev chat --fork <ctx-id> --at 12 -q "try the other approach"
+
+python -m tools.agent_runtime.fork --session <ctx-id> --boundaries
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --dry-run --json
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --title "branch B"
+```
+
+In the chat REPL:
+
+```
+/fork                    # the seqs this session may be forked at
+/fork 12                 # fork here and switch into the branch
+/fork 12 | branch B      # …with a title
+```
+
+**The boundary is resolved against the log, never against `messages_json`.**
+`--at` names a `seq` in `agent_session_events`, which is monotonic per session
+under a UNIQUE `(session_id, seq)` index. A number naming no event is refused
+rather than clamped: an operator who mistypes a boundary and silently gets a
+different fork has been handed a wrong answer that looks like a right one.
+
+**A boundary inside an open turn is REFUSED, not rounded.** Borrowed from DSH
+rather than rediscovered. A prefix ending mid-turn is not a shorter conversation,
+it is an illegal one — an assistant `tool_use` block with no matching
+`tool_result`, which the next provider call rejects (a constraint `agent_loop`
+already states at the budget check it placed *before* appending the assistant
+message). A legal boundary is one where no turn is open, every announced tool
+call has been answered, no `tool_result` is left over, and no projected payload
+is withheld. Every refusal names the legal boundaries either side, so the correct
+fork is one re-run away and never a guess.
+
+**A withheld payload cannot be forked, and says so.** `payload_json IS NULL`
+beside a NOT NULL `payload_hash` means WITHHELD BY POLICY
+(`args/agent_event_log.yaml`), which is not the same as empty. Projecting one
+would seed the branch with a message the model never saw, carrying a
+correct-looking digest. A hash-only deployment gets a refusal naming the policy,
+not a fork with holes in it.
+
+**The event order is not the message order.** `run_agent_loop` fires `on_turn`
+after the post-tool hooks, so a tool-using iteration lands in the log as
+`tool_call, tool_result, …, assistant_message` — the assistant message carrying
+the `tool_use` blocks arrives *after* the results answering them. The projection
+buffers a result until the message that announced its call lands, so both that
+order and the reverse project to the same legal message list. `tool_call` events
+are not projected: they carry no `tool_use` id, so the assistant message is the
+authoritative source for the blocks, and a result whose name matches no
+outstanding call is left orphaned rather than attached to a different tool.
+
+**What a fork writes:** a new `agent_loop_sessions` row holding the projected
+messages (read back before it is trusted — a `resume_session_id` pointing at a
+row that was never written produces a session that looks continued and remembers
+nothing), a new `chat_contexts` row whose `context_config.fork` carries the
+parent id, the boundary seq, the seed length and a digest over the seeded
+events' hashes, one `session_fork` event at `seq` 1 of the new session's own log,
+and the projected user/assistant turns replayed into `chat_messages`. The prefix
+events themselves are **not** copied: the digest proves which prefix was seeded
+without duplicating a byte of it, and copying would have needed a second write
+verb on a module whose surface is deliberately `append` / `read_session` /
+`next_seq`.
+
+**One inherited limitation.** The forked session's next turn behaves exactly as
+`--resume`'s does, including that `run_agent_loop` does not append a new
+`user_prompt` to a transcript loaded from `resume_session_id`
+(`tests/test_agent_loop.py::test_resume_loads_prior_messages` passes
+`user_prompt="ignored"`). That is a pre-existing property of the resume seam, not
+of forking, and fixing it belongs to `AgentRuntime.run_turn`.
+
+---
+
 ## Permission Posture Selection — Operator Intent, Separately From the Knobs (hcx-post-02)
 
 hcx-post-01 named the combination of safety knobs. This is the half that records

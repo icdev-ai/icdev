@@ -31,6 +31,9 @@ none of them is a stub:
   permission posture in force.
 - ``/posture``      — show or select the permission posture; selecting one
   records the decision in ``agent_session_events`` (hcx-post-02).
+- ``/fork``         — branch a new session from this one at a ``seq`` in the
+  append-only event log (hcx-evt-05); with no argument it lists the boundaries
+  a fork is legal at rather than choosing one.
 - ``/search``       — full-text search across past session turns.
 - ``/snapshot``     — checkpoint repo paths before a risky edit.
 - ``/rollback``     — preview or apply a rollback to a checkpoint.
@@ -238,6 +241,83 @@ def _cmd_posture(runtime: Any, arg: str) -> "tuple[str, bool]":
         tenant_id=getattr(runtime, "tenant_id", "") or None,
     )
     return result.summary(), False
+
+
+def _cmd_fork(runtime: Any, arg: str) -> "tuple[str, bool]":
+    """Branch a new session from this one at a seq (hcx-evt-05).
+
+    Usage:
+      /fork                    List the seqs this session may be forked at
+      /fork <seq>              Fork here and switch to the new session
+      /fork <seq> | <title>    …with a title
+
+    The boundary is resolved against ``agent_session_events``, never against the
+    stored message blob, and one that lands inside an open turn is REFUSED
+    rather than rounded to a turn boundary: a prefix ending mid-turn produces a
+    ``tool_use`` with no ``tool_result``, which the next provider call rejects.
+
+    Switching is the point of doing this in the REPL — after a fork the session
+    in front of the operator IS the branch, so the next thing they type goes to
+    it. The parent is untouched and still resumable by its own id.
+    """
+    from tools.agent_runtime.event_log import EventLogUnavailable
+    from tools.agent_runtime.fork import ForkRefused, describe, fork_session
+
+    session_id = str(getattr(getattr(runtime, "session", None), "context_id", "") or "")
+    if not session_id:
+        return "No current session to fork.", False
+
+    ref, _sep, title = arg.partition("|")
+    ref = ref.strip()
+
+    try:
+        if not ref:
+            report = describe(session_id)
+            legal = report["legal_boundaries"]
+            lines = [
+                f"Session {session_id}: {report['events']} event(s), "
+                f"{report['turns']} turn(s), max seq {report['max_seq']}.",
+                "Legal fork boundaries: "
+                + (", ".join(str(s) for s in legal) if legal else "(none yet)"),
+            ]
+            if report["open_turn"]:
+                lines.append(
+                    f"A turn is open from seq {report['open_turn']} — it cannot be "
+                    "forked until it ends."
+                )
+            if report["withheld"]:
+                lines.append(
+                    f"{len(report['withheld'])} event(s) have withheld payloads and "
+                    "cannot be projected (args/agent_event_log.yaml)."
+                )
+            lines.append("Fork with '/fork <seq>'.")
+            return "\n".join(lines), False
+
+        if not ref.lstrip("-").isdigit():
+            return "Usage: /fork [<seq>] — the boundary is a seq, not a turn number.", False
+
+        result = fork_session(
+            session_id,
+            int(ref),
+            title=title.strip(),
+            user_id=getattr(runtime, "user_id", None),
+            tenant_id=getattr(runtime, "tenant_id", None),
+            actor=str(getattr(runtime, "user_id", "") or ""),
+        )
+    except ForkRefused as exc:
+        return f"Refused ({exc.reason}): {exc}", False
+    except (EventLogUnavailable, ValueError) as exc:
+        return f"Cannot fork: {exc}", False
+
+    try:
+        runtime.resume_session(result.context_id)
+    except Exception as exc:  # noqa: BLE001 — the fork exists; only the switch failed
+        return (
+            f"{result.summary()}\nThe fork was created but could not be opened "
+            f"({exc}). Resume it with: icdev chat --resume {result.context_id}",
+            False,
+        )
+    return f"{result.summary()}\nYou are now in the fork.", False
 
 
 def _cmd_search(_runtime: Any, arg: str) -> "tuple[str, bool]":
@@ -681,6 +761,7 @@ REGISTRY: dict[str, Command] = {
     "/goal": Command(_cmd_goal, "Manage standing goals injected into the prompt. Usage: /goal create|list|status|pause|resume|complete|block|cancel|clear ..."),
     "/usage": Command(_cmd_usage, "Show token/cost stats and the posture in force."),
     "/posture": Command(_cmd_posture, "Show or select the permission posture. Usage: /posture [list|<name>]"),
+    "/fork": Command(_cmd_fork, "Branch this session at a seq. Usage: /fork [<seq>] [| title]"),
     "/search": Command(_cmd_search, "Search past session turns. Usage: /search <query>"),
     "/snapshot": Command(_cmd_snapshot, "Checkpoint paths now. Usage: /snapshot <path> [more...]"),
     "/rollback": Command(_cmd_rollback, "Preview/apply a rollback. Usage: /rollback [N|id] [--yes]"),
