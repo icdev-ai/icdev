@@ -118,6 +118,10 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
     wearing a gate sentinel's id, and ``BoardBackendError`` when the write would
     land in a throwaway local database — all BEFORE anything is inserted, so a
     batch never half-lands.
+
+    Two further checks REPORT and never refuse: whether the id has already landed
+    on the default branch (``landed_check``, unless ``KANBAN_LANDED_CHECK=enforce``)
+    and whether any epic claims the id (``task_identity``, rem-hyg-02).
     """
     if not task_specs:
         return []
@@ -196,6 +200,29 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
         if _lc_mode() == "enforce":
             raise ValueError(f"refusing to seed — {_detail}")
         logger.warning("task_factory: %s", _detail)
+
+    # rem-hyg-02: does an epic actually CLAIM each of these ids? Every number on
+    # a project card comes from `<task_prefix><epic_key>-%` patterns, never from
+    # task_prefix alone, so a row no epic matches is counted by nothing — and
+    # when every row of a card is unclaimed the card vanishes entirely, which
+    # looks exactly like a project with no work. Seeding the HCX card by hand on
+    # 2026-08-16 put 25 rows under a `hcx-` prefix that was in no card; reading
+    # args/projects.yaml proved nothing, because the board is the other half of
+    # the state, and the collision was found only by querying it afterwards —
+    # three of the new tasks had already been dispatched.
+    #
+    # REPORT ONLY. Arming this is rem-hyg-04, and only after rem-hyg-03 has
+    # measured the fire rate: CLAUDE.md is explicit that a check enabled without
+    # a survey is unmeasured rather than proven. Evaluated BEFORE any insert so
+    # the eventual refusal cannot half-land a batch, and FAIL-OPEN — an
+    # unreadable projects.yaml leaves seeding exactly as it was.
+    try:
+        from tools.kanban import task_identity as _ti
+
+        for _f in _ti.check_batch(task_specs):
+            logger.warning("task_factory: unclaimed task id — %s", _f["detail"])
+    except Exception as _ti_exc:  # noqa: BLE001 — advisory; never break seeding
+        logger.debug("task_factory: identity check unavailable (%s)", _ti_exc)
 
     from tools.db.storage import get_connection
     from tools.kanban.init_db import init_kanban_tables

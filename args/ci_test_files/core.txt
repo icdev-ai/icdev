@@ -1815,3 +1815,12 @@ tests/test_canvas_dedicated_pg_database.py
 # an extension controls, turns a drop-in extension file into a permission
 # bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
 tests/agent_runtime/test_dispatch_extension_point.py
+
+# rem-hyg-02: the seed-time task-identity validator. Gated in the PR that adds
+# it, per the CI test-gating policy. It is the producer rem-hyg-03..06 build on,
+# and the properties it pins are the ones that go wrong quietly: nesting resolving
+# to the parent card, a gate sentinel counted as an orphan, an unreadable registry
+# fabricating a finding against every id, and the wiring refusing instead of
+# reporting. 26 tests, ~1s, registry injected in every case except one deliberate
+# end-to-end read of args/projects.yaml — no board, no network, no LLM.
+tests/kanban/test_task_identity.py
