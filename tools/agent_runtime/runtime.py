@@ -477,6 +477,31 @@ class AgentRuntime:
                 names.append(name)
         return sorted(names)
 
+    # -- context-injection event ids (hcx-evt-03) ---------------------------
+
+    def _event_session_id(self) -> str:
+        """The id a ``request_context`` event is filed under: the chat context id.
+
+        NOT ``AgentLoopResult.session_id``. That one is empty until the first
+        turn *completes*, and every injection below happens before the first turn
+        *starts* — keying on it would leave turn one unrecorded, which is exactly
+        the lie by omission hcx-evt-03 exists to close. ``context_id`` exists from
+        session creation, survives ``/resume``, and is already the id
+        ``sessions._index_turn`` tags memory rows with.
+
+        Returns ``""`` if there is no session; ``record_injection`` then skips
+        rather than filing the event under an invented id.
+        """
+        return str(getattr(self.session, "context_id", "") or "")
+
+    def _event_correlation_id(self) -> str:
+        """The agent-loop session id, for joining to ``agent_loop_sessions``.
+
+        Legitimately empty on the first turn, and recorded empty rather than
+        back-filled — the loop session it would name does not exist yet.
+        """
+        return str(getattr(self.session, "resume_session_id", "") or "")
+
     # -- project context (hgx-sess-01) --------------------------------------
 
     def _project_context(self) -> str:
@@ -493,7 +518,12 @@ class AgentRuntime:
             try:
                 from tools.agent_runtime.project_context import build_for_runtime
 
-                preamble = build_for_runtime(self.llm_function, self.system_prompt)
+                preamble = build_for_runtime(
+                    self.llm_function,
+                    self.system_prompt,
+                    session_id=self._event_session_id(),
+                    correlation_id=self._event_correlation_id(),
+                )
             except Exception as exc:  # noqa: BLE001 — context is best-effort
                 logger.debug("agent_runtime: project context skipped: %s", exc)
             self._project_preamble = preamble
@@ -521,6 +551,8 @@ class AgentRuntime:
                     user_id=self.user_id,
                     tenant_id=self.tenant_id,
                     context_id=getattr(self.session, "context_id", "") or "",
+                    session_id=self._event_session_id(),
+                    correlation_id=self._event_correlation_id(),
                 )
             except Exception as exc:  # noqa: BLE001 — goals are best-effort
                 logger.debug("agent_runtime: goal injection skipped: %s", exc)
@@ -574,7 +606,11 @@ class AgentRuntime:
                     from tools.agent_runtime.profile_memory import build_profile_context
 
                     preamble = build_profile_context(
-                        self.user_id, self.tenant_id, query=user_input
+                        self.user_id,
+                        self.tenant_id,
+                        query=user_input,
+                        session_id=self._event_session_id(),
+                        correlation_id=self._event_correlation_id(),
                     )
                 except Exception as exc:  # noqa: BLE001 — memory is best-effort
                     logger.debug("agent_runtime: profile injection skipped: %s", exc)

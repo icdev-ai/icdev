@@ -2255,3 +2255,11 @@ tests/test_cache_regression.py
 # union patterns read from .gitattributes rather than hardcoded, and an
 # unavailable corpus exiting 2 instead of printing a clean report.
 tests/ci/test_sibling_hold_survey.py
+# hcx-evt-03 -- every context injection is recorded as a request_context event.
+# Before this, project_context / goal_context / profile_memory all put text in
+# front of the model and NONE of them left a trace, so the log's coverage claim
+# was only as good as its least-covered injector. Added in the PR that makes it
+# pass. 36 tests, ~6s, no DB and no network: same migration-sourced fixture as
+# test_agent_event_log.py, and the injectors are exercised against a tmp_path
+# repo root rather than the real checkout.
+tests/agent_runtime/test_context_events.py
