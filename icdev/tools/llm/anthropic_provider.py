@@ -12,9 +12,11 @@ import time
 from typing import Any, Dict
 
 from tools.llm.provider import (
+    PREFIX_CACHE_EXPLICIT,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
     messages_to_anthropic,
     tools_to_anthropic,
 )
@@ -56,6 +58,21 @@ class AnthropicLLMProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "anthropic"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Explicit: breakpoints are requested on the wire, max 4 per request."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_EXPLICIT,
+            reason=(
+                "Anthropic caches only what the request marks: up to "
+                f"{self.MAX_CACHE_BREAKPOINTS} cache_control={{'type':'ephemeral'}} "
+                "breakpoints over a >=1024-token prefix, 5-minute default TTL. "
+                "The provider decides where they land (system blocks split on the "
+                "cache_breakpoint marker, plus the last user message)."
+            ),
+            reports_cache_tokens=True,
+        )
 
     def _get_client(self):
         """Lazy-init anthropic client."""

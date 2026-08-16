@@ -40,10 +40,10 @@ That single choice produces the whole current picture:
 | `bedrock` | yes | yes | explicit, same model |
 | `openai` | n/a | **yes** | **automatic** ≥1024-token prefixes; nothing to request |
 | `azure_openai` | n/a | yes *(fixed here)* | identical to OpenAI, same SDK object |
-| `gemini` | no | no | `cachedContents` API + implicit caching |
+| `gemini` | no | yes *(cch-prov-01)* | `cachedContents` API + implicit caching |
 | `ollama` | no | no | server-side KV reuse; **latency only, no billing** |
-| `ibm_watsonx` | no | no | unverified |
-| `oci_genai` | no | no | unverified |
+| `ibm_watsonx` | n/a | no | **none — verified 2026-08-16**, no cache field and no counter |
+| `oci_genai` | n/a | **yes** *(cch-prov-04)* | **automatic** — `Usage.prompt_tokens_details.cached_tokens` |
 
 Note what the "no" column is really saying. For OpenAI and Azure there is **nothing to
 set** — caching is automatic and the only job is reading the number back. For Ollama
@@ -66,8 +66,14 @@ PrefixCacheSupport = none | automatic | explicit | managed_object
 - **`automatic`** (OpenAI, Azure): the router asks for nothing; the provider reports what
   it cached.
 - **`managed_object`** (Gemini): the provider needs a stored handle with its own TTL.
-- **`none`** (watsonx, OCI until verified) and **`local`** (Ollama): declared, with the
+- **`none`** (watsonx — verified 2026-08-16) and **`local`** (Ollama): declared, with the
   reason, so a zero is never mistaken for a defect.
+
+*Built in cch-cap-01 — `tools/llm/provider.py::PrefixCacheCapability`. The
+declaration also carries `verified`, because "checked, and the answer is none"
+and "never checked" are different facts, and `reports_cache_tokens`, because
+caching that fires and is never recorded is indistinguishable from caching that
+never fired (§2).*
 
 Every branch normalises into the *same* response fields — `cache_read_input_tokens`,
 `cache_creation_input_tokens` — which already exist on `LLMResponse`. The caller says
@@ -140,13 +146,30 @@ Ordered by value per unit of work:
 2. **Declare the capability per provider** (`none | automatic | explicit |
    managed_object | local`), and have the router consult it instead of setting an
    Anthropic field. This is the agnosticism fix; the rest are its consequences.
+   **Done — cch-cap-01.** `PrefixCacheCapability` on every adapter (plus
+   `vertex_ai`, the OpenAI-compatible labels and the CLI bridge); the caller now
+   sets the neutral `LLMRequest.cache_prefix`, and `apply_prefix_cache` does the
+   vendor translation at the invoke seam. See
+   [docs/features/cch-cap-01-provider-declared-prefix-cache.md](../features/cch-cap-01-provider-declared-prefix-cache.md).
 3. **Read cached tokens wherever the provider already reports them** — the cheapest real
-   wins, because no caching has to be *requested*. Azure is **done in this PR**; Gemini
-   reports `cachedContentTokenCount` in `usageMetadata`.
+   wins, because no caching has to be *requested*. Azure is **done** (#1725); Gemini's
+   `cachedContentTokenCount` from `usageMetadata` is **done** (cch-prov-01), reporting
+   only — `cache_creation_input_tokens` stays 0 there because Gemini bills cache storage
+   by time and reports no creation-token count.
 4. **Gemini explicit caching** via `cachedContents`, mapped onto `managed_object`.
 5. **Ollama**: declare `local` and measure **latency**, not dollars. Prompt-eval time
    with and without a shared prefix is the honest metric for a local model.
 6. **watsonx / OCI**: verify vendor support before declaring anything.
+   **Done — cch-prov-04, checked 2026-08-16.** One of the two placeholders was
+   wrong: watsonx really is `none` (IBM's own SDK models chat usage as three
+   counters and carries no cache parameter — zero files with `cach` in the path
+   across the whole tree), but **OCI is `automatic`** — its `Usage` object has
+   `prompt_tokens_details.cached_tokens` on both response shapes and no
+   request-side cache field, which is the OpenAI shape. The reporting half is
+   implemented; there is no request half for `automatic`. Fixing the read also
+   surfaced that the adapter had been pulling usage off `ChatResult.model_usage`,
+   which the SDK has never had — so every OCI call reported zero tokens. See
+   [cch-prov-04-watsonx-oci-cache-verification.md](cch-prov-04-watsonx-oci-cache-verification.md).
 
 **Re-run section 3 when either input changes** — cloud-provider traffic appears, or
 average prompt size crosses ~1024 tokens. Both flip the conclusion.

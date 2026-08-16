@@ -40,9 +40,15 @@ SCHEMA = [
         total_runs INTEGER DEFAULT 0)""",
     """CREATE TABLE studio_mcp_dispatch_audit (
         audit_id TEXT PRIMARY KEY, tool TEXT, decision TEXT, recorded_at TEXT)""",
+    # `tier` is the discriminator rem-cap-05 added: hitl_delta.py reuses this
+    # table through record_decision() with tiers classify() cannot emit, so a
+    # count without it can report another module's row as gate consumption. The
+    # probe reports a table missing the column as UNMEASURABLE, which is why the
+    # column belongs in this fixture — see
+    # tests/test_capability_consumption_approval_tiers.py for the pinning.
     """CREATE TABLE agent_approval_log (
-        id INTEGER PRIMARY KEY, tool_name TEXT, rule TEXT, decision TEXT,
-        decided_at TEXT)""",
+        id INTEGER PRIMARY KEY, tool_name TEXT, tier TEXT, rule TEXT,
+        decision TEXT, decided_at TEXT)""",
     """CREATE TABLE audit_platform (
         id INTEGER PRIMARY KEY, tenant_id TEXT, user_id TEXT, event_type TEXT,
         action TEXT, details TEXT, recorded_at TEXT)""",

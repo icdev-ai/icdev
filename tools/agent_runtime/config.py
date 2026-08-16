@@ -337,6 +337,14 @@ class AgentRuntimeConfig:
 
     data: dict[str, Any] = dataclasses.field(default_factory=dict)
     path: Path | None = None
+    #: Resolve the posture layer as if this posture were in force, instead of
+    #: consulting ``ICDEV_PERMISSION_POSTURE`` and the file's ``default:``
+    #: (hcx-post-02). ``dataclasses.replace(cfg, posture_override=name)`` then
+    #: answers "what would the knobs be under *that* posture" through the whole
+    #: existing precedence chain rather than through a second copy of it — which
+    #: is what lets :mod:`tools.agent_runtime.posture_selection` compute a
+    #: before/after delta without mutating the process to find out.
+    posture_override: str | None = None
 
     # -- raw lookup ---------------------------------------------------------
 
@@ -363,13 +371,13 @@ class AgentRuntimeConfig:
 
     @property
     def posture_name(self) -> str:
-        return self.posture_set.resolve_name()[0]
+        return self.posture_set.resolve_name(self.posture_override)[0]
 
     def _posture_value(self, key: str | None) -> Any:
         """The posture's value for ``key``, or ``None`` when it declares none."""
         if not key:
             return None
-        return self.posture_set.values().get(key)
+        return self.posture_set.values(self.posture_override).get(key)
 
     # -- env-first accessors ------------------------------------------------
     #
@@ -513,11 +521,7 @@ class AgentRuntimeConfig:
         Reports which env vars are actually overriding the file, because "the
         config says X but the agent does Y" is otherwise a ten-minute hunt.
         """
-        # Local imports: these modules import this one, and `dispatch` must be
-        # imported by module path — `tools.agent_runtime.dispatch` as an
-        # attribute of the package resolves to the slash-command *function*
-        # re-exported in __init__.py, not to the module.
-        from tools.agent_runtime.dispatch import mutation_allowed
+        # Local imports: these modules import this one.
         from tools.agent_runtime.goal_context import ENV_DISABLE as GOALS_ENV
         from tools.agent_runtime.goal_context import goal_limit
         from tools.agent_runtime.project_context import ENV_DISABLE as PROJECT_ENV
@@ -525,7 +529,9 @@ class AgentRuntimeConfig:
             ENV_DISABLE_STATE as PROJECT_STATE_ENV,
         )
 
-        posture_name, posture_source = self.posture_set.resolve_name()
+        posture_name, posture_source = self.posture_set.resolve_name(
+            self.posture_override
+        )
         resolved = {
             "enabled": self.enabled,
             "posture": {
@@ -569,7 +575,7 @@ class AgentRuntimeConfig:
                     "command_mode": self.command_approval_mode,
                 },
                 "sandbox": {"mode": self.sandbox_mode},
-                "mutation": {"allow": mutation_allowed()},
+                "mutation": {"allow": self.allow_mutation},
                 "delegation": {"child_can_delegate": self.child_can_delegate},
                 "toolsets": {"bundle_path": self.toolset_bundle_path},
                 "wake": {"max_sleep_seconds": self.max_sleep_seconds},
@@ -665,6 +671,28 @@ class AgentRuntimeConfig:
             posture_key="command_approval_mode",
             default="enforce",
             choices=("enforce", "dry_run", "off"),
+        )
+
+    @property
+    def allow_mutation(self) -> bool:
+        """Whether the fail-closed default gate lets a mutating tool through.
+
+        ``tools.agent_runtime.dispatch.mutation_allowed`` is the public reader
+        and delegates here; this is the same resolution it always performed,
+        moved onto the config object so a caller holding a
+        :attr:`posture_override` copy resolves all four posture-governed knobs
+        the same way. It used to be the one knob a caller could not ask *this*
+        object about, which would have made hcx-post-02's before/after delta
+        reach for the process-wide config for a quarter of its answer.
+
+        Default ``False``, so the gate stays fail-closed when both files are
+        missing, empty or malformed.
+        """
+        return self.flag(
+            "subsystems.mutation.allow",
+            env="ICDEV_SAG_ALLOW_MUTATION",
+            posture_key="allow_mutation",
+            default=False,
         )
 
     @property

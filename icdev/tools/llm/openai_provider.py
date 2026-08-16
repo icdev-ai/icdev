@@ -18,9 +18,13 @@ import time
 from typing import Any, Dict, Iterator
 
 from tools.llm.provider import (
+    PREFIX_CACHE_AUTOMATIC,
+    PREFIX_CACHE_LOCAL,
+    PREFIX_CACHE_NONE,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
     messages_to_openai,
     tools_to_openai,
 )
@@ -34,6 +38,72 @@ try:
 except ImportError:
     openai_sdk = None
     HAS_OPENAI = False
+
+
+#: One class, several deployments with genuinely different caching — so the
+#: declaration is per configured provider label, not per class (cch-cap-01).
+#: An unlisted label answers UNLISTED_PREFIX_CACHE: none, unverified. That is
+#: the honest default for "somebody pointed base_url at a server we have never
+#: measured", and it is deliberately not `local`, because guessing a level for
+#: an unknown endpoint is how a declaration stops meaning anything.
+_PREFIX_CACHE_BY_LABEL: Dict[str, PrefixCacheCapability] = {
+    "openai": PrefixCacheCapability(
+        support=PREFIX_CACHE_AUTOMATIC,
+        reason=(
+            "OpenAI caches prefixes >=1024 tokens by itself; there is no field to "
+            "set and no breakpoint to place. The only job is reading "
+            "usage.prompt_tokens_details.cached_tokens back, which this adapter does."
+        ),
+        reports_cache_tokens=True,
+    ),
+    "vllm": PrefixCacheCapability(
+        support=PREFIX_CACHE_LOCAL,
+        reason=(
+            "Self-hosted vLLM reuses the KV cache across requests sharing a prefix "
+            "(automatic prefix caching). Real, but it is a LATENCY win on hardware "
+            "already paid for — there is no per-token bill for it to reduce."
+        ),
+    ),
+    "mistral_vllm": PrefixCacheCapability(
+        support=PREFIX_CACHE_LOCAL,
+        reason="Self-hosted vLLM serving Mistral weights; same server-side KV reuse, latency only.",
+    ),
+    "localai": PrefixCacheCapability(
+        support=PREFIX_CACHE_LOCAL,
+        reason=(
+            "Self-hosted LocalAI keeps model state warm between calls; the payoff is "
+            "latency on local hardware, never billing."
+        ),
+    ),
+    "mistral": PrefixCacheCapability(
+        support=PREFIX_CACHE_NONE,
+        reason=(
+            "Mistral's hosted API has not been checked for prefix caching, and it "
+            "returns no cached-token counter this adapter reads. Verify before "
+            "declaring anything else."
+        ),
+        verified=False,
+    ),
+    "gateway": PrefixCacheCapability(
+        support=PREFIX_CACHE_NONE,
+        reason=(
+            "ICDEV's own proxy gateway fronts an upstream chosen at deploy time, so "
+            "no caching behaviour can be declared for the label itself. Whatever the "
+            "upstream caches is invisible at this seam."
+        ),
+        verified=False,
+    ),
+}
+
+#: Answer for an OpenAI-compatible label nobody has measured.
+UNLISTED_PREFIX_CACHE = PrefixCacheCapability(
+    support=PREFIX_CACHE_NONE,
+    reason=(
+        "OpenAI-compatible endpoint with no measured prefix-cache behaviour. "
+        "Add the label to _PREFIX_CACHE_BY_LABEL once it is verified."
+    ),
+    verified=False,
+)
 
 
 class OpenAICompatibleProvider(LLMProvider):
@@ -52,6 +122,11 @@ class OpenAICompatibleProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return self._provider_label
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Declared per configured label — api.openai.com and a local vLLM differ."""
+        return _PREFIX_CACHE_BY_LABEL.get(self._provider_label, UNLISTED_PREFIX_CACHE)
 
     def _get_client(self):
         """Lazy-init OpenAI client with custom base_url."""

@@ -1163,6 +1163,150 @@ works and it is tested. This is the audit / fork / replay path running beside it
 
 ---
 
+## Forking a Session at a `seq` (hcx-evt-05)
+
+The branching primitive ICDEV did not have. `parent_session_id` on
+`run_agent_loop` records sub-agent *lineage*; this is "this session is that one
+up to turn N, and then something else".
+
+```bash
+icdev chat --fork <ctx-id>                  # survey: the legal boundaries, creates nothing
+icdev chat --fork <ctx-id> --at 12          # branch here, then drop into the REPL
+icdev chat --fork <ctx-id> --at 12 -q "try the other approach"
+
+python -m tools.agent_runtime.fork --session <ctx-id> --boundaries
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --dry-run --json
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --title "branch B"
+```
+
+In the chat REPL:
+
+```
+/fork                    # the seqs this session may be forked at
+/fork 12                 # fork here and switch into the branch
+/fork 12 | branch B      # …with a title
+```
+
+**The boundary is resolved against the log, never against `messages_json`.**
+`--at` names a `seq` in `agent_session_events`, which is monotonic per session
+under a UNIQUE `(session_id, seq)` index. A number naming no event is refused
+rather than clamped: an operator who mistypes a boundary and silently gets a
+different fork has been handed a wrong answer that looks like a right one.
+
+**A boundary inside an open turn is REFUSED, not rounded.** Borrowed from DSH
+rather than rediscovered. A prefix ending mid-turn is not a shorter conversation,
+it is an illegal one — an assistant `tool_use` block with no matching
+`tool_result`, which the next provider call rejects (a constraint `agent_loop`
+already states at the budget check it placed *before* appending the assistant
+message). A legal boundary is one where no turn is open, every announced tool
+call has been answered, no `tool_result` is left over, and no projected payload
+is withheld. Every refusal names the legal boundaries either side, so the correct
+fork is one re-run away and never a guess.
+
+**A withheld payload cannot be forked, and says so.** `payload_json IS NULL`
+beside a NOT NULL `payload_hash` means WITHHELD BY POLICY
+(`args/agent_event_log.yaml`), which is not the same as empty. Projecting one
+would seed the branch with a message the model never saw, carrying a
+correct-looking digest. A hash-only deployment gets a refusal naming the policy,
+not a fork with holes in it.
+
+**The event order is not the message order.** `run_agent_loop` fires `on_turn`
+after the post-tool hooks, so a tool-using iteration lands in the log as
+`tool_call, tool_result, …, assistant_message` — the assistant message carrying
+the `tool_use` blocks arrives *after* the results answering them. The projection
+buffers a result until the message that announced its call lands, so both that
+order and the reverse project to the same legal message list. `tool_call` events
+are not projected: they carry no `tool_use` id, so the assistant message is the
+authoritative source for the blocks, and a result whose name matches no
+outstanding call is left orphaned rather than attached to a different tool.
+
+**What a fork writes:** a new `agent_loop_sessions` row holding the projected
+messages (read back before it is trusted — a `resume_session_id` pointing at a
+row that was never written produces a session that looks continued and remembers
+nothing), a new `chat_contexts` row whose `context_config.fork` carries the
+parent id, the boundary seq, the seed length and a digest over the seeded
+events' hashes, one `session_fork` event at `seq` 1 of the new session's own log,
+and the projected user/assistant turns replayed into `chat_messages`. The prefix
+events themselves are **not** copied: the digest proves which prefix was seeded
+without duplicating a byte of it, and copying would have needed a second write
+verb on a module whose surface is deliberately `append` / `read_session` /
+`next_seq`.
+
+**One inherited limitation.** The forked session's next turn behaves exactly as
+`--resume`'s does, including that `run_agent_loop` does not append a new
+`user_prompt` to a transcript loaded from `resume_session_id`
+(`tests/test_agent_loop.py::test_resume_loads_prior_messages` passes
+`user_prompt="ignored"`). That is a pre-existing property of the resume seam, not
+of forking, and fixing it belongs to `AgentRuntime.run_turn`.
+
+---
+
+## Permission Posture Selection — Operator Intent, Separately From the Knobs (hcx-post-02)
+
+hcx-post-01 named the combination of safety knobs. This is the half that records
+a *choice* of one.
+
+```bash
+python -m tools.agent_runtime.posture_selection --json            # what is in force
+python -m tools.agent_runtime.posture_selection --list            # selectable postures
+python -m tools.agent_runtime.posture_selection \
+    --select workspace-write --session <ctx-id> --actor <who>
+```
+
+In the chat REPL:
+
+```
+/posture                 # the posture in force, its source, and its four knobs
+/posture list            # selectable postures
+/posture <name>          # select it — records the decision
+/usage                   # token/cost stats, and the posture in force
+```
+
+**Why a separate event.** The resolved knobs say what the posture *is*; they can
+never say who decided it, or when, or what it was before. `approval_mode == "off"`
+read out of a running process does not distinguish a deployment default nobody
+looked at from something a named operator turned off eleven minutes ago — and
+those call for different responses. So selection appends a `permission_posture`
+event to `agent_session_events` carrying the posture, the actor and the resolved
+knob values, in the same `seq` ordering as the turns it governs. "The posture
+widened, and then these four tool calls happened" is one `ORDER BY seq`.
+
+**The event is log-only, and it is written first.** Nothing reads it back to
+decide a knob; deleting every row would change no behaviour. It is appended
+*before* anything is applied, so an intent survives a crash during the act, and a
+reader who finds an intent with no following change learns the apply failed.
+
+**Re-selecting the effective posture appends nothing.** Same name and no knob
+delta is a look, not a decision.
+
+**It writes one variable and never the four per-knob ones.** Selection sets
+`ICDEV_PERMISSION_POSTURE`; the knobs follow through hcx-post-01's chain
+(`argument > env > agent_runtime.yaml > posture > built-in`). A knob already
+pinned by `ICDEV_SAG_APPROVAL_MODE` or an explicit config key therefore does
+**not** move — including when the operator is tightening. That is reported, not
+worked around:
+
+```
+Posture: workspace-write -> danger-full-access (actor: alice)
+  sandbox: 'workspace-write' -> 'danger-full-access'
+  NOT MOVED  approval_mode stays 'manual'; the posture asks for 'off' but
+             ICDEV_SAG_APPROVAL_MODE pins it. Unset it to let the posture govern.
+```
+
+Having the selection overwrite those variables was rejected: it reverses an
+intent stated at a layer hcx-post-01 put *above* this one, and it would do so
+invisibly. Under-delivering loudly is recoverable; over-delivering silently is
+not.
+
+**An unwritable log refuses to widen, and only to widen.** A posture flagged
+`requires_explicit_selection` is refused when the event cannot be appended —
+there is no unaudited `danger-full-access`. Any other posture is applied with
+`logged: false` and a warning, because refusing in the tightening direction too
+would strand an operator in the *looser* posture whenever the database is
+unreachable.
+
+---
+
 ## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
 
 Mirrors a pending item to a messaging channel and turns the human's reply back
@@ -2066,7 +2210,56 @@ python -m tools.kanban.identity_survey --env-file /path/to/.env --json   # run f
 # Two zeroes that are NEVER a clean bill of health — both report measured:false, never 0%:
 # an unreadable args/projects.yaml (no_registry) and an empty board (empty_board, the worktree
 # trap where a missing .env silently reads a throwaway SQLite DB — use --env-file).
-# REPORT ONLY: no --gate, no writes, one SELECT. Arming is rem-hyg-04.
+# REPORT ONLY: no --gate, no writes, one SELECT. This module never refuses anything.
+
+# Kanban — the armed identity check and its kill switch (rem-hyg-04)
+KANBAN_IDENTITY_CHECK=report    # DEFAULT — log every unclaimed id, seed anyway
+KANBAN_IDENTITY_CHECK=enforce   # refuse the NARROWED population, before any insert
+KANBAN_IDENTITY_CHECK=off       # do not run the check at all
+# Read by tools/kanban/task_identity.py::mode (accepts the KANBAN_LANDED_CHECK spellings:
+# 1/true/yes => enforce, 0/false/no/none => off, warn => report). An UNRECOGNISED value
+# resolves to `report` and LOGS that it did — KANBAN_IDENTITY_CHECK=enforced is one keystroke
+# from enforce and must not read as armed. Consulted by task_factory.create_tasks BEFORE the
+# first INSERT, so a refusal can never half-land a batch; a broken check leaves seeding
+# exactly as it was. The refusal names each id, the id it should have carried
+# (`<prefix><epic>-<N>`), args/projects.yaml, and the way to stand it down.
+# WHY THE DEFAULT IS report: the rem-hyg-03 survey above. Refuse-everything = 35.17%;
+# narrowed (exempt opaque machine ids) = 10.85% lifetime but 15.81% over the last 30 days,
+# ten times the rate CLAUDE.md already calls refusing routine work. Both the survey's
+# NARROWED column and the seeder's refusal call ONE predicate, task_identity.is_enforceable,
+# so the measured rate is the enforced rate. Re-survey before changing the default; never
+# widen an exemption list to compensate, and never drop no_card — that is the HCX case.
+python -m tools.kanban.identity_survey --json | python -c "import json,sys; print(json.load(sys.stdin)['enforcement'])"
+
+# Kanban — will two tasks fight over the same file? Asked at SEED time (rem-hyg-07)
+python -m tools.kanban.lane_conflicts --json
+python -m tools.kanban.lane_conflicts                  # table grouped by shared file
+python -m tools.kanban.lane_conflicts --live-only      # only pairs BOTH dispatchable now
+python -m tools.kanban.lane_conflicts --from-branches  # exact paths, where a branch exists
+python -m tools.kanban.lane_conflicts --task <task-id>
+# pr_watcher's hold_on_sibling_conflict already asks this — about OPEN PRs, which is after both
+# sessions have BUILT. #1684 dispatched a producer and its consumer together, the loser's PR was
+# unlandable, and 1,058 lines were discarded. Measured 2026-08-16 across 44 non-terminal tasks:
+# 54 pairs shared a file with NO dependency path between them, 16 dispatchable simultaneously.
+# Reads BOTH dependency mechanisms (scalar depends_on_task_id AND the kanban_task_deps junction)
+# because _deps_satisfied ANDs them — either alone serializes, so consulting one would report a
+# hand-serialized pair as a live race. Ranks live vs latent: a task whose dependency is
+# unsatisfied cannot race today, and reporting the two identically buries the real finding.
+# Gate sentinels are excluded (gates.is_manual_gate) — a path in a RISK: description is not work.
+# TWO EVIDENCE GRADES, never merged: prose (seed-time, the only time it helps, and a heuristic)
+# and branch (git diff origin/main...kanban/<id>, exact but late). Where a branch exists its
+# paths REPLACE the prose guess. Each branch is compared to origin/main and NEVER to another
+# branch: merge-tree between two task tips reports conflicts the forge never sees, since the
+# forge merges each into main in sequence (hcx-live-02 vs hcx-live-03 said CONFLICT while
+# against main hcx-live-03 was CLEAN). Six suppressions, every one found by RUNNING it: command
+# (a path inside `python tools/...` is a tool to run), evidence (a specimen in a caps-led
+# MEASURED paragraph — deliberately NOT rescued by a write verb, since such a paragraph narrates
+# writes that already happened), precedent ("Follow args/ci_test_backlog.txt"), citation ("see X"
+# or a docs/ path with no write verb), negated ("Do NOT change ..."), coordination (the shared
+# list in tools/git/coordination_paths.py, which pr_watcher's merge-time guard also imports —
+# a second divergent copy is worse than none). Those took the board from 3 live findings of
+# which 0 were real to 0 live / 8 latent. REPORT ONLY at the create_tasks seam; arming it needs
+# a fire-rate survey first, exactly as rem-hyg-03/04 do for the identity check.
 
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"

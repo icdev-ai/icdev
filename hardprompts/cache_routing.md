@@ -53,8 +53,10 @@ the timestamp is not cached, but the expensive system prompt KV state is reused.
 
 ### 4. System Prompt vs User Message
 
-For context caching (Anthropic/Bedrock), the system prompt is the best place
-to put large, stable context blocks:
+For context caching, the system prompt is the best place to put large, stable
+context blocks. Say so with the provider-neutral `cache_prefix` flag — the
+provider translates it (cch-cap-01); never set `cache_control` from a caller,
+that is Anthropic's wire vocabulary:
 
 ```python
 # Best for caching: large context in system_prompt
@@ -65,12 +67,16 @@ request = LLMRequest(
     [5000 lines of guidelines, examples, and reference material]
     """,
     messages=[{"role": "user", "content": "Generate a compliance report."}],
-    cache_control="ephemeral",
+    cache_prefix=True,
 )
 ```
 
-The provider caches the KV state of the system prompt. Subsequent calls with
-different user messages but the same system prompt reuse the cached prefix.
+What that buys depends on the provider's declared support: `explicit`
+(Anthropic, Bedrock) marks breakpoints on the wire, `automatic` (OpenAI, Azure)
+caches the prefix without being asked, `local` (Ollama, vLLM) reuses the KV
+state for a latency win with nothing to bill, and `none` is a first-class
+answer. Subsequent calls with different user messages but the same system
+prompt reuse the cached prefix wherever the provider supports it.
 
 ### 5. Per-Canvas Best Practices
 
@@ -118,7 +124,7 @@ for issue in issues:
         LLMRequest(
             system_prompt=system,
             messages=[{"role": "user", "content": prompt}],
-            cache_control="ephemeral",
+            cache_prefix=True,
         )
     )
 ```

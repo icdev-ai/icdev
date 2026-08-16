@@ -46,8 +46,11 @@ classes:
   agent_approval_rule:
     enabled: true
     description: >-
-      Tools enumerated by tier in args/agent_approval_policy.yaml. Consumption
-      is an approval-gate decision (approve OR deny) on that tool.
+      Tools enumerated in args/agent_approval_policy.yaml under a tier listed in
+      require_approval_tiers. Consumption is an approval-gate decision (approve
+      OR deny) on that tool, identified by the row's `tier`. Tools in the other
+      tiers are auto-allowed without a row by design and are reported under
+      extra.not_measurable_by_design rather than counted inert (rem-cap-05).
   mcp_tool_authorization:
     enabled: true
     description: >-
