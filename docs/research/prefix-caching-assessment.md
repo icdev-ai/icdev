@@ -69,6 +69,12 @@ PrefixCacheSupport = none | automatic | explicit | managed_object
 - **`none`** (watsonx, OCI until verified) and **`local`** (Ollama): declared, with the
   reason, so a zero is never mistaken for a defect.
 
+*Built in cch-cap-01 — `tools/llm/provider.py::PrefixCacheCapability`. The
+declaration also carries `verified`, because "checked, and the answer is none"
+and "never checked" are different facts, and `reports_cache_tokens`, because
+caching that fires and is never recorded is indistinguishable from caching that
+never fired (§2).*
+
 Every branch normalises into the *same* response fields — `cache_read_input_tokens`,
 `cache_creation_input_tokens` — which already exist on `LLMResponse`. The caller says
 "this prefix is stable and worth caching"; the provider decides what that means.
@@ -140,6 +146,11 @@ Ordered by value per unit of work:
 2. **Declare the capability per provider** (`none | automatic | explicit |
    managed_object | local`), and have the router consult it instead of setting an
    Anthropic field. This is the agnosticism fix; the rest are its consequences.
+   **Done — cch-cap-01.** `PrefixCacheCapability` on every adapter (plus
+   `vertex_ai`, the OpenAI-compatible labels and the CLI bridge); the caller now
+   sets the neutral `LLMRequest.cache_prefix`, and `apply_prefix_cache` does the
+   vendor translation at the invoke seam. See
+   [docs/features/cch-cap-01-provider-declared-prefix-cache.md](../features/cch-cap-01-provider-declared-prefix-cache.md).
 3. **Read cached tokens wherever the provider already reports them** — the cheapest real
    wins, because no caching has to be *requested*. Azure is **done in this PR**; Gemini
    reports `cachedContentTokenCount` in `usageMetadata`.
