@@ -1803,4 +1803,5 @@ tests/cortex/test_rest_win_themes.py
 # 11 tests, <1s, registry and grant write injected: no DB, no network.
 tests/security/test_tenant_canvas_seed.py
 tests/genesis/test_code_reload.py
+tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py

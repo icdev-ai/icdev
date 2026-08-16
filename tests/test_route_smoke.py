@@ -252,3 +252,108 @@ def test_blueprint_change_triggers_full_smoke():
 def test_unrelated_change_maps_to_no_routes():
     assert _routes_for_changed_files(["README.md"]) == []
 # CUI // SP-CTI
+
+
+# ── fli-smk-01: the bound must be visible, and a timeout must not read as a pass ──
+#
+# SURVEYED 2026-08-15 before changing anything. _routes_for_changed_files is
+# all-or-nothing: any blueprint.py / app.py / templates/ path returns the FULL
+# 79-route nav list, anything else usually returns zero. The full list takes
+# ~212s against a warm dashboard (2-3s per page). The hook's timeout was 120s and
+# its timeout branch returned True. So every run that actually reached the
+# subprocess died on the timeout and was reported as a pass — route smoke had
+# never gated a commit, while printing as though it might.
+
+
+def _run_cli(base, *args):
+    """Run route_smoke.py --json exactly as the hook does, against a LIVE server.
+
+    A live base is required, not incidental: run_smoke short-circuits to zero
+    results when the server is unreachable, so pointing this at a dead port would
+    make `total` 0 in every case and the coverage assertions below would pass
+    without the cap doing anything.
+    """
+    import subprocess as _sp
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parents[1]
+    proc = _sp.run(
+        [_sys.executable, str(root / "tools" / "testing" / "route_smoke.py"),
+         "--json", "--timeout", "5", "--base", base, *args],
+        capture_output=True, text=True, cwd=str(root), timeout=300,
+    )
+    return json.loads(proc.stdout)
+
+
+def test_max_routes_names_every_route_it_skipped(smoke_base):
+    """A cap you cannot see reads as "covered everything"."""
+    report = _run_cli(smoke_base, "--routes", "/a,/b,/c,/d,/e", "--max-routes", "2")
+
+    assert report["total"] == 2, "only the bounded number may be attempted"
+    assert report["skipped_by_cap"] == ["/c", "/d", "/e"], (
+        "the dropped routes must be NAMED, not counted — a number cannot tell a "
+        "reader which pages went unchecked"
+    )
+
+
+def test_no_cap_means_nothing_is_silently_dropped(smoke_base):
+    report = _run_cli(smoke_base, "--routes", "/a,/b,/c")
+    assert report["total"] == 3
+    assert report["skipped_by_cap"] == []
+
+
+def test_a_cap_larger_than_the_route_set_drops_nothing(smoke_base):
+    report = _run_cli(smoke_base, "--routes", "/a,/b", "--max-routes", "50")
+    assert report["total"] == 2
+    assert report["skipped_by_cap"] == []
+
+
+def test_the_hook_reports_a_timeout_as_NOT_RUN_rather_than_OK(monkeypatch, capsys):
+    """The defect itself: `return True` on TimeoutExpired, printed as a warning.
+
+    The commit is still allowed — route smoke needs a live dashboard and runs
+    nowhere else, so blocking on it would earn the hook a --no-verify — but the
+    output must not let a reader believe anything was verified.
+    """
+    import subprocess as _sp
+
+    from tools.testing import pre_commit_check as pcc
+
+    from tools.testing import route_smoke as rs
+
+    monkeypatch.setattr(pcc, "_is_dashboard_change", lambda files: True)
+    # Both guards the hook consults before spawning: routes affected, server up.
+    # It imports them from route_smoke inside the function, so the patch lands
+    # there rather than on pre_commit_check.
+    monkeypatch.setattr(rs, "_routes_for_changed_files", lambda files: ["/x", "/y"])
+    monkeypatch.setattr(rs, "_server_up", lambda *a, **kw: True)
+    # There is a THIRD guard after those two — a raw socket connect to
+    # 127.0.0.1:5050 — and it is the one that matters on a CI runner, which has
+    # no dashboard. Without this the test passed locally (dashboard up) and
+    # failed in CI on "port 5050 closed — skipped", never reaching the timeout
+    # branch it exists to cover. `import socket as _socket` inside the hook
+    # resolves to this same stdlib module object.
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **kw: _DummySock())
+    monkeypatch.setattr(
+        pcc.subprocess, "run",
+        lambda *a, **kw: (_ for _ in ()).throw(_sp.TimeoutExpired(cmd="route_smoke", timeout=120)))
+
+    allowed = pcc._run_route_smoke(["tools/dashboard/templates/base.html"])
+    out = capsys.readouterr().out
+
+    assert allowed is True, "a slow gate must not block the commit outright"
+    assert "DID NOT RUN" in out, (
+        f"a timeout must not read as a pass; got {out!r}. This is the `|| true` "
+        "shape: nominally enforcing, actually inert, nothing red."
+    )
+    assert "OK" not in out.replace("DID NOT RUN", "")
+    assert "UNCHECKED" in out
+
+
+class _DummySock:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False

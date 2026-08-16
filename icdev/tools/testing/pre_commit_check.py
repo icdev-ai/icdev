@@ -17,6 +17,7 @@ Exit 1 = a check failed (commit blocked with error message).
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -324,6 +325,37 @@ def _run_blueprint_import_check() -> bool:
     return True
 
 
+#: How long the inline route smoke may take, and how many routes it may check.
+#:
+#: SURVEYED BEFORE CHANGING, 2026-08-15 (fli-smk-01), because arming or re-arming
+#: a check without measuring its fire rate is how a gate earns itself a bypass.
+#: What the measurement found is that this gate has never run to completion:
+#:
+#:   * _routes_for_changed_files is all-or-nothing. Any blueprint.py, app.py or
+#:     templates/ path returns the FULL nav list; anything else usually returns
+#:     zero and the gate skips early. There is no middle.
+#:   * The full list is 79 routes and takes ~212s against a warm dashboard —
+#:     2-3s per page, not the ~0.3s the fast pages suggest.
+#:   * The timeout was 120s. So every run that actually reached the subprocess
+#:     died on the timeout, and the timeout branch returned True.
+#:
+#: Route smoke therefore gated nothing, while printing as though it might. Same
+#: shape as the `|| true` that neutered the PreToolUse hook: nominally
+#: enforcing, actually inert, nothing red.
+#:
+#: The bound is what makes it able to finish. 20 routes x ~2.7s is ~55s, inside
+#: the budget with headroom for a cold page. It is a REAL reduction in coverage
+#: and is reported as such — route_smoke names every route it skipped, because a
+#: cap you cannot see reads as "covered everything".
+#:
+#: Full coverage still has no home: route_smoke appears in no workflow under
+#: .github/workflows, so this hook is the only place it runs at all. Fixing that
+#: needs a live dashboard in CI (the E2E job has one) and is deliberately NOT
+#: bundled here — but it must not be described as covered when it is not.
+ROUTE_SMOKE_TIMEOUT_SECONDS = int(os.environ.get("ICDEV_ROUTE_SMOKE_TIMEOUT", "120"))
+ROUTE_SMOKE_MAX_ROUTES = int(os.environ.get("ICDEV_ROUTE_SMOKE_MAX_ROUTES", "20"))
+
+
 def _run_route_smoke(changed_files: list[str]) -> bool:
     """Run route smoke against running server for changed routes.
 
@@ -351,7 +383,12 @@ def _run_route_smoke(changed_files: list[str]) -> bool:
         if not affected:
             print("[pre-commit] Route smoke: no dashboard routes affected — skipped")
             return True
-        if not _server_up("http://localhost:5050", timeout=2.0):
+        # 127.0.0.1, never "localhost": on Windows localhost resolves to ::1
+        # first, the dashboard binds IPv4, and the probe reports a live
+        # server dead — which here means silently SKIPPING the gate. The
+        # socket guard below already used 127.0.0.1; these two disagreeing
+        # is what made the skip look like a considered decision.
+        if not _server_up("http://127.0.0.1:5050", timeout=2.0):
             print("[pre-commit] Route smoke: dashboard not running — skipped")
             return True
     except Exception:
@@ -369,12 +406,22 @@ def _run_route_smoke(changed_files: list[str]) -> bool:
 
     try:
         result = subprocess.run(
-            [sys.executable, "tools/testing/route_smoke.py", "--changed", changed_arg],
-            capture_output=True, text=True, cwd=str(BASE_DIR), timeout=120,
+            [sys.executable, "tools/testing/route_smoke.py", "--changed", changed_arg,
+             "--max-routes", str(ROUTE_SMOKE_MAX_ROUTES)],
+            capture_output=True, text=True, cwd=str(BASE_DIR),
+            timeout=ROUTE_SMOKE_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        print("[pre-commit] Route smoke: timed out (>120s) - too many routes for inline gate; run manually.")
-        print("[pre-commit] WARNING: Skipping route smoke - commit allowed, but run: python tools/testing/route_smoke.py --all")
+        # NOT "OK", and not silent. A gate that cannot run is not a gate that
+        # found nothing — and this one timed out on EVERY run that reached it
+        # (see ROUTE_SMOKE_MAX_ROUTES), so the old `return True` meant route
+        # smoke had never gated a commit while printing as though it might.
+        print(f"[pre-commit] Route smoke DID NOT RUN: exceeded "
+              f"{ROUTE_SMOKE_TIMEOUT_SECONDS}s even bounded to "
+              f"{ROUTE_SMOKE_MAX_ROUTES} route(s). Nothing was verified.")
+        print("[pre-commit] Commit allowed (route smoke needs a live dashboard and "
+              "runs nowhere else), but these routes are UNCHECKED — run: "
+              "python tools/testing/route_smoke.py --all")
         return True
 
     if result.returncode == 0:

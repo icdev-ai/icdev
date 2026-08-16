@@ -489,12 +489,22 @@ def main() -> None:
     parser.add_argument("--changed", help="Comma-separated list of changed file paths")
     parser.add_argument("--api", action="store_true", help="Also smoke critical API endpoints")
     parser.add_argument("--api-only", action="store_true", help="Only smoke API endpoints")
+    parser.add_argument(
+        "--max-routes", type=int, default=0,
+        help=("Check at most N routes and NAME the ones skipped. 0 = no bound. "
+              "For the pre-commit gate, which cannot afford a full sweep: "
+              "measured 2026-08-15, all 79 nav routes take ~212s against a warm "
+              "dashboard (2-3s each), so a hook budget of 120s could never "
+              "finish one and every run died on the timeout instead."))
     parser.add_argument("--base", default="http://localhost:5050")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
     all_results: List[Dict] = []
+    # Defined here, not inside the nav-route branch: --api-only skips that
+    # branch entirely and the reporting below still reads it.
+    skipped_by_cap: List[str] = []
     overall_passed = True
     verbose = not args.as_json
 
@@ -507,8 +517,18 @@ def main() -> None:
         else:
             routes = NAV_ROUTES
 
+        # A cap you cannot see reads as "covered everything". CLAUDE.md forbids
+        # a silent one, so the dropped routes are NAMED, not counted.
+        if args.max_routes and len(routes) > args.max_routes:
+            skipped_by_cap = routes[args.max_routes:]
+            routes = routes[: args.max_routes]
+
         if verbose:
             print(f"Smoking {len(routes)} nav routes against {args.base} ...")
+            if skipped_by_cap:
+                print(f"  BOUNDED by --max-routes={args.max_routes}: "
+                      f"{len(skipped_by_cap)} route(s) NOT checked: "
+                      f"{', '.join(skipped_by_cap)}")
         passed, results = run_smoke(routes, base=args.base, timeout=args.timeout, verbose=verbose)
         all_results.extend(results)
         if not passed:
@@ -529,10 +549,16 @@ def main() -> None:
             "passed": overall_passed,
             "total": len(all_results),
             "failures": len(failures),
+            # Named, not counted: a consumer must be able to tell "79/79 checked"
+            # from "20 checked and the other 59 never looked at".
+            "skipped_by_cap": skipped_by_cap,
             "results": all_results,
         }))
     else:
         print(f"\n{'PASS' if overall_passed else 'FAIL'} — {len(all_results) - len(failures)}/{len(all_results)} checks OK")
+        if skipped_by_cap:
+            print(f"  ({len(skipped_by_cap)} route(s) were NOT checked — see the "
+                  f"--max-routes line above; this is not full coverage)")
         if failures:
             print("\nFailures:")
             for f in failures:
