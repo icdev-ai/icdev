@@ -1882,3 +1882,10 @@ tests/agent_runtime/test_permission_postures.py
 # function, so router.invoke() returned before ever reaching the telemetry seam.
 # 16 tests, <1s: temp SQLite files only, no network, no shared board.
 tests/test_ai_telemetry_cache_tokens.py
+# rem-hyg-03: the fire-rate survey that must run BEFORE rem-hyg-04 arms the
+# identity check. Guards the three properties that fail while looking like
+# success — an unmeasurable survey reporting a 0% rate, a gate sentinel counted
+# as an orphan, and the narrowed rate laundering opaque machine ids into
+# findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
+# network, no LLM.
+tests/test_identity_survey.py

@@ -2039,6 +2039,32 @@ python -m tools.kanban.landed_check --task <task-id> --gate    # exit 1 if it is
 # Wired at three seams (seed / dispatch / PR-open) and ADVISORY by default; KANBAN_LANDED_CHECK
 # =enforce makes it refuse, =off disables it. Survey it before ever defaulting to enforce.
 
+# Kanban — what would the identity check REFUSE on the real board? (rem-hyg-03)
+python -m tools.kanban.identity_survey --json           # machine-readable, includes every id
+python -m tools.kanban.identity_survey                  # per-card table + headline rates
+python -m tools.kanban.identity_survey --card pgrt --ids
+python -m tools.kanban.identity_survey --status backlog --status scheduled
+python -m tools.kanban.identity_survey --env-file /path/to/.env --json   # run from a worktree
+# The fire-rate survey that must exist BEFORE rem-hyg-04 arms task_identity (rem-hyg-02). The
+# rule is CLAUDE.md's, learned from the PreToolUse hook: eight of twelve checks were refusing
+# routine work over 96,818 real calls, and the worst had shipped as a hard block with its rate
+# never once observed. A check nominally enforcing but never measured is UNMEASURED, not proven.
+# Measured 2026-08-16 on the live PG board (3,243 rows / 163 cards): 2,041 claimed, 53 gate
+# sentinels, 22 no_epic (all pgrt-), 1,127 no_card => a 35.43% fire rate if armed naively.
+# The narrowing IS the finding: 789 of those 1,127 are OPAQUE machine ids — task-<hex> from the
+# dashboard's own create-task API and awareness/suggested_card_writer, plus mc-reflex-<hex> and
+# cpmp-<hex> — which were never card work, so refusing them is the same defect the PreToolUse
+# checks had. Exempting them: 11.10% lifetime, 4.23% over the last 7 days, against 17 genuinely
+# unregistered card prefixes (prem- 72, cnr- 46, shx- 33, docmod- 32, ...).
+# classify_shape is a NAMED heuristic over id text and never decides whether an id is claimed;
+# -d<N> decomposition suffixes are stripped first, so mvs-audit-03-d1 counts as card work.
+# Scope caveat for rem-hyg-04: 95 modules INSERT INTO kanban_tasks directly and never reach the
+# create_tasks seam, so arming there cannot see most of the opaque population.
+# Two zeroes that are NEVER a clean bill of health — both report measured:false, never 0%:
+# an unreadable args/projects.yaml (no_registry) and an empty board (empty_board, the worktree
+# trap where a missing .env silently reads a throwaway SQLite DB — use --env-file).
+# REPORT ONLY: no --gate, no writes, one SELECT. Arming is rem-hyg-04.
+
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
 python tools/kanban/cli.py --requeue <id1> <id2> --requeue-status scheduled --json
