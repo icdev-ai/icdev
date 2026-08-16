@@ -177,8 +177,9 @@ def _prompt_eval_ms(data: Dict[str, Any]) -> Optional[float]:
     local model (cch-prov-03). On a KV-cache hit the server skips re-evaluating
     the shared prefix and this number collapses.
 
-    Measured 2026-08-16, qwen3:0.6b, ~1.9k-token prefix, model already warm:
-    a unique prefix costs ~78ms of prompt-eval, a repeated one ~8ms.
+    Measured 2026-08-16, qwen3:4b, ~1.9k-token prefix, model already warm, three
+    consecutive runs of ``tools/llm/ollama_prefix_latency.py``: a prefix the server
+    has never seen costs 440-471 ms of prompt-eval, a repeated one 20-21 ms.
 
     ``prompt_eval_count`` is deliberately NOT used as the hit signal: it reports
     the FULL prompt length on every call, cached or not (measured constant at

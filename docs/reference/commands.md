@@ -42,8 +42,11 @@ python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
 python tools/llm/ollama_prefix_latency.py --base-url http://gpu-box:11434
 # A local model has no per-token price, so cache_read_input_tokens stays 0 however
 # well caching works. The honest metric is server-side prompt-eval (prefill) time.
-# Measured 2026-08-16, ~1.9k-token prefix: qwen3:0.6b 64.5 -> 9.1 ms (7.1x);
-# qwen3:4b 299.0 -> 18.0 ms (16.6x, 281 ms saved per call).
+# Measured 2026-08-16, ~1.9k-token prefix, 3 consecutive runs of n=5:
+#   qwen3:4b   440-471 -> 20-21 ms  (21.8-22.7x)
+#   qwen3:0.6b 103-278 -> 16-23 ms  (4.6-16.8x; noisier, short prefill, GPU load)
+# The cold seed is a per-run NONCE: Ollama's KV cache outlives the process, so a
+# fixed seed measures correctly once and then compares warm against warm.
 # prompt_eval_count is NOT the hit signal — it reports full prompt length on every
 # call, cached or not (constant at 1,914 across one cold and four warm). Only the
 # duration moves. Reports status=unmeasurable, never a number, when Ollama is down.

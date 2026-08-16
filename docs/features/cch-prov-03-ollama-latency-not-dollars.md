@@ -128,40 +128,62 @@ indistinguishable from a field never set, which is this platform's signature bug
 ## Measured result
 
 **2026-08-16, this deployment.** Prefix ≈1,900 tokens (60 paragraphs), `num_predict`
-minimal, `temperature` 0, model already resident. Median of 5 alternating pairs.
+minimal, `temperature` 0, model already resident. Median of 5 alternating pairs,
+**three consecutive runs per model**:
 
-| model | cold prefill | warm prefill | saved / call | speedup |
-|---|---|---|---|---|
-| `qwen3:0.6b` | 64.5 ms | 9.1 ms | 55.4 ms | **7.1x** |
-| `qwen3:4b` | 299.0 ms | 18.0 ms | 281.0 ms | **16.6x** |
+| model | cold prefill | warm prefill | speedup |
+|---|---|---|---|
+| `qwen3:4b` | 440–471 ms | 20.2–21.0 ms | **21.8x – 22.7x** |
+| `qwen3:0.6b` | 103–278 ms | 16.5–23.0 ms | 4.6x – 16.8x |
 
-Raw `qwen3:4b` samples, illustrating the reproducibility and one honest artefact:
+The `qwen3:4b` figure is the reliable one: three runs landed within 7% of each
+other on both legs. `qwen3:0.6b` is reported as a range because its prefill is
+short enough that background GPU contention dominates — one run's cold leg read
+`[235.1, 495.9, 102.7, 377.9, 277.6]`. **The warm leg is stable in both models**
+(16–23 ms regardless of load), which is itself the useful result: KV reuse removes
+the part of the cost that varies.
+
+USD saved: **not applicable**, in every run, by design.
+
+### A measurement bug found by re-running it
+
+The first version of this tool used fixed cold seeds (`COLD0`…`COLD4`) and reported
+`qwen3:0.6b` 64.5 → 9.1 ms (7.1x). That single reading was real, and it was also the
+only correct one the tool could ever produce: **Ollama's KV cache outlives the
+process**, so on every subsequent run those "cold" prefixes had already been
+evaluated. An immediate re-run reported:
 
 ```
-cold_ms: [309.2, 300.1, 299.0, 298.4, 298.5]
-warm_ms: [294.0,  17.9,  18.6,  17.7,  18.0]
+cold_raw: [10.8, 9.4, 10.1, 70.6, 69.7]   warm_raw: [13.5, 16.2, 16.0, 17.5, 18.0]
+speedup: 0.7x
 ```
 
-The first "warm" sample is 294 ms because **the shared prefix is itself new on
-iteration 0** — there is nothing cached to reuse yet. It is a cold call by
-construction. That is exactly why the tool reports the median and not the mean, and
-why the raw samples are printed rather than only the summary.
+Warm-versus-warm, presented with exactly the same authority as the real
+measurement. A tool that works once and then quietly reports noise is worse than no
+tool, because nothing about the second reading looks wrong.
 
-USD saved: **not applicable**, in both runs, by design.
+Fixed by `cold_nonce()` — the cold seed is a per-run UUID, so no run can inherit
+another's prefixes. The warm prefix is deliberately left stable across runs, since a
+prefix the server already holds is precisely what the warm leg is for. Pinned by
+`test_the_cold_seed_is_unique_per_run` and
+`test_cold_prefixes_differ_between_two_runs`.
 
 ### Method, and why each step is load-bearing
 
 1. **Three discarded warm-up calls first.** The first call after a cold start pays to
    load weights onto the accelerator. Left in, it made an otherwise-warm call read
-   **5,148 ms** against a true ~78 ms — a ~66x inflation of the cold leg that would
-   have produced a spectacular and completely meaningless speedup.
+   **5,148 ms** against a true ~8 ms, dominating whichever leg happened to run first
+   and producing a spectacular, meaningless number.
 2. **Legs alternate** rather than running in blocks, so thermal drift and background
    GPU contention hit cold and warm equally.
-3. **Cold means a prefix never sent before.** The seed varies in the *first*
-   characters, because KV reuse matches a leading prefix — a seed buried at the end
-   would leave the body cached and the "cold" leg would be a slower warm one.
-4. **Median, not mean.** Even after warm-up the first sample is an outlier (350 ms
-   against a 78 ms median) and a mean lets it dominate at n=5.
+3. **Cold means a prefix never sent before — by any run.** A per-run nonce, not a
+   fixed seed (see above). The seed also varies in the *first* characters, because
+   KV reuse matches a leading prefix: a seed buried at the end would leave the body
+   cached and the "cold" leg would be a slower warm one.
+4. **Median, not mean, and print the raw samples.** The first warm sample is a cold
+   call by construction, and the cold leg carries real contention outliers. A mean
+   lets either dominate at n=5; printing the samples is what let the bug above be
+   spotted at all.
 5. **`status: unmeasurable` with a reason** when Ollama is unreachable or the endpoint
    is not declared `local`. An unreachable server must never read as "caching does not
    help", and the tool exits 0 either way — it is a measurement, not a merge gate.

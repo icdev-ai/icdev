@@ -342,3 +342,36 @@ def test_cold_prefixes_are_actually_distinct():
     # The seed must differ in the FIRST characters: KV reuse matches a leading
     # prefix, so a seed only at the end would leave the body cached.
     assert a[:40] != b[:40]
+
+
+def test_the_cold_seed_is_unique_per_run():
+    """Ollama's KV cache outlives the process, so a FIXED cold seed is warm on run 2.
+
+    This is the defect that made the tool measure correctly exactly once: with
+    seeds `COLD0..COLD4` an immediate re-run read cold=[10.8, 9.4, 10.1, ...]
+    against warm=[13.5, 16.2, ...] — a 0.7x "speedup" that was warm-vs-warm.
+    """
+    from tools.llm.ollama_prefix_latency import cold_nonce
+
+    assert cold_nonce() != cold_nonce(), "a fixed cold seed silently measures warm-vs-warm"
+
+
+def test_cold_prefixes_differ_between_two_runs(monkeypatch):
+    """End-to-end: two invocations must not send each other's cold prefixes."""
+    from tools.llm import ollama_prefix_latency as tool
+
+    seen: list = []
+
+    def _record(_provider, _model, prefix, _question):
+        seen.append(prefix)
+        return 80.0 if "COLD" in prefix else 8.0
+
+    monkeypatch.setattr(tool, "_one_call", _record)
+    tool.measure(base_url="http://localhost:11434", repeats=2)
+    first = {p for p in seen if "COLD" in p}
+    seen.clear()
+    tool.measure(base_url="http://localhost:11434", repeats=2)
+    second = {p for p in seen if "COLD" in p}
+
+    assert first and second
+    assert not (first & second), "run 2 re-sent run 1's 'cold' prefixes — they were warm"

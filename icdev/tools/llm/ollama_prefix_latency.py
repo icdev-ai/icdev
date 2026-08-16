@@ -18,14 +18,20 @@ Method, and why each step is here:
 
 1. **Warm the MODEL first.** The first call after a cold start pays for loading
    weights onto the accelerator. Measured on this deployment, that made an
-   otherwise-warm call read 5,148 ms against a true ~78 ms. Left in, it would have
-   inflated the "cold" leg by ~66x and produced a spectacular, meaningless speedup.
+   otherwise-warm call read 5,148 ms against a true ~8 ms. Left in, it would have
+   dominated whichever leg happened to run first and produced a spectacular,
+   meaningless number.
 2. **Alternate cold and warm** rather than running each leg in a block, so thermal
    drift and background GPU contention hit both legs equally.
-3. **Cold = a prefix never sent before** (unique filler per iteration). Re-sending
-   an old prefix is not a cold measurement; it is a slower warm one.
-4. **Report the median**, not the mean. The first post-warm-up call remains an
-   outlier (350 ms against a 78 ms median) and a mean lets it dominate n=5.
+3. **Cold = a prefix never sent before, by ANY run** (per-run nonce, not a fixed
+   seed). Ollama's KV cache outlives the process, so fixed seeds made this tool
+   measure correctly exactly once and then silently compare warm against warm —
+   an immediate re-run reported 0.7x. Re-sending an old prefix is not a cold
+   measurement; it is a slower warm one. See :func:`cold_nonce`.
+4. **Report the median**, not the mean, and print the raw samples. The first WARM
+   sample is a cold call by construction — the shared prefix is new on iteration 0
+   — and background GPU contention produces genuine outliers in the cold leg
+   (observed 103, 235, 496 ms within one run). A mean lets either dominate at n=5.
 5. **Do not use ``prompt_eval_count`` as the hit signal.** Measured constant at
    1,914 tokens across one cold and four warm calls: Ollama reports the FULL prompt
    length whether or not it re-evaluated it. Only the duration moves. A "cached
@@ -43,6 +49,7 @@ import json
 import os
 import statistics
 import sys
+import uuid
 from typing import Any, Dict, List, Optional
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,13 +72,31 @@ DEFAULT_REPEATS = 5
 DEFAULT_PARAGRAPHS = 60
 
 
-def build_prefix(seed: str, paragraphs: int = DEFAULT_PARAGRAPHS) -> str:
-    """A deterministic multi-KB prefix.
+def cold_nonce() -> str:
+    """A value no previous run of this tool can have used.
 
-    Deterministic so a re-run is comparable, and seeded so a 'cold' prefix really
-    is one the server has never evaluated. The seed appears in the FIRST sentence
-    on purpose: KV reuse matches on a shared leading prefix, so a seed buried at
-    the end would leave the whole body cached and the cold leg would not be cold.
+    THE cold leg depends on this, and getting it wrong is silent. The seeds were
+    originally fixed strings (``COLD0``..``COLD4``), which made the tool measure
+    correctly exactly once: Ollama's KV cache outlives the process, so on every
+    later run the "cold" prefixes had already been evaluated and came back warm.
+    Observed directly — a first run read 64.5 ms cold against 9.1 ms warm, and an
+    immediate re-run read ``cold_raw=[10.8, 9.4, 10.1, 70.6, 69.7]`` for a nominal
+    0.7x "speedup". Warm-versus-warm, reported as though it were cold-versus-warm.
+
+    A tool that only works the first time and then quietly reports noise is worse
+    than no tool, because the second reading looks just as authoritative.
+    """
+    return uuid.uuid4().hex[:12]
+
+
+def build_prefix(seed: str, paragraphs: int = DEFAULT_PARAGRAPHS) -> str:
+    """A multi-KB prefix of fixed SHAPE, identified by ``seed``.
+
+    Deterministic in size and structure so runs are comparable; the caller varies
+    ``seed`` (see :func:`cold_nonce`) to control what the server has already seen.
+    The seed appears in the FIRST sentence on purpose: KV reuse matches on a shared
+    leading prefix, so a seed buried at the end would leave the whole body cached
+    and the cold leg would not be cold.
     """
     header = f"Reference corpus {seed}. You are a compliance assistant.\n"
     body = "\n".join(
@@ -148,6 +173,11 @@ def measure(
         )
         return result
 
+    # Unique per run — see cold_nonce(). The WARM prefix is deliberately allowed
+    # to persist across runs: a shared prefix the server already holds is exactly
+    # what the warm leg is supposed to be.
+    nonce = cold_nonce()
+    result["cold_nonce"] = nonce
     shared_prefix = build_prefix("SHARED", paragraphs)
 
     # Step 1 — load the weights. Discarded on purpose (see module docstring).
@@ -162,8 +192,9 @@ def measure(
     warm: List[float] = []
     try:
         for i in range(repeats):
-            # Step 3 — a prefix the server has never seen.
-            c = _one_call(provider, model, build_prefix(f"COLD{i}", paragraphs), f"Question {i}.")
+            # Step 3 — a prefix the server has never seen, in THIS run or any
+            # earlier one (the nonce is what makes that true).
+            c = _one_call(provider, model, build_prefix(f"COLD-{nonce}-{i}", paragraphs), f"Question {i}.")
             # Step 2 — alternate, so drift hits both legs.
             w = _one_call(provider, model, shared_prefix, f"Question {i}.")
             if c is not None:
