@@ -8397,3 +8397,42 @@ projects:
     - key: vv
       title: Verification and Validation
       priority: high
+- key: cch
+  name: CCH - Provider-Agnostic Prompt/Prefix/Context Caching
+  description: >-
+    ICDEV is LLM-agnostic, but caching is currently modelled as an Anthropic
+    feature other vendors happen to lack: LLMRequest.cache_control = "ephemeral"
+    is Anthropic's wire format sitting in the provider-neutral request object.
+    That is the wrong shape, not merely incomplete coverage - three of the eight
+    providers would have to IGNORE that field by design, because their caching
+    is automatic (OpenAI, Azure), a managed object (Gemini), or server-side KV
+    reuse with no billing at all (Ollama). Caching is a provider CAPABILITY
+    expressed four different ways.
+    Underneath sits a harder problem: none of it is measurable. No durable table
+    records cache_creation_input_tokens or cache_read_input_tokens -
+    usage_events holds 2.2M rows with no token columns, llm_gateway_audit and
+    agent_token_usage are empty, module_budget_usage has no cache columns. If
+    prefix caching started working tomorrow or silently stopped, the dashboard
+    would look identical. That is exactly how Azure served cached tokens and
+    discarded the count for its entire life, fixed in #1725. Full evidence and
+    the per-provider plan: docs/research/prefix-caching-assessment.md.
+  task_prefix: cch-
+  default_open: true
+  briefs:
+    - "TEL: nothing durably records the cache-token fields, so every claim about caching on this platform is currently unfalsifiable. The response object carries cache_creation_input_tokens and cache_read_input_tokens and llm_response_cache stores them, but that only captures responses which were THEMSELVES response-cached - a subset of a subset. This is the blocker for every other epic here: you cannot declare a capability works, or notice it regressing, without the raw record (cch-tel-01)"
+    - "OBS: recording the signal is not the same as being able to ask questions of it. Today the card shows one aggregate hit rate and derives context_cache_usd_saved from response-cache rows, so it cannot answer 'is prefix caching working, on which provider, and is it better or worse than last week'. Observability here means per-provider effectiveness, a regression signal that fires when a provider that WAS reporting cached tokens stops, and the numbers being queryable rather than only renderable (cch-obs-01..02)"
+    - "CAP: the agnostic shape. A provider declares its support - none | automatic | explicit | managed_object | local - and the router consults that capability instead of setting an Anthropic field on every request. Every branch normalises into the cache_read_input_tokens / cache_creation_input_tokens fields LLMResponse already has, so the savings maths stays provider-neutral. A declared 'local' or 'none' with a written reason is a first-class answer, not a gap: for Ollama the payoff is latency and there is no per-token price to save (cch-cap-01)"
+    - "PROV: per-provider implementation, once the capability exists. Gemini reports cachedContentTokenCount in usageMetadata and is a cheap read like Azure was; its explicit cachedContents API is the managed_object case. Ollama declares local and is measured in LATENCY, never dollars. watsonx and OCI need their vendor support verified before anything is declared about them - do not guess (cch-prov-01..04)"
+  epics:
+    - key: tel
+      title: Durable cache-token telemetry
+      priority: high
+    - key: obs
+      title: Observability - per-provider, and noticing regression
+      priority: high
+    - key: cap
+      title: Provider capability declaration (the agnostic shape)
+      priority: high
+    - key: prov
+      title: Per-provider implementation
+      priority: medium
