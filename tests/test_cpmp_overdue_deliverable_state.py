@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import ExitStack
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -95,13 +95,103 @@ CREATE TABLE kanban_tasks (
 );
 """
 
-# UTC, matching compute_overdue_deliverables(), which computes days_overdue
-# against datetime.now(timezone.utc).date(). date.today() is LOCAL, so on any
-# runner west of UTC the two disagree for part of the day and the expected day
-# count is off by one — green in the morning, red after 8pm ET.
-_TODAY = datetime.now(timezone.utc).date()
+# A FIXED date, not "now" (fli-flk-01).
+#
+# The UTC-vs-local hazard was already handled here: compute_overdue_deliverables
+# derives days_overdue from datetime.now(timezone.utc).date(), and date.today()
+# is LOCAL, so on any runner west of UTC the two disagreed for part of the day —
+# green in the morning, red after 8pm ET.
+#
+# What survived that fix is subtler and had the same effect. `_TODAY` was still a
+# SNAPSHOT taken when this module was imported, while production recomputes the
+# date on every call. Cross midnight UTC between the two and the deliverable is
+# one day older than the literal 44 these tests assert.
+#
+# That is not theoretical: CI failed PR #1712 at 2026-08-16T00:01:47Z with
+# `assert 45 == 44`, on a PR that touched the route-smoke hook and nothing
+# whatsoever to do with CPMP. This file is CI-gated, so for the first minute of
+# every UTC day it could fail whatever happened to be running, and the author was
+# sent to debug a subsystem they never touched. It passes on a re-run, which is
+# what makes it expensive: the lesson taught is "CI is flaky", and that is how a
+# red gate stops being read.
+#
+# So the clock is FROZEN rather than raced — see the `frozen_clock` autouse
+# fixture below, which makes production read this very date. The assertions can
+# then keep saying 44, which is the point: the number is what proves the sweep
+# computes the interval correctly, and widening it to a range to dodge the flake
+# would have thrown away the assertion to keep the test.
+_TODAY = date(2026, 6, 15)
 _LATE = (_TODAY - timedelta(days=44)).isoformat()
 _FUTURE = (_TODAY + timedelta(days=10)).isoformat()
+
+
+class _FrozenDatetime(datetime):
+    """`datetime` with `now()` pinned to _TODAY. Everything else is real.
+
+    A subclass, not a Mock: these modules do `from datetime import date,
+    datetime, timezone` and use them for more than now(), so a stub answering
+    only now() breaks the rest — and isinstance checks keep working against a
+    real datetime subclass.
+    """
+
+    @classmethod
+    def now(cls, tz=None):  # noqa: D102 - matches datetime.now
+        return datetime(_TODAY.year, _TODAY.month, _TODAY.day, 12, 0, tzinfo=tz)
+
+
+class _FrozenDate(date):
+    """`date` with `today()` pinned to _TODAY."""
+
+    @classmethod
+    def today(cls):  # noqa: D102 - matches date.today
+        return _TODAY
+
+
+#: Every module in this flow that reads a clock, and which name it reads.
+#:
+#: TWO of them, which is the part worth writing down. contract_manager computes
+#: days_overdue from ``datetime.now(timezone.utc).date()``; pmo_ai_advisor
+#: computes due_in_30_days from ``date.today()``. Freezing only the first left
+#: the second on the real clock, so a _FUTURE date ten days after the frozen
+#: _TODAY was already in the PAST for it and due_in_30_days came back 0. Half a
+#: frozen clock is worse than none: it fails deterministically rather than
+#: nightly, but it fails.
+_CLOCK_SITES = (
+    ("tools.govcon.contract_manager", "datetime", _FrozenDatetime),
+    ("icdev.tools.govcon.contract_manager", "datetime", _FrozenDatetime),
+    ("tools.govcon.pmo_ai_advisor", "date", _FrozenDate),
+    ("icdev.tools.govcon.pmo_ai_advisor", "date", _FrozenDate),
+)
+
+
+@pytest.fixture(autouse=True)
+def frozen_clock(monkeypatch):
+    """Pin the date production reads, so the expected interval cannot drift.
+
+    Autouse on purpose: every test in this file asserts a day count or a date
+    window, so any one of them can be the one that straddles midnight. Opting in
+    per-test would leave exactly the gap this fixture exists to close.
+
+    Patched on BOTH namespaces. ``tools.govcon.x`` and ``icdev.tools.govcon.x``
+    are distinct module objects — the shim does not alias sys.modules — so
+    patching one leaves the other on the real clock, and which one gets resolved
+    depends on how the process was launched.
+    """
+    import importlib
+
+    patched = 0
+    for name, attr, replacement in _CLOCK_SITES:
+        try:
+            module = importlib.import_module(name)
+        except Exception:  # noqa: BLE001 — the icdev mirror is absent in some trees
+            continue
+        monkeypatch.setattr(module, attr, replacement, raising=False)
+        patched += 1
+
+    assert patched, (
+        "no clock site could be imported — the tests below would be racing the "
+        "real clock again while looking frozen"
+    )
 
 
 def _conn(raw):
@@ -347,3 +437,71 @@ class TestOneBadRowCannotUndoTheSweep:
 
         assert compute_overdue_deliverables()["overdue_count"] == 1
         assert _row(db, "d-ts")["days_overdue"] == 44
+
+
+# ---------------------------------------------------------------------------
+# 5. The clock is controlled, not raced (fli-flk-01)
+# ---------------------------------------------------------------------------
+
+
+class TestTheClockIsFrozenNotRaced:
+    """Waiting until 00:00 UTC is not a test. Moving the clock is.
+
+    The defect: _TODAY was a snapshot taken at MODULE IMPORT while production
+    recomputed the date per call, so crossing midnight UTC between the two made
+    every `days_overdue == 44` assertion read 45. CI hit it on PR #1712 at
+    00:01:47Z — a red gate on a PR that had nothing to do with CPMP.
+    """
+
+    def test_the_expected_interval_does_not_come_from_the_real_clock(self):
+        """If _TODAY still tracked now(), this file is one midnight from red."""
+        assert _TODAY == date(2026, 6, 15), (
+            "_TODAY must be a FIXED date. Deriving it from datetime.now() at "
+            "import time is the defect: production recomputes per call, so the "
+            "two disagree across a midnight boundary."
+        )
+
+    def test_moving_the_frozen_day_moves_the_answer(self, db, monkeypatch):
+        """Proves the freeze is load-bearing AND that the sweep tracks the date.
+
+        A frozen clock that production never reads would make these tests pass
+        for the wrong reason — green because nothing moved, not because the
+        sweep is right. So: same row, clock advanced one day, answer must
+        advance one day.
+        """
+        import importlib
+
+        from tools.govcon.contract_manager import compute_overdue_deliverables
+
+        db.execute(
+            "INSERT INTO cpmp_contracts (id, contract_number, title, status) "
+            "VALUES ('c-1', 'W15P7T-24-C-0001', 'Test', 'active')"
+        )
+        _add(db, "d-late", _LATE)
+        db.commit()
+
+        compute_overdue_deliverables()
+        assert _row(db, "d-late")["days_overdue"] == 44
+
+        # Cross midnight deliberately — the exact transition that used to be a
+        # coin flip decided by when CI happened to start.
+        tomorrow = _TODAY + timedelta(days=1)
+
+        class _NextDay(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 1, tzinfo=tz)
+
+        for name in ("tools.govcon.contract_manager",
+                     "icdev.tools.govcon.contract_manager"):
+            try:
+                monkeypatch.setattr(importlib.import_module(name), "datetime",
+                                    _NextDay, raising=False)
+            except Exception:  # noqa: BLE001
+                continue
+
+        compute_overdue_deliverables()
+        assert _row(db, "d-late")["days_overdue"] == 45, (
+            "the sweep must recompute against the current date — and the test "
+            "must be the thing that decides what 'current' means"
+        )

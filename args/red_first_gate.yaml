@@ -121,6 +121,27 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_cpmp_overdue_deliverable_state.py"
+    reason: >-
+      DETERMINISM FIX, and the proof is structurally impossible rather than
+      merely absent. This file took _TODAY as a snapshot at module import while
+      production recomputes the date per call, so it went red whenever a run
+      straddled midnight UTC — it failed PR #1712 at 00:01:47Z on a change that
+      touched nothing in CPMP. The fix freezes the clock, and it lives ENTIRELY
+      inside this test file. The gate applies only the changed test file on top
+      of the merge base, so applying it also applies the fix: both runs are
+      identical by construction, 20 passed either side. No production code
+      changed, so there is no pre-change tree in which a correct version of this
+      test could fail.
+      This exemption does NOT license a vacuous test here. That distinction is
+      why it is scoped to this ONE file rather than to test-only changes in
+      general: "a test-only PR" also describes a new test that merely asserts
+      current behaviour, which is precisely what this gate exists to catch, and
+      the two are not mechanically distinguishable. The determinism claim is
+      instead proved by a test IN the file — advance the frozen clock one day
+      and days_overdue must move 44 -> 45, so a freeze production never reads
+      cannot pass.
+
   - pattern: "tests/e2e_selenium/**"
     reason: >-
       Requires a live dashboard and a Selenium driver, and the module's autouse
