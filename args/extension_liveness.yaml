@@ -1,0 +1,59 @@
+# CUI // SP-CTI
+#
+# Declared extension points that CANNOT FIRE (hcx-live-03).
+#
+# `ExtensionPoint` in tools/extensions/extension_manager.py declares ten hook
+# points. A point is DEAD when nothing in the tree dispatches it and no handler
+# is registered against it: it is a public name with no behaviour behind it,
+# which is the defect CLAUDE.md calls "a declared capability that is never
+# consumed" — ICDEV's signature bug, here wearing the extension seam's clothes.
+#
+# This file is the census. Every dead point is enumerated BY NAME with a written
+# reason; `python tools/extensions/liveness.py --gate` exits 1 on a dead point
+# that is not listed. Enumerated, never counted — a count can be held constant
+# while the set churns, and that is exactly how the gap regrows behind a green
+# gate.
+#
+# The census only ever SHRINKS. Wire the point to a dispatcher, or take the
+# removal decision below; do not add an entry to get a commit through.
+#
+# WHY THESE FOUR ARE NOT SIMPLY DELETED HERE
+# ------------------------------------------
+# Deleting a declared-but-unconsumed capability IS the sanctioned resolution
+# under CLAUDE.md, and it may well be the right call for all four. It is not a
+# call an auto-merging PR gets to make. `ExtensionPoint` is a public `str`-Enum;
+# extensions are auto-discovered `NNN_name.py` drop-ins loaded from the
+# `scan_directories` in args/extension_config.yaml, which includes a
+# project-root `extensions/` directory that is NOT in this repository. A tenant
+# or site-local drop-in naming one of these members is invisible to any grep of
+# this checkout, and removing the member turns that file into an AttributeError
+# at import — a hard startup failure, not a warning. So: report with evidence,
+# and let a human pull the trigger.
+
+classification: CUI // SP-CTI
+
+# Measured 2026-08-16 by `python tools/extensions/liveness.py --json`.
+known_dead:
+  memory_save_before:
+    reason: >-
+      No dispatcher and no handler. Declared allow_modification: true in
+      args/extension_config.yaml, i.e. it claims to be able to filter or
+      transform a memory write before it lands — nothing anywhere calls it, so
+      no memory write has ever been filtered. tools/memory/memory_write.py and
+      the hybrid-memory writers do not import the extension manager at all.
+    follow_up: hcx-live-gate-01
+  memory_save_after:
+    reason: >-
+      No dispatcher and no handler. The observational twin of the above; same
+      writers, same absence.
+    follow_up: hcx-live-gate-01
+  compliance_check_before:
+    reason: >-
+      No dispatcher and no handler. The compliance path (security gates,
+      crosswalk, STIG/FedRAMP/CMMC assessors) has its own gate machinery in
+      args/security_gates.yaml and never consults the extension seam.
+    follow_up: hcx-live-gate-01
+  compliance_check_after:
+    reason: >-
+      No dispatcher and no handler. The observational twin of the above.
+    follow_up: hcx-live-gate-01
