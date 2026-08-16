@@ -26,7 +26,17 @@ try:
 except ImportError:
     yaml = None
 
-from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
+from tools.llm.provider import (
+    LLMProvider,
+    LLMRequest,
+    LLMResponse,
+    EmbeddingProvider,
+    PrefixCacheCapability,
+    UNDECLARED_PREFIX_CACHE,
+    apply_prefix_cache,
+    resolve_prefix_cache_capability,
+    wants_prefix_cache,
+)
 from tools.llm import cost_budget
 
 try:
@@ -1037,14 +1047,27 @@ class LLMRouter:
                 input_tokens=getattr(response, "input_tokens", 0) or 0,
                 output_tokens=getattr(response, "output_tokens", 0) or 0,
                 thinking_tokens=getattr(response, "thinking_tokens", 0) or 0,
+                # cch-tel-01: the prompt-cache counts this call actually
+                # returned. `or 0` collapses only None to 0 — a genuine 0 from
+                # the provider is written as 0, which is the whole point: an
+                # absent row and a zero row must not mean the same thing.
+                cache_creation_input_tokens=getattr(
+                    response, "cache_creation_input_tokens", 0
+                ) or 0,
+                cache_read_input_tokens=getattr(
+                    response, "cache_read_input_tokens", 0
+                ) or 0,
                 latency_ms=float(latency_ms),
                 cost_usd=getattr(response, "cost_usd", 0.0) or 0.0,
                 project_id=getattr(request, "project_id", None),
                 function=function,
                 api_key_source=getattr(request, "api_key_source", "system") or "system",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # Best-effort — a served LLM call is never failed on bookkeeping.
+            # But say so: a silent `pass` here is how a broken ledger looks
+            # exactly like an idle one.
+            logger.warning("AI telemetry logging failed: %s", exc)
 
     def _scan_for_injection(self, request: LLMRequest) -> Optional[str]:
         """Scan request messages for prompt injection patterns.
@@ -1401,7 +1424,11 @@ class LLMRouter:
     # -------------------------------------------------------------------
 
     def _invoke_model_direct(
-        self, model_name: str, request: LLMRequest, function: str = ""
+        self,
+        model_name: str,
+        request: LLMRequest,
+        function: str = "",
+        telemetry_function: str = "",
     ) -> Optional[LLMResponse]:
         """Invoke a specific named model without chain fallback.
 
@@ -1412,6 +1439,26 @@ class LLMRouter:
         (CoT/CoD) path: it carries real content, and before this it carried no
         function name at all, so a force_local function's content could arrive
         here anonymous.
+
+        ``telemetry_function`` is the LABEL written to ai_telemetry and NOTHING
+        else. It is deliberately separate from ``function``: passing a name in
+        ``function`` also arms the routing policy's force_local rung, which the
+        two-tier call sites below do not currently do. Relabelling a ledger row
+        must not silently change which provider a request is allowed to reach —
+        that is a routing decision, not a telemetry one. (That two-tier does not
+        arm force_local is a real and separate gap; it is reported, not changed
+        here.) Falls back to ``function`` when not given.
+
+        cch-tel-01: this method is where two-tier makes its REAL provider calls
+        — the qwen3 draft and the tier2 review, one each — and it recorded
+        nothing. Measured on this deployment 2026-08-16: two_tier.enabled is
+        true and code_generation is a worker function, so a plain
+        ``router.invoke("code_generation", ...)`` returned from
+        ``_maybe_invoke_two_tier`` before ever reaching ``_log_telemetry`` and
+        wrote ZERO rows to ai_telemetry. Per-call, at the call, is the only
+        granularity that gives honest token counts here: the aggregate the
+        two-tier path returns is the REVIEW response alone, so a single row at
+        the return would undercount the draft's tokens entirely.
         """
         model_cfg = self._get_model_config(model_name)
         if not model_cfg:
@@ -1424,7 +1471,23 @@ class LLMRouter:
             return None
         model_id = model_cfg.get("model_id", "")
         try:
-            return self._provider_invoke(provider, request, model_id, model_cfg, function=function)
+            _start = time.time()
+            response = self._provider_invoke(
+                provider, request, model_id, model_cfg, function=function
+            )
+            _latency = int((time.time() - _start) * 1000)
+            try:
+                self._log_telemetry(
+                    function=telemetry_function or function,
+                    request=request,
+                    response=response,
+                    model_id=model_id,
+                    provider_name=provider_name,
+                    latency_ms=_latency,
+                )
+            except Exception as _tel_exc:  # noqa: BLE001
+                logger.warning("AI telemetry logging failed: %s", _tel_exc)
+            return response
         except (ForceLocalViolation, RedactionUnavailableError):
             # NEVER swallow an egress refusal into a None. The `return None` below
             # means "this model failed, try the next one" — turning a policy
@@ -1562,7 +1625,7 @@ class LLMRouter:
             # the original system prompt so AnthropicLLMProvider can split the system
             # into separate blocks with cache_control breakpoints on the static portion.
             separator = ""
-            if request.cache_control == "ephemeral" and (request.system_prompt or "").strip():
+            if wants_prefix_cache(request) and (request.system_prompt or "").strip():
                 separator = "\n<!-- cache_breakpoint -->\n"
             req = copy.copy(request)
             req.system_prompt = context_block + citation_block + separator + (request.system_prompt or "")
@@ -1798,9 +1861,18 @@ class LLMRouter:
             logger.debug("Cache store failed (non-blocking): %s", exc)
 
     def _apply_context_cache(self, function: str, request: LLMRequest) -> None:
-        """Set request.cache_control for functions/canvases configured for context caching.
+        """Mark the request's prefix as worth caching, for configured functions/canvases.
 
         Context caching (provider-level KV prefix reuse) is additive to response caching.
+
+        cch-cap-01: this sets the provider-NEUTRAL ``cache_prefix`` intent and
+        nothing else. It runs before the chain is routed, so the provider — and
+        therefore what "cache this" means — is not yet known; stamping
+        Anthropic's ``cache_control`` here made every other vendor deal with a
+        foreign vocabulary. The translation happens in :func:`apply_prefix_cache`
+        at the invoke seam, against the provider's declared capability.
+
+        Enablement semantics (which canvases, which functions) are unchanged.
         """
         rcfg = self._config.get("response_cache", {})
         if not rcfg.get("enabled", False):
@@ -1809,12 +1881,12 @@ class LLMRouter:
         canvas_prefix = function.split("_")[0] if "_" in function else ""
         per_canvas = rcfg.get("per_canvas", {}).get(canvas_prefix, {})
         if per_canvas.get("context_cache", False):
-            request.cache_control = "ephemeral"
+            request.cache_prefix = True
             return
 
         per_fn = rcfg.get("per_function", {}).get(function, {})
         if per_fn.get("context_cache", False):
-            request.cache_control = "ephemeral"
+            request.cache_prefix = True
 
     def _maybe_invoke_two_tier(self, function: str, request: LLMRequest) -> Optional[LLMResponse]:
         """Apply two-tier routing if function is configured for it.
@@ -1889,7 +1961,9 @@ class LLMRouter:
             # Claude plans directly (or degraded fallback)
             logger.debug("Two-tier: %s → planner (%s direct)", function, effective_tier2)
             try:
-                result = self._invoke_model_direct(effective_tier2, request)
+                result = self._invoke_model_direct(
+                    effective_tier2, request, telemetry_function=function
+                )
             except Exception as exc:
                 # D-AUTO-DEGRADE: Detect rate limit during invocation
                 if self._is_rate_limit_error(exc):
@@ -1903,7 +1977,9 @@ class LLMRouter:
                         fallback,
                         datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
                     )
-                    result = self._invoke_model_direct(fallback, request)
+                    result = self._invoke_model_direct(
+                        fallback, request, telemetry_function=function
+                    )
                 else:
                     raise
             if result is not None:
@@ -1936,12 +2012,16 @@ class LLMRouter:
             else:
                 # Default: qwen3 drafts
                 logger.debug("Two-tier: %s → worker (qwen3 draft → %s review)", function, effective_tier2)
-                draft = self._invoke_model_direct(tier1, self._draft_request(augmented))
+                draft = self._invoke_model_direct(
+                    tier1, self._draft_request(augmented), telemetry_function=function
+                )
 
             if draft is not None:
                 review_req = self._review_request(request, draft, function)
                 try:
-                    reviewed = self._invoke_model_direct(effective_tier2, review_req)
+                    reviewed = self._invoke_model_direct(
+                        effective_tier2, review_req, telemetry_function=function
+                    )
                 except Exception as exc:
                     # D-AUTO-DEGRADE: Detect rate limit during review
                     if self._is_rate_limit_error(exc):
@@ -1976,7 +2056,9 @@ class LLMRouter:
                 overrides = {**overrides, **dm_overrides}
             scanner_model = overrides.get(function, tier1)
             logger.debug("Two-tier: %s → scanner (%s only)", function, scanner_model)
-            result = self._invoke_model_direct(scanner_model, request)
+            result = self._invoke_model_direct(
+                scanner_model, request, telemetry_function=function
+            )
             if result is not None:
                 return result
             # Fall through to chain on failure
@@ -2393,6 +2475,7 @@ class LLMRouter:
         """
         self._enforce_routing_policy(function, request, model_id, model_cfg)
         self._apply_network_guard(provider)
+        request = apply_prefix_cache(provider, request)
         mp, pmin, pmax = resolve_rate_limit(self._config)
         lease_backend, lease_name, lease_timeout = resolve_lease_config(self._config)
         with rate_gate(
@@ -2414,6 +2497,7 @@ class LLMRouter:
         """
         self._enforce_routing_policy(function, request, model_id, model_cfg)
         self._apply_network_guard(provider)
+        request = apply_prefix_cache(provider, request)
         mp, pmin, pmax = resolve_rate_limit(self._config)
         if mp <= 0:
             return provider.invoke_streaming(request, model_id, model_cfg)
@@ -3420,3 +3504,32 @@ class LLMRouter:
             chain = [target]
         default_route["chain"] = chain
         logger.info("Core profile promoted '%s' to first model in default chain", target)
+
+
+# ---------------------------------------------------------------------------
+# Name -> declared prefix-cache capability (cch-prov-03)
+# ---------------------------------------------------------------------------
+def prefix_cache_capability_for_provider(provider_name: str) -> PrefixCacheCapability:
+    """Resolve a provider NAME to the capability that provider DECLARES.
+
+    Analytics surfaces (the cache-savings card) hold provider *strings* from the
+    database, while :func:`resolve_prefix_cache_capability` needs an *instance* —
+    because the answer is instance-dependent. ``ollama`` and ``ollama_cloud`` are
+    the same class pointed at different base_urls and give opposite answers: one
+    is ``local`` (latency only, nothing to bill), the other is a billed endpoint.
+    So this goes through the router's own construction rather than a second
+    hand-maintained name->capability table that would drift from the adapters.
+
+    Construction only — no network call, no credential check, and no invocation.
+    Fails SAFE: an unknown name, a missing SDK, or any construction error yields
+    UNDECLARED (reported as ``none``, ``verified=False``), never an exception on
+    a page render, and never a guess.
+    """
+    try:
+        provider = LLMRouter()._get_provider(provider_name)
+    except Exception as exc:  # noqa: BLE001 - a dashboard must not 500 on this
+        logger.debug("prefix-cache capability lookup failed for %r: %s", provider_name, exc)
+        return UNDECLARED_PREFIX_CACHE
+    if provider is None:
+        return UNDECLARED_PREFIX_CACHE
+    return resolve_prefix_cache_capability(provider)

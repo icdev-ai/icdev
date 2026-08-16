@@ -79,7 +79,6 @@ import concurrent.futures as _futures
 import contextlib as _contextlib
 import json
 import math
-import os
 import threading
 import time
 import uuid as _uuid
@@ -793,17 +792,41 @@ def _resolve_approval_gate(
 ) -> "PreToolUseHook | None":
     """Turn the ``approval_gate`` argument into a hook, or ``None`` (ars-appr-01).
 
-    ``True`` / env-enabled builds the default reversibility gate; a callable is
-    taken as-is; ``False`` disables it. See :func:`run_agent_loop` for why the
-    default is env-resolved rather than always-on.
+    ``True`` builds the default reversibility gate; a callable is taken as-is;
+    ``False`` disables it. ``None`` — which is what 11 of the 12 call sites in
+    ``tools/`` pass — defers to the operator's configured mode.
+
+    That default used to read ``ICDEV_AGENT_APPROVAL_MODE`` from the environment
+    DIRECTLY, and returned ``None`` (no gate at all) whenever it was unset. So
+    ``args/agent_runtime.yaml`` could say ``command_mode: enforce`` while every
+    default call site ran ungated, and it did: the gate had evaluated zero tool
+    calls in production against 3,214 dispatched builds (rem-cap-03, written up
+    in ``docs/security/approval-gate-reachability.md``). Asking
+    :func:`tools.agent_runtime.approval_gate.resolve_mode` instead consults the
+    whole layer stack — env FIRST, then ``args/agent_runtime.yaml``, then the
+    selected permission posture — so an operator's ``ICDEV_AGENT_APPROVAL_MODE``
+    still wins and the shipped config finally arms anything (rem-cap-04).
     """
     if approval_gate is False:
         return None
     if callable(approval_gate):
         return approval_gate
     if approval_gate is None:
-        mode = (os.environ.get("ICDEV_AGENT_APPROVAL_MODE") or "").strip().lower()
-        if not mode or mode == "off":
+        try:
+            from tools.agent_runtime.approval_gate import MODE_OFF, resolve_mode
+
+            mode = resolve_mode()
+        except Exception as exc:  # noqa: BLE001
+            # Nobody ASKED for a gate here, and the module that would answer
+            # "did the operator want one?" is unreadable. Denying every tool
+            # call on every default call site because a config layer is broken
+            # is not fail-closed, it is an outage; the explicit-request paths
+            # below keep their deny-all behaviour.
+            logger.warning(
+                "agent_loop: cannot resolve the approval mode, running ungated: %s", exc
+            )
+            return None
+        if mode == MODE_OFF:
             return None
     try:
         from tools.agent_runtime.approval_gate import build_approval_hook
@@ -821,8 +844,8 @@ def _resolve_approval_gate(
         def _deny(name: str, _input: dict[str, Any]) -> str:
             return (
                 f"BLOCKED: the approval gate was requested but could not be loaded "
-                f"({why}), so {name} cannot be authorised. Fix the gate or unset "
-                "ICDEV_AGENT_APPROVAL_MODE."
+                f"({why}), so {name} cannot be authorised. Fix the gate, or set "
+                "ICDEV_AGENT_APPROVAL_MODE=off."
             )
 
         return _deny
@@ -1185,21 +1208,29 @@ def run_agent_loop(
                        :func:`tools.agent_runtime.approval_gate.build_approval_hook`;
                        a callable is used as-is (same contract as
                        ``on_pre_tool_use``); ``False`` disables it. The default
-                       ``None`` resolves from ``ICDEV_AGENT_APPROVAL_MODE``: the
-                       gate is built when that env var is set to anything other
-                       than ``off``, and is otherwise absent.
+                       ``None`` resolves through
+                       :func:`tools.agent_runtime.approval_gate.resolve_mode` —
+                       ``ICDEV_AGENT_APPROVAL_MODE``, then
+                       ``args/agent_runtime.yaml``
+                       (``subsystems.approval.command_mode``), then the selected
+                       permission posture. The gate is built for any mode other
+                       than ``off``.
 
-                       Absent-by-default is a deliberate, stated choice, not an
-                       oversight. Every existing caller passes its own tool
-                       vocabulary, and the gate's policy is fail-closed
-                       (unenumerated tool -> halt), so switching it on globally
-                       would deny every call in every caller that has not yet
-                       classified its tools. Turning it on is one env var; a
-                       runtime that executes real irreversible operations —
-                       ``tools/agent_runtime`` already gates its dispatch via
-                       :func:`tools.agent_runtime.safety.build_safety_gate` —
-                       must set it. When it runs, it composes *before*
-                       ``on_pre_tool_use``: the gate's block wins.
+                       Absent-by-default USED to be the behaviour here, and it
+                       was the defect: the resolver read the env var directly, so
+                       a config saying ``enforce`` armed nothing and the gate
+                       evaluated zero tool calls across 3,214 dispatched builds
+                       (rem-cap-03/04,
+                       ``docs/security/approval-gate-reachability.md``). The
+                       concern behind it is still real and is now answered by the
+                       MODE rather than by absence: the policy is fail-closed
+                       (unenumerated tool -> halt) and 47 of the 63 tools these
+                       callers register are unenumerated, so the shipped config
+                       is ``dry_run`` — every irreversible/unknown call is
+                       RECORDED and then allowed. Promotion to ``enforce`` waits
+                       on enumerating those tools, per bundle. When the gate
+                       runs it composes *before* ``on_pre_tool_use``: the gate's
+                       block wins.
         max_total_tokens: Hard cap on cumulative input+output tokens across turns.
         max_cost_usd:     Hard cap on cumulative USD cost (when providers report it).
         max_wall_clock_seconds: Hard cap on TOTAL elapsed session time, checked at

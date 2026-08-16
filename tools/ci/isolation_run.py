@@ -83,7 +83,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Mapping, Optional, Sequence
 
 # Sibling module. Imported by path-independent name so this works from the
 # `tools/` checkout and the packaged `icdev/tools/` mirror alike.
@@ -288,12 +288,23 @@ def resolve(root: Optional[Path] = None, base: Optional[str] = None) -> Dict[str
 # Running them, one process each
 # --------------------------------------------------------------------------- #
 def run_one(
-    root: Path, rel: str, timeout: int = DEFAULT_TIMEOUT, extra: Sequence[str] = ()
+    root: Path,
+    rel: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    extra: Sequence[str] = (),
+    env_extra: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, object]:
     """One test file, one fresh interpreter. That process boundary IS the isolation.
 
     `-p no:cacheprovider` keeps N runs from fighting over `.pytest_cache`, which
     is shared state of exactly the kind being tested for.
+
+    `env_extra` overlays extra environment variables onto the child. It exists so
+    a caller running MANY files concurrently (`tools/ci/ungated_test_census.py`)
+    can point each child at its own scratch `ICDEV_DB_PATH`; without it the
+    concurrent children contend over one SQLite file and manufacture "database is
+    locked" failures that are measurement noise, not findings. The default is
+    None -- the changed-test isolation run stays exactly as it was.
     """
     env = dict(os.environ)
     # conftest.py inserts the repo root itself, but a file that fails at COLLECT
@@ -301,6 +312,8 @@ def run_one(
     env["PYTHONPATH"] = os.pathsep.join(
         [str(root), *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
     )
+    if env_extra:
+        env.update(env_extra)
     cmd = [
         sys.executable, "-m", "pytest", rel,
         "-q", "--tb=short", "-p", "no:cacheprovider", *extra,

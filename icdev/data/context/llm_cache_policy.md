@@ -70,12 +70,22 @@ Per-function and per-canvas TTL overrides allow shorter lifetimes for volatile d
 
 ## Context Caching (Provider-Level)
 
-When `request.cache_control = "ephemeral"`:
+Set `request.cache_prefix = True` — "this prefix is stable and worth caching".
+That is the whole caller contract; the PROVIDER decides what it means, through
+the `PrefixCacheCapability` it declares (cch-cap-01). Do **not** set
+`cache_control` yourself: it is Anthropic's wire vocabulary, and the router
+derives it at the invoke seam only for providers that declare `explicit`.
 
-- **Anthropic/Bedrock**: System prompt and last user message block receive
-  `cache_control: {type: "ephemeral"}`.
-- **OpenAI**: No native support yet; placeholder for future API versions.
-- **Ollama/vLLM**: No-op (local inference has no token cost).
+| Declared support | Providers | What happens |
+|---|---|---|
+| `explicit` | anthropic, bedrock | System prompt and last user message get `cache_control: {type: "ephemeral"}`, max 4 breakpoints |
+| `automatic` | openai, azure_openai, **oci_genai** | Nothing is requested; the provider caches by itself and `cached_tokens` is read back. OpenAI/Azure cache prefixes ≥1024 tokens; OCI returns `Usage.prompt_tokens_details.cached_tokens` (verified 2026-08-16, cch-prov-04) |
+| `managed_object` | gemini, vertex_ai | Needs a stored `cachedContents` handle with its own TTL — not implemented yet |
+| `local` | ollama (local), vllm, localai | Server-side KV reuse: a **latency** win, never a billing one |
+| `none` | ibm_watsonx, cli, hosted ollama | Nothing to set — with a written reason on each. watsonx is a **checked** none (2026-08-16, cch-prov-04): IBM's chat usage object is three counters with no cached-token field, and there is no cache parameter to set. `verified=False` is reserved for endpoints genuinely nobody has checked, such as an unlisted OpenAI-compatible label |
+
+Every branch normalises into the same `LLMResponse.cache_read_input_tokens` /
+`cache_creation_input_tokens` fields, so the savings maths stays vendor-neutral.
 
 Context caching is additive to response caching. A request can hit the response
 cache entirely (skipping provider), or miss the response cache but still benefit

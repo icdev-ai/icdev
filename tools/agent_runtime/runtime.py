@@ -53,6 +53,38 @@ _DEFAULT_MAX_ITERATIONS = 12
 CommandHandler = Callable[["AgentRuntime", str], "tuple[bool, str, bool]"]
 
 
+class _NullRecorder:
+    """Stand-in used when ``event_recorder`` itself cannot be imported.
+
+    Not a general "recording off" switch — :data:`event_recorder.RECORDING_ENV`
+    is that, and a disabled ``TurnRecorder`` still counts and still reports. This
+    covers only the stripped-runtime case where the module is absent, and it
+    keeps the same four hook signatures so ``run_agent_loop`` sees no difference.
+    ``on_pre_tool_use`` returns ``None`` here for the same reason it does there:
+    a hook that observes must never be able to answer a gate's question.
+    """
+
+    correlation_id = ""
+
+    def turn_start(self, user_input: str, **meta: Any) -> None:
+        return None
+
+    def turn_end(self, result: Any = None, *, reason: str = "") -> None:
+        return None
+
+    def on_turn(self, turn: int, response: Any, messages: Any = None) -> None:
+        return None
+
+    def on_pre_tool_use(self, name: str, tool_input: dict) -> None:
+        return None
+
+    def on_post_tool_use(
+        self, name: str, tool_input: dict, result_text: str, is_error: bool
+    ) -> None:
+        return None
+
+    def on_stop(self, result: Any) -> None:
+        return None
 # ---------------------------------------------------------------------------
 # Agent lifecycle extension points (hcx-live-03)
 # ---------------------------------------------------------------------------
@@ -573,6 +605,12 @@ class AgentRuntime:
         partial transcript is still recorded and persisted, so ``/resume``
         continues from where the operator stopped.
 
+        Every model-visible event is also appended to ``agent_session_events``
+        (hcx-evt-02) through the loop's own lifecycle hooks — see
+        :class:`~tools.agent_runtime.event_recorder.TurnRecorder`. That log is
+        ADDITIVE: ``agent_loop_sessions.messages_json`` remains the resume path,
+        and a recorder that cannot write degrades to a warning rather than
+        ending the turn.
         The turn is bracketed by the ``AGENT_START`` / ``AGENT_END`` extension
         points (hcx-live-03). Both are observational — see
         :func:`_dispatch_agent_start` — and ``AGENT_END`` fires from a
@@ -582,6 +620,15 @@ class AgentRuntime:
         from icdev.tools.llm.agent_loop import run_agent_loop
 
         self.session.record_user(user_input)
+        recorder = self._new_recorder()
+        recorder.turn_start(
+            user_input,
+            llm_function=self.llm_function,
+            max_iterations=self.max_iterations,
+            resume_session_id=self.session.resume_session_id or "",
+            tools=self.tool_names(),
+            unattended=self.unattended,
+        )
         self._turn_active.set()
         started_at = time.time()
         result: Any = None
@@ -600,9 +647,24 @@ class AgentRuntime:
                 max_cost_usd=self.max_cost_usd,
                 resume_session_id=self.session.resume_session_id or None,
                 stop_event=self._stop,
+                # The four hooks the loop already exposes. `on_pre_tool_use` is
+                # composed AFTER the approval gate by the loop itself
+                # (_compose_pre_tool_hooks) and the gate's block wins — the
+                # recorder observes, it does not adjudicate.
+                on_turn=recorder.on_turn,
+                on_pre_tool_use=recorder.on_pre_tool_use,
+                on_post_tool_use=recorder.on_post_tool_use,
+                on_stop=recorder.on_stop,
+                # Joins an event row to the loop's OTel span and to
+                # AgentLoopResult.trace_id.
+                correlation_id=recorder.correlation_id,
             )
         except BaseException as exc:  # noqa: BLE001 — re-raised; recorded first
             error = f"{type(exc).__name__}: {exc}"
+            # on_stop fires on every exit path the loop CONTROLS; an exception
+            # out of the loop is not one of them, and a turn with no turn_end
+            # reads to hcx-evt-05 as a turn still open. Re-raised untouched.
+            recorder.turn_end(reason=f"loop_raised:{type(exc).__name__}")
             raise
         finally:
             self._turn_active.clear()
@@ -614,10 +676,36 @@ class AgentRuntime:
                     duration_ms=(time.time() - started_at) * 1000,
                 )
             )
+        # Belt and braces: idempotent, so this is a no-op whenever on_stop ran.
+        recorder.turn_end(result)
         self.session.record_assistant(getattr(result, "final_content", "") or "")
         self.session.persist(result, system_prompt=self.system_prompt)
         return result
 
+    def _new_recorder(self) -> Any:
+        """A :class:`TurnRecorder` for one turn, keyed to this conversation.
+
+        Constructed here rather than held on the runtime because
+        ``correlation_id`` identifies a TURN, and the recorder's pre/post pairing
+        state must not survive into the next one.
+
+        Degrades to a disabled recorder if the module cannot be imported at all
+        — a runtime that refuses to answer because its audit log is missing is a
+        worse outcome than one that answers and says so.
+        """
+        try:
+            from tools.agent_runtime.event_recorder import TurnRecorder
+
+            return TurnRecorder.for_turn(
+                self.session.context_id,
+                tenant_id=self.tenant_id or None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "agent_runtime: event recording unavailable (%s); this turn will "
+                "not appear in agent_session_events", exc,
+            )
+            return _NullRecorder()
     def _lifecycle_context(
         self,
         *,

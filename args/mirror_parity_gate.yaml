@@ -53,7 +53,16 @@ extensions:
 # ITSELF drifted (#1552 added check_capability_liveness to tools/ only), so
 # mirroring it reconciled one file and the budget came down with it. That is
 # the intended workflow — reconcile, then LOWER. Never raise.
-budget: 18
+#
+# 18 -> 14 on 2026-08-16 (rem-cap-04). Not a reconciliation: intentional
+# re-export shims stopped being counted. `_mirror_drifted_files` now applies the
+# `_is_mirror_shim` predicate `check_mirror_drift` already used, which removed
+# `tools/llm/agent_loop.py` and `tools/showcase/synthetic_data_engine.py` from
+# the 16 drifted .py files. A shim is the opposite of this gate's defect — the
+# two names resolve to the SAME module object, so there is no stale half — and
+# "fixing" one by copying the body back would recreate the separate stale copy
+# it was written to delete. The ceiling comes down to match; never raise it.
+budget: 14
 
 # Not counted, with the reason. A gate that fires on a difference which is
 # correct gets switched off, so exclusions are declared rather than discovered.

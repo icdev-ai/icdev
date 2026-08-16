@@ -65,6 +65,21 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "args" / "pr_watcher_config.yaml"
 
 # Max characters of CI log text we inject back into a resume message.
+#: Minimum gap between resume injections for the SAME PR.
+#:
+#: max_resume_cycles_per_task is a budget of ATTEMPTS; this is what makes
+#: each one an attempt. Without it the cap was spent at POLL speed —
+#: measured 2026-08-16, PRs #1742 and #1744 each burned all five cycles in
+#: about three minutes (one per ~45 s poll) and escalated to "manual
+#: intervention required" while both were fully green and merged cleanly
+#: under `git merge-tree`. No agent can read a message and push a fix in
+#: 45 seconds, so those were not five attempts; they were one attempt and
+#: four wasted budget entries.
+#:
+#: 600s gives five real attempts across ~50 minutes. Override per
+#: deployment with `resume_cooldown_seconds` in the watcher config.
+RESUME_COOLDOWN_SECONDS = 600
+
 DEFAULT_CI_LOG_MAX = 4000
 
 # Source prefix for the HITL alerts this watcher raises. Spelled once: the
@@ -130,6 +145,7 @@ def load_config(path: Optional[pathlib.Path] = None) -> dict:
         return {
             "poll_interval_seconds": 30,
             "max_resume_cycles_per_task": 5,
+            "resume_cooldown_seconds": RESUME_COOLDOWN_SECONDS,
             "auto_merge_enabled": False,
             "auto_merge_require_approval": True,
             "ci_log_max_chars": DEFAULT_CI_LOG_MAX,
@@ -492,83 +508,21 @@ def list_pr_tasks(
 # ────────────────────────────────────────────────────────────────────────────
 
 
-# Coordination files that MANY task branches legitimately co-edit (manifest
-# shards, append-only-table registry, nav/registry configs, conftest schema).
-# Two PRs touching these is normal, not a collision — exclude them from the
-# sibling-conflict check so it only fires on genuine same-source-file races
-# (e.g. two branches each creating a different tools/cortex/blueprint.py). See
-# the merge-conflict-hotspots prevention notes.
+# The coordination / generated path lists moved to tools/git/coordination_paths.py
+# (rem-hyg-07) so the seed-time sibling check in tools/kanban/lane_conflicts.py
+# asks the SAME question this merge-time guard does. A second divergent copy is
+# worse than none: the two checks would report different collisions and a reader
+# could not tell which list was current. The curation, and the two deadlocks that
+# produced it, are documented there.
 #
-# "Union-merged" is only literally true for the manifest entries: `.gitattributes`
-# declares `tools/manifest*` `merge=union` (kax-conflict-03), so concurrent
-# appends there really do resolve without a human. The remaining paths are
-# structured config/code, where union would produce duplicate keys or broken
-# syntax — they are excluded from the sibling check as a heuristic about how
-# they are edited, NOT because git resolves them automatically. Adding a path
-# here does not make it auto-mergeable.
-#
-# `args/ci_test_files/` is the second entry that is literally union-merged
-# (kax-conflict-07). It holds the pytest allowlists that used to be a
-# line-continuation chain inside .github/workflows/icdev-ci.yml. That inlining
-# is what deadlocked the board on 2026-08-09: five open PRs each appended a test
-# path to the same hand-written workflow, so this guard made each a sibling of
-# every other and refused all five. Note what is NOT listed here — the workflow
-# itself. It carries real job definitions, and two PRs editing a job's `run:`
-# block is a genuine collision worth serializing; only the additive list moved
-# out, so only the list is excluded.
-_ADDITIVE_PATH_MARKERS = (
-    "tools/manifest/",
-    "tools/manifest.md",
-    "args/ci_test_files/",
-    ".claude/hooks/pre_tool_use.py",
-    "tools/dashboard/templates/base.html",
-    ".claude/commands/start.md",
-    "args/component_registry.yaml",
-    "args/projects.yaml",
-    "args/genesis_config.yaml",
-    "tests/conftest.py",
-    "docs/reference/commands.md",
+# These private aliases stay because they are the names this module's guard and
+# its tests use; they are re-exports, not a copy.
+from tools.git.coordination_paths import (  # noqa: E402,F401
+    COORDINATION_PATH_MARKERS as _ADDITIVE_PATH_MARKERS,  # noqa: F401
+    GENERATED_PATH_MARKERS as _GENERATED_PATH_MARKERS,  # noqa: F401
+    is_coordination_path as _is_additive_path,
+    is_generated_path as _is_generated_path,  # noqa: F401
 )
-
-#: Substrings marking a DERIVED artifact — a file produced by a generator and
-#: checked in, never hand-edited.
-#:
-#: These are excluded for a different reason than the coordination files above.
-#: A coordination file is safe to co-edit because it union-merges. A generated
-#: file is safe because a conflict in it is not a disagreement at all: re-running
-#: the generator over the merged tree produces the correct content, so there is
-#: nothing for a human to arbitrate and nothing for a serialized merge to protect.
-#:
-#: WHY THIS EXISTS. On 2026-08-09 a single generated file —
-#: docs/research/external-benchmark-map.generated.md — deadlocked the entire
-#: board. Every branch that added a module regenerated it, so every open PR
-#: touched it, so hold_on_sibling_conflict made every PR a sibling of every other
-#: and refused all six. The guard was behaving correctly; the input made it
-#: total. The daemons were healthy the whole time, which is what made it read as
-#: "the dispatcher is broken". One shared generated file is enough to stop
-#: everything, so the class is excluded rather than that one path.
-_GENERATED_PATH_MARKERS = (
-    ".generated.",
-    "/generated/",
-)
-
-
-def _is_generated_path(path: str) -> bool:
-    """True when `path` is a generator-produced artifact (regenerate, don't merge)."""
-    p = (path or "").replace("\\", "/")
-    return any(marker in p for marker in _GENERATED_PATH_MARKERS)
-
-
-def _is_additive_path(path: str) -> bool:
-    """True when `path` is safe for two PRs to touch at once.
-
-    Either union-merged coordination state, or a derived artifact whose conflicts
-    are resolved by regeneration rather than by arbitration.
-    """
-    p = (path or "").replace("\\", "/")
-    if _is_generated_path(p):
-        return True
-    return any(marker in p for marker in _ADDITIVE_PATH_MARKERS)
 
 
 #: `isDraft` is not cosmetic. GitHub refuses `gh pr merge` on a draft with
@@ -1326,6 +1280,64 @@ class PRWatcher:
         """Prior pr_watcher resume events for this task, on THIS PR."""
         return self._count_audit_actions(
             task_id, ("pr_watcher.resume",), pr_url=pr_url)
+
+    def _seconds_since_last_resume(
+        self, task_id: str, pr_url: Optional[str] = None,
+    ) -> Optional[float]:
+        """Age of the most recent resume injection for THIS PR, or None.
+
+        The budget counts attempts; this is what makes an attempt an attempt.
+        Without it the cap is spent at POLL speed rather than at agent speed —
+        measured 2026-08-16, #1742 and #1744 each burned all five cycles in
+        about three minutes (one per ~45 s poll) and then escalated to "manual
+        intervention required" while both PRs were fully green and merged
+        cleanly under `git merge-tree`.
+
+        None when there is no prior resume or the age cannot be read, so the
+        caller proceeds — an unreadable clock must not block recovery.
+        """
+        get_conn = self._connection()
+        try:
+            conn = get_conn()
+        except Exception:  # noqa: BLE001
+            return None
+        try:
+            _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+            details_col = "details::text" if _pg else "details"
+            rows = conn.execute(
+                f"SELECT {details_col} AS d, created_at FROM audit_trail "  # nosec B608
+                f"WHERE action = %s AND {details_col} LIKE %s "
+                "ORDER BY created_at DESC LIMIT 25",
+                ("pr_watcher.resume", f"%{task_id}%"),
+            ).fetchall()
+            for r in rows:
+                row = dict(r) if not isinstance(r, dict) else r
+                try:
+                    payload = json.loads(row.get("d") or "")
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if payload.get("task_id") != task_id:
+                    continue
+                if pr_url is not None and (payload.get("pr_url") or "") != pr_url:
+                    continue
+                stamp = row.get("created_at")
+                if isinstance(stamp, str):
+                    stamp = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if stamp is None:
+                    return None
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                return (datetime.now(timezone.utc) - stamp).total_seconds()
+            return None
+        except Exception:  # noqa: BLE001
+            return None
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _rebase_attempts(self, task_id: str, pr_url: Optional[str] = None) -> int:
         """Prior auto-rebase attempts for this task on THIS PR, net of refunds.
@@ -2201,6 +2213,21 @@ class PRWatcher:
 
             # Resume classes: CI_FAILED / MERGE_CONFLICT / CHANGES_REQUESTED
             if cycle >= max_cycles:
+                # ESCALATE ONCE PER PR, not once per poll. This branch re-fired
+                # on every cycle: #1742 and #1744 were re-escalated every ~42 s
+                # for hours, and pr_watcher.escalate stood at 42,902 rows —
+                # nearly all of it a handful of PRs re-announcing. That floods
+                # the audit trail and, worse, re-sends the HITL alert, which is
+                # how a "manual intervention required" notification stops being
+                # read. The task is already parked; saying so again changes
+                # nothing.
+                already = self._count_audit_actions(
+                    task["id"], ("pr_watcher.escalate",), pr_url=pr_url)
+                if already:
+                    logger.debug(
+                        "pr_watcher: %s already escalated (%d/%d) — staying quiet",
+                        pr_url, cycle, max_cycles)
+                    continue
                 action = WatcherAction(
                     task_id=task["id"], pr_url=pr_url,
                     classification=classification.value,
@@ -2219,6 +2246,38 @@ class PRWatcher:
                     f"{classification.value}.")
                 report.actions.append(action)
                 self._audit(action)
+                continue
+
+            # A RESUME MUST BE GIVEN TIME TO WORK BEFORE THE NEXT ONE IS SPENT.
+            #
+            # The budget is five ATTEMPTS at getting an agent to fix the PR.
+            # Nothing stopped it being spent at POLL speed: the watcher injected
+            # context, the next poll 45 s later saw the same classification and
+            # injected again, and the whole budget was gone in about three
+            # minutes — before any agent could plausibly have read the first
+            # message, let alone pushed a commit. Measured 2026-08-16: #1742
+            # burned 17:17:43 -> 17:20:56, #1744 17:54:20 -> 17:57:29, both then
+            # escalating to "manual intervention required" while fully green and
+            # merging cleanly under `git merge-tree`.
+            #
+            # This does not change the budget, only the pacing: five attempts
+            # still, now spaced far enough apart to be attempts. A PR waiting out
+            # the cooldown is recorded as `wait`, which is what the state
+            # actually is, rather than silently consuming a cycle.
+            since = self._seconds_since_last_resume(task["id"], pr_url=pr_url)
+            cooldown = float(self.config.get(
+                "resume_cooldown_seconds", RESUME_COOLDOWN_SECONDS))
+            if since is not None and since < cooldown:
+                report.actions.append(WatcherAction(
+                    task_id=task["id"], pr_url=pr_url,
+                    classification=classification.value,
+                    action="wait",
+                    reason=(
+                        f"resume cooldown: {since:.0f}s of {cooldown:.0f}s since "
+                        f"the last injection (cycle {cycle}/{max_cycles})"
+                    ),
+                    resume_cycle=cycle,
+                ))
                 continue
 
             context = prepare_resume_context(

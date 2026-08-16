@@ -2,9 +2,10 @@
 """Integration tests: router-level context cache activation + cache token tracking.
 
 Verifies that:
-- _apply_context_cache() sets cache_control='ephemeral' for all 12 canvases
+- _apply_context_cache() sets the neutral cache_prefix intent for all 12 canvases
+  (cch-cap-01: it no longer stamps Anthropic's cache_control on the request)
 - TTX functions (ttx_judge, persona_gen) activate context cache after config fix
-- Functions in the excluded list never get cache_control
+- Functions in the excluded list never get the cache_prefix intent
 - LLMResponse carries cache_creation_input_tokens and cache_read_input_tokens
 - _row_to_response round-trips new cache token fields
 """
@@ -69,11 +70,14 @@ CANVAS_FUNCTIONS = [
 def test_canvas_context_cache_activated(router, base_req, function):
     """Every canvas function must activate ephemeral context caching."""
     router._apply_context_cache(function, base_req)
-    assert base_req.cache_control == "ephemeral", (
+    assert base_req.cache_prefix is True, (
         f"Canvas function '{function}' (prefix '{function.split('_')[0]}') "
         "did not activate context cache — check per_canvas in llm_config.yaml"
     )
-    base_req.cache_control = ""  # reset for parametrize reuse
+    assert base_req.cache_control == "", (
+        "the router must not set Anthropic's wire field on a neutral request"
+    )
+    base_req.cache_prefix = False  # reset for parametrize reuse
 
 
 # ---------------------------------------------------------------------------
@@ -84,11 +88,11 @@ def test_canvas_context_cache_activated(router, base_req, function):
 def test_ttx_context_cache_activated(router, base_req, function):
     """TTX functions must activate context cache after config fix."""
     router._apply_context_cache(function, base_req)
-    assert base_req.cache_control == "ephemeral", (
+    assert base_req.cache_prefix is True, (
         f"TTX function '{function}' did not activate context cache — "
         "ensure it appears in per_function with context_cache: true in llm_config.yaml"
     )
-    base_req.cache_control = ""
+    base_req.cache_prefix = False
 
 
 # ---------------------------------------------------------------------------
@@ -99,10 +103,10 @@ def test_ttx_context_cache_activated(router, base_req, function):
 def test_per_function_context_cache_activated(router, base_req, function):
     """Core per_function entries with context_cache: true must activate."""
     router._apply_context_cache(function, base_req)
-    assert base_req.cache_control == "ephemeral", (
+    assert base_req.cache_prefix is True, (
         f"Per-function '{function}' did not activate context cache"
     )
-    base_req.cache_control = ""
+    base_req.cache_prefix = False
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +129,10 @@ def test_excluded_function_no_context_cache(router, base_req, function):
     # Excluded list applies to response cache, not context cache directly.
     # But these functions should NOT be in per_function with context_cache:true.
     router._apply_context_cache(function, base_req)
-    assert base_req.cache_control != "ephemeral", (
+    assert base_req.cache_prefix is False, (
         f"Excluded function '{function}' should not have context cache activated"
     )
-    base_req.cache_control = ""
+    base_req.cache_prefix = False
 
 
 # ---------------------------------------------------------------------------
