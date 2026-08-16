@@ -112,7 +112,7 @@ def test_age_of_the_last_resume_is_reported():
     assert age is not None and 100 < age < 200, age
 
 
-def test_a_resume_for_another_PR_does_not_count_as_this_one(): 
+def test_a_resume_for_another_PR_does_not_count_as_this_one():
     """The budget is per-PR; so is the cooldown, or a busy task starves."""
     conn = _StampedConn([_stamped_row("t1", "http://pr/OTHER", 5)])
     assert _watcher(conn)._seconds_since_last_resume("t1", pr_url="http://pr/1") is None
