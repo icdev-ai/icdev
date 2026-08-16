@@ -27,7 +27,10 @@ none of them is a stub:
 - ``/memory``       — show, remember or forget durable profile facts.
 - ``/goal``         — manage standing goals; the active ones are injected into
   the system prompt (hgx-goal-02).
-- ``/usage``        — token / cost stats for the current session.
+- ``/usage``        — token / cost stats for the current session, and the
+  permission posture in force.
+- ``/posture``      — show or select the permission posture; selecting one
+  records the decision in ``agent_session_events`` (hcx-post-02).
 - ``/search``       — full-text search across past session turns.
 - ``/snapshot``     — checkpoint repo paths before a risky edit.
 - ``/rollback``     — preview or apply a rollback to a checkpoint.
@@ -154,12 +157,87 @@ def _cmd_memory(runtime: Any, arg: str) -> "tuple[str, bool]":
 
 def _cmd_usage(runtime: Any, _arg: str) -> "tuple[str, bool]":
     u = runtime.session.usage()
-    return (
+    line = (
         f"Usage — turns: {u['turns']}, input: {u['input_tokens']}, "
         f"output: {u['output_tokens']}, total: {u['total_tokens']} tokens, "
-        f"cost: ${u['cost_usd']:.6f} (session {u['session_id'] or 'n/a'})",
-        False,
+        f"cost: ${u['cost_usd']:.6f} (session {u['session_id'] or 'n/a'})"
     )
+    return f"{line}\n{_posture_line()}", False
+
+
+def _posture_line() -> str:
+    """One line naming the posture in force — shown by ``/usage`` (hcx-post-02).
+
+    A posture nobody can see at runtime is a posture nobody checks, which is how
+    "the agent is confined" becomes an assumption rather than an observation. It
+    rides on ``/usage`` because that is the command an operator already types to
+    ask what this session is costing them, and a knob that widened is exactly
+    the kind of thing they want in the same answer.
+
+    Never raises: this is a suffix on an unrelated command, and a config layer
+    that cannot load must not take ``/usage`` down with it.
+    """
+    try:
+        from tools.agent_runtime.posture_selection import describe
+
+        report = describe()
+        knobs = ", ".join(f"{k}={v!r}" for k, v in report["knobs"].items())
+        line = f"Posture — {report['posture']} (by {report['source']}): {knobs}"
+        if report["pinned"]:
+            held = ", ".join(f"{k} by {v}" for k, v in report["pinned"].items())
+            line += f"\n  NOT set by the posture: {held}"
+        return line + "\n  Change it with /posture <name>."
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("commands: posture line unavailable: %s", exc)
+        return "Posture — unavailable (the config layer did not load)."
+
+
+def _cmd_posture(runtime: Any, arg: str) -> "tuple[str, bool]":
+    """Show or select the permission posture (hcx-post-02).
+
+    Usage:
+      /posture                 Show the posture in force and its four knobs
+      /posture list            List selectable postures
+      /posture <name>          Select it, recording the decision
+
+    Selecting appends a ``permission_posture`` event to ``agent_session_events``
+    naming this operator, the posture and the resolved knobs — and only then
+    moves anything. Re-selecting the posture already in force records nothing.
+    """
+    from tools.agent_runtime.posture_selection import (
+        available_postures,
+        describe,
+        select_posture,
+    )
+
+    sub = arg.strip()
+
+    if not sub:
+        report = describe()
+        lines = [f"Posture: {report['posture']} (selected by: {report['source']})"]
+        for key, value in report["knobs"].items():
+            holder = report["pinned"].get(key)
+            note = f"   <- pinned by {holder}, not by the posture" if holder else ""
+            lines.append(f"  {key:<22} {value!r}{note}")
+        lines.append("Select with '/posture <name>', or list them with '/posture list'.")
+        return "\n".join(lines), False
+
+    if sub.lower() in ("list", "ls"):
+        lines = ["Selectable postures:"]
+        for name, meta in available_postures().items():
+            flag = "  [explicit selection only]" if meta["requires_explicit_selection"] else ""
+            lines.append(f"  {name}{flag}")
+            if meta["description"]:
+                lines.append(f"      {meta['description']}")
+        return "\n".join(lines), False
+
+    result = select_posture(
+        sub.split()[0],
+        actor=str(getattr(runtime, "user_id", "") or "unknown"),
+        session_id=str(getattr(getattr(runtime, "session", None), "context_id", "") or ""),
+        tenant_id=getattr(runtime, "tenant_id", "") or None,
+    )
+    return result.summary(), False
 
 
 def _cmd_search(_runtime: Any, arg: str) -> "tuple[str, bool]":
@@ -601,7 +679,8 @@ REGISTRY: dict[str, Command] = {
     "/skill": Command(_cmd_skill, "Propose/review/promote auto-skills (HITL). Usage: /skill propose|list|approve|reject ..."),
     "/memory": Command(_cmd_memory, "Show/remember/forget durable facts. Usage: /memory [forget <N>|remember <fact>]"),
     "/goal": Command(_cmd_goal, "Manage standing goals injected into the prompt. Usage: /goal create|list|status|pause|resume|complete|block|cancel|clear ..."),
-    "/usage": Command(_cmd_usage, "Show token/cost stats for this session."),
+    "/usage": Command(_cmd_usage, "Show token/cost stats and the posture in force."),
+    "/posture": Command(_cmd_posture, "Show or select the permission posture. Usage: /posture [list|<name>]"),
     "/search": Command(_cmd_search, "Search past session turns. Usage: /search <query>"),
     "/snapshot": Command(_cmd_snapshot, "Checkpoint paths now. Usage: /snapshot <path> [more...]"),
     "/rollback": Command(_cmd_rollback, "Preview/apply a rollback. Usage: /rollback [N|id] [--yes]"),

@@ -120,9 +120,18 @@ MIGRATION = "20260816122036_agent_session_events"
 #: rather than anything the model saw, at one row per token. ``assistant_message``
 #: is the assembled message, which is the unit a fork or a replay resumes from.
 #:
+#: ``permission_posture`` (hcx-post-02) is the one member that is NOT
+#: model-visible. It records an OPERATOR's act — "who chose this posture, and
+#: when" — which reading the resolved knobs can never answer, because the knobs
+#: carry the state and not the decision that produced it. It lives in this
+#: vocabulary rather than in a table of its own so the decision and the turns it
+#: governs share one ``seq`` ordering: "the posture widened, and then these four
+#: tool calls happened" is a single ORDER BY, not a join across two clocks.
+#:
 #: Validated in Python rather than by a CHECK constraint — the call migrations
 #: 20260803002224, 20260809203855 and 20260815063941 all made. A CHECK is a
 #: second copy of this tuple and it drifts the first time a type is added.
+#: Adding this one required no migration, which is that decision paying off.
 EVENT_TYPES = (
     "turn_start",
     "request_context",
@@ -130,6 +139,7 @@ EVENT_TYPES = (
     "tool_call",
     "tool_result",
     "turn_end",
+    "permission_posture",
 )
 
 #: Column order. The INSERT names every one of these explicitly, and every one
