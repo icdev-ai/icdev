@@ -75,8 +75,13 @@ table this one complements (``agent_loop_sessions``) is canvas-resident:
 
 CONSUMERS
 ---------
-hcx-evt-02..06 (fork, replay, the timeline join, the runtime write path) build on
-this. Until they land the CLI below is the operable surface.
+hcx-evt-02 writes these rows from a real turn (``event_recorder.py``), and
+hcx-evt-04 reads them back: ``tools/agent_case/session_timeline.py`` joins this
+table as a fourth source and ``case_bundler.py`` carries it in every case bundle
+— WITHOUT ``payload_json``, which can hold verbatim model input a forensic
+bundle must not travel with. ``payload_hash`` goes instead, so a holder of the
+payload can still prove what it was. hcx-evt-03, 05 and 06 (context injection,
+fork, the gate registrations) build on the same rows.
 
 CLI::
 

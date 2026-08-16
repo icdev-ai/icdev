@@ -1074,7 +1074,8 @@ race produces rather than writing a duplicate position.
 grain of CLAUDE.md's canvas rule, because `tenant_id`/`classification` make it
 RLS-eligible (these rows can hold verbatim model input) and because
 `agent_case/session_timeline.py` joins `hook_events` and `audit_trail`, both of
-which are in the main db.
+which are in the main db. hcx-evt-04 collected on that: the log is a fourth
+source in that timeline, which a canvas-resident table could never have been.
 
 **`payload_hash` is always written; `payload_json` is not.** The hash comes from
 `tools/audit/row_hash.py::compute_payload_hash` — the same module, algorithm and
@@ -1092,8 +1093,10 @@ Append-only: registered in `APPEND_ONLY_TABLES`, and the module exposes
 correction is a new event. The INSERT is not wrapped in a bare `except` — a
 swallowed INSERT is how `module_budget_usage` held zero rows.
 
-Consumers: hcx-evt-02 (below), then hcx-evt-03..06 (context injection, the
-timeline join, fork, the gate registrations).
+Consumers: hcx-evt-02 (below) and hcx-evt-04 (the timeline join — the log is a
+fourth source in `tools/agent_case/session_timeline.py` and a member of every
+case bundle, minus `payload_json`; see the AGOV CASE section), then hcx-evt-03,
+05 and 06 (context injection, fork, the gate registrations).
 
 ### Wiring it to a real turn (hcx-evt-02)
 
@@ -6195,7 +6198,20 @@ python tools/agent_case/bundle_verifier.py --bundle <dir> --json
 # report, not an error to raise.
 # tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
 # write_manifest, compute_event_hmac, compute_audit_row_hash.
----
+#
+# FOUR joinable sources since hcx-evt-04, not three: hook_events, audit_trail,
+# agent_session_events (the append-only event log) and agent_findings. The event
+# log joins because hcx-evt-01 gave it a session_id by construction — which is
+# what the still-accurate `limits` block says agent_executions / ai_telemetry /
+# ace_audit_log would need. Events sharing one occurred_at are ordered by `seq`,
+# never by the uuid in event_id.
+# agent_session_events.payload_json is NOT read: it can hold verbatim model input
+# and a case bundle carries no transcript by construction. payload_hash IS
+# carried on every event, so a holder of the payload re-verifies with
+# tools/audit/row_hash.py::compute_payload_hash; the omission is declared in the
+# timeline's `limits` and in context.json -> sources.excluded_columns. Read the
+# documents from the log itself:
+python tools/agent_runtime/event_log.py --session <session_id> --with-payload
 
 ## Unified Approval Inbox — ACE + workflow_hitl adapters (agov-inbox-05)
 

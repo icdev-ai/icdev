@@ -37,9 +37,15 @@ from tests._sql_compat import translating
 
 session_timeline = importlib.import_module("tools.agent_case.session_timeline")
 timeline_redaction = importlib.import_module("tools.agent_case.timeline_redaction")
+row_hash = importlib.import_module("tools.audit.row_hash")
 
 SESSION = "sess-agov-case-01"
 OTHER_SESSION = "sess-a-different-agent"
+
+# Planted in every ``agent_session_events.payload_json`` the fixture writes. The
+# payload column is the one place a model transcript could enter a timeline that
+# joins the event log, so its absence is asserted against the rendered bytes.
+EVENT_PAYLOAD_MARKER = "MODEL-INPUT-CANARY-8b31d7"
 
 # A credential shaped like the ones tools/security/secret_detector.py already
 # recognizes. It is not a real token and never was one.
@@ -74,6 +80,20 @@ CREATE TABLE audit_trail (
     hash TEXT,
     previous_hash TEXT
 );
+CREATE TABLE agent_session_events (
+    event_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    payload_json TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    correlation_id TEXT
+);
+CREATE UNIQUE INDEX idx_agent_session_events_seq
+    ON agent_session_events (session_id, seq);
 CREATE TABLE agent_findings (
     finding_id TEXT PRIMARY KEY,
     rule_id TEXT NOT NULL,
@@ -103,6 +123,25 @@ def _hook(raw, session_id, tool_name, created_at, payload=None,
          "CUI", "sig", created_at),
     )
     return raw.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def _event(raw, event_id, session_id, seq, event_type, occurred_at, payload,
+           correlation_id=""):
+    """One ``agent_session_events`` row, hashed the way ``event_log.append`` does.
+
+    The payload really is stored, so a test asserting it does not reach the
+    timeline is asserting against data that was available rather than against
+    an empty column.
+    """
+    raw.execute(
+        "INSERT INTO agent_session_events (event_id, session_id, seq, event_type, "
+        "occurred_at, payload_hash, payload_json, tenant_id, classification, "
+        "correlation_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (event_id, session_id, seq, event_type, occurred_at,
+         row_hash.compute_payload_hash(payload),
+         json.dumps(payload, sort_keys=True, ensure_ascii=False),
+         "default", "CUI", correlation_id),
+    )
 
 
 def _finding(raw, finding_id, title, session_id, event_ids, created_at,
@@ -151,6 +190,24 @@ def db(tmp_path):
         ("proj-1", "code_change", "agent", "wrote config", "detail", "CUI",
          "10.0.0.1", SESSION, "2026-08-09T12:00:07Z"),
     )
+
+    # The event log. Events 1 and 2 share one occurred_at — the case hcx-evt-01
+    # gave `seq` a UNIQUE index for — and their event_ids sort in the OPPOSITE
+    # order, so a timeline falling back to the uuid puts them backwards.
+    ids["evt1"] = "ase-zzzz000000000001"
+    ids["evt2"] = "ase-aaaa000000000002"
+    _event(raw, ids["evt1"], SESSION, 1, "turn_start", "2026-08-09T12:00:00Z",
+           {"turn": 1, "note": f"turn opened: {EVENT_PAYLOAD_MARKER}"},
+           correlation_id="corr-turn-1")
+    _event(raw, ids["evt2"], SESSION, 2, "request_context", "2026-08-09T12:00:00Z",
+           {"messages": [f"system prompt: {EVENT_PAYLOAD_MARKER}"]},
+           correlation_id="corr-turn-1")
+    ids["evt3"] = "ase-mmmm000000000003"
+    _event(raw, ids["evt3"], SESSION, 3, "assistant_message",
+           "2026-08-09T12:00:02Z", f"model replied: {EVENT_PAYLOAD_MARKER}",
+           correlation_id="corr-turn-1")
+    _event(raw, "ase-other00000000001", OTHER_SESSION, 1, "turn_start",
+           "2026-08-09T12:00:02Z", {"turn": 1, "note": "someone else's turn"})
 
     # The finding fires two seconds after the last event it cites, and its own
     # timestamp would put it dead last. Its evidence is the read and the POST.
@@ -438,3 +495,145 @@ def test_seq_is_renumbered_after_anchoring(conn):
 
     assert [e["seq"] for e in result["entries"]] == list(
         range(1, len(result["entries"]) + 1))
+
+
+# ---------------------------------------------------------------------------
+# 5. agent_session_events is the fourth source (hcx-evt-04)
+# ---------------------------------------------------------------------------
+
+def test_the_event_log_joins_as_a_fourth_source(conn, ids):
+    """It has ``session_id`` by construction, so it needs no special case."""
+    result = session_timeline.build_timeline(SESSION, conn=conn)
+
+    assert result["sources"]["agent_session_events"] == {
+        "present": True, "records": 3}
+    assert result["counts"]["sources_joined"] == 4
+
+    events = [e for e in result["entries"] if e["source"] == "agent_session_events"]
+    assert [e["record_id"] for e in events] == [ids["evt1"], ids["evt2"], ids["evt3"]]
+    assert [e["kind"] for e in events] == [
+        "turn_start", "request_context", "assistant_message"]
+    # Interleaved with the other sources, not appended after them: the first
+    # event predates the first hook, so it must open the timeline.
+    assert result["entries"][0]["source"] == "agent_session_events"
+
+
+def test_events_sharing_a_timestamp_are_ordered_by_seq_not_by_event_id(conn, ids):
+    """The ordering guarantee hcx-evt-01 put a UNIQUE index behind.
+
+    ``evt1`` and ``evt2`` share one ``occurred_at`` and their uuids sort the
+    other way round, so a timeline tie-breaking on ``event_id`` — the previous
+    behaviour — reverses them while still looking reproducible.
+    """
+    assert ids["evt2"] < ids["evt1"], "the fixture's uuids must disagree with seq"
+
+    result = session_timeline.build_timeline(SESSION, conn=conn)
+    order = [e["record_id"] for e in result["entries"]]
+    assert order.index(ids["evt1"]) < order.index(ids["evt2"])
+
+    events = [e for e in result["entries"] if e["source"] == "agent_session_events"]
+    assert [e["record"]["seq"] for e in events] == [1, 2, 3]
+
+
+def test_the_event_payload_never_reaches_the_timeline(conn):
+    """``payload_json`` can hold verbatim model input and is not selected.
+
+    Asserted against the record, the canonical bytes and the rendered text —
+    the exclusion is a column allowlist, so a widened SELECT is the way this
+    regresses and only the bytes would catch it.
+    """
+    result = session_timeline.build_timeline(SESSION, conn=conn)
+    events = [e for e in result["entries"] if e["source"] == "agent_session_events"]
+    assert events, "the fixture seeded no events"
+
+    for entry in events:
+        assert "payload_json" not in entry["record"]
+        assert EVENT_PAYLOAD_MARKER not in json.dumps(entry["record"])
+
+    assert EVENT_PAYLOAD_MARKER not in session_timeline.canonical_json(result)
+    assert EVENT_PAYLOAD_MARKER not in session_timeline.format_timeline(result)
+    # The payload really was there to be leaked.
+    stored = conn.cursor()
+    stored.execute("SELECT payload_json FROM agent_session_events "
+                   "WHERE session_id = ?", [SESSION])
+    assert all(EVENT_PAYLOAD_MARKER in row[0] for row in stored.fetchall())
+
+
+def test_the_payload_hash_survives_verbatim_for_re_verification(conn, ids):
+    """The verbatim half of the split: what travels must still prove the payload."""
+    result = session_timeline.build_timeline(SESSION, conn=conn)
+    entry = next(e for e in result["entries"] if e["record_id"] == ids["evt3"])
+
+    payload = f"model replied: {EVENT_PAYLOAD_MARKER}"
+    assert entry["record"]["payload_hash"] == row_hash.compute_payload_hash(payload)
+    # ...and the summary quotes the digest, never the document it stands for.
+    assert entry["display"]["summary"].startswith("event seq 3")
+    assert "sha256:" in entry["display"]["summary"]
+
+
+def test_the_limits_block_declares_the_withheld_payload(conn):
+    """The limits block is the honest half of this module and must stay accurate."""
+    result = session_timeline.build_timeline(SESSION, conn=conn)
+
+    assert session_timeline.PAYLOAD_WITHHELD_NOTE in result["limits"]
+    assert any("payload_hash" in limit for limit in result["limits"])
+
+    # The three genuinely uncorrelatable tables are still named...
+    for table in session_timeline.UNJOINABLE_SOURCES:
+        assert any(f"{table} is NOT in this timeline" in limit
+                   for limit in result["limits"])
+    # ...and the event log is no longer one of them.
+    assert "agent_session_events" not in session_timeline.UNJOINABLE_SOURCES
+    assert not any("agent_session_events is NOT in this timeline" in limit
+                   for limit in result["limits"])
+
+
+def test_a_missing_event_log_table_is_reported_not_raised(tmp_path, db):
+    """A checkout whose hcx-evt-01 migration has not run still builds a timeline."""
+    path, _ = db
+    raw = sqlite3.connect(str(path))
+    raw.execute("DROP TABLE agent_session_events")
+    raw.commit()
+    raw.close()
+
+    result = session_timeline.build_timeline(
+        SESSION, conn=translating(sqlite3.connect(str(path))))
+
+    assert result["sources"]["agent_session_events"]["present"] is False
+    assert result["counts"]["sources_joined"] == 3
+    assert result["counts"]["entries"] > 0
+    # The note describes a column of a table that is not here, so it is not
+    # claimed. An absent table is already reported under `sources`.
+    assert session_timeline.PAYLOAD_WITHHELD_NOTE not in result["limits"]
+
+
+def test_another_sessions_events_stay_out_of_this_timeline(conn):
+    result = session_timeline.build_timeline(SESSION, conn=conn)
+    events = [e for e in result["entries"] if e["source"] == "agent_session_events"]
+
+    assert all(e["record"]["session_id"] == SESSION for e in events)
+    assert "ase-other00000000001" not in session_timeline.canonical_json(result)
+
+
+def test_a_finding_anchors_to_an_agent_session_event(db, conn, ids):
+    """Anchoring works across the new source with no translation table.
+
+    ``event_key`` is ``"<table>:<id>"`` for every source, which is the shape
+    agov-det-01 assigns, so a rule citing an event-log row resolves the same way
+    one citing a hook does.
+    """
+    path, _ = db
+    raw = sqlite3.connect(str(path))
+    _finding(raw, "f-onevent", "model was handed a credential", SESSION,
+             [f"agent_session_events:{ids['evt3']}"], "2026-08-09T12:00:30Z")
+    raw.commit()
+    raw.close()
+
+    result = session_timeline.build_timeline(SESSION, conn=conn)
+    order = [(e["source"], e["record_id"]) for e in result["entries"]]
+    entry = next(e for e in result["entries"] if e["record_id"] == "f-onevent")
+
+    assert entry["anchored_to"] == f"agent_session_events:{ids['evt3']}"
+    assert entry["unresolved_event_ids"] == []
+    assert (order.index(("agent_findings", "f-onevent"))
+            == order.index(("agent_session_events", ids["evt3"])) + 1)

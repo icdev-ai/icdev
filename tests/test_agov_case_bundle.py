@@ -43,6 +43,7 @@ bundle_format = importlib.import_module("tools.agent_case.bundle_format")
 case_bundler = importlib.import_module("tools.agent_case.case_bundler")
 classification_manager = importlib.import_module(
     "tools.compliance.classification_manager")
+row_hash = importlib.import_module("tools.audit.row_hash")
 
 SESSION = "sess-agov-case-02"
 OTHER_SESSION = "sess-not-this-one"
@@ -78,6 +79,18 @@ CREATE TABLE audit_trail (
     created_at TIMESTAMP,
     hash TEXT,
     previous_hash TEXT
+);
+CREATE TABLE agent_session_events (
+    event_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    payload_json TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    correlation_id TEXT
 );
 CREATE TABLE agent_approval_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,6 +206,32 @@ def _seed(raw, audit_classification="CUI"):
          "2026-08-09T10:00:08Z"),
     )
 
+    # The agent event log (hcx-evt-01). Its payload_json holds the transcript
+    # marker, which makes it the sharpest leak path in this fixture: unlike the
+    # tables above, this one IS exported — only its payload column is not.
+    for seq, (event_type, at, payload) in enumerate([
+        ("turn_start", "2026-08-09T10:00:01Z", {"turn": 1}),
+        ("request_context", "2026-08-09T10:00:01Z",
+         {"messages": [f"system prompt: {TRANSCRIPT_MARKER}"]}),
+        ("assistant_message", "2026-08-09T10:00:02Z",
+         f"model said: {TRANSCRIPT_MARKER}"),
+    ], start=1):
+        raw.execute(
+            "INSERT INTO agent_session_events (event_id, session_id, seq, "
+            "event_type, occurred_at, payload_hash, payload_json, tenant_id, "
+            "classification, correlation_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (f"ase-case02-{seq:04d}", SESSION, seq, event_type, at,
+             row_hash.compute_payload_hash(payload),
+             json.dumps(payload, sort_keys=True), "default", "CUI", "corr-1"),
+        )
+    raw.execute(
+        "INSERT INTO agent_session_events (event_id, session_id, seq, event_type, "
+        "occurred_at, payload_hash, payload_json, tenant_id, classification, "
+        "correlation_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("ase-decoy-0001", OTHER_SESSION, 1, "turn_start", "2026-08-09T10:00:01Z",
+         row_hash.compute_payload_hash({}), "{}", "default", "CUI", ""),
+    )
+
     # Two enforcement decisions: one allowed, one denied. The denied one carries
     # a live-looking credential and an email in its free text.
     raw.execute(
@@ -302,6 +341,7 @@ def test_the_bundle_carries_every_member_the_card_asks_for(tmp_path, case_db):
     for member in (case_bundler.CONTEXT_MEMBER, case_bundler.TIMELINE_MEMBER,
                    bundle_format.HOOK_EVENTS_MEMBER,
                    bundle_format.AUDIT_TRAIL_MEMBER,
+                   case_bundler.AGENT_EVENTS_MEMBER,
                    case_bundler.APPROVALS_MEMBER, case_bundler.ARTIFACTS_MEMBER,
                    case_bundler.PROVENANCE_MEMBER):
         assert member in on_disk, f"{member} missing from the bundle"
@@ -420,11 +460,19 @@ def test_no_raw_transcript_reaches_the_bundle(tmp_path, case_db):
             f"SELECT COUNT(*) FROM {table} WHERE session_id = ?", [SESSION])  # noqa: S608
         assert cursor.fetchone()[0] == 1, f"{table} fixture did not seed"
 
+    # And the sharpest one: agent_session_events IS exported, with the marker in
+    # the payload column the export deliberately does not select.
+    cursor = case_db.cursor()
+    cursor.execute("SELECT COUNT(*) FROM agent_session_events WHERE session_id = ? "
+                   "AND payload_json LIKE ?", [SESSION, f"%{TRANSCRIPT_MARKER}%"])
+    assert cursor.fetchone()[0] == 2, "agent_session_events fixture did not seed"
+
     _build(tmp_path, case_db)
     blob = _bundle_bytes(tmp_path / "bundle")
     assert TRANSCRIPT_MARKER not in blob, (
         "conversation text from a transcript table reached the case bundle")
-    for phrase in ("user said:", "assistant replied:", "turn detail:", "chat body:"):
+    for phrase in ("user said:", "assistant replied:", "turn detail:", "chat body:",
+                   "system prompt:", "model said:"):
         assert phrase not in blob
 
 
@@ -444,6 +492,76 @@ def test_transcript_tables_are_excluded_by_construction_and_named(tmp_path, case
     # No transcript table may appear in the exported set, and the two lists must
     # not intersect at all.
     assert not set(context["sources"]["included"]) & set(case_bundler.TRANSCRIPT_SOURCES)
+
+
+def test_the_event_log_is_bundled_without_its_payload_column(tmp_path, case_db):
+    """hcx-evt-04's half of invariant 3: an exported table with a withheld column.
+
+    ``TRANSCRIPT_SOURCES`` cannot express this — ``agent_session_events`` IS
+    read, and dropping it would lose the one source that records what the model
+    was actually handed. So the column allowlist drops ``payload_json`` and the
+    hash travels in its place.
+    """
+    result = _build(tmp_path, case_db)
+    events = json.loads(
+        (tmp_path / "bundle" / case_bundler.AGENT_EVENTS_MEMBER).read_text("utf-8"))
+
+    assert events["table"] == "agent_session_events"
+    assert [r["seq"] for r in events["records"]] == [1, 2, 3]
+    assert all(r["session_id"] == SESSION for r in events["records"])
+    assert "ase-decoy-0001" not in json.dumps(events)
+
+    for record in events["records"]:
+        assert "payload_json" not in record
+        assert record["payload_hash"], "the hash must travel in the payload's place"
+    # The hash is still the one a holder of the payload recomputes.
+    assert events["records"][2]["payload_hash"] == row_hash.compute_payload_hash(
+        f"model said: {TRANSCRIPT_MARKER}")
+
+    # 3 hooks + 2 audit rows + 3 events; the events are in the timeline too.
+    assert result["counts"]["entries"] == 8
+    assert result["counts"]["sources_joined"] == 3
+
+
+def test_the_withheld_column_is_declared_not_merely_omitted(tmp_path, case_db):
+    """An absence nobody wrote down is indistinguishable from an oversight."""
+    result = _build(tmp_path, case_db)
+    context = json.loads(
+        (tmp_path / "bundle" / case_bundler.CONTEXT_MEMBER).read_text("utf-8"))
+
+    excluded = context["sources"]["excluded_columns"]
+    assert set(excluded) == set(case_bundler.EXCLUDED_COLUMNS)
+    assert "agent_session_events.payload_json" in excluded
+    assert excluded["agent_session_events.payload_json"]
+
+    # The exported table is named as included, so a reader can see that the
+    # exclusion is a COLUMN and not the whole source.
+    assert "agent_session_events" in context["sources"]["included"]
+    assert any("payload_json" in limit for limit in result["limits"])
+    assert any("payload_json" in limit for limit in context["limits"])
+
+
+def test_declaring_a_column_excluded_while_still_selecting_it_fails_at_import(
+        monkeypatch):
+    """The declaration is guarded, or it is only a comment.
+
+    Reload the module with ``payload_json`` put back into the timeline's column
+    allowlist: the guard must refuse rather than let the two disagree.
+    """
+    session_timeline = importlib.import_module("tools.agent_case.session_timeline")
+    spec = session_timeline.SOURCES["agent_session_events"]
+    monkeypatch.setitem(spec, "columns", tuple(spec["columns"]) + ("payload_json",))
+
+    try:
+        with pytest.raises(RuntimeError, match="payload_json"):
+            importlib.reload(case_bundler)
+    finally:
+        # A failed reload leaves the module stripped of everything defined below
+        # the guard, so it MUST be restored here or every later test in the file
+        # runs against a hollow module.
+        monkeypatch.undo()
+        importlib.reload(case_bundler)
+    assert hasattr(case_bundler, "build_case_bundle")
 
 
 def test_operator_free_text_is_redacted_in_the_enforcement_decisions(
