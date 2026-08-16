@@ -3669,6 +3669,13 @@ CREATE TABLE IF NOT EXISTS ai_telemetry (
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     thinking_tokens INTEGER DEFAULT 0,
+    -- cch-tel-01: prompt-cache accounting. NOT NULL DEFAULT 0 so that "the
+    -- provider served no cached tokens" is a recorded 0 and never a NULL that
+    -- reads the same as "nobody looked". Existing databases get these from
+    -- migration 20260816135136_ai_telemetry_cache_tokens; this DDL only ever
+    -- runs for a database that does not have the table yet.
+    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
     latency_ms INTEGER DEFAULT 0,
     cost_usd REAL,
     agent_id TEXT,

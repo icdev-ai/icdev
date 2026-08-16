@@ -378,6 +378,17 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # DISPOSITION is mutable state and lives in approval_items, which is
         # deliberately NOT in this list.
         "trust_deltas",
+        # The agent event log (hcx-evt-01, migration 20260816122036). One row per
+        # model-visible event — turn_start, request_context, assistant_message,
+        # tool_call, tool_result, turn_end — carrying the payload's SHA-256
+        # always and the payload itself only when the classification policy in
+        # args/agent_event_log.yaml allows. It exists because
+        # agent_loop_sessions.messages_json is UPSERT-overwritten every turn, so
+        # turn N stops existing the moment turn N+1 is written; an event log that
+        # could be edited would restore exactly that defect. A correction is a
+        # new event. tools/agent_runtime/event_log.py exposes append(),
+        # read_session() and next_seq() and no mutating verb at all.
+        "agent_session_events",
         # ICDEV Cortex governance audit — one append-only row per governed Cortex
         # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
         # (mutable session lifecycle: status/updated_at).

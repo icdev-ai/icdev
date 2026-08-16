@@ -83,11 +83,13 @@ being authorized, which is not authentication — gating on it would produce
 authorization-shaped evidence with no authorization behind it, which is the
 exact defect this work exists to remove.
 
-Compensating controls, each probed rather than assumed (RT-OS-003b):
+Compensating controls, each probed rather than assumed (RT-OS-003b) — except the
+first, which was probed for *behaviour* and never for *reachability*, and has
+been withdrawn on that ground:
 
 | Control | Bounds the surface by |
 |---|---|
-| `tools/agent_runtime/approval_gate.py` | Classifies each call by reversibility; halts irreversible ones for approval. |
+| ~~`tools/agent_runtime/approval_gate.py`~~ | ~~Classifies each call by reversibility; halts irreversible ones for approval.~~ **WITHDRAWN 2026-08-16 (rem-cap-03): measured, this control has evaluated ZERO tool calls.** It is not in the `claude_cli` adapter's path (a separate process), and on the in-process paths `_resolve_approval_gate` returns *no gate* because it reads `ICDEV_AGENT_APPROVAL_MODE` from the environment rather than consulting `resolve_mode()` — so `args/agent_runtime.yaml`'s shipped `enforce` arms nothing. 62 declared rules, 0 ever evaluated, on a board that has dispatched 3,214 autonomous builds. Listing it here was itself the file-existence-as-evidence defect. See [`approval-gate-reachability.md`](approval-gate-reachability.md); remediation is `rem-cap-04`. |
 | `.claude/hooks/pre_tool_use.py` | Hard-blocks destructive commands and UPDATE/DELETE on append-only tables before the call runs. |
 | `args/file_access_tiers.yaml` | Tiers filesystem reach so a tool cannot read or write outside its declared tier. |
 

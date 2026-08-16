@@ -462,17 +462,22 @@ documented file. It is a **layer beneath** the existing environment variables,
 not a replacement: resolution is
 
 ```
-explicit argument  >  environment variable  >  args/agent_runtime.yaml  >  built-in default
+explicit argument
+  >  environment variable
+  >  args/agent_runtime.yaml
+  >  args/permission_postures.yaml (the selected posture)
+  >  built-in default
 ```
 
-so every env var that worked before still works and still wins. The file is
-optional — deleting it changes nothing about how the agent runs.
+so every env var that worked before still works and still wins. Both files are
+optional — deleting them changes nothing about how the agent runs.
 
 ```bash
-# Resolved configuration, plus the env vars currently overriding the file
+# Resolved configuration: posture, how it was selected, and the env vars
+# currently overriding the files
 python -m tools.agent_runtime.config
 
-# Machine-readable (config_path, config_found, env_overrides, resolved)
+# Machine-readable (config_path, postures_path, env_overrides, resolved)
 python -m tools.agent_runtime.config --json
 
 # Resolve against a site-local file instead of args/agent_runtime.yaml
@@ -481,6 +486,44 @@ python -m tools.agent_runtime.config --config /etc/icdev/agent_runtime.yaml --js
 
 Point the loader at a different file for a whole process with
 `ICDEV_AGENT_RUNTIME_CONFIG=/path/to/file.yaml`.
+
+### Permission postures (hcx-post-01)
+
+`args/permission_postures.yaml` names a **combination** of the safety knobs —
+sandbox confinement, approval mode, command-approval mode, mutation gate — so one
+selector moves them together and a run can say which posture it was under. Two
+ship:
+
+| Posture | Sandbox | Approval | Command gate | Mutation |
+|---|---|---|---|---|
+| `workspace-write` (default) | `workspace-write` | `manual` | `enforce` | denied |
+| `danger-full-access` | `danger-full-access` | `off` | `off` | allowed |
+
+```bash
+# Select a posture for one run
+ICDEV_PERMISSION_POSTURE=workspace-write python -m tools.agent_runtime.config
+
+# Which posture is in force, and what chose it (argument|env|file|builtin)?
+python -m tools.agent_runtime.config --json | python -c "import json,sys; print(json.load(sys.stdin)['resolved']['posture'])"
+```
+
+Two rules the loader enforces:
+
+- **A posture never overrules a higher layer.** It supplies a value only where no
+  environment variable and no explicit `agent_runtime.yaml` key already did. The
+  four posture-governed keys therefore ship *commented out* in
+  `args/agent_runtime.yaml` — uncomment one to pin that knob regardless of posture.
+- **`danger-full-access` takes an explicit human act.** It is reachable from an
+  explicit call argument or `ICDEV_PERMISSION_POSTURE`, and never from the file's
+  own `default:` key — including by re-declaring the posture without its
+  `requires_explicit_selection` flag.
+
+The `pre_tool_use` hook switches (`ICDEV_PRETOOLUSE_ENFORCE`, the per-check
+`ICDEV_<CHECK>_GUARD` set), `args/file_access_tiers.yaml` and
+`args/sandbox_config.yaml` are deliberately **not** posture keys: they are read by
+a standalone hook subprocess and by the container sandbox executor, neither of
+which loads this config layer. A key here with no reader would claim a reach the
+file does not have.
 
 The runtime is registered as the `sag` component, so the toggle is reachable from
 the normal component surfaces:
@@ -992,6 +1035,197 @@ the ask, so a dropped ask surfaces as unanswered rather than as an approval.
 
 Consumers: the side-by-side panel is trust-hitl-02, the `force_*` call sites are
 trust-hitl-03. Until those land the CLI above is the operable surface.
+
+---
+
+## Agent Session Event Log — Model-Visible Means Logged (hcx-evt-01)
+
+`agent_loop_session.save_session` writes an agent run as ONE `messages_json`
+blob, UPSERT-overwritten every turn. That is enough to RESUME and nothing else:
+once turn N+1 is written, turn N no longer exists, so fork and replay are not
+merely unimplemented — the data they need is already gone. `llm_gateway_audit`
+does not cover it either; it stores hashes only and is imported by
+`tools/cortex/*` and `ops_hub/llmops_engine.py`, neither on the agent-runtime
+path, so SAG's own LLM calls are unaudited.
+
+`agent_session_events` (migration `20260816122036`) is one immutable row per
+model-visible event.
+
+```bash
+python tools/agent_runtime/event_log.py --session <session_id> --json
+python tools/agent_runtime/event_log.py --session <session_id> --with-payload
+python tools/agent_runtime/event_log.py --session <session_id> --type tool_call
+python tools/agent_runtime/event_log.py --policy --json
+```
+
+**The vocabulary is deliberately smaller than DSH's**: `turn_start`,
+`request_context`, `assistant_message`, `tool_call`, `tool_result`, `turn_end`.
+There is no per-chunk event — ICDEV's loop does not stream into the log, so a
+chunk row would record the transport's framing rather than anything the model
+saw, at one row per token.
+
+**Ordering is `seq`, not the clock.** Several events inside one turn routinely
+share a millisecond. `seq` is monotonic per session and UNIQUE over
+`(session_id, seq)`, which is what makes optimistic allocation safe: `next_seq()`
+reads the current maximum, and `append()` retries the constraint violation a lost
+race produces rather than writing a duplicate position.
+
+**This one is in the MAIN db, not the canvas db** — deliberately, and against the
+grain of CLAUDE.md's canvas rule, because `tenant_id`/`classification` make it
+RLS-eligible (these rows can hold verbatim model input) and because
+`agent_case/session_timeline.py` joins `hook_events` and `audit_trail`, both of
+which are in the main db. hcx-evt-04 collected on that: the log is a fourth
+source in that timeline, which a canvas-resident table could never have been.
+
+**`payload_hash` is always written; `payload_json` is not.** The hash comes from
+`tools/audit/row_hash.py::compute_payload_hash` — the same module, algorithm and
+encoding constants as the migration-149 audit chain, so this codebase has one
+hashing recipe and not two. Whether the document itself is retained is a
+classification decision in `args/agent_event_log.yaml`
+(`ICDEV_AGENT_EVENT_PAYLOAD_RETENTION=0` forces hash-only). A config file that
+exists but cannot be parsed fails **closed** to hash-only; an absent one uses the
+documented defaults. A NULL `payload_json` therefore means WITHHELD BY POLICY and
+nothing else — a retained `None` is stored as the JSON literal `null`, so
+"suppressed" and "empty" never collapse into one value.
+
+Append-only: registered in `APPEND_ONLY_TABLES`, and the module exposes
+`append()`, `read_session()` and `next_seq()` and no mutating verb at all. A
+correction is a new event. The INSERT is not wrapped in a bare `except` — a
+swallowed INSERT is how `module_budget_usage` held zero rows.
+
+Consumers: hcx-evt-02 (below) and hcx-evt-04 (the timeline join — the log is a
+fourth source in `tools/agent_case/session_timeline.py` and a member of every
+case bundle, minus `payload_json`; see the AGOV CASE section), then hcx-evt-03,
+05 and 06 (context injection, fork, the gate registrations).
+
+### Wiring it to a real turn (hcx-evt-02)
+
+`tools/agent_runtime/event_recorder.py` is a library — no CLI, so import it
+rather than invoking it:
+
+```python
+from tools.agent_runtime.event_recorder import TurnRecorder
+
+recorder = TurnRecorder.for_turn(chat_context_id)
+recorder.turn_start(user_input)
+result = run_agent_loop(
+    router,
+    ...,
+    on_turn=recorder.on_turn,                  # -> assistant_message
+    on_pre_tool_use=recorder.on_pre_tool_use,  # -> tool_call
+    on_post_tool_use=recorder.on_post_tool_use,  # -> tool_result
+    on_stop=recorder.on_stop,                  # -> turn_end
+    correlation_id=recorder.correlation_id,
+)
+```
+
+`AgentRuntime.run_turn` already does this, so every `icdev chat` turn is
+recorded. Read one back with the CLI above, using the **chat context id**:
+
+```bash
+python tools/agent_runtime/event_log.py --session <ctx-id> --json
+python tools/agent_runtime/event_log.py --session <ctx-id> --type tool_call --with-payload
+ICDEV_AGENT_EVENT_RECORDING=0 icdev chat      # stand recording down for a run
+```
+
+**No new hook machinery was added to the agent loop**, because none was needed —
+those four hooks already existed. `turn_start` is emitted by `run_turn` itself
+rather than by `on_turn`, which fires only *after* a model response and so could
+never carry the user's own input.
+
+**The recorder cannot change what a tool call is allowed to do.**
+`on_pre_tool_use` returns `None` on every path, including the paths where the
+log is unreachable; `run_agent_loop` composes the caller's hook *after* the
+approval gate and the first non-empty block message wins, so it can neither deny
+a call nor rescue one the gate denied. An audit outage must not silently become
+a refusal.
+
+**The recorder cannot end a turn.** `event_log.append` still raises — a writer
+that swallows its own INSERT is the defect that card exists to prevent — so the
+swallow lives in the recorder, once, with a `failures` count you can read back.
+
+**A gate-blocked or unregistered call still gets a `tool_call` event.**
+`on_post_tool_use` fires for every entry in `tool_calls`; `on_pre_tool_use` does
+not (skipped when no handler is registered, short-circuited when the gate blocks
+first), which would leave exactly the denied calls with no record of being
+called. The missing event is reconstructed from the post-hook's own arguments and
+tagged `observed: post_tool_use`, so it is never mistaken for one the pre-hook
+saw dispatched.
+
+**`session_id` is the chat context id**, not `AgentLoopResult.session_id` — that
+one is a fresh UUID on every call even when resuming, which would make each user
+message its own one-turn "session" and leave hcx-evt-05 nothing multi-turn to
+fork. The loop's per-run identity moves to the `correlation_id` column, which is
+also `AgentLoopResult.trace_id` and the `agent.turn` OTel span.
+
+**ADDITIVE.** `agent_loop_sessions.messages_json` remains the resume path: it
+works and it is tested. This is the audit / fork / replay path running beside it.
+
+---
+
+## Permission Posture Selection — Operator Intent, Separately From the Knobs (hcx-post-02)
+
+hcx-post-01 named the combination of safety knobs. This is the half that records
+a *choice* of one.
+
+```bash
+python -m tools.agent_runtime.posture_selection --json            # what is in force
+python -m tools.agent_runtime.posture_selection --list            # selectable postures
+python -m tools.agent_runtime.posture_selection \
+    --select workspace-write --session <ctx-id> --actor <who>
+```
+
+In the chat REPL:
+
+```
+/posture                 # the posture in force, its source, and its four knobs
+/posture list            # selectable postures
+/posture <name>          # select it — records the decision
+/usage                   # token/cost stats, and the posture in force
+```
+
+**Why a separate event.** The resolved knobs say what the posture *is*; they can
+never say who decided it, or when, or what it was before. `approval_mode == "off"`
+read out of a running process does not distinguish a deployment default nobody
+looked at from something a named operator turned off eleven minutes ago — and
+those call for different responses. So selection appends a `permission_posture`
+event to `agent_session_events` carrying the posture, the actor and the resolved
+knob values, in the same `seq` ordering as the turns it governs. "The posture
+widened, and then these four tool calls happened" is one `ORDER BY seq`.
+
+**The event is log-only, and it is written first.** Nothing reads it back to
+decide a knob; deleting every row would change no behaviour. It is appended
+*before* anything is applied, so an intent survives a crash during the act, and a
+reader who finds an intent with no following change learns the apply failed.
+
+**Re-selecting the effective posture appends nothing.** Same name and no knob
+delta is a look, not a decision.
+
+**It writes one variable and never the four per-knob ones.** Selection sets
+`ICDEV_PERMISSION_POSTURE`; the knobs follow through hcx-post-01's chain
+(`argument > env > agent_runtime.yaml > posture > built-in`). A knob already
+pinned by `ICDEV_SAG_APPROVAL_MODE` or an explicit config key therefore does
+**not** move — including when the operator is tightening. That is reported, not
+worked around:
+
+```
+Posture: workspace-write -> danger-full-access (actor: alice)
+  sandbox: 'workspace-write' -> 'danger-full-access'
+  NOT MOVED  approval_mode stays 'manual'; the posture asks for 'off' but
+             ICDEV_SAG_APPROVAL_MODE pins it. Unset it to let the posture govern.
+```
+
+Having the selection overwrite those variables was rejected: it reverses an
+intent stated at a layer hcx-post-01 put *above* this one, and it would do so
+invisibly. Under-delivering loudly is recoverable; over-delivering silently is
+not.
+
+**An unwritable log refuses to widen, and only to widen.** A posture flagged
+`requires_explicit_selection` is refused when the event cannot be appended —
+there is no unaudited `danger-full-access`. Any other posture is applied with
+`logged: false` and a warning, because refusing in the tightening direction too
+would strand an operator in the *looser* posture whenever the database is
+unreachable.
 
 ---
 
@@ -1873,6 +2107,62 @@ python -m tools.kanban.landed_check --task <task-id> --gate    # exit 1 if it is
 # and #1647 open at once and only the kanban/<task_id> branch can settle the card.
 # Wired at three seams (seed / dispatch / PR-open) and ADVISORY by default; KANBAN_LANDED_CHECK
 # =enforce makes it refuse, =off disables it. Survey it before ever defaulting to enforce.
+
+# Kanban — what would the identity check REFUSE on the real board? (rem-hyg-03)
+python -m tools.kanban.identity_survey --json           # machine-readable, includes every id
+python -m tools.kanban.identity_survey                  # per-card table + headline rates
+python -m tools.kanban.identity_survey --card pgrt --ids
+python -m tools.kanban.identity_survey --status backlog --status scheduled
+python -m tools.kanban.identity_survey --env-file /path/to/.env --json   # run from a worktree
+# The fire-rate survey that must exist BEFORE rem-hyg-04 arms task_identity (rem-hyg-02). The
+# rule is CLAUDE.md's, learned from the PreToolUse hook: eight of twelve checks were refusing
+# routine work over 96,818 real calls, and the worst had shipped as a hard block with its rate
+# never once observed. A check nominally enforcing but never measured is UNMEASURED, not proven.
+# Measured 2026-08-16 on the live PG board (3,243 rows / 163 cards): 2,041 claimed, 53 gate
+# sentinels, 22 no_epic (all pgrt-), 1,127 no_card => a 35.43% fire rate if armed naively.
+# The narrowing IS the finding: 789 of those 1,127 are OPAQUE machine ids — task-<hex> from the
+# dashboard's own create-task API and awareness/suggested_card_writer, plus mc-reflex-<hex> and
+# cpmp-<hex> — which were never card work, so refusing them is the same defect the PreToolUse
+# checks had. Exempting them: 11.10% lifetime, 4.23% over the last 7 days, against 17 genuinely
+# unregistered card prefixes (prem- 72, cnr- 46, shx- 33, docmod- 32, ...).
+# classify_shape is a NAMED heuristic over id text and never decides whether an id is claimed;
+# -d<N> decomposition suffixes are stripped first, so mvs-audit-03-d1 counts as card work.
+# Scope caveat for rem-hyg-04: 95 modules INSERT INTO kanban_tasks directly and never reach the
+# create_tasks seam, so arming there cannot see most of the opaque population.
+# Two zeroes that are NEVER a clean bill of health — both report measured:false, never 0%:
+# an unreadable args/projects.yaml (no_registry) and an empty board (empty_board, the worktree
+# trap where a missing .env silently reads a throwaway SQLite DB — use --env-file).
+# REPORT ONLY: no --gate, no writes, one SELECT. Arming is rem-hyg-04.
+
+# Kanban — will two tasks fight over the same file? Asked at SEED time (rem-hyg-07)
+python -m tools.kanban.lane_conflicts --json
+python -m tools.kanban.lane_conflicts                  # table grouped by shared file
+python -m tools.kanban.lane_conflicts --live-only      # only pairs BOTH dispatchable now
+python -m tools.kanban.lane_conflicts --from-branches  # exact paths, where a branch exists
+python -m tools.kanban.lane_conflicts --task <task-id>
+# pr_watcher's hold_on_sibling_conflict already asks this — about OPEN PRs, which is after both
+# sessions have BUILT. #1684 dispatched a producer and its consumer together, the loser's PR was
+# unlandable, and 1,058 lines were discarded. Measured 2026-08-16 across 44 non-terminal tasks:
+# 54 pairs shared a file with NO dependency path between them, 16 dispatchable simultaneously.
+# Reads BOTH dependency mechanisms (scalar depends_on_task_id AND the kanban_task_deps junction)
+# because _deps_satisfied ANDs them — either alone serializes, so consulting one would report a
+# hand-serialized pair as a live race. Ranks live vs latent: a task whose dependency is
+# unsatisfied cannot race today, and reporting the two identically buries the real finding.
+# Gate sentinels are excluded (gates.is_manual_gate) — a path in a RISK: description is not work.
+# TWO EVIDENCE GRADES, never merged: prose (seed-time, the only time it helps, and a heuristic)
+# and branch (git diff origin/main...kanban/<id>, exact but late). Where a branch exists its
+# paths REPLACE the prose guess. Each branch is compared to origin/main and NEVER to another
+# branch: merge-tree between two task tips reports conflicts the forge never sees, since the
+# forge merges each into main in sequence (hcx-live-02 vs hcx-live-03 said CONFLICT while
+# against main hcx-live-03 was CLEAN). Six suppressions, every one found by RUNNING it: command
+# (a path inside `python tools/...` is a tool to run), evidence (a specimen in a caps-led
+# MEASURED paragraph — deliberately NOT rescued by a write verb, since such a paragraph narrates
+# writes that already happened), precedent ("Follow args/ci_test_backlog.txt"), citation ("see X"
+# or a docs/ path with no write verb), negated ("Do NOT change ..."), coordination (the shared
+# list in tools/git/coordination_paths.py, which pr_watcher's merge-time guard also imports —
+# a second divergent copy is worse than none). Those took the board from 3 live findings of
+# which 0 were real to 0 live / 8 latent. REPORT ONLY at the create_tasks seam; arming it needs
+# a fire-rate survey first, exactly as rem-hyg-03/04 do for the identity check.
 
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
@@ -3229,11 +3519,20 @@ python tools/skills/gepa_optimizer.py --json                             # Run o
 python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
 # MCP tool: gepa_optimizer
 #   Parameters: dry_run (bool, default false) — when true, scan runs but no DB writes are committed.
-#   Returns:    {applied: [{capability_id, action, fitness, dry_run}],
-#                skipped: [{capability_id, reason, fitness}],
-#                errors:  [str]}
+#   Returns:    {applied:  [{capability_id, action, fitness, dry_run}],
+#                declined: [{artifact_id, decision}],
+#                skipped:  [{capability_id, reason, fitness}],
+#                errors:   [str]}
 #   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
 #   Skill:      tools/skills/gepa_optimizer.py::run()
+# rem-cap-01 — GEPA records a decision against EVERY artifact it evaluates, in
+# agent_improvement_artifacts.gepa_decision / gepa_decided_at (migration
+# 20260816125047_gepa_decision_columns). Terminal, so the artifact leaves the
+# queue: declined_no_delta, declined_low_score, declined_unmappable_skill.
+# Retried next cycle: declined_skill_file_missing, declined_rubric,
+# declined_empty_patch. `capability_consumption`'s skill_optimizer class counts
+# a recorded decision — applied OR declined — because counting applies alone
+# made a correct decline indistinguishable from never having run.
 # Genesis daemon 24h trigger — GEPA reflex fires daily via the genesis daemon loop:
 #   Config:     args/genesis_config.yaml — add a "gepa_optimizer" entry with interval_seconds: 86400
 #   Interval:   86400 s (24 h); controlled by interval_seconds / interval_hours in genesis_config.yaml
@@ -5995,7 +6294,20 @@ python tools/agent_case/bundle_verifier.py --bundle <dir> --json
 # report, not an error to raise.
 # tools/agent_case/bundle_format.py is a library (no CLI) — import build_manifest,
 # write_manifest, compute_event_hmac, compute_audit_row_hash.
----
+#
+# FOUR joinable sources since hcx-evt-04, not three: hook_events, audit_trail,
+# agent_session_events (the append-only event log) and agent_findings. The event
+# log joins because hcx-evt-01 gave it a session_id by construction — which is
+# what the still-accurate `limits` block says agent_executions / ai_telemetry /
+# ace_audit_log would need. Events sharing one occurred_at are ordered by `seq`,
+# never by the uuid in event_id.
+# agent_session_events.payload_json is NOT read: it can hold verbatim model input
+# and a case bundle carries no transcript by construction. payload_hash IS
+# carried on every event, so a holder of the payload re-verifies with
+# tools/audit/row_hash.py::compute_payload_hash; the omission is declared in the
+# timeline's `limits` and in context.json -> sources.excluded_columns. Read the
+# documents from the log itself:
+python tools/agent_runtime/event_log.py --session <session_id> --with-payload
 
 ## Unified Approval Inbox — ACE + workflow_hitl adapters (agov-inbox-05)
 
@@ -6052,3 +6364,45 @@ semantics do not survive being flattened into one item with one `resolved_by`.
 # session is reported under `unresolved_event_ids` and never pulls that event in.
 # Two runs over the same rows are byte-identical — import canonical_timeline /
 # canonical_json / timeline_digest from session_timeline to check that yourself.
+
+---
+
+## Extension Point Liveness (hcx-live-03)
+
+`ExtensionPoint` declares ten hook points. Declaring one costs a line;
+*consuming* one costs a dispatcher on a real code path and a handler registered
+against it. This measures the gap.
+
+```bash
+python tools/extensions/liveness.py            # human report, all ten points
+python tools/extensions/liveness.py --json
+python tools/extensions/liveness.py --dead     # only the points that cannot fire
+python tools/extensions/liveness.py --gate     # exit 1 on a dead point not in the census
+python tools/extensions/liveness.py --root /path/to/checkout
+```
+
+Two independent pieces of evidence per point:
+
+| evidence | how | why it matters |
+|---|---|---|
+| **dispatchers** | static: a file that both names the point (`ExtensionPoint.P` or the bare string `"p"`) and calls `dispatch`/`dispatch_async` | a point with **no dispatcher cannot fire**, whatever registers against it |
+| **handlers** | static (`EXTENSION_HOOKS` keys, `register(...)` args) + live (`ExtensionManager.handler_count`) | the live half sees site-local drop-ins this checkout does not contain |
+
+Status is one of `live`, `dispatcher_only`, `handlers_only`, `dead`.
+`dispatcher_only` (fires, nobody listening) and `dead` (cannot fire) are
+different defects and are never merged.
+
+This does **not** count dispatches — that is runtime telemetry and belongs
+inside `ExtensionManager.dispatch`. A point reported `live` here is *wired*, not
+necessarily *exercised*.
+
+Dead points are enumerated by name with a written reason and a follow-up card in
+`args/extension_liveness.yaml`; the census only ever shrinks. A member of
+`ExtensionPoint` is never removed to clear a finding without a human decision —
+it is a public `str`-Enum and extensions are auto-discovered drop-ins from a
+project-root `extensions/` directory outside this repository, so a removal is an
+`AttributeError` at import for any site-local file naming it.
+
+```bash
+pytest tests/test_extension_point_liveness.py -v   # AGENT_START/END wiring + the census (12 tests)
+```

@@ -5548,13 +5548,39 @@ def check_log_standard_compliance() -> CoherenceCheck:
         if not re.search(r"\blogging\.getLogger\s*\(", src):
             continue
         try:
+            tree = ast.parse(src)
+
+            def _is_raw_get_logger(node: ast.AST) -> bool:
+                return (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "getLogger"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "logging"
+                )
+
+            # A module that PREFERS get_logger() and drops to stdlib logging only
+            # when that import fails is compliant, not in violation. Migrations and
+            # other bootstrap modules run at points where `tools.logging` may not be
+            # importable yet, and the alternative to the fallback is no logger at
+            # all. Flagging it would push authors to delete the working branch.
+            prefers_get_logger = any(
+                isinstance(node, ast.ImportFrom)
+                and (node.module or "").endswith("logging.icdev_logger")
+                and any(alias.name == "get_logger" for alias in node.names)
+                for node in ast.walk(tree)
+            )
+            fallback_calls = {
+                id(inner)
+                for handler in ast.walk(tree)
+                if isinstance(handler, ast.ExceptHandler)
+                for inner in ast.walk(handler)
+                if _is_raw_get_logger(inner)
+            }
             uses_raw = any(
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "getLogger"
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "logging"
-                for node in ast.walk(ast.parse(src))
+                _is_raw_get_logger(node)
+                and not (prefers_get_logger and id(node) in fallback_calls)
+                for node in ast.walk(tree)
             )
         except SyntaxError:
             uses_raw = True  # unparseable — fall back to the textual match

@@ -646,6 +646,16 @@ tests/test_agent_policy_composition.py
 # same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
 tests/test_capability_consumption.py
 
+# rem-cap-01 -- GEPA decision recording, the last known-inert capability. The
+# defect was invisible to every existing test because GEPA's cycle SUCCEEDED
+# while recording nothing: the only outcome it could write was status='applied',
+# so a declined artifact stayed 'pending' forever and 132 permanently
+# unselectable rows held the queue-full/zero-selectable alarm on for good. These
+# assert the RECORDED DECISION and what the consumption probe counts, never mere
+# execution -- a test asserting run() returns a dict passed against the whole
+# thing. Temp SQLite via production NOVA DDL; LLM patched out. ~2s.
+tests/test_gepa_decision_recording.py
+
 # exa-refine-01 -- prompt registry as the router's SUPPLEMENTAL read path. Earns a
 # required slot because it pins a governance invariant, not a feature: the base
 # system prompt is immutable, so a regression here means self-modification can
@@ -1807,3 +1817,108 @@ tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py
 tests/test_project_prefix_scope.py
 tests/test_canvas_dedicated_pg_database.py
+# hcx-live-01 pins TOOL_EXECUTE_BEFORE to a production dispatcher. The hook
+# point had ten declared siblings and no caller outside tests -- the GATING
+# point, and the whole reason the behavioral tier exists. The seven ordering
+# tests are the reason this is gated rather than merely written: dispatching
+# after the safety gate, or reading tool_name/read_only back out of a context
+# an extension controls, turns a drop-in extension file into a permission
+# bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
+tests/agent_runtime/test_dispatch_extension_point.py
+tests/test_kanban_suggested_decay.py
+
+# hcx-live-03 — AGENT_START/AGENT_END are dispatched from AgentRuntime.run_turn,
+# and the four points that still cannot fire are named with evidence. Gated for
+# two reasons. (1) The observational contract is enforced at the call site, not
+# in YAML: test_agent_start_cannot_alter_the_turn / _cannot_block_the_turn fail
+# the moment somebody feeds a handler's return value back into the turn, which
+# would turn a reviewed-as-observational point into an unreviewed gating one.
+# (2) test_extension_point_members_unchanged is the guard that a later PR does
+# not quietly delete a public str-Enum member — an AttributeError at import for
+# any site-local drop-in naming it. 12 tests, ~3s, no DB and no network: the
+# agent loop is monkeypatched and the tree scan is static.
+tests/test_extension_point_liveness.py
+# hcx-evt-01 -- the append-only agent event log (agent_session_events). Added in
+# the PR that makes it pass, per the test-gating policy. 39 tests, ~1s, no DB and
+# no network: the fixture builds the table from the migration's own up.sql behind
+# tests/_sql_compat.translating, so a column added to one and not the other fails
+# here rather than at runtime inside somebody's except.
+tests/test_agent_event_log.py
+
+# rem-hyg-02: the seed-time task-identity validator. Gated in the PR that adds
+# it, per the CI test-gating policy. It is the producer rem-hyg-03..06 build on,
+# and the properties it pins are the ones that go wrong quietly: nesting resolving
+# to the parent card, a gate sentinel counted as an orphan, an unreadable registry
+# fabricating a finding against every id, and the wiring refusing instead of
+# reporting. 26 tests, ~1s, registry injected in every case except one deliberate
+# end-to-end read of args/projects.yaml — no board, no network, no LLM.
+tests/kanban/test_task_identity.py
+# hcx-evt-02 -- the CONSUMPTION proof for that log: run_turn wires it through the
+# four lifecycle hooks run_agent_loop already exposes. Asserts the gate's block
+# still wins through the loop's own _compose_pre_tool_hooks, that an unwritable
+# log degrades to a warning instead of ending the turn, and that a gate-blocked
+# call (whose pre-hook never runs) still gets a tool_call event. 38 tests, ~25s,
+# same migration-derived fixture; the two end-to-end cases drive the REAL loop
+# with a scripted provider -- no DB, no network, no LLM.
+tests/agent_runtime/test_event_recorder.py
+# hcx-post-01 — permission postures. Gated because the two properties it holds
+# are precedence properties, and a precedence regression is silent: a posture
+# that started overruling an exported ICDEV_SAG_APPROVAL_MODE, or a config file
+# that could name danger-full-access, would keep every other test green.
+# 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
+tests/agent_runtime/test_permission_postures.py
+
+# hcx-vv-02 — coherence check_log_standard_compliance, narrowed to allow the
+# prefer-get_logger-then-fall-back shape. The gate failed on
+# 20260815191145_seed_canvas_grants_for_existing_tenants/up.py, which prefers
+# get_logger() and drops to stdlib logging only when that import fails — correct
+# for a migration that may run before tools.logging is importable. Three of the
+# nine tests are the guard rather than the coverage: a bare fallback that never
+# tried get_logger, and a raw call sitting OUTSIDE the handler in a module that
+# merely imports get_logger, must both still fail. Pre-existing file, moved off
+# the backlog census in the PR that makes it gate. 9 tests, ~2.5s, tmp_path
+# only: no DB, no network.
+tests/test_coherence_log_standard.py
+# cch-tel-01: prompt-cache tokens are recorded durably, per call. LLMResponse
+# has carried cache_creation_input_tokens/cache_read_input_tokens since
+# D-CACHE-10 and four adapters populate them, but nothing durable recorded them,
+# so every caching claim on this platform was unfalsifiable. Gated because the
+# load-bearing assertion is a NEGATIVE one that no other test makes: a call
+# reporting ZERO cached tokens must record a row holding 0, never be skipped and
+# never write NULL — otherwise a provider that stopped caching is indistinguish-
+# able from one that was never asked, which is exactly how Azure discarded the
+# count for its entire life. Also holds INSERT/live-schema parity, which is the
+# failure mode that kept module_budget_usage at 0 rows while reporting success.
+# Also covers the two-tier path, which made real provider calls and recorded
+# nothing at all: two_tier.enabled is true and code_generation is a worker
+# function, so router.invoke() returned before ever reaching the telemetry seam.
+# 16 tests, <1s: temp SQLite files only, no network, no shared board.
+tests/test_ai_telemetry_cache_tokens.py
+# rem-hyg-03: the fire-rate survey that must run BEFORE rem-hyg-04 arms the
+# identity check. Guards the three properties that fail while looking like
+# success — an unmeasurable survey reporting a 0% rate, a gate sentinel counted
+# as an orphan, and the narrowed rate laundering opaque machine ids into
+# findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
+# network, no LLM.
+tests/test_identity_survey.py
+# hcx-post-02 — posture selection recorded as operator intent. Gated because
+# every property it holds fails SILENTLY: a selection that stopped appending an
+# event, one that appended after applying instead of before, one that started
+# overwriting the per-knob env vars an operator exported, or one that widened to
+# danger-full-access with the audit log down -- all four leave the knobs reading
+# exactly right and every other test green. 27 tests, ~2s; the appender is
+# injected and the environment is a dict, so no DB, no network, and no write to
+# os.environ (the snapshot fixture explains why that one matters in-suite).
+tests/agent_runtime/test_posture_selection.py
+
+# rem-hyg-07: sibling file contention detected at SEED time, not after the PR.
+# pr_watcher's guard runs on OPEN PRs, which is after both sessions have built —
+# #1684 dispatched a producer and its consumer together and 1,058 lines of the
+# loser's branch were discarded. Pins the two dependency mechanisms (scalar AND
+# junction, because _deps_satisfied ANDs them), the live/latent ranking, and the
+# six prose suppressions — including the three found by running the check
+# against the live board, where every string asserted is real text from a real
+# row. Also pins the residual hole, so a reader sees the edge of the heuristic
+# instead of assuming prose parsing is solved. 44 tests, ~1s, synthetic rows and
+# a stub git runner: no board, no network, no LLM.
+tests/kanban/test_lane_conflicts.py

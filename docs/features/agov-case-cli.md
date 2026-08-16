@@ -37,6 +37,7 @@ is that join.
 |---|---|---|
 | `hook_events` | `session_id` | Every pre/post tool-use hook, HMAC-signed |
 | `audit_trail` | `session_id` | Immutable audit, hash-chained since migration 149 |
+| `agent_session_events` | `session_id` | The append-only agent event log (`hcx-evt-01`), joined by `hcx-evt-04`; `payload_json` deliberately not read |
 | `agent_findings` | `session_id` | AGOV detection findings; present once `agov-det-05` lands, reported as `present: false` until then |
 
 **What it cannot join, stated on every result.** `agent_executions`,
@@ -44,10 +45,26 @@ is that join.
 has a `session_id` column — they key on `execution_id`, `agent_id`/`user_id` and
 `instance_id`. A forensic timeline must not silently omit them, so all three are
 named under `limits`. Correlating them needs a schema change, not a wider
-`SELECT`.
+`SELECT` — and `agent_session_events` is what that schema change looks like when
+it is made: `hcx-evt-01` gave it a `session_id` by construction, so `hcx-evt-04`
+joined it with no special case at all.
 
-Ordering is `(timestamp, source, record_id)`, so two runs over the same data
-produce the same sequence. Rows with no timestamp cannot be placed in time: they
+**What it joins but does not carry whole.** `agent_session_events.payload_json`
+can hold verbatim model input, so it is left out of that source's column
+allowlist — this timeline and the case bundle built from it carry no transcript
+by construction rather than by filtering. `payload_hash` is carried for every
+event, so a holder of the payload re-verifies it with
+`tools/audit/row_hash.py::compute_payload_hash`; read the documents themselves
+with `python tools/agent_runtime/event_log.py --session <id> --with-payload`.
+Every result where the table is present says so under `limits`, because "the
+payload is not here" and "there was no payload" are different facts.
+
+Ordering is `(timestamp, source, tiebreak, record_id)`, so two runs over the
+same data produce the same sequence. The tiebreak exists for
+`agent_session_events`: several of its events routinely share one `occurred_at`,
+which is why `hcx-evt-01` ordered that table by a monotonic `seq` behind a
+UNIQUE index — falling back to its `event_id` (a random uuid) would be
+reproducible and wrong. Rows with no timestamp cannot be placed in time: they
 sort last, are counted in `undated`, and are reported — not dropped.
 
 ### `build` — a bundle the verifier can check

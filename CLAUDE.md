@@ -156,6 +156,22 @@ python -m tools.kanban.landed_check --task <task-id> --gate  # exit 1 if already
 # citation as often as a landing). Boundary-matched, so ctx-perf-02 != ctx-perf-021 and a
 # parent id != its children. FAIL-OPEN — `checked: false` is never a clean answer.
 # Advisory by default; KANBAN_LANDED_CHECK=enforce refuses, =off disables. Survey first.
+
+# What would the identity check REFUSE on the real board? Survey before arming (#rem-hyg-03)
+python -m tools.kanban.identity_survey --json            # every id, machine-readable
+python -m tools.kanban.identity_survey                   # per-card table + headline rates
+python -m tools.kanban.identity_survey --env-file /path/to/.env   # running from a worktree
+# The survey `task_identity` (rem-hyg-02) needs before rem-hyg-04 may arm it. Measured
+# 2026-08-16 on the live board (3,243 rows): 2,041 claimed, 53 gate sentinels, 22 no_epic,
+# 1,127 no_card = 35.43% if armed naively. The NARROWING is the finding: 789 of the 1,127
+# are opaque machine ids — `task-<hex>` is what the dashboard's own create-task API and
+# `awareness/suggested_card_writer` generate — so refusing them refuses routine work, the
+# exact defect the PreToolUse survey found. Exempting them: 11.10% lifetime, 4.23% over 7d,
+# against 17 genuinely unregistered card prefixes. Also: 95 modules INSERT INTO kanban_tasks
+# directly and never reach the `create_tasks` seam rem-hyg-04 would arm.
+# UNMEASURABLE is never 0%: an unreadable projects.yaml, and an empty board — the worktree
+# trap, where a missing .env silently reads a throwaway SQLite DB. REPORT ONLY, no --gate.
+
 # Red-first proof — did the changed test actually go RED? (trust-disc-01)
 python tools/ci/red_first_gate.py --gate                 # the merge gate (0 clean / 1 finding / 2 could-not-run)
 python tools/ci/red_first_gate.py                        # report only, always exit 0
@@ -170,7 +186,19 @@ python tools/ci/red_first_gate.py --json --out red-first-proof.json
 python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)
 python tools/skills/gepa_optimizer.py --dry-run --json # Scan without writing changes
 # MCP tool: gepa_optimizer  params: dry_run (bool, default false)
-#   Returns: {applied: [...], skipped: [...], errors: [...]}
+#   Returns: {applied: [...], declined: [...], skipped: [...], errors: [...]}
+# rem-cap-01: GEPA records a DECISION against every artifact it evaluates, not
+# only the ones it applies. `declined_no_delta` / `declined_low_score` /
+# `declined_unmappable_skill` are TERMINAL (nothing rescores an artifact after
+# insert, and a blank skill_used can never resolve) so the artifact leaves the
+# queue; `declined_skill_file_missing` / `declined_rubric` /
+# `declined_empty_patch` are retried next cycle. Consumption for the
+# `skill_optimizer` capability class is a recorded decision, applied OR
+# declined — counting applies alone made "GEPA ran and correctly declined
+# everything" read identically to "GEPA never ran", which is the exact defect
+# capability_consumption exists to catch. `status` is deliberately untouched:
+# skills_lifecycle.py and ace/blueprint.py read status='pending' as NOVA's
+# proposal queue.
 ```
 
 ### Python Dependencies
