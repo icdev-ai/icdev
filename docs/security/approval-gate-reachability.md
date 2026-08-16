@@ -8,6 +8,15 @@ CUI // SP-CTI
 **Measured:** 2026-08-16, live board (`ICDEV_STORAGE_BACKEND` default), worktree
 `kanban/rem-cap-03`.
 
+> **STATUS — partially remediated, 2026-08-16 (rem-cap-04).** The in-process
+> half is fixed: the resolver is config-aware, the shipped config arms the gate
+> in `dry_run`, and `agent_approval_log` now holds gate-written rows. Everything
+> below is the finding **as measured before that change** and is left intact as
+> the record; **§8.1 states what landed and what is still open.** The two rows
+> in §0 marked † no longer hold. Findings 1 and 3 are unchanged: the `claude_cli`
+> dispatch path is still a separate process no Python gate reaches, and
+> `enforce` is still unarmed pending tool enumeration.
+
 `args/agent_approval_policy.yaml` enumerates **62** tools by reversibility tier.
 `tools/awareness/capability_consumption.py` reports **0 consumed**. This document
 answers the question the count could not: is that 62 a backlog to work off, or a
@@ -29,8 +38,8 @@ zero even if the first three were fixed.
 | Kanban tasks dispatched `executor_type = claude_cli` | **3,214** | `kanban_tasks`, vs 3 `ollama_local` |
 | Agent-loop invocation sites in `tools/` | 12 | §2 |
 | …that pass `approval_gate=` explicitly | **1** | `tools/studio/executors/agent_executor.py:556` |
-| `args/agent_runtime.yaml` → `command_approval_mode` | `enforce` | and it does not arm the gate — §2 |
-| `_resolve_approval_gate(None)` on this checkout | **`None` (no gate)** | `icdev/tools/llm/agent_loop.py:804` |
+| † `args/agent_runtime.yaml` → `command_approval_mode` | `enforce` | and it does not arm the gate — §2. Now `dry_run`, and it does — §8.1 |
+| † `_resolve_approval_gate(None)` on this checkout | **`None` (no gate)** | `icdev/tools/llm/agent_loop.py:804`. Now returns a hook — §8.1 |
 | Studio workflow runs ever recorded | 26 (25 failed, 1 success) | `studio_workflow_runs` |
 | Studio `agent`-node steps ever recorded | **0** | `studio_mcp_dispatch_audit` holds 19 rows, all `mcp-*`/probe steps |
 | Declared tools that can *never* appear in `agent_approval_log` | **37 of 62** | §5 |
@@ -365,6 +374,103 @@ arming depend on extension registration rather than on the mode the operator set
 in `args/agent_runtime.yaml` — a second declared-vs-consumed hop of exactly the
 kind this finding is about. Fix the resolver first; that covers all eleven sites
 with one function.
+
+---
+
+## 8.1 What landed — rem-cap-04, 2026-08-16
+
+Steps 1 and 2 above. Step 3 landed separately as rem-cap-05 (#1758). **The gate
+now exists as a control.** `enforce` is deliberately NOT armed and is still
+pending the enumeration task — see "What is still open" below.
+
+**1. `_resolve_approval_gate` is config-aware.** The direct
+`os.environ.get("ICDEV_AGENT_APPROVAL_MODE")` read in
+`icdev/tools/llm/agent_loop.py` is now
+`tools.agent_runtime.approval_gate.resolve_mode()`, which layers env *over*
+`args/agent_runtime.yaml` over the selected posture. No signature change, no call
+site changed. `tools/llm/agent_loop.py` was verified to be a pure re-export shim
+(it re-exports `_resolve_approval_gate` by name for object identity), so there is
+one copy to change, not two.
+
+One asymmetry was added deliberately: when `approval_gate=None` and the gate
+module cannot even be imported to *ask* the mode, the resolver returns `None`
+and logs a warning rather than denying. `None` means "use the operator's
+default", so there is no request to fail closed on; refusing every tool call on
+all eleven default sites because a config layer broke is an outage, not a
+safety property. An explicit `True` — which *is* a request — keeps its
+deny-everything behaviour unchanged.
+
+**2. `subsystems.approval.command_mode: dry_run` ships**, in `args/` **and** in
+the packaged `icdev/data/args/` mirror. `_find_config_path` probes both layouts,
+so shipping the pin in only one would leave a wheel install falling through to
+the posture's `enforce` — the 81% refusal, in the deployment nobody tests
+locally. The two files are asserted byte-identical.
+
+**A consequence the card did not name: this pins a POSTURE-GOVERNED knob.**
+hcx-post-01 ships all four such keys commented out so that selecting a posture
+actually moves them, and `tests/agent_runtime/test_permission_postures.py`
+asserted the shipped config pins nothing. The pin is still the right call, and
+the inertness it costs was measured rather than assumed: `off`
+(danger-full-access) and `dry_run` **both** write the audit row and **both**
+allow, so for that posture the pin changes the recorded reason and not the
+behaviour. The invariant was kept rather than deleted — pins are now enumerated
+by name with a written reason in `SANCTIONED_PINS`, and the exact *value* is
+asserted, so an unreviewed edit from `dry_run` to `enforce` fails the test
+instead of slipping past an "is it pinned?" check. The four `test_posture_selection.py`
+cases that broke were testing the posture MECHANISM, which was working correctly
+and reporting the pin loudly exactly as designed; they now point the loader at
+their own config, per the convention `tests/agent_runtime/test_config.py`
+already documents.
+
+**The hard-block leg was surveyed before arming, because `dry_run` does not
+disarm it.** `build_approval_hook`'s step 1 consults
+`.claude/hooks/pre_tool_use.py` via `tools.airgap.hook_compat.run_pre_tool_check`
+and **denies regardless of mode** — so arming eleven previously-ungated call
+sites is a real enforcement change, not a purely observational one, and
+CLAUDE.md requires a fire-rate survey first. Measured across every tool the 13
+SAG bundles register:
+
+| probe | fires |
+|---|---:|
+| 63 distinct tools x {empty input, realistic input} = 126 probes | **0** |
+| 3 genuinely dangerous inputs (`rm -rf /`, `git push --force`, a write to `/etc/cron.d/`) | **3** |
+
+Zero false refusals, and the leg is not inert. (The tier census reproduced 47
+`unknown` exactly; the distinct-tool count is 63 here against §6's 58, a
+counting difference in bundle dedup that does not move the `unknown` figure.)
+
+**Proof the control now exists.** Live board, PostgreSQL, immediately after the
+change — the first row the approval gate has ever written, from a default call
+site that passed no `approval_gate=` argument:
+
+```
+id: 5   decided_at: 2026-08-16T21:03:06Z   session_id: local-2ad8368cdc06
+tool_name: generate_ssp        tier: unknown       rule: default_tier
+decision: approved             mode: dry_run       arg_keys: system
+reason: dry_run: would have required approval
+detail: 'generate_ssp' is not enumerated in agent_approval_policy.yaml...
+```
+
+`SELECT tier, COUNT(*) FROM agent_approval_log WHERE tier IN (...) GROUP BY tier`
+returned `[]` before and `{unknown: 1}` after. Note `arg_keys` records key names
+and never operands, consistent with the platform's telemetry stance.
+
+Note the second row that did **not** appear, because it is the more instructive
+result: a `write_file` call in the same exercise was classified `recoverable`
+and auto-allowed **without** a row, by design — `require_approval_tiers` is
+`[irreversible, unknown]`, so `dry_run` surveys the tools that would have
+halted, not every tool call. The `agent_approval_log` corpus this produces is
+therefore exactly the enumeration backlog and nothing else.
+
+**What is still open.** `enforce` remains unarmed and must stay that way until
+the 47 `unknown` tools are enumerated in `args/agent_approval_policy.yaml` or
+explicitly accepted, per bundle — `compliance` (13), `security` (9), `canvas`
+(7), `govcon` (5) and `kanban` (5) are entirely unenumerated. Promote per
+bundle, from the `agent_approval_log` corpus this change starts collecting; do
+not flip the single config line to do it globally. Also still true and unchanged
+by this task: findings 1 and 3 stand — the `claude_cli` dispatch path (3,214 of
+3,217 board tasks) is a separate process that no Python gate reaches, and Studio
+has still never run an `agent`-node step.
 
 ---
 

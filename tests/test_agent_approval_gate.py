@@ -336,12 +336,33 @@ class TestGateHalts:
     def test_off_is_an_explicit_escape_hatch(self):
         assert _gate(mode=MODE_OFF)("git_push", {}) is None
 
-    def test_mode_resolution(self, monkeypatch):
+    def test_mode_resolution(self, monkeypatch, tmp_path):
+        """The resolver's own fall-through, with no config value to find.
+
+        Deliberately pointed at an empty config rather than reading the shipped
+        one. The shipped file now pins `command_mode: dry_run` (rem-cap-04), and
+        asserting that here would (a) duplicate
+        tests/test_approval_gate_arming.py::TestShippedDefault and (b) make this
+        test order-dependent — it passed alone and failed in-suite, because an
+        earlier module leaks ICDEV_AGENT_RUNTIME_CONFIG pointing at a tmp_path
+        that no longer exists. What this case is about is the layer BENEATH any
+        config: absent a value, the mode is `enforce`, and it is `enforce` for an
+        unparseable one too. A typo must never resolve to `off`.
+        """
+        import tools.agent_runtime.config as config_mod
+
+        empty = tmp_path / "agent_runtime.yaml"
+        with empty.open("w", encoding="utf-8", newline="") as fh:
+            fh.write("version: 1\n")
+        monkeypatch.setenv(config_mod.ENV_CONFIG_PATH, str(empty))
+        config_mod.reset_cache()
+
         monkeypatch.delenv("ICDEV_AGENT_APPROVAL_MODE", raising=False)
-        assert resolve_mode() == MODE_ENFORCE          # default is enforce
+        assert resolve_mode() == MODE_ENFORCE          # no value -> posture -> enforce
         assert resolve_mode("nonsense") == MODE_ENFORCE  # unparseable is enforce
         monkeypatch.setenv("ICDEV_AGENT_APPROVAL_MODE", "off")
         assert resolve_mode() == MODE_OFF
+        config_mod.reset_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -592,8 +613,15 @@ class TestAgentLoopWiring:
         assert hook("git_push", {}) == "caller says no"
 
     def test_resolution_of_the_approval_gate_argument(self, monkeypatch):
+        # `None` defers to the operator's configured mode, which since
+        # rem-cap-04 is resolved through `approval_gate.resolve_mode()` rather
+        # than read straight out of the environment. The shipped config says
+        # `dry_run`, so an unset env var now means "gated, and recorded" — it
+        # used to mean "no gate at all", which is why the gate had evaluated
+        # zero tool calls in production. Config-vs-env precedence is pinned in
+        # tests/test_approval_gate_arming.py; this case only pins the argument.
         monkeypatch.delenv("ICDEV_AGENT_APPROVAL_MODE", raising=False)
-        assert _resolve_approval_gate(None) is None      # off by default
+        assert callable(_resolve_approval_gate(None))    # the config arms it
         assert _resolve_approval_gate(False) is None
         sentinel = lambda n, i: None  # noqa: E731
         assert _resolve_approval_gate(sentinel) is sentinel
@@ -601,7 +629,7 @@ class TestAgentLoopWiring:
         monkeypatch.setenv("ICDEV_AGENT_APPROVAL_MODE", "enforce")
         assert callable(_resolve_approval_gate(None))    # env switches it on
         monkeypatch.setenv("ICDEV_AGENT_APPROVAL_MODE", "off")
-        assert _resolve_approval_gate(None) is None
+        assert _resolve_approval_gate(None) is None      # and the operator can veto
 
     def test_a_gate_that_cannot_be_built_denies_everything(self, monkeypatch):
         """Fail closed: an operator who asked for a gate did not ask for none."""
