@@ -2270,3 +2270,13 @@ tests/ci/test_sibling_hold_survey.py
 # test_agent_event_log.py, and the injectors are exercised against a tmp_path
 # repo root rather than the real checkout.
 tests/agent_runtime/test_context_events.py
+# kpr-dup-03: the stale-reaper recorded a FAILURE against a task that had
+# already opened its PR (kpr-watch-01, 2026-08-16: heartbeat 16:24:36Z, PR #1744
+# 16:27:16Z, reap 16:35:00Z) -- failure_count incremented, last_failure_reason
+# fabricated, status=backlog with an open PR. Gated because the reverse-direction
+# case is the one that regresses silently: a task with an open PR and a stale
+# heartbeat must NOT be reaped, and nothing else asserts that. Also pins the
+# over-correction guard -- a genuinely silent dispatch with no PR is still
+# reaped and still counted. 8 tests, ~1s, sqlite fixture, no network (`gh` is
+# monkeypatched out).
+tests/test_kanban_reaper_pr_opened.py
