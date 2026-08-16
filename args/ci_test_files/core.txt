@@ -1840,3 +1840,9 @@ tests/test_agent_event_log.py
 # reporting. 26 tests, ~1s, registry injected in every case except one deliberate
 # end-to-end read of args/projects.yaml — no board, no network, no LLM.
 tests/kanban/test_task_identity.py
+# hcx-post-01 — permission postures. Gated because the two properties it holds
+# are precedence properties, and a precedence regression is silent: a posture
+# that started overruling an exported ICDEV_SAG_APPROVAL_MODE, or a config file
+# that could name danger-full-access, would keep every other test green.
+# 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
+tests/agent_runtime/test_permission_postures.py
