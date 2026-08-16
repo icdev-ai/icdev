@@ -48,8 +48,22 @@ prose, so it is stated first and precisely.
 
 `agent_executor.py` is the sole module that calls both `build_gate_hook` and
 `build_approval_hook`. `tools/agents/` imports neither — verifiable with
-`grep -rn "approval_gate\|agent_tool_gate" tools/agents/`, which returns nothing.
-The spawned CLI is a different process that imports no ICDEV module at all.
+`grep -rn "approval_gate\|agent_tool_gate" tools/agents/`, whose only hits are the
+two docstring lines in `claude_cli.py` that say so. The spawned CLI is a different
+process that imports no ICDEV module at all.
+
+> **rem-cap-03 (2026-08-16) measured the first row of this table and it is worse
+> than "not in the adapter's path".** The in-process gate is also **disarmed by
+> default**: `icdev/tools/llm/agent_loop.py::_resolve_approval_gate` reads
+> `ICDEV_AGENT_APPROVAL_MODE` from the environment directly and returns *no gate*
+> when it is unset — it never consults `approval_gate.resolve_mode()`, so
+> `args/agent_runtime.yaml`'s shipped `command_mode: enforce` does not arm
+> anything. Eleven of the twelve agent-loop call sites take that default; only
+> `agent_executor.py` passes `approval_gate=` explicitly, and no `agent`-node step
+> has ever run. Net: the reversibility gate has evaluated **zero** tool calls
+> against its 62 declared rules, on a board that has dispatched 3,214 autonomous
+> builds. See
+> [`approval-gate-reachability.md`](approval-gate-reachability.md).
 
 So: **the two gates usually named as the compensating controls for this flag are
 not in this adapter's path.** They are real, they are default-deny, and they are
