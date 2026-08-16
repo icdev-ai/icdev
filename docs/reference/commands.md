@@ -6183,3 +6183,45 @@ semantics do not survive being flattened into one item with one `resolved_by`.
 # session is reported under `unresolved_event_ids` and never pulls that event in.
 # Two runs over the same rows are byte-identical — import canonical_timeline /
 # canonical_json / timeline_digest from session_timeline to check that yourself.
+
+---
+
+## Extension Point Liveness (hcx-live-03)
+
+`ExtensionPoint` declares ten hook points. Declaring one costs a line;
+*consuming* one costs a dispatcher on a real code path and a handler registered
+against it. This measures the gap.
+
+```bash
+python tools/extensions/liveness.py            # human report, all ten points
+python tools/extensions/liveness.py --json
+python tools/extensions/liveness.py --dead     # only the points that cannot fire
+python tools/extensions/liveness.py --gate     # exit 1 on a dead point not in the census
+python tools/extensions/liveness.py --root /path/to/checkout
+```
+
+Two independent pieces of evidence per point:
+
+| evidence | how | why it matters |
+|---|---|---|
+| **dispatchers** | static: a file that both names the point (`ExtensionPoint.P` or the bare string `"p"`) and calls `dispatch`/`dispatch_async` | a point with **no dispatcher cannot fire**, whatever registers against it |
+| **handlers** | static (`EXTENSION_HOOKS` keys, `register(...)` args) + live (`ExtensionManager.handler_count`) | the live half sees site-local drop-ins this checkout does not contain |
+
+Status is one of `live`, `dispatcher_only`, `handlers_only`, `dead`.
+`dispatcher_only` (fires, nobody listening) and `dead` (cannot fire) are
+different defects and are never merged.
+
+This does **not** count dispatches — that is runtime telemetry and belongs
+inside `ExtensionManager.dispatch`. A point reported `live` here is *wired*, not
+necessarily *exercised*.
+
+Dead points are enumerated by name with a written reason and a follow-up card in
+`args/extension_liveness.yaml`; the census only ever shrinks. A member of
+`ExtensionPoint` is never removed to clear a finding without a human decision —
+it is a public `str`-Enum and extensions are auto-discovered drop-ins from a
+project-root `extensions/` directory outside this repository, so a removal is an
+`AttributeError` at import for any site-local file naming it.
+
+```bash
+pytest tests/test_extension_point_liveness.py -v   # AGENT_START/END wiring + the census (12 tests)
+```

@@ -13,3 +13,4 @@
 | Genesis Status Chat Hook | tools/extensions/builtins/070_genesis_status_chat.py | Chat hook: Genesis daemon status | (hook) | Status message |
 | Intake Enrichment Chat Hook | tools/extensions/builtins/080_intake_enrichment_chat.py | Chat hook: intake session enrichment | (hook) | Enrichment context |
 
+| Extension Point Liveness | tools/extensions/liveness.py | Per declared ExtensionPoint: does anything dispatch it, and is any handler registered? Reports the points that cannot fire; `--gate` fails on a dead point not enumerated in args/extension_liveness.yaml (hcx-live-03) | `--json`, `--dead`, `--gate`, `--root <path>` | Liveness report + census verdict |

@@ -506,3 +506,84 @@ class TestSchema:
         )
         assert "payload" not in event.to_dict(include_payload=False)
         assert event.to_dict()["payload"] == {"secret": 1}
+
+
+# ---------------------------------------------------------------------------
+# 7. The registrations (hcx-evt-06)
+# ---------------------------------------------------------------------------
+class TestRegistrations:
+    """A registration nothing asserts is one a later edit removes in silence.
+
+    ``TestAppendOnly.test_the_table_is_registered_append_only`` already covers
+    the PreToolUse hook. The two below had no assertion at all, and both fail
+    QUIETLY — which is the whole reason they are worth a test:
+
+      * a table missing from ``MINIMAL_ICDEV_SCHEMA`` does not fail a gated
+        test, it makes one SKIP, and a gated test that skips reports green
+        while measuring nothing;
+      * a substrate missing from the curated ``substrates:`` list does not
+        fail ``substrate_liveness``, it makes the check unable to see the
+        table at all, so an empty one reads exactly like a healthy one.
+    """
+
+    def test_conftest_schema_matches_the_migration(self):
+        """MINIMAL_ICDEV_SCHEMA must create the table the migration creates.
+
+        Compared column-for-column against up.sql rather than against a
+        hand-written list, so a column added to the migration and not to
+        conftest fails HERE instead of turning a gated test into a skip.
+        """
+        conftest_src = (REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
+        schema = None
+        for node in ast.walk(ast.parse(conftest_src)):
+            if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", None) == "MINIMAL_ICDEV_SCHEMA" for t in node.targets
+            ):
+                schema = ast.literal_eval(node.value)
+        assert schema is not None, "MINIMAL_ICDEV_SCHEMA not found in tests/conftest.py"
+
+        def _columns(ddl: str) -> set:
+            db = sqlite3.connect(":memory:")
+            db.executescript(ddl)
+            cols = {r[1] for r in db.execute(f"PRAGMA table_info({TABLE})")}
+            db.close()
+            return cols
+
+        from_conftest = _columns(schema)
+        assert from_conftest, (
+            f"{TABLE} is absent from MINIMAL_ICDEV_SCHEMA — a gated test that "
+            "touches it will SKIP, not fail"
+        )
+        assert from_conftest == _columns(_events_ddl())
+
+    def test_the_table_is_a_declared_substrate(self):
+        """Declared in args/capability_consumption.yaml :: substrates.
+
+        Declared BEFORE a writer exists, deliberately. hcx-evt-02..05 add the
+        ``append()`` call sites; until one lands the table is empty, and an
+        empty substrate that nothing declares is invisible to the very check
+        that exists to name it.
+        """
+        import yaml
+
+        cfg = yaml.safe_load(
+            (REPO_ROOT / "args" / "capability_consumption.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        declared = {
+            str(e["ref"])
+            for e in (cfg.get("substrates") or [])
+            if isinstance(e, dict) and e.get("ref")
+        }
+        assert TABLE in declared, (
+            f"{TABLE} is not in substrates: — substrate_liveness cannot see it, "
+            "so an empty event log reads the same as a healthy one"
+        )
+
+    def test_the_declared_entry_carries_a_reason(self):
+        """The list is curated claims, never a schema dump — so it needs a note."""
+        from tools.awareness.capability_consumption import declared_substrates
+
+        entry = next(e for e in declared_substrates() if str(e["ref"]) == TABLE)
+        assert len(str(entry.get("note") or "").strip()) > 40

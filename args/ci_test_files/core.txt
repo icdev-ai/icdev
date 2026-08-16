@@ -1825,6 +1825,18 @@ tests/test_canvas_dedicated_pg_database.py
 # an extension controls, turns a drop-in extension file into a permission
 # bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
 tests/agent_runtime/test_dispatch_extension_point.py
+
+# hcx-live-03 — AGENT_START/AGENT_END are dispatched from AgentRuntime.run_turn,
+# and the four points that still cannot fire are named with evidence. Gated for
+# two reasons. (1) The observational contract is enforced at the call site, not
+# in YAML: test_agent_start_cannot_alter_the_turn / _cannot_block_the_turn fail
+# the moment somebody feeds a handler's return value back into the turn, which
+# would turn a reviewed-as-observational point into an unreviewed gating one.
+# (2) test_extension_point_members_unchanged is the guard that a later PR does
+# not quietly delete a public str-Enum member — an AttributeError at import for
+# any site-local drop-in naming it. 12 tests, ~3s, no DB and no network: the
+# agent loop is monkeypatched and the tree scan is static.
+tests/test_extension_point_liveness.py
 # hcx-evt-01 -- the append-only agent event log (agent_session_events). Added in
 # the PR that makes it pass, per the test-gating policy. 39 tests, ~1s, no DB and
 # no network: the fixture builds the table from the migration's own up.sql behind

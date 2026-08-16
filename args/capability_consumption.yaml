@@ -148,6 +148,17 @@ substrates:
       and never the operand, which is why a fire-rate survey has to be driven
       from the Claude Code transcripts instead. Listed so that "it has rows"
       never gets read as "it can answer the question".
+  - ref: agent_session_events
+    note: >-
+      The append-only agent event log (hcx-evt-01, migration
+      20260816122036). It exists because agent_loop_sessions.messages_json is
+      UPSERT-overwritten every turn, so fork and replay have no data to read.
+      Declared here BEFORE a writer is wired, deliberately: hcx-evt-02..05 add
+      the append() call sites, and until one of them lands this table is the
+      textbook shape this probe exists to name — a substrate something is
+      designed against that holds nothing. tools/agent_runtime/event_log.py
+      already READS it via read_session()/next_seq(), so a change to that module
+      is exactly the commit substrate_liveness should warn on.
 
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,
