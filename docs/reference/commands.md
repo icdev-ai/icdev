@@ -1049,8 +1049,71 @@ Append-only: registered in `APPEND_ONLY_TABLES`, and the module exposes
 correction is a new event. The INSERT is not wrapped in a bare `except` — a
 swallowed INSERT is how `module_budget_usage` held zero rows.
 
-Consumers: hcx-evt-02..06 (fork, replay, the timeline join, the runtime write
-path). Until those land the CLI above is the operable surface.
+Consumers: hcx-evt-02 (below), then hcx-evt-03..06 (context injection, the
+timeline join, fork, the gate registrations).
+
+### Wiring it to a real turn (hcx-evt-02)
+
+`tools/agent_runtime/event_recorder.py` is a library — no CLI, so import it
+rather than invoking it:
+
+```python
+from tools.agent_runtime.event_recorder import TurnRecorder
+
+recorder = TurnRecorder.for_turn(chat_context_id)
+recorder.turn_start(user_input)
+result = run_agent_loop(
+    router,
+    ...,
+    on_turn=recorder.on_turn,                  # -> assistant_message
+    on_pre_tool_use=recorder.on_pre_tool_use,  # -> tool_call
+    on_post_tool_use=recorder.on_post_tool_use,  # -> tool_result
+    on_stop=recorder.on_stop,                  # -> turn_end
+    correlation_id=recorder.correlation_id,
+)
+```
+
+`AgentRuntime.run_turn` already does this, so every `icdev chat` turn is
+recorded. Read one back with the CLI above, using the **chat context id**:
+
+```bash
+python tools/agent_runtime/event_log.py --session <ctx-id> --json
+python tools/agent_runtime/event_log.py --session <ctx-id> --type tool_call --with-payload
+ICDEV_AGENT_EVENT_RECORDING=0 icdev chat      # stand recording down for a run
+```
+
+**No new hook machinery was added to the agent loop**, because none was needed —
+those four hooks already existed. `turn_start` is emitted by `run_turn` itself
+rather than by `on_turn`, which fires only *after* a model response and so could
+never carry the user's own input.
+
+**The recorder cannot change what a tool call is allowed to do.**
+`on_pre_tool_use` returns `None` on every path, including the paths where the
+log is unreachable; `run_agent_loop` composes the caller's hook *after* the
+approval gate and the first non-empty block message wins, so it can neither deny
+a call nor rescue one the gate denied. An audit outage must not silently become
+a refusal.
+
+**The recorder cannot end a turn.** `event_log.append` still raises — a writer
+that swallows its own INSERT is the defect that card exists to prevent — so the
+swallow lives in the recorder, once, with a `failures` count you can read back.
+
+**A gate-blocked or unregistered call still gets a `tool_call` event.**
+`on_post_tool_use` fires for every entry in `tool_calls`; `on_pre_tool_use` does
+not (skipped when no handler is registered, short-circuited when the gate blocks
+first), which would leave exactly the denied calls with no record of being
+called. The missing event is reconstructed from the post-hook's own arguments and
+tagged `observed: post_tool_use`, so it is never mistaken for one the pre-hook
+saw dispatched.
+
+**`session_id` is the chat context id**, not `AgentLoopResult.session_id` — that
+one is a fresh UUID on every call even when resuming, which would make each user
+message its own one-turn "session" and leave hcx-evt-05 nothing multi-turn to
+fork. The loop's per-run identity moves to the `correlation_id` column, which is
+also `AgentLoopResult.trace_id` and the `agent.turn` OTel span.
+
+**ADDITIVE.** `agent_loop_sessions.messages_json` remains the resume path: it
+works and it is tested. This is the audit / fork / replay path running beside it.
 
 ---
 
