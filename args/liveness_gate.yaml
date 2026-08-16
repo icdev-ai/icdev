@@ -146,9 +146,13 @@ grandfathered:
   # once enforcement is on; lower it then rather than waiting for a task.
   mcp_tool_authorization: 4
 
-  # GEPA. 124 pending agent_improvement_artifacts, 0 applied, and 0 that satisfy
-  # its own selection predicate — every queued artifact has
-  # composite_score == baseline_score, so the >= 0.05 delta filter can never
-  # select one. It is dispatched every 24h and cannot act, which is why it reads
-  # as scheduled-and-healthy while doing nothing.
-  skill_optimizer: 1
+  # GEPA — RESOLVED by rem-cap-01, budget lowered 1 -> 0. It was dispatched
+  # every 24h with 7 successful runs and recorded nothing, because the only
+  # outcome it could write was status='applied': an artifact it declined stayed
+  # 'pending' forever, so the queue could only grow and a correct decline was
+  # indistinguishable from never having run. GEPA now records a decision
+  # (applied or declined, terminal or retryable) against every artifact it
+  # evaluates, which drained the 132-row permanently-unselectable backlog left
+  # behind by the pre-exa-refine writers. Never raise this back to pass a
+  # commit — if it fails, GEPA has stopped deciding.
+  skill_optimizer: 0

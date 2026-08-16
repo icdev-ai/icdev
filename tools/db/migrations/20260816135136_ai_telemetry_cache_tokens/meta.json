@@ -1,0 +1,7 @@
+{
+  "description": "record cache_creation/cache_read input tokens per LLM call on ai_telemetry (cch-tel-01)",
+  "date": "2026-08-16",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

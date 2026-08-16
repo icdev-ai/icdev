@@ -427,7 +427,10 @@ class TestGEPAOptimizer:
         }]
 
         conn = _make_conn()
-        monkeypatch.setattr(mod, "_get_pending_artifacts", lambda c: artifacts)
+        # rem-cap-01: run() iterates every UNDECIDED pending artifact and records
+        # a verdict for each, so this is the seam to patch — _get_pending_artifacts
+        # is now just the selection predicate applied on top.
+        monkeypatch.setattr(mod, "_fetch_undecided_pending", lambda c, **k: artifacts)
         monkeypatch.setattr(mod, "_find_skill_file", lambda s: skill_file)
         _patch_storage(monkeypatch, conn)
 
@@ -451,14 +454,20 @@ class TestGEPAOptimizer:
         }]
 
         conn = _make_conn()
-        monkeypatch.setattr(mod, "_get_pending_artifacts", lambda c: artifacts)
+        monkeypatch.setattr(mod, "_fetch_undecided_pending", lambda c, **k: artifacts)
         monkeypatch.setattr(mod, "_find_skill_file", lambda s: None)
         _patch_storage(monkeypatch, conn)
 
         result = mod.run(dry_run=False)
 
+        # rem-cap-01: the bare "skill_file_not_found" reason became the decision
+        # vocabulary. `unknown-skill` is a NAMED skill whose SKILL.md is absent,
+        # so the decline is retryable — someone may add the file — as opposed to
+        # the terminal `declined_unmappable_skill` a blank skill_used earns.
         assert len(result["skipped"]) == 1
-        assert result["skipped"][0]["reason"] == "skill_file_not_found"
+        assert result["skipped"][0]["reason"] == mod.DECISION_SKILL_FILE_MISSING
+        assert [d["decision"] for d in result["declined"]] == \
+            [mod.DECISION_SKILL_FILE_MISSING]
 
     # ── GEPA reflex wrapper ───────────────────────────────────────────────────
 

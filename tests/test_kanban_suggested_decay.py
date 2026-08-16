@@ -475,3 +475,89 @@ def test_full_sweep_leaves_no_phantom_reason_anywhere(wired, db):
                 f"{tid} carries a sweep-authored string in last_failure_reason: {reason!r}"
             )
     assert triage.find_recent_failures(24) == []
+
+
+# ---------------------------------------------------------------------------
+# The recovery sweep runs on a schedule, not a coin flip (2026-08-16)
+# ---------------------------------------------------------------------------
+# The call site read `if _rr.random() < 0.004`, commented "once every ~4 h
+# (1/240 cycles)". A probability is not a schedule: 0.4% per cycle has an
+# expected wait of ~250 cycles and NO UPPER BOUND.
+#
+# What waits on it matters. _unblock_dep_chain revives tasks parked with
+# "no executor available" — never attempted, failure_count 0, parked for an
+# infrastructure reason failure_triage already classifies as "nothing in the
+# repo is broken". rem-hyg-01 sat 38 minutes with one such row on the board;
+# 369 rows have taken that path all-time.
+
+
+def test_the_sweep_gate_is_deterministic_not_random():
+    """The defect, asserted where it lived: the call site."""
+    import inspect
+    import re
+
+    from tools.genesis.reflexes import kanban
+
+    src = inspect.getsource(kanban.run)
+    # The block that guards the suggested-recovery sweep.
+    match = re.search(r"\n([^\n]*\n){0,6}[^\n]*_promote_stale_suggested\(\)", src)
+    assert match, "could not locate the _promote_stale_suggested call site"
+    block = match.group(0)
+
+    assert "random" not in block, (
+        "the recovery sweep is gated on a random draw again — expected wait "
+        "~250 cycles with no upper bound, for tasks that were never attempted"
+    )
+    assert "_suggested_sweep_due" in block, (
+        "the sweep must be gated on the deterministic interval check"
+    )
+
+
+def test_the_gate_is_due_immediately_then_waits_the_interval(monkeypatch):
+    """First call sweeps; a call inside the window does not; after it, it does."""
+    from tools.genesis.reflexes import kanban
+
+    monkeypatch.setattr(kanban, "_last_suggested_sweep_at", 0.0, raising=False)
+    monkeypatch.setattr(kanban, "_SUGGESTED_SWEEP_INTERVAL_SEC", 300, raising=False)
+
+    assert kanban._suggested_sweep_due(now=1000.0) is True, (
+        "a freshly started scheduler must sweep promptly, not inherit a window"
+    )
+    assert kanban._suggested_sweep_due(now=1000.0 + 299) is False, (
+        "inside the interval the sweep must not run — this is what bounds the "
+        "revive-and-requarantine churn during a long executor outage"
+    )
+    assert kanban._suggested_sweep_due(now=1000.0 + 301) is True, (
+        "past the interval it must run — deterministically, unlike the coin flip"
+    )
+
+
+def test_the_interval_is_bounded_which_a_probability_was_not(monkeypatch):
+    """The actual property that was missing: an upper bound on the wait.
+
+    With a 0.4% draw there is no number of cycles after which recovery is
+    guaranteed. With an interval there is, and this pins it.
+    """
+    from tools.genesis.reflexes import kanban
+
+    monkeypatch.setattr(kanban, "_last_suggested_sweep_at", 0.0, raising=False)
+    monkeypatch.setattr(kanban, "_SUGGESTED_SWEEP_INTERVAL_SEC", 60, raising=False)
+
+    kanban._suggested_sweep_due(now=500.0)
+    # However many times it is asked inside the window, it stays False...
+    assert not any(kanban._suggested_sweep_due(now=500.0 + t) for t in range(1, 60))
+    # ...and it is guaranteed True once the window passes.
+    assert kanban._suggested_sweep_due(now=500.0 + 61) is True
+
+
+def test_the_eligibility_rules_themselves_are_untouched():
+    """A shorter interval must not promote anything that was not already due.
+
+    Each pass owns its criteria; this change moved the trigger only. If these
+    constants ever move, the safety argument for the shorter interval has to be
+    re-made rather than silently inherited.
+    """
+    from tools.genesis.reflexes import kanban
+
+    assert kanban._SUGGESTED_DECAY_HOURS == 48, "decay window changed"
+    assert kanban.QUARANTINE_REVIVE_COOLDOWN_MIN == 30, "revive cooldown changed"

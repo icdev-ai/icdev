@@ -88,10 +88,11 @@ _FAILURE_PREFIX = "error ["
 def mutation_allowed() -> bool:
     """Whether the fail-closed default gate lets a mutating tool through.
 
-    ``ICDEV_SAG_ALLOW_MUTATION`` → ``args/agent_runtime.yaml`` → ``False``. The
-    env var is read first and still wins (hgx-cfg-01); the config layer only
-    supplies the fallback, and its default is ``False`` so the gate stays
-    fail-closed when the config file is missing, empty or malformed.
+    ``ICDEV_SAG_ALLOW_MUTATION`` → ``args/agent_runtime.yaml`` → the selected
+    permission posture → ``False``. The env var is read first and still wins
+    (hgx-cfg-01); the posture (hcx-post-01) is the bottom-most layer and only
+    supplies a default. The final default is ``False``, so the gate stays
+    fail-closed when both files are missing, empty or malformed.
     """
     try:
         from tools.agent_runtime.config import load_config
@@ -99,6 +100,7 @@ def mutation_allowed() -> bool:
         return load_config().flag(
             "subsystems.mutation.allow",
             env="ICDEV_SAG_ALLOW_MUTATION",
+            posture_key="allow_mutation",
             default=False,
         )
     except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency

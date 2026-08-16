@@ -7510,6 +7510,9 @@ projects:
   - key: stale
     title: STALE — Refresh green PRs gone stale against main
     priority: medium
+  - key: watch
+    title: WATCH — Report what is AWAITING MERGE, and why each PR is not merging
+    priority: high
 - key: sdt
   name: SDT - Slides Deck-Type Vocabulary Repair
   description: 'Carded out of TSR. tsr-dash-01-d5 found, and its merged report
@@ -8321,6 +8324,79 @@ projects:
     - key: e2e
       title: Selenium suite fails from a worktree
       priority: low
+- key: hcx
+  name: HCX - Harness Composability
+  description: 'Long-running programme on the ICDEV agent harness. TWO PHASES, and
+    the epic keys tell them apart. PHASE 1 (ace/ctx/rt, 25 tasks, all done, shipped
+    before 2026-08-16) hardened the ACE runtime, the Cortex/TRUST grounding path and
+    the harness runtime itself - notably hcx-rt-02 (collapse tools/llm/agent_loop.py
+    into a true re-export shim of the canonical icdev/ copy), hcx-rt-03 and hcx-rt-08
+    (record codegen decisions to harness_eval from the agent loop and the claude-cli
+    executor). Those 25 tasks were on the board with NO registered card, so nothing
+    counted them and the work was invisible - registering them here is itself a fix
+    for the coverage defect described in CLAUDE.md, not bookkeeping. Note for anyone
+    extending phase 1: harness_eval is a PER-DISPATCH OUTCOME table keyed by task_id
+    (1,993 rows, live) - reflex/decision/confidence/actual_outcome. It has no
+    session_id, no seq, no messages, no tool calls and no context injections, so it
+    is NOT a model-visible event log and must not be bolted into one.
+    PHASE 2 (evt/post/live, 14 tasks, opened 2026-08-16) adapts three design
+    commitments from DeepSeek Harness (dsh
+    0.1.0-rc.5, MIT, 2026-08-13) and its Cordis kernel, analysed in
+    docs/research/deepseek-harness-cordis-adaptation.md. DSH itself is REJECTED and
+    must not be vendored: it is TypeScript on Node 22.19+, its sandbox is
+    filesystem-scoped only with network and process isolation explicitly excluded,
+    a plugin dependency executes code at npm prepare time outside that sandbox, and
+    its Python SDK ships no Windows support. The Cordis paper is a self-published
+    preprint with no quantitative evaluation whose author also wrote the framework
+    and its sole case study. What survives the filter is the part that names a
+    defect ICDEV already has - a descriptive registry beside an imperative
+    hardcoded list, where the descriptive one silently does nothing
+    (reflex_registry.py vs REFLEX_NAMES; capability_matrix.py whose
+    pick_default(require=) consumer has zero call sites; ExtensionPoint with ten
+    members and one production dispatcher). Three adaptations: (1) DSH''s
+    "model-visible means logged" invariant as an append-only agent event log, (2)
+    named permission postures, (3) making the extension seam honest. NOT adopted
+    and recorded so nobody re-derives it: hot mount/unmount (Cordis''s own
+    Discussion lists dependency cycles, interface drift and total in-memory state
+    loss as unsolved), a third-party CODE plugin marketplace, waterfall
+    around-middleware events, and Cordis''s "the telemetry seam ships no rules of
+    its own" (correct for them, wrong for CUI). Also recorded as VALIDATION rather
+    than adoption: DSH''s monotonic guards that "can only deny, never force-allow"
+    are already how _compose_pre_tool_hooks composes the approval gate ahead of
+    on_pre_tool_use in agent_loop.py.'
+  task_prefix: hcx-
+  default_open: true
+  briefs:
+    - "PHASE 1 (ace/ctx/rt - all 25 done, registered here so they are counted): ACE runtime hardening (SQL placeholders, ace_audit_log schema split, tools/ace vs icdev/tools/ace mirror drift, event-driven HITL wake, per-role trust parallelism, live CHECK constraints, Windows log-rotation collision), the Cortex/TRUST grounding path (semantic content-grounding gate, the hidden reason facade, shared retriever helper, an automated mirror-drift coherence check, TRUST calibration, the MCP rag_search TypeError), and the harness runtime (register the harness reflex in the genesis daemon, collapse tools/llm/agent_loop.py into a re-export shim of the canonical icdev/ copy, record codegen decisions to harness_eval from both the agent loop and the claude-cli executor, the rubric loop, co-learning, NOVA MCP handlers). Do not reopen these; they are listed so the card's denominator is honest (hcx-ace-01..11, hcx-ctx-01..06, hcx-rt-01..08)"
+    - "EVT: the highest-value item and a genuine hole. agent_loop_session.save_session writes the whole transcript as one messages_json blob, UPSERT-overwritten every turn - resume works, fork and replay do not exist. No context injection is recorded ANYWHERE: project_context.py, goal_context.py and profile_memory.py all inject into the prompt and a tree-wide grep for context_injection|injected_context|prompt_snapshot|rendered_prompt returns three unrelated files. llm_gateway_audit stores hashes only and is imported only by tools/cortex/* and ops_hub/llmops_engine.py, so it is NOT on the agent-runtime path and SAG's LLM calls are unaudited. session_timeline.py already joins hook_events + audit_trail + agent_findings and its own limits block names agent_executions, ai_telemetry and ace_audit_log as uncorrelatable because none has a session_id column. Build an append-only agent_session_events table in the MAIN db via get_connection() (NOT the canvas db that holds agent_loop_sessions - it needs tenant_id + classification so RLS applies and it must join hook_events/audit_trail), written through the four hooks run_agent_loop ALREADY exposes (on_turn, on_pre_tool_use, on_post_tool_use, on_stop, composed at agent_loop.py:1395 - no new hook machinery). Additive: messages_json stays the resume path. Ship the consumers in the same card - a table nothing reads is the exact defect this card exists to fix (hcx-evt-01..06)"
+    - "POST: DSH bundles sandbox mode + approval policy into ONE named selector and appends a log-only event recording the operator's INTENT, separately from the knobs it sets. ICDEV's equivalent posture is spread across ICDEV_SAG_APPROVAL_MODE, ICDEV_AGENT_APPROVAL_MODE, ICDEV_SAG_ALLOW_MUTATION, ICDEV_PRETOOLUSE_ENFORCE, per-check ICDEV_<CHECK>_GUARD, args/file_access_tiers.yaml and args/sandbox_config.yaml, and nothing records what posture a run was under or who chose it. Add args/permission_postures.yaml resolved in agent_runtime/config.py, which already implements explicit-arg > env > YAML > default and MUST keep that precedence - a posture is a default-setter, never an override of an operator's exported env var (hcx-post-01..02)"
+    - "LIVE: make the extension seam honest, per ICDEV's own capability-liveness rule. extension_manager.py declares ten ExtensionPoint members; exactly one production site calls dispatch() (chat_manager.py:79), and TOOL_EXECUTE_BEFORE - the GATING point, and the whole reason the behavioral tier exists - had no production dispatcher at all. dispatch() also catches every handler exception and logs it, so a broken handler is invisible, and nothing counts dispatches, so capability_consumption.py cannot measure the seam. A THIRD instance surfaced while reviewing hcx-live-01: args/extension_config.yaml declares a hook_points: block with per-point enabled/allow_modification/max_handlers/timeout_ms for all ten points, and dispatch() reads NONE of it (extension_manager.py:188-194 reads only extensions.enabled and extensions.safety.*). That stopped being cosmetic the moment TOOL_EXECUTE_BEFORE began firing on every tool call: an operator standing it down via hook_points.tool_execute_before.enabled=false gets no effect, and the only working kill switch is the global one that also kills the chat hooks in use. Wire a point to a real dispatcher or stop declaring it - but the REMOVAL half is a human call, not an autonomous one: ExtensionPoint is a public str-Enum and extensions are auto-discovered NNN_name.py drop-ins, including from a project-root extensions/ dir outside this repo, so a member deleted here is an AttributeError at import for a file no grep of this checkout can see (hcx-live-01..03)"
+    - "VV: the reverse-direction proof - run one real agent turn and assert a request_context row exists NAMING each injected source. If agent_session_events has zero rows after a live turn this card has reproduced the exact defect it was written to fix. Plus substrate registration in args/capability_consumption.yaml, the manifest shard row (APPEND only - union-merged), feature doc, companion sync and the coherence gate (hcx-vv-01..03)"
+  epics:
+    - key: gate
+      title: Manual Gate
+      priority: critical
+    - key: ace
+      title: 'Phase 1 (done): ACE runtime hardening'
+      priority: medium
+    - key: ctx
+      title: 'Phase 1 (done): Cortex / TRUST grounding path'
+      priority: medium
+    - key: rt
+      title: 'Phase 1 (done): harness runtime, agent-loop shim, codegen telemetry'
+      priority: medium
+    - key: evt
+      title: 'Phase 2: append-only agent event log (model-visible means logged)'
+      priority: high
+    - key: post
+      title: 'Phase 2: named permission postures'
+      priority: medium
+    - key: live
+      title: 'Phase 2: make the extension seam honest'
+      priority: medium
+    - key: vv
+      title: Verification and Validation
+      priority: high
 - key: cch
   name: CCH - Provider-Agnostic Prompt/Prefix/Context Caching
   description: >-

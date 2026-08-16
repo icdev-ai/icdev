@@ -1165,7 +1165,6 @@ tests/test_kanban_scheduled_and_pr_opened.py
 tests/test_kanban_silent_cleanup.py
 tests/test_kanban_sla_metrics.py
 tests/test_kanban_stale_reaper_manual_actor.py
-tests/test_kanban_suggested_decay.py
 tests/test_kanban_tool_runner_allowlist.py
 tests/test_kanban_transition_reason.py
 tests/test_key_personnel.py

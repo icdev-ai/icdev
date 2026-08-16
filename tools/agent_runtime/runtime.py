@@ -28,6 +28,7 @@ import contextlib
 import signal
 import sys
 import threading
+import time
 from typing import Any, Callable
 
 from tools.agent_runtime.builtin_tools import build_builtin_toolset
@@ -50,6 +51,129 @@ _DEFAULT_MAX_ITERATIONS = 12
 # A command handler takes (runtime, raw_input) and returns a
 # ``(handled, response_text, should_exit)`` tuple.
 CommandHandler = Callable[["AgentRuntime", str], "tuple[bool, str, bool]"]
+
+
+class _NullRecorder:
+    """Stand-in used when ``event_recorder`` itself cannot be imported.
+
+    Not a general "recording off" switch — :data:`event_recorder.RECORDING_ENV`
+    is that, and a disabled ``TurnRecorder`` still counts and still reports. This
+    covers only the stripped-runtime case where the module is absent, and it
+    keeps the same four hook signatures so ``run_agent_loop`` sees no difference.
+    ``on_pre_tool_use`` returns ``None`` here for the same reason it does there:
+    a hook that observes must never be able to answer a gate's question.
+    """
+
+    correlation_id = ""
+
+    def turn_start(self, user_input: str, **meta: Any) -> None:
+        return None
+
+    def turn_end(self, result: Any = None, *, reason: str = "") -> None:
+        return None
+
+    def on_turn(self, turn: int, response: Any, messages: Any = None) -> None:
+        return None
+
+    def on_pre_tool_use(self, name: str, tool_input: dict) -> None:
+        return None
+
+    def on_post_tool_use(
+        self, name: str, tool_input: dict, result_text: str, is_error: bool
+    ) -> None:
+        return None
+
+    def on_stop(self, result: Any) -> None:
+        return None
+# ---------------------------------------------------------------------------
+# Agent lifecycle extension points (hcx-live-03)
+# ---------------------------------------------------------------------------
+#: Cached ``(manager, AGENT_START, AGENT_END)``; ``False`` once the import is
+#: known to fail, so an unavailable extension package costs one failed import
+#: per process rather than one per turn.
+_lifecycle_points: Any = None
+
+
+def _agent_lifecycle_points() -> Any:
+    """The extension manager and the two agent-lifecycle points, or None.
+
+    Resolved from ``tools.extensions.extension_manager`` — the same import
+    ``dispatch``, ``chat_manager`` and ``.claude/hooks/post_tool_use.py`` use.
+    ``tools/extensions/`` and ``icdev/tools/extensions/`` are physically
+    distinct copies holding **distinct singletons**, so dispatching through the
+    other one would consult a registry no extension has ever registered with.
+    Both copies of this module name ``tools.`` for that reason.
+
+    The two enum members are named literally rather than looked up by string so
+    that a static scan of this tree (``tools/extensions/liveness.py``) can see
+    that these points have a dispatcher at all.
+    """
+    global _lifecycle_points
+    if _lifecycle_points is False:
+        return None
+    if _lifecycle_points is not None:
+        return _lifecycle_points
+    try:
+        from tools.extensions.extension_manager import (
+            ExtensionPoint,
+            extension_manager,
+        )
+    except Exception as exc:  # noqa: BLE001 — extensions are a layer, not a dep
+        logger.debug("agent_runtime: extension manager unavailable: %s", exc)
+        _lifecycle_points = False
+        return None
+    _lifecycle_points = (
+        extension_manager,
+        ExtensionPoint.AGENT_START,
+        ExtensionPoint.AGENT_END,
+    )
+    return _lifecycle_points
+
+
+def _dispatch_agent_start(context: dict) -> None:
+    """Fire the **observational** AGENT_START point. Never raises.
+
+    ``AGENT_START`` and ``AGENT_END`` are declared ``allow_modification: false``
+    in ``args/extension_config.yaml``, and these two call sites enforce that
+    rather than merely declaring it: the dispatch result is discarded, so
+    nothing a handler returns can reach the turn. A handler here can observe a
+    turn; it can neither block one nor alter its input, its output or its
+    budget. Making an observational point influential is a new gating surface
+    nobody reviewed, and it would have to be introduced here, deliberately.
+
+    Failures are swallowed for the same reason: an extension is a layer over the
+    runtime, and a broken drop-in must not take a turn down with it.
+    ``ExtensionManager.dispatch`` already contains a handler that raises; this
+    guard covers the import and the enum, not the handlers.
+    """
+    loaded = _agent_lifecycle_points()
+    if loaded is None:
+        return
+    manager, start, _end = loaded
+    try:
+        manager.dispatch(start, context)
+    except Exception as exc:  # noqa: BLE001 — never fail a turn on a hook
+        logger.warning("agent_runtime: AGENT_START dispatch failed: %s", exc)
+
+
+def _dispatch_agent_end(context: dict) -> None:
+    """Fire the **observational** AGENT_END point. Never raises.
+
+    Called from the turn's ``finally``, so an END pairs with its START even when
+    the turn raised or was cancelled — a lifecycle point that only fires on the
+    happy path cannot be used to close anything a handler opened at START. The
+    outcome (``ok``, ``error``, ``truncation_reason``) is in the context, which
+    is where a handler reads what happened. See :func:`_dispatch_agent_start`
+    for why the return value is discarded.
+    """
+    loaded = _agent_lifecycle_points()
+    if loaded is None:
+        return
+    manager, _start, end = loaded
+    try:
+        manager.dispatch(end, context)
+    except Exception as exc:  # noqa: BLE001 — never fail a turn on a hook
+        logger.warning("agent_runtime: AGENT_END dispatch failed: %s", exc)
 
 
 class AgentRuntime:
@@ -480,11 +604,36 @@ class AgentRuntime:
         at the next boundary with ``truncation_reason == "stop_event"``. The
         partial transcript is still recorded and persisted, so ``/resume``
         continues from where the operator stopped.
+
+        Every model-visible event is also appended to ``agent_session_events``
+        (hcx-evt-02) through the loop's own lifecycle hooks — see
+        :class:`~tools.agent_runtime.event_recorder.TurnRecorder`. That log is
+        ADDITIVE: ``agent_loop_sessions.messages_json`` remains the resume path,
+        and a recorder that cannot write degrades to a warning rather than
+        ending the turn.
+        The turn is bracketed by the ``AGENT_START`` / ``AGENT_END`` extension
+        points (hcx-live-03). Both are observational — see
+        :func:`_dispatch_agent_start` — and ``AGENT_END`` fires from a
+        ``finally`` so it pairs with its ``AGENT_START`` on the failure and
+        cancellation paths too.
         """
         from icdev.tools.llm.agent_loop import run_agent_loop
 
         self.session.record_user(user_input)
+        recorder = self._new_recorder()
+        recorder.turn_start(
+            user_input,
+            llm_function=self.llm_function,
+            max_iterations=self.max_iterations,
+            resume_session_id=self.session.resume_session_id or "",
+            tools=self.tool_names(),
+            unattended=self.unattended,
+        )
         self._turn_active.set()
+        started_at = time.time()
+        result: Any = None
+        error: str = ""
+        _dispatch_agent_start(self._lifecycle_context(user_input=user_input))
         try:
             result = run_agent_loop(
                 self.router,
@@ -498,12 +647,109 @@ class AgentRuntime:
                 max_cost_usd=self.max_cost_usd,
                 resume_session_id=self.session.resume_session_id or None,
                 stop_event=self._stop,
+                # The four hooks the loop already exposes. `on_pre_tool_use` is
+                # composed AFTER the approval gate by the loop itself
+                # (_compose_pre_tool_hooks) and the gate's block wins — the
+                # recorder observes, it does not adjudicate.
+                on_turn=recorder.on_turn,
+                on_pre_tool_use=recorder.on_pre_tool_use,
+                on_post_tool_use=recorder.on_post_tool_use,
+                on_stop=recorder.on_stop,
+                # Joins an event row to the loop's OTel span and to
+                # AgentLoopResult.trace_id.
+                correlation_id=recorder.correlation_id,
             )
+        except BaseException as exc:  # noqa: BLE001 — re-raised; recorded first
+            error = f"{type(exc).__name__}: {exc}"
+            # on_stop fires on every exit path the loop CONTROLS; an exception
+            # out of the loop is not one of them, and a turn with no turn_end
+            # reads to hcx-evt-05 as a turn still open. Re-raised untouched.
+            recorder.turn_end(reason=f"loop_raised:{type(exc).__name__}")
+            raise
         finally:
             self._turn_active.clear()
+            _dispatch_agent_end(
+                self._lifecycle_context(
+                    user_input=user_input,
+                    result=result,
+                    error=error,
+                    duration_ms=(time.time() - started_at) * 1000,
+                )
+            )
+        # Belt and braces: idempotent, so this is a no-op whenever on_stop ran.
+        recorder.turn_end(result)
         self.session.record_assistant(getattr(result, "final_content", "") or "")
         self.session.persist(result, system_prompt=self.system_prompt)
         return result
+
+    def _new_recorder(self) -> Any:
+        """A :class:`TurnRecorder` for one turn, keyed to this conversation.
+
+        Constructed here rather than held on the runtime because
+        ``correlation_id`` identifies a TURN, and the recorder's pre/post pairing
+        state must not survive into the next one.
+
+        Degrades to a disabled recorder if the module cannot be imported at all
+        — a runtime that refuses to answer because its audit log is missing is a
+        worse outcome than one that answers and says so.
+        """
+        try:
+            from tools.agent_runtime.event_recorder import TurnRecorder
+
+            return TurnRecorder.for_turn(
+                self.session.context_id,
+                tenant_id=self.tenant_id or None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "agent_runtime: event recording unavailable (%s); this turn will "
+                "not appear in agent_session_events", exc,
+            )
+            return _NullRecorder()
+    def _lifecycle_context(
+        self,
+        *,
+        user_input: str,
+        result: Any = None,
+        error: str = "",
+        duration_ms: float | None = None,
+    ) -> dict:
+        """Build the context dict handed to AGENT_START / AGENT_END.
+
+        Scalars only, and read defensively off ``result``: this payload is
+        offered to third-party drop-in code, so it must not hand out the live
+        ``AgentLoopResult`` (whose ``messages`` a behavioural handler elsewhere
+        could mutate) and must not raise while assembling itself.
+        """
+        context: dict[str, Any] = {
+            "context_id": getattr(self.session, "context_id", ""),
+            "resume_session_id": getattr(self.session, "resume_session_id", ""),
+            "user_id": self.user_id,
+            "tenant_id": self.tenant_id,
+            "profile": self.profile,
+            "llm_function": self.llm_function,
+            "unattended": self.unattended,
+            "user_input": user_input,
+        }
+        if duration_ms is None:
+            return context
+        context.update(
+            {
+                "duration_ms": round(duration_ms, 3),
+                "ok": bool(result is not None and not error),
+                "error": error,
+                "stopped": self._stop.is_set(),
+                "turns": getattr(result, "turns", 0),
+                "done": bool(getattr(result, "done", False)),
+                "truncated": bool(getattr(result, "truncated", False)),
+                "truncation_reason": getattr(result, "truncation_reason", ""),
+                "result_subtype": getattr(result, "result_subtype", ""),
+                "total_input_tokens": getattr(result, "total_input_tokens", 0),
+                "total_output_tokens": getattr(result, "total_output_tokens", 0),
+                "total_cost_usd": getattr(result, "total_cost_usd", 0.0),
+            }
+        )
+        return context
 
     def stream_turn(
         self,
