@@ -1807,3 +1807,11 @@ tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py
 tests/test_project_prefix_scope.py
 tests/test_canvas_dedicated_pg_database.py
+# hcx-live-01 pins TOOL_EXECUTE_BEFORE to a production dispatcher. The hook
+# point had ten declared siblings and no caller outside tests -- the GATING
+# point, and the whole reason the behavioral tier exists. The seven ordering
+# tests are the reason this is gated rather than merely written: dispatching
+# after the safety gate, or reading tool_name/read_only back out of a context
+# an extension controls, turns a drop-in extension file into a permission
+# bypass. 13 tests, <1s, gate and tool injected: no DB, no network.
+tests/agent_runtime/test_dispatch_extension_point.py

@@ -44,6 +44,14 @@ This module turns those coordinates into agent-loop handlers matching the
    "the model asked for a tool it was not allowed to run" is exactly the kind of
    thing a run needs to show. A blocked call is recorded with status ``error``
    and the gate's reason, not silently dropped.
+5. **The extension point (hcx-live-01).**
+   :attr:`~tools.extensions.extension_manager.ExtensionPoint.TOOL_EXECUTE_BEFORE`
+   is dispatched here, immediately before the safety gate. It is the *gating*
+   hook point and the reason the extension manager has a behavioral tier at
+   all, and until this task nothing in production dispatched it — a descriptive
+   registry sitting beside an imperative hardcoded list, where the descriptive
+   one silently did nothing. See :func:`_dispatch_before` for the composition
+   rule, which is the security-relevant half.
 """
 from __future__ import annotations
 
@@ -246,6 +254,115 @@ def _invoke_external(
 
 
 # ---------------------------------------------------------------------------
+# TOOL_EXECUTE_BEFORE extension point (hcx-live-01)
+# ---------------------------------------------------------------------------
+#: Cached ``(manager, ExtensionPoint)``; ``False`` once the import is known to
+#: fail, so an unavailable extension package costs one failed import per
+#: process rather than one per tool call.
+_ext_point: Any = None
+
+
+def _extension_point() -> Any:
+    """The extension manager and its enum, or None when unavailable.
+
+    Resolved from ``tools.extensions.extension_manager`` — the same import
+    ``chat_manager``, ``awareness.hooks`` and ``.claude/hooks/post_tool_use.py``
+    use. ``tools/extensions/`` and ``icdev/tools/extensions/`` are physically
+    distinct copies holding **distinct singletons**, so dispatching through the
+    other one would consult a registry no extension has ever registered with.
+    Both copies of this module name ``tools.`` for that reason.
+    """
+    global _ext_point
+    if _ext_point is False:
+        return None
+    if _ext_point is not None:
+        return _ext_point
+    try:
+        from tools.extensions.extension_manager import (
+            ExtensionPoint,
+            extension_manager,
+        )
+    except Exception as exc:  # noqa: BLE001 — extensions are a layer, not a dep
+        logger.debug("dispatch: extension manager unavailable: %s", exc)
+        _ext_point = False
+        return None
+    _ext_point = (extension_manager, ExtensionPoint.TOOL_EXECUTE_BEFORE)
+    return _ext_point
+
+
+def _dispatch_before(
+    spec: ToolSpec,
+    tool_input: dict[str, Any],
+    task_id: Optional[str],
+) -> "tuple[dict[str, Any], str]":
+    """Run TOOL_EXECUTE_BEFORE. Returns ``(tool_input, refusal)``.
+
+    ``tool_input`` is what the tool should actually run with — a *behavioral*
+    extension (``allow_modification=True``) may have rewritten it. ``refusal``
+    is an extension's reason for denying the call, or ``""``.
+
+    **Composition — an extension may deny, and may never permit.** The caller
+    runs this *before* the safety gate, and the gate is then evaluated on
+    whatever comes back. Two properties follow, and both are load-bearing:
+
+    * The gate judges exactly the input the tool receives. Dispatching *after*
+      the gate would let a drop-in extension file swap in a payload the gate
+      never saw, which is a one-line permission bypass wearing the clothes of
+      the behavioral tier.
+    * Nothing runs between the gate's verdict and execution, so no extension
+      can un-block what the gate blocked. A refusal here short-circuits ahead
+      of the gate — strictly *more* blocking, and it spares a human approver
+      being prompted to authorise a call that was already refused.
+
+    Only three things are read back out of the returned context: ``tool_input``
+    (when it is a dict), ``deny`` and ``deny_reason``. ``tool_name`` and
+    ``read_only`` are taken from the :class:`ToolSpec` by the caller and are
+    never re-read from here — the default gate waves every read-only tool
+    through, so a context key an extension controls deciding that flag would
+    skip the mutation gate outright.
+
+    Fail-open, deliberately: with no extension manager there are no extensions,
+    and extensions can only ever *add* a refusal. The safety gate is unaffected
+    either way, and :meth:`ExtensionManager.dispatch` already contains a
+    handler that raises.
+    """
+    loaded = _extension_point()
+    if loaded is None:
+        return tool_input, ""
+    manager, point = loaded
+
+    context = {
+        "tool_name": spec.name,
+        "tool_input": dict(tool_input),
+        "read_only": spec.read_only,
+        "source": spec.source,
+        "task_id": task_id or "",
+    }
+    try:
+        result = manager.dispatch(point, context)
+    except Exception as exc:  # noqa: BLE001 — never crash the agent loop
+        logger.warning("dispatch: TOOL_EXECUTE_BEFORE dispatch failed: %s", exc)
+        return tool_input, ""
+
+    if not isinstance(result, dict):
+        return tool_input, ""
+
+    rewritten = result.get("tool_input")
+    out_input = rewritten if isinstance(rewritten, dict) else tool_input
+
+    deny = result.get("deny")
+    if not deny:
+        return out_input, ""
+
+    reason = result.get("deny_reason")
+    if not isinstance(reason, str) or not reason.strip():
+        reason = deny if isinstance(deny, str) and deny.strip() else (
+            f"{spec.name} refused by a TOOL_EXECUTE_BEFORE extension"
+        )
+    return out_input, reason
+
+
+# ---------------------------------------------------------------------------
 # Failure policy (arr-tax-01, arr-res-01, arr-res-02, arr-deg-01, arr-esc-01)
 # ---------------------------------------------------------------------------
 def _handle_failure(
@@ -384,7 +501,19 @@ def make_handler(
 
     def _run(tool_input: dict[str, Any], stop: "threading.Event | None",
              inv: Any) -> str:
-        """Gate, execute, and annotate the invocation record with the outcome."""
+        """Extend, gate, execute, and annotate the record with the outcome."""
+        # TOOL_EXECUTE_BEFORE runs first so the gate below judges the input the
+        # tool will actually receive; see _dispatch_before for why that order
+        # is the safe one. A refusal here never reaches the gate — it is an
+        # additional block, never a substitute for one.
+        tool_input, refusal = _dispatch_before(spec, tool_input, task_id)
+        if refusal:
+            _annotate(inv, status="error", error_class="ExtensionDenied",
+                      error_message=refusal)
+            blocked = f"blocked: {refusal}"
+            _record_result(inv, blocked)
+            return blocked
+
         allowed, reason = gate(spec.name, tool_input, spec.read_only)
         if not allowed:
             _annotate(inv, status="error", error_class="SafetyGateBlocked",
