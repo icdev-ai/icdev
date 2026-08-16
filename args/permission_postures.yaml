@@ -1,0 +1,100 @@
+# CUI // SP-CTI
+# Permission postures — one named selector for the agent safety knobs  [hcx-post-01]
+#
+# Consumed by:
+#   - tools/agent_runtime/config.py       (loader — PostureSet / AgentRuntimeConfig)
+#   - tools/agent_runtime/safety.py       (approval_mode)
+#   - tools/agent_runtime/approval_gate.py(command_approval_mode)
+#   - tools/agent_runtime/dispatch.py     (allow_mutation)
+#   - tools/agents/adapters/codex_cli.py  (sandbox -> `--sandbox <mode>`)
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The knobs that decide how much damage a run can do were spread across
+# ICDEV_SAG_APPROVAL_MODE, ICDEV_AGENT_APPROVAL_MODE, ICDEV_SAG_ALLOW_MUTATION
+# and the adapter's `--sandbox` default, each independently settable. Nothing
+# named the combination, so nothing could say what posture a given run was
+# under. This file names two combinations and nothing else: it is a SELECTOR,
+# not a new control surface.
+#
+# PRECEDENCE — a posture is a DEFAULT-SETTER, and sits at the BOTTOM
+# ------------------------------------------------------------------
+#
+#     explicit call argument
+#       >  environment variable
+#       >  args/agent_runtime.yaml
+#       >  the selected posture (this file)
+#       >  built-in default
+#
+# A posture must NEVER reverse an exported environment variable. An operator who
+# writes ICDEV_SAG_APPROVAL_MODE=off into a systemd unit has stated an intent at
+# a layer this file does not get to overrule — the same reasoning that put
+# args/agent_runtime.yaml below the environment rather than above it. A posture
+# supplies a value only where no env var and no explicit agent_runtime.yaml key
+# already did.
+#
+# Corollary: pinning a knob in args/agent_runtime.yaml takes it OUT of posture
+# control. The shipped agent_runtime.yaml therefore leaves the four keys below
+# commented out, so switching posture actually moves them.
+#
+# SELECTING A POSTURE
+# -------------------
+#     ICDEV_PERMISSION_POSTURE=workspace-write        # env (per-run, per-shell)
+#     default: workspace-write                        # this file (deployment-wide)
+#
+# `requires_explicit_selection: true` marks a posture that this file's own
+# `default:` key may NOT select. Widening the blast radius is an act somebody
+# has to perform — exporting the variable, or passing the name in code — never
+# a line in a config file that ships with the repo.
+#
+# Inspect what actually resolved (posture, source, and the env vars overriding
+# it):
+#     python -m tools.agent_runtime.config --json
+#
+# NOT COVERED HERE (deliberately, so this file does not read as more than it is)
+# -----------------------------------------------------------------------------
+# ICDEV_PRETOOLUSE_ENFORCE, the per-check ICDEV_<CHECK>_GUARD switches,
+# args/file_access_tiers.yaml and args/sandbox_config.yaml are NOT posture keys.
+# They are read by `.claude/hooks/pre_tool_use.py`, a standalone subprocess that
+# does not import this module, and by the container sandbox executor. Adding
+# keys for them here without a reader would make this file claim a reach it does
+# not have — the declared-but-never-consumed defect this platform ships most.
+# Wire the reader first, then add the key.
+#
+# Every key below is read by the module named against it. Do not add a key here
+# without adding its reader in the same commit.
+
+version: 1
+
+# Posture used when neither an explicit argument nor ICDEV_PERMISSION_POSTURE
+# names one. May not name a `requires_explicit_selection` posture; if it does,
+# the selection is refused and `workspace-write` is used instead.
+default: workspace-write
+
+postures:
+
+  # The everyday posture, and the built-in fallback. Reproduces exactly the
+  # values this platform shipped before postures existed, so adopting the file
+  # changes no behaviour on its own.
+  workspace-write:
+    description: >-
+      Confined to the working directory. The agent may propose mutations; a
+      human approves each one. This is the default and should stay the default.
+    sandbox: workspace-write     # codex_cli.py -> `--sandbox workspace-write`
+    approval_mode: manual        # safety.py        (manual|smart|off)
+    command_approval_mode: enforce  # approval_gate.py (enforce|dry_run|off)
+    allow_mutation: false        # dispatch.py — false is what makes the
+                                 # default gate fail-closed
+
+  # Everything off. There is no legitimate unattended use of this posture: it
+  # removes the approval prompt, the command gate and the working-directory
+  # confinement at once.
+  danger-full-access:
+    description: >-
+      No confinement, no approval prompt, no command gate. For a throwaway
+      container or an operator watching the session — nothing else.
+    requires_explicit_selection: true
+    sandbox: danger-full-access  # codex_cli.py -> `--sandbox danger-full-access`
+    approval_mode: 'off'         # quoted: bare `off` is a YAML boolean
+    command_approval_mode: 'off'
+    allow_mutation: true

@@ -96,7 +96,35 @@ _ENV_SANDBOX = "ICDEV_CODEX_SANDBOX"
 # writes inside the working directory. Narrow it (``read-only``) or widen it
 # (``danger-full-access``) per session; set it to "" to omit the flag entirely
 # for a CLI build that predates it.
+#
+# This is the floor of a four-layer chain (hcx-post-01):
+#
+#     session metadata  >  $ICDEV_CODEX_SANDBOX  >  permission posture  >  here
+#
+# The posture layer is what lets `ICDEV_PERMISSION_POSTURE=danger-full-access`
+# move the sandbox and the approval gates together instead of one at a time. It
+# sits BELOW both explicit layers, so naming a posture never reverses a sandbox
+# an operator or a caller spelled out. An empty string at any layer is a
+# deliberate "omit the flag", not an absent value, so only ``None`` falls
+# through.
 _DEFAULT_SANDBOX = "workspace-write"
+
+
+def _posture_sandbox() -> Optional[str]:
+    """The selected permission posture's sandbox mode, or ``None``.
+
+    The agent runtime's config layer is a convenience here, never a dependency:
+    an adapter must still build a command line on a checkout where that layer is
+    absent or broken, so every failure resolves to ``None`` and the built-in
+    default applies. Imported inside the function to keep adapter import time
+    free of it.
+    """
+    try:
+        from tools.agent_runtime.config import load_config
+
+        return load_config().sandbox_mode or None
+    except Exception:  # noqa: BLE001 — the posture layer is optional, see above
+        return None
 
 _COMPLETION_MARKERS = (
     "[DONE]",
@@ -412,7 +440,11 @@ class CodexCliAdapter:
 
         sandbox = meta.get("sandbox")
         if sandbox is None:
-            sandbox = os.environ.get(_ENV_SANDBOX, _DEFAULT_SANDBOX)
+            sandbox = os.environ.get(_ENV_SANDBOX)
+        if sandbox is None:
+            sandbox = _posture_sandbox()
+        if sandbox is None:
+            sandbox = _DEFAULT_SANDBOX
         if sandbox:
             argv += ["--sandbox", str(sandbox)]
 

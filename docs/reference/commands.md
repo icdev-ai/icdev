@@ -462,17 +462,22 @@ documented file. It is a **layer beneath** the existing environment variables,
 not a replacement: resolution is
 
 ```
-explicit argument  >  environment variable  >  args/agent_runtime.yaml  >  built-in default
+explicit argument
+  >  environment variable
+  >  args/agent_runtime.yaml
+  >  args/permission_postures.yaml (the selected posture)
+  >  built-in default
 ```
 
-so every env var that worked before still works and still wins. The file is
-optional — deleting it changes nothing about how the agent runs.
+so every env var that worked before still works and still wins. Both files are
+optional — deleting them changes nothing about how the agent runs.
 
 ```bash
-# Resolved configuration, plus the env vars currently overriding the file
+# Resolved configuration: posture, how it was selected, and the env vars
+# currently overriding the files
 python -m tools.agent_runtime.config
 
-# Machine-readable (config_path, config_found, env_overrides, resolved)
+# Machine-readable (config_path, postures_path, env_overrides, resolved)
 python -m tools.agent_runtime.config --json
 
 # Resolve against a site-local file instead of args/agent_runtime.yaml
@@ -481,6 +486,44 @@ python -m tools.agent_runtime.config --config /etc/icdev/agent_runtime.yaml --js
 
 Point the loader at a different file for a whole process with
 `ICDEV_AGENT_RUNTIME_CONFIG=/path/to/file.yaml`.
+
+### Permission postures (hcx-post-01)
+
+`args/permission_postures.yaml` names a **combination** of the safety knobs —
+sandbox confinement, approval mode, command-approval mode, mutation gate — so one
+selector moves them together and a run can say which posture it was under. Two
+ship:
+
+| Posture | Sandbox | Approval | Command gate | Mutation |
+|---|---|---|---|---|
+| `workspace-write` (default) | `workspace-write` | `manual` | `enforce` | denied |
+| `danger-full-access` | `danger-full-access` | `off` | `off` | allowed |
+
+```bash
+# Select a posture for one run
+ICDEV_PERMISSION_POSTURE=workspace-write python -m tools.agent_runtime.config
+
+# Which posture is in force, and what chose it (argument|env|file|builtin)?
+python -m tools.agent_runtime.config --json | python -c "import json,sys; print(json.load(sys.stdin)['resolved']['posture'])"
+```
+
+Two rules the loader enforces:
+
+- **A posture never overrules a higher layer.** It supplies a value only where no
+  environment variable and no explicit `agent_runtime.yaml` key already did. The
+  four posture-governed keys therefore ship *commented out* in
+  `args/agent_runtime.yaml` — uncomment one to pin that knob regardless of posture.
+- **`danger-full-access` takes an explicit human act.** It is reachable from an
+  explicit call argument or `ICDEV_PERMISSION_POSTURE`, and never from the file's
+  own `default:` key — including by re-declaring the posture without its
+  `requires_explicit_selection` flag.
+
+The `pre_tool_use` hook switches (`ICDEV_PRETOOLUSE_ENFORCE`, the per-check
+`ICDEV_<CHECK>_GUARD` set), `args/file_access_tiers.yaml` and
+`args/sandbox_config.yaml` are deliberately **not** posture keys: they are read by
+a standalone hook subprocess and by the container sandbox executor, neither of
+which loads this config layer. A key here with no reader would claim a reach the
+file does not have.
 
 The runtime is registered as the `sag` component, so the toggle is reachable from
 the normal component surfaces:

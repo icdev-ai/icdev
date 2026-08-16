@@ -14,6 +14,23 @@ var is absent or unparseable. An operator who exports ``ICDEV_SAG_GOALS=0`` in a
 systemd unit must not have it quietly reversed by a file they did not know to
 look at, so the layer is inserted *below* the environment rather than above it.
 
+Permission postures (hcx-post-01)
+---------------------------------
+``args/permission_postures.yaml`` names a *combination* of the safety knobs —
+sandbox mode, approval mode, command-approval mode, mutation gate — so a run can
+say which posture it was under instead of leaving four independent variables to
+be read individually. It extends the chain at the bottom:
+
+    explicit call argument  >  env var  >  agent_runtime.yaml  >  posture  >  default
+
+A posture is a DEFAULT-SETTER. It supplies a value only where neither an
+environment variable nor an explicit ``agent_runtime.yaml`` key already did, for
+exactly the reason above: naming a posture must not reverse an intent an
+operator stated at a higher layer. Selecting the posture is itself layered —
+explicit argument, then ``ICDEV_PERMISSION_POSTURE``, then the file's ``default:``
+— and a posture flagged ``requires_explicit_selection`` is reachable only from
+the first two, so no file that ships with the repo can widen the blast radius.
+
 Design notes
 ------------
 - **LLM-agnostic.** The only model-ish key in the schema is ``llm_function`` — a
@@ -64,6 +81,15 @@ ENV_CONFIG_PATH = "ICDEV_AGENT_RUNTIME_CONFIG"
 #: Master enable flag, shared with the ``sag`` entry in component_registry.yaml.
 ENV_ENABLED = "ICDEV_SAG_ENABLED"
 
+#: Basename of the posture file, found the same way as :data:`CONFIG_FILENAME`.
+POSTURES_FILENAME = "permission_postures.yaml"
+
+#: Absolute path override for the posture file (tests, site-local installs).
+ENV_POSTURES_PATH = "ICDEV_PERMISSION_POSTURES_CONFIG"
+
+#: Names the posture in force. Beaten only by an explicit call argument.
+ENV_POSTURE = "ICDEV_PERMISSION_POSTURE"
+
 _TRUTHY = ("1", "true", "yes", "on")
 _FALSEY = ("0", "false", "no", "off")
 
@@ -71,15 +97,21 @@ _FALSEY = ("0", "false", "no", "off")
 # ---------------------------------------------------------------------------
 # Location
 # ---------------------------------------------------------------------------
-def _find_config_path() -> Path | None:
-    """Locate ``agent_runtime.yaml`` from this file's location, not the cwd.
+def _find_config_path(
+    filename: str = CONFIG_FILENAME, env_override: str = ENV_CONFIG_PATH
+) -> Path | None:
+    """Locate ``filename`` from this file's location, not the cwd.
 
     Walks upward from this module probing both layouts at every level: the
     checkout (``<parent>/args/``) and the installed wheel, where the FORGE data
     layer lands under ``icdev/data/args/``. Returns ``None`` when no file exists
     — an absent config is not an error, it means "use the built-in defaults".
+
+    Both this file and ``permission_postures.yaml`` are found this way, so the
+    packaged mirror wins for a wheel and the checkout copy for a worktree, for
+    both files together rather than one each.
     """
-    override = (os.environ.get(ENV_CONFIG_PATH) or "").strip()
+    override = (os.environ.get(env_override) or "").strip()
     if override:
         path = Path(override)
         return path if path.is_file() else None
@@ -87,7 +119,7 @@ def _find_config_path() -> Path | None:
     here = Path(__file__).resolve()
     for parent in here.parents:
         for rel in (("args",), ("data", "args")):
-            candidate = parent.joinpath(*rel, CONFIG_FILENAME)
+            candidate = parent.joinpath(*rel, filename)
             if candidate.is_file():
                 return candidate
     return None
@@ -157,6 +189,141 @@ def _as_float(value: Any) -> float | None:
 
 
 # ---------------------------------------------------------------------------
+# Permission postures (hcx-post-01)
+# ---------------------------------------------------------------------------
+#: The posture in force when nothing selects one. Its values are exactly what
+#: this platform shipped before postures existed, so the layer is a rename of
+#: the status quo rather than a change to it.
+DEFAULT_POSTURE = "workspace-write"
+
+#: Marks a posture that ``args/permission_postures.yaml``'s own ``default:`` key
+#: may not select. Widening the blast radius takes an explicit human act — an
+#: exported variable or a call argument — never a line in a shipped file.
+POSTURE_EXPLICIT_KEY = "requires_explicit_selection"
+
+#: Built-in postures, so the YAML file is documentation rather than a
+#: load-bearing dependency: deleting it leaves both postures available and the
+#: default unchanged. Every key here is read by a module — ``sandbox`` by
+#: ``tools/agents/adapters/codex_cli.py``, the rest by the properties below.
+BUILTIN_POSTURES: dict[str, dict[str, Any]] = {
+    "workspace-write": {
+        "sandbox": "workspace-write",
+        "approval_mode": "manual",
+        "command_approval_mode": "enforce",
+        "allow_mutation": False,
+    },
+    "danger-full-access": {
+        POSTURE_EXPLICIT_KEY: True,
+        "sandbox": "danger-full-access",
+        "approval_mode": "off",
+        "command_approval_mode": "off",
+        "allow_mutation": True,
+    },
+}
+
+#: How a posture name was chosen, reported by :meth:`AgentRuntimeConfig.describe`.
+POSTURE_SOURCE_ARGUMENT = "argument"
+POSTURE_SOURCE_ENV = "env"
+POSTURE_SOURCE_FILE = "file"
+POSTURE_SOURCE_BUILTIN = "builtin"
+
+
+@dataclasses.dataclass(frozen=True)
+class PostureSet:
+    """Resolved ``args/permission_postures.yaml``.
+
+    Attributes:
+        data: The parsed mapping (``{}`` when no file was found).
+        path: The file it came from, or ``None`` when built-ins are in force.
+    """
+
+    data: dict[str, Any] = dataclasses.field(default_factory=dict)
+    path: Path | None = None
+
+    @property
+    def postures(self) -> dict[str, dict[str, Any]]:
+        """Built-in postures, key-wise overlaid by the file's declarations.
+
+        Overlaying rather than replacing means a partially-declared posture
+        keeps the keys it did not mention, so a half-written file cannot blank a
+        safety knob into "unset". The one key the file may not relax is
+        :data:`POSTURE_EXPLICIT_KEY` on a *built-in* posture: re-declaring
+        ``danger-full-access`` without it would restore exactly the "a file
+        selected the dangerous posture" case the flag exists to prevent. A
+        posture the file invents owns its own flag.
+        """
+        merged = {name: dict(values) for name, values in BUILTIN_POSTURES.items()}
+        declared = self.data.get("postures")
+        if isinstance(declared, dict):
+            for name, values in declared.items():
+                if not isinstance(values, dict):
+                    logger.warning(
+                        "permission_postures: posture %r is not a mapping; ignored", name
+                    )
+                    continue
+                merged.setdefault(str(name), {}).update(values)
+                if BUILTIN_POSTURES.get(str(name), {}).get(POSTURE_EXPLICIT_KEY):
+                    merged[str(name)][POSTURE_EXPLICIT_KEY] = True
+        return merged
+
+    def requires_explicit_selection(self, name: str) -> bool:
+        return bool(self.postures.get(name, {}).get(POSTURE_EXPLICIT_KEY))
+
+    def resolve_name(self, explicit: str | None = None) -> tuple[str, str]:
+        """Return ``(posture_name, source)``.
+
+        ``explicit`` → :data:`ENV_POSTURE` → the file's ``default:`` →
+        :data:`DEFAULT_POSTURE`. An unknown name is discarded (with a warning)
+        and resolution continues to the next layer rather than resolving to
+        nothing — the same discipline ``text(choices=...)`` applies, for the
+        same reason: a typo must not silently disable a gate.
+
+        The file layer additionally may not name a posture flagged
+        :data:`POSTURE_EXPLICIT_KEY`. The two layers above it may, because both
+        are acts a person performed.
+        """
+        known = self.postures
+        candidates = (
+            (POSTURE_SOURCE_ARGUMENT, explicit, True),
+            (POSTURE_SOURCE_ENV, os.environ.get(ENV_POSTURE), True),
+            (POSTURE_SOURCE_FILE, self.data.get("default"), False),
+        )
+        for source, raw, may_be_explicit_only in candidates:
+            if raw is None:
+                continue
+            name = str(raw).strip()
+            if not name:
+                continue
+            if name not in known:
+                logger.warning(
+                    "permission_postures: %s names unknown posture %r (known: %s); "
+                    "falling through",
+                    source,
+                    name,
+                    ", ".join(sorted(known)),
+                )
+                continue
+            if not may_be_explicit_only and self.requires_explicit_selection(name):
+                logger.warning(
+                    "permission_postures: posture %r requires an explicit selection "
+                    "(%s=%s or a call argument) and cannot be chosen by the file's "
+                    "default: key; using %r",
+                    name,
+                    ENV_POSTURE,
+                    name,
+                    DEFAULT_POSTURE,
+                )
+                continue
+            return name, source
+        return DEFAULT_POSTURE, POSTURE_SOURCE_BUILTIN
+
+    def values(self, explicit: str | None = None) -> dict[str, Any]:
+        """The knob values of the posture in force."""
+        name, _ = self.resolve_name(explicit)
+        return self.postures.get(name, {})
+
+
+# ---------------------------------------------------------------------------
 # The config object
 # ---------------------------------------------------------------------------
 @dataclasses.dataclass(frozen=True)
@@ -187,14 +354,42 @@ class AgentRuntimeConfig:
             node = node[part]
         return default if node is None else node
 
+    # -- posture ------------------------------------------------------------
+
+    @property
+    def posture_set(self) -> PostureSet:
+        """The loaded ``args/permission_postures.yaml`` (process-cached)."""
+        return load_postures()
+
+    @property
+    def posture_name(self) -> str:
+        return self.posture_set.resolve_name()[0]
+
+    def _posture_value(self, key: str | None) -> Any:
+        """The posture's value for ``key``, or ``None`` when it declares none."""
+        if not key:
+            return None
+        return self.posture_set.values().get(key)
+
     # -- env-first accessors ------------------------------------------------
     #
     # Each takes the env var it defers to. The env var is read FIRST; the YAML
     # value is a fallback for when it is unset. Unparseable env values fall
     # through to YAML too, so a typo does not silently flip a safety toggle.
+    #
+    # ``posture_key`` names this knob in the selected permission posture. It is
+    # consulted LAST, below the YAML file: a posture sets defaults, it does not
+    # overrule a value somebody wrote down for this specific knob.
 
-    def flag(self, dotted: str, *, env: str | None = None, default: bool = True) -> bool:
-        """Resolve a boolean: ``env`` → YAML at ``dotted`` → ``default``."""
+    def flag(
+        self,
+        dotted: str,
+        *,
+        env: str | None = None,
+        posture_key: str | None = None,
+        default: bool = True,
+    ) -> bool:
+        """Resolve a boolean: ``env`` → YAML → posture → ``default``."""
         if env:
             raw = os.environ.get(env)
             if raw is not None and str(raw).strip():
@@ -205,6 +400,8 @@ class AgentRuntimeConfig:
                     "agent_runtime.config: %s=%r is not a boolean; using config", env, raw
                 )
         coerced = _as_bool(self.get(dotted))
+        if coerced is None:
+            coerced = _as_bool(self._posture_value(posture_key))
         return default if coerced is None else coerced
 
     def integer(
@@ -260,19 +457,24 @@ class AgentRuntimeConfig:
         dotted: str,
         *,
         env: str | None = None,
+        posture_key: str | None = None,
         default: str = "",
         choices: "tuple[str, ...] | None" = None,
     ) -> str:
-        """Resolve a string: ``env`` → YAML at ``dotted`` → ``default``.
+        """Resolve a string: ``env`` → YAML → posture → ``default``.
 
         When ``choices`` is given, a value outside it is discarded (with a debug
         log) and resolution continues to the next layer — a mistyped approval
-        mode must not silently disable the approval gate.
+        mode must not silently disable the approval gate. That applies to the
+        posture layer too: a posture cannot smuggle in a mode the property does
+        not accept.
         """
         candidates: list[tuple[str, Any]] = []
         if env:
             candidates.append((env, os.environ.get(env)))
         candidates.append((dotted, self.get(dotted)))
+        if posture_key:
+            candidates.append((f"posture.{posture_key}", self._posture_value(posture_key)))
         for source, raw in candidates:
             if raw is None:
                 continue
@@ -323,8 +525,14 @@ class AgentRuntimeConfig:
             ENV_DISABLE_STATE as PROJECT_STATE_ENV,
         )
 
+        posture_name, posture_source = self.posture_set.resolve_name()
         resolved = {
             "enabled": self.enabled,
+            "posture": {
+                "name": posture_name,
+                "source": posture_source,
+                "values": self.posture_set.postures.get(posture_name, {}),
+            },
             "runtime": {
                 "llm_function": self.llm_function,
                 "max_iterations": self.max_iterations,
@@ -360,6 +568,7 @@ class AgentRuntimeConfig:
                     "risk_function": self.risk_function,
                     "command_mode": self.command_approval_mode,
                 },
+                "sandbox": {"mode": self.sandbox_mode},
                 "mutation": {"allow": mutation_allowed()},
                 "delegation": {"child_can_delegate": self.child_can_delegate},
                 "toolsets": {"bundle_path": self.toolset_bundle_path},
@@ -374,6 +583,9 @@ class AgentRuntimeConfig:
         return {
             "config_path": str(self.path) if self.path else None,
             "config_found": self.path is not None,
+            "postures_path": (
+                str(self.posture_set.path) if self.posture_set.path else None
+            ),
             "env_overrides": env_overrides,
             "resolved": resolved,
         }
@@ -414,8 +626,25 @@ class AgentRuntimeConfig:
         return self.text(
             "subsystems.approval.mode",
             env="ICDEV_SAG_APPROVAL_MODE",
+            posture_key="approval_mode",
             default="manual",
             choices=("manual", "smart", "off"),
+        )
+
+    @property
+    def sandbox_mode(self) -> str:
+        """Sandbox confinement passed to an agent CLI that supports one.
+
+        Read by ``tools/agents/adapters/codex_cli.py`` as the layer beneath
+        ``ICDEV_CODEX_SANDBOX``. Deliberately unconstrained by ``choices``: the
+        accepted mode names belong to the vendor CLI, not to ICDEV, and a list
+        here would go stale and start discarding modes that work.
+        """
+        return self.text(
+            "subsystems.sandbox.mode",
+            env="ICDEV_SAG_SANDBOX_MODE",
+            posture_key="sandbox",
+            default="",
         )
 
     @property
@@ -433,6 +662,7 @@ class AgentRuntimeConfig:
         return self.text(
             "subsystems.approval.command_mode",
             env="ICDEV_AGENT_APPROVAL_MODE",
+            posture_key="command_approval_mode",
             default="enforce",
             choices=("enforce", "dry_run", "off"),
         )
@@ -476,10 +706,13 @@ DEFAULT_MAX_ITERATIONS = 12
 #: overnight case, short enough that a mistake surfaces within one working day.
 DEFAULT_MAX_SLEEP_SECONDS = 86_400
 
-#: Env vars that override this file, reported by ``--json`` so an operator can
-#: see at a glance why the file is not winning.
+#: Env vars that override this file — plus the two that locate and select a
+#: permission posture. Reported by ``--json`` so an operator can see at a glance
+#: why the file is not winning.
 OVERRIDE_ENV_VARS = (
     ENV_CONFIG_PATH,
+    ENV_POSTURES_PATH,
+    ENV_POSTURE,
     ENV_ENABLED,
     "ICDEV_SAG_LLM_FUNCTION",
     "ICDEV_SAG_MAX_ITERATIONS",
@@ -493,6 +726,7 @@ OVERRIDE_ENV_VARS = (
     "ICDEV_SAG_SKILL_PROPOSALS",
     "ICDEV_SAG_APPROVAL_MODE",
     "ICDEV_SAG_RISK_FUNCTION",
+    "ICDEV_SAG_SANDBOX_MODE",
     "ICDEV_AGENT_APPROVAL_MODE",
     "ICDEV_SAG_ALLOW_MUTATION",
     "ICDEV_SAG_CAN_DELEGATE",
@@ -510,6 +744,32 @@ ENV_SKILL_PROPOSALS = "ICDEV_SAG_SKILL_PROPOSALS"
 # ---------------------------------------------------------------------------
 _LOCK = threading.Lock()
 _CACHE: AgentRuntimeConfig | None = None
+_POSTURE_CACHE: PostureSet | None = None
+
+
+def load_postures(
+    path: "Path | str | None" = None, *, refresh: bool = False
+) -> PostureSet:
+    """Return the process-wide :class:`PostureSet` (cached like the config).
+
+    Same contract as :func:`load_config`: the file is parsed once, the
+    environment is not cached, and an absent or malformed file degrades to
+    :data:`BUILTIN_POSTURES` rather than raising.
+    """
+    global _POSTURE_CACHE
+    if path is not None:
+        candidate = Path(path)
+        return PostureSet(
+            data=_read_yaml(candidate) if candidate.is_file() else {},
+            path=candidate if candidate.is_file() else None,
+        )
+    with _LOCK:
+        if _POSTURE_CACHE is None or refresh:
+            found = _find_config_path(POSTURES_FILENAME, ENV_POSTURES_PATH)
+            _POSTURE_CACHE = PostureSet(
+                data=_read_yaml(found) if found else {}, path=found
+            )
+        return _POSTURE_CACHE
 
 
 def load_config(
@@ -544,10 +804,16 @@ def load_config(
 
 
 def reset_cache() -> None:
-    """Drop the cached config (tests; ``ICDEV_AGENT_RUNTIME_CONFIG`` changes)."""
-    global _CACHE
+    """Drop both cached files (tests; ``ICDEV_*_CONFIG`` path changes).
+
+    Postures are cleared alongside the config deliberately: they resolve
+    together, so a test that repoints one and not the other would assert against
+    a half-refreshed view.
+    """
+    global _CACHE, _POSTURE_CACHE
     with _LOCK:
         _CACHE = None
+        _POSTURE_CACHE = None
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +830,7 @@ def main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("--json", action="store_true", help="Emit JSON.")
     args = parser.parse_args(argv)
 
+    reset_cache()
     cfg = load_config(args.config, refresh=True) if args.config else load_config(refresh=True)
     report = cfg.describe()
 
@@ -571,7 +838,10 @@ def main(argv: "list[str] | None" = None) -> int:
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
 
+    posture = report["resolved"]["posture"]
     print(f"config file : {report['config_path'] or '(none — built-in defaults)'}")
+    print(f"postures    : {report['postures_path'] or '(none — built-in postures)'}")
+    print(f"posture     : {posture['name']} (selected by: {posture['source']})")
     print(f"enabled     : {report['resolved']['enabled']}")
     print("runtime     :")
     for key, value in sorted(report["resolved"]["runtime"].items()):
