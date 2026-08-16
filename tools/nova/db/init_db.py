@@ -55,7 +55,13 @@ CREATE TABLE IF NOT EXISTS agent_improvement_artifacts (
     applied_count    INTEGER NOT NULL DEFAULT 0,
     status           TEXT NOT NULL DEFAULT 'pending',
     created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    applied_at       TEXT
+    applied_at       TEXT,
+    -- rem-cap-01: what GEPA decided about this artifact, and when. `status`
+    -- only ever recorded 'applied', so an artifact GEPA declined stayed
+    -- 'pending' forever and GEPA's work was invisible. Migration
+    -- 20260816125047_gepa_decision_columns adds these to existing databases.
+    gepa_decision    TEXT,
+    gepa_decided_at  TEXT
 )
 """
 

@@ -39,6 +39,50 @@ _MIN_LENGTH_RATIO = 0.80
 # Skills root directory
 _SKILLS_ROOT = _BASE / ".agents" / "skills"
 
+# --------------------------------------------------------------------------
+# Decision vocabulary (rem-cap-01)
+# --------------------------------------------------------------------------
+# GEPA used to write exactly one outcome — status='applied' — so an artifact it
+# looked at and declined stayed 'pending' forever. Two consequences, both
+# measured on the live board:
+#
+#   1. The queue only ever grew. 132 of 162 rows were pending with an IMMUTABLE
+#      delta of 0.0 (composite == baseline == 1.0, written before the
+#      exa-refine writer fixes) and skill_used = '', so they could never be
+#      selected and could never leave. capability_consumption's own alarm
+#      condition — queue full, zero rows satisfying the selection predicate,
+#      i.e. "structurally cannot ever act" — was therefore stuck on forever
+#      regardless of whether the flywheel worked.
+#   2. "GEPA ran and correctly declined everything" was indistinguishable from
+#      "GEPA never ran", which is exactly the declared-but-unconsumed shape the
+#      awareness engine exists to catch. The reflex had 7 successful runs and
+#      recorded nothing.
+#
+# So GEPA now stamps a decision on every artifact it evaluates. A decision whose
+# inputs can never change is TERMINAL and the artifact is not re-examined; one
+# that could come out differently on a later cycle is not.
+DECISION_APPLIED = "applied"
+DECISION_NO_DELTA = "declined_no_delta"
+DECISION_LOW_SCORE = "declined_low_score"
+DECISION_UNMAPPABLE_SKILL = "declined_unmappable_skill"
+DECISION_SKILL_FILE_MISSING = "declined_skill_file_missing"
+DECISION_EMPTY_PATCH = "declined_empty_patch"
+DECISION_RUBRIC = "declined_rubric"
+
+# Terminal decisions. Nothing rescores an artifact after insert — the only
+# UPDATEs against this table touch status/applied_at/applied_count/gepa_* — so a
+# score-based decline can never come out differently, and neither can a blank
+# skill_used. DECISION_SKILL_FILE_MISSING is deliberately NOT terminal: the
+# artifact names a skill whose SKILL.md simply is not there yet, and someone may
+# add it. Nor are the rubric/empty-patch declines, which depend on a fresh LLM
+# call.
+TERMINAL_DECISIONS = frozenset({
+    DECISION_APPLIED,
+    DECISION_NO_DELTA,
+    DECISION_LOW_SCORE,
+    DECISION_UNMAPPABLE_SKILL,
+})
+
 
 def _skill_dir_candidates(skill_used: str) -> list[str]:
     """Directory names to try under _SKILLS_ROOT for a given ``skill_used``.
@@ -160,40 +204,135 @@ def _rubric_check(original: str, updated: str) -> bool:
     return True
 
 
-def _get_pending_artifacts(conn) -> list[dict]:
-    """Fetch pending improvement artifacts above the score thresholds."""
+def _score_verdict(artifact: dict) -> str | None:
+    """The score-based decline reason for an artifact, or None if it is selectable.
+
+    Mirrors the thresholds this module has always applied; it just names the
+    reason instead of dropping the row on the floor.
+    """
+    composite = artifact.get("composite_score")
+    baseline = artifact.get("baseline_score")
+    if composite is None or baseline is None:
+        return DECISION_LOW_SCORE
+    if float(composite) < _MIN_COMPOSITE_SCORE:
+        return DECISION_LOW_SCORE
+    if float(composite) - float(baseline) < _MIN_SCORE_DELTA:
+        return DECISION_NO_DELTA
+    return None
+
+
+def _attach_evidence(d: dict) -> dict:
+    """Parse evidence_traces onto an artifact dict.
+
+    exa-refine-04: evidence_traces is a lesson-backed bundle now. parse_evidence
+    also reads the legacy bare trace-id list and NOVA's provenance dict, so
+    n_traces stays meaningful for the artifacts written before the bundle
+    existed.
+    """
+    from tools.workflow.refinement_evidence import parse_evidence
+
+    evidence = parse_evidence(d.get("evidence_traces"))
+    d["evidence"] = evidence
+    d["n_traces"] = len(evidence.get("trace_ids") or [])
+    d["n_lessons"] = int(evidence.get("lesson_count") or 0)
+    return d
+
+
+def _decisions_recordable(conn) -> bool:
+    """True when this database has GEPA's decision columns.
+
+    False means the gepa_decision_columns migration has not run here. GEPA still
+    selects and patches; it simply cannot record its verdicts, and
+    capability_consumption reports the class UNMEASURABLE rather than zero.
+    """
     try:
-        rows = conn.execute(
+        from tools.db.storage import column_exists
+
+        return bool(column_exists(conn, "agent_improvement_artifacts", "gepa_decision"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _fetch_undecided_pending(conn, limit: int = 200) -> list[dict]:
+    """Every pending artifact GEPA has not already TERMINALLY decided.
+
+    This is the set GEPA owes a decision to. It is deliberately not filtered by
+    the selection predicate: the rows that fail that predicate are the ones
+    whose fate was previously invisible, and they are the whole reason the
+    pending queue could only ever grow.
+    """
+    # An install that has not run 20260816125047_gepa_decision_columns still has
+    # a working optimizer — it just cannot record what it decided. Selecting on
+    # a column that is not there would turn a missing migration into "GEPA finds
+    # nothing", which is the silent no-op this whole task was about.
+    decisions_recordable = _decisions_recordable(conn)
+    if decisions_recordable:
+        placeholders = ", ".join(["%s"] * len(TERMINAL_DECISIONS))
+        sql = (
+            "SELECT artifact_id, task_type, skill_used, improvement_text, "
+            "       composite_score, baseline_score, evidence_traces, gepa_decision "
+            "FROM agent_improvement_artifacts "
+            "WHERE status = 'pending' "
+            f"  AND (gepa_decision IS NULL OR gepa_decision NOT IN ({placeholders})) "
+            "ORDER BY (COALESCE(composite_score, 0) - COALESCE(baseline_score, 0)) DESC "
+            f"LIMIT {int(limit)}"
+        )
+        params: tuple = tuple(sorted(TERMINAL_DECISIONS))
+    else:
+        sql = (
             "SELECT artifact_id, task_type, skill_used, improvement_text, "
             "       composite_score, baseline_score, evidence_traces "
             "FROM agent_improvement_artifacts "
             "WHERE status = 'pending' "
-            "  AND composite_score IS NOT NULL "
-            "  AND baseline_score IS NOT NULL "
-            "  AND composite_score >= %s "
-            "ORDER BY (composite_score - baseline_score) DESC "
-            "LIMIT 10",
-            (_MIN_COMPOSITE_SCORE,),
-        ).fetchall()
-        result = []
-        for r in rows:
-            d = dict(r)
-            delta = (d.get("composite_score") or 0) - (d.get("baseline_score") or 0)
-            if delta >= _MIN_SCORE_DELTA:
-                # exa-refine-04: evidence_traces is a lesson-backed bundle now.
-                # parse_evidence also reads the legacy bare trace-id list and
-                # NOVA's provenance dict, so n_traces stays meaningful for the
-                # artifacts written before the bundle existed.
-                from tools.workflow.refinement_evidence import parse_evidence
-                evidence = parse_evidence(d.get("evidence_traces"))
-                d["evidence"] = evidence
-                d["n_traces"] = len(evidence.get("trace_ids") or [])
-                d["n_lessons"] = int(evidence.get("lesson_count") or 0)
-                result.append(d)
-        return result
+            "ORDER BY (COALESCE(composite_score, 0) - COALESCE(baseline_score, 0)) DESC "
+            f"LIMIT {int(limit)}"
+        )
+        params = ()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+        return [_attach_evidence(dict(r)) for r in rows]
     except Exception as exc:
         logger.warning("gepa_optimizer: failed to fetch artifacts: %s", exc)
         return []
+
+
+def _get_pending_artifacts(conn) -> list[dict]:
+    """Fetch pending improvement artifacts above the score thresholds.
+
+    The selection predicate, unchanged: composite >= _MIN_COMPOSITE_SCORE and a
+    delta of at least _MIN_SCORE_DELTA over baseline, best delta first.
+    """
+    selectable = [
+        a for a in _fetch_undecided_pending(conn) if _score_verdict(a) is None
+    ]
+    return selectable[:10]
+
+
+def _record_decision(conn, artifact_id: str, decision: str) -> None:
+    """Stamp what GEPA decided about this artifact, and when.
+
+    Written for EVERY evaluated artifact, applied or declined. `status` is left
+    alone — tools/agent_runtime/skills_lifecycle.py and tools/ace/blueprint.py
+    read status='pending' as NOVA's proposal queue, and this is GEPA's verdict,
+    not NOVA's.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        conn.execute(
+            "UPDATE agent_improvement_artifacts "
+            "SET gepa_decision = %s, gepa_decided_at = %s "
+            "WHERE artifact_id = %s",
+            (decision, now, artifact_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        # An install that has not run the gepa_decision_columns migration yet
+        # must not lose the cycle — but it must not report the decision as
+        # recorded either, so this is a warning and not a swallow.
+        logger.warning(
+            "gepa_optimizer: could not record decision %s for %s: %s",
+            decision, artifact_id, exc,
+        )
 
 
 def _evidence_summary(evidence) -> str:
@@ -214,6 +353,11 @@ def _mark_applied(conn, artifact_id: str) -> None:
         (now, artifact_id),
     )
     conn.commit()
+    # An apply is a GEPA decision like any other, so it lands in the same
+    # column the declines do. Recorded separately from the status write above so
+    # an install still missing the gepa_decision_columns migration keeps the
+    # apply rather than losing the whole cycle to an UndefinedColumn.
+    _record_decision(conn, artifact_id, DECISION_APPLIED)
 
 
 def _seed_review_card(skill_name: str, skill_file: str, evidence: dict | None = None) -> None:
@@ -268,7 +412,7 @@ def run(dry_run: bool = False) -> dict:
     """Run one GEPA optimization cycle. Returns summary dict."""
     from tools.db.storage import get_connection
 
-    summary = {"applied": [], "skipped": [], "errors": []}
+    summary = {"applied": [], "skipped": [], "errors": [], "declined": []}
 
     if _gepa_frozen() and not dry_run:
         logger.warning(
@@ -284,10 +428,39 @@ def run(dry_run: bool = False) -> dict:
         logger.error("gepa_optimizer: DB connection failed: %s", exc)
         return summary
 
+    def _decline(artifact_id: str, decision: str) -> None:
+        """Record a decline and note it on the summary."""
+        if not dry_run:
+            _record_decision(conn, artifact_id, decision)
+        summary["declined"].append({"artifact_id": artifact_id, "decision": decision})
+        # Preserved for callers that already read `skipped`; `declined` is the
+        # one that carries the reason vocabulary.
+        summary["skipped"].append({"artifact_id": artifact_id, "reason": decision})
+
     try:
-        artifacts = _get_pending_artifacts(conn)
+        # Every pending artifact GEPA has not already terminally decided — not
+        # just the selectable ones. GEPA owes each of them a recorded verdict;
+        # writing only the 'applied' ones is what left 132 permanently
+        # unselectable rows queued forever and GEPA's own work unmeasurable.
+        candidates = _fetch_undecided_pending(conn)
+        if not candidates:
+            logger.info("gepa_optimizer: no undecided pending artifacts")
+            return summary
+
+        artifacts = []
+        for artifact in candidates:
+            verdict = _score_verdict(artifact)
+            if verdict is None:
+                artifacts.append(artifact)
+            else:
+                _decline(artifact["artifact_id"], verdict)
+        artifacts = artifacts[:10]
+
         if not artifacts:
-            logger.info("gepa_optimizer: no pending artifacts above threshold")
+            logger.info(
+                "gepa_optimizer: no pending artifacts above threshold "
+                "(%d declined on score this cycle)", len(summary["declined"]),
+            )
             return summary
 
         for artifact in artifacts:
@@ -296,11 +469,18 @@ def run(dry_run: bool = False) -> dict:
             skill_file = _find_skill_file(skill_used)
 
             if not skill_file:
-                logger.info(
-                    "gepa_optimizer: no skill file found for '%s' (artifact %s) — skipping",
-                    skill_used, artifact_id,
+                # A blank skill_used can never resolve, so that decline is
+                # terminal. A named skill whose SKILL.md is simply absent might
+                # resolve once someone adds the file, so it is not.
+                decision = (
+                    DECISION_UNMAPPABLE_SKILL if not skill_used.strip()
+                    else DECISION_SKILL_FILE_MISSING
                 )
-                summary["skipped"].append({"artifact_id": artifact_id, "reason": "skill_file_not_found"})
+                logger.info(
+                    "gepa_optimizer: no skill file found for '%s' (artifact %s) — %s",
+                    skill_used, artifact_id, decision,
+                )
+                _decline(artifact_id, decision)
                 continue
 
             current_content = skill_file.read_text(encoding="utf-8")
@@ -331,6 +511,11 @@ def run(dry_run: bool = False) -> dict:
 
             if not updated_content:
                 logger.warning("gepa_optimizer: LLM returned empty patch for %s", artifact_id)
+                # Not terminal: a later cycle's LLM call may well return one.
+                _record_decision(conn, artifact_id, DECISION_EMPTY_PATCH)
+                summary["declined"].append(
+                    {"artifact_id": artifact_id, "decision": DECISION_EMPTY_PATCH}
+                )
                 summary["errors"].append({"artifact_id": artifact_id, "reason": "empty_patch"})
                 continue
 
@@ -340,7 +525,8 @@ def run(dry_run: bool = False) -> dict:
                     artifact_id, len(current_content), len(updated_content),
                     "---" in updated_content,
                 )
-                summary["skipped"].append({"artifact_id": artifact_id, "reason": "rubric_failed"})
+                # Not terminal, for the same reason as the empty patch above.
+                _decline(artifact_id, DECISION_RUBRIC)
                 continue
 
             # Write updated skill file
@@ -387,8 +573,14 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2))
     else:
         print(f"GEPA optimizer: applied={len(result['applied'])} "
+              f"declined={len(result.get('declined', []))} "
               f"skipped={len(result['skipped'])} errors={len(result['errors'])}")
         for item in result["applied"]:
             print(f"  [applied] {item.get('skill_file')} "
                   f"(delta +{item.get('score_delta', 0):.3f}, "
                   f"{item.get('n_traces', 0)} traces)")
+        by_reason: dict[str, int] = {}
+        for item in result.get("declined", []):
+            by_reason[item["decision"]] = by_reason.get(item["decision"], 0) + 1
+        for reason, count in sorted(by_reason.items()):
+            print(f"  [declined] {reason}: {count}")
