@@ -1,14 +1,17 @@
 # CUI // SP-CTI
 """Health, readiness, and liveness probes — Flask Blueprint (ECR-OBS-03).
 
-GET /health        — structured JSON: {status, checks, version, uptime_seconds}
+GET /health        — structured JSON: {status, checks, version, uptime_seconds,
+                     checkout_id}
 GET /health/ready  — Kubernetes readiness (503 when DB unreachable)
 GET /health/live   — Kubernetes liveness (always 200)
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import time
+from pathlib import Path
 
 from flask import Blueprint, jsonify
 
@@ -21,6 +24,66 @@ try:
     _VERSION = _imeta.version("icdev")
 except Exception:
     _VERSION = "dev"
+
+
+# ---------------------------------------------------------------------------
+# Checkout identity (rem-e2e-01)
+# ---------------------------------------------------------------------------
+
+def repo_root_for(path: str | Path) -> Path | None:
+    """Return the repo root containing *path*, or None if there is no git marker.
+
+    Walks up from *path* to the first directory holding a ``.git`` entry. A git
+    worktree carries a ``.git`` *file* and the main checkout a ``.git``
+    *directory*, so both resolve, and stopping at the FIRST marker is what makes
+    a worktree nested inside another checkout resolve to itself rather than to
+    its parent. Walking to the marker (rather than counting ``parents``) also
+    collapses the canonical ``tools/`` package and the ``icdev/tools/`` mirror
+    onto the same root — the two import paths are the same working copy and must
+    not report different identities.
+    """
+    try:
+        here = Path(path).resolve()
+    except Exception:
+        return None
+    for candidate in here.parents:
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def checkout_id_for(path: str | Path) -> str:
+    """Stable identifier for the working copy containing *path*.
+
+    An E2E harness needs to know *which* checkout answered, not merely that a
+    port answered: a suite launched from a git worktree will otherwise connect
+    to a dashboard started from the main checkout and measure the wrong tree —
+    a green run that means nothing and a red run that is pure noise.
+
+    The value is a hash of the resolved repo root, not the root itself, so an
+    unauthenticated endpoint gains an exact-match identity signal without
+    disclosing the server's filesystem layout. Empty string when the tree has
+    no git marker (installed package, container image), which callers must
+    treat as "cannot verify" rather than as a match.
+
+    It takes a *path* rather than reading ``__file__`` so a client can identify
+    the checkout it is itself running from, instead of the one this module
+    happened to be imported from. Those differ exactly when it matters: under
+    pytest, ``import tools`` can resolve to the shared checkout (an earlier
+    ``sys.modules`` entry, or a stray ``.pth``), and an identity probe that
+    trusted it would compute the SHARED tree's id, match the running dashboard,
+    and cheerfully run the suite against the wrong tree — the very defect this
+    function exists to prevent.
+    """
+    root = repo_root_for(path)
+    if root is None:
+        return ""
+    return hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
+
+
+def _checkout_id() -> str:
+    """``checkout_id`` for the tree this module was imported from."""
+    return checkout_id_for(__file__)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +210,7 @@ def health():
         "checks": checks,
         "version": _VERSION,
         "uptime_seconds": round(time.monotonic() - _START_TIME, 2),
+        "checkout_id": _checkout_id(),
     }), http_code
 
 
