@@ -59,6 +59,21 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "args" / "pr_watcher_config.yaml"
 
 # Max characters of CI log text we inject back into a resume message.
+#: Minimum gap between resume injections for the SAME PR.
+#:
+#: max_resume_cycles_per_task is a budget of ATTEMPTS; this is what makes
+#: each one an attempt. Without it the cap was spent at POLL speed —
+#: measured 2026-08-16, PRs #1742 and #1744 each burned all five cycles in
+#: about three minutes (one per ~45 s poll) and escalated to "manual
+#: intervention required" while both were fully green and merged cleanly
+#: under `git merge-tree`. No agent can read a message and push a fix in
+#: 45 seconds, so those were not five attempts; they were one attempt and
+#: four wasted budget entries.
+#:
+#: 600s gives five real attempts across ~50 minutes. Override per
+#: deployment with `resume_cooldown_seconds` in the watcher config.
+RESUME_COOLDOWN_SECONDS = 600
+
 DEFAULT_CI_LOG_MAX = 4000
 
 # Source prefix for the HITL alerts this watcher raises. Spelled once: the
@@ -124,6 +139,7 @@ def load_config(path: Optional[pathlib.Path] = None) -> dict:
         return {
             "poll_interval_seconds": 30,
             "max_resume_cycles_per_task": 5,
+            "resume_cooldown_seconds": RESUME_COOLDOWN_SECONDS,
             "auto_merge_enabled": False,
             "auto_merge_require_approval": True,
             "ci_log_max_chars": DEFAULT_CI_LOG_MAX,
@@ -1257,6 +1273,64 @@ class PRWatcher:
         return self._count_audit_actions(
             task_id, ("pr_watcher.resume",), pr_url=pr_url)
 
+    def _seconds_since_last_resume(
+        self, task_id: str, pr_url: Optional[str] = None,
+    ) -> Optional[float]:
+        """Age of the most recent resume injection for THIS PR, or None.
+
+        The budget counts attempts; this is what makes an attempt an attempt.
+        Without it the cap is spent at POLL speed rather than at agent speed —
+        measured 2026-08-16, #1742 and #1744 each burned all five cycles in
+        about three minutes (one per ~45 s poll) and then escalated to "manual
+        intervention required" while both PRs were fully green and merged
+        cleanly under `git merge-tree`.
+
+        None when there is no prior resume or the age cannot be read, so the
+        caller proceeds — an unreadable clock must not block recovery.
+        """
+        get_conn = self._connection()
+        try:
+            conn = get_conn()
+        except Exception:  # noqa: BLE001
+            return None
+        try:
+            _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+            details_col = "details::text" if _pg else "details"
+            rows = conn.execute(
+                f"SELECT {details_col} AS d, created_at FROM audit_trail "  # nosec B608
+                f"WHERE action = %s AND {details_col} LIKE %s "
+                "ORDER BY created_at DESC LIMIT 25",
+                ("pr_watcher.resume", f"%{task_id}%"),
+            ).fetchall()
+            for r in rows:
+                row = dict(r) if not isinstance(r, dict) else r
+                try:
+                    payload = json.loads(row.get("d") or "")
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if payload.get("task_id") != task_id:
+                    continue
+                if pr_url is not None and (payload.get("pr_url") or "") != pr_url:
+                    continue
+                stamp = row.get("created_at")
+                if isinstance(stamp, str):
+                    stamp = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if stamp is None:
+                    return None
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                return (datetime.now(timezone.utc) - stamp).total_seconds()
+            return None
+        except Exception:  # noqa: BLE001
+            return None
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
     def _rebase_attempts(self, task_id: str, pr_url: Optional[str] = None) -> int:
         """Prior auto-rebase attempts for this task on THIS PR, net of refunds.
 
@@ -2131,6 +2205,21 @@ class PRWatcher:
 
             # Resume classes: CI_FAILED / MERGE_CONFLICT / CHANGES_REQUESTED
             if cycle >= max_cycles:
+                # ESCALATE ONCE PER PR, not once per poll. This branch re-fired
+                # on every cycle: #1742 and #1744 were re-escalated every ~42 s
+                # for hours, and pr_watcher.escalate stood at 42,902 rows —
+                # nearly all of it a handful of PRs re-announcing. That floods
+                # the audit trail and, worse, re-sends the HITL alert, which is
+                # how a "manual intervention required" notification stops being
+                # read. The task is already parked; saying so again changes
+                # nothing.
+                already = self._count_audit_actions(
+                    task["id"], ("pr_watcher.escalate",), pr_url=pr_url)
+                if already:
+                    logger.debug(
+                        "pr_watcher: %s already escalated (%d/%d) — staying quiet",
+                        pr_url, cycle, max_cycles)
+                    continue
                 action = WatcherAction(
                     task_id=task["id"], pr_url=pr_url,
                     classification=classification.value,
@@ -2149,6 +2238,38 @@ class PRWatcher:
                     f"{classification.value}.")
                 report.actions.append(action)
                 self._audit(action)
+                continue
+
+            # A RESUME MUST BE GIVEN TIME TO WORK BEFORE THE NEXT ONE IS SPENT.
+            #
+            # The budget is five ATTEMPTS at getting an agent to fix the PR.
+            # Nothing stopped it being spent at POLL speed: the watcher injected
+            # context, the next poll 45 s later saw the same classification and
+            # injected again, and the whole budget was gone in about three
+            # minutes — before any agent could plausibly have read the first
+            # message, let alone pushed a commit. Measured 2026-08-16: #1742
+            # burned 17:17:43 -> 17:20:56, #1744 17:54:20 -> 17:57:29, both then
+            # escalating to "manual intervention required" while fully green and
+            # merging cleanly under `git merge-tree`.
+            #
+            # This does not change the budget, only the pacing: five attempts
+            # still, now spaced far enough apart to be attempts. A PR waiting out
+            # the cooldown is recorded as `wait`, which is what the state
+            # actually is, rather than silently consuming a cycle.
+            since = self._seconds_since_last_resume(task["id"], pr_url=pr_url)
+            cooldown = float(self.config.get(
+                "resume_cooldown_seconds", RESUME_COOLDOWN_SECONDS))
+            if since is not None and since < cooldown:
+                report.actions.append(WatcherAction(
+                    task_id=task["id"], pr_url=pr_url,
+                    classification=classification.value,
+                    action="wait",
+                    reason=(
+                        f"resume cooldown: {since:.0f}s of {cooldown:.0f}s since "
+                        f"the last injection (cycle {cycle}/{max_cycles})"
+                    ),
+                    resume_cycle=cycle,
+                ))
                 continue
 
             context = prepare_resume_context(

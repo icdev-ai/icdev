@@ -1912,6 +1912,7 @@ tests/test_ai_telemetry_cache_tokens.py
 # findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
 # network, no LLM.
 tests/test_identity_survey.py
+tests/ci/test_pr_watcher_budgets.py
 # rem-hyg-04: arming that check behind KANBAN_IDENTITY_CHECK. Gated in the PR
 # that adds it. Every property here fails while looking correct: a kill switch
 # nothing reads (the inert hook_points: block in args/extension_config.yaml), a
