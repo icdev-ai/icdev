@@ -1858,3 +1858,18 @@ tests/kanban/test_task_identity.py
 # that could name danger-full-access, would keep every other test green.
 # 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
 tests/agent_runtime/test_permission_postures.py
+# cch-tel-01: prompt-cache tokens are recorded durably, per call. LLMResponse
+# has carried cache_creation_input_tokens/cache_read_input_tokens since
+# D-CACHE-10 and four adapters populate them, but nothing durable recorded them,
+# so every caching claim on this platform was unfalsifiable. Gated because the
+# load-bearing assertion is a NEGATIVE one that no other test makes: a call
+# reporting ZERO cached tokens must record a row holding 0, never be skipped and
+# never write NULL — otherwise a provider that stopped caching is indistinguish-
+# able from one that was never asked, which is exactly how Azure discarded the
+# count for its entire life. Also holds INSERT/live-schema parity, which is the
+# failure mode that kept module_budget_usage at 0 rows while reporting success.
+# Also covers the two-tier path, which made real provider calls and recorded
+# nothing at all: two_tier.enabled is true and code_generation is a worker
+# function, so router.invoke() returned before ever reaching the telemetry seam.
+# 16 tests, <1s: temp SQLite files only, no network, no shared board.
+tests/test_ai_telemetry_cache_tokens.py
