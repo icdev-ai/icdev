@@ -11,9 +11,11 @@ nothing goes red. Known instances:
   * ``MCPToolAuthorizer``: zero call sites, yet ``fedramp_ksi_generator`` counted
     the *file's existence* as satisfied evidence;
   * ``prompt_registry``: 0 rows in ``prompt_versions``, 0 importers;
-  * GEPA: dispatched every 24h, but its selection predicate requires
-    ``composite_score - baseline_score >= 0.05`` and every queued artifact has
-    the two equal, so it can never select one;
+  * GEPA: dispatched every 24h with 7 successful runs on the board and zero
+    recorded consumption, because the only outcome it could write was
+    ``status='applied'`` — an artifact it declined stayed ``'pending'`` forever,
+    so the queue could only grow and a correct decline was indistinguishable
+    from never having run (rem-cap-01);
   * three separate reflex incidents (xbm-wake-01, xbm-wake-02, hgx-obs-02) where
     ``enabled: true`` + a working module + a catalogue entry produced zero
     executions.
@@ -672,24 +674,48 @@ def probe_audit_chain(conn, since: datetime, threshold: int, max_listed: int) ->
 
 
 def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int) -> ClassResult:
-    """GEPA: skills queued for optimization vs. artifacts it actually applied.
+    """GEPA: skills queued for optimization vs. artifacts GEPA actually decided.
+
+    Consumption is a RECORDED GEPA DECISION — applied or declined — not an apply
+    alone (rem-cap-01). Counting applies only made "GEPA ran and correctly
+    declined everything" indistinguishable from "GEPA never ran", which is the
+    declared-but-unconsumed shape this module exists to catch, in the module
+    that is supposed to catch it. It also matches how the two neighbouring
+    classes already count: mcp_tool_authorization counts a VERDICT rather than a
+    denial, and audit_chain counts a row written with a chain hash rather than a
+    tamper finding. `applied` and `declined` are reported separately in `extra`
+    so a busy decline loop can never read as a busy patch loop.
 
     Also reports how many queued artifacts even *satisfy* GEPA's own selection
     predicate. That number being zero while the queue is full is the difference
     between "nothing to do" and "structurally cannot ever act", and only the
-    second one is a defect.
+    second one is a defect. `pending_undecided` is the honest denominator for
+    that comparison: an artifact GEPA has terminally declined is settled, and
+    counting it as backlog is what kept the alarm on forever.
     """
     res = ClassResult(
         capability_class="skill_optimizer",
-        declaration_source="agent_improvement_artifacts (distinct skill_used)",
+        declaration_source=(
+            "agent_improvement_artifacts (distinct skill_used, "
+            "excluding upstream evidence rejections)"
+        ),
         telemetry_table="agent_improvement_artifacts",
     )
-    from tools.db.storage import table_exists
+    from tools.db.storage import column_exists, table_exists
 
     if not table_exists(conn, "agent_improvement_artifacts"):
         return _unmeasured(
             "skill_optimizer", res.declaration_source, res.telemetry_table,
             "agent_improvement_artifacts does not exist",
+        )
+    # A database that predates the gepa_decision_columns migration cannot be
+    # asked this question. Reporting zero there would be the misleading zero
+    # this module refuses to produce everywhere else.
+    if not column_exists(conn, "agent_improvement_artifacts", "gepa_decided_at"):
+        return _unmeasured(
+            "skill_optimizer", res.declaration_source, res.telemetry_table,
+            "agent_improvement_artifacts.gepa_decided_at does not exist "
+            "(migration 20260816125047_gepa_decision_columns has not run)",
         )
     try:
         # Declared units are the skills GEPA was asked to improve, across every
@@ -698,11 +724,11 @@ def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int
         # structurally incapable of ever being counted as consumed: the exact
         # never-goes-green shape this tool exists to catch.
         all_rows = conn.execute(
-            "SELECT skill_used, composite_score, baseline_score, status "
+            "SELECT skill_used, composite_score, baseline_score, status, gepa_decision "
             "FROM agent_improvement_artifacts"
         ).fetchall()
         counts = _count_by_key(
-            conn, "agent_improvement_artifacts", "skill_used", "applied_at", since
+            conn, "agent_improvement_artifacts", "skill_used", "gepa_decided_at", since
         )
     except Exception as exc:  # noqa: BLE001
         _rollback(conn)
@@ -711,29 +737,66 @@ def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int
             f"query failed: {exc}",
         )
 
+    from tools.skills.gepa_optimizer import DECISION_APPLIED, TERMINAL_DECISIONS
+
     declared: List[str] = []
     pending = 0
+    pending_undecided = 0
     selectable = 0
+    decided_lifetime = 0
+    applied_lifetime = 0
+    upstream_rejected = 0
     for row in all_rows:
         rec = dict(row)
+        status = str(rec.get("status") or "")
+        # An artifact the Reflexion agent's evidence gate refused
+        # (`rejected_no_evidence`, args/refinement_evidence.yaml
+        # `rejected_status`) never enters GEPA's queue — GEPA selects on
+        # status='pending' and is structurally never shown it. Counting it as a
+        # skill GEPA was asked to improve blames GEPA for an upstream decision
+        # and makes the class permanently un-greenable no matter how well GEPA
+        # works. 'applied' still counts, which is the point of not scoping this
+        # to 'pending' alone: an artifact GEPA acted on has left that queue.
+        if status.startswith("rejected"):
+            upstream_rejected += 1
+            continue
         declared.append(str(rec.get("skill_used") or "(unattributed)"))
-        if str(rec.get("status") or "") != "pending":
+        decision = str(rec.get("gepa_decision") or "")
+        if decision:
+            decided_lifetime += 1
+            if decision == DECISION_APPLIED:
+                applied_lifetime += 1
+        if status != "pending":
             continue
         pending += 1
+        if decision in TERMINAL_DECISIONS:
+            continue
+        pending_undecided += 1
         composite = rec.get("composite_score")
         baseline = rec.get("baseline_score")
         if composite is None or baseline is None:
             continue
-        # Mirrors gepa_optimizer._get_pending_artifacts: composite >= 0.60 and
-        # a delta of at least 0.05 over baseline.
+        # Mirrors gepa_optimizer._score_verdict: composite >= 0.60 and a delta
+        # of at least 0.05 over baseline.
         if float(composite) >= 0.60 and float(composite) - float(baseline) >= 0.05:
             selectable += 1
 
     counts = {(k or "(unattributed)"): v for k, v in counts.items()}
     res = _finish(res, declared, counts, threshold, max_listed)
     res.extra["artifacts_total"] = len(all_rows)
+    # Reported, never silently dropped: these are artifacts the evidence gate
+    # refused upstream, so they are not GEPA's to answer for and not GEPA's to
+    # be credited with either.
+    res.extra["upstream_rejected_artifacts"] = upstream_rejected
     res.extra["pending_artifacts"] = pending
+    res.extra["pending_undecided_artifacts"] = pending_undecided
     res.extra["artifacts_matching_selection_predicate"] = selectable
+    # Lifetime, alongside the window counts — the same split probe_reflex makes
+    # with never_run_lifetime. A capability that decided something once and has
+    # been idle since is idle, not inert, and the two must not blur.
+    res.extra["decisions_lifetime"] = decided_lifetime
+    res.extra["applied_lifetime"] = applied_lifetime
+    res.extra["declined_lifetime"] = decided_lifetime - applied_lifetime
     return res
 
 

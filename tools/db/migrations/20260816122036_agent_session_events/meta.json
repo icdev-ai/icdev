@@ -1,0 +1,7 @@
+{
+  "description": "agent_session_events — append-only agent event log (hcx-evt-01)",
+  "date": "2026-08-16",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

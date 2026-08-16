@@ -646,6 +646,16 @@ tests/test_agent_policy_composition.py
 # same table. Seeded temp SQLite only -- no DB service, LLM or network, ~3s.
 tests/test_capability_consumption.py
 
+# rem-cap-01 -- GEPA decision recording, the last known-inert capability. The
+# defect was invisible to every existing test because GEPA's cycle SUCCEEDED
+# while recording nothing: the only outcome it could write was status='applied',
+# so a declined artifact stayed 'pending' forever and 132 permanently
+# unselectable rows held the queue-full/zero-selectable alarm on for good. These
+# assert the RECORDED DECISION and what the consumption probe counts, never mere
+# execution -- a test asserting run() returns a dict passed against the whole
+# thing. Temp SQLite via production NOVA DDL; LLM patched out. ~2s.
+tests/test_gepa_decision_recording.py
+
 # exa-refine-01 -- prompt registry as the router's SUPPLEMENTAL read path. Earns a
 # required slot because it pins a governance invariant, not a feature: the base
 # system prompt is immutable, so a regression here means self-modification can
@@ -1827,3 +1837,9 @@ tests/agent_runtime/test_dispatch_extension_point.py
 # any site-local drop-in naming it. 12 tests, ~3s, no DB and no network: the
 # agent loop is monkeypatched and the tree scan is static.
 tests/test_extension_point_liveness.py
+# hcx-evt-01 -- the append-only agent event log (agent_session_events). Added in
+# the PR that makes it pass, per the test-gating policy. 39 tests, ~1s, no DB and
+# no network: the fixture builds the table from the migration's own up.sql behind
+# tests/_sql_compat.translating, so a column added to one and not the other fails
+# here rather than at runtime inside somebody's except.
+tests/test_agent_event_log.py

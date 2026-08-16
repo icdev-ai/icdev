@@ -995,6 +995,65 @@ trust-hitl-03. Until those land the CLI above is the operable surface.
 
 ---
 
+## Agent Session Event Log — Model-Visible Means Logged (hcx-evt-01)
+
+`agent_loop_session.save_session` writes an agent run as ONE `messages_json`
+blob, UPSERT-overwritten every turn. That is enough to RESUME and nothing else:
+once turn N+1 is written, turn N no longer exists, so fork and replay are not
+merely unimplemented — the data they need is already gone. `llm_gateway_audit`
+does not cover it either; it stores hashes only and is imported by
+`tools/cortex/*` and `ops_hub/llmops_engine.py`, neither on the agent-runtime
+path, so SAG's own LLM calls are unaudited.
+
+`agent_session_events` (migration `20260816122036`) is one immutable row per
+model-visible event.
+
+```bash
+python tools/agent_runtime/event_log.py --session <session_id> --json
+python tools/agent_runtime/event_log.py --session <session_id> --with-payload
+python tools/agent_runtime/event_log.py --session <session_id> --type tool_call
+python tools/agent_runtime/event_log.py --policy --json
+```
+
+**The vocabulary is deliberately smaller than DSH's**: `turn_start`,
+`request_context`, `assistant_message`, `tool_call`, `tool_result`, `turn_end`.
+There is no per-chunk event — ICDEV's loop does not stream into the log, so a
+chunk row would record the transport's framing rather than anything the model
+saw, at one row per token.
+
+**Ordering is `seq`, not the clock.** Several events inside one turn routinely
+share a millisecond. `seq` is monotonic per session and UNIQUE over
+`(session_id, seq)`, which is what makes optimistic allocation safe: `next_seq()`
+reads the current maximum, and `append()` retries the constraint violation a lost
+race produces rather than writing a duplicate position.
+
+**This one is in the MAIN db, not the canvas db** — deliberately, and against the
+grain of CLAUDE.md's canvas rule, because `tenant_id`/`classification` make it
+RLS-eligible (these rows can hold verbatim model input) and because
+`agent_case/session_timeline.py` joins `hook_events` and `audit_trail`, both of
+which are in the main db.
+
+**`payload_hash` is always written; `payload_json` is not.** The hash comes from
+`tools/audit/row_hash.py::compute_payload_hash` — the same module, algorithm and
+encoding constants as the migration-149 audit chain, so this codebase has one
+hashing recipe and not two. Whether the document itself is retained is a
+classification decision in `args/agent_event_log.yaml`
+(`ICDEV_AGENT_EVENT_PAYLOAD_RETENTION=0` forces hash-only). A config file that
+exists but cannot be parsed fails **closed** to hash-only; an absent one uses the
+documented defaults. A NULL `payload_json` therefore means WITHHELD BY POLICY and
+nothing else — a retained `None` is stored as the JSON literal `null`, so
+"suppressed" and "empty" never collapse into one value.
+
+Append-only: registered in `APPEND_ONLY_TABLES`, and the module exposes
+`append()`, `read_session()` and `next_seq()` and no mutating verb at all. A
+correction is a new event. The INSERT is not wrapped in a bare `except` — a
+swallowed INSERT is how `module_budget_usage` held zero rows.
+
+Consumers: hcx-evt-02..06 (fork, replay, the timeline join, the runtime write
+path). Until those land the CLI above is the operable surface.
+
+---
+
 ## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
 
 Mirrors a pending item to a messaging channel and turns the human's reply back
@@ -3229,11 +3288,20 @@ python tools/skills/gepa_optimizer.py --json                             # Run o
 python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
 # MCP tool: gepa_optimizer
 #   Parameters: dry_run (bool, default false) — when true, scan runs but no DB writes are committed.
-#   Returns:    {applied: [{capability_id, action, fitness, dry_run}],
-#                skipped: [{capability_id, reason, fitness}],
-#                errors:  [str]}
+#   Returns:    {applied:  [{capability_id, action, fitness, dry_run}],
+#                declined: [{artifact_id, decision}],
+#                skipped:  [{capability_id, reason, fitness}],
+#                errors:   [str]}
 #   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
 #   Skill:      tools/skills/gepa_optimizer.py::run()
+# rem-cap-01 — GEPA records a decision against EVERY artifact it evaluates, in
+# agent_improvement_artifacts.gepa_decision / gepa_decided_at (migration
+# 20260816125047_gepa_decision_columns). Terminal, so the artifact leaves the
+# queue: declined_no_delta, declined_low_score, declined_unmappable_skill.
+# Retried next cycle: declined_skill_file_missing, declined_rubric,
+# declined_empty_patch. `capability_consumption`'s skill_optimizer class counts
+# a recorded decision — applied OR declined — because counting applies alone
+# made a correct decline indistinguishable from never having run.
 # Genesis daemon 24h trigger — GEPA reflex fires daily via the genesis daemon loop:
 #   Config:     args/genesis_config.yaml — add a "gepa_optimizer" entry with interval_seconds: 86400
 #   Interval:   86400 s (24 h); controlled by interval_seconds / interval_hours in genesis_config.yaml

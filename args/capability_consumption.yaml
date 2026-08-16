@@ -70,8 +70,14 @@ classes:
   skill_optimizer:
     enabled: true
     description: >-
-      Skills queued for GEPA optimization as pending agent_improvement_artifacts.
-      Consumption is an artifact GEPA actually applied.
+      Skills queued for GEPA optimization as agent_improvement_artifacts.
+      Consumption is a GEPA DECISION recorded against an artifact — applied or
+      declined (rem-cap-01). Counting applies alone made "GEPA ran and correctly
+      declined everything" indistinguishable from "GEPA never ran"; the two
+      neighbouring classes already count the same way, mcp_tool_authorization
+      counting a verdict rather than a denial and audit_chain a chained row
+      rather than a tamper finding. applied vs declined stay separate in
+      `extra`.
 
 # ---------------------------------------------------------------------------
 # Substrate probing (#trust-disc-04)
@@ -187,9 +193,22 @@ known_inert_cases:
     capability_class: skill_optimizer
     metric: events
     note: >-
-      Dispatched every 24h, but every queued artifact has
-      composite_score == baseline_score, so the >= 0.05 delta filter can never
-      select one.
+      Dispatched every 24h and running — genesis_reflex_state showed 7 runs, 7
+      successes, last_metric_value 0.0 every time — while recording nothing.
+      The original note here blamed the >= 0.05 delta filter against artifacts
+      with composite_score == baseline_score; exa-refine-03 fixed the WRITERS
+      (reflexion_agent now scores the candidate independently of the baseline
+      and resolves skill_used from the traces) but could not fix the 132 rows
+      already in the queue, whose scores are immutable because nothing rescores
+      an artifact after insert. rem-cap-01 found the reason that backlog was
+      permanent: GEPA could only ever write status='applied', so an artifact it
+      declined stayed 'pending' forever. GEPA now records a decision — applied
+      or declined, terminal or retryable — against every artifact it evaluates,
+      which both drains the immortal queue and makes a correct decline
+      measurable. Stays listed rather than declared done because the thing
+      worth counting is whether a given INSTALL's GEPA is deciding anything: a
+      wired optimizer with no artifacts to judge is still a no-op, and that is
+      exactly the state this entry makes visible.
   - id: inert_reflexes
     capability_class: reflex
     metric: inert_units

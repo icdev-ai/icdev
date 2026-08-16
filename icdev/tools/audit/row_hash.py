@@ -20,11 +20,20 @@ the exact byte sequence so adding a column cannot silently change the digest.
 This module is deliberately stdlib-only and touches no database: the offline
 verifier must import it on a machine that has the bundle and nothing else.
 
+A second recipe lives here as of hcx-evt-01: :func:`compute_payload_hash`, which
+digests an arbitrary JSON-able document rather than an audit ROW. It is here and
+not in its caller for the reason the module docstring already gives — a hashing
+recipe that lives beside its one writer is a recipe that will be re-derived,
+slightly differently, by the second reader. Both recipes share the algorithm and
+encoding constants below, and both are pinned by tests.
+
 Usage:
     from icdev.tools.audit.row_hash import compute_audit_row_hash, GENESIS_HASH
+    from icdev.tools.audit.row_hash import compute_payload_hash
 """
 
 import hashlib
+import json
 
 # --- The recipe ------------------------------------------------------------
 #
@@ -88,3 +97,61 @@ def audit_row_content(row) -> str:
 def compute_audit_row_hash(row) -> str:
     """SHA-256 hex digest of an audit row, per the migration-149 chain recipe."""
     return hashlib.sha256(audit_row_content(row).encode(AUDIT_HASH_ENCODING)).hexdigest()
+
+
+# --- Payload digests (hcx-evt-01) ------------------------------------------
+#
+# The audit-row recipe above hashes a FIXED field list in a FIXED order. An
+# agent event's payload has neither: it is whatever document that event type
+# carries. So it needs its own canonical rendering, and that rendering is here
+# rather than in `tools/agent_runtime/event_log.py` so there is one place in this
+# codebase that decides how bytes become a digest.
+#
+# `agent_session_events.payload_hash` is NOT NULL while `payload_json` is
+# nullable — a payload withheld by classification policy still has a hash, and
+# that hash is the only thing that lets a holder of the payload prove it is the
+# one the event describes. So this function must be stable across processes,
+# machines and Python versions.
+
+#: Separators for the canonical rendering — no insignificant whitespace, so two
+#: callers that format their JSON differently still agree on the digest.
+PAYLOAD_JSON_SEPARATORS = (",", ":")
+
+
+def canonical_payload(payload) -> str:
+    """The exact string that gets hashed — separated out so a test can pin it.
+
+    Rendering rules, all load-bearing:
+
+    * ``sort_keys=True``  — dict iteration order is an implementation detail of
+      how the payload was BUILT, never of what it MEANS. Without this the same
+      tool call hashes differently depending on the order its arguments were
+      assembled.
+    * ``ensure_ascii=False`` — so a non-ASCII payload hashes as its own UTF-8
+      bytes rather than as ``\\uXXXX`` escapes; matches AUDIT_HASH_ENCODING.
+    * ``default=str`` — a datetime or a Path in a payload renders instead of
+      raising. An event whose payload cannot be serialized must still be
+      recordable; refusing to hash it would mean refusing to log it.
+
+    A string payload is hashed as itself, NOT as a JSON-quoted string. Callers
+    pass raw assistant text for ``assistant_message`` and a dict elsewhere, and
+    ``"hello"`` and ``hello`` must not be two different events.
+    """
+    if isinstance(payload, str):
+        return payload
+    if payload is None:
+        return ""
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=PAYLOAD_JSON_SEPARATORS,
+        ensure_ascii=False,
+        default=str,
+    )
+
+
+def compute_payload_hash(payload) -> str:
+    """SHA-256 hex digest of an event payload, per :func:`canonical_payload`."""
+    return hashlib.sha256(
+        canonical_payload(payload).encode(AUDIT_HASH_ENCODING)
+    ).hexdigest()
