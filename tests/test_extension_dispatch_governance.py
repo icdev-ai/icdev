@@ -473,6 +473,30 @@ def test_telemetry_that_itself_fails_never_breaks_the_dispatch(monkeypatch, inv_
     assert log == ["a"]
 
 
+def test_a_raising_handler_with_broken_telemetry_still_fails_soft(monkeypatch, inv_db):
+    """Both failures at once — the annotation path runs against the null span.
+
+    Without this, the ``_NullSpan`` fallback is only ever exercised on the happy
+    path, and the branch that writes the failure onto it is untested exactly
+    when both things are wrong.
+    """
+    em_mod = importlib.import_module("tools.extensions.extension_manager")
+    monkeypatch.setattr(
+        em_mod, "_record_dispatch",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("telemetry is down")),
+    )
+
+    def boom(context):
+        raise RuntimeError("handler is broken")
+
+    mgr = _manager({})
+    mgr.register(ExtensionPoint.AGENT_END, boom, name="boom")
+
+    assert mgr.dispatch(ExtensionPoint.AGENT_END, {"x": 1}) == {"x": 1}
+    assert mgr.stats(ExtensionPoint.AGENT_END)["handler_failures"] == 1
+    assert "boom" in mgr.stats(ExtensionPoint.AGENT_END)["last_error"]
+
+
 def test_extension_is_a_declared_surface_with_a_filter_button():
     """A surface the monitoring panel cannot filter to is one nobody will read."""
     from pathlib import Path
