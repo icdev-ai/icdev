@@ -103,7 +103,7 @@ _POSTURE_ENV = (
 
 
 @pytest.fixture(autouse=True)
-def _clean_posture_env():
+def _clean_posture_env(tmp_path_factory):
     """Every posture-governed variable unset, and the config cache dropped.
 
     Snapshot-and-restore rather than ``monkeypatch.delenv``, and this is the
@@ -117,12 +117,28 @@ def _clean_posture_env():
 
     Restoring on the way in as well as out also stops a developer's exported
     ``ICDEV_SAG_*`` from pinning a knob and reading as a failure of this module.
+
+    The loader is pointed at an EMPTY config for the same reason (rem-cap-04).
+    This file tests the posture MECHANISM — that a pin is detected, attributed
+    and reported — not the shipped defaults, and the two must not be coupled:
+    ``args/agent_runtime.yaml`` now deliberately pins ``command_mode: dry_run``,
+    which made four mechanism tests here fail while the mechanism was working
+    perfectly and reporting the pin exactly as designed. Whether the SHIPPED
+    file pins anything is asserted in exactly one place —
+    ``test_permission_postures.test_the_shipped_config_does_not_pin_the_posture_governed_knobs``
+    — so a future pin is caught once, loudly, instead of scattering.
     """
     import os
 
-    saved = {name: os.environ.get(name) for name in _POSTURE_ENV}
+    empty_config = tmp_path_factory.mktemp("posture-cfg") / "agent_runtime.yaml"
+    with empty_config.open("w", encoding="utf-8", newline="") as fh:
+        fh.write("version: 1\n")
+
+    names = (*_POSTURE_ENV, config_mod.ENV_CONFIG_PATH)
+    saved = {name: os.environ.get(name) for name in names}
     for name in _POSTURE_ENV:
         os.environ.pop(name, None)
+    os.environ[config_mod.ENV_CONFIG_PATH] = str(empty_config)
     config_mod.reset_cache()
     try:
         yield

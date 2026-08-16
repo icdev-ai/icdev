@@ -89,8 +89,11 @@ EXPECTED_SUPPORT = {
     "azure_openai": PREFIX_CACHE_AUTOMATIC,
     "gemini": PREFIX_CACHE_MANAGED_OBJECT,
     "ollama": PREFIX_CACHE_LOCAL,
+    # cch-prov-04 checked the two the assessment had left unverified. watsonx
+    # stayed 'none'; OCI did NOT — its usage object carries a cached-token
+    # counter, which is the automatic shape, so the placeholder was wrong.
     "ibm_watsonx": PREFIX_CACHE_NONE,
-    "oci_genai": PREFIX_CACHE_NONE,
+    "oci_genai": PREFIX_CACHE_AUTOMATIC,
 }
 
 
@@ -123,12 +126,23 @@ def test_declaration_carries_a_written_reason(name):
 
 
 def test_unverified_is_distinct_from_verified_none():
-    """watsonx/OCI say 'none, NOT checked'; Ollama says 'local, checked'."""
-    providers = _providers()
-    assert providers["ibm_watsonx"].prefix_cache_capability.verified is False
-    assert providers["oci_genai"].prefix_cache_capability.verified is False
-    assert providers["ollama"].prefix_cache_capability.verified is True
-    assert providers["anthropic"].prefix_cache_capability.verified is True
+    """No SHIPPING adapter is left saying 'nobody looked' (cch-prov-04).
+
+    The distinction itself still has to hold — an unlisted OpenAI-compatible
+    label and a hosted Ollama endpoint are genuinely unchecked, and say so
+    below. What cch-prov-04 removes is the two named vendors that were
+    carrying `verified=False` as a placeholder.
+    """
+    unverified = {
+        name
+        for name, p in _providers().items()
+        if p.prefix_cache_capability.verified is False
+    }
+    assert unverified == set(), (
+        f"{sorted(unverified)} still declare 'not checked'. Check the vendor and "
+        "record the date and citation, or say so in the assessment — do not "
+        "leave a named provider unasked."
+    )
 
 
 def test_reports_cache_tokens_matches_the_adapters_that_read_them():
@@ -147,11 +161,25 @@ def test_reports_cache_tokens_matches_the_adapters_that_read_them():
         "bedrock": True,
         "openai": True,
         "azure_openai": True,
+        # cch-prov-04: OCI reports `Usage.prompt_tokens_details.cached_tokens`
+        # and the adapter now reads it.
+        "oci_genai": True,
         "gemini": True,
         "ollama": False,
         "ibm_watsonx": False,
-        "oci_genai": False,
     }
+
+
+@pytest.mark.parametrize("name", ["ibm_watsonx", "oci_genai"])
+def test_the_two_verified_vendors_cite_a_date(name):
+    """A 'none' without a date is a stale assumption dressed as a finding.
+
+    cch-prov-04's whole point: the next reader must be able to tell WHEN the
+    vendor was checked, so they know whether to re-check rather than guess.
+    """
+    reason = _providers()[name].prefix_cache_capability.reason
+    assert "2026-08-16" in reason, f"{name}'s declaration carries no check date"
+    assert "cch-prov-04" in reason, f"{name}'s declaration cites no verification record"
 
 
 def test_capability_rejects_an_invented_level_and_an_empty_reason():
@@ -406,3 +434,94 @@ def test_anthropic_payload_is_byte_for_byte_what_it_was_before():
         ]
     else:
         assert captured[0]["system"] == system
+
+
+# ---------------------------------------------------------------------------
+# 5. OCI reports cached tokens into the shared field (cch-prov-04)
+# ---------------------------------------------------------------------------
+class _FakeUsage:
+    """The shape of oci.generative_ai_inference.models.Usage."""
+
+    def __init__(self, prompt_tokens=0, completion_tokens=0, cached_tokens=None):
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.total_tokens = prompt_tokens + completion_tokens
+        self.prompt_tokens_details = (
+            None if cached_tokens is None else _FakePromptTokensDetails(cached_tokens)
+        )
+
+
+class _FakePromptTokensDetails:
+    def __init__(self, cached_tokens):
+        self.cached_tokens = cached_tokens
+
+
+class _FakeChatResult:
+    """ChatResult: model_id, model_version, chat_response. NO model_usage."""
+
+    def __init__(self, chat_response):
+        self.model_id = "cohere.command-r-08-2024"
+        self.model_version = "1.0"
+        self.chat_response = chat_response
+
+
+def _oci_response(usage):
+    from tools.llm.provider import LLMResponse
+    from tools.llm.oci_genai_provider import _read_usage_into
+
+    chat_response = MagicMock(spec=["usage", "text", "finish_reason"])
+    chat_response.usage = usage
+    result = _FakeChatResult(chat_response)
+    resp = LLMResponse(provider="oci_genai")
+    _read_usage_into(chat_response, result, resp)
+    return resp
+
+
+def test_oci_reads_cached_tokens_into_the_shared_field():
+    """The reporting half: cachedTokens lands in cache_read_input_tokens."""
+    resp = _oci_response(_FakeUsage(prompt_tokens=2048, completion_tokens=64, cached_tokens=1536))
+    assert resp.input_tokens == 2048
+    assert resp.output_tokens == 64
+    assert resp.cache_read_input_tokens == 1536
+    # OCI reports reads only; there is no cache-creation counter to read.
+    assert resp.cache_creation_input_tokens == 0
+
+
+def test_oci_usage_comes_off_the_chat_response_not_the_chat_result():
+    """ChatResult has no model_usage, so the old read reported zero forever.
+
+    Guards the regression directly: a ChatResult whose chat_response carries
+    usage must yield non-zero tokens even though `model_usage` is absent.
+    """
+    resp = _oci_response(_FakeUsage(prompt_tokens=300, completion_tokens=12))
+    assert (resp.input_tokens, resp.output_tokens) == (300, 12)
+
+
+def test_oci_absent_cache_details_is_zero_not_an_error():
+    """A model that caches nothing returns no details block; that is 0, not a crash."""
+    resp = _oci_response(_FakeUsage(prompt_tokens=300, completion_tokens=12))
+    assert resp.cache_read_input_tokens == 0
+
+
+def test_oci_falls_back_to_the_legacy_attribute_when_the_response_has_no_usage():
+    """Kept deliberately: the oci SDK is not importable in this suite."""
+    from tools.llm.provider import LLMResponse
+    from tools.llm.oci_genai_provider import _read_usage_into
+
+    chat_response = MagicMock(spec=["text"])  # no .usage at all
+    result = _FakeChatResult(chat_response)
+    result.model_usage = _FakeUsage(prompt_tokens=77, completion_tokens=3, cached_tokens=64)
+    resp = LLMResponse(provider="oci_genai")
+    _read_usage_into(chat_response, result, resp)
+    assert (resp.input_tokens, resp.output_tokens, resp.cache_read_input_tokens) == (77, 3, 64)
+
+
+def test_oci_no_usage_anywhere_leaves_the_counters_untouched():
+    from tools.llm.provider import LLMResponse
+    from tools.llm.oci_genai_provider import _read_usage_into
+
+    chat_response = MagicMock(spec=["text"])
+    result = MagicMock(spec=["chat_response"])
+    resp = LLMResponse(provider="oci_genai")
+    _read_usage_into(chat_response, result, resp)
+    assert (resp.input_tokens, resp.output_tokens, resp.cache_read_input_tokens) == (0, 0, 0)

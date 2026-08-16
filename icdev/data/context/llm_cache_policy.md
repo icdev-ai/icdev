@@ -79,10 +79,10 @@ derives it at the invoke seam only for providers that declare `explicit`.
 | Declared support | Providers | What happens |
 |---|---|---|
 | `explicit` | anthropic, bedrock | System prompt and last user message get `cache_control: {type: "ephemeral"}`, max 4 breakpoints |
-| `automatic` | openai, azure_openai | Nothing is requested; prefixes ≥1024 tokens cache themselves and `cached_tokens` is read back |
+| `automatic` | openai, azure_openai, **oci_genai** | Nothing is requested; the provider caches by itself and `cached_tokens` is read back. OpenAI/Azure cache prefixes ≥1024 tokens; OCI returns `Usage.prompt_tokens_details.cached_tokens` (verified 2026-08-16, cch-prov-04) |
 | `managed_object` | gemini, vertex_ai | A stored `cachedContents` object with its own TTL is created, reused and expired by the adapter (cch-prov-02). **Default OFF** — see below |
 | `local` | ollama (local), vllm, localai | Server-side KV reuse: a **latency** win, never a billing one |
-| `none` | ibm_watsonx, oci_genai, cli, hosted ollama | Nothing to set — with a written reason on each, and `verified=False` where the vendor was never checked |
+| `none` | ibm_watsonx, cli, hosted ollama | Nothing to set — with a written reason on each. watsonx is a **checked** none (2026-08-16, cch-prov-04): IBM's chat usage object is three counters with no cached-token field, and there is no cache parameter to set. `verified=False` is reserved for endpoints genuinely nobody has checked, such as an unlisted OpenAI-compatible label |
 
 Every branch normalises into the same `LLMResponse.cache_read_input_tokens` /
 `cache_creation_input_tokens` fields, so the savings maths stays vendor-neutral.

@@ -42,8 +42,14 @@ means.
 | `azure_openai` | `automatic` | yes | yes |
 | `gemini` | `managed_object` | yes | no |
 | `ollama` (local endpoint) | `local` | yes | no |
-| `ibm_watsonx` | `none` | **no** | no |
-| `oci_genai` | `none` | **no** | no |
+| `ibm_watsonx` | `none` | yes *(cch-prov-04)* | no |
+| `oci_genai` | ~~`none`~~ → `automatic` | yes *(cch-prov-04)* | yes *(cch-prov-04)* |
+
+> Both rows shipped here as `verified=False` placeholders and were checked on
+> 2026-08-16 by **cch-prov-04**. watsonx held; **OCI did not** — its `Usage`
+> object carries `prompt_tokens_details.cached_tokens` and it has no
+> request-side cache field, which is the `automatic` shape. See
+> [docs/research/cch-prov-04-watsonx-oci-cache-verification.md](../research/cch-prov-04-watsonx-oci-cache-verification.md).
 
 Also declared, outside the assessment's eight: `vertex_ai` → `managed_object`
 (unverified — it serves Gemini, so it is Gemini's shape); `vllm` / `mistral_vllm`
@@ -100,7 +106,9 @@ with a captured client, and compares the kwargs that would go on the wire.
 
 - every one of the eight providers declares a level from the closed vocabulary,
   with a reason substantial enough to be evidence;
-- `verified=False` on watsonx/OCI is distinct from a verified `none`;
+- `verified=False` is distinct from a verified `none` (cch-prov-04 then checked
+  both named vendors, so the assertion now names the endpoints that are
+  genuinely unchecked rather than watsonx/OCI);
 - the router's source is parsed and **any** assignment to `.cache_control`
   fails the test — a behavioural check only covers the paths it walks;
 - `explicit` providers still receive the marker; the other six receive no vendor

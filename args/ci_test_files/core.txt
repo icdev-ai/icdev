@@ -1912,6 +1912,16 @@ tests/test_ai_telemetry_cache_tokens.py
 # findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
 # network, no LLM.
 tests/test_identity_survey.py
+tests/ci/test_pr_watcher_budgets.py
+# rem-hyg-04: arming that check behind KANBAN_IDENTITY_CHECK. Gated in the PR
+# that adds it. Every property here fails while looking correct: a kill switch
+# nothing reads (the inert hook_points: block in args/extension_config.yaml), a
+# typo like KANBAN_IDENTITY_CHECK=enforced resolving silently to the default so
+# an operator believes it is armed, the survey's NARROWED column and the seeder's
+# refusal drifting into two different populations, and a refusal raised after the
+# first insert half-landing a batch. 35 tests, <1s, registry injected and every
+# get_connection alias stubbed: no board, no network, no LLM.
+tests/kanban/test_identity_check_arming.py
 # hcx-post-02 — posture selection recorded as operator intent. Gated because
 # every property it holds fails SILENTLY: a selection that stopped appending an
 # event, one that appended after applying instead of before, one that started
@@ -1938,6 +1948,23 @@ tests/kanban/test_lane_conflicts.py
 # instead of stamping Anthropic's cache_control on a provider-neutral request.
 # No SDK, key, network or DB — pure declaration + translation.
 tests/test_prefix_cache_capability.py
+# rem-cap-04: the approval gate is ARMED by configuration, not only by an env
+# var. Gated because the defect it pins was invisible for the gate's entire
+# life: `_resolve_approval_gate` read ICDEV_AGENT_APPROVAL_MODE straight out of
+# os.environ and returned None -- no gate at all -- whenever it was unset, so
+# args/agent_runtime.yaml could say `enforce`, resolve_mode() could agree, and
+# all eleven default call sites still ran ungated. Every existing test passed
+# throughout; the gate had evaluated ZERO tool calls against 3,214 dispatched
+# builds. The property is a JOIN between two modules that were not talking, so
+# nothing that tests either one alone can see it. Also pins the escape hatch
+# (env `off` beats a config that enforces), the asymmetry when the gate module
+# is unimportable (an explicit `True` denies everything, an unasked-for default
+# does not), and the SHIPPED value in BOTH copies -- if only args/ said dry_run,
+# a wheel resolving icdev/data/args/ would fall through to the posture's
+# `enforce` and refuse 81% of tool calls in the deployment nobody tests locally.
+# 15 tests, <1s, tmp_path YAML and an injected import failure: no board, no
+# network, no LLM.
+tests/test_approval_gate_arming.py
 # hcx-evt-05 — forking a session at a seq. Gated because the refusals are the
 # feature: a fork boundary that started rounding into an open turn, or a
 # projection that stopped ordering an assistant tool_use ahead of the
@@ -1954,3 +1981,9 @@ tests/agent_runtime/test_fork.py
 # front of it (default OFF, size floor, never on a prefix's first sighting).
 # Fake SDK: no vendor package, key, network or DB.
 tests/test_gemini_managed_object_cache.py
+# cch-prov-03: Ollama's prefix cache pays in LATENCY, so the savings card must
+# report "not applicable" for a local provider rather than a dollar figure — it
+# was reporting a fabricated NON-ZERO one ($0.0040 against Anthropic's rate card
+# for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
+# absent. No Ollama process, no network, no DB.
+tests/test_ollama_prefix_latency.py

@@ -36,6 +36,23 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
+python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
+python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
+python tools/llm/ollama_prefix_latency.py --base-url http://gpu-box:11434
+# A local model has no per-token price, so cache_read_input_tokens stays 0 however
+# well caching works. The honest metric is server-side prompt-eval (prefill) time.
+# Measured 2026-08-16, ~1.9k-token prefix, 3 consecutive runs of n=5:
+#   qwen3:4b   440-471 -> 20-21 ms  (21.8-22.7x)
+#   qwen3:0.6b 103-278 -> 16-23 ms  (4.6-16.8x; noisier, short prefill, GPU load)
+# The cold seed is a per-run NONCE: Ollama's KV cache outlives the process, so a
+# fixed seed measures correctly once and then compares warm against warm.
+# prompt_eval_count is NOT the hit signal — it reports full prompt length on every
+# call, cached or not (constant at 1,914 across one cold and four warm). Only the
+# duration moves. Reports status=unmeasurable, never a number, when Ollama is down.
+# The /cache-savings card reads the DECLARED capability and shows "not applicable"
+# for a local provider instead of a dollar figure.
+
 # Semantic loop detection for the agent loop (ars-loop-01)
 # Library: tools/llm/loop_detector.py — detect_semantic_loop(records, config=) -> LoopDetection
 #   Config: args/llm_config.yaml -> agent_loop.loop_detection (enabled, window, similarity_threshold,
@@ -2210,7 +2227,26 @@ python -m tools.kanban.identity_survey --env-file /path/to/.env --json   # run f
 # Two zeroes that are NEVER a clean bill of health — both report measured:false, never 0%:
 # an unreadable args/projects.yaml (no_registry) and an empty board (empty_board, the worktree
 # trap where a missing .env silently reads a throwaway SQLite DB — use --env-file).
-# REPORT ONLY: no --gate, no writes, one SELECT. Arming is rem-hyg-04.
+# REPORT ONLY: no --gate, no writes, one SELECT. This module never refuses anything.
+
+# Kanban — the armed identity check and its kill switch (rem-hyg-04)
+KANBAN_IDENTITY_CHECK=report    # DEFAULT — log every unclaimed id, seed anyway
+KANBAN_IDENTITY_CHECK=enforce   # refuse the NARROWED population, before any insert
+KANBAN_IDENTITY_CHECK=off       # do not run the check at all
+# Read by tools/kanban/task_identity.py::mode (accepts the KANBAN_LANDED_CHECK spellings:
+# 1/true/yes => enforce, 0/false/no/none => off, warn => report). An UNRECOGNISED value
+# resolves to `report` and LOGS that it did — KANBAN_IDENTITY_CHECK=enforced is one keystroke
+# from enforce and must not read as armed. Consulted by task_factory.create_tasks BEFORE the
+# first INSERT, so a refusal can never half-land a batch; a broken check leaves seeding
+# exactly as it was. The refusal names each id, the id it should have carried
+# (`<prefix><epic>-<N>`), args/projects.yaml, and the way to stand it down.
+# WHY THE DEFAULT IS report: the rem-hyg-03 survey above. Refuse-everything = 35.17%;
+# narrowed (exempt opaque machine ids) = 10.85% lifetime but 15.81% over the last 30 days,
+# ten times the rate CLAUDE.md already calls refusing routine work. Both the survey's
+# NARROWED column and the seeder's refusal call ONE predicate, task_identity.is_enforceable,
+# so the measured rate is the enforced rate. Re-survey before changing the default; never
+# widen an exemption list to compensate, and never drop no_card — that is the HCX case.
+python -m tools.kanban.identity_survey --json | python -c "import json,sys; print(json.load(sys.stdin)['enforcement'])"
 
 # Kanban — will two tasks fight over the same file? Asked at SEED time (rem-hyg-07)
 python -m tools.kanban.lane_conflicts --json
@@ -6344,6 +6380,24 @@ python tools/ci/skip_census.py --check --changed tests/test_app.py
 python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what the run ACTUALLY skipped
 python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
 python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
+
+# UNGATED test census (rem-tst-01) — which of the backlog modules are GREEN today?
+# The ratchet above stops the ungated census GROWING and the drift reflex watches for
+# regressions inside it, but a promotion batch has to start from a different question:
+# of the 1,794 modules in args/ci_test_backlog.txt, which already pass? They cannot be
+# bulk-added — an unknown fraction are red, a red file turns main red, and a red main
+# gets the gate disabled, which is strictly worse than the debt. So MEASURE FIRST.
+# Runs each backlog module ALONE via isolation_run.run_one (same execution path, so
+# "alone" cannot mean two things), each child pinned to its own scratch ICDEV_DB_PATH
+# and a root-only PYTHONPATH. no-tests (pytest exit 5) is NOT counted as passed, and
+# collection-error is NOT merged into failed — they are different promotion jobs.
+# MEASURES ONLY: edits no allowlist and exits 0 whatever it finds.
+python tools/ci/ungated_test_census.py                       # backlog size + cost estimate
+python tools/ci/ungated_test_census.py --run --out docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --run --limit 50 --workers 4    # sample the prefix
+python tools/ci/ungated_test_census.py --run --deadline-s 3600 --timeout 240   # unstarted -> not-reached
+python tools/ci/ungated_test_census.py --verify docs/testing/ungated_test_census.json  # measured + not-reached + out-of-scope == backlog
+python tools/ci/ungated_test_census.py --summarize docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
 
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require

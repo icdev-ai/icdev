@@ -95,10 +95,34 @@ subsystems:
   # here would sit ABOVE the posture and pin the knob regardless of which
   # posture is selected — which is a legitimate thing to want, and exactly why
   # they are left commented rather than deleted. Uncomment to pin.
+  #
+  # `command_mode` IS pinned, deliberately (rem-cap-04). Both built-in postures
+  # would otherwise supply `enforce` (workspace-write) or `off`
+  # (danger-full-access), and `enforce` is not survivable yet:
+  #
+  #   * The gate's policy is fail-closed, so an unenumerated tool halts. Of the
+  #     tools the SAG toolsets actually register, 81% classify `unknown` —
+  #     `args/agent_approval_policy.yaml` enumerates 62 tools and misses these,
+  #     with the `compliance` (13), `security` (9), `canvas` (7), `govcon` (5)
+  #     and `kanban` (5) bundles entirely unenumerated.
+  #   * The default approver is `console_approver`, which denies on EOF. That is
+  #     correct fail-closed behaviour and fatal in an unattended run.
+  #
+  #   `enforce` today would therefore refuse roughly four tool calls in five, on
+  #   every SAG surface, with no human on the other end — the `|| true`
+  #   PreToolUse mistake at 17x the rate (that one was refusing 4.86%).
+  #
+  # `dry_run` calls the gate's `_finish()`, so it WRITES the `agent_approval_log`
+  # row and then allows. That makes the control consumed and measurable at zero
+  # liveness risk, and the log becomes the corpus for deciding what to enumerate
+  # — i.e. this IS the fire-rate survey CLAUDE.md requires before arming a
+  # security check. Promote to `enforce` per bundle, once those tools are
+  # enumerated or explicitly accepted; do not flip this line to do it globally.
+  # Finding: docs/security/approval-gate-reachability.md
   approval:
     # mode: manual                   # env: ICDEV_SAG_APPROVAL_MODE  (manual|smart|off)
     risk_function: summarization     # env: ICDEV_SAG_RISK_FUNCTION  (routing function, not a model)
-    # command_mode: enforce          # env: ICDEV_AGENT_APPROVAL_MODE (enforce|dry_run|off)
+    command_mode: dry_run            # env: ICDEV_AGENT_APPROVAL_MODE (enforce|dry_run|off)
 
   # tools/agents/adapters/codex_cli.py — confinement passed to an agent CLI that
   # supports one (`--sandbox <mode>`). The mode names belong to the vendor CLI,

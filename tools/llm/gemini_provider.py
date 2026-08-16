@@ -487,25 +487,39 @@ class GeminiProvider(LLMProvider):
             resp.input_tokens = getattr(usage, "prompt_token_count", 0) or 0
             resp.output_tokens = getattr(usage, "candidates_token_count", 0) or 0
             resp.thinking_tokens = getattr(usage, "thoughts_token_count", 0) or 0
-            # cch-prov-02: Gemini's cached tokens land in the SAME shared field
-            # every other provider reports into. Read unconditionally, not only
-            # when we created an object: Gemini also caches implicitly, and a
+            # Cache-token parity (cch-prov-01) + the storage event (cch-prov-02).
+            #
+            # Gemini sends cachedContentTokenCount in usageMetadata for
+            # implicit caching and for the explicit cachedContents API alike.
+            # Read unconditionally, not only when we created an object: a
             # count we did not ask for is still a count worth recording.
+            #
+            # BOTH spellings, because the SDK snake_cases the field while a
+            # raw REST payload does not.
+            #
             # NOTE for anyone summing across providers — prompt_token_count
             # INCLUDES the cached tokens (OpenAI's convention, the opposite of
             # Anthropic's), so input_tokens + cache_read_input_tokens
             # double-counts them here.
             resp.cache_read_input_tokens = (
-                getattr(usage, "cached_content_token_count", 0) or 0
+                getattr(usage, "cached_content_token_count", 0)
+                or getattr(usage, "cachedContentTokenCount", 0)
+                or 0
             )
 
-        # The storage event: how many tokens this call put into a stored object.
-        # Reported on the creating call only, so a write is never mistaken for a
-        # read. Unlike Anthropic's 1.25x write premium, Gemini bills storage per
-        # token-hour instead — the token count is the same fact, the price
-        # attached to it is not.
-        if created_tokens:
-            resp.cache_creation_input_tokens = created_tokens
+            # The storage event: how many tokens this call put into a stored object.
+            # Reported on the creating call ONLY, so a write is never mistaken for a
+            # read.
+            #
+            # cch-prov-01 left this field at 0 and said so deliberately — correct
+            # while nothing created objects, since Gemini reports no creation-token
+            # count and inventing one would fabricate a write cost. cch-prov-02
+            # creates the object, so the count is now a fact we hold rather than one
+            # we would have to invent. Unlike Anthropic's 1.25x write premium,
+            # Gemini bills storage per token-hour: same token count, different price
+            # attached to it.
+            if created_tokens:
+                resp.cache_creation_input_tokens = created_tokens
 
         # Try parsing structured output
         if resp.content.strip().startswith(("{", "[")):

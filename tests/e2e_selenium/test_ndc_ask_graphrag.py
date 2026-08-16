@@ -31,6 +31,25 @@ if str(_PROJECT_ROOT) not in sys.path:
 from tools.browser.driver_manager import get_driver  # noqa: E402
 
 BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
+GRAPH_ID = "ndc-network-intelligence"
+
+# A browser stamps Sec-Fetch-Site on every request and page JS cannot forge it,
+# so tools/security/csrf.py accepts it as proof a mutating request is not a
+# cross-site forgery. These raw urllib POSTs send no cookies and previously no
+# such header, so every one was rejected 403 CSRF_FAILED — a transport artifact
+# that masked whatever the endpoint actually returns (rem-e2e-01). Sending what
+# the page under test sends measures the endpoint instead of the CSRF shim.
+JSON_POST_HEADERS = {
+    "Content-Type": "application/json",
+    "Sec-Fetch-Site": "same-origin",
+}
+
+# The first /api/ask warms the retrieval path, and a tight bound turns that
+# cold-start cost into a TimeoutError indistinguishable from "the endpoint
+# returned 0 nodes" — the one thing this module exists to detect. No assertion
+# here is about latency, so the bound sits where only a genuine hang reaches it.
+# See the matching note in test_canvas_ask_fanout.py (rem-e2e-01).
+_ASK_TIMEOUT = 90
 
 
 @pytest.fixture(scope="module")
@@ -53,21 +72,22 @@ def test_ndc_ask_page_loads(driver):
 
 
 @pytest.mark.e2e_selenium
-def test_ndc_api_ask_firewall_matches():
+def test_ndc_api_ask_firewall_matches(require_graph_populated):
     """POST /network/api/ask {query:'firewall'} returns >=1 firewall node.
 
     Regression: graph_rag.retrieve previously missed entity_type matches,
     so "firewall" returned 0 against nodes with entity_type=network_firewall
     (labels are abbreviated like NYC-FWLL-01).
     """
+    require_graph_populated(GRAPH_ID)
     req = urllib.request.Request(
         f"{BASE_URL}/network/api/ask",
         data=json.dumps({"query": "firewall", "top_k": 10}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=JSON_POST_HEADERS,
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=_ASK_TIMEOUT) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         pytest.fail(f"api/ask HTTP {e.code}: {e.read()[:300].decode('utf-8','replace')}")
@@ -84,7 +104,7 @@ def test_ndc_api_ask_empty_query_400():
     req = urllib.request.Request(
         f"{BASE_URL}/network/api/ask",
         data=json.dumps({"query": ""}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=JSON_POST_HEADERS,
         method="POST",
     )
     try:
