@@ -496,6 +496,15 @@ def main() -> None:
               "measured 2026-08-15, all 79 nav routes take ~212s against a warm "
               "dashboard (2-3s each), so a hook budget of 120s could never "
               "finish one and every run died on the timeout instead."))
+    parser.add_argument(
+        "--exclude", default="",
+        help=("Comma-separated routes to skip, each NAMED in the output. For "
+              "routes a given environment genuinely cannot serve — CI disables "
+              "the network canvas (ICDEV_NETWORK_ENABLED=false), so /network/* "
+              "returns 404 there and always will. An exclusion is a statement "
+              "that the route is out of scope HERE, never that a failure is "
+              "acceptable; it is enumerated so a reader can see the coverage "
+              "they are actually getting."))
     parser.add_argument("--base", default="http://localhost:5050")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--json", action="store_true", dest="as_json")
@@ -505,6 +514,7 @@ def main() -> None:
     # Defined here, not inside the nav-route branch: --api-only skips that
     # branch entirely and the reporting below still reads it.
     skipped_by_cap: List[str] = []
+    excluded: List[str] = []
     overall_passed = True
     verbose = not args.as_json
 
@@ -517,6 +527,20 @@ def main() -> None:
         else:
             routes = NAV_ROUTES
 
+        # Environment exclusions come off FIRST, so --max-routes bounds the
+        # routes actually worth checking rather than spending its budget on
+        # routes this environment was never going to serve.
+        if args.exclude:
+            drop = {r.strip() for r in args.exclude.split(",") if r.strip()}
+            excluded = [r for r in routes if r in drop]
+            routes = [r for r in routes if r not in drop]
+            missing = sorted(drop - set(excluded))
+            if missing and verbose:
+                # A stale exclusion is how coverage shrinks without anyone
+                # deciding to shrink it — the same reason red_first_gate.yaml
+                # reports an exemption matching nothing.
+                print(f"  STALE --exclude entries (no such route): {', '.join(missing)}")
+
         # A cap you cannot see reads as "covered everything". CLAUDE.md forbids
         # a silent one, so the dropped routes are NAMED, not counted.
         if args.max_routes and len(routes) > args.max_routes:
@@ -525,6 +549,9 @@ def main() -> None:
 
         if verbose:
             print(f"Smoking {len(routes)} nav routes against {args.base} ...")
+            if excluded:
+                print(f"  EXCLUDED for this environment ({len(excluded)}): "
+                      f"{', '.join(excluded)}")
             if skipped_by_cap:
                 print(f"  BOUNDED by --max-routes={args.max_routes}: "
                       f"{len(skipped_by_cap)} route(s) NOT checked: "
@@ -552,6 +579,7 @@ def main() -> None:
             # Named, not counted: a consumer must be able to tell "79/79 checked"
             # from "20 checked and the other 59 never looked at".
             "skipped_by_cap": skipped_by_cap,
+            "excluded": excluded,
             "results": all_results,
         }))
     else:

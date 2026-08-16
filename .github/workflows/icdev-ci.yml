@@ -712,6 +712,45 @@ jobs:
             fi
           done
         continue-on-error: true
+      # Route smoke ran in NO workflow before this (fli-smk-01). Its only home
+      # was the pre-commit hook, and there it timed out on every run that
+      # reached it — 79 nav routes take ~212s against a warm dashboard and the
+      # budget was 120s — so a `return True` on TimeoutExpired meant it had
+      # never once gated anything. The hook is now bounded to 20 routes, which
+      # makes it finish but is explicitly NOT full coverage. This is the only
+      # place a full sweep can run, because it needs a live dashboard.
+      #
+      # MEASURING, NOT YET ENFORCING. CLAUDE.md forbids arming a check without
+      # a fire-rate survey first, and this environment is not the dev box: the
+      # network canvas is off here (ICDEV_NETWORK_ENABLED=false), and there is
+      # already a non-blocking step above conceding that /ai-wizard and
+      # /ai-patterns may not answer. Turning on a 79-route blocking gate on an
+      # unmeasured pass rate is how a gate earns a `|| true` in its first week.
+      # The JSON is uploaded so the run is EVIDENCE rather than scrollback, and
+      # the exclusions get enumerated from it before this flips to blocking.
+      - name: Route smoke — full nav sweep (measuring, non-blocking)
+        run: |
+          python tools/testing/route_smoke.py --all --json \
+            --base http://localhost:5050 \
+            > route-smoke.json || true
+          python - <<'PY'
+          import json
+          r = json.load(open("route-smoke.json"))
+          bad = [x for x in r["results"] if not x["ok"]]
+          print(f"route smoke: {r['total'] - r['failures']}/{r['total']} OK, "
+                f"{r['failures']} failing")
+          for x in bad:
+              print(f"::warning::route smoke {x['route']} -> "
+                    f"status={x['status']} {x.get('error') or x.get('error_signal') or ''}")
+          PY
+        continue-on-error: true
+      - name: Upload route-smoke evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: route-smoke
+          path: route-smoke.json
+          if-no-files-found: warn
       - name: Run Playwright E2E tests
         run: |
           _abort() {
