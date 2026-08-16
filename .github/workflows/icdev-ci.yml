@@ -752,8 +752,14 @@ jobs:
           r = json.load(open("route-smoke.json"))
           bad = [x for x in r["results"] if not x["ok"]
                  and x["route"] not in r.get("tolerated", [])]
-          print(f"route smoke: {r['total'] - r['failures']}/{r['total']} enforced OK, "
-                f"{len(r.get('tolerated', []))} tolerated (canvas off here)")
+          # Report what was ENFORCED, not the raw total. "89/89 enforced OK"
+          # while 8 were tolerated overstates the coverage by exactly the 8 —
+          # the overstatement this gate exists to stop, in its own summary line.
+          tolerated = r.get("tolerated", [])
+          enforced = r["total"] - len(tolerated)
+          print(f"route smoke: {enforced - len(bad)}/{enforced} enforced OK, "
+                f"{len(tolerated)} tolerated (canvas off here), "
+                f"{r['total']} checked in total")
           for name in r.get("stale_expect_fail", []):
               print(f"::warning::route smoke: --expect-fail {name} no longer fails — "
                     f"remove it so the gate covers it again")
