@@ -104,12 +104,30 @@ def test_every_state_carries_an_explanation_except_populated():
 
 
 def test_the_cold_explanation_names_the_actual_cause():
-    """UNLOGGED is why this happens, and nobody would guess it from a 0%."""
+    """A 0% hit rate explains nothing on its own; the tile must say why.
+
+    This asserted `"unlogged" in detail` until 2026-08-16, and that was correct
+    while UNLOGGED was the cause: PostgreSQL truncates an unlogged table on crash
+    recovery, so a restart emptied the cache AND — because every figure on the
+    card is derived `FROM llm_response_cache`, with no separate savings table —
+    reset the cumulative dollars-saved to $0.0000.
+
+    Migration 20260816123233 made the table LOGGED, so naming UNLOGGED would now
+    send the reader after a cause that no longer exists. What the explanation
+    must still do is state a real cause and a remedy.
+    """
     from tools.cache_savings.savings import _STATE_DETAIL
 
     detail = _STATE_DETAIL[STATE_COLD].lower()
-    assert "unlogged" in detail
     assert "warmer" in detail, "tell the reader how to fix it"
+    assert "logged" in detail, (
+        "say that entries now survive a restart — otherwise a cold reading after "
+        "a restart still looks like the old expected reset"
+    )
+    assert "unlogged is" not in detail and "is unlogged" not in detail, (
+        "the table is LOGGED as of 20260816123233; naming UNLOGGED as the cause "
+        "sends the reader after something that is no longer true"
+    )
 
 
 @pytest.mark.parametrize("enabled,live,stored,expected", [
@@ -258,3 +276,72 @@ def test_tile_endpoint_carries_the_state_through(monkeypatch):
     # And the legacy keys the tile already rendered are untouched.
     assert payload["hit_rate_pct"] == 0.0
     assert payload["backend"] == "postgresql"
+
+
+# ---------------------------------------------------------------------------
+# The savings ledger must not be volatile (2026-08-16)
+# ---------------------------------------------------------------------------
+# tools/cache_savings/savings.py derives EVERY number on the LLM Prompt Cache
+# card with `FROM llm_response_cache` and nothing else. The table was created
+# UNLOGGED, and PostgreSQL truncates unlogged tables on crash recovery — so an
+# unclean shutdown did not merely drop cached responses (fine, they regenerate),
+# it reset a cumulative business metric to $0.0000 with no record it had ever
+# been anything else.
+
+
+def test_the_pg_ddl_does_not_create_an_unlogged_table():
+    """The table is the ledger, so it has to survive a restart."""
+    from tools.llm import response_cache
+
+    ddl = response_cache._PG_DDL.upper()
+    assert "CREATE TABLE" in ddl
+    assert "UNLOGGED" not in ddl, (
+        "llm_response_cache is the ONLY source of the dashboard's cumulative "
+        "dollars-saved; UNLOGGED means PostgreSQL truncates it on crash "
+        "recovery and the metric silently resets to $0.0000"
+    )
+
+
+def test_savings_still_read_from_the_cache_table():
+    """Guards the premise of the test above rather than assuming it holds.
+
+    If the savings ever move to their own durable table, UNLOGGED becomes a
+    defensible choice again for the cache — and this test failing is the signal
+    to revisit that, instead of the ledger assertion quietly protecting nothing.
+    """
+    import inspect
+
+    from tools.cache_savings import savings
+
+    src = inspect.getsource(savings)
+    assert "FROM llm_response_cache" in src, (
+        "savings no longer derive from llm_response_cache — re-examine whether "
+        "the LOGGED requirement above still applies"
+    )
+
+
+def test_the_warmer_runs_by_path_without_PYTHONPATH():
+    """The cold tile tells operators to run this exact command.
+
+    warmer.py had no sys.path bootstrap, so `python tools/cache_savings/warmer.py
+    --warm` — the remedy printed on the card — died with ModuleNotFoundError:
+    No module named 'tools'. The one moment that command is reached is the one
+    moment it has to work.
+    """
+    import os
+    import subprocess
+    import sys
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+
+    proc = subprocess.run(
+        [sys.executable, str(root / "tools" / "cache_savings" / "warmer.py"),
+         "--warm", "--dry-run"],
+        capture_output=True, text=True, cwd=str(root), env=env, timeout=300,
+    )
+    combined = (proc.stdout or "") + (proc.stderr or "")
+    assert "ModuleNotFoundError" not in combined, (
+        f"the documented command fails without PYTHONPATH:\n{combined[-500:]}"
+    )
+    assert proc.returncode == 0, f"exit {proc.returncode}:\n{combined[-500:]}"

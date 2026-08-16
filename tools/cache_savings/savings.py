@@ -21,12 +21,23 @@ _CR  = 0.30 / 1_000_000      # $0.30/MTok cache read  (90% discount)
 
 
 #: Why the cache has no live entries. A zero hit rate is reported identically
-#: whether caching is broken, switched off, or simply cold — and on this
-#: platform "cold" is the COMMON case, because llm_response_cache is created
-#: UNLOGGED on PostgreSQL (tools/llm/response_cache.py) and PostgreSQL empties
-#: unlogged tables on any unclean shutdown or crash recovery. That is a
-#: deliberate trade (no WAL, fast cache writes), so the reset is expected
-#: behaviour and must not render as a failure.
+#: whether caching is broken, switched off, or simply cold, so the state is named
+#: rather than left to the reader.
+#:
+#: "Cold" USED to be the common case for a bad reason: llm_response_cache was
+#: created UNLOGGED on PostgreSQL, and PostgreSQL truncates unlogged tables on
+#: crash recovery. Every number below comes `FROM llm_response_cache` and there
+#: is no separate savings table — so an unclean shutdown did not merely drop
+#: cached responses (fine, they regenerate), it reset a CUMULATIVE metric to
+#: $0.0000 with no record it had ever been anything else.
+#:
+#: The old note here called that "a deliberate trade (no WAL, fast cache
+#: writes)". Measured 2026-08-16 on this deployment, 400 inserts of a 2KB body:
+#: UNLOGGED 0.482 ms/insert, LOGGED 0.446 ms/insert — LOGGED marginally FASTER,
+#: the difference noise. There was no throughput being bought, because a write
+#: here happens once per cache MISS, i.e. once per LLM API call taking seconds.
+#: The table is LOGGED as of migration 20260816123233; cold now means genuinely
+#: new or recently expired, not "the server restarted".
 STATE_POPULATED   = "populated"
 STATE_DISABLED    = "disabled"        # response_cache.enabled is false
 STATE_UNREACHABLE = "unreachable"     # the query itself failed
@@ -47,10 +58,13 @@ _STATE_DETAIL = {
     STATE_DISABLED: "response_cache.enabled is false in args/llm_config.yaml",
     STATE_UNREACHABLE: "the cache table could not be queried",
     STATE_COLD: (
-        "cache is cold — no entries at all. llm_response_cache is UNLOGGED on "
-        "PostgreSQL, which empties it on an unclean shutdown or crash recovery; "
-        "it refills from live router traffic, or run "
-        "`python tools/cache_savings/warmer.py --warm` to pre-populate it."
+        "cache is cold — no entries at all. It fills from live router traffic "
+        "(one entry per cache miss), or run "
+        "`python tools/cache_savings/warmer.py --warm` to pre-populate it. "
+        "The table is LOGGED as of migration 20260816123233, so entries and the "
+        "savings they represent now survive a restart; if this reads cold "
+        "shortly after a restart, that is new behaviour worth investigating "
+        "rather than the expected reset it used to be."
     ),
     STATE_EXPIRED: (
         "every stored entry is past its TTL (response_cache.ttl_seconds); the "

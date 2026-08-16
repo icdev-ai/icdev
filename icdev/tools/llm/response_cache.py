@@ -1,7 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
 """LLM Response Cache — deterministic key-value store for LLM responses.
 
-PostgreSQL-native (UNLOGGED + JSONB + BRIN) with automatic SQLite fallback.
+PostgreSQL-native (JSONB + BRIN) with automatic SQLite fallback. The table is
+LOGGED: it is also the savings ledger — see the note above _PG_DDL.
 Air-gap safe — 100% local storage via get_connection().
 
 Usage::
@@ -50,8 +51,27 @@ CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 # DDL per backend
 # ---------------------------------------------------------------------------
 
+# LOGGED, deliberately — this table is not only a cache.
+#
+# It was UNLOGGED, which is the right call for data that is cheap to regenerate
+# and written at high frequency. Neither half held here.
+#
+# It is also the LEDGER. tools/cache_savings/savings.py computes every number on
+# the dashboard's LLM Prompt Cache card — total hits, hit rate, dollars saved —
+# with `FROM llm_response_cache` and nothing else; there is no separate savings
+# table. PostgreSQL TRUNCATES an unlogged table on crash recovery, so any unclean
+# shutdown silently reset a cumulative business metric to $0.0000, with no record
+# that it had ever been anything else. Observed 2026-08-16: card reading 0
+# entries / 0.0% / $0.0000 on a platform that has been routing LLM traffic for
+# months.
+#
+# And the optimisation bought nothing. Writes here happen once per cache MISS —
+# i.e. once per real LLM API call, which takes seconds. Benchmarked on this
+# deployment, 400 inserts of a 2KB body: UNLOGGED 0.482 ms/insert, LOGGED
+# 0.446 ms/insert. LOGGED measured marginally FASTER; the difference is noise,
+# which is the point — there is no throughput to protect at this write rate.
 _PG_DDL = """
-CREATE UNLOGGED TABLE IF NOT EXISTS llm_response_cache (
+CREATE TABLE IF NOT EXISTS llm_response_cache (
     cache_key TEXT PRIMARY KEY,
     function TEXT NOT NULL,
     model_id TEXT NOT NULL,
