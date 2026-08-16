@@ -33,14 +33,41 @@ from tools.browser.driver_manager import get_driver  # noqa: E402
 
 BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5050")
 
+# A browser stamps Sec-Fetch-Site on every request and page JS cannot forge it,
+# so tools/security/csrf.py accepts it as proof a mutating request is not a
+# cross-site forgery. These raw urllib POSTs send no cookies and previously no
+# such header, so every one was rejected 403 CSRF_FAILED — a transport artifact
+# that masked whatever the endpoint actually returns (rem-e2e-01). Sending what
+# the page under test sends measures the endpoint instead of the CSRF shim.
+JSON_POST_HEADERS = {
+    "Content-Type": "application/json",
+    "Sec-Fetch-Site": "same-origin",
+}
+
 # (route_prefix, canvas label for error messages, probe query expected to hit)
+#
+# The probe must be a token the canvas's indexed design data actually contains,
+# otherwise a 0-node result says nothing about retrieval. Three of these had
+# gone stale against the entity types canvas_indexer.py writes today (measured
+# 2026-08-16 against the live kg_nodes inventory, rem-e2e-01):
+#   DDC "table"     -> no such type; types are ddc_service/ddc_database/ddc_api
+#   ODC "detection" -> no such type; types are odc_col-*/odc_src-*/odc_plt-*
+#   IDC "compute"   -> the entity_type=idc_compute named in the old comment no
+#                      longer exists; types are idc_switch/idc_k8s/idc_db/...
+# Keep this table in step with canvas_indexer.py: a probe naming a type that is
+# gone reports a retrieval regression that is not happening.
 CANVASES = [
-    ("/devops",        "PDC", "build"),
-    ("/boundary",      "BDC", "boundary"),
-    ("/data",          "DDC", "table"),
-    ("/observability", "ODC", "detection"),
-    ("/infra",         "IDC", "compute"),  # matches entity_type=idc_compute
+    ("/devops",        "PDC", "build"),      # pdc_* build/pipeline nodes
+    ("/boundary",      "BDC", "boundary"),   # bdc_bnd-* boundary nodes
+    ("/data",          "DDC", "database"),   # ddc_database
+    ("/observability", "ODC", "collector"),  # odc_col-otel / odc_col-fluentd
+    ("/infra",         "IDC", "switch"),     # idc_switch
 ]
+
+
+def _graph_id(canvas: str) -> str:
+    """The kg_nodes graph_id a canvas's /ask endpoint is scoped to."""
+    return f"{canvas.lower()}-designs"
 
 
 @pytest.fixture(scope="module")
@@ -51,15 +78,28 @@ def driver():
     drv.quit()
 
 
+# The first /api/ask against a given canvas warms the retrieval path, and the
+# 15s this used to allow was under that cost: the SAME probe that passes in ~2s
+# on its own timed out when run after its siblings, so the module's verdict
+# depended on how many tests preceded it (measured 2026-08-16 — 16 passed, then
+# 3 failed, for the identical command against the identical dashboard).
+# A TimeoutError raised here is indistinguishable from "the endpoint answered
+# with 0 nodes", which is the one thing these tests exist to detect, so a tight
+# bound converts cold-start latency into a fake retrieval regression. None of
+# these tests asserts a latency SLA; the assertion is on nodes_returned. The
+# bound is therefore set where only a genuine hang can reach it.
+_ASK_TIMEOUT = 90
+
+
 def _post(url: str, body: dict):
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=JSON_POST_HEADERS,
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=_ASK_TIMEOUT) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         return e.code, {"_raw": e.read()[:300].decode("utf-8", "replace")}
@@ -77,7 +117,8 @@ def test_canvas_ask_page_loads(driver, prefix, canvas, probe):
 
 @pytest.mark.e2e_selenium
 @pytest.mark.parametrize("prefix,canvas,probe", CANVASES)
-def test_canvas_ask_probe_returns_nodes(prefix, canvas, probe):
+def test_canvas_ask_probe_returns_nodes(prefix, canvas, probe, require_graph_populated):
+    require_graph_populated(_graph_id(canvas))
     status, body = _post(f"{BASE_URL}{prefix}/api/ask", {"query": probe, "top_k": 10})
     assert status == 200, f"[{canvas}] status={status} body={body}"
     assert body.get("nodes_returned", 0) >= 1, \

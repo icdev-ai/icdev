@@ -30,9 +30,11 @@ import time
 from typing import Any, Dict, Iterator, List
 
 from tools.llm.provider import (
+    PREFIX_CACHE_AUTOMATIC,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
     messages_to_openai,
     tools_to_openai,
 )
@@ -97,6 +99,20 @@ class AzureOpenAIProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "azure_openai"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Automatic: identical to OpenAI, same SDK object, nothing to request."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_AUTOMATIC,
+            reason=(
+                "Azure OpenAI does the same automatic >=1024-token prefix caching as "
+                "OpenAI on GPT-4o+ deployments, through the same SDK object. Nothing "
+                "is requested; usage.prompt_tokens_details.cached_tokens is read back "
+                "(D-CACHE-OAI-1) so the tokens it serves are not discarded."
+            ),
+            reports_cache_tokens=True,
+        )
 
     @property
     def _is_government(self) -> bool:

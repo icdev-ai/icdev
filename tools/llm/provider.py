@@ -5,6 +5,7 @@ Defines the universal request/response format and abstract interfaces
 that all provider implementations must satisfy.
 """
 
+import copy
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -33,6 +34,88 @@ class LLMRateLimitError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
+# Prefix-cache capability (cch-cap-01)
+# ---------------------------------------------------------------------------
+#: The provider does no prefix caching that ICDEV can reach.
+PREFIX_CACHE_NONE = "none"
+#: The provider caches eligible prefixes by itself. Nothing is requested; the
+#: only job is reading the count back (OpenAI, Azure OpenAI).
+PREFIX_CACHE_AUTOMATIC = "automatic"
+#: The caller marks breakpoints on the wire and the provider honours them
+#: (Anthropic, Bedrock).
+PREFIX_CACHE_EXPLICIT = "explicit"
+#: The provider needs a stored handle with its own TTL, created out of band and
+#: referenced by the call (Gemini ``cachedContents``).
+PREFIX_CACHE_MANAGED_OBJECT = "managed_object"
+#: A locally hosted server reuses the KV cache across calls. Real, and worth
+#: declaring — but the payoff is LATENCY, not billing, so cached-token dollars
+#: are the wrong unit entirely.
+PREFIX_CACHE_LOCAL = "local"
+
+PREFIX_CACHE_SUPPORT_LEVELS = frozenset(
+    {
+        PREFIX_CACHE_NONE,
+        PREFIX_CACHE_AUTOMATIC,
+        PREFIX_CACHE_EXPLICIT,
+        PREFIX_CACHE_MANAGED_OBJECT,
+        PREFIX_CACHE_LOCAL,
+    }
+)
+
+#: Anthropic's wire value for an ``explicit`` breakpoint. The ONLY place this
+#: vendor string is produced from a neutral request.
+CACHE_CONTROL_EPHEMERAL = "ephemeral"
+
+
+@dataclass(frozen=True)
+class PrefixCacheCapability:
+    """What a provider does when the caller says 'this prefix is worth caching'.
+
+    Declared BY the provider, never inferred by the router. ``none`` and
+    ``local`` are first-class answers with a written reason — not gaps to be
+    filled in later — because a provider that legitimately has nothing to offer
+    and a provider nobody has looked at must not read the same.
+
+    Attributes:
+        support: One of :data:`PREFIX_CACHE_SUPPORT_LEVELS`.
+        reason: Why this level, in the provider's own terms. Required — an
+            undocumented ``none`` is indistinguishable from an unasked question.
+        verified: True when the level was checked against vendor behaviour or
+            documentation. False means 'not assessed', which is a DIFFERENT
+            fact from 'assessed, and the answer is none'.
+        reports_cache_tokens: True when the adapter reads the provider's cached
+            token counts back into ``LLMResponse.cache_read_input_tokens`` /
+            ``cache_creation_input_tokens``. Caching that fires and is never
+            recorded is indistinguishable from caching that never fired.
+    """
+
+    support: str
+    reason: str
+    verified: bool = True
+    reports_cache_tokens: bool = False
+
+    def __post_init__(self) -> None:
+        if self.support not in PREFIX_CACHE_SUPPORT_LEVELS:
+            raise ValueError(
+                f"Unknown prefix cache support level {self.support!r}. "
+                f"Expected one of: {sorted(PREFIX_CACHE_SUPPORT_LEVELS)}"
+            )
+        if not (self.reason or "").strip():
+            raise ValueError("PrefixCacheCapability.reason is required")
+
+
+#: What an adapter that has never declared anything answers. Deliberately
+#: ``verified=False``: the router treats it exactly like ``none``, but a
+#: reader (and any future census) can tell 'nobody has looked' apart from
+#: 'looked, and there is nothing there'.
+UNDECLARED_PREFIX_CACHE = PrefixCacheCapability(
+    support=PREFIX_CACHE_NONE,
+    reason="This adapter has not declared prefix-cache support; treated as none until it does.",
+    verified=False,
+)
+
+
+# ---------------------------------------------------------------------------
 # Vendor-agnostic request / response
 # ---------------------------------------------------------------------------
 @dataclass
@@ -49,8 +132,20 @@ class LLMRequest:
     stop_sequences: Optional[List[str]] = None
     effort: str = "medium"  # low, medium, high, max
     skip_injection_scan: bool = False  # True for trusted internal pipeline calls
-    # Cache control
-    cache_control: str = ""  # "ephemeral" | "" — hints provider to KV-cache this prefix
+    # Cache control (cch-cap-01)
+    #: The provider-NEUTRAL intent: "this request's prefix is stable and worth
+    #: caching". Set by the caller (or by the router from per-canvas /
+    #: per-function config); the PROVIDER decides what that means, via its
+    #: declared PrefixCacheCapability. This is the field to set.
+    cache_prefix: bool = False
+    #: Anthropic's wire vocabulary ("ephemeral" | ""), derived from
+    #: ``cache_prefix`` by :func:`apply_prefix_cache` for providers that declare
+    #: ``explicit`` support, and read only by the Anthropic and Bedrock
+    #: adapters. Do NOT set this from a caller or from the router — a vendor
+    #: field on a neutral request forces every other vendor to recognise or
+    #: ignore a foreign vocabulary. Kept settable for the two adapters' tests
+    #: and for callers predating cch-cap-01.
+    cache_control: str = ""
     # Chain orchestration fields
     chain_mode: str = ""  # "cot" or "cod" or ""
     chain_config: Dict[str, Any] = field(default_factory=dict)
@@ -82,6 +177,14 @@ class LLMResponse:
     cache_creation_input_tokens: int = 0  # D-CACHE-10: Anthropic prompt cache write cost
     cache_read_input_tokens: int = 0      # D-CACHE-10: Anthropic prompt cache read savings
     duration_ms: int = 0
+    #: Server-side time spent evaluating the PROMPT (prefill), in ms — the honest
+    #: prefix-cache metric for a `local` provider, where there is no per-token
+    #: price for cached tokens to discount (cch-prov-03).
+    #:
+    #: ``None`` means the provider does not report it, which is a DIFFERENT fact
+    #: from a measured 0.0. Only Ollama populates it today; every other adapter
+    #: leaves it None rather than reporting a zero nobody measured.
+    prompt_eval_ms: Optional[float] = None
     stop_reason: str = ""
     cost_usd: float = 0.0                 # USD cost, derived by the router
     #: How cost_usd was arrived at: "priced" | "local_zero" | "unpriced".
@@ -110,6 +213,16 @@ class LLMProvider(ABC):
     @abstractmethod
     def provider_name(self) -> str:
         """Return the provider identifier (e.g. 'bedrock', 'openai')."""
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Declare what this provider does with a stable, cacheable prefix.
+
+        Every adapter overrides this. The default is UNDECLARED — reported as
+        ``none`` with ``verified=False`` — so an adapter that forgets answers
+        honestly instead of inheriting somebody else's vendor behaviour.
+        """
+        return UNDECLARED_PREFIX_CACHE
 
     @abstractmethod
     def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
@@ -164,6 +277,90 @@ class LLMProvider(ABC):
         """
         if getattr(self, "_client", None) is not None:
             self._client = None
+
+
+# ---------------------------------------------------------------------------
+# Prefix-cache resolution (cch-cap-01)
+# ---------------------------------------------------------------------------
+def resolve_prefix_cache_capability(provider: Any) -> PrefixCacheCapability:
+    """Return ``provider``'s declared capability, or UNDECLARED.
+
+    Duck-typed on purpose: the router hands over whatever ``_get_provider``
+    returned, and test doubles / the CLI bridge are not required to subclass
+    :class:`LLMProvider`. A provider that cannot answer is treated as
+    undeclared, never as an error on the invocation path.
+    """
+    cap = getattr(provider, "prefix_cache_capability", None)
+    return cap if isinstance(cap, PrefixCacheCapability) else UNDECLARED_PREFIX_CACHE
+
+
+def wants_prefix_cache(request: LLMRequest) -> bool:
+    """True when caching this request's prefix has been asked for.
+
+    Accepts the legacy vendor field as well as the neutral one so callers
+    predating cch-cap-01 — and the Anthropic-specific BDD suite — keep working.
+    """
+    return bool(getattr(request, "cache_prefix", False)) or (
+        getattr(request, "cache_control", "") == CACHE_CONTROL_EPHEMERAL
+    )
+
+
+def apply_prefix_cache(provider: Any, request: LLMRequest) -> LLMRequest:
+    """Translate the neutral prefix-cache intent into what THIS provider needs.
+
+    Called once the provider is known — which is the whole point, since the
+    router picks a chain, not a vendor, and the same request can fall through
+    to a second provider with entirely different semantics.
+
+    - ``explicit``: set Anthropic's ``cache_control`` breakpoint marker.
+    - ``automatic``: nothing to ask for; the provider caches and reports.
+    - ``managed_object``: the handle is created out of band; nothing on the
+      request today.
+    - ``local`` / ``none``: nothing to set, by design.
+
+    For every level except ``explicit`` a foreign ``cache_control`` value is
+    STRIPPED rather than forwarded, so a fallback from Anthropic to (say)
+    Gemini cannot carry Anthropic's vocabulary onto Gemini's wire.
+
+    Returns the request unchanged when nothing needs to change, and a shallow
+    copy otherwise — never mutates the caller's object, which may be retried
+    against a different provider.
+    """
+    if not wants_prefix_cache(request):
+        return request
+
+    cap = resolve_prefix_cache_capability(provider)
+    if cap.support == PREFIX_CACHE_EXPLICIT:
+        if request.cache_control == CACHE_CONTROL_EPHEMERAL:
+            return request
+        req = copy.copy(request)
+        req.cache_control = CACHE_CONTROL_EPHEMERAL
+        return req
+
+    if request.cache_control:
+        req = copy.copy(request)
+        req.cache_control = ""
+        return req
+    return request
+
+
+def prefix_cache_savings_are_monetary(cap: PrefixCacheCapability) -> bool:
+    """Is this provider's prefix-cache payoff denominated in DOLLARS? (cch-prov-03)
+
+    False for ``local`` only. A locally hosted model has no per-token price, so
+    a cached prefix costs less TIME and exactly zero less money — there is no
+    bill for a discount to apply to. Reporting ``$0.0000`` for it is not a
+    conservative estimate, it is the wrong unit: the reader cannot tell it from
+    a cloud provider whose caching is broken.
+
+    ``none`` IS monetary and legitimately zero: a billed provider that caches
+    nothing really did save nothing, and $0.00 is the correct answer there.
+
+    Callers that render money should show "not applicable" plus
+    :attr:`PrefixCacheCapability.reason` when this returns False, and must not
+    substitute a fabricated figure to keep a table looking uniform.
+    """
+    return cap.support != PREFIX_CACHE_LOCAL
 
 
 # ---------------------------------------------------------------------------

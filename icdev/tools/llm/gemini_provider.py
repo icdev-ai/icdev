@@ -16,9 +16,11 @@ import time
 from typing import Any, Dict, Iterator, List
 
 from tools.llm.provider import (
+    PREFIX_CACHE_MANAGED_OBJECT,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
 )
 
 logger = get_logger("icdev.llm.gemini")
@@ -195,6 +197,22 @@ class GeminiProvider(LLMProvider):
     def provider_name(self) -> str:
         return "gemini"
 
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Managed object: a stored cachedContents handle with its own TTL."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_MANAGED_OBJECT,
+            reason=(
+                "Gemini caches through the cachedContents API: content is uploaded "
+                "once, given a TTL, and referenced by handle on later calls — there "
+                "is no per-request marker to set, so a cache_control field is "
+                "meaningless here. Creating and reusing the handle is not "
+                "implemented yet (assessment section 4.4); this adapter also does "
+                "not yet read usageMetadata.cachedContentTokenCount, so it reports "
+                "no cached tokens."
+            ),
+        )
+
     def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Gemini API synchronously."""
         self._ensure_configured()
@@ -293,6 +311,25 @@ class GeminiProvider(LLMProvider):
             resp.input_tokens = getattr(usage, "prompt_token_count", 0) or 0
             resp.output_tokens = getattr(usage, "candidates_token_count", 0) or 0
             resp.thinking_tokens = getattr(usage, "thoughts_token_count", 0) or 0
+            # Cache-token parity (cch-prov-01), same shape as the Azure fix.
+            #
+            # Gemini already sends cachedContentTokenCount in usageMetadata —
+            # for implicit caching and for the explicit cachedContents API
+            # alike — and this parse dropped it, so any caching Gemini did on
+            # our behalf was indistinguishable from no caching at all.
+            #
+            # Nothing is REQUESTED here: this is the reporting half only, and
+            # cachedContents is cch-prov-02. Both spellings are read because
+            # the SDK snake_cases the field while a raw REST payload does not.
+            resp.cache_read_input_tokens = (
+                getattr(usage, "cached_content_token_count", 0)
+                or getattr(usage, "cachedContentTokenCount", 0)
+                or 0
+            )
+            # cache_creation_input_tokens stays 0 deliberately. Gemini bills
+            # cache STORAGE by time and reports no creation-token count, so
+            # filling that field from the read count would invent a write cost
+            # the vendor never charged.
 
         # Try parsing structured output
         if resp.content.strip().startswith(("{", "[")):

@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# The append-only agent event log (hcx-evt-01, hcx-evt-02)
+# The append-only agent event log (hcx-evt-01, hcx-evt-02, hcx-evt-05)
 
 **Card:** `hcx` — see [docs/research/deepseek-harness-cordis-adaptation.md](../research/deepseek-harness-cordis-adaptation.md) §3.1.
 **Table:** `agent_session_events`, migration `20260816122036`.
@@ -145,6 +145,57 @@ Additive: `agent_loop_sessions.messages_json` stays the resume path. Kill switch
 `ICDEV_AGENT_EVENT_RECORDING=0`; **default ON**, because shipping it off would be
 the declared-but-unconsumed defect again.
 
+## The fork (hcx-evt-05)
+
+The reason the ordering was built. `tools/agent_runtime/fork.py` turns a prefix
+of this log back into a message list and seeds a NEW session from it, which is
+the branching primitive ICDEV did not have — `run_agent_loop(parent_session_id=…)`
+records sub-agent *lineage*, not "this session is that one up to turn N".
+
+```bash
+icdev chat --fork <ctx-id>                    # survey the legal boundaries; creates nothing
+icdev chat --fork <ctx-id> --at 12            # branch there and drop into the REPL
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --dry-run --json
+```
+
+**A boundary inside an open turn is REFUSED, not rounded** — the one refusal
+borrowed from DSH rather than rediscovered. A prefix ending mid-turn is not a
+shorter conversation, it is an illegal one: an assistant `tool_use` with no
+matching `tool_result`, which the next provider call rejects. Refused likewise: a
+`seq` that names no event (the log is the only place that number means anything,
+so it is never clamped to a neighbour), an unanswered tool call or an orphaned
+result — holes in the log rather than a boundary anyone chose — and a prefix
+whose projected payloads are **withheld**, because a withheld payload is not an
+empty one and projecting it would seed a fabrication carrying a correct-looking
+digest. Every refusal names the legal boundaries either side.
+
+**The event order is not the message order.** `on_turn` fires *after* the
+post-tool hooks, so a tool-using iteration is recorded `tool_call, tool_result, …,
+assistant_message` — the message announcing the calls arrives after the results
+answering them. The projection buffers a result until its call lands, so both
+that order and the reverse project to the same legal list.
+
+A fork writes the projected messages to `agent_loop_sessions` (**read back before
+it is linked** — a `resume_session_id` pointing at a row that was never written
+produces a session that looks continued and remembers nothing), a `chat_contexts`
+row whose `context_config.fork` holds the parent id, boundary seq, seed length
+and a digest over the seeded events' hashes, one `session_fork` event at `seq` 1
+of the new session's own log, and the projected turns replayed into
+`chat_messages`. The prefix events are **not copied**: the digest identifies them
+without duplicating a byte, and a copy would have needed a second write verb on a
+module whose surface is deliberately `append` / `read_session` / `next_seq`.
+
+`session_fork` is the second non-model-visible member of `EVENT_TYPES`, after
+`permission_posture`, and adding it needed no migration — the payoff of holding
+the vocabulary in Python rather than in a `CHECK` constraint.
+
+One limitation, inherited and not introduced: the forked session's next turn
+behaves exactly as `--resume`'s does, and `run_agent_loop` does not append a new
+`user_prompt` to a transcript loaded from `resume_session_id`
+(`tests/test_agent_loop.py::test_resume_loads_prior_messages` passes
+`user_prompt="ignored"`). That is a property of the resume seam in
+`AgentRuntime.run_turn`, not of forking.
+
 ## Using it
 
 ```bash
@@ -164,6 +215,10 @@ Session Event Log".
   the migration's own `up.sql`, so a column added to one and not the other fails
   there rather than at runtime.
 - `tests/agent_runtime/test_event_recorder.py` — 38 tests.
+- `tests/agent_runtime/test_fork.py` — 21 tests, against the same
+  migration-built table. Half of them are the refusals: a boundary mid-turn, a
+  `seq` naming no event, an unanswered tool call, a withheld payload, and a
+  refused fork leaving nothing behind.
 
 Both gated in `args/ci_test_files/core.txt` in the PR that made them pass, per
 the test-gating policy; `red_first_gate` recorded the RED for each.

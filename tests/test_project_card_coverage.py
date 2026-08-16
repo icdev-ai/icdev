@@ -92,6 +92,25 @@ def test_a_finished_project_leaves_the_board():
     assert visible(83, 83, 324, 0) is False
 
 
+def test_orphan_detection_is_not_skipped_for_a_card_with_no_epics():
+    """The renderer carried the same blind spot as the check.
+
+    `orphans = [...] if epic_pats else []` returned an empty list for a card that
+    registers no epics — the one case where EVERY row is unclaimed. The card then
+    reported 0 orphans, computed 0/0 and vanished. `str.startswith(())` is already
+    False for an empty tuple, so the comprehension was right and the guard threw
+    the answer away.
+    """
+    src = _APP.read_text(encoding="utf-8", errors="replace")
+    assert "if not tid.startswith(epic_pats) and not has_gate_id(tid)" in src
+    assert ") if epic_pats else []" not in src, (
+        "a card with no epics must still report its orphans — it is the maximal "
+        "case of this bug, not an exemption from it"
+    )
+    # The empty-tuple semantics the removal relies on.
+    assert not "anything-01".startswith(())
+
+
 def test_the_payload_reports_orphans():
     """An operator cannot act on a number the API never sends."""
     src = _APP.read_text(encoding="utf-8", errors="replace")
@@ -259,11 +278,63 @@ def test_reserved_gate_epics_are_the_only_gate_shaped_epic_keys():
     )
 
 
-def test_project_card_entries_requires_both_prefix_and_epics():
-    """A card with a prefix but no epics can never count anything."""
-    for p in _project_card_entries():
+def test_project_card_entries_audits_a_card_that_declares_no_epics():
+    """A card with a prefix but no epics can never count anything — so it is the
+    one that most needs auditing, not the one to exclude.
+
+    The loader used to require epics, and its test asserted that requirement back
+    at it. That made the check structurally blind to the maximal case: `pgrt`
+    carried 22 board tasks, declared no `epics:` block, rendered nothing, and
+    `--check project_card_coverage` reported clean. A card is auditable because it
+    declares a `task_prefix` — that is the claim "these rows are mine". Whether an
+    epic then claims them is the finding.
+    """
+    entries = _project_card_entries()
+    assert entries, "projects.yaml declares no cards at all"
+    for p in entries:
         assert p["prefix"], p
-        assert p["epics"], p
+
+
+def test_check_flags_a_card_that_registers_no_epics_at_all():
+    """The maximal case, on a synthetic board: prefix declared, epics absent.
+
+    Nothing can ever be claimed, so every non-sentinel row is unclaimed and the
+    card renders nothing. The finding must say so rather than print an empty epic
+    list, which reads as a truncated message instead of the defect.
+    """
+    prefix = "zzzcardwithnoepics-"
+    orphan = f"{prefix}work-01"
+    sentinel = f"{prefix}gate-00"
+
+    class _Conn:
+        def execute(self, *_a, **_kw):
+            rows = [{"id": orphan}, {"id": sentinel}]
+
+            class _Cur:
+                def fetchall(self_inner):
+                    return rows
+            return _Cur()
+
+        def close(self):
+            pass
+
+    # Injected, not monkeypatched — same reasoning as conn_factory: patching a
+    # module attribute can land on `tools.workflow.coherence_checker` while the
+    # call resolves `icdev.tools.workflow.coherence_checker`, and the test then
+    # silently audits the real registry.
+    result = check_project_card_coverage(
+        conn_factory=_Conn,
+        entries=[{"key": "zzzcard", "prefix": prefix, "epics": []}],
+    )
+
+    assert result.status == "warn"
+    joined = " ".join(result.extra)
+    assert orphan in joined, "an epic-less card's work must be reported"
+    assert sentinel not in joined, "a gate sentinel holds the card; it is not work"
+    assert "NO epics registered" in joined, (
+        "the finding must name the cause; an empty 'epics: ' list reads as a "
+        "truncated message, not as the defect"
+    )
 
 
 @pytest.mark.parametrize("field", ["task_prefix", "epics"])

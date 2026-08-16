@@ -5564,6 +5564,37 @@ projects:
   default_open: true
   briefs:
   - 'gate: manual gate held in_progress — PG migrations are false-positive heavy and need per-file verification (pgrt-gate-00)'
+  epics:
+  - key: json
+    title: PG1 — JSON runtime violations (pgp-tx-03 gate)
+    priority: high
+  - key: ndc
+    title: PG2a — NDC cluster (8 files)
+    priority: high
+  - key: mon
+    title: PG2b — monitor / dashboard / iqe Class-A modules
+    priority: high
+  - key: sdc
+    title: PG2c — sdc / network Class-A modules
+    priority: high
+  - key: findagg
+    title: PG2d — dashboard/findings_aggregator per-canvas routing
+    priority: high
+  - key: verify-fp
+    title: PG2d — false-positive confirmation (keep SQLite)
+    priority: medium
+  - key: govlift
+    title: PG3a — govlift/* fallback-only verification (11 files)
+    priority: medium
+  - key: mem
+    title: PG3b — memory/* fallback-only verification (5 files)
+    priority: medium
+  - key: strat
+    title: PG3c — strategos / trading / news / conflict_mesh (Class B)
+    priority: medium
+  - key: sweep
+    title: PG4 — PRAGMA / sqlite_master cleanup sweep + linter baseline
+    priority: medium
 - key: bom_engine
   name: BOM Evidence Engine (ICDEV core)
   description: "Open-source engine under tools/bom/ — cell-grid extraction (formulas + coordinates preserved), hidden-data forensics, source credibility, derivative detection, declared-scope coverage, baseline-architecture conformance, reconciliation, cross-tab pivot, themed exports. Exposed via the /bom canvas, Cortex REST and MCP. Nothing in it is IRAD-specific."
