@@ -9834,10 +9834,17 @@ def create_app(testing: bool = False) -> Flask:
             def has_gate_id(_tid):  # type: ignore[misc]
                 return False
         epic_pats = tuple(f"{prefix}{ep['key']}-" for ep in project.get("epics", []))
+        # No `if epic_pats else []` guard. A card that registers NO epics is the
+        # maximal case of this bug, not an exemption from it: it claims nothing,
+        # so total_all is 0 and it renders nothing however much work carries its
+        # prefix. `pgrt` sat there with 22 board tasks. `str.startswith(())` is
+        # False for an empty tuple, so the comprehension already gives the right
+        # answer — every non-sentinel row is an orphan — and the guard was
+        # discarding it.
         orphans = sorted(
             tid for tid in (str(dict(r)["id"]) for r in owned_rows)
             if not tid.startswith(epic_pats) and not has_gate_id(tid)
-        ) if epic_pats else []
+        )
 
         # How many of those are still OPEN. Visibility keys on this, not on the
         # orphan count: a finished project must leave the board, and an unclaimed
