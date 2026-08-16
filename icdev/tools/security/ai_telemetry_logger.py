@@ -15,7 +15,6 @@ CLI:
 import argparse
 import hashlib
 import json
-import logging
 import math
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -32,11 +31,12 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.db.storage import get_connection
+from tools.logging.icdev_logger import get_logger
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger(__name__)
+logger = get_logger("security.ai_telemetry")
 
 
 class AITelemetryLogger:
