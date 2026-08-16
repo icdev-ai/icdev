@@ -28,7 +28,7 @@ import time
 from typing import Any, Dict, Iterator, List
 
 from tools.llm.provider import (
-    PREFIX_CACHE_NONE,
+    PREFIX_CACHE_AUTOMATIC,
     LLMProvider,
     LLMRequest,
     LLMResponse,
@@ -134,6 +134,38 @@ def _build_generic_messages(
     return result
 
 
+def _read_usage_into(chat_response: Any, chat_result: Any, resp: LLMResponse) -> None:
+    """Copy OCI token counts onto the neutral response, cached tokens included.
+
+    Usage lives on the chat response — ``CohereChatResponse.usage`` and
+    ``GenericChatResponse.usage`` are both ``Usage`` (API version 20231130).
+    It is NOT on ``ChatResult``, whose only properties are ``model_id``,
+    ``model_version`` and ``chat_response``; the adapter read a
+    ``ChatResult.model_usage`` that the SDK has never had, so every OCI call
+    reported zero tokens. The old path is kept as a fallback rather than
+    deleted, because an SDK the tests cannot import is not one to be
+    confident about, and ``getattr`` on an absent attribute costs nothing.
+
+    ``Usage.prompt_tokens`` follows the OpenAI convention and INCLUDES the
+    cached tokens (Anthropic's excludes them), so do not add
+    ``cache_read_input_tokens`` to ``input_tokens`` when costing an OCI call.
+    OCI reports reads only — there is no cache-creation counter — so
+    ``cache_creation_input_tokens`` stays 0 for this provider.
+    """
+    usage = getattr(chat_response, "usage", None)
+    if usage is None:
+        usage = getattr(chat_result, "model_usage", None)
+    if usage is None:
+        return
+
+    resp.input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    resp.output_tokens = getattr(usage, "completion_tokens", 0) or 0
+
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        resp.cache_read_input_tokens = getattr(details, "cached_tokens", 0) or 0
+
+
 class OCIGenAIProvider(LLMProvider):
     """Oracle OCI Generative AI provider using the oci Python SDK.
 
@@ -169,17 +201,32 @@ class OCIGenAIProvider(LLMProvider):
 
     @property
     def prefix_cache_capability(self) -> PrefixCacheCapability:
-        """None, and explicitly unverified — not the same as 'no caching exists'."""
+        """Automatic — CHECKED 2026-08-16, and the earlier 'none' was wrong.
+
+        OCI's usage object carries a cached-token counter and its request
+        models carry no cache field: nothing to ask for, something to read
+        back. That is the same shape as OpenAI and Azure, not a gap.
+        """
         return PrefixCacheCapability(
-            support=PREFIX_CACHE_NONE,
+            support=PREFIX_CACHE_AUTOMATIC,
             reason=(
-                "OCI Generative AI (Cohere Command R/R+, Meta Llama) exposes no "
-                "prefix-cache request field this adapter can set and returns no "
-                "cached-token counter it can read. Vendor support was NOT checked "
-                "in the 2026-08-16 assessment — verify before declaring anything "
-                "else (assessment section 4.6)."
+                "Verified 2026-08-16 (cch-prov-04). OCI Generative AI inference "
+                "(API version 20231130) returns "
+                "`Usage.prompt_tokens_details.cached_tokens` — 'Cached tokens present "
+                "in the prompt', wire name `cachedTokens` — on BOTH response shapes "
+                "this adapter handles (CohereChatResponse.usage and "
+                "GenericChatResponse.usage are both `Usage`). No request-side cache "
+                "model exists anywhere in oci.generative_ai_inference.models, so there "
+                "is nothing to ask for: automatic, exactly like OpenAI. This adapter "
+                "reads the counter into cache_read_input_tokens. HONEST LIMIT: the SDK "
+                "proves the counter exists, not that the service populates it non-zero "
+                "for any given model — Oracle publishes no prompt-caching page for the "
+                "chat API. That is now MEASURABLE (a persistent zero on real OCI "
+                "traffic is an answer) rather than assumed. See "
+                "docs/research/cch-prov-04-watsonx-oci-cache-verification.md."
             ),
-            verified=False,
+            verified=True,
+            reports_cache_tokens=True,
         )
 
     def _get_client(self):
@@ -320,10 +367,7 @@ class OCIGenAIProvider(LLMProvider):
                 resp.stop_reason = getattr(choice, "finish_reason", "") or ""
 
         # Token usage (if available)
-        usage = getattr(response.data, "model_usage", None)
-        if usage:
-            resp.input_tokens = getattr(usage, "prompt_tokens", 0) or 0
-            resp.output_tokens = getattr(usage, "completion_tokens", 0) or 0
+        _read_usage_into(chat_response, response.data, resp)
 
         # Try parsing structured output
         if resp.content.strip().startswith(("{", "[")):

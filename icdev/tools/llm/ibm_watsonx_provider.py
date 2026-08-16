@@ -70,17 +70,30 @@ class IBMWatsonxProvider(LLMProvider):
 
     @property
     def prefix_cache_capability(self) -> PrefixCacheCapability:
-        """None, and explicitly unverified — not the same as 'no caching exists'."""
+        """None — CHECKED against vendor docs on 2026-08-16, not merely unasked.
+
+        The finding, not a shrug: IBM's own watsonx.ai SDKs model the chat
+        response usage object as exactly three counters and expose no cache
+        parameter on the request. Both halves are absent, so there is nothing
+        to ask for and nothing to read back.
+        """
         return PrefixCacheCapability(
             support=PREFIX_CACHE_NONE,
             reason=(
-                "watsonx.ai foundation-model inference exposes no prefix-cache "
-                "request field this adapter can set and returns no cached-token "
-                "counter it can read. Vendor support was NOT checked in the "
-                "2026-08-16 assessment — verify before declaring anything else "
-                "(assessment section 4.6)."
+                "Verified 2026-08-16 (cch-prov-04). IBM's watsonx.ai chat API models "
+                "usage as `ChatUsage(completionTokens, promptTokens, totalTokens)` — "
+                "three counters, no cached-token counter — and no cache field exists "
+                "on ChatParameters / BaseChatParameters / TextChatRequest, so there is "
+                "nothing to request either. The whole watsonx-ai-java-sdk tree "
+                "(github.com/IBM/watsonx-ai-java-sdk, main @ 2026-08-16) contains ZERO "
+                "files with 'cach' in the path, and the Python SDK's "
+                "ModelInference.chat() reference documents no caching parameter. IBM's "
+                "published prompt-caching material is about the technique and about an "
+                "APPLICATION-side cache (LangChain SQLiteCache) — that is ICDEV's own "
+                "llm_response_cache, a different mechanism. See "
+                "docs/research/cch-prov-04-watsonx-oci-cache-verification.md."
             ),
-            verified=False,
+            verified=True,
         )
 
     def _get_credentials(self):
