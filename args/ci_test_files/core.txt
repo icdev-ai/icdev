@@ -1938,3 +1938,20 @@ tests/kanban/test_lane_conflicts.py
 # instead of stamping Anthropic's cache_control on a provider-neutral request.
 # No SDK, key, network or DB — pure declaration + translation.
 tests/test_prefix_cache_capability.py
+# rem-cap-04: the approval gate is ARMED by configuration, not only by an env
+# var. Gated because the defect it pins was invisible for the gate's entire
+# life: `_resolve_approval_gate` read ICDEV_AGENT_APPROVAL_MODE straight out of
+# os.environ and returned None -- no gate at all -- whenever it was unset, so
+# args/agent_runtime.yaml could say `enforce`, resolve_mode() could agree, and
+# all eleven default call sites still ran ungated. Every existing test passed
+# throughout; the gate had evaluated ZERO tool calls against 3,214 dispatched
+# builds. The property is a JOIN between two modules that were not talking, so
+# nothing that tests either one alone can see it. Also pins the escape hatch
+# (env `off` beats a config that enforces), the asymmetry when the gate module
+# is unimportable (an explicit `True` denies everything, an unasked-for default
+# does not), and the SHIPPED value in BOTH copies -- if only args/ said dry_run,
+# a wheel resolving icdev/data/args/ would fall through to the posture's
+# `enforce` and refuse 81% of tool calls in the deployment nobody tests locally.
+# 15 tests, <1s, tmp_path YAML and an injected import failure: no board, no
+# network, no LLM.
+tests/test_approval_gate_arming.py

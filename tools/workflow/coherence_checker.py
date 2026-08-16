@@ -9511,6 +9511,19 @@ def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
 
     Delegates to tools/dx/mirror_parity.py — the audit already existed and
     already had ``--gate``; it was simply wired into nothing.
+
+    Intentional re-export shims are excluded, via the same :func:`_is_mirror_shim`
+    predicate ``check_mirror_drift`` already uses — one copy of the rule, not two.
+    A shim is the OPPOSITE of the defect this gate exists for: the gate's premise
+    is that the two trees are separate module objects (``a is b`` -> False), and
+    for a shim they are literally the same object, so there is no stale half to
+    run. Byte-comparing a 98-line re-export against the 2,672-line module it
+    re-exports reports permanent drift that can only be "fixed" by copying the
+    body back — recreating the physically-separate stale copy the shim was
+    written to delete. ``_is_mirror_shim``'s own docstring names
+    ``tools/llm/agent_loop.py`` and says it must never be flagged; that was true
+    of the report-only check and not of this gate, so touching the CANONICAL
+    module failed the gate on its shim (rem-cap-04).
     """
     try:
         from tools.dx.mirror_parity import audit_all
@@ -9525,8 +9538,12 @@ def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
     for report in result.get("reports") or []:
         pkg = report.get("path") or ""
         for rel in report.get("content_drift") or []:
-            if str(rel).endswith(exts):
-                out.append(f"tools/{pkg}/{rel}".replace("\\", "/"))
+            if not str(rel).endswith(exts):
+                continue
+            rel_path = f"tools/{pkg}/{rel}".replace("\\", "/")
+            if _is_mirror_shim(PROJECT_ROOT / rel_path):
+                continue
+            out.append(rel_path)
     return sorted(out)
 
 
