@@ -80,7 +80,7 @@ derives it at the invoke seam only for providers that declare `explicit`.
 |---|---|---|
 | `explicit` | anthropic, bedrock | System prompt and last user message get `cache_control: {type: "ephemeral"}`, max 4 breakpoints |
 | `automatic` | openai, azure_openai, **oci_genai** | Nothing is requested; the provider caches by itself and `cached_tokens` is read back. OpenAI/Azure cache prefixes ≥1024 tokens; OCI returns `Usage.prompt_tokens_details.cached_tokens` (verified 2026-08-16, cch-prov-04) |
-| `managed_object` | gemini, vertex_ai | Needs a stored `cachedContents` handle with its own TTL — not implemented yet |
+| `managed_object` | gemini, vertex_ai | A stored `cachedContents` object with its own TTL is created, reused and expired by the adapter (cch-prov-02). **Default OFF** — see below |
 | `local` | ollama (local), vllm, localai | Server-side KV reuse: a **latency** win, never a billing one |
 | `none` | ibm_watsonx, cli, hosted ollama | Nothing to set — with a written reason on each. watsonx is a **checked** none (2026-08-16, cch-prov-04): IBM's chat usage object is three counters with no cached-token field, and there is no cache parameter to set. `verified=False` is reserved for endpoints genuinely nobody has checked, such as an unlisted OpenAI-compatible label |
 
@@ -90,6 +90,39 @@ Every branch normalises into the same `LLMResponse.cache_read_input_tokens` /
 Context caching is additive to response caching. A request can hit the response
 cache entirely (skipping provider), or miss the response cache but still benefit
 from provider-level KV prefix reuse.
+
+### Managed objects are the one shape with a standing cost (cch-prov-02)
+
+`explicit` and `automatic` cost nothing when they miss. A `managed_object` does:
+Gemini's `cachedContents` is billed per token **per hour of storage**, whether or
+not anything reads it. An object created for a prefix that is used once is
+therefore *strictly worse* than no caching — it pays rent and saves nothing,
+silently, with the only trace on the invoice.
+
+So `managed_object_cache` in `args/llm_config.yaml` is **`enabled: false`**, and
+turning it on is a per-deployment decision. Two further gates are then measured
+per prefix at runtime rather than declared per surface:
+
+- `min_prefix_tokens` (default 4096) — 95.5% of this platform's calls sit below
+  even the 1024-token floor at which any vendor's cache can fire.
+- `min_sightings` (default 2) — nothing is stored on a prefix's **first**
+  sighting inside the TTL window.
+
+Break-even, so it can be re-derived when vendor prices move: a cached read costs
+~0.25× normal input (saving ~0.75×) and storage costs `S` per token-hour, so over
+a TTL of `h` hours with `R` reads, storing pays when `(R - 1) > S·h / (0.75·P)`.
+At Gemini 2.5 Flash's published order of magnitude that is `(R - 1) > 4.4·h`:
+~6 reads inside an hour, but only 2 inside five minutes — which is why the
+default TTL is 300 s rather than an hour. Vendor prices are terms that change;
+re-check them before acting on the arithmetic.
+
+Which surfaces participate is the existing per-canvas / per-function
+`context_cache` list — the surfaces that assert `cache_prefix`. There is no
+second allowlist.
+
+Engine: `tools/llm/managed_cache.py`. Caching never fails a call: a refused
+create, an expired handle or a rejected object all degrade to a normal uncached
+invocation.
 
 ## Operational Runbook
 

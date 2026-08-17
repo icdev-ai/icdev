@@ -1,0 +1,156 @@
+# CUI // SP-CTI
+#
+# Entity-currency store — source declarations (cef-fnd-04).
+#
+# tools/currency/entity_currency.py contains NO table name, NO column name, NO
+# vendor, product, protocol or industry. Every one of those is data, and this
+# file is where it lives. Adding a fifth provider is an entry here plus a table
+# to read; it is not a code change.
+#
+# THE SHAPES THIS FILE EXISTS TO RECONCILE
+#
+# The three sources below answer "is it current?" in three incompatible ways:
+#
+#   product + release cycle + EOL date       (a software release feed)
+#   naming authority + a match PATTERN + EOL date  (a hardware EOL feed)
+#   a curated STATUS WORD and no date at all       (the curated catalog)
+#
+# Nothing could ask all three at once, and a fourth provider had nowhere to
+# write. Each entry maps its own shape onto the common one.
+#
+# HOW A SOURCE IS DECLARED
+#
+#   id            provider id, written verbatim to entity_currency.source
+#   kind          external_feed | curated | inventory | derived
+#   table         the table to read
+#   entity_type   literal type for every row, OR entity_type_column to take it
+#                 from the row itself (data-driven — preferred when the source
+#                 already classifies its own rows)
+#   authoritative true = wins resolution outright, ahead of confidence. Only the
+#                 curated catalog carries it; see `resolution` at the bottom.
+#   confidence    DECLARED PRIOR in [0,1]. Not a measurement — nothing in this
+#                 repo has calibrated these. They rank sources against each
+#                 other and that is all they do.
+#   columns       source column -> canonical field. A field whose column is
+#                 absent or NULL simply stays empty.
+#   extra_columns carried verbatim into provenance_json. Use for signal this
+#                 store has no column for, so it is preserved rather than lost.
+#   verdict       how to derive the verdict:
+#                   strategy: dates      -> from eol_date/eos_date vs today
+#                   strategy: value_map  -> map a column's value through `map`
+#
+# CANONICAL FIELDS (see the migration comment for the full semantics)
+#   entity_key entity_label entity_version namespace
+#   eol_date eos_date superseded_by as_of provenance_id
+
+classification: CUI // SP-CTI
+
+# Verdict when a source records the entity but asserts no currency signal at
+# all. NEVER guessed upward: an unmapped entity is 'unknown', never 'current'
+# and never 'end_of_life' (TRUST — no guessing), and it is written anyway
+# because "this source has heard of it and knows nothing" is itself an answer.
+unknown_confidence: 0.3
+
+sources:
+  - id: docmod_eol_products
+    kind: external_feed
+    enabled: true
+    table: docmod_eol_products
+    entity_type: software_release
+    confidence: 0.8
+    note: >-
+      endoflife.date, plus an air-gap seed. 110 rows, 105 of them synced — a
+      genuinely working external path. It knows release cycles of software
+      products and nothing else: it has never heard of a hardware chassis or a
+      protocol version, which is the whole reason this store is not just a view
+      over it.
+    columns:
+      provenance_id: id
+      entity_key: product
+      entity_label: product
+      entity_version: cycle
+      eol_date: eol_date
+      eos_date: eos_date
+      # The feed's own "what should you be on instead" field.
+      superseded_by: latest_version
+      as_of: synced_at
+    extra_columns: [lts, source]
+    verdict:
+      strategy: dates
+
+  - id: mc_net_eol_data
+    kind: external_feed
+    enabled: true
+    table: mc_net_eol_data
+    entity_type: hardware_model
+    confidence: 0.75
+    note: >-
+      The migration-canvas hardware EOL database. entity_key is a match PATTERN
+      rather than an exact identity — that is what the source stores, and it is
+      recorded as-is rather than being silently reinterpreted. Callers that need
+      pattern semantics still go through tools/migration_canvas/eol_sync.py;
+      this store carries the assertion, not the matcher.
+    columns:
+      provenance_id: id
+      namespace: vendor
+      entity_key: model_pattern
+      entity_label: model_pattern
+      eol_date: eol_date
+      eos_date: eos_date
+      as_of: synced_at
+    # End-of-service-maintenance — a third date this store has no column for.
+    extra_columns: [eosm_date, source]
+    verdict:
+      strategy: dates
+
+  - id: docmod_catalog_entries
+    kind: curated
+    enabled: true
+    authoritative: true
+    table: docmod_catalog_entries
+    # Data-driven: the catalog already classifies each row, so the type comes
+    # from the row and this file names none of its values.
+    entity_type_column: category
+    confidence: 0.95
+    note: >-
+      The team-curated catalog. AUTHORITATIVE — per the defacto_learner
+      docstring, curated entries win and learner/feed output is corroboration
+      and tie-breaker. Its currency signal is a status word and usually no date
+      at all, so `dates` would report every row 'unknown'.
+    columns:
+      provenance_id: entry_id
+      namespace: vendor
+      entity_key: product
+      entity_label: product
+      entity_version: version
+      eol_date: eol_date
+      eos_date: eos_date
+      superseded_by: replacement_entry_id
+      as_of: updated_at
+    extra_columns: [domain, model_family, source, is_builtin]
+    verdict:
+      strategy: value_map
+      column: status
+      # The catalog's own vocabulary on the left, this store's on the right.
+      # Not a domain hardcode: these are the three values of a CHECK constraint
+      # in migration 257, and mapping them is the whole job of this entry.
+      map:
+        approved: current
+        deprecated: deprecated
+        retired: end_of_life
+      default: unknown
+
+# Read-time resolution policy, consumed by entity_currency.resolve(). Applied in
+# order; the first discriminating key wins.
+#
+# `authoritative` is FIRST and is deliberately not expressible as a confidence
+# number: a curated 'approved' must beat an external feed even when the feed is
+# newer and more confident, and a tie-break that can be overturned by bumping a
+# prior is not authority. Disagreement is never squashed at write time — every
+# source keeps its own row, and resolve() reports the losers alongside the
+# winner so a caller can see the conflict rather than inherit it silently.
+resolution:
+  order:
+    - authoritative   # curated sources first, unconditionally
+    - confidence      # then the declared prior, descending
+    - as_of           # then the source's own clock, most recent first

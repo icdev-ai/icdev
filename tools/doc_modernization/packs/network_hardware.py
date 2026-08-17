@@ -10,7 +10,13 @@ Evidence priority (deterministic — TRUST rule 1):
 1. Curated catalog (NetworkCatalogAdapter over team-maintained
    nc_hardware_profiles, merged with the central generic store) — AUTHORITATIVE
 2. tools/migration_canvas/eol_sync.get_eol_date (Cisco EoX + eol_data.yaml seed)
-3. Learned de facto stats (defacto_learner) — corroboration + replacement
+3. The domain-agnostic entity-currency store (tools/currency/entity_currency),
+   consulted only when 1 and 2 both come back empty. It is the seam for a
+   provider neither of them knows about: a source declared in
+   args/entity_currency.yaml starts answering here with no change to this file,
+   which is the whole point of a source-agnostic store. It never overrides the
+   curated catalog — resolve() is not even called when the catalog answered.
+4. Learned de facto stats (defacto_learner) — corroboration + replacement
    tie-breaker; divergence/gap findings are emitted by the sweep via
    defacto_learner.cross_check, not per-document here.
 """
@@ -134,6 +140,45 @@ class NetworkHardwarePack(DomainPack):
                     })
             except Exception as exc:
                 logger.debug("docmod hw pack: eol_sync unavailable: %s", exc)
+
+        if eol_date is None and eos_date is None:
+            # Last: whatever any OTHER declared provider knows (cef-fnd-04).
+            # Reached only when the catalog and the hardware EOL feed both had
+            # nothing, so it can add evidence and can never overrule authority.
+            try:
+                from tools.currency.entity_currency import resolve
+                hit = resolve(entity.label, entity_type="hardware_model", conn=conn)
+                if hit:
+                    eol_date = hit.get("eol_date") or None
+                    eos_date = hit.get("eos_date") or None
+                    evidence.append({
+                        "source": f"entity_currency:{hit.get('source')}",
+                        "detail": f"{hit.get('verdict')} as of {hit.get('as_of')}"
+                                  + (" (sources disagree)" if hit.get("conflict") else ""),
+                        "date": eol_date or eos_date or "",
+                    })
+                    # A source may assert a verdict WITHOUT a date (a curated
+                    # status word does exactly that). Falling through to the
+                    # date checks below would silently discard it and report
+                    # 'unknown', so the verdict is honoured here instead.
+                    if not (eol_date or eos_date):
+                        verdict_map = {
+                            "end_of_life": ("eol", "high"),
+                            "end_of_support": ("deprecated", "medium"),
+                            "deprecated": ("deprecated", "medium"),
+                        }
+                        mapped = verdict_map.get(str(hit.get("verdict")))
+                        if mapped:
+                            return Verdict(
+                                currency_verdict=mapped[0], finding_type="eol_hardware",
+                                severity=mapped[1],
+                                rationale=f"{entity.label} is '{hit.get('verdict')}' per "
+                                          f"{hit.get('source')} (as of {hit.get('as_of')}).",
+                                confidence=float(hit.get("confidence") or 0.0),
+                                evidence=evidence,
+                            )
+            except Exception as exc:
+                logger.debug("docmod hw pack: entity_currency unavailable: %s", exc)
 
         if eol_date and eol_date <= today:
             return Verdict(

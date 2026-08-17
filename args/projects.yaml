@@ -8467,3 +8467,165 @@ projects:
     - key: prov
       title: Per-provider implementation
       priority: medium
+- key: cef
+  name: CEF - Cortex Evidence Fabric
+  description: 'Every /document-intelligence/* surface should answer evidence questions
+    through ONE governed Cortex seam that federates local data, RAG, KG, a currency
+    store, DataBridge external sources, and an SME co-worker persona - with citations,
+    provenance, HITL approval, and no hardcoded domain knowledge. Most of this already
+    exists as separate, unconnected parts; this is integration and activation, not a
+    greenfield build. MEASURED 2026-08-16 on the live PostgreSQL board. LIVE: rag_chunks
+    4111, kg_nodes 8919, kg_edges 16630, docmod_eol_products 110 (105 synced from
+    endoflife.date - a working external path), mc_net_eol_data 101, docmod_findings
+    100, dic_drift_events 54, dic_acoic_regen_queue 54, DI corpus 54 docs / 28
+    collections / 30 versions / 168 chunk_links / 69 sections, docmod_catalog_entries
+    19, ace_coworkers 357, ace_instances 138, cortex_audit 177 across 5 verbs with 9
+    REAL BLOCKS and 37 rows carrying provenance_id. EMPTY OR MISSING: ni_devices 0 -
+    which is the root cause of docmod_defacto_standards 0, because defacto_learner
+    derives de-facto standards from that inventory and had nothing to learn from;
+    docmod_nist_pubs ABSENT so the policy_refs pack has no substrate;
+    databridge_agent_access_log ABSENT because its DDL is SQLite syntax (INTEGER
+    PRIMARY KEY AUTOINCREMENT, datetime-now) on a PG-primary deployment, so every
+    external fetch is unauditable AND _audit() swallows the failure; DataBridge
+    manifest enabled false with connectors empty and db_connections 0, so 33
+    implemented connectors are 0 authorized; rag_provenance_ledger 0; kg_ontology 0;
+    tech_radar_entries 0 (declared-but-unconsumed, NOT a usable currency provider);
+    dic_ssp_fragments 0. WHAT CORTEX ALREADY IS: search_service.py federates 4
+    backends via BACKEND_ADAPTERS (search_service.py:583) declared in CORTEX_BACKENDS
+    (schemas.py:24), adapter contract f(query, top_k, ctx) returning a list of
+    CortexSearchResult with a mandatory Citation, scores clamped to 0..1,
+    exception-isolated returning BackendResults with an errors list rather than
+    raising; weighted RRF fusion, parallel fan-out under per-backend timeouts, CRAG
+    corrective loop. It ALREADY distinguishes "backend died" from "corpus matched
+    nothing" via BackendResults.errors. _governed_facade() wraps every verb in an
+    8-gate TRUST chain (pre_check, input_redaction, operation, citation_grounding,
+    content_grounding, kg_grounding opt-in, output_redaction, provenance) with
+    MANDATORY_GATES = operation, output_redaction, provenance enforced at profile
+    load; the provenance gate writes source_citation_registry with
+    citation_type="cortex", an already-registered vocabulary value. WHAT THE PACK
+    SYSTEM ALREADY IS: domain packs are YAML in args/docmod/packs/ naming a dotted
+    evaluator (8 exist - crypto_protocols is the TLS case, network_hardware is the
+    Nortel case), a generic rulebook evaluator driven by args/docmod/rulebook_*.yaml
+    means a NEW DOMAIN NEEDS ZERO PYTHON, and base_pack TRUST rule 1 already mandates
+    that evaluate() derive its verdict from deterministic evidence and never from an
+    LLM - the LLM only words redline prose around a verdict produced there. THE GAPS:
+    DataBridge is wired to nothing (zero DI references); five DI surfaces each
+    reinvent retrieval (tech_writing_assist does RAG+KG+web+cortex.complete, acoic
+    does RAG+KG+LLMRouter, search_engine does RAG plus a filesystem wiki cache plus
+    LLMRouter, doc_modernization packs read local tables only, doc_generator is
+    LLM-only with evidence passed in); cross-source synthesis is STRING CONCATENATION
+    with no semantic entity resolution, so nothing can notice that RAG and the catalog
+    DISAGREE about an entity - that absence is precisely the "reveal unseen data" gap;
+    cross_canvas_context.py is purpose-built for cross-canvas evidence and is dead
+    code called only by its own test; ace_ensure_sme has NEVER successfully produced a
+    role (no file in args/ace/roles/ carries the generated_at stamp,
+    _generated_smes.json does not exist). TWO HONEST LIMITS kept by design: (1) adding
+    a DOMAIN is YAML (docmod pack + rulebook + cortex lens) so "no hardcoding" holds
+    fully for any field, industry or topic, but adding a new SOURCE TYPE is a 5-point
+    code change - there is no data-driven provider plugin point, only the domain-lens
+    layer on top - and that is the right boundary; (2) making Cortex mandatory is a
+    real refactor across 5 modules on a live canvas, so every migrated surface goes
+    behind a config toggle and Phase 3 migrates one surface per task. DECISIONS TAKEN
+    BY THE USER: auto-fetch from configured and authorized external sources and log
+    every fetch, degrading to local-only when air-gapped; propose redlines with
+    evidence via TRUST and let HITL approve, NEVER auto-apply; open vocabulary for SME
+    personas; build a cached domain-agnostic entity-currency store; Cortex is a
+    MANDATORY chokepoint for all DI evidence retrieval; fix the empty substrates
+    FIRST; an entity nothing can answer for is a VISIBLE finding. Plan:
+    plans/cortex-evidence-fabric-plan.md'
+  task_prefix: cef-
+  default_open: true
+  policy: 'Card: CEF - Cortex Evidence Fabric. NO manual gate; this card dispatches
+    autonomously. Open PRs NORMALLY, not --draft - pr_watcher auto-merges green
+    kanban/* branches and cannot touch a draft, so a draft stalls the pipeline. What
+    sequences the work is depends_on_task_id. PHASE ORDER IS LOAD-BEARING: every
+    Phase 0 FND task must land before the Phase 1 BCK backend that reads its
+    substrate, because four substrates are empty or absent today and a backend built
+    against them would demo on nothing. Within BCK, cef-bck-01/02/03 may run in
+    parallel but all three must land before cef-rsv-01, which registers the facade
+    that dispatches to them. cef-rsv-02 (semantic entity resolution) must land before
+    any Phase 4 UI task, because conflicts cannot be rendered before they can be
+    detected. Phase 3 DI migration tasks are one-surface-each and must NOT be
+    parallelised onto the same module - each goes behind its own config toggle so the
+    legacy chain can be restored without a revert. NEVER raise a liveness or substrate
+    gate budget to get a commit through, and never add a shell neutraliser to a gate.
+    Runtime SQL is authored for PostgreSQL. No model IDs in code or YAML - route by
+    llm_function through LLMRouter. This block is generated from the card - do not
+    edit it on the task row, edit the card.'
+  briefs:
+  - 'FND - fix the empty substrates before anything is built on them. Four things are
+    not merely empty but structurally broken: databridge_agent_access_log does not
+    exist in PostgreSQL because its DDL was authored in SQLite syntax, and _audit()
+    swallows the resulting failure, so the "log every fetch" decision is currently
+    unimplementable; docmod_nist_pubs was never created so the policy_refs pack has no
+    substrate; docmod_defacto_standards is 0 because its writer defacto_learner
+    derives from ni_devices which is 0; rag_provenance_ledger is 0 despite 2430
+    retrieval-log rows. DataBridge itself is enabled false with no connectors and
+    db_connections 0. Distinguish the three failure shapes the substrate probe already
+    names - empty (writer never ran), absent (migration never ran),
+    column_unpopulated - because each sends you to a different fix.'
+  - 'BCK - three new Cortex backends, each following the SAME 5-point registration the
+    existing four use: adapter fn in search_service.py, key in CORTEX_BACKENDS
+    (schemas.py:24), entry in BACKEND_ADAPTERS (search_service.py:583), optional label
+    in ROUTE_LABEL_BACKENDS (:628), then weights, timeouts and fan-out in
+    args/cortex_config.yaml. Adapters must be exception-isolated and return
+    BackendResults with an errors list rather than raising - that is what preserves
+    the died-vs-matched-nothing distinction the whole design depends on. The external
+    adapter inherits DataBridge broker authz wholesale (air-gap interlock, connector
+    and table allowlist, per-agent role grants, classification ceiling, read-only
+    enforcement, fail-closed GovConSanitizer redaction, 200/1000 row caps) and must
+    force CortexContext.fail_closed=True because the platform default is false. The
+    sme adapter is genuinely new ground: ACE is reachable only as an ACTION via
+    cortex.agent today, and ace_ensure_sme has never successfully produced a role, so
+    this task must PROVE generation works end to end rather than assume it. SME output
+    is ADVISORY metadata only and must never become the deterministic verdict.'
+  - 'RSV - cortex.resolve(entity, question, ctx), registered through _governed_facade
+    exactly as search and ask are, so it inherits the 8-gate TRUST chain,
+    cortex_audit, provenance_id and real blocking for free. Returns a DETERMINISTIC
+    verdict produced by pack evaluate() and never by an LLM (current, deprecated,
+    superseded, unknown), validated citations, gaps, conflicts and backend_errors. The
+    hardest and most valuable piece is cef-rsv-02: semantic entity resolution across
+    backends. Today cross-source synthesis is string concatenation, so nothing can
+    notice that two sources disagree about the same entity - building that join is
+    what turns "reveal unseen data" from a slogan into a feature, and it is what makes
+    a conflict detectable at all.'
+  - 'DI - migrate the five surfaces onto the mandatory chokepoint, ONE PER TASK, each
+    behind its own config toggle so a regression is a flag flip and not a revert. This
+    touches a LIVE canvas (54 docs, 100 findings, 54 drift events, 54 queued regens),
+    so treat every migration as behaviour-preserving until proven otherwise. Two
+    pre-existing defects get fixed on the way: tech_writing_assist accepts
+    collection_id but never passes it to retrieval, so a section draft can today pull
+    chunks from ANY collection in the tenant; and cross_canvas_context.py is dead code
+    written for exactly this purpose - activate it as a resolve source or delete it,
+    but do not leave it declared-and-unconsumed.'
+  - 'UI - render what resolve() now produces: verdict, citations, SME advisory opinion
+    and unknowns on DocDrift; conflicts and gaps on Explorer, which already has the
+    "buried bodies" surface for exactly this; and HITL approve/reject wired to the
+    EXISTING /api/modernization/findings resolve and /api/review routes rather than a
+    new approval path. An unknown must be visibly distinct from a clean bill of health
+    - the whole point is that silence and safety stop looking identical.'
+  - 'CI - prove it stays wired. This card exists because ICDEV ships declared-but-
+    unconsumed capabilities repeatedly, and a new federation layer with three new
+    backends is a prime candidate to become the next one. Arm capability_liveness and
+    substrate_liveness for the new backends, add tests to args/ci_test_files/core.txt
+    IN THE PR THAT MAKES THEM PASS, capture red-first proof, and run E2E against a
+    SECOND dashboard on a Chrome-safe port rather than 5050.'
+  epics:
+  - key: fnd
+    title: FND - fix the empty and structurally broken substrates first
+    priority: critical
+  - key: bck
+    title: BCK - currency, external and SME evidence backends for Cortex
+    priority: critical
+  - key: rsv
+    title: RSV - cortex.resolve() and cross-backend entity resolution
+    priority: critical
+  - key: di
+    title: DI - migrate the five DI surfaces onto the mandatory chokepoint
+    priority: high
+  - key: ui
+    title: UI - surface verdicts, citations, conflicts and unknowns
+    priority: medium
+  - key: ci
+    title: CI - liveness gates and red-first proof so it stays wired
+    priority: medium

@@ -1,9 +1,16 @@
 # CUI // SP-CTI
 """IQE cache_savings collection adapters.
 
-Registering this module exposes two IQE collections:
-  cache.stats    — per-function hit rate, avoided calls, token savings, cost saved
-  cache.entries  — raw llm_response_cache rows (non-expired)
+Registering this module exposes three IQE collections:
+  cache.stats        — per-function hit rate, avoided calls, token savings, cost saved
+  cache.entries      — raw llm_response_cache rows (non-expired)
+  cache.by_provider  — per-provider PREFIX-cache effectiveness (cch-obs-01)
+
+The first two describe the RESPONSE cache (an LLM call avoided entirely) and
+read `llm_response_cache`. The third describes PREFIX caching (cached input
+tokens on a call that still happened) and reads `ai_telemetry`. They are
+different questions about different substrates; querying one for the other's
+answer returns a confidently wrong number.
 """
 from __future__ import annotations
 
@@ -83,5 +90,21 @@ def _get_stats_simple(conn: Any) -> list[dict]:
     return get_savings_stats(conn)["by_function"]
 
 
-register_collection("cache.stats",   _get_stats_simple)
-register_collection("cache.entries", _entries_adapter)
+def _by_provider_adapter(conn: Any) -> list[dict]:
+    """Per-provider prefix-cache effectiveness rows (cch-obs-01).
+
+    `cached_share_pct` and `usd_saved` are deliberately NULL rather than 0 for
+    a provider with no traffic, no reported counters, or no bill — so an IQE
+    query that filters or sorts on them cannot silently rank "we never
+    measured this" alongside "this measured zero".
+    """
+    try:
+        from tools.cache_savings.by_provider import get_provider_effectiveness
+        return get_provider_effectiveness(conn=conn).get("providers", [])
+    except Exception:
+        return []
+
+
+register_collection("cache.stats",       _get_stats_simple)
+register_collection("cache.entries",     _entries_adapter)
+register_collection("cache.by_provider", _by_provider_adapter)

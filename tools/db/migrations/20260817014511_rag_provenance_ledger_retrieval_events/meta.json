@@ -1,0 +1,11 @@
+{
+  "description": "Add retrieval_log_id + allow event_type='retrieval' on rag_provenance_ledger (cef-fnd-05)",
+  "date": "2026-08-17",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "cef-fnd-05",
+  "tables": [
+    "rag_provenance_ledger"
+  ]
+}
