@@ -20,26 +20,27 @@ Usage (via DataBridge registry):
         limit=20,
     ))
 
-Usage (standalone CLI):
-    python tools/databridge/connectors/rss_connector.py --url URL --json
-    python tools/databridge/connectors/rss_connector.py --url URL --feed-id my_feed --limit 10 --json
-    python tools/databridge/connectors/rss_connector.py --health --json
+Usage (standalone CLI — module form; this file uses package-relative imports
+and cannot be run as a bare path):
+    python -m tools.databridge.connectors.rss_connector --url URL --json
+    python -m tools.databridge.connectors.rss_connector --url URL --feed-id my_feed --limit 10 --json
+    python -m tools.databridge.connectors.rss_connector --health --json
+
+Egress: every feed fetch is guarded by tools/http/egress_guard.py (https-only,
+deny-beats-allow, DNS resolve-then-range-check) and stopped outright in air-gap
+mode, the same control saas_base applies. This connector fetched bare before —
+and it is the one connector reachable by an agent through the DataBridge broker,
+whose docstring advertises that guard as step 5 of its chain.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from calendar import timegm
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
@@ -48,7 +49,14 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("feedparser is required: pip install feedparser") from exc
 
-from tools.databridge.connector import (  # noqa: E402
+# Relative, not "from tools.databridge.registry import ...". This file is
+# mirrored at tools/ and icdev/tools/, and those two package roots carry two
+# DISTINCT registry module objects with two DISTINCT _REGISTRY dicts. An
+# absolute "tools." import registers into the root copy no matter which mirror
+# was imported, so the agent broker — which reads the icdev copy — never saw
+# this connector. Registering into whichever registry is a sibling of this
+# module is the only spelling that is correct from both.
+from ..connector import (  # noqa: E402
     ConnectorCapabilities,
     ConnectorRequest,
     ConnectorResponse,
@@ -57,7 +65,7 @@ from tools.databridge.connector import (  # noqa: E402
     SchemaDefinition,
     SchemaField,
 )
-from tools.databridge.registry import register_connector  # noqa: E402
+from ..registry import register_connector  # noqa: E402
 
 logger = get_logger("databridge.rss")
 
@@ -114,11 +122,55 @@ class RSSConnector(DataConnector):
         self._config = {}
         self._connected = False
 
+    # -- Egress control -------------------------------------------------------
+    #
+    # feedparser.parse(url) opens a socket. Nothing checked the destination
+    # first: this connector does not extend saas_base, so it inherited none of
+    # that class's _guard_egress, and it is precisely the connector the agent
+    # broker grants. The broker's own docstring lists "egress guard, applied in
+    # saas_base before the socket opens" as step 5 of its chain — a claim that
+    # was false for the only path an agent could take through it.
+    #
+    # Air-gap is an absolute stop; the guard is fail-closed on import failure,
+    # because an unimportable guard means the destination is unchecked, which is
+    # exactly when not to proceed. Redirects are NOT re-validated — feedparser
+    # follows them itself — which is why the broker allowlists exact feed URLs
+    # rather than accepting one from the agent.
+
+    def _egress_config(self) -> Dict[str, Any]:
+        return {
+            "allowlist": list(self._config.get("egress_allowlist") or []),
+            "denylist": list(self._config.get("egress_denylist") or []),
+        }
+
+    def _guard_egress(self, url: str) -> None:
+        """Raise ``PermissionError`` unless *url* may be contacted."""
+        try:
+            from tools.airgap import is_airgap
+            if is_airgap():
+                raise PermissionError(
+                    f"egress blocked: air-gap mode is active (target {url!r})"
+                )
+        except PermissionError:
+            raise
+        except Exception:  # noqa: BLE001 — airgap module optional
+            pass
+
+        try:
+            from tools.http.egress_guard import egress_guard
+        except Exception as exc:  # noqa: BLE001
+            raise PermissionError(f"egress guard unavailable: {exc}") from exc
+
+        allowed, reason, _ips = egress_guard(url, self._egress_config())
+        if not allowed:
+            raise PermissionError(f"egress blocked ({reason}) for {url!r}")
+
     def health_check(self) -> Dict[str, Any]:
         """Verify feedparser is importable; optionally probe a configured test URL."""
         test_url: str = self._config.get("health_url", "")
         if test_url:
             try:
+                self._guard_egress(test_url)
                 feed = feedparser.parse(test_url, agent=USER_AGENT, request_headers={"Connection": "close"})
                 if feed.bozo and not feed.entries:
                     return {
@@ -158,6 +210,11 @@ class RSSConnector(DataConnector):
         max_items: int = request.limit if request.limit is not None else DEFAULT_MAX_ITEMS
         feed_id: str = (request.filters or {}).get("feed_id", feed_url)
 
+        # Raised, not returned as an error row: the agent broker maps
+        # PermissionError to a "blocked" denial and audits it, and a refused
+        # egress must not be indistinguishable from a feed that failed to parse.
+        self._guard_egress(feed_url)
+
         try:
             feed = feedparser.parse(
                 feed_url,
@@ -169,6 +226,28 @@ class RSSConnector(DataConnector):
                 status="error",
                 errors=[str(exc)],
                 duration_ms=int((time.time() - t0) * 1000),
+            )
+
+        # An HTTP error is NOT an empty feed. feedparser returns a well-formed
+        # object for a 404 — bozo False, entries [], no `version` key — so the
+        # old code fell straight through to `feed.version` (AttributeError, a
+        # missing key on a FeedParserDict) or, had that key existed, reported a
+        # dead endpoint as a successful fetch of zero rows. That is the
+        # difference between "the source published nothing" and "the URL is
+        # gone", and only one of them is a defect to act on. Measured
+        # 2026-08-17: the NIST CSRC publications feed this platform has been
+        # configured against since it was written now 404s at every path while
+        # csrc.nist.gov itself serves 200.
+        #
+        # `status` is absent when feedparser parsed a string or a local file
+        # rather than fetching a URL; that is not an error.
+        http_status = feed.get("status")
+        if isinstance(http_status, int) and not (200 <= http_status < 300 or http_status == 304):
+            return ConnectorResponse(
+                status="error",
+                errors=[f"HTTP {http_status} from {feed_url}"],
+                duration_ms=int((time.time() - t0) * 1000),
+                metadata={"feed_url": feed_url, "http_status": http_status},
             )
 
         # bozo=True means malformed XML, but entries may still be present
@@ -192,7 +271,11 @@ class RSSConnector(DataConnector):
                 "feed_id": feed_id,
                 "feed_title": getattr(feed.feed, "title", ""),
                 "total_entries": len(feed.entries),
-                "feed_version": feed.version or "unknown",
+                # .get, not .version — a FeedParserDict raises AttributeError
+                # for an absent key, and the key IS absent on any response
+                # feedparser did not manage to identify as a feed.
+                "feed_version": feed.get("version") or "unknown",
+                "http_status": http_status,
             },
         )
 

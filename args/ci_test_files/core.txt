@@ -2184,3 +2184,4 @@ tests/test_ideation_frames.py
 # refusal to bucket a line with no usable signature, and the committed
 # docs/testing/ungated_red_modules.md agreeing with the committed census.
 tests/ci/test_ungated_red_report.py
+tests/test_databridge_first_grant.py

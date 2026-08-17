@@ -2384,6 +2384,34 @@ python tools/autoresearch/hypothesis_generator.py --domain compliance --max 5 --
 
 ---
 
+## DataBridge Agent Access Commands
+```bash
+# Seed db_connections from args/databridge_connections.yaml (cef-fnd-03)
+python -m tools.databridge.seed_connections --seed --json
+python -m tools.databridge.seed_connections --dry-run --json    # validate, write nothing
+python -m tools.databridge.seed_connections --verify --json     # row present? credential resolves?
+python -m tools.databridge.seed_connections --list --json
+# REFUSES a literal secret: auth_secret_ref must be an env:/vault:/aws:/file: reference.
+# REFUSES the banner 'CUI // SP-CTI' as a classification -- that column feeds the RLS
+# predicate, which is drawn from the LABEL vocabulary, so a banner-labelled row is
+# written, retained and invisible to every reader at every clearance.
+# All-or-nothing: one bad descriptor writes none of them, because a half-wired
+# grant is harder to diagnose than an unseeded one.
+
+# What may this agent reach, and what happens when it reaches?
+python -c "from icdev.tools.databridge import broker; print(broker.list_available('doc_reviewer'))"
+python -c "from icdev.tools.databridge import broker; print(broker.fetch('doc_reviewer','rss','<granted feed url>',limit=5).to_dict())"
+# Grants: args/databridge_agent_access.yaml   Endpoints: args/databridge_connections.yaml
+# Every call -- allowed or denied -- writes one row to databridge_agent_access_log.
+# MCP surface: databridge_sources (discover) then databridge_fetch (read).
+
+# One RSS/Atom feed, standalone. Module form only: the file uses package-relative
+# imports so the mirrored icdev/ copy registers into the right connector registry.
+python -m tools.databridge.connectors.rss_connector --url URL --limit 10 --json
+```
+
+---
+
 ## Connector Forge Commands
 ```bash
 # Generate connector from OpenAPI spec (template-only, no LLM)
