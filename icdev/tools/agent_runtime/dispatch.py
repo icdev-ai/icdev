@@ -88,19 +88,24 @@ _FAILURE_PREFIX = "error ["
 def mutation_allowed() -> bool:
     """Whether the fail-closed default gate lets a mutating tool through.
 
-    ``ICDEV_SAG_ALLOW_MUTATION`` → ``args/agent_runtime.yaml`` → ``False``. The
-    env var is read first and still wins (hgx-cfg-01); the config layer only
-    supplies the fallback, and its default is ``False`` so the gate stays
-    fail-closed when the config file is missing, empty or malformed.
+    ``ICDEV_SAG_ALLOW_MUTATION`` → ``args/agent_runtime.yaml`` → the selected
+    permission posture → ``False``. The env var is read first and still wins
+    (hgx-cfg-01); the posture (hcx-post-01) is the bottom-most layer and only
+    supplies a default. The final default is ``False``, so the gate stays
+    fail-closed when both files are missing, empty or malformed.
+
+    The resolution itself lives on
+    :attr:`~tools.agent_runtime.config.AgentRuntimeConfig.allow_mutation`
+    (hcx-post-02) so that a caller holding a ``posture_override`` copy of the
+    config reads this knob through the same chain as the other three. This
+    function stays the public reader — every existing call site goes through it,
+    including the ``except`` fallback below, which the config layer cannot serve
+    because it is precisely the case where the config layer did not import.
     """
     try:
         from tools.agent_runtime.config import load_config
 
-        return load_config().flag(
-            "subsystems.mutation.allow",
-            env="ICDEV_SAG_ALLOW_MUTATION",
-            default=False,
-        )
+        return load_config().allow_mutation
     except Exception as exc:  # noqa: BLE001 — config is a layer, not a dependency
         logger.debug("dispatch: config layer unavailable: %s", exc)
         return os.environ.get("ICDEV_SAG_ALLOW_MUTATION", "").strip().lower() in _TRUTHY

@@ -3634,7 +3634,20 @@ _CARD_EXPECTED = [
 
 
 def _project_card_entries() -> list:
-    """Load args/projects.yaml entries that declare both a prefix and epics."""
+    """Load args/projects.yaml entries that declare a task_prefix.
+
+    A card with a prefix and NO epics is included, with ``epics == []``. It used
+    to be filtered out here, which made the check blind to the worst spelling of
+    the bug it exists to find: a card that can never claim a single row, so
+    ``total_all`` is 0 and it renders nothing no matter how much work carries its
+    prefix. ``pgrt`` sat in exactly that state with 22 board tasks, and running
+    this check reported it clean — the one card most in need of the finding was
+    the one card excluded from the audit.
+
+    The prefix alone is what makes an entry auditable: it is the claim "these
+    rows are mine". Whether any epic then claims them is the question, not the
+    entry criterion.
+    """
     import yaml
 
     path = PROJECT_ROOT / "args" / "projects.yaml"
@@ -3649,12 +3662,12 @@ def _project_card_entries() -> list:
             for e in (p.get("epics") or [])
             if isinstance(e, dict) and str(e.get("key") or "").strip()
         ]
-        if prefix and epics:
+        if prefix:
             out.append({"key": str(p.get("key") or ""), "prefix": prefix, "epics": epics})
     return out
 
 
-def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
+def check_project_card_coverage(*, conn_factory=None, entries=None) -> CoherenceCheck:
     """A project card that silently renders NOTHING while its work sits on the board.
 
     ``_compute_project_progress`` in ``tools/dashboard/app.py`` derives every
@@ -3674,13 +3687,19 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
     computed over a subset, which is the recurring "the card's own progress claim
     is wrong" complaint.
 
-    Two spellings of the same mistake produce it:
+    Three spellings of the same mistake produce it:
       * seeding ``<prefix><something>-NN`` for a ``<something>`` that is not a
-        registered epic key, and
-      * adding tasks for an epic that was never added to ``args/projects.yaml``.
+        registered epic key,
+      * adding tasks for an epic that was never added to ``args/projects.yaml``,
+        and
+      * registering a card with a ``task_prefix`` and NO ``epics:`` block at all,
+        which claims nothing however much work carries the prefix.
 
-    Both are invisible at seed time, because ``task_factory`` does not consult the
-    project registry.
+    All three are invisible at seed time, because ``task_factory`` does not consult
+    the project registry. The third was invisible HERE too until rem-hyg-01: the
+    entry loader required epics, so the maximal case — ``pgrt``, 22 board tasks,
+    zero epics, card rendering nothing — was excluded from its own audit and the
+    check reported clean.
 
     Gate sentinels are deliberately NOT counted as orphans: a ``<prefix>gate-NN``
     row holds the card, it is not work, and it should not appear in a progress
@@ -3689,7 +3708,8 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
     Reported as ``warn``: the finding is board DATA, so failing a per-task code
     gate on it would block commits that have nothing to do with it.
 
-    ``conn_factory`` is an injection seam for tests. It exists because the
+    ``conn_factory`` and ``entries`` are injection seams for tests. They exist
+    because the
     obvious alternative — monkeypatching ``tools.db.storage.get_connection`` —
     does not reliably work here: ``tools.db.storage`` and
     ``icdev.tools.db.storage`` are DISTINCT module objects with distinct
@@ -3708,7 +3728,7 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
         else:
             get_connection = conn_factory
 
-        projects = _project_card_entries()
+        projects = _project_card_entries() if entries is None else list(entries)
     except Exception as exc:  # noqa: BLE001
         return CoherenceCheck(
             check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
@@ -3773,9 +3793,16 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
         if not orphans:
             continue
         scope = "EVERY task" if len(orphans) == len(owned) else f"{len(orphans)}/{len(owned)}"
+        # An entry with no epics at all cannot claim a row by construction, and
+        # saying "epics: " with nothing after it reads like a truncation rather
+        # than the finding.
+        epic_note = (
+            f"epics: {','.join(proj['epics'])}" if proj["epics"]
+            else "NO epics registered — the card can never count anything"
+        )
         findings.append(
             f"{proj['key']}: {scope} unclaimed by any epic "
-            f"(epics: {','.join(proj['epics'])}) e.g. {', '.join(orphans[:3])}"
+            f"({epic_note}) e.g. {', '.join(orphans[:3])}"
         )
 
     if findings:
@@ -3783,7 +3810,7 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
         return CoherenceCheck(
             check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
             expected=_CARD_EXPECTED,
-            actual=[f"{len(projects)} card(s) with epics audited against {len(ids)} board task(s)"],
+            actual=[f"{len(projects)} card(s) audited against {len(ids)} board task(s)"],
             missing=[], extra=sorted(findings),
             message=(
                 f"{len(findings)} project card(s) own board tasks that no epic claims"
@@ -5521,13 +5548,39 @@ def check_log_standard_compliance() -> CoherenceCheck:
         if not re.search(r"\blogging\.getLogger\s*\(", src):
             continue
         try:
+            tree = ast.parse(src)
+
+            def _is_raw_get_logger(node: ast.AST) -> bool:
+                return (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "getLogger"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "logging"
+                )
+
+            # A module that PREFERS get_logger() and drops to stdlib logging only
+            # when that import fails is compliant, not in violation. Migrations and
+            # other bootstrap modules run at points where `tools.logging` may not be
+            # importable yet, and the alternative to the fallback is no logger at
+            # all. Flagging it would push authors to delete the working branch.
+            prefers_get_logger = any(
+                isinstance(node, ast.ImportFrom)
+                and (node.module or "").endswith("logging.icdev_logger")
+                and any(alias.name == "get_logger" for alias in node.names)
+                for node in ast.walk(tree)
+            )
+            fallback_calls = {
+                id(inner)
+                for handler in ast.walk(tree)
+                if isinstance(handler, ast.ExceptHandler)
+                for inner in ast.walk(handler)
+                if _is_raw_get_logger(inner)
+            }
             uses_raw = any(
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "getLogger"
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "logging"
-                for node in ast.walk(ast.parse(src))
+                _is_raw_get_logger(node)
+                and not (prefers_get_logger and id(node) in fallback_calls)
+                for node in ast.walk(tree)
             )
         except SyntaxError:
             uses_raw = True  # unparseable — fall back to the textual match
@@ -9485,6 +9538,19 @@ def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
 
     Delegates to tools/dx/mirror_parity.py — the audit already existed and
     already had ``--gate``; it was simply wired into nothing.
+
+    Intentional re-export shims are excluded, via the same :func:`_is_mirror_shim`
+    predicate ``check_mirror_drift`` already uses — one copy of the rule, not two.
+    A shim is the OPPOSITE of the defect this gate exists for: the gate's premise
+    is that the two trees are separate module objects (``a is b`` -> False), and
+    for a shim they are literally the same object, so there is no stale half to
+    run. Byte-comparing a 98-line re-export against the 2,672-line module it
+    re-exports reports permanent drift that can only be "fixed" by copying the
+    body back — recreating the physically-separate stale copy the shim was
+    written to delete. ``_is_mirror_shim``'s own docstring names
+    ``tools/llm/agent_loop.py`` and says it must never be flagged; that was true
+    of the report-only check and not of this gate, so touching the CANONICAL
+    module failed the gate on its shim (rem-cap-04).
     """
     try:
         from tools.dx.mirror_parity import audit_all
@@ -9499,8 +9565,12 @@ def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
     for report in result.get("reports") or []:
         pkg = report.get("path") or ""
         for rel in report.get("content_drift") or []:
-            if str(rel).endswith(exts):
-                out.append(f"tools/{pkg}/{rel}".replace("\\", "/"))
+            if not str(rel).endswith(exts):
+                continue
+            rel_path = f"tools/{pkg}/{rel}".replace("\\", "/")
+            if _is_mirror_shim(PROJECT_ROOT / rel_path):
+                continue
+            out.append(rel_path)
     return sorted(out)
 
 

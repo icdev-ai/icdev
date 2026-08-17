@@ -17,9 +17,14 @@ Deterministic response cache + provider-level context caching.
 - **Response cache**: SHA-256 keyed PostgreSQL UNLOGGED table. Stores complete
   LLMResponse objects. Lazy TTL eviction + eager LRU sweep. 0–50 ms jitter on
   hit for InputSnatch side-channel mitigation.
-- **Context cache**: Anthropic/Bedrock prompt caching API. Marks system prompt
-  and last user message with `cache_control: {type: "ephemeral"}`. KV prefix
-  reuse reduces token cost for long contexts.
+- **Context cache**: provider-declared prefix caching (cch-cap-01). The caller
+  sets `LLMRequest.cache_prefix = True`; each provider declares what it supports
+  (`none | automatic | explicit | managed_object | local`) and the router
+  translates at the invoke seam. On `explicit` providers (Anthropic/Bedrock)
+  that marks the system prompt and last user message with
+  `cache_control: {type: "ephemeral"}`; on `automatic` ones nothing is requested
+  at all. KV prefix reuse reduces token cost for long contexts where the
+  provider bills for them.
 
 ## Workflow
 

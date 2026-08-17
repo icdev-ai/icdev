@@ -40,9 +40,15 @@ SCHEMA = [
         total_runs INTEGER DEFAULT 0)""",
     """CREATE TABLE studio_mcp_dispatch_audit (
         audit_id TEXT PRIMARY KEY, tool TEXT, decision TEXT, recorded_at TEXT)""",
+    # `tier` is the discriminator rem-cap-05 added: hitl_delta.py reuses this
+    # table through record_decision() with tiers classify() cannot emit, so a
+    # count without it can report another module's row as gate consumption. The
+    # probe reports a table missing the column as UNMEASURABLE, which is why the
+    # column belongs in this fixture — see
+    # tests/test_capability_consumption_approval_tiers.py for the pinning.
     """CREATE TABLE agent_approval_log (
-        id INTEGER PRIMARY KEY, tool_name TEXT, rule TEXT, decision TEXT,
-        decided_at TEXT)""",
+        id INTEGER PRIMARY KEY, tool_name TEXT, tier TEXT, rule TEXT,
+        decision TEXT, decided_at TEXT)""",
     """CREATE TABLE audit_platform (
         id INTEGER PRIMARY KEY, tenant_id TEXT, user_id TEXT, event_type TEXT,
         action TEXT, details TEXT, recorded_at TEXT)""",
@@ -52,10 +58,12 @@ SCHEMA = [
     """CREATE TABLE audit_trail (
         id INTEGER PRIMARY KEY, event_type TEXT, actor TEXT, created_at TEXT,
         hash TEXT, previous_hash TEXT, signature TEXT)""",
+    # gepa_decision/gepa_decided_at are rem-cap-01's: consumption for this class
+    # is a recorded GEPA DECISION, applied or declined, not an apply alone.
     """CREATE TABLE agent_improvement_artifacts (
         artifact_id TEXT PRIMARY KEY, skill_used TEXT, composite_score REAL,
         baseline_score REAL, status TEXT, applied_count INTEGER DEFAULT 0,
-        applied_at TEXT)""",
+        applied_at TEXT, gepa_decision TEXT, gepa_decided_at TEXT)""",
     """CREATE TABLE runtime_invocations (
         id TEXT PRIMARY KEY, surface TEXT NOT NULL, name TEXT NOT NULL,
         started_at TEXT NOT NULL, status TEXT, error_class TEXT)""",
@@ -224,10 +232,13 @@ def test_in_window_consumption_is_counted(conn_factory):
          ('{"rbac_role": "developer", "enforced": true}', IN_WINDOW)),
         ("INSERT INTO prompt_versions (id, prompt_name, version, status, updated_at) "
          "VALUES ('p1', 'karpathy_principles', 1, 'active', ?)", (IN_WINDOW,)),
+        # GEPA applied this one — and records that as a decision, which is what
+        # consumption for this class now counts.
         ("INSERT INTO agent_improvement_artifacts "
          "(artifact_id, skill_used, composite_score, baseline_score, status, "
-         " applied_count, applied_at) "
-         "VALUES ('a1', 'build', 0.9, 0.5, 'applied', 1, ?)", (IN_WINDOW,)),
+         " applied_count, applied_at, gepa_decision, gepa_decided_at) "
+         "VALUES ('a1', 'build', 0.9, 0.5, 'applied', 1, ?, 'applied', ?)",
+         (IN_WINDOW, IN_WINDOW)),
         ("INSERT INTO agent_improvement_artifacts "
          "(artifact_id, skill_used, composite_score, baseline_score, status, applied_count) "
          "VALUES ('a2', 'test', 0.9, 0.5, 'pending', 0)", ()),

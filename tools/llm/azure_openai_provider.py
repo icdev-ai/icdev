@@ -30,9 +30,11 @@ import time
 from typing import Any, Dict, Iterator, List
 
 from tools.llm.provider import (
+    PREFIX_CACHE_AUTOMATIC,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
     messages_to_openai,
     tools_to_openai,
 )
@@ -97,6 +99,20 @@ class AzureOpenAIProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "azure_openai"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Automatic: identical to OpenAI, same SDK object, nothing to request."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_AUTOMATIC,
+            reason=(
+                "Azure OpenAI does the same automatic >=1024-token prefix caching as "
+                "OpenAI on GPT-4o+ deployments, through the same SDK object. Nothing "
+                "is requested; usage.prompt_tokens_details.cached_tokens is read back "
+                "(D-CACHE-OAI-1) so the tokens it serves are not discarded."
+            ),
+            reports_cache_tokens=True,
+        )
 
     @property
     def _is_government(self) -> bool:
@@ -210,6 +226,22 @@ class AzureOpenAIProvider(LLMProvider):
         if hasattr(completion, "usage") and completion.usage:
             resp.input_tokens = getattr(completion.usage, "prompt_tokens", 0)
             resp.output_tokens = getattr(completion.usage, "completion_tokens", 0)
+            # Cache-token parity, same as openai_provider (D-CACHE-OAI-1).
+            #
+            # Azure OpenAI does automatic prefix caching on GPT-4o+ exactly as
+            # OpenAI does, through the same SDK object, and reports it in the
+            # same place — but this provider read only prompt_tokens and
+            # completion_tokens, so every cached token it served was invisible.
+            # Prefix caching that works and is not recorded is indistinguishable
+            # from prefix caching that never fired.
+            #
+            # Nothing is REQUESTED here: OpenAI-family caching is automatic and
+            # has no cache_control to set. The whole fix is reading the number
+            # the provider already returns, and normalising it into the shared
+            # LLMResponse field every other provider reports into.
+            details = getattr(completion.usage, "prompt_tokens_details", None)
+            if details is not None:
+                resp.cache_read_input_tokens = getattr(details, "cached_tokens", 0) or 0
 
         choice = completion.choices[0] if completion.choices else None
         if choice:

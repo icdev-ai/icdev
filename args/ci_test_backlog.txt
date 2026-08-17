@@ -86,7 +86,6 @@ tests/ci/modules/test_vcs.py
 tests/ci/modules/test_workflow_ops.py
 tests/ci/test_bom_corpus_leak_guard.py
 tests/ci/test_pr_watcher.py
-tests/ci/test_pr_watcher_budgets.py
 tests/ci/test_pr_watcher_ci_never_fired.py
 tests/ci/test_pr_watcher_dotenv.py
 tests/ci/test_pr_watcher_draft_ready.py
@@ -620,7 +619,6 @@ tests/test_coherence_checker.py
 tests/test_coherence_doc_command_paths.py
 tests/test_coherence_insert_schema_parity.py
 tests/test_coherence_llm_injection.py
-tests/test_coherence_log_standard.py
 tests/test_coherence_mirror_drift.py
 tests/test_coherence_new_page_completeness.py
 tests/test_coherence_sweep_timeout.py
@@ -1165,7 +1163,6 @@ tests/test_kanban_scheduled_and_pr_opened.py
 tests/test_kanban_silent_cleanup.py
 tests/test_kanban_sla_metrics.py
 tests/test_kanban_stale_reaper_manual_actor.py
-tests/test_kanban_suggested_decay.py
 tests/test_kanban_tool_runner_allowlist.py
 tests/test_kanban_transition_reason.py
 tests/test_key_personnel.py

@@ -10,11 +10,15 @@ explicit statement of what could NOT be joined.
 
 Joinable sources — these tables carry a ``session_id`` column:
 
-===================  =========================================================
-``hook_events``      every pre/post tool-use hook, HMAC-signed
-``audit_trail``      the immutable audit log, hash-chained since migration 149
-``agent_findings``   AGOV detection findings (present once agov-det-05 lands)
-===================  =========================================================
+=========================  ===================================================
+``hook_events``            every pre/post tool-use hook, HMAC-signed
+``audit_trail``            the immutable audit log, hash-chained since
+                           migration 149
+``agent_session_events``   the append-only agent event log (hcx-evt-01), one
+                           row per model-visible event, ordered by ``seq``
+``agent_findings``         AGOV detection findings (present once agov-det-05
+                           lands)
+=========================  ===================================================
 
 NOT joinable, and this is a real limitation rather than an oversight:
 ``agent_executions``, ``ai_telemetry`` and ``ace_audit_log`` all record agent
@@ -22,11 +26,28 @@ activity but none of them has a ``session_id`` column — they key on
 ``execution_id``, ``agent_id``/``user_id`` and ``instance_id`` respectively. A
 timeline cannot silently omit them, so every result names them under
 ``limits``. Correlating them needs a schema change, not a wider SELECT.
+``agent_session_events`` is what a schema change looks like when it is made:
+hcx-evt-01 gave it ``session_id`` by construction, so it joins with no special
+case at all.
 
-Ordering is by timestamp, then source, then record id, so two runs over the same
-data produce the same sequence. Rows whose timestamp is NULL or empty cannot be
-placed in time: they sort last, are counted in ``undated``, and keep their
-records rather than being dropped.
+Joined, but NOT wholly: ``agent_session_events.payload_json`` is deliberately
+not selected. It can hold verbatim model input, and both this timeline and the
+case bundle built from it carry no transcript by construction rather than by
+filtering (``case_bundler`` invariant 3). ``payload_hash`` IS carried — it is
+the same SHA-256 recipe the migration-149 audit chain uses
+(``tools/audit/row_hash.py``), so a holder of the payload can still prove what
+it was. Every result where the table is present says this under ``limits``,
+because "the payload is not here" and "there was no payload" are different
+facts.
+
+Ordering is by timestamp, then source, then the source's own tiebreak, then
+record id, so two runs over the same data produce the same sequence. The
+tiebreak exists for ``agent_session_events``: several of its events routinely
+share one ``occurred_at``, which is exactly why hcx-evt-01 ordered that table by
+a monotonic ``seq`` and held a UNIQUE index over ``(session_id, seq)``. Falling
+back to its ``event_id`` — a random uuid — would be reproducible and wrong.
+Rows whose timestamp is NULL or empty cannot be placed in time: they sort last,
+are counted in ``undated``, and keep their records rather than being dropped.
 
 Three properties are contractual, because a case bundle (agov-case-02) is
 manifested by SHA-256 over what this module produces and a timeline that
@@ -87,6 +108,28 @@ from tools.db.storage import (  # noqa: E402
 
 # --- Source declarations ---------------------------------------------------
 
+
+def _agent_event_summary(record: dict) -> str:
+    """One-line summary of an ``agent_session_events`` row, from METADATA only.
+
+    Every other source names a column that already holds a short human string
+    (``tool_name``, ``action``, ``title``). This one has none: its human-readable
+    content lives in ``payload_json``, which is precisely the column this module
+    refuses to read. So the summary states where the event sits in the session
+    and the digest that stands in for its content, and quotes nothing.
+    """
+    parts = []
+    seq = record.get("seq")
+    if seq is not None:
+        parts.append(f"event seq {seq}")
+    correlation = record.get("correlation_id")
+    if correlation:
+        parts.append(f"correlation {correlation}")
+    digest = str(record.get("payload_hash") or "")
+    parts.append(f"payload sha256:{digest[:12]}" if digest else "payload hash absent")
+    return " | ".join(parts)
+
+
 # Each entry: table -> what to select and how to normalize it. ``columns`` is an
 # explicit allowlist rather than ``SELECT *`` so a later ALTER TABLE cannot
 # silently widen a forensic export, and so the bundler's record files have a
@@ -122,6 +165,27 @@ SOURCES = {
         "summary_column": "action",
         "operand_columns": ("affected_files",),
     },
+    "agent_session_events": {
+        "id_column": "event_id",
+        "time_column": "occurred_at",
+        # payload_json is ABSENT from this allowlist on purpose — see
+        # PAYLOAD_WITHHELD_NOTE. payload_hash stands in for it and is what a
+        # holder of the payload re-verifies against.
+        "columns": (
+            "event_id", "session_id", "seq", "event_type", "occurred_at",
+            "payload_hash", "tenant_id", "classification", "correlation_id",
+        ),
+        "kind_column": "event_type",
+        "actor_column": "session_id",
+        # No free-text title column exists here, and the one column that could
+        # supply prose is the one deliberately not read. The summary is built
+        # from metadata instead.
+        "summary_column": None,
+        "summary_builder": _agent_event_summary,
+        # Ordering inside one timestamp is `seq`, the invariant hcx-evt-01 put a
+        # UNIQUE index behind, never the random uuid in event_id.
+        "tiebreak_column": "seq",
+    },
     "agent_findings": {
         "id_column": "finding_id",
         "time_column": "created_at",
@@ -138,8 +202,11 @@ SOURCES = {
     },
 }
 
-# Deterministic ordering when two records share a timestamp.
-SOURCE_ORDER = ("hook_events", "audit_trail", "agent_findings")
+# Deterministic ordering when two records share a timestamp. Findings stay last
+# because they are derived FROM the other three: a rule that fired in the same
+# second as the event it matched belongs after it, not interleaved with it.
+SOURCE_ORDER = ("hook_events", "audit_trail", "agent_session_events",
+                "agent_findings")
 
 # --- Operand extraction ----------------------------------------------------
 
@@ -181,6 +248,21 @@ UNJOINABLE_SOURCES = {
     "ai_telemetry": "agent_id / user_id (no session_id column)",
     "ace_audit_log": "instance_id (no session_id column)",
 }
+
+# A source that IS joined, but not in full. Reported whenever
+# agent_session_events is present, because a reader who sees the events but no
+# payloads must be able to tell "withheld from this export" from "the log
+# recorded no payload" — and hcx-evt-01 already spends a NULLable column and an
+# explicit ``payload_withheld`` flag keeping exactly that pair apart at rest.
+PAYLOAD_WITHHELD_NOTE = (
+    "agent_session_events.payload_json is NOT read by this timeline: it can hold "
+    "verbatim model input, and a case bundle built from this timeline carries no "
+    "transcript by construction rather than by filtering. payload_hash IS carried "
+    "for every event, so a holder of the payload can re-verify it with "
+    "tools/audit/row_hash.py::compute_payload_hash. Read the log directly "
+    "(tools/agent_runtime/event_log.py --with-payload) if you need the documents, "
+    "and note that some are withheld at rest by args/agent_event_log.yaml too"
+)
 
 
 def _row_to_dict(cursor, row) -> dict:
@@ -235,7 +317,14 @@ def _fetch_source(conn, table: str, spec: dict, session_id: str,
     if until and time_column in available:
         sql += f" AND {time_column} <= {ph}"
         params.append(until)
-    sql += f" ORDER BY {time_column}, {spec['id_column']}"
+    # The tiebreak sits between the timestamp and the id so a --limit slice is
+    # cut at the same place the Python sort would put the boundary.
+    order_by = [time_column]
+    tiebreak = spec.get("tiebreak_column")
+    if tiebreak and tiebreak in available:
+        order_by.append(tiebreak)
+    order_by.append(spec["id_column"])
+    sql += f" ORDER BY {', '.join(order_by)}"
     if limit:
         sql += f" LIMIT {int(limit)}"
 
@@ -301,6 +390,20 @@ def _extract_operands(spec: dict, record: dict) -> dict:
     return operands
 
 
+def _summary_for(spec: dict, record: dict):
+    """The entry's summary string — a column, or a builder when no column fits.
+
+    ``agent_session_events`` is the source with no column that fits: its only
+    human-readable field is the payload this module refuses to read. A builder
+    keeps that a per-source declaration rather than a branch in ``_normalize``.
+    """
+    builder = spec.get("summary_builder")
+    if builder is not None:
+        return builder(record)
+    column = spec.get("summary_column")
+    return record.get(column) if column else None
+
+
 def _normalize(table: str, spec: dict, record: dict) -> dict:
     """One timeline entry. ``record`` is carried verbatim — the entry is a view."""
     entry = {
@@ -309,7 +412,7 @@ def _normalize(table: str, spec: dict, record: dict) -> dict:
         "at": record.get(spec["time_column"]) or None,
         "kind": record.get(spec["kind_column"]),
         "actor": record.get(spec["actor_column"]),
-        "summary": record.get(spec["summary_column"]),
+        "summary": _summary_for(spec, record),
         "classification": record.get("classification") or "CUI",
         "operands": _extract_operands(spec, record),
         "record": record,
@@ -331,20 +434,45 @@ def event_key(entry: dict) -> str:
     return f"{entry['source']}:{entry.get('record_id')}"
 
 
+def _tiebreak(entry: dict) -> str:
+    """The source's own within-timestamp order, as a sortable string.
+
+    Only ``agent_session_events`` declares one, and only it needs one: several
+    of its events share a single ``occurred_at`` and hcx-evt-01 orders them by a
+    monotonic ``seq`` the database holds UNIQUE. Zero-padded so 2 sorts before
+    10, and read off ``record`` rather than stored on the entry so no source's
+    entry shape — and therefore no existing timeline digest — changes for a
+    field only the sort consults.
+    """
+    column = (SOURCES.get(entry.get("source")) or {}).get("tiebreak_column")
+    if not column:
+        return ""
+    value = (entry.get("record") or {}).get(column)
+    if value is None:
+        return ""
+    try:
+        return f"{int(value):020d}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _sort_key(entry: dict):
-    """Undated entries last; otherwise timestamp, then source, then id — as text.
+    """Undated entries last; otherwise timestamp, source, tiebreak, id — as text.
 
     Record ids are mixed-type across sources (``hook_events.id`` is an integer,
     ``agent_findings.finding_id`` is text), so comparing them directly raises on
     a tie. Comparing their string forms only decides ties and keeps the order
-    reproducible.
+    reproducible. The tiebreak is compared before the id and only ever against
+    another row of the SAME source, because ``source_rank`` has already
+    separated them.
     """
     at = entry.get("at")
     try:
         source_rank = SOURCE_ORDER.index(entry["source"])
     except ValueError:
         source_rank = len(SOURCE_ORDER)
-    return (at is None, str(at or ""), source_rank, str(entry.get("record_id") or ""))
+    return (at is None, str(at or ""), source_rank, _tiebreak(entry),
+            str(entry.get("record_id") or ""))
 
 
 def _anchor_findings(entries: list) -> list:
@@ -487,6 +615,11 @@ def build_timeline(session_id: str, conn=None, since: str = None,
             records = _fetch_source(conn, table, spec, session_id,
                                     since=since, until=until, limit=limit)
             result["sources"][table] = {"present": True, "records": len(records)}
+            if table == "agent_session_events":
+                # Stated whenever the table is present, not only when it had
+                # rows: an operator who sees zero events needs to know the
+                # payloads were never in scope either way.
+                result["limits"].append(PAYLOAD_WITHHELD_NOTE)
             if limit and len(records) == int(limit):
                 result["sources"][table]["truncated"] = True
                 result["limits"].append(

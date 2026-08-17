@@ -11,9 +11,11 @@ nothing goes red. Known instances:
   * ``MCPToolAuthorizer``: zero call sites, yet ``fedramp_ksi_generator`` counted
     the *file's existence* as satisfied evidence;
   * ``prompt_registry``: 0 rows in ``prompt_versions``, 0 importers;
-  * GEPA: dispatched every 24h, but its selection predicate requires
-    ``composite_score - baseline_score >= 0.05`` and every queued artifact has
-    the two equal, so it can never select one;
+  * GEPA: dispatched every 24h with 7 successful runs on the board and zero
+    recorded consumption, because the only outcome it could write was
+    ``status='applied'`` — an artifact it declined stayed ``'pending'`` forever,
+    so the queue could only grow and a correct decline was indistinguishable
+    from never having run (rem-cap-01);
   * three separate reflex incidents (xbm-wake-01, xbm-wake-02, hgx-obs-02) where
     ``enabled: true`` + a working module + a catalogue entry produced zero
     executions.
@@ -453,26 +455,72 @@ def probe_mcp_dispatch_tool(conn, since: datetime, threshold: int, max_listed: i
 
 
 def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed: int) -> ClassResult:
-    """Tools the approval policy enumerates by tier vs. gate decisions recorded."""
+    """Tools the approval policy REQUIRES APPROVAL FOR vs. gate decisions recorded.
+
+    Two narrowings, both rem-cap-05, both because the naive reading of this class
+    could never reach zero even with a perfectly wired gate.
+
+    1. ``declared`` is scoped to the tiers in ``require_approval_tiers``. The hook
+       ``build_approval_hook`` returns early for a call that does not require
+       approval (approval_gate.py, "allowed without ceremony and without a row"),
+       which is the right design for an audit trail of DECISIONS — but it means
+       the 37 tools in the ``reversible``/``recoverable`` tiers could be
+       classified ten thousand times a day and ``agent_approval_log`` would still
+       hold nothing for any of them. Counting them as declared-and-inert made a
+       working gate indistinguishable from an absent one, in the direction that
+       pins the budget at >= 37 forever. They are reported in
+       ``extra.not_measurable_by_design``, ENUMERATED rather than merely counted,
+       so a tier change or a policy edit is visible — a class that quietly shrank
+       its own denominator would be the same dishonesty pointed the other way.
+       The tier list is read from the policy, never hardcoded: an operator who
+       adds ``recoverable`` to ``require_approval_tiers`` moves those 13 tools
+       into the measurable set on the next run.
+
+    2. Events are filtered on ``tier``. ``tools/quality/hitl_delta.py``
+       legitimately reuses ``record_decision()`` and this table for a different
+       kind of decision (tiers ``review`` / ``trust_delta``, rules
+       ``claim_guard`` / ``hitl_delta``) — tiers ``classify()`` can never emit.
+       The probe previously reported zero only because those rows' ``tool_name``
+       values happened not to collide with a policy-enumerated tool; a collision
+       would have reported FALSE consumption for a gate that has never run.
+    """
     res = ClassResult(
         capability_class="agent_approval_rule",
-        declaration_source="args/agent_approval_policy.yaml (tools.*)",
-        telemetry_table="agent_approval_log",
+        declaration_source="args/agent_approval_policy.yaml (tools.* in require_approval_tiers)",
+        telemetry_table="agent_approval_log (tier IN approval_gate.TIERS)",
     )
     try:
         from tools.agent_runtime.approval_gate import TIERS, load_policy
 
         policy = load_policy()
         tools_by_tier = policy.get("tools") or {}
+        require = {
+            str(t).strip().lower() for t in (policy.get("require_approval_tiers") or [])
+        }
+        measurable = tuple(t for t in TIERS if t in require)
         declared = [
             str(name).lower()
-            for tier in TIERS
+            for tier in measurable
             for name in (tools_by_tier.get(tier) or [])
         ]
+        excluded_by_tier = {
+            tier: sorted({str(n).lower() for n in (tools_by_tier.get(tier) or [])})
+            for tier in TIERS
+            if tier not in require and (tools_by_tier.get(tier) or [])
+        }
     except Exception as exc:  # noqa: BLE001
         return _unmeasured(
             "agent_approval_rule", res.declaration_source, res.telemetry_table,
             f"declaration source unreadable: {exc}",
+        )
+
+    if not measurable:
+        # No tier requires approval, so the hook records nothing for any tool.
+        # Reporting a clean 0 declared / 0 inert here would launder a gate that
+        # cannot write a row into a gate with nothing left to prove.
+        return _unmeasured(
+            "agent_approval_rule", res.declaration_source, res.telemetry_table,
+            "require_approval_tiers is empty — no call can produce a decision row",
         )
 
     from tools.db.storage import table_exists
@@ -482,8 +530,20 @@ def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed:
             "agent_approval_rule", res.declaration_source, res.telemetry_table,
             "agent_approval_log does not exist",
         )
+    if _column_type(conn, "agent_approval_log", "tier") is None:
+        # Without the discriminator the count cannot exclude hitl_delta's rows,
+        # and an over-count here reads as a live gate. Say so instead.
+        return _unmeasured(
+            "agent_approval_rule", res.declaration_source, res.telemetry_table,
+            "agent_approval_log has no tier column — consumption is indistinguishable "
+            "from other record_decision() writers",
+        )
     try:
-        counts = _count_by_key(conn, "agent_approval_log", "tool_name", "decided_at", since)
+        counts = _count_by_key(
+            conn, "agent_approval_log", "tool_name", "decided_at", since,
+            extra_sql="AND LOWER(tier) IN (" + ", ".join(["%s"] * len(TIERS)) + ")",
+            extra_params=tuple(TIERS),
+        )
     except Exception as exc:  # noqa: BLE001
         _rollback(conn)
         return _unmeasured(
@@ -491,7 +551,22 @@ def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed:
             f"query failed: {exc}",
         )
     counts = {str(k).lower(): v for k, v in counts.items()}
-    return _finish(res, declared, counts, threshold, max_listed)
+    res = _finish(res, declared, counts, threshold, max_listed)
+    excluded_flat = sorted({n for names in excluded_by_tier.values() for n in names})
+    res.extra["require_approval_tiers"] = sorted(require)
+    res.extra["not_measurable_by_design"] = {
+        "count": len(excluded_flat),
+        "tiers": sorted(excluded_by_tier),
+        "tools_by_tier": {
+            tier: names[:max_listed] for tier, names in sorted(excluded_by_tier.items())
+        },
+        "truncated": any(len(names) > max_listed for names in excluded_by_tier.values()),
+        "why": (
+            "build_approval_hook auto-allows a tier outside require_approval_tiers "
+            "without writing a row; these tools can never appear in agent_approval_log"
+        ),
+    }
+    return res
 
 
 def probe_mcp_tool_authorization(
@@ -673,24 +748,48 @@ def probe_audit_chain(conn, since: datetime, threshold: int, max_listed: int) ->
 
 
 def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int) -> ClassResult:
-    """GEPA: skills queued for optimization vs. artifacts it actually applied.
+    """GEPA: skills queued for optimization vs. artifacts GEPA actually decided.
+
+    Consumption is a RECORDED GEPA DECISION — applied or declined — not an apply
+    alone (rem-cap-01). Counting applies only made "GEPA ran and correctly
+    declined everything" indistinguishable from "GEPA never ran", which is the
+    declared-but-unconsumed shape this module exists to catch, in the module
+    that is supposed to catch it. It also matches how the two neighbouring
+    classes already count: mcp_tool_authorization counts a VERDICT rather than a
+    denial, and audit_chain counts a row written with a chain hash rather than a
+    tamper finding. `applied` and `declined` are reported separately in `extra`
+    so a busy decline loop can never read as a busy patch loop.
 
     Also reports how many queued artifacts even *satisfy* GEPA's own selection
     predicate. That number being zero while the queue is full is the difference
     between "nothing to do" and "structurally cannot ever act", and only the
-    second one is a defect.
+    second one is a defect. `pending_undecided` is the honest denominator for
+    that comparison: an artifact GEPA has terminally declined is settled, and
+    counting it as backlog is what kept the alarm on forever.
     """
     res = ClassResult(
         capability_class="skill_optimizer",
-        declaration_source="agent_improvement_artifacts (distinct skill_used)",
+        declaration_source=(
+            "agent_improvement_artifacts (distinct skill_used, "
+            "excluding upstream evidence rejections)"
+        ),
         telemetry_table="agent_improvement_artifacts",
     )
-    from tools.db.storage import table_exists
+    from tools.db.storage import column_exists, table_exists
 
     if not table_exists(conn, "agent_improvement_artifacts"):
         return _unmeasured(
             "skill_optimizer", res.declaration_source, res.telemetry_table,
             "agent_improvement_artifacts does not exist",
+        )
+    # A database that predates the gepa_decision_columns migration cannot be
+    # asked this question. Reporting zero there would be the misleading zero
+    # this module refuses to produce everywhere else.
+    if not column_exists(conn, "agent_improvement_artifacts", "gepa_decided_at"):
+        return _unmeasured(
+            "skill_optimizer", res.declaration_source, res.telemetry_table,
+            "agent_improvement_artifacts.gepa_decided_at does not exist "
+            "(migration 20260816125047_gepa_decision_columns has not run)",
         )
     try:
         # Declared units are the skills GEPA was asked to improve, across every
@@ -699,11 +798,11 @@ def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int
         # structurally incapable of ever being counted as consumed: the exact
         # never-goes-green shape this tool exists to catch.
         all_rows = conn.execute(
-            "SELECT skill_used, composite_score, baseline_score, status "
+            "SELECT skill_used, composite_score, baseline_score, status, gepa_decision "
             "FROM agent_improvement_artifacts"
         ).fetchall()
         counts = _count_by_key(
-            conn, "agent_improvement_artifacts", "skill_used", "applied_at", since
+            conn, "agent_improvement_artifacts", "skill_used", "gepa_decided_at", since
         )
     except Exception as exc:  # noqa: BLE001
         _rollback(conn)
@@ -712,29 +811,66 @@ def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int
             f"query failed: {exc}",
         )
 
+    from tools.skills.gepa_optimizer import DECISION_APPLIED, TERMINAL_DECISIONS
+
     declared: List[str] = []
     pending = 0
+    pending_undecided = 0
     selectable = 0
+    decided_lifetime = 0
+    applied_lifetime = 0
+    upstream_rejected = 0
     for row in all_rows:
         rec = dict(row)
+        status = str(rec.get("status") or "")
+        # An artifact the Reflexion agent's evidence gate refused
+        # (`rejected_no_evidence`, args/refinement_evidence.yaml
+        # `rejected_status`) never enters GEPA's queue — GEPA selects on
+        # status='pending' and is structurally never shown it. Counting it as a
+        # skill GEPA was asked to improve blames GEPA for an upstream decision
+        # and makes the class permanently un-greenable no matter how well GEPA
+        # works. 'applied' still counts, which is the point of not scoping this
+        # to 'pending' alone: an artifact GEPA acted on has left that queue.
+        if status.startswith("rejected"):
+            upstream_rejected += 1
+            continue
         declared.append(str(rec.get("skill_used") or "(unattributed)"))
-        if str(rec.get("status") or "") != "pending":
+        decision = str(rec.get("gepa_decision") or "")
+        if decision:
+            decided_lifetime += 1
+            if decision == DECISION_APPLIED:
+                applied_lifetime += 1
+        if status != "pending":
             continue
         pending += 1
+        if decision in TERMINAL_DECISIONS:
+            continue
+        pending_undecided += 1
         composite = rec.get("composite_score")
         baseline = rec.get("baseline_score")
         if composite is None or baseline is None:
             continue
-        # Mirrors gepa_optimizer._get_pending_artifacts: composite >= 0.60 and
-        # a delta of at least 0.05 over baseline.
+        # Mirrors gepa_optimizer._score_verdict: composite >= 0.60 and a delta
+        # of at least 0.05 over baseline.
         if float(composite) >= 0.60 and float(composite) - float(baseline) >= 0.05:
             selectable += 1
 
     counts = {(k or "(unattributed)"): v for k, v in counts.items()}
     res = _finish(res, declared, counts, threshold, max_listed)
     res.extra["artifacts_total"] = len(all_rows)
+    # Reported, never silently dropped: these are artifacts the evidence gate
+    # refused upstream, so they are not GEPA's to answer for and not GEPA's to
+    # be credited with either.
+    res.extra["upstream_rejected_artifacts"] = upstream_rejected
     res.extra["pending_artifacts"] = pending
+    res.extra["pending_undecided_artifacts"] = pending_undecided
     res.extra["artifacts_matching_selection_predicate"] = selectable
+    # Lifetime, alongside the window counts — the same split probe_reflex makes
+    # with never_run_lifetime. A capability that decided something once and has
+    # been idle since is idle, not inert, and the two must not blur.
+    res.extra["decisions_lifetime"] = decided_lifetime
+    res.extra["applied_lifetime"] = applied_lifetime
+    res.extra["declined_lifetime"] = decided_lifetime - applied_lifetime
     return res
 
 

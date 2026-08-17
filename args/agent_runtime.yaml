@@ -8,7 +8,11 @@
 #
 # PRECEDENCE — this file is a LAYER, not a replacement:
 #
-#     explicit call argument  >  environment variable  >  this file  >  built-in default
+#     explicit call argument
+#       >  environment variable
+#       >  this file
+#       >  args/permission_postures.yaml (the selected posture)
+#       >  built-in default
 #
 # Every environment variable that worked before this file existed still works,
 # and still wins. The value here is only consulted when the env var is unset (or
@@ -21,7 +25,14 @@
 # add a key here, wire it in that module too — an inert config key reads as a
 # supported setting and is worse than no key at all.
 #
-# Inspect the resolved values (config + the env overrides actually in force):
+# A handful of keys are POSTURE-GOVERNED and ship COMMENTED OUT below: the
+# sandbox mode, the two approval modes and the mutation gate. They are named
+# together by args/permission_postures.yaml so one selector moves the whole set.
+# A value written here sits above the posture and pins that knob whichever
+# posture is selected — which is why they are commented rather than removed.
+#
+# Inspect the resolved values (config, posture, and the env overrides actually
+# in force):
 #     python -m tools.agent_runtime.config --json
 #
 # Override the file location with ICDEV_AGENT_RUNTIME_CONFIG=/path/to/file.yaml.
@@ -77,15 +88,55 @@ subsystems:
   # tools/agent_runtime/safety.py (mode/risk_function) and
   # tools/agent_runtime/approval_gate.py (command_mode) — the sag-safe-01
   # approval flow in front of every mutating tool call.
+  #
+  # `mode` and `command_mode` are POSTURE-GOVERNED (hcx-post-01): they come from
+  # the posture named in args/permission_postures.yaml, so that one selector
+  # moves them together with the sandbox and the mutation gate. A key written
+  # here would sit ABOVE the posture and pin the knob regardless of which
+  # posture is selected — which is a legitimate thing to want, and exactly why
+  # they are left commented rather than deleted. Uncomment to pin.
+  #
+  # `command_mode` IS pinned, deliberately (rem-cap-04). Both built-in postures
+  # would otherwise supply `enforce` (workspace-write) or `off`
+  # (danger-full-access), and `enforce` is not survivable yet:
+  #
+  #   * The gate's policy is fail-closed, so an unenumerated tool halts. Of the
+  #     tools the SAG toolsets actually register, 81% classify `unknown` —
+  #     `args/agent_approval_policy.yaml` enumerates 62 tools and misses these,
+  #     with the `compliance` (13), `security` (9), `canvas` (7), `govcon` (5)
+  #     and `kanban` (5) bundles entirely unenumerated.
+  #   * The default approver is `console_approver`, which denies on EOF. That is
+  #     correct fail-closed behaviour and fatal in an unattended run.
+  #
+  #   `enforce` today would therefore refuse roughly four tool calls in five, on
+  #   every SAG surface, with no human on the other end — the `|| true`
+  #   PreToolUse mistake at 17x the rate (that one was refusing 4.86%).
+  #
+  # `dry_run` calls the gate's `_finish()`, so it WRITES the `agent_approval_log`
+  # row and then allows. That makes the control consumed and measurable at zero
+  # liveness risk, and the log becomes the corpus for deciding what to enumerate
+  # — i.e. this IS the fire-rate survey CLAUDE.md requires before arming a
+  # security check. Promote to `enforce` per bundle, once those tools are
+  # enumerated or explicitly accepted; do not flip this line to do it globally.
+  # Finding: docs/security/approval-gate-reachability.md
   approval:
-    mode: manual                     # env: ICDEV_SAG_APPROVAL_MODE  (manual|smart|off)
+    # mode: manual                   # env: ICDEV_SAG_APPROVAL_MODE  (manual|smart|off)
     risk_function: summarization     # env: ICDEV_SAG_RISK_FUNCTION  (routing function, not a model)
-    command_mode: enforce            # env: ICDEV_AGENT_APPROVAL_MODE (enforce|dry_run|off)
+    command_mode: dry_run            # env: ICDEV_AGENT_APPROVAL_MODE (enforce|dry_run|off)
+
+  # tools/agents/adapters/codex_cli.py — confinement passed to an agent CLI that
+  # supports one (`--sandbox <mode>`). The mode names belong to the vendor CLI,
+  # so this is not validated against a list here. POSTURE-GOVERNED; the
+  # adapter-specific ICDEV_CODEX_SANDBOX wins over the generic env var below.
+  sandbox:
+    # mode: workspace-write          # env: ICDEV_SAG_SANDBOX_MODE
 
   # tools/agent_runtime/dispatch.py — the fail-closed default gate used when no
-  # safety gate is supplied. Leave false; `false` is what makes it fail-closed.
+  # safety gate is supplied. POSTURE-GOVERNED, and every shipped posture that is
+  # not `danger-full-access` sets it false; `false` is what makes it fail-closed.
+  # With no posture file at all the built-in default is still false.
   mutation:
-    allow: false                     # env: ICDEV_SAG_ALLOW_MUTATION
+    # allow: false                   # env: ICDEV_SAG_ALLOW_MUTATION
 
   # tools/agent_runtime/delegation.py — whether a CHILD agent (depth > 0) may
   # itself delegate. The top-level agent always may; the absolute depth cap

@@ -13,15 +13,16 @@ Layout, and every well-known path here is the constant from
 the verifier cannot drift::
 
     <bundle>/
-      manifest.json                    # SHA-256 of every other member
-      context.json                     # endpoint/context header + classification
-      timeline.json                    # the ordered join (session_timeline)
-      records/hook_events.json         # {"table", "records"}
-      records/audit_trail.json         # {"table", "records", "chain_context"}
-      records/agent_findings.json      # only when the table exists
-      records/agent_approval_log.json  # enforcement decisions, excerpts redacted
-      artifacts.json                   # paths the session referenced, not their bytes
-      provenance/prov.json             # W3C PROV-JSON, only when a project resolves
+      manifest.json                      # SHA-256 of every other member
+      context.json                       # endpoint/context header + classification
+      timeline.json                      # the ordered join (session_timeline)
+      records/hook_events.json           # {"table", "records"}
+      records/audit_trail.json           # {"table", "records", "chain_context"}
+      records/agent_session_events.json  # the event log, WITHOUT payload_json
+      records/agent_findings.json        # only when the table exists
+      records/agent_approval_log.json    # enforcement decisions, excerpts redacted
+      artifacts.json                     # paths the session referenced, not their bytes
+      provenance/prov.json               # W3C PROV-JSON, only when a project resolves
 
 WHY THIS IS NOT A THIRD BUNDLER. ``tools/compliance/swft_evidence_bundler.py``
 bundles DoD SWFT software-supply-chain evidence per PROJECT, and
@@ -58,6 +59,16 @@ THREE INVARIANTS THIS MODULE OWNS
    ``.detail``) are additionally passed through
    ``tools.llm.output_redactor.redact`` before they are written.
 
+   ``agent_session_events`` (hcx-evt-04) is the case the table-level list cannot
+   express: it IS exported, and one of its columns holds verbatim model input.
+   ``session_timeline.SOURCES`` leaves ``payload_json`` out of that table's
+   column allowlist, so the export never selects it, and
+   ``EXCLUDED_COLUMNS`` names the omission in ``context.json`` — an absence
+   nobody wrote down is indistinguishable from an oversight. ``payload_hash``
+   travels instead: it is the same recipe ``tools/audit/row_hash.py`` gives the
+   migration-149 chain, so a recipient holding the payload can still prove what
+   it was without the bundle carrying it.
+
 The classification marking is resolved through
 ``tools/compliance/classification_manager.py`` from the markings actually
 present on the session's records — the most restrictive one wins — and never
@@ -92,6 +103,7 @@ from tools.agent_case.bundle_format import (  # noqa: E402
     write_manifest,
 )
 from tools.agent_case.session_timeline import (  # noqa: E402
+    SOURCES,
     UNJOINABLE_SOURCES,
     _row_to_dict,
     _table_columns,
@@ -108,6 +120,7 @@ from tools.db.storage import (  # noqa: E402
 
 CONTEXT_MEMBER = "context.json"
 TIMELINE_MEMBER = "timeline.json"
+AGENT_EVENTS_MEMBER = "records/agent_session_events.json"
 FINDINGS_MEMBER = "records/agent_findings.json"
 APPROVALS_MEMBER = "records/agent_approval_log.json"
 ARTIFACTS_MEMBER = "artifacts.json"
@@ -121,6 +134,7 @@ PRODUCER = "tools/agent_case/case_bundler.py"
 MEMBER_FOR_SOURCE = {
     "hook_events": HOOK_EVENTS_MEMBER,
     "audit_trail": AUDIT_TRAIL_MEMBER,
+    "agent_session_events": AGENT_EVENTS_MEMBER,
     "agent_findings": FINDINGS_MEMBER,
 }
 
@@ -178,6 +192,34 @@ TRANSCRIPT_SOURCES = {
     "agent_executions": ("prompt_hash and output_path — a pointer to run output, "
                          "never followed"),
 }
+
+# Columns dropped from a table that IS exported. A table-level exclusion list
+# cannot express this case and quietly reads as "everything in every exported
+# table is here", so the omission is declared rather than merely performed.
+# session_timeline.SOURCES is the mechanism and this is only its explanation, so
+# the guard below fails at IMPORT if a later edit puts one of these columns back
+# into the allowlist. A documented exclusion the code stopped honouring is worse
+# than no documentation at all.
+EXCLUDED_COLUMNS = {
+    "agent_session_events.payload_json": (
+        "verbatim model input; a case bundle carries no transcript. The row's "
+        "payload_hash is exported instead, so a holder of the payload can "
+        "re-verify it with tools/audit/row_hash.py::compute_payload_hash"
+    ),
+}
+
+_still_selected = sorted(
+    name for name in EXCLUDED_COLUMNS
+    for table, _, column in [name.partition(".")]
+    if column in (SOURCES.get(table, {}).get("columns") or ())
+    or column in (SOURCES.get(table, {}).get("optional_columns") or ())
+)
+if _still_selected:  # pragma: no cover - import-time invariant
+    raise RuntimeError(
+        f"EXCLUDED_COLUMNS declares {_still_selected} excluded, but "
+        "session_timeline.SOURCES still selects them; remove the column from the "
+        "allowlist or stop claiming it is excluded"
+    )
 
 # Columns that carry a filesystem path the session touched. Read from the
 # records already in the bundle, never from a wider query.
@@ -401,7 +443,12 @@ def collect_artifact_paths(records_by_source: dict) -> dict:
                 for path in _split_paths(record.get(field)):
                     entry = referenced.setdefault(
                         path, {"path": path, "referenced_by": []})
-                    ref = f"{source}#{record.get('id') or record.get('finding_id')}"
+                    # Each source names its own primary key: hook_events and
+                    # audit_trail use `id`, agent_findings `finding_id`,
+                    # agent_session_events `event_id`. A reference that read
+                    # "table#None" would point at nothing.
+                    ref = (f"{source}#"
+                           f"{record.get('id') or record.get('finding_id') or record.get('event_id')}")
                     if ref not in entry["referenced_by"]:
                         entry["referenced_by"].append(ref)
     for entry in referenced.values():
@@ -515,6 +562,7 @@ def build_context_header(session_id: str, classification: str, window: dict,
         "sources": {
             "included": sorted(included_sources),
             "excluded_transcripts": dict(sorted(TRANSCRIPT_SOURCES.items())),
+            "excluded_columns": dict(sorted(EXCLUDED_COLUMNS.items())),
             "not_joinable": dict(sorted(UNJOINABLE_SOURCES.items())),
         },
         "redaction": {

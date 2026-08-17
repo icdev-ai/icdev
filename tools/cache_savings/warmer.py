@@ -19,7 +19,22 @@ Usage::
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
+
+import sys
+from pathlib import Path
+
+# kax-conflict-05: run BY PATH, sys.path[0] is this file's own directory — never
+# the import root — so `from tools...` below raises ModuleNotFoundError and the
+# usage line above fails exactly as printed. This is the command the dashboard's
+# LLM Prompt Cache card tells an operator to run when the cache reads cold, so
+# the one moment it is reached is the one moment it must work. parents[2] is
+# whatever holds this file's `tools` package: the repo root in tools/, and
+# <repo>/icdev in the icdev/ mirror.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 import argparse
 import json

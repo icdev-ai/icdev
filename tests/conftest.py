@@ -83,6 +83,35 @@ os.environ.setdefault("ICDEV_SLIDES_ENABLED", "true")
 
 
 MINIMAL_ICDEV_SCHEMA = """
+-- Per-call LLM telemetry (D218). The prompt-cache columns are cch-tel-01
+-- (migration 20260816135136): NOT NULL DEFAULT 0, so a call that returned no
+-- cached tokens records 0 rather than NULL. Mirrors the live schema including
+-- bridge_bypassed (migration 185), which drifted from init_icdev_db.py's DDL.
+CREATE TABLE IF NOT EXISTS ai_telemetry (
+    id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    prompt_hash TEXT NOT NULL,
+    response_hash TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    thinking_tokens INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    cost_usd REAL,
+    agent_id TEXT,
+    user_id TEXT,
+    project_id TEXT,
+    function TEXT,
+    api_key_source TEXT,
+    injection_scan_result TEXT,
+    bridge_bypassed INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    logged_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Runtime invocation telemetry (migration 341). Present here so any test that
 -- exercises an instrumented path (MCP dispatch, execute_agent, an ACE role
 -- step) records rather than tripping the recorder's missing-table latch.
@@ -801,6 +830,30 @@ CREATE TABLE IF NOT EXISTS trust_deltas (
     classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- hcx-evt-01 / migration 20260816122036. One append-only row per model-visible
+-- agent event, ordered by `seq` (UNIQUE per session, which is what lets two
+-- writers allocate optimistically) rather than by the clock. payload_hash is
+-- NOT NULL and always written; payload_json is NULL exactly when the
+-- classification policy in args/agent_event_log.yaml withheld the document.
+-- Registered in APPEND_ONLY_TABLES. In the MAIN db and not the ACE canvas db --
+-- deliberately, so tenant_id/classification make it RLS-eligible and so it can
+-- be joined to hook_events/audit_trail by session_timeline.py.
+CREATE TABLE IF NOT EXISTS agent_session_events (
+    event_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    payload_json TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    correlation_id TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_session_events_seq
+    ON agent_session_events (session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_agent_session_events_session
+    ON agent_session_events (session_id);
 CREATE TABLE IF NOT EXISTS session_risk_log (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,

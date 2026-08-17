@@ -118,6 +118,15 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
     wearing a gate sentinel's id, and ``BoardBackendError`` when the write would
     land in a throwaway local database — all BEFORE anything is inserted, so a
     batch never half-lands.
+
+    Three further checks are evaluated before the first insert for the same
+    reason. Two report by default and refuse only when their own named switch
+    says to: whether the id has already landed on the default branch
+    (``KANBAN_LANDED_CHECK``, ``landed_check``, trust-disc-05) and whether any
+    epic claims the id (``KANBAN_IDENTITY_CHECK``, ``task_identity``,
+    rem-hyg-02/04). The third REPORTS and never refuses: whether the batch puts
+    two unserialized tasks on the same file (``lane_conflicts``, rem-hyg-07),
+    which needs its own fire-rate survey before it can be armed.
     """
     if not task_specs:
         return []
@@ -196,6 +205,91 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
         if _lc_mode() == "enforce":
             raise ValueError(f"refusing to seed — {_detail}")
         logger.warning("task_factory: %s", _detail)
+
+    # rem-hyg-02: does an epic actually CLAIM each of these ids? Every number on
+    # a project card comes from `<task_prefix><epic_key>-%` patterns, never from
+    # task_prefix alone, so a row no epic matches is counted by nothing — and
+    # when every row of a card is unclaimed the card vanishes entirely, which
+    # looks exactly like a project with no work. Seeding the HCX card by hand on
+    # 2026-08-16 put 25 rows under a `hcx-` prefix that was in no card; reading
+    # args/projects.yaml proved nothing, because the board is the other half of
+    # the state, and the collision was found only by querying it afterwards —
+    # three of the new tasks had already been dispatched.
+    #
+    # rem-hyg-04 arms it, behind KANBAN_IDENTITY_CHECK=enforce|report|off and
+    # defaulting to `report` — because that is what rem-hyg-03's survey of the
+    # live board supports, not because arming was left half-done. Refusing every
+    # unclaimed id would have fired on 35.17% of 3,244 rows; exempting opaque
+    # machine ids (`task-<hex>`, which the dashboard's own create-task API and
+    # awareness/suggested_card_writer generate, and which no card was ever meant
+    # to count) narrows that to 10.85% lifetime and 15.81% over the last 30 days.
+    # 15.81% is ten times the rate CLAUDE.md already calls refusing routine work,
+    # so `enforce` is offered and documented rather than defaulted. The findings
+    # are real, which is why they are still logged at the default.
+    #
+    # Evaluated BEFORE any insert so a refusal cannot half-land a batch, and
+    # FAIL-OPEN — an unreadable projects.yaml leaves seeding exactly as it was.
+    _identity_findings: list[dict] = []
+    _identity_mode = "off"
+    try:
+        from tools.kanban import task_identity as _ti
+
+        _identity_mode = _ti.mode()
+        if _identity_mode != "off":
+            _identity_findings = _ti.check_batch(task_specs)
+    except Exception as _ti_exc:  # noqa: BLE001 — advisory; never break seeding
+        logger.debug("task_factory: identity check unavailable (%s)", _ti_exc)
+
+    for _f in _identity_findings:
+        logger.warning("task_factory: unclaimed task id — %s", _f["detail"])
+
+    # Only the enforceable subset refuses; the rest have already been logged
+    # above, so the narrowing is visible in the log rather than hidden by
+    # omission.
+    _enforceable = [f for f in _identity_findings if f.get("enforced")]
+    if _enforceable and _identity_mode == "enforce":
+        from tools.kanban.task_identity import MODE_ENV as _ID_ENV
+
+        _named = "; ".join(
+            f"{f['task_id']} ({f['reason']} — use {f['suggestion']!r})"
+            for f in sorted(_enforceable, key=lambda f: f["task_id"])
+        )
+        raise ValueError(
+            f"refusing to seed {len(_enforceable)} task id(s) no epic claims: "
+            f"{_named}. Every number on a project card comes from "
+            f"<task_prefix><epic_key>-% patterns and never from task_prefix alone, "
+            f"so these rows would be counted by nothing — and a card ALL of whose "
+            f"rows are unclaimed vanishes from Home entirely, which looks exactly "
+            f"like a project with no work. Fix it in one of two places: rename the "
+            f"id to an epic the card already declares, or register the epic (or the "
+            f"whole card) in args/projects.yaml. Stand this check down with "
+            f"{_ID_ENV}=report to log instead of refusing, or {_ID_ENV}=off.\n\n"
+            + "\n".join(f"  - {f['detail']}" for f in _enforceable)
+        )
+
+    # rem-hyg-07: will two of these tasks — or one of these and something already
+    # on the board — fight over the same file? pr_watcher already answers that,
+    # but only for OPEN PRs, which is after both sessions have built: #1684
+    # dispatched a producer and its consumer together and 1,058 lines of the
+    # loser's branch were discarded. Measured on the live board 2026-08-16, 54
+    # pairs shared a file with no dependency path between them and 16 of those
+    # were dispatchable simultaneously; two had already been serialized by hand
+    # that day and a third had turned PR #1730 DIRTY against main.
+    #
+    # REPORT ONLY, and the report says which grade of evidence it rests on:
+    # seed-time contention can only be read out of PROSE, and telling "this task
+    # will WRITE this file" from "this task MENTIONS this file" is a heuristic,
+    # not a fact. Arming it needs a fire-rate survey first, exactly as
+    # rem-hyg-03/04 do for the identity check. Evaluated BEFORE any insert so the
+    # eventual refusal cannot half-land a batch, and FAIL-OPEN — an unreachable
+    # board leaves seeding exactly as it was.
+    try:
+        from tools.kanban import lane_conflicts as _lcf
+
+        for _c in _lcf.check_batch(task_specs):
+            logger.warning("task_factory: sibling file contention — %s", _c["detail"])
+    except Exception as _lcf_exc:  # noqa: BLE001 — advisory; never break seeding
+        logger.debug("task_factory: lane-conflict check unavailable (%s)", _lcf_exc)
 
     from tools.db.storage import get_connection
     from tools.kanban.init_db import init_kanban_tables

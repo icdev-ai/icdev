@@ -1,0 +1,7 @@
+{
+  "description": "llm_response_cache_set_logged",
+  "date": "2026-08-16",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

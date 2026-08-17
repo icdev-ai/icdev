@@ -133,11 +133,25 @@ grandfathered:
   # dispatches is precisely the defect. Wire it, or do not register it yet.
   mcp_dispatch_tool: 467
 
-  # args/agent_approval_policy.yaml enumerates 62 tools across its tiers and
-  # agent_approval_log holds not one decision for any of them — 0 rows, whole
-  # table, whole lifetime. A gate whose decision log is empty has never gated
-  # anything. The policy file is read; nothing writes the verdict.
-  agent_approval_rule: 62
+  # agent_approval_log holds not one gate decision — 0 rows with a tier
+  # classify() can emit, whole table, whole lifetime. A gate whose decision log
+  # is empty has never gated anything. The policy file is read; nothing writes
+  # the verdict.
+  #
+  # 62 -> 25 is a DENOMINATOR CORRECTION, not an accommodation: nothing was
+  # wired, and no tool moved tier. args/agent_approval_policy.yaml enumerates 62
+  # tools, but only the 25 in require_approval_tiers (irreversible; unknown
+  # enumerates none) can ever produce a row — build_approval_hook auto-allows the
+  # other 37 without writing one, deliberately, because an audit trail of every
+  # read_file is noise. Counting those 37 as declared-and-inert pinned this
+  # budget at >= 37 no matter how well the gate were wired, so whoever wires it
+  # would watch the number refuse to move and conclude the wiring failed
+  # (rem-cap-05; docs/security/approval-gate-reachability.md §5). The probe now
+  # scopes `declared` to require_approval_tiers and enumerates the excluded 37 in
+  # extra.not_measurable_by_design, so the exclusion is visible rather than a
+  # quietly shrunken denominator. Widening require_approval_tiers RAISES the
+  # declared count; wire the gate before that lands, do not raise this.
+  agent_approval_rule: 25
 
   # 5 RBAC roles in the D261 role_tool_matrix, 1 seen in an MCPToolAuthorizer
   # verdict. exa-policy-05 landed the enforcement seam MONITOR-ONLY by design,
@@ -174,9 +188,13 @@ grandfathered:
   # dispatch call site is precisely the defect, and it should trip the check.
   extension_hook_point: 10
 
-  # GEPA. 124 pending agent_improvement_artifacts, 0 applied, and 0 that satisfy
-  # its own selection predicate — every queued artifact has
-  # composite_score == baseline_score, so the >= 0.05 delta filter can never
-  # select one. It is dispatched every 24h and cannot act, which is why it reads
-  # as scheduled-and-healthy while doing nothing.
-  skill_optimizer: 1
+  # GEPA — RESOLVED by rem-cap-01, budget lowered 1 -> 0. It was dispatched
+  # every 24h with 7 successful runs and recorded nothing, because the only
+  # outcome it could write was status='applied': an artifact it declined stayed
+  # 'pending' forever, so the queue could only grow and a correct decline was
+  # indistinguishable from never having run. GEPA now records a decision
+  # (applied or declined, terminal or retryable) against every artifact it
+  # evaluates, which drained the 132-row permanently-unselectable backlog left
+  # behind by the pre-exa-refine writers. Never raise this back to pass a
+  # commit — if it fails, GEPA has stopped deciding.
+  skill_optimizer: 0
