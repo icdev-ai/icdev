@@ -1,0 +1,208 @@
+# CUI // SP-CTI
+# Per-provider prompt-cache effectiveness (cch-obs-01)
+#
+# WHY THIS FILE EXISTS
+# The LLM Prompt Cache card reported ONE hit rate over a mix of providers that
+# do genuinely different things. Anthropic and Bedrock cache what the request
+# explicitly marks; OpenAI and Azure cache automatically above a token floor;
+# Gemini wants a managed cache object; the Ollama family reuses a KV prefix
+# server-side and never bills or reports a token for it. An average over that
+# mix is not a summary, it is a blur — and the blur hides the only question an
+# operator has, which is whether prefix caching is working ON A NAMED PROVIDER.
+#
+# WHAT IS KEYED HERE
+# Providers, never models. A model id in code OR in YAML pins one vendor into a
+# platform that must stay LLM-agnostic (see tests/test_no_hardcoded_model_ids.py
+# for the code half). Everything below is a claim about a PROVIDER's caching
+# and billing behaviour, which is the granularity the accounting actually has.
+#
+# ------------------------------------------------------------------------
+# capability — HOW the provider caches. Descriptive; drives the UI label only.
+#   explicit    caller marks the prefix (cache_control: ephemeral)
+#   automatic   provider caches above a token floor with no caller action
+#   managed     caller creates and references a cache object
+#   server_kv   server-side KV prefix reuse, no caller control, no accounting
+#   opaque      caching may occur upstream but the transport reports nothing
+#   unknown     not characterised
+#
+# token_accounting — THE FIELD THAT MAKES THE NUMBERS WRONG IF YOU GET IT WRONG.
+#   disjoint    input_tokens EXCLUDES cache reads/writes (Anthropic, Bedrock).
+#               total prompt = input + cache_read + cache_write
+#   inclusive   input_tokens INCLUDES cache reads (OpenAI/Azure report
+#               prompt_tokens_details.cached_tokens as a SUBSET of prompt_tokens).
+#               total prompt = input;  uncached = input - cache_read
+#   n_a         provider reports no cache tokens, so the question does not arise
+#   Summing the two shapes together — which one aggregate number necessarily
+#   does — double-counts every OpenAI cached token. That is not a rounding
+#   error, it is the aggregate reporting cache reads it already counted.
+#
+# reports_cache_tokens — does the ADAPTER populate cache_read/creation for this
+#   provider? true | false | null(unknown). This is what separates "measured a
+#   real 0%" from "never reported a number", and those are different claims.
+#   NOTE: measurement always overrides declaration. A provider declared false
+#   that turns out to report non-zero cache tokens is reported as CACHING —
+#   evidence beats this file.
+#
+# usd_basis — WHY a provider may have no dollars to show.
+#   priced      list price declared below; savings are computed
+#   local       self-hosted inference; there is no bill, so there are no dollars
+#               to save. Latency is reported instead. Printing $0.00 here would
+#               read as "caching failed", which is a different and false claim.
+#   unpriced    genuinely billed, but no per-token price is declared here (a
+#               subscription-billed CLI bridge, or a vendor whose price nobody
+#               has verified). Tokens are reported; dollars are withheld.
+#
+# PRICING
+# input_usd_per_mtok is a LIST PRICE and list prices drift; pricing_verified_on
+# records when a human last checked. The MULTIPLIERS are the stable half and the
+# load-bearing half: a cache read costs read_multiplier x input, a cache write
+# costs write_multiplier x input. Update a price by editing it here — never by
+# hardcoding it in a module.
+# ------------------------------------------------------------------------
+
+window_days: 7          # reporting window; the previous equal window is the trend baseline
+top_providers: 20       # cap on rows returned (a provider column is unbounded)
+
+defaults:
+  capability: unknown
+  token_accounting: n_a
+  reports_cache_tokens: null
+  usd_basis: unpriced
+
+providers:
+
+  # --- explicit prefix caching, disjoint accounting -----------------------
+  anthropic:
+    capability: explicit
+    token_accounting: disjoint
+    reports_cache_tokens: true
+    usd_basis: priced
+    input_usd_per_mtok: 3.00
+    read_multiplier: 0.1      # cache read ~= 10% of input price
+    write_multiplier: 1.25    # 5-minute TTL write premium (1h TTL is 2.0)
+    pricing_verified_on: 2026-08-16
+
+  bedrock:
+    capability: explicit
+    token_accounting: disjoint
+    reports_cache_tokens: true
+    usd_basis: priced
+    # Bedrock is partner-operated and priced separately from first-party
+    # Anthropic. The multipliers hold; the base rate is the one to re-verify.
+    input_usd_per_mtok: 3.00
+    read_multiplier: 0.1
+    write_multiplier: 1.25
+    pricing_verified_on: 2026-08-16
+
+  # --- automatic caching, INCLUSIVE accounting ----------------------------
+  openai:
+    capability: automatic
+    token_accounting: inclusive
+    reports_cache_tokens: true
+    usd_basis: priced
+    input_usd_per_mtok: 2.50
+    read_multiplier: 0.5      # automatic-cache discount
+    write_multiplier: 1.0     # no write premium — nothing is explicitly written
+    pricing_verified_on: 2026-08-16
+
+  azure_openai:
+    capability: automatic
+    token_accounting: inclusive
+    reports_cache_tokens: true
+    usd_basis: priced
+    input_usd_per_mtok: 2.50
+    read_multiplier: 0.5
+    write_multiplier: 1.0
+    pricing_verified_on: 2026-08-16
+
+  # --- managed cache object -----------------------------------------------
+  gemini:
+    capability: managed
+    token_accounting: disjoint
+    # The gemini adapter does not populate the cache columns, so a zero here is
+    # "never reported", not "cached nothing".
+    reports_cache_tokens: false
+    usd_basis: unpriced
+
+  # --- self-hosted: server-side KV reuse, no bill, no counters ------------
+  ollama:
+    capability: server_kv
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: local
+  vllm:
+    capability: server_kv
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: local
+  localai:
+    capability: server_kv
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: local
+  mistral_vllm:
+    capability: server_kv
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: local
+
+  # Hosted Ollama endpoint: same KV-reuse behaviour and same absence of
+  # counters, but it IS billed — so `unpriced`, not `local`.
+  ollama_cloud:
+    capability: server_kv
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: unpriced
+
+  # --- CLI bridges: caching happens upstream, invisible to us -------------
+  # Claude Code caches aggressively on the far side of this transport, but the
+  # CLI returns no usage counters, so we can never say a rate. Reporting these
+  # as 0% would be the exact defect this card exists to remove.
+  claude-cli:
+    capability: opaque
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: unpriced
+  cli_bridge:
+    capability: opaque
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: unpriced
+  cli:
+    capability: opaque
+    token_accounting: n_a
+    reports_cache_tokens: false
+    usd_basis: unpriced
+
+  # --- pass-throughs and aggregators --------------------------------------
+  # A corporate gateway forwards to whatever the site configured, so neither
+  # the caching behaviour nor the price is knowable from here.
+  gateway:
+    capability: unknown
+    token_accounting: n_a
+    reports_cache_tokens: null
+    usd_basis: unpriced
+  mistral:
+    capability: unknown
+    token_accounting: n_a
+    reports_cache_tokens: null
+    usd_basis: unpriced
+  ibm_watsonx:
+    capability: unknown
+    token_accounting: n_a
+    reports_cache_tokens: null
+    usd_basis: unpriced
+  featherless:
+    capability: unknown
+    token_accounting: n_a
+    reports_cache_tokens: null
+    usd_basis: unpriced
+
+  # Not a provider — the two-tier orchestrator labels some rows this way.
+  # Left declared so it renders as `unknown` rather than falling through
+  # silently, which is how an unrecognised label becomes an invisible one.
+  chain_orchestrator:
+    capability: unknown
+    token_accounting: n_a
+    reports_cache_tokens: null
+    usd_basis: unpriced

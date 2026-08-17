@@ -32,7 +32,36 @@ def cache_savings_page():
     """GET /cache-savings — cache savings analytics dashboard."""
     from tools.cache_savings.savings import get_savings_stats
     stats = get_savings_stats()
-    return render_template("cache_savings/page.html", stats=stats)
+    # cch-obs-01: the per-provider view. Best-effort — a failure here must not
+    # take down the page that already works, but it says so rather than
+    # rendering an empty table that reads like "no providers cache anything".
+    try:
+        from tools.cache_savings.by_provider import get_provider_effectiveness
+        by_provider = get_provider_effectiveness()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("per-provider cache effectiveness unavailable: %s", exc)
+        by_provider = {
+            "measurable": False,
+            "unmeasurable_reason": f"per-provider view unavailable: {exc}",
+            "providers": [], "totals": {},
+            "window_days": 0, "window_start": "", "window_end": "",
+        }
+    return render_template("cache_savings/page.html", stats=stats, by_provider=by_provider)
+
+
+@bp.route("/api/cache-savings/by-provider")
+def api_cache_savings_by_provider():
+    """GET /api/cache-savings/by-provider — per-provider cache effectiveness (cch-obs-01).
+
+    Optional ``?window_days=N`` overrides the configured window.
+    """
+    from tools.cache_savings.by_provider import get_provider_effectiveness
+    raw = flask_request.args.get("window_days")
+    try:
+        window_days = int(raw) if raw else None
+    except ValueError:
+        return jsonify({"error": "window_days must be an integer"}), 400
+    return jsonify(get_provider_effectiveness(window_days=window_days))
 
 
 @bp.route("/api/cache-savings/stats")
@@ -49,7 +78,38 @@ def api_cache_savings_tile():
     from tools.cache_savings.savings import get_savings_stats
     stats = get_savings_stats()
     s = stats["summary"]
+    # cch-obs-01: the tile carried ONE hit rate over every provider. It keeps
+    # doing that for the RESPONSE cache (avoided calls, which is genuinely one
+    # number), and now also carries a per-provider PREFIX-cache breakdown —
+    # counts by state, never a blended rate. `no data`, `not reported` and a
+    # measured 0% are three different states and the tile shows all three.
+    prefix = {"measurable": False, "caching": 0, "no_cache_hits": 0,
+              "unreported": 0, "no_data": 0, "usd_saved": None, "top": []}
+    try:
+        from tools.cache_savings.by_provider import get_provider_effectiveness
+        bp_stats = get_provider_effectiveness()
+        t = bp_stats.get("totals") or {}
+        prefix = {
+            "measurable":    bp_stats.get("measurable", False),
+            "window_days":   bp_stats.get("window_days", 0),
+            "caching":       t.get("providers_caching", 0),
+            "no_cache_hits": t.get("providers_no_cache_hits", 0),
+            "unreported":    t.get("providers_unreported", 0),
+            "no_data":       t.get("providers_no_data", 0),
+            "usd_saved":     t.get("usd_saved_total"),
+            # The busiest few, so the tile names providers instead of implying
+            # a platform-wide rate that no single number can honestly carry.
+            "top": [
+                {"provider": p["provider"], "status": p["status"],
+                 "cached_share_pct": p["cached_share_pct"], "calls": p["calls"]}
+                for p in (bp_stats.get("providers") or [])[:3]
+            ],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("per-provider cache tile block unavailable: %s", exc)
+
     return jsonify({
+        "by_provider":   prefix,
         "enabled":       stats["enabled"],
         "hit_rate_pct":  s["hit_rate_pct"],
         "total_entries": s["total_entries"],
@@ -81,7 +141,7 @@ def api_cache_iqe_query():
     if not question:
         return jsonify({"error": "question is required"}), 400
 
-    collections = ["cache.stats", "cache.entries"]
+    collections = ["cache.stats", "cache.entries", "cache.by_provider"]
     try:
         result = nl_to_iqe(question, collections)
         iqe_str = result.get("iqe", "")

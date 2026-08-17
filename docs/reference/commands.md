@@ -4383,6 +4383,28 @@ python tools/databridge/connectors/clawhub_connector.py --health --json
 ## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
 
 ```bash
+# Per-provider prompt-cache effectiveness -- NOT one aggregate number (cch-obs-01)
+python tools/cache_savings/by_provider.py --json                     # every provider, configured window
+python tools/cache_savings/by_provider.py --window-days 30
+python tools/cache_savings/by_provider.py --provider anthropic --json
+# Reads ai_telemetry (cch-tel-01's per-call ledger), NOT llm_response_cache -- that table
+# answers "was an LLM call avoided outright" and holds a row only for response-cached
+# results, so it can never describe cached INPUT tokens on a call that still happened.
+# Four states, never merged into one 0%: no_data (nobody called it) | unreported (the
+# transport returns no counters -- claude-cli carried 626 such calls) | no_cache_hits (a
+# real measured 0%, the only defect of the four) | caching. cached_share_pct is None, not
+# 0.0, for the first two. A provider with usd_basis: local (Ollama and friends) has no
+# bill, so usd_saved is None and its latency is reported instead -- $0.00 there reads as
+# "caching failed" for a cache that works fine and simply is not billed.
+# Token accounting is per provider and is NEVER summed across shapes: Anthropic/Bedrock
+# report input_tokens DISJOINT from cache tokens, OpenAI/Azure report cached tokens as a
+# SUBSET. Identical raw numbers give 28.57% vs 40.00%; averaging them double-counts every
+# OpenAI cached token, which is what the single aggregate did. Emits no blended hit rate.
+# A database with no operating history reports UNMEASURABLE, never a wall of no_data.
+# Claims (provider-keyed, never model-keyed): args/cache_effectiveness.yaml
+# UI: /cache-savings -> "Prefix Cache by Provider"   API: /api/cache-savings/by-provider
+# IQE: cache.by_provider (alongside cache.stats / cache.entries)
+
 # Cost budget — the DOWNGRADE gate on the LLMRouter chain (exa-policy-04)
 python tools/llm/cost_budget.py --status --json                                         # Current spend vs limit, and what the router would do
 python tools/llm/cost_budget.py --function code_generation --json                       # Evaluate one function's budget

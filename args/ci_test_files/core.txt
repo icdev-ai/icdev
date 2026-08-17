@@ -1912,6 +1912,26 @@ tests/test_ai_telemetry_cache_tokens.py
 # findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
 # network, no LLM.
 tests/test_identity_survey.py
+
+# cch-obs-01 -- per-provider prompt-cache effectiveness, and the four zeroes the
+# single aggregate hit rate merged into one. A provider nobody called, a
+# provider whose transport reports no cache counters, a provider that genuinely
+# cached nothing, and a provider that is not billed at all ALL rendered as
+# "0% / $0.00" on the old card; only the third is a defect. The first three
+# tests are the acceptance criteria (no_data vs a measured zero must differ in
+# status AND in cached_share_pct -- None vs 0.0); the rest hold the rules that
+# keep those states honest against the real provider mix: an unreported
+# transport is never 0%, a local provider shows latency and no dollars,
+# evidence overrides the declared claim, and inclusive vs disjoint token
+# accounting are never summed (doing so double-counts every OpenAI cached
+# token). Also pins that a database with no history reports UNMEASURABLE
+# rather than a wall of fabricated findings, that the route and the home tile
+# preserve the null share instead of coercing it to 0, and that all four states
+# RENDER distinctly -- `no_cache_hits` was absent from the live 7d window the
+# day this shipped, so that branch is proven by a stubbed-parent Jinja render
+# rather than by waiting for a real cache miss. 22 tests, <1s, in-memory sqlite
+# through the real translate_sql: no board, no network, no LLM.
+tests/test_cache_effectiveness_by_provider.py
 tests/ci/test_pr_watcher_budgets.py
 # rem-hyg-04: arming that check behind KANBAN_IDENTITY_CHECK. Gated in the PR
 # that adds it. Every property here fails while looking correct: a kill switch
