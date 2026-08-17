@@ -24,7 +24,10 @@ which applies, in order:
    fail-closed, because a query string is the one part of a fetch that carries
    caller content.
 5. **Egress guard** — applied in ``saas_base`` before the socket opens.
-6. **Audit** — one append-only row per call, whatever the outcome.
+6. **Audit** — one append-only row per call, whatever the outcome. An audit
+   write that fails is raised, not logged: a decision that could not be
+   recorded must not read as a clean call, and rows are withheld from the
+   caller rather than delivered unaudited.
 
 Deliberately NOT reachable through ``ToolRunner``: it matches command strings
 exactly, so a parameterised data fetch cannot be usefully allowlisted there.
@@ -55,6 +58,16 @@ class BrokerDenied(PermissionError):
     """Raised when a fetch is refused. Carries the reason for the audit row."""
 
 
+class AuditWriteFailed(RuntimeError):
+    """Raised when an access decision could not be recorded.
+
+    Distinct from BrokerDenied: the decision itself was reached, the TRAIL is
+    what is missing. Kept as its own type because the two need opposite
+    handling — a denial is a normal outcome to report, an unrecorded decision is
+    a control failure to escalate.
+    """
+
+
 @dataclass
 class FetchOutcome:
     """Result of a brokered fetch."""
@@ -66,6 +79,11 @@ class FetchOutcome:
     row_count: int = 0
     error: str = ""
     redactions: int = 0
+    #: Whether this call's decision reached databridge_agent_access_log.
+    #: A separate field rather than a note inside ``error`` because "the audit
+    #: row is missing" and "the fetch was refused" are different facts, and a
+    #: caller that wants to alert on the first must not have to parse prose.
+    audited: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +94,7 @@ class FetchOutcome:
             "row_count": self.row_count,
             "error": self.error,
             "redactions": self.redactions,
+            "audited": self.audited,
         }
 
 
@@ -164,6 +183,15 @@ def _audit(agent_id: str, connector: str, table: str, decision: str,
 
     Denials are the interesting half: a connector an agent keeps being refused
     is either a misconfiguration or someone probing.
+
+    Raises AuditWriteFailed when the row does not land. It used to swallow the
+    failure into a warning, and that is how the trail stayed empty for the whole
+    life of this module: the table did not exist on the PostgreSQL backend at
+    all -- its only DDL was authored in SQLite syntax in init_icdev_db.py and so
+    never ran there -- and every insert raised UndefinedTable while every fetch
+    reported success. A control whose failure mode is a log line nobody reads is
+    indistinguishable from a control that works, which is the same defect as a
+    security hook wrapped in `|| true`.
     """
     try:
         from icdev.tools.db.storage import get_connection
@@ -182,8 +210,15 @@ def _audit(agent_id: str, connector: str, table: str, decision: str,
             conn.commit()
         finally:
             conn.close()
-    except Exception as exc:  # noqa: BLE001 — auditing must not block the decision
-        logger.warning("databridge broker: audit write failed: %s", exc)
+    except Exception as exc:  # noqa: BLE001 — re-raised as AuditWriteFailed below
+        logger.error(
+            "databridge broker: AUDIT WRITE FAILED for %s agent=%s connector=%s "
+            "table=%s — the decision was NOT recorded: %s",
+            decision, agent_id, connector, table, exc,
+        )
+        raise AuditWriteFailed(
+            f"access decision {decision!r} could not be recorded: {exc}"
+        ) from exc
 
 
 def fetch(
@@ -213,8 +248,18 @@ def fetch(
             "databridge broker: DENIED agent=%s connector=%s table=%s — %s",
             agent_id, connector, table, reason,
         )
-        _audit(agent_id, connector, table, "denied", reason)
-        return FetchOutcome(ok=False, connector=connector, table=table, error=reason)
+        audited = True
+        try:
+            _audit(agent_id, connector, table, "denied", reason)
+        except AuditWriteFailed as exc:
+            # The refusal stands — nothing left. But an agent that keeps being
+            # refused a connector is the signal this table exists to carry, so a
+            # denial that went unrecorded is reported as such rather than
+            # returned as an ordinary denial.
+            audited = False
+            reason = f"{reason} (NOT AUDITED: {exc})"
+        return FetchOutcome(ok=False, connector=connector, table=table,
+                            error=reason, audited=audited)
 
     if not connector or not table:
         return _deny("connector and table are required")
@@ -287,8 +332,22 @@ def fetch(
         return _deny(f"connector error: {exc}")
 
     rows = list(getattr(response, "data", None) or [])[:limit]
-    _audit(agent_id, connector, table, "allowed", "",
-           rows=len(rows), redactions=redactions)
+    try:
+        _audit(agent_id, connector, table, "allowed", "",
+               rows=len(rows), redactions=redactions)
+    except AuditWriteFailed as exc:
+        # The read already happened — the rows are in this process. What is
+        # still preventable is the agent RECEIVING them unaudited, so they are
+        # withheld and the outcome is not ok. "Auto-fetch, and log it" is not a
+        # fetch that logs when convenient: an unlogged fetch is not the
+        # authorised behaviour, and returning the rows anyway with a warning in
+        # the log is exactly the swallow this replaced.
+        return FetchOutcome(
+            ok=False, connector=connector, table=table,
+            row_count=0, redactions=redactions, audited=False,
+            error=(f"fetch succeeded but its audit row could not be written, so "
+                   f"the rows are withheld: {exc}"),
+        )
 
     return FetchOutcome(
         ok=True, connector=connector, table=table,
@@ -323,4 +382,5 @@ def list_available(agent_id: str = "") -> list[dict]:
 
 
 __all__ = ["fetch", "list_available", "FetchOutcome", "BrokerDenied",
-           "load_manifest", "DEFAULT_MAX_ROWS", "HARD_MAX_ROWS"]
+           "AuditWriteFailed", "load_manifest", "DEFAULT_MAX_ROWS",
+           "HARD_MAX_ROWS"]
