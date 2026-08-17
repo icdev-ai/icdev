@@ -221,3 +221,52 @@ def test_fetch_prs_parses_the_fields_the_replay_needs():
     assert prs[0]["number"] == 7
     assert prs[0]["files"] == ["tools/a.py"], "a blank path is dropped"
     assert prs[0]["merged"] == "2026-01-02T00:00:00Z"
+
+
+# ── the survey's dependency on coordination_paths ───────────────────────────
+def test_every_union_pattern_still_resolves_to_a_coordination_path():
+    """The premise that makes the two postures differ at all.
+
+    `widened` is defined as `current` MINUS the union exclusions, so it can only
+    differ where a union path is ALSO a coordination path. If a union rule were
+    added for a path `coordination_paths` does not exclude — or an entry were
+    dropped from COORDINATION_PATH_MARKERS — the two postures would silently
+    converge and the survey would report a difference of zero while looking like
+    it had measured something.
+
+    Asserted against the real `.gitattributes`, not a fixture, because that
+    convergence is a property of this repo's actual configuration.
+    """
+    from tools.git.coordination_paths import is_coordination_path
+
+    samples = {
+        "tools/manifest.md": "tools/manifest.md",
+        "tools/manifest/*.md": "tools/manifest/kanban.md",
+        "args/ci_test_files/*.txt": "args/ci_test_files/core.txt",
+        "args/ci_skip_census.txt": "args/ci_skip_census.txt",
+        "docs/reference/commands.md": "docs/reference/commands.md",
+    }
+    live = set(shs.union_patterns())
+    checked = 0
+    for pattern, example in samples.items():
+        if pattern not in live:
+            continue
+        checked += 1
+        assert shs.is_union_merged(example, [pattern])
+        if not is_coordination_path(example):
+            # A real finding, not a broken test: the posture difference this
+            # survey measures does not exist for that path.
+            raise AssertionError(
+                f"{example} is merge=union but is NOT excluded by "
+                "coordination_paths, so `widened` and `current` do not differ "
+                "for it — the survey would under-report the hold"
+            )
+    assert checked, "no known union pattern matched .gitattributes — re-check"
+
+
+def test_a_union_path_outside_the_exclusions_is_a_no_op_not_a_difference():
+    """Same property, stated as behaviour: a union pattern covering a path the
+    guard never excluded changes nothing between the postures."""
+    pats = ["tools/cortex/*.py"]  # union on an ordinary source path (hypothetical)
+    assert not shs.is_excluded("tools/cortex/blueprint.py", "current", pats)
+    assert not shs.is_excluded("tools/cortex/blueprint.py", "widened", pats)

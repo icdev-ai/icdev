@@ -112,6 +112,16 @@ COORDINATION_PATH_MARKERS = (
     "args/genesis_config.yaml",
     "tests/conftest.py",
     "docs/reference/commands.md",
+    # trust-disc-03 declared `args/ci_skip_census.txt` merge=union and never
+    # added it here — the exact MIRROR of the commands.md defect described
+    # above, which sat in this tuple with no union rule behind it. The
+    # consequence runs the other way: git resolves two concurrent skip
+    # registrations automatically, while the guard treated them as a genuine
+    # collision and serialised the PRs for a file that needed no arbitration.
+    # Found by tests/ci/test_sibling_hold_survey.py, which asserts that every
+    # merge=union pattern in .gitattributes resolves to a path this list
+    # excludes — the two must not be allowed to disagree in either direction.
+    "args/ci_skip_census.txt",
 )
 
 #: Substrings marking a DERIVED artifact — a file produced by a generator and
