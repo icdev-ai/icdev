@@ -19,6 +19,34 @@
 *.ini text eol=lf
 *.env text eol=lf
 
+# ⚠ WHAT UNION DOES *NOT* DO (kpr-watch-07, measured 2026-08-17)
+#
+# GitHub does not apply these rules. `.gitattributes` merge drivers are honoured
+# by `git merge`, `git rebase` and `git merge-tree` — every path we rehearse on —
+# and NOT by the merge GitHub computes for a pull request. So a branch that
+# collides on a union path merges clean locally and is reported CONFLICTING /
+# DIRTY on the PR, and the two disagree while both are right about their own
+# merge. The "plumbing a forge runs server-side" claimed by the rehearsal notes
+# below was never GitHub's plumbing; those notes are true about git and wrong
+# about the forge.
+#
+# It is the COMMON case, not an edge: CLAUDE.md requires every PR that adds a
+# test file to append to `args/ci_test_files/core.txt`, so nearly every kanban PR
+# collides there. Nine of ten open PRs were DIRTY that morning; re-running each
+# merge with the union rules stripped reproduced the forge's verdict on ten of
+# ten, negative control included (#1730 appended to `core.txt`, did not collide
+# there, and was the one PR reported MERGEABLE).
+#
+# Union still earns its place — it removes the collision from every local merge
+# and rebase, which is what makes the recovery below deterministic. What it does
+# not do is stop the PR going DIRTY. THE FIX IS A REBASE: it applies the union
+# rule and writes the resolution into the branch, after which the forge has
+# nothing left to object to. `pr_watcher.classify_conflict` names that case
+# `union_only` and rebases it, and `_rebase_attempts` counts attempts per base
+# era so a collision that returns on every push to main cannot exhaust a budget
+# sized for a one-off. Do NOT respond to a DIRTY union PR by removing a rule
+# here — that puts the conflict back in every local merge as well.
+#
 # Append-only coordination files (kax-conflict-03)
 #
 # The tool manifest concentrates edits from unrelated tasks into one markdown

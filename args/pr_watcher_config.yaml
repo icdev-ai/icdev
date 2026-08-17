@@ -39,6 +39,21 @@ ci_log_max_chars: 4000
 # sibling). A rebase with real conflicts aborts, pushes nothing, and escalates
 # exactly as before. Rebase attempts are counted separately from resumes, so
 # this never eats into the resume budget.
+#
+# THE CAP IS PER BASE ERA, NOT PER PR LIFETIME (kpr-watch-07).
+# Two attempts is right for a verdict that goes stale once and wrong for a
+# conflict that RECURS. GitHub does not apply `.gitattributes` merge drivers, so
+# every PR that appends to a union-merged path — `args/ci_test_files/core.txt`
+# above all, which CLAUDE.md requires of every PR adding a test file — is
+# reported CONFLICTING again each time main appends to the same file. A rebase
+# clears it every time, by writing the union resolution into the branch. With a
+# lifetime cap the PR ran out after two and could never take the one action that
+# works: measured 2026-08-17, nine of ten open PRs were DIRTY, hcx-evt-03 had
+# spent its budget the previous afternoon and had 499 `escalate` rows, and a
+# rebase run by hand flipped five of them to MERGEABLE in seconds.
+# `_rebase_attempts` therefore discounts attempts spent against a DIFFERENT base
+# sha. Attempts against the current base still count, so a genuinely stuck PR is
+# still capped at this number and cannot rebase on every poll.
 auto_rebase_on_conflict: true
 max_rebase_attempts_per_task: 2
 
