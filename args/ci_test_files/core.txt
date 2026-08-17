@@ -2197,3 +2197,15 @@ tests/rag/test_provenance_ledger_retrieval.py
 # is not read as a conflict, that only the union lines are stripped from the
 # comparison tree, and that the rebase budget is counted per base era.
 tests/ci/test_pr_watcher_union_conflict.py
+
+# Modified by kpr-watch-07, green alone and in-suite, and it carries the
+# structural guards that keep a stale conflict routed to the REBASE rather
+# than to the merge the forge refuses — deletable, until now, without anything
+# going red. Its `importorskip` on a first-party module went with it: that
+# guard could only ever turn a real breakage into a green skip.
+#
+# tests/ci/test_pr_watcher_rebase.py is deliberately NOT gated here. It is
+# green too, but it carries two legitimate environment guards (git absent;
+# suite pinned to SQLite), and registering them would need skip_max raised —
+# which may only go DOWN. Gating it belongs with whatever removes those two.
+tests/ci/test_pr_watcher_stale_conflict_recovery.py
