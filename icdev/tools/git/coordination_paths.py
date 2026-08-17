@@ -48,13 +48,20 @@ from __future__ import annotations
 # (e.g. two branches each creating a different tools/cortex/blueprint.py). See
 # the merge-conflict-hotspots prevention notes.
 #
-# "Union-merged" is only literally true for the manifest entries: `.gitattributes`
-# declares `tools/manifest*` `merge=union` (kax-conflict-03), so concurrent
-# appends there really do resolve without a human. The remaining paths are
-# structured config/code, where union would produce duplicate keys or broken
-# syntax — they are excluded from the sibling check as a heuristic about how
-# they are edited, NOT because git resolves them automatically. Adding a path
-# here does not make it auto-mergeable.
+# "Union-merged" is only literally true for three of these: `.gitattributes`
+# declares `tools/manifest*` (kax-conflict-03), `args/ci_test_files/*.txt`
+# (kax-conflict-07) and `docs/reference/commands.md` (kax-conflict-11)
+# `merge=union`, so concurrent appends there really do resolve without a human.
+# The remaining paths are structured config/code, where union would produce
+# duplicate keys or broken syntax — they are excluded from the sibling check as
+# a heuristic about how they are edited, NOT because git resolves them
+# automatically. Adding a path here does not make it auto-mergeable.
+#
+# That gap is not hypothetical: `docs/reference/commands.md` sat in this tuple
+# with no union rule behind it, so the watcher stopped serializing PRs that
+# shared it while git still conflicted on every one. Two of the six conflicts
+# resolved by hand on 2026-08-16 were exactly that. When you add a path here,
+# decide explicitly which of the two claims you are making.
 #
 # `args/ci_test_files/` is the second entry that is literally union-merged
 # (kax-conflict-07). It holds the pytest allowlists that used to be a

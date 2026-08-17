@@ -229,7 +229,6 @@ tests/genesis/test_stagnation_migration_constants.py
 tests/genesis/test_talent_anomaly.py
 tests/genesis/test_team_constants.py
 tests/genesis/test_test_reflex_constants.py
-tests/git/test_manifest_merge_rehearsal.py
 tests/govcon/test_clause_risk_engine.py
 tests/govcon/test_past_performance_suggester.py
 tests/hooks/test_headless_parity.py

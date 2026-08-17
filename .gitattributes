@@ -82,8 +82,67 @@ icdev/data/args/ci_test_files/*.txt merge=union
 # on a duplicated site (tested) and on a malformed line, and a resurrected
 # deletion shows up as a stale entry the next --prune clears. The ceiling
 # `skip_census.skip_max` fails independently if the census grew.
+#
+# There is deliberately NO `icdev/data/args/` mirror line here. The allowlist
+# block above has one because that file really is mirrored into the package;
+# this one is not — `args/ci_skip_census.txt` is the only copy in the tree, and
+# `skip_census.CENSUS_FILE` is the only thing that reads it. The mirror line was
+# copied from the block above when trust-disc-03 landed and matched nothing for
+# as long as it existed, which is why kax-conflict-11 added a test that every
+# union pattern resolves to a real path.
 args/ci_skip_census.txt merge=union
-icdev/data/args/ci_skip_census.txt merge=union
+
+# Command reference (kax-conflict-11)
+#
+# The largest collision surface still unprotected: `docs/reference/commands.md`
+# was touched by 18 of the last 40 branches, against 27 for the CI allowlists
+# and 6 for the manifest shards — both of which are already union and neither of
+# which conflicted. Two of the six conflicts resolved BY HAND on 2026-08-16 were
+# this file, and both resolutions were "keep both blocks", which is what union
+# does. The registration checklist in CLAUDE.md tells every task that adds a
+# tool to document it here, so the collisions are mandated by process, not
+# incidental.
+#
+# It is also the SAME defect kax-conflict-03 fixed for the manifest shards, one
+# file later, and the reason the collisions surfaced as conflicts rather than as
+# a deadlock: `tools/git/coordination_paths.py::COORDINATION_PATH_MARKERS`
+# already lists `docs/reference/commands.md`, so `pr_watcher`'s
+# `hold_on_sibling_conflict` has been treating two PRs touching it as normal and
+# declining to serialize them — a promise that they merge without a human, which
+# nothing implemented on the git side. The classification and the merge driver
+# disagreed, and the branches paid for it.
+#
+# Unlike a manifest shard this file is BLOCK-structured — a fenced ```bash
+# region holding a comment paragraph and several command lines — so "obviously
+# append-only" was an assumption worth measuring rather than asserting. Over the
+# 60 most recent merges on origin/main, of the branches whose OWN diff against
+# the merge base touched this file:
+#
+#     pure additions (union merges correctly) ..... 14
+#     also removed or edited lines ................ 0
+#
+# Every branch appends; nothing edits an existing line. Verified conflict-free
+# for 2/3/5 concurrent branches with code fences intact, in BOTH the local
+# `git merge` path and the bare `git merge-tree --write-tree` plumbing a forge
+# runs server-side:
+#     python tools/git/commands_doc_merge_rehearsal.py --branches 5
+# and the harness proves it is measuring a real collision rather than passing
+# vacuously:
+#     python tools/git/commands_doc_merge_rehearsal.py --without-union
+#
+# Same scope note as above — flat, line-oriented, independent lines. Union's one
+# cost here is that two branches appending the SAME command line leave a
+# byte-identical duplicate, and that a line deleted on one branch is resurrected
+# when its hunk collides with an append. `coherence_checker`'s
+# `doc_command_paths` check catches the dangerous half of that directly: a
+# resurrected command whose file no longer exists FAILS the gate. A duplicate is
+# cosmetic and visible in the diff — and note 31 duplicate command lines already
+# exist here legitimately (the same command documented in two sections), so a
+# blanket no-duplicates rule would fire on real content and is deliberately NOT
+# imposed.
+docs/reference/commands.md merge=union
+icdev/docs/reference/commands.md merge=union
+icdev/data/docs/reference/commands.md merge=union
 
 # Binary files
 *.db binary

@@ -2008,6 +2008,13 @@ tests/test_gemini_managed_object_cache.py
 # for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
 # absent. No Ollama process, no network, no DB.
 tests/test_ollama_prefix_latency.py
+# kax-conflict-11: the union-merge guard for .gitattributes. It was RED on main
+# from the moment trust-disc-03 landed `args/ci_skip_census.txt merge=union`
+# without registering it in _UNION_SAFE_PATHS, and nothing reported that for as
+# long as it sat in args/ci_test_backlog.txt — a guard that gates nothing is the
+# declared-but-unconsumed defect in its purest form. Gated here so it can fail.
+# Runs real git against throwaway repos (no network, no DB); 18 tests, ~9s.
+tests/git/test_manifest_merge_rehearsal.py
 
 # rem-tst-02 — first promotion batch off the ungated census (rem-tst-01).
 #

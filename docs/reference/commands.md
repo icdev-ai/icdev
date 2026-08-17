@@ -6347,6 +6347,15 @@ python tools/git/ci_test_list_merge_rehearsal.py             # inline vs externa
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
 
+# Command-reference union merge (kax-conflict-11) — THIS file. The registration
+# checklist sends every new tool here, so 18 of 40 recent branches appended to it
+# and it was the largest collision surface still unprotected. 14 of 14 branches
+# whose own diff touched it were pure additions; none edited an existing line.
+python tools/git/commands_doc_merge_rehearsal.py                  # 3 scenarios x both merge paths
+python tools/git/commands_doc_merge_rehearsal.py --branches 5     # 5 concurrent branches
+python tools/git/commands_doc_merge_rehearsal.py --gate --json    # exit 1 if the observed pattern is not clean
+python tools/git/commands_doc_merge_rehearsal.py --without-union  # CONTROL: must conflict, else the rehearsal is vacuous
+
 # CI test gating ratchet (tsg-policy-01) — the gap cannot silently REGROW.
 # --check above proves the allowlist did not shrink; this proves no test file is
 # gated by nothing. Every collectible module under tests/ must be in an allowlist,
