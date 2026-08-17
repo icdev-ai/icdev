@@ -1,0 +1,7 @@
+{
+  "description": "databridge_agent_access_log — append-only agent access decisions, PG-native (cef-fnd-01)",
+  "date": "2026-08-17",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
