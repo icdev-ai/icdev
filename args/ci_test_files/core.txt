@@ -2185,3 +2185,14 @@ tests/test_ideation_frames.py
 # docs/testing/ungated_red_modules.md agreeing with the committed census.
 tests/ci/test_ungated_red_report.py
 tests/test_databridge_first_grant.py
+
+# kpr-watch-07. GitHub does not apply `.gitattributes` merge drivers, so a PR
+# that appends to a union-merged path — which CLAUDE.md requires of every PR
+# adding a test file, via this very list — goes DIRTY while merging clean under
+# git. pr_watcher called that whole class a stale forge cache, spent a one-shot
+# budget on it and then went silent: nine of ten open PRs stuck, hcx-evt-03 with
+# 499 escalate rows and AWAITING MERGE never draining. This pins the three-way
+# classification (real / union_only / phantom), that a probe which could not RUN
+# is not read as a conflict, that only the union lines are stripped from the
+# comparison tree, and that the rebase budget is counted per base era.
+tests/ci/test_pr_watcher_union_conflict.py

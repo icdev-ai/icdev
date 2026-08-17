@@ -416,7 +416,9 @@ def test_watcher_refuses_to_rebase_a_branch_it_does_not_own():
     # is a cache and goes stale), an unstubbed check would consult real git and
     # reclassify this fixture as mergeable — which is correct behaviour and would
     # make this test silently stop exercising the rebase path it is about.
-    watcher._conflict_is_real = lambda state, runner=None: True
+    # `real` is the only kind that still reaches the resume path: union_only and
+    # phantom are branches git merges clean, and no agent can resolve those.
+    watcher.classify_conflict = lambda state, runner=None: pw.CONFLICT_REAL
     report = watcher.poll_once()
 
     assert called == [], "the watcher must not hand `main` to the rebase path"
