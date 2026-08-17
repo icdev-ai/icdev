@@ -2060,3 +2060,4 @@ tests/test_lens_quality.py
 tests/test_lens_quality_anomaly.py
 tests/test_lens_workflow_patterns_anomaly.py
 tests/test_lesson_learned_kph.py
+tests/rag/test_provenance_ledger_retrieval.py

@@ -2545,6 +2545,29 @@ CREATE TABLE IF NOT EXISTS mcip_dti_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_mcip_dti_scores_at ON mcip_dti_scores(computed_at);
 
+-- RAG retrieval log — append-only search telemetry (D-RAG-8). The
+-- retrieval_mode CHECK is derived from tools/rag/retriever.py::RETRIEVAL_MODES.
+CREATE TABLE IF NOT EXISTS rag_retrieval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_hash TEXT NOT NULL,
+    query_text TEXT DEFAULT '',
+    results_count INTEGER NOT NULL DEFAULT 0,
+    top_score REAL DEFAULT 0.0,
+    retrieval_mode TEXT DEFAULT 'hybrid'
+        CHECK(retrieval_mode IN ('vector', 'bm25', 'hybrid', 'rrf_hybrid', 'reranked',
+                                 'reflective_reranked', 'reflective_degraded')),
+    vector_top_k INTEGER DEFAULT 50,
+    final_top_k INTEGER DEFAULT 5,
+    rerank_used INTEGER DEFAULT 0,
+    source_types_queried TEXT DEFAULT '',
+    duration_ms INTEGER DEFAULT 0,
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    agent_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
 CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2559,12 +2582,14 @@ CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     prompt_sha256 TEXT,
     signature TEXT,
     event_type TEXT NOT NULL DEFAULT 'ingest'
-        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+        CHECK(event_type IN ('ingest', 'chain_of_custody', 'retrieval')),
     ingest_timestamp TEXT,
+    retrieval_log_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON rag_provenance_ledger(chunk_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON rag_provenance_ledger(event_type);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_retrieval_log ON rag_provenance_ledger(retrieval_log_id);
 
 -- SBOM document records (init_icdev_db.py) + the 2026 Minimum Elements columns
 -- added by migration 20260808030213_sbom_2026_minimum_elements (sbx-fnd-02).
