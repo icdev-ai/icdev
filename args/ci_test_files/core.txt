@@ -2068,3 +2068,53 @@ tests/test_lens_quality.py
 tests/test_lens_quality_anomaly.py
 tests/test_lens_workflow_patterns_anomaly.py
 tests/test_lesson_learned_kph.py
+
+# rem-tst-03 — second promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as the rem-tst-02 block above, on the next 25 modules, and
+# SERIALISED behind it on purpose: both batches edit args/ci_test_backlog.txt,
+# which is delete-only and NOT merge=union (only args/ci_test_files/*.txt is), so
+# two of these in flight at once conflict and one PR becomes unlandable.
+#
+# Selection, unchanged and re-derived from the census rather than copied: (a)
+# census status `passed` with a non-zero test count, so a module that collects
+# nothing cannot be promoted as if it were coverage; (b) fastest first among what
+# rem-tst-02 left; (c) ZERO static skip sites, because a gated file that skips is
+# unmeasured and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# The census is a shortlist, never the evidence. Re-measured on this branch on
+# 2026-08-16: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH,
+# 378 tests, ZERO skipped) and green IN-SUITE appended after the existing list in
+# one process — the order-dependence half CLAUDE.md requires, which the census
+# does not cover in either direction.
+#
+# args/test_gating_gate.yaml's backlog_max falls 1765 -> 1740, exactly the 25
+# moved. rem-tst-02 already surrendered the 19 slots of headroom main was
+# carrying, so the ceiling now equals the effective backlog and this batch keeps
+# it there, as the "no headroom, deliberately" note in that file specifies.
+tests/test_agent_mailbox_placeholders.py
+tests/test_integrity_event_emitter.py
+tests/test_lens_workflow_patterns.py
+tests/test_icdev_logger.py
+tests/test_instrumentation.py
+tests/test_integrity_claim_parser.py
+tests/test_news_stream_fetcher.py
+tests/browser/test_get_driver_backend.py
+tests/chat_router/test_url_analyzer_query_wiring.py
+tests/test_iqe_infra_adapter.py
+tests/test_lens_trajectory_confidence.py
+tests/test_network_intelligence.py
+tests/browser/test_page_vv.py
+tests/chat_router/test_intent_classifier_cortex_adoption.py
+tests/ci/test_pr_watcher_enforced_gate.py
+tests/test_evidence_corpus.py
+tests/test_icdev_client.py
+tests/test_iqe_data_adapter.py
+tests/test_iqe_executor.py
+tests/browser/cdp/test_launcher.py
+tests/ci/modules/test_agent.py
+tests/ci/modules/test_state.py
+tests/perf/test_perf_benchmark.py
+tests/test_agent_shap.py
+tests/test_aggregation_guard.py
