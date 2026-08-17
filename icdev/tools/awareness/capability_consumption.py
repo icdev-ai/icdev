@@ -66,6 +66,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -873,6 +874,122 @@ def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int
     return res
 
 
+#: Where the hook-point enum lives. Read with ``ast`` rather than imported: the
+#: module creates its singleton at import time and the singleton auto-loads the
+#: nine chat builtins, which pull in RAG, Bayesian learning and the genesis
+#: status reader. ``check_capability_liveness`` runs this twice per commit, so a
+#: measurement tool must not execute eleven extension modules to count ten
+#: names — and a builtin that failed to import would turn a count into an
+#: unmeasurable, which is a reading about the importer, not about the seam.
+_EXTENSION_MANAGER_SRC = "tools/extensions/extension_manager.py"
+
+
+def _extension_points_from_source() -> List[str]:
+    """The ``ExtensionPoint`` enum's values, parsed without importing it."""
+    tree = ast.parse(
+        _repo_file(_EXTENSION_MANAGER_SRC).read_text(encoding="utf-8")
+    )
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ClassDef) and node.name == "ExtensionPoint"):
+            continue
+        values = []
+        for stmt in node.body:
+            if (
+                isinstance(stmt, ast.Assign)
+                and isinstance(stmt.value, ast.Constant)
+                and isinstance(stmt.value.value, str)
+            ):
+                values.append(stmt.value.value)
+        return values
+    raise ValueError("ExtensionPoint enum not found")
+
+
+def probe_extension_hook_point(
+    conn, since: datetime, threshold: int, max_listed: int
+) -> ClassResult:
+    """Extension hook points declared vs. dispatches actually recorded.
+
+    The seam ``args/extension_config.yaml`` declares ten points for. Until
+    hcx-live-02 nothing counted a dispatch anywhere, so "this point is consumed"
+    and "this point has never been called in the platform's history" were the
+    same reading — and eight of the ten have no dispatch call site at all.
+
+    Declared units are points present in BOTH the enum and an enabled config
+    block, for the same reason ``probe_reflex`` requires both halves: a point
+    the config disables is stood down on purpose and is not the defect, and a
+    config key with no matching enum member can never be dispatched at all.
+    Both exclusions are reported in ``extra`` rather than dropped silently.
+    """
+    res = ClassResult(
+        capability_class="extension_hook_point",
+        declaration_source="ExtensionPoint x args/extension_config.yaml (hook_points)",
+        telemetry_table="runtime_invocations (surface='extension')",
+    )
+    try:
+        import yaml
+
+        enum_points = _extension_points_from_source()
+        cfg = yaml.safe_load(
+            _repo_file("args/extension_config.yaml").read_text(encoding="utf-8")
+        ) or {}
+        points_cfg = ((cfg.get("extensions") or {}).get("hook_points") or {})
+    except Exception as exc:  # noqa: BLE001
+        return _unmeasured(
+            "extension_hook_point", res.declaration_source, res.telemetry_table,
+            f"declaration source unreadable: {exc}",
+        )
+
+    def _point_enabled(name: str) -> bool:
+        block = points_cfg.get(name)
+        # An absent block is the permissive default dispatch() itself applies.
+        return not isinstance(block, dict) or block.get("enabled") is not False
+
+    declared = [p for p in enum_points if _point_enabled(p)]
+    res.extra["enum_points_total"] = len(enum_points)
+    res.extra["disabled_in_config"] = sorted(
+        p for p in enum_points if not _point_enabled(p)
+    )[:max_listed]
+    # A hook_points key naming no enum member configures a point that cannot be
+    # dispatched — declared-but-unconsumable, one notch worse than inert.
+    res.extra["config_points_not_in_enum"] = sorted(
+        set(points_cfg) - set(enum_points)
+    )[:max_listed]
+
+    from tools.db.storage import table_exists
+
+    if not table_exists(conn, "runtime_invocations"):
+        return _unmeasured(
+            "extension_hook_point", res.declaration_source, res.telemetry_table,
+            "runtime_invocations does not exist",
+        )
+    try:
+        counts = _count_by_key(
+            conn, "runtime_invocations", "name", "started_at", since,
+            extra_sql="AND surface = %s", extra_params=("extension",),
+        )
+        failed = _count_by_key(
+            conn, "runtime_invocations", "name", "started_at", since,
+            extra_sql="AND surface = %s AND status = %s",
+            extra_params=("extension", "error"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        return _unmeasured(
+            "extension_hook_point", res.declaration_source, res.telemetry_table,
+            f"query failed: {exc}",
+        )
+
+    res = _finish(res, declared, counts, threshold, max_listed)
+    # A dispatch whose handler raised is still a dispatch — it counts as
+    # consumption. It is reported separately because a point that only ever
+    # fails is consumed and broken, and the two readings must not cancel out.
+    res.extra["failed_dispatch_events"] = sum(failed.get(p, 0) for p in set(declared))
+    res.extra["points_with_failures"] = sorted(
+        p for p in declared if failed.get(p, 0) > 0
+    )[:max_listed]
+    return res
+
+
 PROBES: Dict[str, Callable[..., ClassResult]] = {
     "reflex": probe_reflex,
     "mcp_dispatch_tool": probe_mcp_dispatch_tool,
@@ -881,6 +998,7 @@ PROBES: Dict[str, Callable[..., ClassResult]] = {
     "prompt_template": probe_prompt_template,
     "audit_chain": probe_audit_chain,
     "skill_optimizer": probe_skill_optimizer,
+    "extension_hook_point": probe_extension_hook_point,
 }
 
 

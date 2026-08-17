@@ -2384,6 +2384,34 @@ python tools/autoresearch/hypothesis_generator.py --domain compliance --max 5 --
 
 ---
 
+## DataBridge Agent Access Commands
+```bash
+# Seed db_connections from args/databridge_connections.yaml (cef-fnd-03)
+python -m tools.databridge.seed_connections --seed --json
+python -m tools.databridge.seed_connections --dry-run --json    # validate, write nothing
+python -m tools.databridge.seed_connections --verify --json     # row present? credential resolves?
+python -m tools.databridge.seed_connections --list --json
+# REFUSES a literal secret: auth_secret_ref must be an env:/vault:/aws:/file: reference.
+# REFUSES the banner 'CUI // SP-CTI' as a classification -- that column feeds the RLS
+# predicate, which is drawn from the LABEL vocabulary, so a banner-labelled row is
+# written, retained and invisible to every reader at every clearance.
+# All-or-nothing: one bad descriptor writes none of them, because a half-wired
+# grant is harder to diagnose than an unseeded one.
+
+# What may this agent reach, and what happens when it reaches?
+python -c "from icdev.tools.databridge import broker; print(broker.list_available('doc_reviewer'))"
+python -c "from icdev.tools.databridge import broker; print(broker.fetch('doc_reviewer','rss','<granted feed url>',limit=5).to_dict())"
+# Grants: args/databridge_agent_access.yaml   Endpoints: args/databridge_connections.yaml
+# Every call -- allowed or denied -- writes one row to databridge_agent_access_log.
+# MCP surface: databridge_sources (discover) then databridge_fetch (read).
+
+# One RSS/Atom feed, standalone. Module form only: the file uses package-relative
+# imports so the mirrored icdev/ copy registers into the right connector registry.
+python -m tools.databridge.connectors.rss_connector --url URL --limit 10 --json
+```
+
+---
+
 ## Connector Forge Commands
 ```bash
 # Generate connector from OpenAPI spec (template-only, no LLM)
@@ -5564,8 +5592,16 @@ python -m tools.doc_modernization.eol_products_sync --seed --json
 python -m tools.doc_modernization.eol_products_sync --sync --json
 python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
 
-# De facto deployment standards from ni_devices (recency-weighted)
+# De facto standards from the declared inventory feeds (recency-weighted)
 python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+python -c "from tools.doc_modernization.defacto_learner import load_feeds; print(load_feeds())"
+# cef-fnd-04: the input is args/docmod/inventory_feeds.yaml, not one hardcoded
+# table. docmod_defacto_standards held 0 rows for months because its only input,
+# ni_devices, held 0 rows — the writer ran nightly and had nothing to learn from.
+# Each row records source_feed + evidence_kind, share_pct is a share WITHIN one
+# feed, and get_recommended() answers from the best-precedence feed alone:
+# an observed estate beats a drawing of one, and no quantity of drawings adds up
+# to an observation.
 
 # Nightly sweep reflex (standalone)
 python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
@@ -5575,6 +5611,36 @@ python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
 # Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
 # MCP tools: docmod_scan, docmod_findings, docmod_redline
 ```
+
+## Entity Currency Store — one domain-agnostic "is it still current" (cef-fnd-04)
+
+```bash
+python -m tools.currency.entity_currency --backfill --json
+python -m tools.currency.entity_currency --backfill --source docmod_eol_products
+python -m tools.currency.entity_currency --stats --json
+python -m tools.currency.entity_currency --resolve "<entity>" --entity-type hardware_model
+```
+
+Currency evidence used to live in three domain-narrow tables — a software-release
+feed (`docmod_eol_products`), a hardware EOL feed (`mc_net_eol_data`) and the
+curated catalog (`docmod_catalog_entries`) — each answering in its own shape, none
+able to describe an entity the others had never heard of, and no place for a
+fourth provider to write. `entity_currency` is one row per **(source, entity,
+version) assertion**.
+
+- **Sources are config**, not code: `args/entity_currency.yaml` supplies every
+  table, column mapping, entity type and verdict rule. `tools/currency/` names no
+  table, column, vendor, product or domain.
+- **Disagreement is preserved.** Two sources that disagree keep two rows;
+  `resolve()` picks a winner at read time and returns the losers under `others`
+  with `conflict: true`.
+- **Curated evidence is authoritative** — ahead of confidence, ahead of recency.
+- **`confidence` is a declared prior, not a measurement.**
+- `as_of` (the source's clock) is kept apart from `observed_at` (ours), so stale
+  evidence stays distinguishable from fresh evidence.
+- Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
+  network-hardware pack only when the catalog and the hardware feed are both
+  silent. Declared in `args/capability_consumption.yaml` `substrates:`.
 
 ## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
 
@@ -6429,6 +6495,8 @@ python tools/ci/ungated_test_census.py --run --limit 50 --workers 4    # sample 
 python tools/ci/ungated_test_census.py --run --deadline-s 3600 --timeout 240   # unstarted -> not-reached
 python tools/ci/ungated_test_census.py --verify docs/testing/ungated_test_census.json  # measured + not-reached + out-of-scope == backlog
 python tools/ci/ungated_test_census.py --summarize docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json   # group the FAILING modules by failure shape
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json --red-md docs/testing/ungated_red_modules.md
 
 # RAW BOARD-WRITER census (rem-hyg-05) — a kanban INSERT that bypasses the canonical seeder.
 # tools/kanban/task_factory.py opens with "Canonical task seeder — never use raw INSERT
@@ -6590,4 +6658,45 @@ project-root `extensions/` directory outside this repository, so a removal is an
 
 ```bash
 pytest tests/test_extension_point_liveness.py -v   # AGENT_START/END wiring + the census (12 tests)
+```
+
+---
+
+## Prompt-Cache Regression Signal (cch-obs-02)
+
+`cch-tel-01` made the per-call cache counts exist; nothing watched them CHANGE.
+A provider that was serving cached tokens and stops renders identically to one
+that was never enabled — both are zero — which is how Azure discarded its
+cached-token count for its entire life with nothing going red.
+
+```bash
+python -m tools.cache_savings.regression                       # per-provider table + verdicts
+python -m tools.cache_savings.regression --json
+python -m tools.cache_savings.regression --window-end 2026-08-01T00:00:00+00:00   # replay a past window
+python -m tools.cache_savings.regression --gate                # 0 clean / 1 regression / 2 unmeasurable
+python -m tools.genesis.reflexes.cache_regression_reflex --dry-run   # detect, file no cards
+```
+
+Three rungs: `stopped` (cache reads across the baseline window, exactly zero
+across the recent one), `collapsed` (share fell past `collapse_drop_ratio`) and
+`never_cached` (a mechanism that bills cached tokens, a real sample, never one
+read). The comparative rungs ignore the mechanism declaration — a provider that
+DID report cache reads was caching whatever any config claims.
+
+Every non-finding is NAMED, because a zero here has four meanings:
+`mechanism_no_billing` (Ollama's KV reuse bills nothing back — a permanent zero
+is correct), `pre_instrumentation_unknown`, `mechanism_unknown`,
+`insufficient_calls`, `no_traffic`. Rows predating `instrumented_since` hold a
+BACKFILLED zero and are excluded from the `never_cached` rung; an empty or
+unmigrated ledger reports `unmeasurable`, never a clean bill.
+
+`collapse_drop_ratio: 0.7` was fitted against 79 historical window pairs out of
+this ledger — 0.00% false-fire, against 8.86% at 0.5 and 29.27% at 0.3. **Never
+widen a threshold to silence a finding**; re-measure and say what you measured.
+Thresholds and the mechanism map: `args/cache_regression.yaml`. The genesis
+reflex `cache_regression_reflex` runs it every 6h and files one card per finding
+with an id deterministic in (rung, provider).
+
+```bash
+pytest tests/test_cache_regression.py -v   # both directions: fires, and does not (28 tests)
 ```

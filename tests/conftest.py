@@ -2549,6 +2549,29 @@ CREATE TABLE IF NOT EXISTS mcip_dti_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_mcip_dti_scores_at ON mcip_dti_scores(computed_at);
 
+-- RAG retrieval log — append-only search telemetry (D-RAG-8). The
+-- retrieval_mode CHECK is derived from tools/rag/retriever.py::RETRIEVAL_MODES.
+CREATE TABLE IF NOT EXISTS rag_retrieval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_hash TEXT NOT NULL,
+    query_text TEXT DEFAULT '',
+    results_count INTEGER NOT NULL DEFAULT 0,
+    top_score REAL DEFAULT 0.0,
+    retrieval_mode TEXT DEFAULT 'hybrid'
+        CHECK(retrieval_mode IN ('vector', 'bm25', 'hybrid', 'rrf_hybrid', 'reranked',
+                                 'reflective_reranked', 'reflective_degraded')),
+    vector_top_k INTEGER DEFAULT 50,
+    final_top_k INTEGER DEFAULT 5,
+    rerank_used INTEGER DEFAULT 0,
+    source_types_queried TEXT DEFAULT '',
+    duration_ms INTEGER DEFAULT 0,
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    agent_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
 CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2563,12 +2586,14 @@ CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     prompt_sha256 TEXT,
     signature TEXT,
     event_type TEXT NOT NULL DEFAULT 'ingest'
-        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+        CHECK(event_type IN ('ingest', 'chain_of_custody', 'retrieval')),
     ingest_timestamp TEXT,
+    retrieval_log_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON rag_provenance_ledger(chunk_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON rag_provenance_ledger(event_type);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_retrieval_log ON rag_provenance_ledger(retrieval_log_id);
 
 -- SBOM document records (init_icdev_db.py) + the 2026 Minimum Elements columns
 -- added by migration 20260808030213_sbom_2026_minimum_elements (sbx-fnd-02).
@@ -3248,9 +3273,35 @@ CREATE TABLE IF NOT EXISTS docmod_defacto_standards (
     weighted_score  REAL NOT NULL DEFAULT 0.0,
     share_pct       REAL NOT NULL DEFAULT 0.0,
     computed_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    source_feed     TEXT DEFAULT '',
+    evidence_kind   TEXT DEFAULT '',
     tenant_id       TEXT,
     classification  TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS entity_currency (
+    record_id       TEXT PRIMARY KEY,
+    entity_type     TEXT NOT NULL,
+    namespace       TEXT NOT NULL DEFAULT '',
+    entity_key      TEXT NOT NULL,
+    entity_label    TEXT,
+    entity_version  TEXT NOT NULL DEFAULT '',
+    verdict         TEXT NOT NULL,
+    superseded_by   TEXT,
+    source          TEXT NOT NULL,
+    source_kind     TEXT NOT NULL DEFAULT 'derived',
+    as_of           TEXT NOT NULL,
+    observed_at     TEXT NOT NULL,
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    eol_date        TEXT,
+    eos_date        TEXT,
+    provenance_table TEXT,
+    provenance_id    TEXT,
+    provenance_json  TEXT NOT NULL DEFAULT '{}',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_currency_identity
+    ON entity_currency (source, entity_type, namespace, entity_key, entity_version);
 CREATE TABLE IF NOT EXISTS docmod_doc_scan_state (
     doc_id             TEXT PRIMARY KEY,
     last_version_id    TEXT,

@@ -1828,6 +1828,19 @@ tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py
 tests/test_project_prefix_scope.py
 tests/test_canvas_dedicated_pg_database.py
+
+# hcx-live-02 — args/extension_config.yaml declared a hook_points: block with
+# per-point enabled/allow_modification/max_handlers/timeout_ms for all ten
+# points, and ExtensionManager.dispatch() read NONE of them: the only working
+# kill switch was the global one, which also stops the nine chat handlers in
+# use. Nothing counted a dispatch either, so capability_consumption could not
+# tell a consumed hook point from one never called in the platform's history.
+# The first dispatch under the new telemetry found 081_build_kanban_sync
+# raising TypeError on EVERY chat message since it landed — registered,
+# enabled, and structurally incapable of running, swallowed by
+# catch_handler_exceptions. 23 tests, <1s: isolated managers, no builtins
+# loaded except in the one signature test, SQLite temp file for the telemetry.
+tests/test_extension_dispatch_governance.py
 # hcx-live-01 pins TOOL_EXECUTE_BEFORE to a production dispatcher. The hook
 # point had ten declared siblings and no caller outside tests -- the GATING
 # point, and the whole reason the behavioral tier exists. The seven ordering
@@ -2008,6 +2021,16 @@ tests/test_gemini_managed_object_cache.py
 # for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
 # absent. No Ollama process, no network, no DB.
 tests/test_ollama_prefix_latency.py
+# trust-disc-05 (extended to the merge path): pr_watcher must not auto-merge a
+# PR whose work is ALREADY on main under a different number — that merge is a
+# REVERT wearing a feature's clothes (#1651 was -38/+26 on rest_v1.py) and every
+# gate on the board reports green, because every gate asks about the PR.
+# The suite is behavioural: `not merge_calls` under enforce is what proves the
+# check runs BEFORE _auto_merge, and the checked:False/landed:True case is what
+# proves fail-open is read rather than incidental. Regressed three ways
+# (call site deleted / checked ignored / mode ignored); each is caught by a
+# different test. No network, no git, no DB.
+tests/ci/test_pr_watcher_landed.py
 # kax-conflict-11: the union-merge guard for .gitattributes. It was RED on main
 # from the moment trust-disc-03 landed `args/ci_skip_census.txt merge=union`
 # without registering it in _UNION_SAFE_PATHS, and nothing reported that for as
@@ -2068,6 +2091,51 @@ tests/test_lens_quality.py
 tests/test_lens_quality_anomaly.py
 tests/test_lens_workflow_patterns_anomaly.py
 tests/test_lesson_learned_kph.py
+
+# rem-tst-03 — second promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02, on the next 25. The census is the shortlist and
+# never the evidence: it answers "green ALONE" for all 1,792 grandfathered
+# modules and says nothing about order-dependence, so both halves were
+# re-measured on this branch on 2026-08-16 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one is under 4s alone, ~16s of pytest for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_agent_mailbox_placeholders.py
+tests/test_integrity_event_emitter.py
+tests/test_lens_workflow_patterns.py
+tests/test_icdev_logger.py
+tests/test_instrumentation.py
+tests/test_integrity_claim_parser.py
+tests/test_news_stream_fetcher.py
+tests/browser/test_get_driver_backend.py
+tests/chat_router/test_url_analyzer_query_wiring.py
+tests/test_iqe_infra_adapter.py
+tests/test_lens_trajectory_confidence.py
+tests/test_network_intelligence.py
+tests/browser/test_page_vv.py
+tests/chat_router/test_intent_classifier_cortex_adoption.py
+tests/ci/test_pr_watcher_enforced_gate.py
+tests/test_evidence_corpus.py
+tests/test_icdev_client.py
+tests/test_iqe_data_adapter.py
+tests/test_iqe_executor.py
+tests/browser/cdp/test_launcher.py
+tests/ci/modules/test_agent.py
+tests/ci/modules/test_state.py
+tests/perf/test_perf_benchmark.py
+tests/test_agent_shap.py
+tests/test_aggregation_guard.py
 # cef-fnd-01: the DataBridge agent broker's audit trail. Promoted OUT of
 # args/ci_test_backlog.txt in the PR that made it pass — the whole point of this
 # change is that an unrecorded access decision must go red, and a test that has
@@ -2083,3 +2151,105 @@ tests/test_databridge_broker.py
 # hold drafts and unrevised publications out of the supersession cache, and keep
 # the offline flag a clean no-op. No network, no live DB (conftest forces SQLite).
 tests/docmod/test_feed_wiring.py
+# rem-tst-04 — third promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02 and rem-tst-03, on the next 25. The census is the
+# shortlist and never the evidence: it answers "green ALONE" for all 1,792
+# grandfathered modules and says nothing about order-dependence, so both halves
+# were re-measured on this branch on 2026-08-17 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one under 4.5s alone, 292 tests for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_iqe_data_seeds.py
+tests/test_dcpr_anomaly_detector.py
+tests/test_heartbeat_kanban_wakeup.py
+tests/test_iqe_infra_seeds.py
+tests/test_eval_suggestions.py
+tests/test_dic_filters.py
+tests/test_eval_harness_anomaly_detection.py
+tests/test_dcpr_append_only_tables.py
+tests/test_iqe_compliance_seeds.py
+tests/test_govcon_rfi_parser.py
+tests/test_dcpr_ai_mapper_llm.py
+tests/test_iqe_compliance_adapter.py
+tests/test_dic_layout_probe.py
+tests/quality/test_rigor_gates.py
+tests/test_embedding_feasibility.py
+tests/test_pipeline_delta.py
+tests/test_atlas_red_team.py
+tests/test_helm_emitter.py
+tests/test_ingestion_pipeline.py
+tests/ci/test_pr_watcher_unlinked_sweep.py
+tests/test_dwo_mcp_node_type.py
+tests/rag/test_retriever_common.py
+tests/test_alert_service_ai_narrative.py
+tests/test_dwo_event_tables.py
+tests/test_ideation_frames.py
+
+# rem-tst-04, the tool half. Gated in the PR that adds it, per the test-gating
+# policy — the red report is only worth reading if its arithmetic is checked, and
+# a check that never runs in CI cannot do that. Covers the failure-shape
+# classifier (including the two lines that made it wrong: a driver name quoted
+# inside an assertion message, and a table named before the word "table"), the
+# refusal to bucket a line with no usable signature, and the committed
+# docs/testing/ungated_red_modules.md agreeing with the committed census.
+tests/ci/test_ungated_red_report.py
+tests/test_databridge_first_grant.py
+tests/rag/test_provenance_ledger_retrieval.py
+
+# kpr-watch-07. GitHub does not apply `.gitattributes` merge drivers, so a PR
+# that appends to a union-merged path — which CLAUDE.md requires of every PR
+# adding a test file, via this very list — goes DIRTY while merging clean under
+# git. pr_watcher called that whole class a stale forge cache, spent a one-shot
+# budget on it and then went silent: nine of ten open PRs stuck, hcx-evt-03 with
+# 499 escalate rows and AWAITING MERGE never draining. This pins the three-way
+# classification (real / union_only / phantom), that a probe which could not RUN
+# is not read as a conflict, that only the union lines are stripped from the
+# comparison tree, and that the rebase budget is counted per base era.
+tests/ci/test_pr_watcher_union_conflict.py
+
+# Modified by kpr-watch-07, green alone and in-suite, and it carries the
+# structural guards that keep a stale conflict routed to the REBASE rather
+# than to the merge the forge refuses — deletable, until now, without anything
+# going red. Its `importorskip` on a first-party module went with it: that
+# guard could only ever turn a real breakage into a green skip.
+#
+# tests/ci/test_pr_watcher_rebase.py is deliberately NOT gated here. It is
+# green too, but it carries two legitimate environment guards (git absent;
+# suite pinned to SQLite), and registering them would need skip_max raised —
+# which may only go DOWN. Gating it belongs with whatever removes those two.
+tests/ci/test_pr_watcher_stale_conflict_recovery.py
+# cef-fnd-04: the domain-agnostic entity-currency store, and the reason
+# docmod_defacto_standards held 0 rows — its ONLY input, ni_devices, held 0 rows,
+# so the writer ran nightly and had nothing to learn from. Pins the shape, not
+# any vendor: sources are read from config, curated evidence keeps its authority
+# over a fresher feed, disagreement survives to the caller, and inventory vs
+# design evidence is never pooled into one percentage. Temp SQLite DB, no
+# network.
+tests/currency/test_entity_currency.py
+# cch-obs-02: caching that stops working goes red instead of quiet. cch-tel-01
+# made the per-call cache count exist; nothing watched it CHANGE, and a provider
+# that was caching and stops renders identically to one never enabled — both are
+# zero. Gated because the load-bearing half is the NEGATIVE direction: the
+# thresholds were fitted against 79 historical window pairs out of this ledger
+# (0.00% false-fire at 0.7 relative drop; 8.86% at 0.5), and a signal that fires
+# on normal variation is muted within a week, so the "does not fire" cases are
+# what keep it alive — ordinary movement, a swing on traffic too thin to judge, a
+# `local` mechanism that bills nothing back, an undeclared provider, and the
+# BACKFILLED pre-instrumentation zeros that would otherwise indict all 8
+# providers on the live board's 13,073 rows on the first run. Also pins that an
+# empty or unmigrated ledger reports `unmeasurable` rather than a clean bill, and
+# that the reflex is actually dispatched by the daemon rather than merely written
+# — declared-but-unconsumed being the defect this platform ships most.
+# 28 tests, ~1s: temp SQLite files only, no network, no shared board.
+tests/test_cache_regression.py

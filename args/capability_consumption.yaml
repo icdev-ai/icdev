@@ -81,6 +81,15 @@ classes:
       counting a verdict rather than a denial and audit_chain a chained row
       rather than a tamper finding. applied vs declined stay separate in
       `extra`.
+  extension_hook_point:
+    enabled: true
+    description: >-
+      Extension hook points present in both the ExtensionPoint enum and an
+      enabled args/extension_config.yaml hook_points block. Consumption is a
+      recorded ExtensionManager.dispatch on the 'extension' surface of
+      runtime_invocations. Ten declared; before hcx-live-02 nothing counted a
+      dispatch at all, so a point with no call site read exactly like a point on
+      the chat hot path.
 
 # ---------------------------------------------------------------------------
 # Substrate probing (#trust-disc-04)
@@ -162,6 +171,30 @@ substrates:
       designed against that holds nothing. tools/agent_runtime/event_log.py
       already READS it via read_session()/next_seq(), so a change to that module
       is exactly the commit substrate_liveness should warn on.
+  - ref: entity_currency
+    note: >-
+      The domain-agnostic entity-currency store (cef-fnd-04, migration
+      20260817010533). Load-bearing on a READ path — the network-hardware docmod
+      pack consults resolve() when the curated catalog and the hardware EOL feed
+      both come back empty — so an empty table here is a pack that silently
+      reports 'unknown' rather than a table nobody touches. It is backfilled from
+      docmod_eol_products, mc_net_eol_data and docmod_catalog_entries on the
+      nightly docmod sweep and by
+      `python -m tools.currency.entity_currency --backfill`; 230 rows on the live
+      board at declaration time. Listed because the failure mode is silent: every
+      caller degrades to "no answer", which is indistinguishable from "nothing to
+      report".
+  - ref: docmod_defacto_standards
+    note: >-
+      Learned de-facto standards. THE case cef-fnd-04 was opened for: 0 rows, and
+      not because the writer never ran — defacto_learner.recompute() runs on the
+      nightly sweep and read ni_devices, which itself holds 0 rows. `empty`
+      pointing at an EMPTY UPSTREAM is a different fix from `absent`, and merging
+      the two is what made this look like a missing migration for months. Fixed
+      by making the learner's input a declaration
+      (args/docmod/inventory_feeds.yaml) instead of one hardcoded table; it now
+      holds 32 rows derived from the topology feed. If it returns to 0, check
+      whether every declared feed is empty before suspecting the writer.
 
 # The five incidents this measurement was built for. Each is asserted to be
 # measurable — `--gate` fails when a case's class cannot be measured at all,

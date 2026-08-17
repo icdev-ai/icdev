@@ -1,0 +1,7 @@
+{
+  "description": "entity_currency — domain-agnostic entity-currency store (cef-fnd-04)",
+  "date": "2026-08-17",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

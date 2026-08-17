@@ -181,6 +181,7 @@
 - [Document Modernization Engine (docmod)](manifest/doc-modernization.md)
 - [FORGE Academy](manifest/forge-academy.md) — learner platform: server-authoritative grading, XP provenance ledger, tier gating (`apps/forge_academy/`)
 - [GeoSIGINT Indo-Pacific Analyzer](manifest/geosigint.md) — 6 OSINT analyzers, 7 pages, 23 APIs (`apps/geosigint/`)
+- [Entity Currency Store](manifest/entity-currency.md) — one domain-agnostic "is it still current", source-agnostic, disagreement preserved (`tools/currency/`)
 
 
 ## Auto-Registered (Coherence Fix)

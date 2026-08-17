@@ -64,6 +64,9 @@ SCHEMA = [
         artifact_id TEXT PRIMARY KEY, skill_used TEXT, composite_score REAL,
         baseline_score REAL, status TEXT, applied_count INTEGER DEFAULT 0,
         applied_at TEXT, gepa_decision TEXT, gepa_decided_at TEXT)""",
+    """CREATE TABLE runtime_invocations (
+        id TEXT PRIMARY KEY, surface TEXT NOT NULL, name TEXT NOT NULL,
+        started_at TEXT NOT NULL, status TEXT, error_class TEXT)""",
 ]
 
 CONFIG = {
@@ -397,6 +400,9 @@ def test_report_uses_only_existing_telemetry_tables(conn_factory):
     allowed = {
         "genesis_reflex_state", "studio_mcp_dispatch_audit", "agent_approval_log",
         "audit_platform", "prompt_versions", "audit_trail", "agent_improvement_artifacts",
+        # migration 341 — the runtime telemetry table, four surfaces older than
+        # the extension one hcx-live-02 records dispatches on.
+        "runtime_invocations",
     }
     report = capcon.collect(conn=conn_factory(), config=CONFIG)
     for cls in report["classes"]:
@@ -424,3 +430,143 @@ def test_disabled_class_is_skipped(conn_factory):
     config["classes"]["reflex"] = {"enabled": False}
     report = capcon.collect(conn=conn_factory(), config=config)
     assert "reflex" not in _by_class(report)
+
+
+# ---------------------------------------------------------------------------
+# extension_hook_point (hcx-live-02)
+# ---------------------------------------------------------------------------
+# The seam args/extension_config.yaml declares ten points for. Nothing counted a
+# dispatch until hcx-live-02, so "consumed" and "never called in the platform's
+# history" were the same reading. Eight of the ten have no dispatch call site.
+
+
+def _dispatch_row(point, when=IN_WINDOW, status="ok", surface="extension"):
+    return (
+        "INSERT INTO runtime_invocations (id, surface, name, started_at, status) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (f"inv-{point}-{when}-{status}-{surface}", surface, point, when, status),
+    )
+
+
+def test_a_hook_point_nothing_dispatches_reports_inert(conn_factory):
+    """The negative, with a positive control on the same table beside it.
+
+    Without the control this test would pass just as well if the probe silently
+    read nothing at all — the failure mode the tool exists to detect.
+    """
+    report = capcon.collect(
+        conn=conn_factory([_dispatch_row("chat_message_after")]),
+        config=CONFIG,
+        only=["extension_hook_point"],
+    )
+    cls = _by_class(report)["extension_hook_point"]
+
+    assert cls["telemetry_available"] is True
+    assert cls["declared"] == 10
+    assert cls["consumed"] == 1, "the positive control did not register"
+    assert "tool_execute_after" in cls["inert_units"]
+    assert "chat_message_after" not in cls["inert_units"]
+
+
+def test_rows_from_another_surface_are_not_counted_as_dispatches(conn_factory):
+    """``runtime_invocations`` is shared. An MCP tool named after a hook point
+    must not launder that point into looking consumed."""
+    report = capcon.collect(
+        conn=conn_factory([_dispatch_row("agent_start", surface="mcp")]),
+        config=CONFIG,
+        only=["extension_hook_point"],
+    )
+    cls = _by_class(report)["extension_hook_point"]
+
+    assert cls["consumed"] == 0
+    assert "agent_start" in cls["inert_units"]
+
+
+def test_a_dispatch_whose_handler_failed_still_counts_as_consumption(conn_factory):
+    """Consumed and broken is a different reading from never called.
+
+    Folding a failing dispatch into the inert count would hide a wired-and-
+    broken hook behind the same number as a hook nobody calls.
+    """
+    report = capcon.collect(
+        conn=conn_factory([_dispatch_row("chat_message_before", status="error")]),
+        config=CONFIG,
+        only=["extension_hook_point"],
+    )
+    cls = _by_class(report)["extension_hook_point"]
+
+    assert "chat_message_before" not in cls["inert_units"]
+    assert cls["extra"]["failed_dispatch_events"] == 1
+    assert cls["extra"]["points_with_failures"] == ["chat_message_before"]
+
+
+def test_a_point_disabled_in_config_is_not_counted_as_declared(
+    conn_factory, tmp_path, monkeypatch
+):
+    """Stood down on purpose is not the defect — the rule probe_reflex applies.
+
+    Also the reason the disabled set is reported in ``extra`` rather than just
+    dropped: a point missing from the declared count for a good reason and one
+    missing because somebody deleted it look identical in the total.
+    """
+    override = tmp_path / "extension_config.yaml"
+    override.write_text(
+        "extensions:\n"
+        "  hook_points:\n"
+        "    agent_start:\n"
+        "      enabled: false\n"
+        "    memory_save_after:\n"
+        "      enabled: false\n",
+        encoding="utf-8",
+    )
+    real = capcon._repo_file
+    monkeypatch.setattr(
+        capcon, "_repo_file",
+        lambda rel: override if rel.endswith("extension_config.yaml") else real(rel),
+    )
+
+    report = capcon.collect(
+        conn=conn_factory(), config=CONFIG, only=["extension_hook_point"]
+    )
+    cls = _by_class(report)["extension_hook_point"]
+
+    assert cls["declared"] == 8
+    assert cls["extra"]["disabled_in_config"] == ["agent_start", "memory_save_after"]
+    assert cls["extra"]["enum_points_total"] == 10
+
+
+def test_an_absent_runtime_invocations_is_unmeasurable_not_zero(conn_factory):
+    report = capcon.collect(
+        conn=conn_factory(skip_tables=("runtime_invocations",)),
+        config=CONFIG,
+        only=["extension_hook_point"],
+    )
+    cls = _by_class(report)["extension_hook_point"]
+
+    assert cls["telemetry_available"] is False
+    assert "runtime_invocations" in cls["unmeasured_reason"]
+
+
+def test_the_enum_is_read_without_importing_the_module(monkeypatch):
+    """Importing it builds the singleton, which auto-loads nine chat builtins.
+
+    A measurement tool that executes eleven extension modules to count ten names
+    reports on the importer as much as on the seam — and this probe runs twice
+    per commit inside check_capability_liveness.
+
+    ``monkeypatch.delitem`` rather than a bare ``sys.modules.pop``: the entry
+    holds the process-wide ``extension_manager`` singleton, and dropping it
+    permanently makes the NEXT ``from tools.extensions.extension_manager import
+    extension_manager`` build a second one. Nothing raises — a later test
+    registers a handler on the singleton it bound at collection time while the
+    runtime dispatches through the replacement, and the dispatch runs zero
+    handlers, silently. That is how this test took the whole hcx-live-03
+    lifecycle suite down in-suite while every file passed alone.
+    """
+    import sys
+
+    monkeypatch.delitem(sys.modules, "tools.extensions.extension_manager", raising=False)
+    points = capcon._extension_points_from_source()
+
+    assert "tool_execute_before" in points and len(points) == 10
+    assert "tools.extensions.extension_manager" not in sys.modules

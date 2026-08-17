@@ -101,6 +101,13 @@ _PR_URL_RE = re.compile(
 # ────────────────────────────────────────────────────────────────────────────
 
 
+# Which KIND of conflict the forge is reporting (kpr-watch-07). Three answers,
+# because they need three different remedies — see `PRWatcher.classify_conflict`.
+CONFLICT_REAL = "real"
+CONFLICT_UNION_ONLY = "union_only"
+CONFLICT_PHANTOM = "phantom"
+
+
 @dataclass
 class WatcherAction:
     task_id: str
@@ -110,6 +117,13 @@ class WatcherAction:
     reason: str = ""
     resume_cycle: int = 0
     context_preview: str = ""
+    # The base sha a rebase attempt was spent against. A rebase resolves the
+    # collision with the base AS IT WAS; when the base moves and collides again
+    # the old attempt describes a world that no longer exists, so the budget
+    # counts attempts per base era rather than per PR lifetime. Absent on every
+    # row written before kpr-watch-07, which is why "no recorded sha" reads as
+    # "another era" rather than as "this one".
+    base_sha: str = ""
 
 
 @dataclass
@@ -857,6 +871,35 @@ class PRWatcher:
             out[url] = {f.get("path", "") for f in (pr.get("files") or []) if f.get("path")}
         return out
 
+    def _landed_map(self, tasks: List[dict]) -> Dict[str, dict]:
+        """task_id -> landed-check report for every task with an open PR.
+
+        `tools.kanban.landed_check` already answers "is this task id ALREADY on
+        the default branch", and it is already consulted at SEED time
+        (`task_factory`) and at DISPATCH time (`reflexes/kanban.py`). Neither
+        covers the window this closes: a PR is opened, the same work lands under
+        a DIFFERENT PR number while it sits, and the stale PR can then only
+        merge as a REVERT — #1651 was -38/+26 on rest_v1.py, i.e. it would have
+        deleted 38 lines main currently has, with every gate on the board green
+        because every gate on the board asks about the PR.
+
+        One `git log --grep` answers for the whole batch (git ORs repeated
+        --grep), so this costs one subprocess per cycle, not one per PR.
+
+        FAIL-OPEN: any failure returns {}, and a report with `checked: False` is
+        never treated as a finding. An unreachable git must not wedge merging.
+        """
+        ids = [str(t.get("id")) for t in tasks if t.get("id")]
+        if not ids:
+            return {}
+        try:
+            from tools.kanban import landed_check
+
+            return landed_check.check_landed_bulk(ids)
+        except Exception as exc:  # noqa: BLE001 — advisory check, never fatal
+            logger.debug("pr_watcher: landed-check batch failed: %s", exc)
+            return {}
+
     def _sibling_conflicts(self, candidate_url: str, file_map: Dict[str, set]) -> Dict[str, set]:
         """Return {other_pr_url: shared_integrity_files} for OPEN PRs that touch a
         non-additive file the candidate PR also touches.
@@ -1009,56 +1052,145 @@ class PRWatcher:
                 "reason": "closed and reopened to re-fire pull_request workflows",
                 "close_rc": getattr(close, "returncode", None)}
 
-    def _conflict_is_real(self, state: dict, runner=None) -> bool:
-        """Confirm a CONFLICTING verdict against git before acting on it.
+    def _git_probe(self, argv: List[str], runner=None, stdin: Optional[str] = None):
+        """One read-only git call against the repo root. Never raises."""
+        root = str(pathlib.Path(__file__).resolve().parents[2])
+        run = runner or subprocess.run
+        kwargs: Dict[str, Any] = dict(
+            cwd=root, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=120, shell=False,
+        )
+        if stdin is not None:
+            kwargs["input"] = stdin
+        return run(argv, **kwargs)  # nosec B603 — fixed argv, shell=False
 
-        GitHub computes `mergeable` ASYNCHRONOUSLY and caches it. When the base
-        moves quickly the cached answer goes stale and stays stale, because
-        nothing about the PR changed to invalidate it. On 2026-08-09 THIRTEEN
-        PRs were reported CONFLICTING while `git merge-tree` merged every one of
-        them cleanly — same base sha, same head sha, exit 0, a single tree hash
-        and no conflict output.
+    def _no_union_attr_tree(self, base: str, runner=None) -> Optional[str]:
+        """A tree holding the base's `.gitattributes` MINUS its union rules.
 
-        The cost of believing it was not cosmetic. Each of those PRs burned two
-        rebase attempts and five resume cycles fighting a conflict that did not
-        exist, then raised a HITL alert. A rebase cannot clear the flag either: a
-        branch that is already current has nothing to rebase, so it succeeds,
-        changes nothing, and the stale verdict survives.
+        Used to re-run the merge the way the forge runs it. Deliberately not
+        "disable all attributes": dropping `* text=auto eol=lf` too would let a
+        line-ending difference surface as a conflict, and the answer would then
+        be attributed to `merge=union` — a label that has to be true, because a
+        rebase is spent on it.
 
-        `git merge-tree --write-tree` performs the real merge in memory and exits
-        non-zero on a genuine conflict, so it is the authority here and the forge
-        is the cache.
+        None means union is not in play at all (no `.gitattributes`, or no union
+        rule in it), so union cannot be the explanation for anything.
+        """
+        show = self._git_probe(
+            ["git", "cat-file", "-p", f"origin/{base}:.gitattributes"], runner)
+        if getattr(show, "returncode", 1) != 0:
+            return None
+        lines = (getattr(show, "stdout", "") or "").splitlines()
+        kept = [ln for ln in lines if "merge=union" not in ln]
+        if len(kept) == len(lines):
+            return None
+        blob = self._git_probe(
+            ["git", "hash-object", "-w", "--stdin"], runner,
+            stdin="\n".join(kept) + "\n")
+        if getattr(blob, "returncode", 1) != 0:
+            return None
+        sha = (getattr(blob, "stdout", "") or "").strip()
+        if not sha:
+            return None
+        tree = self._git_probe(
+            ["git", "mktree"], runner,
+            stdin=f"100644 blob {sha}\t.gitattributes\n")
+        if getattr(tree, "returncode", 1) != 0:
+            return None
+        return (getattr(tree, "stdout", "") or "").strip() or None
 
-        Errs toward TRUSTING THE FORGE: any failure to verify returns True, so an
-        unreachable git or an unfetchable ref leaves today's behaviour unchanged
-        rather than declaring a real conflict resolved.
+    def classify_conflict(self, state: dict, runner=None) -> str:
+        """Which KIND of conflict a CONFLICTING verdict is. Three, not two.
+
+        The old question was "is the forge lying?", and it had the wrong shape,
+        because `git merge-tree` reads `.gitattributes` and GitHub does not.
+        Anything `merge=union` resolves therefore merges clean here and conflicts
+        there, and the two disagree while both are correct about their own merge.
+
+        MEASURED 2026-08-17. Nine of ten open PRs were DIRTY; re-running the
+        three-way merge with the union rules stripped reproduced the forge's
+        verdict on ten of ten, negative control included — #1730 also appended to
+        `args/ci_test_files/core.txt`, did not collide there, and was the one PR
+        the forge called MERGEABLE. CLAUDE.md requires every PR that adds a test
+        file to append to that list, so this is the common case, not an edge.
+
+          real        git conflicts too. Nothing local resolves it; escalate.
+          union_only  clean here, conflicting there, and only because of union.
+                      A rebase APPLIES the union rule and writes the resolution
+                      into the branch, after which the forge has nothing left to
+                      object to — until main appends to the same file again.
+          phantom     clean both ways. The forge's cached verdict really is
+                      stale (measured on #1473, 2026-08-09: same base sha, same
+                      head sha, exit 0). Only a new head sha clears it.
+
+        The last two both want a rebase; they differ in whether the cause
+        RECURS, which is what the rebase budget has to know.
+
+        Errs toward TRUSTING THE FORGE: every failure to verify returns `real`,
+        so an unreachable git or an unfetchable ref leaves behaviour unchanged
+        rather than declaring a genuine conflict resolved.
         """
         head = (state.get("headRefName") or "").strip()
         base = (state.get("baseRefName") or "").strip() or self._default_branch()
         if not head:
-            return True
-        root = str(pathlib.Path(__file__).resolve().parents[2])
-        run = runner or subprocess.run
+            return CONFLICT_REAL
         try:
-            fetch = run(  # nosec B603 — fixed argv, shell=False
-                ["git", "fetch", "--quiet", "origin", base, head],
-                cwd=root, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=120, shell=False,
-            )
+            fetch = self._git_probe(
+                ["git", "fetch", "--quiet", "origin", base, head], runner)
             if getattr(fetch, "returncode", 1) != 0:
-                return True
-            merged = run(  # nosec B603
+                return CONFLICT_REAL
+            with_union = self._git_probe(
                 ["git", "merge-tree", "--write-tree",
-                 f"origin/{base}", f"origin/{head}"],
-                cwd=root, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=120, shell=False,
-            )
+                 f"origin/{base}", f"origin/{head}"], runner)
         except (OSError, subprocess.SubprocessError) as exc:
             logger.debug("pr_watcher: conflict verification failed: %s", exc)
-            return True
-        if getattr(merged, "returncode", 1) == 0:
-            return False
-        return True
+            return CONFLICT_REAL
+        if getattr(with_union, "returncode", 1) != 0:
+            # git and the forge agree. The second probe cannot change that, and
+            # a PR is polled every 30s — do not pay for it.
+            return CONFLICT_REAL
+
+        try:
+            attr_tree = self._no_union_attr_tree(base, runner)
+            if not attr_tree:
+                return CONFLICT_PHANTOM
+            without_union = self._git_probe(
+                ["git", "-c", f"attr.tree={attr_tree}",
+                 "merge-tree", "--write-tree",
+                 f"origin/{base}", f"origin/{head}"], runner)
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("pr_watcher: union probe failed: %s", exc)
+            return CONFLICT_PHANTOM
+        # merge-tree exits 1 on a conflict and 128+ on an error. The first
+        # version of this probe passed `--attr-source`, which merge-tree does
+        # not accept, and read the resulting exit 129 as a clean merge. Only 1
+        # means conflict; anything else that is not 0 means the probe did not
+        # run, which is not evidence of anything.
+        rc = getattr(without_union, "returncode", 0)
+        if rc == 1:
+            return CONFLICT_UNION_ONLY
+        return CONFLICT_PHANTOM
+
+    def _conflict_is_real(self, state: dict, runner=None) -> bool:
+        """Whether a CONFLICTING verdict survives verification against git.
+
+        Kept as the boolean its callers ask for. `union_only` answers False
+        here: git merges the branch, so nothing in the tree needs fixing — but
+        see `classify_conflict`, because the forge is not wrong either and the
+        remedy differs.
+        """
+        return self.classify_conflict(state, runner=runner) == CONFLICT_REAL
+
+    def _base_sha(self, base: str, runner=None) -> str:
+        """The sha of `origin/<base>`, or "" if it cannot be read."""
+        try:
+            p = self._git_probe(
+                ["git", "rev-parse", f"refs/remotes/origin/{base}"], runner)
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        if getattr(p, "returncode", 1) != 0:
+            return ""
+        return (getattr(p, "stdout", "") or "").strip()
 
     def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
         """Take a green PR out of draft so the merge below can actually run.
@@ -1202,6 +1334,59 @@ class PRWatcher:
         _git("worktree", "prune")
         logger.info("pr_watcher: reclaimed worktree for %s at %s", task_id, path)
         return {"reclaimed": True, "path": str(path)}
+
+    def _audit_payloads(
+        self,
+        task_id: str,
+        actions: Tuple[str, ...],
+        pr_url: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """The `details` payloads `_count_audit_actions` counts, unaggregated.
+
+        A count answers "how many attempts", which was the whole question until
+        an attempt gained a base era to belong to. Same filters, same
+        fail-quiet: an unreadable audit trail yields [], never a partial ledger
+        dressed as a complete one.
+        """
+        get_conn = self._connection()
+        try:
+            conn = get_conn()
+        except Exception:  # noqa: BLE001
+            return []
+        try:
+            placeholders = ", ".join(["%s"] * len(actions))
+            _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+            details_col = "details::text" if _pg else "details"
+            rows = conn.execute(
+                f"SELECT {details_col} AS d FROM audit_trail "  # nosec B608
+                f"WHERE action IN ({placeholders}) "
+                f"AND {details_col} LIKE %s",
+                (*actions, f"%{task_id}%"),
+            ).fetchall()
+            out: List[Dict[str, Any]] = []
+            for r in rows:
+                blob = (dict(r) if not isinstance(r, dict) else r).get("d")
+                if not blob:
+                    continue
+                try:
+                    payload = json.loads(blob)
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                if payload.get("task_id") != task_id:
+                    continue
+                if pr_url is not None and (payload.get("pr_url") or "") != pr_url:
+                    continue
+                out.append(payload)
+            return out
+        except Exception:  # noqa: BLE001
+            return []
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _count_audit_actions(
         self,
@@ -1366,12 +1551,49 @@ class PRWatcher:
             except Exception:  # noqa: BLE001
                 pass
 
-    def _rebase_attempts(self, task_id: str, pr_url: Optional[str] = None) -> int:
-        """Prior auto-rebase attempts for this task on THIS PR, net of refunds.
+    def _attempts_against_another_base(
+        self, task_id: str, pr_url: Optional[str], base_sha: str,
+    ) -> int:
+        """Rebase attempts on this PR that were spent against a DIFFERENT base.
+
+        A rebase resolves the collision with the base as it was. When the base
+        moves and collides again, the earlier attempt describes a world that no
+        longer exists — counting it caps the PR on work already done.
+
+        A row with no recorded `base_sha` predates kpr-watch-07 and belongs to
+        an unknown era, so it is discounted too. That is the deliberate half of
+        the unstick: every PR deadlocked by the old ledger gets its budget back
+        once, and only once, because every attempt from here on records its sha.
+        """
+        return sum(
+            1
+            for payload in self._audit_payloads(
+                task_id, ("pr_watcher.rebase", "pr_watcher.rebase_failed"),
+                pr_url=pr_url,
+            )
+            if (payload.get("base_sha") or "") != base_sha
+        )
+
+    def _rebase_attempts(
+        self,
+        task_id: str,
+        pr_url: Optional[str] = None,
+        base_sha: str = "",
+    ) -> int:
+        """Prior auto-rebase attempts for this task on THIS PR and THIS base.
 
         Attempts spent on a conflict the forge only IMAGINED are refunded, so a
         PR is not permanently locked out of the one action that can clear a stale
         verdict. Floored at zero: a refund can restore a budget, never grant one.
+
+        `base_sha` narrows the ledger to the current base era. Without it the
+        cap was a one-way ratchet against a cause that RECURS: two attempts is
+        the right budget for a verdict that goes stale once and the wrong one
+        for a union collision that returns every time main appends to the same
+        file. hcx-evt-03 spent its three attempts by 15:46 on 2026-08-16 and
+        could never rebase again, while the rebase was the only thing that
+        would have worked — proved when one, run by hand on 2026-08-17, flipped
+        it to MERGEABLE in seconds.
         """
         spent = self._count_audit_actions(
             task_id, ("pr_watcher.rebase", "pr_watcher.rebase_failed"),
@@ -1379,7 +1601,11 @@ class PRWatcher:
         )
         refunded = self._count_audit_actions(
             task_id, ("pr_watcher.rebase_refund",), pr_url=pr_url)
-        return max(0, spent - refunded)
+        superseded = (
+            self._attempts_against_another_base(task_id, pr_url, base_sha)
+            if base_sha else 0
+        )
+        return max(0, spent - refunded - superseded)
 
     def _refund_rebase_budget(self, task_id: str, pr_url: str,
                               classification: str = "") -> None:
@@ -1414,15 +1640,18 @@ class PRWatcher:
             return {"attempted": False, "pushed": False,
                     "reason": "auto_rebase_on_conflict=false"}
 
-        cap = int(self.config.get("max_rebase_attempts_per_task", 2))
-        attempts = self._rebase_attempts(
-            task_id, pr_url=(state.get("url") or "").strip() or None)
-        if attempts >= cap:
-            return {"attempted": False, "pushed": False,
-                    "reason": f"rebase attempts exhausted ({attempts}/{cap})"}
-
         branch = (state.get("headRefName") or "").strip()
         base = (state.get("baseRefName") or "").strip() or self._default_branch()
+        base_sha = self._base_sha(base)
+
+        cap = int(self.config.get("max_rebase_attempts_per_task", 2))
+        attempts = self._rebase_attempts(
+            task_id, pr_url=(state.get("url") or "").strip() or None,
+            base_sha=base_sha)
+        if attempts >= cap:
+            return {"attempted": False, "pushed": False, "base_sha": base_sha,
+                    "reason": (f"rebase attempts exhausted ({attempts}/{cap}) "
+                               f"against base {base_sha[:7] or '?'}")}
 
         from tools.kanban.rebase_recovery import branch_is_task_owned
 
@@ -1447,11 +1676,15 @@ class PRWatcher:
             rebase = rebase_and_push
 
         try:
-            return rebase(task_id, branch, base=base)
+            verdict = dict(rebase(task_id, branch, base=base))
         except Exception as exc:  # noqa: BLE001 — must never stop the poll
             logger.warning("pr_watcher: auto-rebase errored for %s: %s", task_id, exc)
-            return {"attempted": True, "pushed": False,
-                    "reason": f"rebase errored: {exc}"}
+            verdict = {"attempted": True, "pushed": False,
+                       "reason": f"rebase errored: {exc}"}
+        # The era this attempt belongs to. Recorded on the audit row by the
+        # caller, and read back by _attempts_against_another_base.
+        verdict["base_sha"] = base_sha
+        return verdict
 
     def _hitl_alert(self, task_id: str, pr_url: str, reason: str) -> None:
         """Raise a FIRING alert when a task genuinely needs a human.
@@ -1505,7 +1738,8 @@ class PRWatcher:
             except Exception:  # noqa: BLE001
                 pass
 
-    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int) -> bool:
+    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int,
+                        landed: Optional[dict] = None) -> bool:
         """True when the PREMISE of a HITL alert is false — not merely that the
         forge is happy.
 
@@ -1521,13 +1755,23 @@ class PRWatcher:
         drained, which is the same "list nobody reads" failure the resolve was
         written to prevent.
 
-        The two raise sites are the resume cap (`cycle >= max_cycles`) and CI
-        that never fired, so both are negated here. Anything that adds a third
-        raise site must negate it here too, or the alert flaps again.
+        The raise sites are the resume cap (`cycle >= max_cycles`), CI that
+        never fired, and a task whose work is ALREADY on the default branch, so
+        all three are negated here. Anything that adds a fourth must negate it
+        here too, or the alert flaps again.
+
+        The already-landed case is the one most able to flap: such a PR is green
+        AND MERGEABLE by construction — that is exactly why it is dangerous —
+        so every condition above it says "recovered". Nothing about main ever
+        un-lands the commit, so the premise stays true until a human closes or
+        rebases the PR, at which point the task leaves `list_pr_tasks` and
+        `_sweep_stale_hitl_alerts` retires the alert.
         """
         if (state.get("mergeable") or "").upper() != "MERGEABLE":
             return False
         if cycle >= max_cycles:
+            return False
+        if landed and landed.get("checked") and landed.get("landed"):
             return False
         return not self._ci_never_fired(state)
 
@@ -1823,6 +2067,15 @@ class PRWatcher:
             if self.config.get("sibling_conflict_check", True)
             else {}
         )
+        # Already-landed map (trust-disc-05, extended): one `git log --grep` for
+        # the whole batch, so the DONE path can refuse to merge a PR whose work
+        # is already on main under a different number. Same once-per-cycle shape
+        # as sibling_map above.
+        landed_map = (
+            self._landed_map(tasks)
+            if self.config.get("landed_check_on_poll", True)
+            else {}
+        )
 
         for task in tasks:
             report.tasks_checked += 1
@@ -1857,7 +2110,15 @@ class PRWatcher:
             # watcher went on to merge. Re-emitting the same key every cycle is
             # harmless: fire_event only promotes wakes that are still pending.
             self._emit_wake_events(pr_url, classification, state)
-            if classification == KanbanState.MERGE_CONFLICT and not self._conflict_is_real(state):
+            # WHICH KIND of conflict (kpr-watch-07). Computed once per task per
+            # poll and reused by the rebase and resume paths below — a second
+            # call would re-run two merges against a live forge every 30s.
+            conflict_kind = (
+                self.classify_conflict(state)
+                if classification == KanbanState.MERGE_CONFLICT
+                else ""
+            )
+            if conflict_kind and conflict_kind != CONFLICT_REAL:
                 # The forge's cached verdict disagrees with git. git wins — but
                 # knowing that is not a remedy, and the obvious remedy is wrong.
                 #
@@ -1884,12 +2145,25 @@ class PRWatcher:
                 # again — stuck at exactly the moment we can prove it is fine.
                 # Refund ONCE per PR: enough to act on a verdict we have disproved,
                 # bounded so a forge that keeps lying cannot buy unlimited pushes.
+                #
+                # The base-era rule in _rebase_attempts is what makes this
+                # survivable for the RECURRING half (union_only): the refund is
+                # a one-shot, and a collision that returns on every push to main
+                # needs more than one. The refund stays because a phantom really
+                # does only need one.
                 if self._count_audit_actions(
                         task["id"], ("pr_watcher.rebase_refund",), pr_url=pr_url) == 0:
                     self._refund_rebase_budget(task["id"], pr_url)
-                logger.warning(
-                    "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
-                    "rebasing to force the forge to recompute", pr_url)
+                if conflict_kind == CONFLICT_UNION_ONLY:
+                    logger.warning(
+                        "pr_watcher: %s conflicts for the FORGE but not for git — "
+                        "a .gitattributes merge=union rule resolves it and GitHub "
+                        "does not apply one. Rebasing writes that resolution into "
+                        "the branch.", pr_url)
+                else:
+                    logger.warning(
+                        "pr_watcher: %s is reported CONFLICTING but merges cleanly — "
+                        "rebasing to force the forge to recompute", pr_url)
 
                 # THE RESUME BUDGET NEEDS THE SAME PROTECTION THE REBASE BUDGET
                 # ALREADY HAS. A phantom conflict does not only cost rebases: the
@@ -1941,7 +2215,8 @@ class PRWatcher:
             #
             # The resolve is deduped on `source` and is a no-op when nothing is
             # firing, so calling it on every healthy pass costs nothing.
-            if self._hitl_recovered(state, cycle, max_cycles):
+            if self._hitl_recovered(state, cycle, max_cycles,
+                                    landed=landed_map.get(task["id"])):
                 self._resolve_hitl_alert(task["id"])
 
             # A CLOSED PR cannot be rebased, resumed or merged, so an alert
@@ -2118,6 +2393,71 @@ class PRWatcher:
                             report.actions.append(action)
                             self._audit(action)
                             continue
+
+                    # ALREADY ON MAIN. The board tracks task -> PR; nothing
+                    # checked task -> main, so a PR whose work merged under a
+                    # different number stays green and mergeable, and merging it
+                    # applies a diff against a branch that has moved on — a
+                    # revert wearing a feature's clothes. This must run BEFORE
+                    # _auto_merge; after it, the damage is a commit on main.
+                    #
+                    # Advisory by default and audited either way. `enforce`
+                    # (KANBAN_LANDED_CHECK) holds the merge for a human, which
+                    # is the same posture landed_check uses at seed and dispatch
+                    # time — one switch, not a second one invented here.
+                    #
+                    # SURVEYED at THIS call site before wiring, because the
+                    # existing survey measured the dispatch population and does
+                    # not transfer: 2026-08-16, the 6 task-linked open PRs the
+                    # merge path actually sees produced 0 fires (1 body-only
+                    # reference, which never blocks). Against the three known
+                    # true positives — rem-hyg-02 (#1738, closed by hand that
+                    # day), ctx-perf-02 (#1646) and ctx-trust-02 (#1651) — it
+                    # fires on 3 of 3 with blocking-tier `subject` evidence.
+                    landed = landed_map.get(task["id"]) or {}
+                    if landed.get("checked") and landed.get("landed"):
+                        try:
+                            from tools.kanban.landed_check import (
+                                format_warning, mode as _landed_mode,
+                            )
+                            detail = format_warning(landed).strip()
+                            enforcing = _landed_mode() == "enforce"
+                        except Exception as _lc_exc:  # noqa: BLE001
+                            detail = f"task {task['id']} already on the default branch"
+                            enforcing = False
+                            logger.debug(
+                                "pr_watcher: landed-check formatting failed: %s", _lc_exc)
+                        logger.warning(
+                            "pr_watcher: %s — %s is ALREADY on the default branch "
+                            "(evidence: %s); merging this PR may REVERT it",
+                            pr_url, task["id"], landed.get("confidence"),
+                        )
+                        self._audit(WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="already_landed_hold" if enforcing
+                                   else "already_landed_warn",
+                            reason=detail[:500],
+                            resume_cycle=cycle,
+                        ))
+                        if enforcing:
+                            self._hitl_alert(
+                                task["id"], pr_url,
+                                "the work for this task is already on the default "
+                                "branch under a different PR; merging this one may "
+                                "revert it. Verify, then close or rebase.",
+                            )
+                            action = WatcherAction(
+                                task_id=task["id"], pr_url=pr_url,
+                                classification="done", action="wait",
+                                reason=(f"held: {task['id']} already on the default "
+                                        f"branch (evidence: {landed.get('confidence')})"),
+                                resume_cycle=cycle,
+                            )
+                            report.actions.append(action)
+                            self._audit(action)
+                            continue
+
                     approved_ok = (
                         not require_approval
                         or ec.is_approved_and_passing(state)
@@ -2242,6 +2582,7 @@ class PRWatcher:
                         # Deliberately the UNCHANGED resume count: a rebase is
                         # not a resume and must not consume that budget.
                         resume_cycle=cycle,
+                        base_sha=verdict.get("base_sha", ""),
                     )
                     report.actions.append(action)
                     self._audit(action)
@@ -2255,12 +2596,48 @@ class PRWatcher:
                         action="rebase_failed",
                         reason=verdict.get("reason", "rebase failed"),
                         resume_cycle=cycle,
+                        base_sha=verdict.get("base_sha", ""),
                     ))
                 else:
                     logger.debug(
                         "pr_watcher: no auto-rebase for %s — %s",
                         task["id"], verdict.get("reason"),
                     )
+
+                # NO AGENT CAN FIX A CONFLICT THAT IS NOT IN THE TREE.
+                #
+                # For union_only and phantom the branch merges clean under git,
+                # so a resumed session opens the files, finds no conflict
+                # markers and nothing to resolve, and pushes nothing. Ten
+                # resumes went into hcx-evt-03 that way and fifteen into
+                # kpr-dup-03; all they bought was the escalation that follows a
+                # spent budget, after which pr_watcher goes quiet for good and
+                # the board shows AWAITING MERGE with no explanation.
+                #
+                # The rebase above IS the remedy, so this sits after it: when a
+                # rebase was possible it already ran and we never get here.
+                # Reported as a `wait` rather than skipped in silence — a poll
+                # that decides to do nothing has to say what it decided, which
+                # is the complaint that opened this card.
+                if conflict_kind in (CONFLICT_UNION_ONLY, CONFLICT_PHANTOM):
+                    why = (
+                        "only a .gitattributes merge=union rule the forge does "
+                        "not apply" if conflict_kind == CONFLICT_UNION_ONLY
+                        else "a stale cached verdict"
+                    )
+                    report.actions.append(WatcherAction(
+                        task_id=task["id"], pr_url=pr_url,
+                        classification=classification.value,
+                        action="wait",
+                        reason=(
+                            f"{conflict_kind}: git merges this branch cleanly — "
+                            f"the forge reports CONFLICTING because of {why}. "
+                            f"A resume cannot help; {verdict.get('reason', 'no rebase')}"
+                        ),
+                        resume_cycle=cycle,
+                        base_sha=verdict.get("base_sha", ""),
+                    ))
+                    continue
 
             # Resume classes: CI_FAILED / MERGE_CONFLICT / CHANGES_REQUESTED
             if cycle >= max_cycles:

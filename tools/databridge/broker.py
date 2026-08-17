@@ -23,8 +23,15 @@ which applies, in order:
 4. **Outbound redaction** — any free-text filter value is sanitized
    fail-closed, because a query string is the one part of a fetch that carries
    caller content.
-5. **Egress guard** — applied in ``saas_base`` before the socket opens.
-6. **Audit** — one append-only row per call, whatever the outcome. An audit
+5. **Connection resolution** — the grant's ``connection_id`` is read from
+   ``db_connections`` and handed to the connector as its config, and any
+   ``auth_secret_ref`` on that row is resolved through the configured secret
+   backend. An unreadable connection or an unresolvable credential is a
+   refusal, not an empty config: running a connector on ``{}`` is how a
+   per-connection ``egress_allowlist`` came to be declared and never enforced.
+6. **Egress guard** — applied in the connector before the socket opens
+   (``saas_base._guard_egress``; ``rss_connector`` carries its own copy).
+7. **Audit** — one append-only row per call, whatever the outcome. An audit
    write that fails is raised, not logged: a decision that could not be
    recorded must not read as a clean call, and rows are withheld from the
    caller rather than delivered unaudited.
@@ -170,6 +177,80 @@ def _redact_outbound(text: str) -> tuple[str, int]:
     return sanitized, count
 
 
+#: Config key a resolved ``auth_secret_ref`` is injected under when a connection
+#: does not name its own. SaaS connectors read their credential from their config
+#: dict (see ``saas_base._build_auth_headers``), and ``api_key`` is the key that
+#: docstring uses.
+DEFAULT_SECRET_CONFIG_KEY = "api_key"
+
+
+def _connection_config(connection_id: str) -> dict:
+    """Load the db_connections row for *connection_id* and return its config.
+
+    ``connection_id`` was decorative until now: the grant carried it, the broker
+    passed it through to ``ConnectorRequest`` and nothing ever read the row, so
+    the connector ran on an empty config — which meant, among other things, that
+    a per-connection ``egress_allowlist`` was declared and never enforced.
+
+    Fail-closed in both directions. A grant naming a connection whose row cannot
+    be read is refused rather than run on ``{}``: an unreadable connection is
+    the case where we cannot say what the connector would contact or as whom.
+    A credential reference that will not resolve is refused for the same reason,
+    and the resolved VALUE is never logged or returned — it goes into the config
+    dict handed to ``connect()`` and nowhere else.
+
+    Raises BrokerDenied.
+    """
+    try:
+        from icdev.tools.databridge.connection_manager import (
+            get_connection as _get_connection_row,
+            resolve_secret,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise BrokerDenied(f"connection manager unavailable: {exc}") from exc
+
+    row = _get_connection_row(connection_id)
+    if not row:
+        # get_connection() swallows a store failure into None, so this covers
+        # both "no such row" and "could not ask". Stated as the ambiguity it is
+        # rather than asserting the row is missing.
+        raise BrokerDenied(
+            f"connection {connection_id!r} could not be read from db_connections "
+            f"(no such row, or the store is unreachable)"
+        )
+
+    config: dict[str, Any] = {}
+    raw = row.get("config_yaml") or ""
+    if str(raw).strip():
+        try:
+            parsed = yaml.safe_load(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise BrokerDenied(
+                f"connection {connection_id!r} has unparseable config_yaml: {exc}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise BrokerDenied(
+                f"connection {connection_id!r} config_yaml is not a mapping"
+            )
+        config = parsed
+
+    secret_ref = str(row.get("auth_secret_ref") or "").strip()
+    if secret_ref:
+        try:
+            secret = resolve_secret(secret_ref)
+        except Exception as exc:  # noqa: BLE001
+            # The reference, never the value — the ref is a location, which is
+            # what an operator needs to fix this, and the value is what must not
+            # reach a log line.
+            raise BrokerDenied(
+                f"credential for connection {connection_id!r} could not be "
+                f"resolved from {secret_ref!r}: {exc}"
+            ) from exc
+        config[str(config.get("secret_config_key") or DEFAULT_SECRET_CONFIG_KEY)] = secret
+
+    return config
+
+
 def _audit(agent_id: str, connector: str, table: str, decision: str,
            reason: str = "", rows: int = 0, redactions: int = 0) -> None:
     """Append one row per call, allowed or denied.
@@ -310,7 +391,8 @@ def fetch(
     except BrokerDenied as exc:
         return _deny(str(exc))
 
-    # 5. Dispatch. egress_guard fires inside saas_base before the socket opens.
+    # 5. Dispatch. egress_guard fires in the connector before the socket opens.
+    connection_id = str(grant.get("connection_id") or "")
     try:
         from icdev.tools.databridge.connector import ConnectorRequest
         from icdev.tools.databridge.registry import get_connector_instance
@@ -319,13 +401,26 @@ def fetch(
         if instance is None:
             return _deny(f"connector {connector!r} is not registered")
 
+        # A grant with no connection_id keeps the old behaviour — an empty
+        # config — because a connector needing neither endpoint nor credential
+        # is a legitimate shape and denying it would be a new refusal with no
+        # security story behind it.
+        config = _connection_config(connection_id) if connection_id else {}
+        if not instance.connect(config):
+            return _deny(
+                f"connector {connector!r} refused to connect using connection "
+                f"{connection_id or '<none>'!r}"
+            )
+
         response = instance.read(ConnectorRequest(
             table_name=table,
-            connection_id=str(grant.get("connection_id") or ""),
+            connection_id=connection_id,
             query=query,
             limit=limit,
             filters=safe_filters,
         ))
+    except BrokerDenied as exc:  # connection record / credential resolution
+        return _deny(str(exc))
     except PermissionError as exc:  # egress guard, credential refusal
         return _deny(f"blocked: {exc}")
     except Exception as exc:  # noqa: BLE001
