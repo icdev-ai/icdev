@@ -2087,12 +2087,19 @@ tests/test_lesson_learned_kph.py
 # 2026-08-16: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH,
 # 378 tests, ZERO skipped) and green IN-SUITE appended after the existing list in
 # one process — the order-dependence half CLAUDE.md requires, which the census
-# does not cover in either direction.
+# does not cover in either direction. The in-suite run was the full gated list,
+# 346 targets in one process: 8,903 passed, 0 failed, 45 skipped — the same 45
+# the pre-existing census accounts for, 0 unattributed and 0 unaccounted, so
+# these 25 contribute no unmeasured surface.
 #
-# args/test_gating_gate.yaml's backlog_max falls 1765 -> 1740, exactly the 25
-# moved. rem-tst-02 already surrendered the 19 slots of headroom main was
-# carrying, so the ceiling now equals the effective backlog and this batch keeps
-# it there, as the "no headroom, deliberately" note in that file specifies.
+# The census itself falls by exactly the 25 moved. args/test_gating_gate.yaml's
+# backlog_max falls 1765 -> 1739, which is 26: the extra 1 is headroom #1772
+# opened while this branch was in flight by gating tests/test_databridge_broker.py
+# without lowering the ceiling with it. Surrendering it here is the same call
+# rem-tst-02 made on the 19 slots it found, and for the reason the "no headroom,
+# deliberately" note in that file gives — headroom is room for the gap to regrow
+# unobserved. The ceiling therefore equals the effective backlog again, and per
+# the ratchet may only go down from here.
 tests/test_agent_mailbox_placeholders.py
 tests/test_integrity_event_emitter.py
 tests/test_lens_workflow_patterns.py
