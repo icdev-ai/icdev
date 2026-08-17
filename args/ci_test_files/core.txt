@@ -1828,6 +1828,19 @@ tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py
 tests/test_project_prefix_scope.py
 tests/test_canvas_dedicated_pg_database.py
+
+# hcx-live-02 — args/extension_config.yaml declared a hook_points: block with
+# per-point enabled/allow_modification/max_handlers/timeout_ms for all ten
+# points, and ExtensionManager.dispatch() read NONE of them: the only working
+# kill switch was the global one, which also stops the nine chat handlers in
+# use. Nothing counted a dispatch either, so capability_consumption could not
+# tell a consumed hook point from one never called in the platform's history.
+# The first dispatch under the new telemetry found 081_build_kanban_sync
+# raising TypeError on EVERY chat message since it landed — registered,
+# enabled, and structurally incapable of running, swallowed by
+# catch_handler_exceptions. 23 tests, <1s: isolated managers, no builtins
+# loaded except in the one signature test, SQLite temp file for the telemetry.
+tests/test_extension_dispatch_governance.py
 # hcx-live-01 pins TOOL_EXECUTE_BEFORE to a production dispatcher. The hook
 # point had ten declared siblings and no caller outside tests -- the GATING
 # point, and the whole reason the behavioral tier exists. The seven ordering

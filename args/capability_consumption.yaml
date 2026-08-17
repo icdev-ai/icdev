@@ -81,6 +81,15 @@ classes:
       counting a verdict rather than a denial and audit_chain a chained row
       rather than a tamper finding. applied vs declined stay separate in
       `extra`.
+  extension_hook_point:
+    enabled: true
+    description: >-
+      Extension hook points present in both the ExtensionPoint enum and an
+      enabled args/extension_config.yaml hook_points block. Consumption is a
+      recorded ExtensionManager.dispatch on the 'extension' surface of
+      runtime_invocations. Ten declared; before hcx-live-02 nothing counted a
+      dispatch at all, so a point with no call site read exactly like a point on
+      the chat hot path.
 
 # ---------------------------------------------------------------------------
 # Substrate probing (#trust-disc-04)
