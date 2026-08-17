@@ -2257,3 +2257,11 @@ tests/test_cache_regression.py
 # genuinely CLOSED-unmerged link is still repaired. Also pins the fail-safe
 # direction — an unverifiable landed check holds instead of rolling back.
 tests/kanban/test_completed_work_is_not_rewritten.py
+# kpr-watch-08. The survey that decides whether hold_on_sibling_conflict may
+# be widened to the union-merged paths, and the tie-break narrowing it found.
+# Gated because the survey's whole value is being trustworthy in ONE direction
+# — it must not under-report how much serialization widening would cause — and
+# that rests on details a refactor would quietly break: `*` not crossing `/`,
+# union patterns read from .gitattributes rather than hardcoded, and an
+# unavailable corpus exiting 2 instead of printing a clean report.
+tests/ci/test_sibling_hold_survey.py

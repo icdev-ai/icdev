@@ -559,7 +559,7 @@ def _pr_number(url: str) -> int:
     return int(m.group(1)) if m else 1 << 30
 
 
-def _wins_sibling_tiebreak(pr_url: str, siblings) -> bool:
+def _wins_sibling_tiebreak(pr_url: str, siblings, blocked=None) -> bool:
     """True when THIS PR is the one that should merge first among its siblings.
 
     THE DEADLOCK THIS BREAKS. hold_on_sibling_conflict exists to SERIALISE merges
@@ -578,9 +578,45 @@ def _wins_sibling_tiebreak(pr_url: str, siblings) -> bool:
 
     The guard itself is unchanged for everyone else — the losers still wait, and
     still rebase afterwards.
+
+    `blocked` — urls of siblings that CANNOT merge right now (draft, or the forge
+    reports CONFLICTING) — are dropped from the tie-break, because the same
+    sentence above applies one level up. A PR held behind a sibling that cannot
+    merge is not being serialised behind it; it is waiting for a queue position
+    that will never come free, and the hold is re-evaluated every poll so the
+    wait never expires. MEASURED 2026-08-17 by tools/ci/sibling_hold_survey.py:
+    of six open PRs, #1769 was held behind #1744 (a draft with a real CLAUDE.md
+    conflict, open over a day) and #1781 behind #1773 — under the CURRENT
+    posture, not a hypothetical widened one.
+
+    Dropping them cannot let two PRs that share a file merge together, which is
+    the invariant the guard exists for: a sibling excluded here is one the forge
+    would refuse to merge anyway. And it is not permanent — the exclusion is
+    recomputed every poll, so a blocker that gets rebased back to MERGEABLE
+    rejoins the queue and wins it.
     """
     mine = _pr_number(pr_url)
-    return all(mine < _pr_number(other) for other in (siblings or {}))
+    skip = set(blocked or ())
+    return all(
+        mine < _pr_number(other)
+        for other in (siblings or {})
+        if other not in skip
+    )
+
+
+def _pr_can_merge(state: dict) -> bool:
+    """Whether an open PR could merge at all right now.
+
+    Unknown counts as MERGEABLE: erring the other way would drop a sibling from
+    the tie-break on no evidence, and letting a PR past a hold is the direction
+    with consequences.
+    """
+    if (state or {}).get("draft"):
+        return False
+    mergeable = (state or {}).get("mergeable")
+    if mergeable is None:
+        return True
+    return str(mergeable).upper() != "CONFLICTING"
 
 
 def repo_default_branch(*, runner=None, gh_bin: str = "gh") -> str:
@@ -844,16 +880,21 @@ class PRWatcher:
             logger.debug("pr_watcher: wake event emit failed for %s: %s", pr_url, exc)
             return {"keys": [], "promoted": [], "error": str(exc)}
 
-    def _open_pr_files(self) -> Dict[str, set]:
-        """Map every open PR's url -> set of changed file paths (single gh call).
+    def _open_pr_index(self) -> Dict[str, dict]:
+        """url -> {files, mergeable, draft} for every open PR (single gh call).
+
+        `mergeable`/`draft` are what let the tie-break skip a sibling that cannot
+        merge — see `_wins_sibling_tiebreak`. Fetched in the SAME call that
+        already lists the files, so the guard gained a second input without a
+        second API round-trip per cycle.
 
         Best-effort: returns {} if gh is unavailable / errors, so the sibling
         check degrades to a no-op rather than blocking the watcher.
         """
         try:
             proc = self._pr_list_runner(
-                ["gh", "pr", "list", "--state", "open", "--json", "url,files",
-                 "--limit", "200"],
+                ["gh", "pr", "list", "--state", "open", "--json",
+                 "url,files,mergeable,isDraft", "--limit", "200"],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=60,
             )
@@ -863,13 +904,24 @@ class PRWatcher:
         except Exception as exc:  # noqa: BLE001
             logger.debug("pr_watcher: open-PR file listing failed: %s", exc)
             return {}
-        out: Dict[str, set] = {}
+        out: Dict[str, dict] = {}
         for pr in data:
             url = pr.get("url")
             if not url:
                 continue
-            out[url] = {f.get("path", "") for f in (pr.get("files") or []) if f.get("path")}
+            out[url] = {
+                "files": {
+                    f.get("path", "")
+                    for f in (pr.get("files") or []) if f.get("path")
+                },
+                "mergeable": pr.get("mergeable"),
+                "draft": bool(pr.get("isDraft")),
+            }
         return out
+
+    def _open_pr_files(self) -> Dict[str, set]:
+        """Map every open PR's url -> set of changed file paths."""
+        return {url: e["files"] for url, e in self._open_pr_index().items()}
 
     def _landed_map(self, tasks: List[dict]) -> Dict[str, dict]:
         """task_id -> landed-check report for every task with an open PR.
@@ -2062,11 +2114,18 @@ class PRWatcher:
         # Sibling-file-conflict map (kph): fetch every open PR's changed files ONCE
         # per cycle so the DONE path can flag a merge candidate that races another
         # open PR on the same source file (the "two different blueprint.py" class).
-        sibling_map = (
-            self._open_pr_files()
+        sibling_index = (
+            self._open_pr_index()
             if self.config.get("sibling_conflict_check", True)
             else {}
         )
+        sibling_map = {url: e["files"] for url, e in sibling_index.items()}
+        # Siblings that cannot merge at all right now. They are dropped from the
+        # tie-break below: waiting behind a PR the forge would refuse is not
+        # serialisation, it is a queue position that never comes free.
+        blocked_siblings = {
+            url for url, e in sibling_index.items() if not _pr_can_merge(e)
+        }
         # Already-landed map (trust-disc-05, extended): one `git log --grep` for
         # the whole batch, so the DONE path can refuse to merge a PR whose work
         # is already on main under a different number. Same once-per-cycle shape
@@ -2382,7 +2441,8 @@ class PRWatcher:
                             logger.debug(
                                 "pr_watcher: sibling lesson hook failed: %s", _ll_exc)
                         if (self.config.get("hold_on_sibling_conflict", False)
-                                and not _wins_sibling_tiebreak(pr_url, sib)):
+                                and not _wins_sibling_tiebreak(
+                                    pr_url, sib, blocked=blocked_siblings)):
                             action = WatcherAction(
                                 task_id=task["id"], pr_url=pr_url,
                                 classification="done", action="wait",
