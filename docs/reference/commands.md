@@ -6457,6 +6457,8 @@ python tools/ci/ungated_test_census.py --run --limit 50 --workers 4    # sample 
 python tools/ci/ungated_test_census.py --run --deadline-s 3600 --timeout 240   # unstarted -> not-reached
 python tools/ci/ungated_test_census.py --verify docs/testing/ungated_test_census.json  # measured + not-reached + out-of-scope == backlog
 python tools/ci/ungated_test_census.py --summarize docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json   # group the FAILING modules by failure shape
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json --red-md docs/testing/ungated_red_modules.md
 
 # RAW BOARD-WRITER census (rem-hyg-05) — a kanban INSERT that bypasses the canonical seeder.
 # tools/kanban/task_factory.py opens with "Canonical task seeder — never use raw INSERT

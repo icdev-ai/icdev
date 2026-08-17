@@ -2130,4 +2130,58 @@ tests/test_aggregation_guard.py
 # the SQLite init DDL kept in step with it, and an audit-write failure surfacing
 # instead of being swallowed. No network, no live DB (conftest forces SQLite).
 tests/test_databridge_broker.py
+
+# rem-tst-04 — third promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02 and rem-tst-03, on the next 25. The census is the
+# shortlist and never the evidence: it answers "green ALONE" for all 1,792
+# grandfathered modules and says nothing about order-dependence, so both halves
+# were re-measured on this branch on 2026-08-17 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one under 4.5s alone, 292 tests for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_iqe_data_seeds.py
+tests/test_dcpr_anomaly_detector.py
+tests/test_heartbeat_kanban_wakeup.py
+tests/test_iqe_infra_seeds.py
+tests/test_eval_suggestions.py
+tests/test_dic_filters.py
+tests/test_eval_harness_anomaly_detection.py
+tests/test_dcpr_append_only_tables.py
+tests/test_iqe_compliance_seeds.py
+tests/test_govcon_rfi_parser.py
+tests/test_dcpr_ai_mapper_llm.py
+tests/test_iqe_compliance_adapter.py
+tests/test_dic_layout_probe.py
+tests/quality/test_rigor_gates.py
+tests/test_embedding_feasibility.py
+tests/test_pipeline_delta.py
+tests/test_atlas_red_team.py
+tests/test_helm_emitter.py
+tests/test_ingestion_pipeline.py
+tests/ci/test_pr_watcher_unlinked_sweep.py
+tests/test_dwo_mcp_node_type.py
+tests/rag/test_retriever_common.py
+tests/test_alert_service_ai_narrative.py
+tests/test_dwo_event_tables.py
+tests/test_ideation_frames.py
+
+# rem-tst-04, the tool half. Gated in the PR that adds it, per the test-gating
+# policy — the red report is only worth reading if its arithmetic is checked, and
+# a check that never runs in CI cannot do that. Covers the failure-shape
+# classifier (including the two lines that made it wrong: a driver name quoted
+# inside an assertion message, and a table named before the word "table"), the
+# refusal to bucket a line with no usable signature, and the committed
+# docs/testing/ungated_red_modules.md agreeing with the committed census.
+tests/ci/test_ungated_red_report.py
 tests/test_databridge_first_grant.py

@@ -77,7 +77,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 #: This checkout, derived from `__file__` and never from `os.getcwd()` or from
 #: whatever `import tools` happens to resolve to.
@@ -686,6 +686,370 @@ def _signature(line: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# RED REPORT — the shape of the failures, not their number (rem-tst-04)
+# --------------------------------------------------------------------------- #
+# The promotion batches consume the `passed` rows and the census's own markdown
+# already tabulates raw first-failure lines. That table is nearly all singletons,
+# because the raw line carries the test's own prose: 93 reds render as ~80
+# distinct "signatures" and a reader learns nothing about what work they are.
+#
+# This groups them by FAILURE SHAPE instead — the thing that decides who fixes it
+# and whether twenty reds are one job or twenty. Deliberately NOT merged, because
+# each sends you somewhere different:
+#
+#   schema-drift        the table/column exists in the DDL, not in the DB the
+#                       test got. Fix is a migration or a conftest schema entry.
+#   sql-dialect         PG placeholders reaching SQLite (or the reverse). Fix is
+#                       in the call site's SQL, not in the test.
+#   import-or-attribute the module does not import, or the attribute the test
+#                       patches is gone. Batchable with its siblings.
+#   http-auth           401/403/CSRF from a test client that was never
+#                       authenticated. Fixture-shaped, not behaviour-shaped.
+#   db-error-unspecified a sqlite3/psycopg exception whose REASON pytest
+#                       truncated out of the short summary. It is NOT schema
+#                       drift and NOT a dialect bug until someone re-runs it, and
+#                       filing it as either would be a guess presented as a
+#                       finding.
+#   error-dominant      the module ERRORED more than it failed — setup/teardown,
+#                       so no assertion was ever reached.
+#   assertion           a readable assertion about behaviour. The residue, and
+#                       the biggest bucket: these are N separate jobs.
+#   runtime-exception   a non-assertion exception that is not a DB error.
+#   unclassified        the recorded line carries no usable signature at all.
+#
+# The last one is why this is honest: `FAILED tests/x.py::y - ...` is what the
+# census recorded for some rows, and a classifier that never says "I cannot tell"
+# will always find a bucket for them.
+RED_GROUPS: Tuple[Tuple[str, str, str], ...] = (
+    ("schema-drift", "Missing table or column",
+     "The DDL and the database the test actually got have diverged. Fix is a migration, "
+     "or a `MINIMAL_ICDEV_SCHEMA` entry in `tests/conftest.py` — not the test."),
+    ("sql-dialect", "SQL dialect / placeholder mismatch",
+     "PostgreSQL `%s` placeholders reaching SQLite (or `?` reaching PG). Fix is in the "
+     "runtime call site's SQL, per the CLAUDE.md rule that `translate_sql` is an "
+     "init-fallback and never load-bearing."),
+    ("import-or-attribute", "Import / missing attribute",
+     "The module does not import, or the attribute the test patches no longer exists. "
+     "Batchable: one import fix commonly clears several files."),
+    ("http-auth", "Unauthenticated test client (401 / 403 / CSRF)",
+     "The route is reachable but the test client carries no session or CSRF token. "
+     "Fixture-shaped — it says nothing about the behaviour under test."),
+    ("db-error-unspecified", "DB driver error, reason truncated",
+     "A `sqlite3.*` / `psycopg.*` exception whose reason pytest cut out of the short "
+     "summary line. NOT counted as schema drift or as a dialect bug: those are "
+     "different fixes and the recorded evidence does not distinguish them. Re-run the "
+     "module alone to resolve it."),
+    ("error-dominant", "Errored in setup, never asserted",
+     "The module produced more pytest ERRORs than failures, so its tests never reached "
+     "an assertion. The fixture is the defect."),
+    ("assertion", "Behavioural assertion",
+     "A readable assertion that the code under test does not satisfy. The residue after "
+     "the shared shapes are pulled out, and the bucket with the least leverage: these "
+     "are individual jobs."),
+    ("runtime-exception", "Other runtime exception",
+     "A non-assertion exception that is not a DB driver error — an unavailable provider, "
+     "a KeyError on a response, a domain error raised by the code under test."),
+    ("unclassified", "No usable signature recorded",
+     "The census recorded a first-failure line with the reason truncated away entirely. "
+     "These need a re-run before they can be grouped; they are reported rather than "
+     "distributed, because a classifier that always finds a bucket is not measuring."),
+)
+
+_RED_GROUP_KEYS: Tuple[str, ...] = tuple(key for key, _title, _why in RED_GROUPS)
+
+_SCHEMA_DRIFT_RE = re.compile(
+    r"no such table:|no such column:|has no column named|no such index:"
+    # The table name comes BEFORE the word in this one: `dic_doc_freshness table
+    # missing from MINIMAL_ICDEV_SCHEMA`. Same defect, same fix.
+    r"|missing from MINIMAL_ICDEV_SCHEMA",
+    re.IGNORECASE,
+)
+_SQL_DIALECT_RE = re.compile(
+    r'near "%": syntax error'
+    r"|SQL fragments with `\?`"
+    r"|MATCH \?"
+    r"|%s\b.{0,80}\bplaceholder"
+    r"|\b(SELECT|INSERT|UPDATE|DELETE)\b.{0,200}%s"
+)
+_IMPORT_RE = re.compile(
+    r"\bModuleNotFoundError\b|\bImportError\b"
+    r"|AttributeError: (module|<module)"
+    r"|does not have the attribute"
+)
+_HTTP_AUTH_RE = re.compile(r"CSRF|assert 40[13] ==|failed 40[13]\b|== 40[13]\b")
+# ANCHORED at the start of the reason on purpose: the DB error has to BE the
+# failure. Two of these reds are assertions whose MESSAGE quotes a docstring
+# that names the sqlite3 driver, and an unanchored match files them as database
+# errors nobody can reproduce.
+_DB_ERROR_RE = re.compile(r"^(E\s+)?(sqlite3|psycopg\d*|psyc)\.")
+_ASSERTION_RE = re.compile(r"^(E\s+)?(assert\b|AssertionError|Failed:)")
+# pytest's `-q` short summary truncates the reason to the terminal width, so the
+# exception class survives as a prefix and nothing else does. Only accepted when
+# the line actually ENDS in the ellipsis — otherwise this would swallow whole
+# readable lines that merely start with "ass".
+_TRUNCATED_ASSERTION_RE = re.compile(r"- (assert|Assert|asse|Asse|ass|Ass)[\w ]*\.{3}$")
+_EXCEPTION_RE = re.compile(r"^(E\s+)?[A-Za-z_][\w.]*(Error|Exception|Warning)\b")
+_TRUNCATED_EXCEPTION_RE = re.compile(r"- [A-Za-z_][\w.]*(Error|Exception|Err|E)\.{3}$")
+
+
+def classify_red(first_failure: str, counts: Optional[Mapping[str, int]] = None) -> str:
+    """Map one recorded failure onto a RED_GROUPS key. First match wins.
+
+    Order matters and is the whole design. `http-auth` is tried before
+    `error-dominant` because a module that errors in teardown *because* its
+    request 403'd is an auth problem, not a fixture problem; `import-or-attribute`
+    is tried before `error-dominant` because an ImportError raised in setup names
+    its own cause and the error count adds nothing.
+    """
+    line = (first_failure or "").strip()
+    reason = line.split(" - ", 1)[1] if line.startswith(("FAILED ", "ERROR ")) and " - " in line else line
+    counts = counts or {}
+
+    if _SCHEMA_DRIFT_RE.search(line):
+        return "schema-drift"
+    if _SQL_DIALECT_RE.search(line):
+        return "sql-dialect"
+    if _IMPORT_RE.search(line):
+        return "import-or-attribute"
+    if _HTTP_AUTH_RE.search(line):
+        return "http-auth"
+    if _DB_ERROR_RE.match(reason):
+        return "db-error-unspecified"
+    if int(counts.get("error", 0)) > int(counts.get("failed", 0)):
+        return "error-dominant"
+    if _ASSERTION_RE.match(reason) or _TRUNCATED_ASSERTION_RE.search(line):
+        return "assertion"
+    if _EXCEPTION_RE.match(reason) or _TRUNCATED_EXCEPTION_RE.search(line):
+        return "runtime-exception"
+    return "unclassified"
+
+
+def gated_allowlist(root: Optional[Path] = None) -> List[str]:
+    """Every module currently named in args/ci_test_files/*.txt."""
+    base = (root or repo_root()) / "args" / "ci_test_files"
+    entries: List[str] = []
+    for path in sorted(base.glob("*.txt")) if base.is_dir() else []:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            entry = line.strip()
+            if entry and not entry.startswith("#"):
+                entries.append(entry)
+    return entries
+
+
+def red_report(
+    report: Mapping[str, object], root: Optional[Path] = None
+) -> Dict[str, object]:
+    """Group the census's `failed` rows by failure shape.
+
+    Scope is EXACTLY `status == failed`, so the group counts sum to the census's
+    own failing count and the two artifacts can be checked against each other.
+    `timeout` and `no-tests` are neither green nor failing; they are carried
+    alongside, counted, and never folded in.
+
+    `already_gated` is the intersection with the CI allowlist. It is NOT an
+    error and it is NOT filtered out: the census is a snapshot, and a module
+    recorded red there may since have been fixed and gated in the PR that fixed
+    it (`tests/git/test_manifest_merge_rehearsal.py` is exactly that). Naming
+    them is how a reader tells a stale row from a live one — silently dropping
+    them would make the report's own counts stop matching the census.
+    """
+    results: List[Dict[str, object]] = list(report.get("results") or [])  # type: ignore[arg-type]
+    failing = [r for r in results if r.get("status") == STATUS_FAILED]
+
+    grouped: Dict[str, List[Dict[str, object]]] = {key: [] for key in _RED_GROUP_KEYS}
+    for row in failing:
+        key = classify_red(str(row.get("first_failure") or ""), row.get("counts") or {})  # type: ignore[arg-type]
+        grouped[key].append({
+            "file": row.get("file"),
+            "counts": row.get("counts") or {},
+            "first_failure": row.get("first_failure") or "",
+            "signature": _signature(str(row.get("first_failure") or "")),
+        })
+
+    claimed = int((report.get("counts") or {}).get(STATUS_FAILED, 0))  # type: ignore[union-attr]
+    total = sum(len(v) for v in grouped.values())
+    try:
+        gated = set(gated_allowlist(root))
+    except OSError:
+        gated = set()
+    return {
+        "already_gated": sorted(str(r["file"]) for r in failing if r.get("file") in gated),
+        "source": "docs/testing/ungated_test_census.json",
+        "failing_claimed": claimed,
+        "failing_grouped": total,
+        "accounted_for": total == claimed == len(failing),
+        "groups": [
+            {
+                "key": key,
+                "title": title,
+                "why": why,
+                "count": len(grouped[key]),
+                "modules": sorted(grouped[key], key=lambda m: str(m["file"])),
+            }
+            for key, title, why in RED_GROUPS
+        ],
+        "other_non_green": {
+            status: [r["file"] for r in results if r.get("status") == status]
+            for status in (STATUS_TIMEOUT, STATUS_NO_TESTS, STATUS_COLLECTION_ERROR)
+        },
+    }
+
+
+def _cell(text: str, width: int = 150) -> str:
+    """One table cell: no pipes, no newlines, bounded."""
+    flat = " ".join(str(text).split()).replace("|", "\\|")
+    return flat[: width - 1] + "…" if len(flat) > width else flat
+
+
+def render_red_markdown(report: Mapping[str, object], red: Mapping[str, object]) -> str:
+    groups: List[Dict[str, object]] = list(red.get("groups") or [])  # type: ignore[arg-type]
+    claimed = int(red.get("failing_claimed") or 0)
+    total = int(red.get("failing_grouped") or 0)
+    other: Dict[str, List[str]] = red.get("other_non_green") or {}  # type: ignore[assignment]
+
+    lines: List[str] = []
+    lines.append("# Ungated backlog — what the census recorded as RED")
+    lines.append("")
+    lines.append(
+        f"`docs/testing/ungated_test_census.json` measured **{report.get('measured')}** "
+        f"grandfathered modules alone and recorded **{claimed}** of them `failed`. The "
+        "promotion batches (rem-tst-02/03/04) consume the green rows; nothing consumed "
+        "these, and a backlog with no shape to it is just a number."
+    )
+    lines.append("")
+    lines.append(
+        "This groups the reds by **failure shape** — what decides who fixes it, and "
+        "whether twenty reds are one job or twenty. The census's own "
+        "`Most common failure signatures` table cannot answer that: it keys on the raw "
+        "first-failure line, which carries each test's own prose, so it renders as "
+        "near-singletons."
+    )
+    lines.append("")
+    lines.append(f"**{total} grouped = {claimed} recorded failing.** "
+                 + ("Arithmetic checks." if red.get("accounted_for") else
+                    "**MISMATCH — do not act on this report.**"))
+    lines.append("")
+
+    lines.append("## Groups")
+    lines.append("")
+    lines.append("| Modules | Shape | One example |")
+    lines.append("|---:|---|---|")
+    for group in sorted(groups, key=lambda g: -int(g["count"])):  # type: ignore[index,arg-type]
+        modules: List[Dict[str, object]] = group["modules"]  # type: ignore[assignment]
+        if not modules:
+            continue
+        example = modules[0]
+        lines.append(
+            f"| {group['count']} | **{group['title']}** (`{group['key']}`) | "
+            f"`{example['file']}` — {_cell(str(example['first_failure']), 110)} |"
+        )
+    empty = [g for g in groups if not int(g["count"])]  # type: ignore[arg-type]
+    if empty:
+        lines.append("")
+        lines.append(
+            "Groups this census matched nothing in: "
+            + ", ".join(f"`{g['key']}`" for g in empty)
+            + ". Reported rather than dropped — a bucket that silently disappears is how "
+            "a shape stops being looked for."
+        )
+    lines.append("")
+
+    lines.append("## What each shape means, and the modules in it")
+    lines.append("")
+    for group in sorted(groups, key=lambda g: -int(g["count"])):  # type: ignore[index,arg-type]
+        modules = group["modules"]  # type: ignore[assignment]
+        if not modules:
+            continue
+        lines.append(f"### {group['title']} — {group['count']} module(s)")
+        lines.append("")
+        lines.append(str(group["why"]))
+        lines.append("")
+        lines.append("| Module | failed / error | First failure recorded |")
+        lines.append("|---|---:|---|")
+        for module in modules:
+            counts: Mapping[str, int] = module["counts"]  # type: ignore[assignment]
+            tally = f"{counts.get('failed', 0)} / {counts.get('error', 0)}"
+            lines.append(
+                f"| `{module['file']}` | {tally} | {_cell(str(module['first_failure']))} |"
+            )
+        lines.append("")
+
+    lines.append("## Neither green nor failing")
+    lines.append("")
+    lines.append(
+        "Carried separately so the group arithmetic above stays exactly the census's "
+        "`failed` count. These are not promotable either, and they are not the same "
+        "problem."
+    )
+    lines.append("")
+    lines.append("| Status | Files | Modules |")
+    lines.append("|---|---:|---|")
+    for status in (STATUS_TIMEOUT, STATUS_NO_TESTS, STATUS_COLLECTION_ERROR):
+        files = other.get(status) or []
+        listed = ", ".join(f"`{f}`" for f in files) if files else "—"
+        lines.append(f"| `{status}` | {len(files)} | {_cell(listed, 400)} |")
+    lines.append("")
+
+    already_gated: List[str] = list(red.get("already_gated") or [])  # type: ignore[arg-type]
+    lines.append("## Recorded red here, gated since")
+    lines.append("")
+    if already_gated:
+        lines.append(
+            f"{len(already_gated)} module(s) in the groups above are already on "
+            "`args/ci_test_files/*.txt`. That is not a breach of the promotion rule — it "
+            "is the census being a SNAPSHOT. Each was fixed and gated in the PR that "
+            "fixed it, after the census ran, so its row here is stale rather than "
+            "outstanding. They are named instead of filtered out, because dropping them "
+            "would make this report's counts stop matching the census's."
+        )
+        lines.append("")
+        for entry in already_gated:
+            lines.append(f"- `{entry}`")
+    else:
+        lines.append(
+            "None. Every module grouped above is still ungated, which is the expected "
+            "state: a promotion batch takes `passed` rows only."
+        )
+    lines.append("")
+
+    lines.append("## What this does NOT say")
+    lines.append("")
+    lines.append(
+        "- **It is not a diagnosis.** The group is the shape of the FIRST recorded "
+        "failure line. A module in `assertion` may also be carrying a schema problem in "
+        "its second failure; only the first one was recorded."
+    )
+    lines.append(
+        "- **It is a snapshot.** These verdicts are the census run's, measured ALONE. A "
+        "module here may have been fixed since, and none of them was measured in-suite."
+    )
+    lines.append(
+        "- **`db-error-unspecified` is not a small `schema-drift`.** pytest truncated the "
+        "reason out of the short summary. Re-run those modules alone before filing them."
+    )
+    lines.append(
+        "- **No module in this report was gated.** Promotion batches take `passed` rows "
+        "only; adding a red file to `args/ci_test_files/core.txt` turns `main` red, and a "
+        "red `main` gets the gate switched off."
+    )
+    lines.append("")
+    lines.append("## Reproducing this")
+    lines.append("")
+    lines.append("```bash")
+    lines.append("python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json \\")
+    lines.append("  --red-md docs/testing/ungated_red_modules.md")
+    lines.append("```")
+    lines.append("")
+    lines.append(
+        "Exit 1 if the group counts do not sum to the census's own `failed` count. That "
+        "is the only thing this mode gates on: a red report whose arithmetic has drifted "
+        "from the census is worse than no report."
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -705,6 +1069,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--quiet", action="store_true", help="suppress per-file progress")
     parser.add_argument("--summarize", type=Path, help="render markdown from an existing report")
     parser.add_argument("--verify", type=Path, help="re-check an existing report's arithmetic")
+    parser.add_argument("--red-report", type=Path, dest="red_report",
+                        help="group an existing report's FAILING modules by failure shape")
+    parser.add_argument("--red-md", type=Path, dest="red_md",
+                        help="with --red-report, write the grouped markdown here")
     args = parser.parse_args(argv)
 
     try:
@@ -724,6 +1092,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 f"{report.get('out_of_scope_count')} out of scope = "
                 f"{report.get('backlog_size')} backlog modules."
             )
+            return 0
+
+        if args.red_report:
+            report = json.loads(args.red_report.read_text(encoding="utf-8"))
+            red = red_report(report)
+            if args.red_md:
+                args.red_md.parent.mkdir(parents=True, exist_ok=True)
+                args.red_md.write_text(
+                    render_red_markdown(report, red), encoding="utf-8", newline="\n"
+                )
+                print(f"wrote {args.red_md}")
+            for group in red["groups"]:  # type: ignore[index]
+                if group["count"]:
+                    print(f"{group['count']:>4}  {group['key']}")
+            print(
+                f"\n{red['failing_grouped']} grouped = "
+                f"{red['failing_claimed']} recorded failing."
+            )
+            if not red["accounted_for"]:
+                print(
+                    "::error::red groups do not sum to the census's failing count",
+                    file=sys.stderr,
+                )
+                return 1
             return 0
 
         if args.summarize:
