@@ -122,18 +122,45 @@ asserts the arity of every callable the real singleton would invoke.
 That is the whole thesis of the change in one incident: the exception was
 already being caught correctly; what was missing was anyone able to notice.
 
+### …and what fixing it exposed: the same defect one layer down
+
+Repairing the signature is not resuming a working feature. This handler has
+never once run, so the fix *starts* an untested one — and what it does on its
+first run is call `tools/chat/kanban_bridge.create_vv_chain`, writing three
+tasks to the **live board** that the kanban runner may then auto-dispatch, on
+triggers as broad as an assistant saying "all tests passed".
+
+Standing that single handler down had no switch. `hook_points.chat_message_after.
+enabled: false` is too coarse — it takes the eight chat handlers that ARE in use
+with it — and the per-handler `enabled` key two builtins already declare in
+their `EXTENSION_HOOKS` dict was read by nothing: `_auto_load_builtins` never
+passed it to `register()`. `ExtensionHandler.enabled` and the `if h.enabled`
+filter in `dispatch()` both already existed; only the read was missing.
+
+So: `register()` takes `enabled`, `_auto_load_builtins` passes the declared
+value, and a handler declaring `enabled: False` is **registered and listed but
+never run** — dropping it instead would make "declared off" indistinguishable
+from "never declared", which is the same collapse this whole change exists to
+undo (`list_handlers` shows 9 for `chat_message_after`; 8 run).
+
+`081_build_kanban_sync` ships repaired, registered, measurable and declared
+**off**, with the reason written next to the key. The signature fix and the
+decision to start writing to the board are two separate changes and only the
+first belongs to this task; flip the key to `True` to take delivery of the
+second.
+
 ## Files
 
 | File | Change |
 |---|---|
-| `tools/extensions/extension_manager.py` | `point_config()`, per-point enforcement in `dispatch()`, telemetry, `stats()` / `reset_stats()`, `ExtensionManager(config=…, load_builtins=…)` |
+| `tools/extensions/extension_manager.py` | `point_config()`, per-point enforcement in `dispatch()`, telemetry, `stats()` / `reset_stats()`, `ExtensionManager(config=…, load_builtins=…)`, `register(enabled=…)` + `_auto_load_builtins` reading the declared key |
 | `tools/observability/invocation_recorder.py` | `SURFACE_EXTENSION` |
 | `tools/awareness/capability_consumption.py` | `probe_extension_hook_point`, `_extension_points_from_source` |
-| `tools/extensions/builtins/081_build_kanban_sync.py` | the signature fix |
+| `tools/extensions/builtins/081_build_kanban_sync.py` | the signature fix, and `enabled: False` with the reason written next to it |
 | `tools/dashboard/templates/monitoring/_runtime_performance.html` | Extensions filter button |
 | `args/extension_config.yaml` | documents what each key now means |
 | `args/capability_consumption.yaml`, `args/liveness_gate.yaml` | the new class and its measured budget |
-| `tests/test_extension_dispatch_governance.py` | 23 tests, gated in `args/ci_test_files/core.txt` |
+| `tests/test_extension_dispatch_governance.py` | 26 tests, gated in `args/ci_test_files/core.txt` |
 | `tests/test_capability_consumption.py` | 6 tests for the new probe |
 
 Everything under `tools/` is mirrored to `icdev/tools/`; the two singletons are
