@@ -3273,9 +3273,35 @@ CREATE TABLE IF NOT EXISTS docmod_defacto_standards (
     weighted_score  REAL NOT NULL DEFAULT 0.0,
     share_pct       REAL NOT NULL DEFAULT 0.0,
     computed_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    source_feed     TEXT DEFAULT '',
+    evidence_kind   TEXT DEFAULT '',
     tenant_id       TEXT,
     classification  TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS entity_currency (
+    record_id       TEXT PRIMARY KEY,
+    entity_type     TEXT NOT NULL,
+    namespace       TEXT NOT NULL DEFAULT '',
+    entity_key      TEXT NOT NULL,
+    entity_label    TEXT,
+    entity_version  TEXT NOT NULL DEFAULT '',
+    verdict         TEXT NOT NULL,
+    superseded_by   TEXT,
+    source          TEXT NOT NULL,
+    source_kind     TEXT NOT NULL DEFAULT 'derived',
+    as_of           TEXT NOT NULL,
+    observed_at     TEXT NOT NULL,
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    eol_date        TEXT,
+    eos_date        TEXT,
+    provenance_table TEXT,
+    provenance_id    TEXT,
+    provenance_json  TEXT NOT NULL DEFAULT '{}',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_currency_identity
+    ON entity_currency (source, entity_type, namespace, entity_key, entity_version);
 CREATE TABLE IF NOT EXISTS docmod_doc_scan_state (
     doc_id             TEXT PRIMARY KEY,
     last_version_id    TEXT,
