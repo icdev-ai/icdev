@@ -7601,6 +7601,20 @@ CREATE INDEX IF NOT EXISTS idx_db_sync_time ON db_sync_log(synced_at);
 -- failed silently and the trail was empty exactly when it mattered.
 --
 -- Append-only (NIST AU) -- see APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+--
+-- THIS IS THE SQLITE INIT FALLBACK, NOT THE PRIMARY DEFINITION. On the primary
+-- PostgreSQL backend the table is created by migration
+-- 20260817010532_databridge_agent_access_log, which carries the PG-native DDL.
+-- This block being the ONLY definition is why the table did not exist on PG at
+-- all: AUTOINCREMENT and datetime('now') are SQLite syntax, so nothing here ever
+-- ran there, and every audit insert raised UndefinedTable into a swallowed
+-- warning. Keep the two in step -- a column added in one belongs in the other.
+--
+-- tenant_id and classification are the RLS predicate columns get_connection()
+-- injects. classification holds the LABEL ('CUI'), never the banner
+-- ('CUI // SP-CTI'): the predicate is `classification IN (<labels dominated by
+-- the caller's clearance>)`, and a banner string matches no label at any
+-- clearance, so such a row is written, retained and unreadable.
 CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL DEFAULT 'unknown',
@@ -7608,13 +7622,15 @@ CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     table_name TEXT NOT NULL DEFAULT '',
     decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
     reason TEXT NOT NULL DEFAULT '',
-    rows_returned INTEGER DEFAULT 0,
-    redactions_applied INTEGER DEFAULT 0,
-    classification TEXT DEFAULT 'CUI // SP-CTI',
-    created_at TEXT DEFAULT (datetime('now'))
+    rows_returned INTEGER NOT NULL DEFAULT 0,
+    redactions_applied INTEGER NOT NULL DEFAULT 0,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_db_agent_access_agent ON databridge_agent_access_log(agent_id);
 CREATE INDEX IF NOT EXISTS idx_db_agent_access_decision ON databridge_agent_access_log(decision);
+CREATE INDEX IF NOT EXISTS idx_db_agent_access_tenant ON databridge_agent_access_log(tenant_id, created_at);
 
 -- Connector configuration registry
 CREATE TABLE IF NOT EXISTS db_connector_configs (

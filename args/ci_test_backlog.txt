@@ -221,7 +221,6 @@ tests/genesis/test_stagnation_migration_constants.py
 tests/genesis/test_talent_anomaly.py
 tests/genesis/test_team_constants.py
 tests/genesis/test_test_reflex_constants.py
-tests/git/test_manifest_merge_rehearsal.py
 tests/govcon/test_clause_risk_engine.py
 tests/govcon/test_past_performance_suggester.py
 tests/hooks/test_headless_parity.py
@@ -664,7 +663,6 @@ tests/test_dat_ingestion_engine.py
 tests/test_dat_refresh_anomaly.py
 tests/test_data_gateway.py
 tests/test_data_lineage_route.py
-tests/test_databridge_broker.py
 tests/test_databridge_egress.py
 tests/test_dataset_lineage.py
 tests/test_db_utils.py

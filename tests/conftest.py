@@ -138,6 +138,9 @@ CREATE TABLE IF NOT EXISTS runtime_invocations (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Mirrors 20260817010532_databridge_agent_access_log (PG) and the SQLite init
+-- fallback in init_icdev_db.py. classification carries the LABEL, not the
+-- banner — the RLS predicate matches labels.
 CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL DEFAULT 'unknown',
@@ -145,10 +148,11 @@ CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     table_name TEXT NOT NULL DEFAULT '',
     decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
     reason TEXT NOT NULL DEFAULT '',
-    rows_returned INTEGER DEFAULT 0,
-    redactions_applied INTEGER DEFAULT 0,
-    classification TEXT DEFAULT 'CUI // SP-CTI',
-    created_at TEXT DEFAULT (datetime('now'))
+    rows_returned INTEGER NOT NULL DEFAULT 0,
+    redactions_applied INTEGER NOT NULL DEFAULT 0,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS web_fetch_provenance (
