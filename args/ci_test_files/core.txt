@@ -2008,6 +2008,16 @@ tests/test_gemini_managed_object_cache.py
 # for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
 # absent. No Ollama process, no network, no DB.
 tests/test_ollama_prefix_latency.py
+# trust-disc-05 (extended to the merge path): pr_watcher must not auto-merge a
+# PR whose work is ALREADY on main under a different number — that merge is a
+# REVERT wearing a feature's clothes (#1651 was -38/+26 on rest_v1.py) and every
+# gate on the board reports green, because every gate asks about the PR.
+# The suite is behavioural: `not merge_calls` under enforce is what proves the
+# check runs BEFORE _auto_merge, and the checked:False/landed:True case is what
+# proves fail-open is read rather than incidental. Regressed three ways
+# (call site deleted / checked ignored / mode ignored); each is caught by a
+# different test. No network, no git, no DB.
+tests/ci/test_pr_watcher_landed.py
 # kax-conflict-11: the union-merge guard for .gitattributes. It was RED on main
 # from the moment trust-disc-03 landed `args/ci_skip_census.txt merge=union`
 # without registering it in _UNION_SAFE_PATHS, and nothing reported that for as
