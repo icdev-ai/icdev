@@ -2075,3 +2075,11 @@ tests/test_lesson_learned_kph.py
 # the SQLite init DDL kept in step with it, and an audit-write failure surfacing
 # instead of being swallowed. No network, no live DB (conftest forces SQLite).
 tests/test_databridge_broker.py
+
+# cef-fnd-02: the docmod NIST publication cache. Gated because the live pull it
+# guards had NEVER landed a row — the CSRC RSS feed it shipped against is retired
+# (HTTP 404) and _fetch_feed reported that as "offline?", so a dead URL and an
+# air-gap were the same observable. These tests pin the four fetch outcomes apart,
+# hold drafts and unrevised publications out of the supersession cache, and keep
+# the offline flag a clean no-op. No network, no live DB (conftest forces SQLite).
+tests/docmod/test_feed_wiring.py
