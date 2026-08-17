@@ -1,0 +1,7 @@
+{
+  "description": "docmod_nist_pubs — own timestamped DDL, decoupled from the shared v282 slot (cef-fnd-02)",
+  "date": "2026-08-17",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}

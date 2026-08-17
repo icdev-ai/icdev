@@ -19,9 +19,23 @@ offline: false
 # degrade gracefully (skip + log, never fail the sweep) when egress is absent.
 #
 # NIST publication revision feed → docmod_nist_pubs cache (policy_refs evidence).
-nist_pubs_feed_url: "https://csrc.nist.gov/CSRC/media/feeds/rss/publications.xml"
+#
+# The live source is CSRC's spreadsheet of current draft + final publications. It
+# carries a Stage column, so the sync keeps FINAL rows only and reads the revision
+# out of "Publication Number" ('800-53 Rev. 5').
+nist_pubs_catalog_url: "https://csrc.nist.gov/files/pubs/shared/docs/NIST-Cybersecurity-Publications.xlsx"
+#
+# nist_pubs_feed_url is EMPTY on purpose (cef-fnd-02). This shipped pointing at
+# https://csrc.nist.gov/CSRC/media/feeds/rss/publications.xml, which is retired:
+# measured 2026-08-17 it returns HTTP 404 while csrc.nist.gov answers 200, so the
+# live pull had never landed a row and every cached row was source='seed'. The one
+# publications feed CSRC still advertises is drafts-open-for-comment.xml — do NOT
+# point this at it: a DRAFT does not supersede a final publication, so draft
+# revisions here would manufacture false "superseded" findings. Set this only to a
+# mirror that lists FINAL publications.
+nist_pubs_feed_url: ""
 nist_pubs_cadence_hours: 24        # skip live sync if one ran inside this window
-nist_pubs_timeout_seconds: 15      # tight timeout on the outbound feed GET
+nist_pubs_timeout_seconds: 15      # tight timeout on the outbound catalog GET
 #
 # CVE → docmod bridge: products cited in documents matched against the existing
 # supply-chain cve_triage store (no new poller). Emits HITL drift via acoic.

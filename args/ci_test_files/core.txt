@@ -2144,6 +2144,13 @@ tests/test_aggregation_guard.py
 # instead of being swallowed. No network, no live DB (conftest forces SQLite).
 tests/test_databridge_broker.py
 
+# cef-fnd-02: the docmod NIST publication cache. Gated because the live pull it
+# guards had NEVER landed a row — the CSRC RSS feed it shipped against is retired
+# (HTTP 404) and _fetch_feed reported that as "offline?", so a dead URL and an
+# air-gap were the same observable. These tests pin the four fetch outcomes apart,
+# hold drafts and unrevised publications out of the supersession cache, and keep
+# the offline flag a clean no-op. No network, no live DB (conftest forces SQLite).
+tests/docmod/test_feed_wiring.py
 # rem-tst-04 — third promotion batch off the ungated census (rem-tst-01).
 #
 # Same procedure as rem-tst-02 and rem-tst-03, on the next 25. The census is the
