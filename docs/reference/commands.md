@@ -5592,8 +5592,16 @@ python -m tools.doc_modernization.eol_products_sync --seed --json
 python -m tools.doc_modernization.eol_products_sync --sync --json
 python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
 
-# De facto deployment standards from ni_devices (recency-weighted)
+# De facto standards from the declared inventory feeds (recency-weighted)
 python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+python -c "from tools.doc_modernization.defacto_learner import load_feeds; print(load_feeds())"
+# cef-fnd-04: the input is args/docmod/inventory_feeds.yaml, not one hardcoded
+# table. docmod_defacto_standards held 0 rows for months because its only input,
+# ni_devices, held 0 rows — the writer ran nightly and had nothing to learn from.
+# Each row records source_feed + evidence_kind, share_pct is a share WITHIN one
+# feed, and get_recommended() answers from the best-precedence feed alone:
+# an observed estate beats a drawing of one, and no quantity of drawings adds up
+# to an observation.
 
 # Nightly sweep reflex (standalone)
 python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
@@ -5603,6 +5611,36 @@ python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
 # Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
 # MCP tools: docmod_scan, docmod_findings, docmod_redline
 ```
+
+## Entity Currency Store — one domain-agnostic "is it still current" (cef-fnd-04)
+
+```bash
+python -m tools.currency.entity_currency --backfill --json
+python -m tools.currency.entity_currency --backfill --source docmod_eol_products
+python -m tools.currency.entity_currency --stats --json
+python -m tools.currency.entity_currency --resolve "<entity>" --entity-type hardware_model
+```
+
+Currency evidence used to live in three domain-narrow tables — a software-release
+feed (`docmod_eol_products`), a hardware EOL feed (`mc_net_eol_data`) and the
+curated catalog (`docmod_catalog_entries`) — each answering in its own shape, none
+able to describe an entity the others had never heard of, and no place for a
+fourth provider to write. `entity_currency` is one row per **(source, entity,
+version) assertion**.
+
+- **Sources are config**, not code: `args/entity_currency.yaml` supplies every
+  table, column mapping, entity type and verdict rule. `tools/currency/` names no
+  table, column, vendor, product or domain.
+- **Disagreement is preserved.** Two sources that disagree keep two rows;
+  `resolve()` picks a winner at read time and returns the losers under `others`
+  with `conflict: true`.
+- **Curated evidence is authoritative** — ahead of confidence, ahead of recency.
+- **`confidence` is a declared prior, not a measurement.**
+- `as_of` (the source's clock) is kept apart from `observed_at` (ours), so stale
+  evidence stays distinguishable from fresh evidence.
+- Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
+  network-hardware pack only when the catalog and the hardware feed are both
+  silent. Declared in `args/capability_consumption.yaml` `substrates:`.
 
 ## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
 

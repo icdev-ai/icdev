@@ -3,8 +3,10 @@
 
 Keeps enterprise documents honest as evidence changes:
   1. refresh EOL caches (endoflife.date + migration-canvas Cisco EoX;
-     network-permitting, no-ops offline)
-  2. recompute de facto deployment standards from ni_devices
+     network-permitting, no-ops offline), then fold them into the
+     domain-agnostic entity-currency store
+  2. recompute de facto standards from the declared inventory feeds
+     (args/docmod/inventory_feeds.yaml)
   3. incremental document scan (skips docs whose approved version AND combined
      pack evidence hash are unchanged — docmod_doc_scan_state)
   4. draft TRUST-gated redlines for new findings (capped by
@@ -58,6 +60,18 @@ class DocModernizationSweepReflex:
         except Exception as exc:
             logger.warning("docmod sweep: nist_pubs_sync failed: %s", exc)
             result["nist_pubs_sync"] = {"error": str(exc)}
+
+        # 1d. Fold every refreshed evidence source into the domain-agnostic
+        # entity-currency store (cef-fnd-04). Runs AFTER the syncs above so it
+        # reads what they just wrote, and is idempotent — a re-run updates rows
+        # rather than growing them. This is what keeps the store live: a
+        # substrate nothing refreshes goes stale silently.
+        try:
+            from tools.currency.entity_currency import backfill as currency_backfill
+            result["entity_currency"] = currency_backfill()
+        except Exception as exc:
+            logger.warning("docmod sweep: entity_currency backfill failed: %s", exc)
+            result["entity_currency"] = {"error": str(exc)}
 
         # 2. De facto learner
         try:

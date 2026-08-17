@@ -2186,3 +2186,11 @@ tests/test_ideation_frames.py
 tests/ci/test_ungated_red_report.py
 tests/test_databridge_first_grant.py
 tests/rag/test_provenance_ledger_retrieval.py
+# cef-fnd-04: the domain-agnostic entity-currency store, and the reason
+# docmod_defacto_standards held 0 rows — its ONLY input, ni_devices, held 0 rows,
+# so the writer ran nightly and had nothing to learn from. Pins the shape, not
+# any vendor: sources are read from config, curated evidence keeps its authority
+# over a fresher feed, disagreement survives to the caller, and inventory vs
+# design evidence is never pooled into one percentage. Temp SQLite DB, no
+# network.
+tests/currency/test_entity_currency.py
