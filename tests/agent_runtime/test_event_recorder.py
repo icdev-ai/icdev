@@ -711,6 +711,22 @@ class TestTheCapabilityIsActuallyConsumed:
         assert result.done is True
         _assert_ordered_subset(
             _types(ctx_id), ["turn_start", "assistant_message", "turn_end"])
+        # THE COMPLEMENT OF LOOSENING THE ASSERTIONS ABOVE.
+        #
+        # Four assertions in this file used to pin the exact event sequence, and
+        # hcx-evt-03 relaxed them to ordered-subset checks so a new event type
+        # would stop being a tripwire. That trade is only honest if something
+        # still asserts the new event IS recorded — otherwise the relaxation is
+        # a coverage cut wearing a refactor's clothes, and `request_context`
+        # could stop being emitted entirely without this file noticing.
+        #
+        # `tests/agent_runtime/test_context_events.py` covers the event's own
+        # contract; this covers its place in a REAL turn's lifecycle, which is
+        # what this file is for.
+        _assert_ordered_subset(
+            _types(ctx_id),
+            ["turn_start", "request_context", "assistant_message", "turn_end"],
+        )
         end = _events(ctx_id)[-1]["payload"]
         assert end["truncation_reason"] == "completed"
         assert end["loop_session_id"] == result.session_id
