@@ -6884,6 +6884,10 @@ CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_expires
 -- RAG provenance ledger — append-only AIA chain-of-custody log (D-AIDP, NIST AU-3)
 -- event_type='ingest': chunk bound to source document with hash verification
 -- event_type='chain_of_custody': LLM invocation audit block (model, hyperparams, prompt hash, signature)
+-- event_type='retrieval': chunk served to a caller as citable evidence (cef-fnd-05)
+-- The CHECK list is derived from tools/rag/provenance_ledger.py::PROVENANCE_EVENT_TYPES.
+-- Widen BOTH together — a value the CHECK rejects is dropped by the caller's
+-- best-effort INSERT and the row silently never appears.
 CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chunk_uuid TEXT NOT NULL,
@@ -6897,8 +6901,12 @@ CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     prompt_sha256 TEXT,
     signature TEXT,
     event_type TEXT NOT NULL DEFAULT 'ingest'
-        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+        CHECK(event_type IN ('ingest', 'chain_of_custody', 'retrieval')),
     ingest_timestamp TIMESTAMP,
+    -- rag_retrieval_log.id of the search that served this chunk (cef-fnd-05).
+    -- Nullable: a row is still worth keeping when the retrieval-log INSERT
+    -- itself failed, since prompt_sha256 equals that table's query_hash.
+    retrieval_log_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -6908,6 +6916,8 @@ CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc
     ON rag_provenance_ledger(parent_doc_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type
     ON rag_provenance_ledger(event_type);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_retrieval_log
+    ON rag_provenance_ledger(retrieval_log_id);
 
 -- rag_queries: tracks RAG knowledge search requests and their lifecycle
 CREATE TABLE IF NOT EXISTS rag_queries (

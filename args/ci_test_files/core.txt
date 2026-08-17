@@ -2185,3 +2185,4 @@ tests/test_ideation_frames.py
 # docs/testing/ungated_red_modules.md agreeing with the committed census.
 tests/ci/test_ungated_red_report.py
 tests/test_databridge_first_grant.py
+tests/rag/test_provenance_ledger_retrieval.py
