@@ -19,9 +19,10 @@ Two separate defects kept them there, and the first hid the second:
 """
 from __future__ import annotations
 
-import pytest
-
-pr_watcher = pytest.importorskip("tools.ci.pr_watcher")
+# A plain import, not `importorskip`: `tools.ci.pr_watcher` is first-party and
+# always present, so the guard could only ever convert a real breakage into a
+# green skip — which is the whole reason this file was not gated before.
+import tools.ci.pr_watcher as pr_watcher
 
 
 class _Proc:
