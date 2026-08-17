@@ -2057,6 +2057,50 @@ response_cache:
       context_cache: true
 
 # ---------------------------------------------------------------------------
+# Managed-object prefix cache (cch-prov-02)
+# The third caching shape, alongside response_cache (ICDEV's own KV store) and
+# context_cache above (provider-level prefix reuse). Consumed by providers that
+# DECLARE PrefixCacheCapability(support="managed_object") — today Gemini's
+# cachedContents, via tools/llm/managed_cache.py.
+#
+# DEFAULT OFF, and that is the economics, not caution. A stored cache object is
+# billed per token PER HOUR of storage whether or not anything reads it, so an
+# object created for a prefix used once is strictly worse than no caching at
+# all. Measured on this platform (docs/research/prefix-caching-assessment.md
+# section 3), 95.5% of calls sit below even the 1024-token floor at which any
+# vendor's prefix cache can fire.
+#
+# Break-even, so it can be re-derived when vendor prices move: a cached read
+# costs ~0.25x normal input (saving ~0.75x), storage costs S per token-hour, so
+# over a TTL of h hours with R reads storing pays when
+#   (R - 1) > S * h / (0.75 * P).
+# At Gemini 2.5 Flash's published order of magnitude (P ~ $0.30/1M input,
+# S ~ $1.00/1M/hour) that is (R - 1) > 4.4 * h: ~6 reads inside an hour, but
+# only 2 inside five minutes. Hence ttl_seconds 300 paired with min_sightings 2
+# — the short TTL is what makes a twice-used prefix profitable, and it also
+# bounds the rent on an orphan left by a process that exits.
+#
+# Which surfaces participate is the existing per_canvas / per_function
+# `context_cache` list above: those are the surfaces that assert the neutral
+# `cache_prefix` intent. Size and repetition are then MEASURED per prefix at
+# runtime rather than declared, which is strictly stronger than a second list.
+# ---------------------------------------------------------------------------
+managed_object_cache:
+  enabled: false          # master switch; a standing per-hour cost is opted into
+  ttl_seconds: 300        # vendor TTL AND the width of the repetition window
+  min_prefix_tokens: 4096 # keep at or above the model's own floor (Gemini 2.5
+                          # Flash 1024 / Pro 2048); the floor is where the API
+                          # ACCEPTS the object, not where it pays for itself
+  min_sightings: 2        # never store a prefix seen only once — the one case
+                          # guaranteed to lose money
+  max_objects: 32         # ceiling on live objects per process; each is renting
+  chars_per_token: 4.0    # local size estimate; the exact count is a network
+                          # call, and paying for a call to decide whether to pay
+                          # for a cache is backwards
+  failure_cooldown_seconds: 600   # suppress a prefix whose create failed, so it
+                                  # cannot storm the API on every call
+
+# ---------------------------------------------------------------------------
 # Speculative Decoding (Ollama path only — auto-detected)
 # ---------------------------------------------------------------------------
 speculative_decoding:

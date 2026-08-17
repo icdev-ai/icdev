@@ -146,7 +146,12 @@ def test_unverified_is_distinct_from_verified_none():
 
 
 def test_reports_cache_tokens_matches_the_adapters_that_read_them():
-    """Only the adapters that read a cached-token counter claim to."""
+    """Only the adapters that read a cached-token counter claim to.
+
+    Gemini joined them in cch-prov-02, which implemented the cachedContents
+    lifecycle and reads usageMetadata.cachedContentTokenCount back into the
+    shared field.
+    """
     reporting = {
         name: p.prefix_cache_capability.reports_cache_tokens
         for name, p in _providers().items()
@@ -159,7 +164,7 @@ def test_reports_cache_tokens_matches_the_adapters_that_read_them():
         # cch-prov-04: OCI reports `Usage.prompt_tokens_details.cached_tokens`
         # and the adapter now reads it.
         "oci_genai": True,
-        "gemini": False,
+        "gemini": True,
         "ollama": False,
         "ibm_watsonx": False,
     }
