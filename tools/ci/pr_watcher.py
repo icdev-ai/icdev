@@ -857,6 +857,35 @@ class PRWatcher:
             out[url] = {f.get("path", "") for f in (pr.get("files") or []) if f.get("path")}
         return out
 
+    def _landed_map(self, tasks: List[dict]) -> Dict[str, dict]:
+        """task_id -> landed-check report for every task with an open PR.
+
+        `tools.kanban.landed_check` already answers "is this task id ALREADY on
+        the default branch", and it is already consulted at SEED time
+        (`task_factory`) and at DISPATCH time (`reflexes/kanban.py`). Neither
+        covers the window this closes: a PR is opened, the same work lands under
+        a DIFFERENT PR number while it sits, and the stale PR can then only
+        merge as a REVERT — #1651 was -38/+26 on rest_v1.py, i.e. it would have
+        deleted 38 lines main currently has, with every gate on the board green
+        because every gate on the board asks about the PR.
+
+        One `git log --grep` answers for the whole batch (git ORs repeated
+        --grep), so this costs one subprocess per cycle, not one per PR.
+
+        FAIL-OPEN: any failure returns {}, and a report with `checked: False` is
+        never treated as a finding. An unreachable git must not wedge merging.
+        """
+        ids = [str(t.get("id")) for t in tasks if t.get("id")]
+        if not ids:
+            return {}
+        try:
+            from tools.kanban import landed_check
+
+            return landed_check.check_landed_bulk(ids)
+        except Exception as exc:  # noqa: BLE001 — advisory check, never fatal
+            logger.debug("pr_watcher: landed-check batch failed: %s", exc)
+            return {}
+
     def _sibling_conflicts(self, candidate_url: str, file_map: Dict[str, set]) -> Dict[str, set]:
         """Return {other_pr_url: shared_integrity_files} for OPEN PRs that touch a
         non-additive file the candidate PR also touches.
@@ -1505,7 +1534,8 @@ class PRWatcher:
             except Exception:  # noqa: BLE001
                 pass
 
-    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int) -> bool:
+    def _hitl_recovered(self, state: dict, cycle: int, max_cycles: int,
+                        landed: Optional[dict] = None) -> bool:
         """True when the PREMISE of a HITL alert is false — not merely that the
         forge is happy.
 
@@ -1521,13 +1551,23 @@ class PRWatcher:
         drained, which is the same "list nobody reads" failure the resolve was
         written to prevent.
 
-        The two raise sites are the resume cap (`cycle >= max_cycles`) and CI
-        that never fired, so both are negated here. Anything that adds a third
-        raise site must negate it here too, or the alert flaps again.
+        The raise sites are the resume cap (`cycle >= max_cycles`), CI that
+        never fired, and a task whose work is ALREADY on the default branch, so
+        all three are negated here. Anything that adds a fourth must negate it
+        here too, or the alert flaps again.
+
+        The already-landed case is the one most able to flap: such a PR is green
+        AND MERGEABLE by construction — that is exactly why it is dangerous —
+        so every condition above it says "recovered". Nothing about main ever
+        un-lands the commit, so the premise stays true until a human closes or
+        rebases the PR, at which point the task leaves `list_pr_tasks` and
+        `_sweep_stale_hitl_alerts` retires the alert.
         """
         if (state.get("mergeable") or "").upper() != "MERGEABLE":
             return False
         if cycle >= max_cycles:
+            return False
+        if landed and landed.get("checked") and landed.get("landed"):
             return False
         return not self._ci_never_fired(state)
 
@@ -1823,6 +1863,15 @@ class PRWatcher:
             if self.config.get("sibling_conflict_check", True)
             else {}
         )
+        # Already-landed map (trust-disc-05, extended): one `git log --grep` for
+        # the whole batch, so the DONE path can refuse to merge a PR whose work
+        # is already on main under a different number. Same once-per-cycle shape
+        # as sibling_map above.
+        landed_map = (
+            self._landed_map(tasks)
+            if self.config.get("landed_check_on_poll", True)
+            else {}
+        )
 
         for task in tasks:
             report.tasks_checked += 1
@@ -1941,7 +1990,8 @@ class PRWatcher:
             #
             # The resolve is deduped on `source` and is a no-op when nothing is
             # firing, so calling it on every healthy pass costs nothing.
-            if self._hitl_recovered(state, cycle, max_cycles):
+            if self._hitl_recovered(state, cycle, max_cycles,
+                                    landed=landed_map.get(task["id"])):
                 self._resolve_hitl_alert(task["id"])
 
             # A CLOSED PR cannot be rebased, resumed or merged, so an alert
@@ -2118,6 +2168,71 @@ class PRWatcher:
                             report.actions.append(action)
                             self._audit(action)
                             continue
+
+                    # ALREADY ON MAIN. The board tracks task -> PR; nothing
+                    # checked task -> main, so a PR whose work merged under a
+                    # different number stays green and mergeable, and merging it
+                    # applies a diff against a branch that has moved on — a
+                    # revert wearing a feature's clothes. This must run BEFORE
+                    # _auto_merge; after it, the damage is a commit on main.
+                    #
+                    # Advisory by default and audited either way. `enforce`
+                    # (KANBAN_LANDED_CHECK) holds the merge for a human, which
+                    # is the same posture landed_check uses at seed and dispatch
+                    # time — one switch, not a second one invented here.
+                    #
+                    # SURVEYED at THIS call site before wiring, because the
+                    # existing survey measured the dispatch population and does
+                    # not transfer: 2026-08-16, the 6 task-linked open PRs the
+                    # merge path actually sees produced 0 fires (1 body-only
+                    # reference, which never blocks). Against the three known
+                    # true positives — rem-hyg-02 (#1738, closed by hand that
+                    # day), ctx-perf-02 (#1646) and ctx-trust-02 (#1651) — it
+                    # fires on 3 of 3 with blocking-tier `subject` evidence.
+                    landed = landed_map.get(task["id"]) or {}
+                    if landed.get("checked") and landed.get("landed"):
+                        try:
+                            from tools.kanban.landed_check import (
+                                format_warning, mode as _landed_mode,
+                            )
+                            detail = format_warning(landed).strip()
+                            enforcing = _landed_mode() == "enforce"
+                        except Exception as _lc_exc:  # noqa: BLE001
+                            detail = f"task {task['id']} already on the default branch"
+                            enforcing = False
+                            logger.debug(
+                                "pr_watcher: landed-check formatting failed: %s", _lc_exc)
+                        logger.warning(
+                            "pr_watcher: %s — %s is ALREADY on the default branch "
+                            "(evidence: %s); merging this PR may REVERT it",
+                            pr_url, task["id"], landed.get("confidence"),
+                        )
+                        self._audit(WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done",
+                            action="already_landed_hold" if enforcing
+                                   else "already_landed_warn",
+                            reason=detail[:500],
+                            resume_cycle=cycle,
+                        ))
+                        if enforcing:
+                            self._hitl_alert(
+                                task["id"], pr_url,
+                                "the work for this task is already on the default "
+                                "branch under a different PR; merging this one may "
+                                "revert it. Verify, then close or rebase.",
+                            )
+                            action = WatcherAction(
+                                task_id=task["id"], pr_url=pr_url,
+                                classification="done", action="wait",
+                                reason=(f"held: {task['id']} already on the default "
+                                        f"branch (evidence: {landed.get('confidence')})"),
+                                resume_cycle=cycle,
+                            )
+                            report.actions.append(action)
+                            self._audit(action)
+                            continue
+
                     approved_ok = (
                         not require_approval
                         or ec.is_approved_and_passing(state)

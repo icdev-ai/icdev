@@ -65,6 +65,32 @@ max_rebase_attempts_per_task: 2
 sibling_conflict_check: true
 hold_on_sibling_conflict: true
 
+# Already-on-main guard (trust-disc-05, extended to the merge path).
+# The board tracks task -> PR. Nothing checked task -> MAIN, and those are
+# different questions: a PR whose work already merged under a different number
+# stays green, stays MERGEABLE, and merging it re-applies a diff against a
+# branch that has moved on. #1651 was -38/+26 on rest_v1.py — merging it would
+# have DELETED 38 lines main currently has. Every gate on the board said green,
+# because every gate on the board asks about the PR.
+#
+# `tools.kanban.landed_check` already answers this and is already consulted at
+# SEED time (task_factory) and DISPATCH time (reflexes/kanban.py). This wires
+# the third moment — one `git log --grep` for the whole batch, once per cycle,
+# same shape as the sibling map above.
+#
+# POSTURE. Warn + audit always; the HOLD is opt-in via KANBAN_LANDED_CHECK=enforce,
+# reusing landed_check's own switch rather than inventing a second one. Surveyed
+# at THIS call site before wiring (the earlier survey measured the dispatch
+# population and does not transfer): 2026-08-16, the 6 task-linked open PRs the
+# merge path sees produced 0 fires, with 1 body-only reference, which never
+# blocks. Against the 3 known true positives — rem-hyg-02 (#1738), ctx-perf-02
+# (#1646), ctx-trust-02 (#1651) — it fires on 3 of 3 with `subject` evidence.
+# Re-survey before defaulting the mode to enforce.
+#
+# Set false to skip the batch lookup entirely. It is FAIL-OPEN either way: an
+# unavailable git reports checked:false, which is never read as a finding.
+landed_check_on_poll: true
+
 # Bounded self-heal of a stale done-gate block (kpr-rvfy-03).
 # The enforced done-gate reads only the LATEST kanban_verifications row, and
 # nothing writes one except a dispatch — so a green PR whose verification went
