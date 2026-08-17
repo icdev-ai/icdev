@@ -108,14 +108,49 @@ External-source refresh is **scheduled pull, not webhook/push** (ADR **D370**) �
 the dashboard is not internet-reachable, so inbound webhooks cannot be delivered
 in the target isolated topologies.
 
-- **NIST Publications Sync** — a mutable revision cache (`docmod_nist_pubs`,
-  migration 282) structurally cloned from `eol_products_sync`. Stdlib-only
+- **NIST Publications Sync** — a mutable revision cache (`docmod_nist_pubs`)
+  structurally cloned from `eol_products_sync`. Stdlib-only
   (`urllib` + `defusedxml`, no new deps) https-only, TLS-verified,
   cadence-gated pull of the NIST CSRC publications RSS/Atom feed, with a YAML
   seed and an `import_dataset()` air-gap bundle. The `policy_refs` pack flags a
   document citing an OLDER revision than the cache records (deterministic
   numeric compare). Swallows every network/parse error — the sweep never fails
   because egress is down.
+
+### 7a. The cache was ABSENT, and the feed is gone (cef-fnd-02, 2026-08-17)
+
+Two independent defects kept this whole chain inert from the day it shipped.
+Both are worth recording because both are shapes this platform repeats.
+
+**The table never existed.** The DDL landed as the flat file
+`tools/db/migrations/282_docmod_nist_pubs.sql`, but version `282` was already
+recorded applied in `schema_migrations` by the 2026-07-29 squash baseline
+(`squashed-282`). `MigrationRunner` skips a version it has already recorded, so
+the file has never run: `docmod_nist_pubs` was **absent**, not empty. Absent and
+empty are different failures — no writer can populate a table that does not
+exist — and the fix is the timestamped migration
+`20260817014226_docmod_nist_pubs`, which cannot be shadowed that way. The flat
+file is left in place (it still runs on a database built from zero, and both are
+`CREATE ... IF NOT EXISTS`).
+
+**The feed answers HTTP 404.** NIST retired the CSRC publications RSS feed.
+Every run reported `"feed unavailable (offline?)"` — the exact string a
+genuinely air-gapped site produces — so a dead URL was indistinguishable from
+the posture the module is designed for. `sync()` now always reports a
+`fetch_status` naming the cause (`offline` / `not_attempted` / `not_https` /
+`unreachable` / `feed_not_found` / `http_error` / `empty_feed` / `ok`); only the
+last two of the middle group are defects, and a real air-gap still degrades
+silently and cleanly. No live replacement was adopted: CSRC's remaining
+`drafts-open-for-comment` feed would flag current FINAL revisions as superseded,
+and `NIST-Cybersecurity-Publications.xlsx` was ~3 years stale (still listing SP
+800-171 Rev 3 as a draft) and would have regressed the curated seed.
+
+**The seed is now a floor, not a manual step.** `doc_modernization_sweep` only
+ever calls `sync()`, never `load_seed()`, so a deployment where nobody hand-ran
+`--seed` left the cache at zero rows forever and `policy_refs` answered
+`unknown` for every citation. When the pull lands nothing **and the cache is
+empty**, `sync()` loads the static seed. It never overwrites live rows — it
+cannot, because it only runs when there are none.
 - **CVE Bridge** — adds NO poller; it REUSES the existing supply-chain
   `cve_triage` store. For each document it re-runs the network_hardware +
   software extractors to learn cited products, matches them against
@@ -169,7 +204,7 @@ MUTABLE — correctly NOT in `APPEND_ONLY_TABLES`:
 | Table | Migration / DDL | RLS cols | Mutability |
 |-------|-----------------|----------|------------|
 | `docmod_link_checks` | `link_check.py` init DDL | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — upserted per sweep |
-| `docmod_nist_pubs` | migration 282 | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — revision cache upsert |
+| `docmod_nist_pubs` | migration `20260817014226_docmod_nist_pubs` (flat `282_docmod_nist_pubs.sql` never ran — see below) | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — revision cache upsert |
 | `dic_cross_references` | `document_intelligence/db/init_db.py` | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — resolution UPDATEs `target_doc_id` |
 
 The `dic_doc_freshness.last_notified_at` column (cooldown store) is also

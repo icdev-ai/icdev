@@ -166,7 +166,6 @@ tests/docmod/test_core_engine.py
 tests/docmod/test_cross_reference_tracker.py
 tests/docmod/test_domain_packs.py
 tests/docmod/test_evidence_currency_pack.py
-tests/docmod/test_feed_wiring.py
 tests/docmod/test_hitl_surfaces.py
 tests/docmod/test_import_from_docgen.py
 tests/docmod/test_link_check.py

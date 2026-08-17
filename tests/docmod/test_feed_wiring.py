@@ -171,9 +171,10 @@ def test_parse_feed_bad_xml_returns_empty():
 def test_sync_writes_policy_evidence_row(db, monkeypatch):
     from tools.doc_modernization import nist_pubs_sync as nps
 
-    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: _RSS)
+    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: (_RSS, "ok"))
     out = nps.sync(force=True)
     assert out["synced"] == 2
+    assert out["fetch_status"] == "ok"
 
     row = nps.get_latest_revision("SP 800-53")
     assert row is not None
@@ -196,9 +197,11 @@ def test_sync_cadence_gates_recent_run(db, monkeypatch):
     monkeypatch.setattr(nps, "_fetch_feed", _boom)
     out = nps.sync(force=False)
     assert out["synced"] == 0 and "cadence" in out["skipped"]
+    # A cadence skip fetched nothing — it must not be reported as a fetch failure.
+    assert out["fetch_status"] == "not_attempted"
 
     # force=True bypasses the cadence gate and fetches.
-    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: _ATOM)
+    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: (_ATOM, "ok"))
     out2 = nps.sync(force=True)
     assert out2["synced"] == 1
 
@@ -213,23 +216,112 @@ def test_sync_offline_flag_skips(db, monkeypatch):
                         lambda url, timeout: (_ for _ in ()).throw(AssertionError("no fetch")))
     out = nps.sync()
     assert out["synced"] == 0 and "offline" in out["skipped"]
+    assert out["fetch_status"] == "offline"
+    # An air-gapped site loads its substrate deliberately (--seed / --import);
+    # the offline branch must not quietly do it on the site's behalf.
+    assert "seeded" not in out
 
 
-def test_sync_feed_unavailable_skips_clean(db, monkeypatch):
+def test_sync_feed_unavailable_falls_back_to_seed(db, monkeypatch):
     from tools.doc_modernization import nist_pubs_sync as nps
 
-    # Egress down: _fetch_feed returns None. sync() must not raise and must not
-    # write rows.
-    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: None)
+    # Egress down: _fetch_feed returns no body. sync() must not raise, must not
+    # write nist.gov rows -- and, because the cache is EMPTY, must fall back to
+    # the static seed so policy_refs is never left without a substrate.
+    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: (None, "unreachable"))
     out = nps.sync(force=True)
-    assert out["synced"] == 0 and "unavailable" in out["skipped"]
-    assert nps.get_latest_revision("SP 800-53") is None
+    assert out["synced"] == 0 and "unreachable" in out["skipped"]
+    assert out["fetch_status"] == "unreachable"
+    assert out["seeded"] > 0 and out["cache_rows"] == out["seeded"]
+
+    row = nps.get_latest_revision("SP 800-53")
+    assert row is not None and row["source"] == "seed"   # seeded, not fabricated live
+
+
+def test_seed_fallback_does_not_touch_a_populated_cache(db, monkeypatch):
+    from tools.doc_modernization import nist_pubs_sync as nps
+
+    # A live row already exists -> the fallback must leave it alone. Overwriting
+    # a fresher nist.gov row with the static seed would silently regress the
+    # cache every time egress blipped.
+    _seed_nist_pub("SP 800-53", 9, source="nist.gov")
+    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: (None, "unreachable"))
+    out = nps.sync(force=True)
+
+    assert out["seeded"] == 0 and out["cache_status"] == "populated"
+    row = nps.get_latest_revision("SP 800-53")
+    assert row["revision_num"] == 9 and row["source"] == "nist.gov"
+
+
+def test_sync_reports_404_distinctly_from_offline(db, monkeypatch):
+    """A retired feed URL must NOT read as air-gap (cef-fnd-02).
+
+    The CSRC RSS feed this module was built against answers HTTP 404 as of
+    2026-08-17. The old code collapsed that into "feed unavailable (offline?)"
+    -- the same string a genuinely air-gapped host produces -- so a broken
+    configuration was indistinguishable from the posture the module is designed
+    for. Exercise the real _fetch_feed so the HTTPError branch itself is under
+    test, not a stubbed status string.
+    """
+    import urllib.error
+
+    from tools.doc_modernization import nist_pubs_sync as nps
+
+    def _raise_404(req, timeout=None):
+        raise urllib.error.HTTPError(
+            req.full_url, 404, "Not Found", hdrs=None, fp=None)
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_404)
+    out = nps.sync(force=True)
+
+    assert out["fetch_status"] == "feed_not_found"
+    assert "404" in out["skipped"]
+    assert "offline" not in out["skipped"].lower()
+    # ...and the substrate is still provided rather than left at zero rows.
+    assert out["seeded"] > 0
+
+
+def test_sync_reports_empty_feed_distinctly(db, monkeypatch):
+    from tools.doc_modernization import nist_pubs_sync as nps
+
+    # 200 OK but nothing parseable: a live-but-wrong endpoint. Distinct from
+    # both a 404 and an unreachable host, because the fix differs for each.
+    monkeypatch.setattr(
+        nps, "_fetch_feed",
+        lambda url, timeout: ("<rss version='2.0'><channel/></rss>", "ok"))
+    out = nps.sync(force=True)
+    assert out["synced"] == 0 and out["fetch_status"] == "empty_feed"
+
+
+def test_cache_row_count_separates_absent_from_empty(db):
+    """An ABSENT table and an EMPTY one are different failures.
+
+    docmod_nist_pubs was absent on the live database until cef-fnd-02 (its DDL
+    landed as flat migration 282, whose version the squash baseline had already
+    recorded applied, so it never ran). "No writer has run" and "no migration
+    has run" send you to different fixes, so they must not both report 0.
+    """
+    from tools.doc_modernization.nist_pubs_sync import _cache_row_count
+
+    conn = _conn()
+    try:
+        assert _cache_row_count(conn) == 0          # exists, empty (db fixture)
+    finally:
+        conn.close()
+
+    missing = sqlite3.connect(":memory:")
+    missing.row_factory = sqlite3.Row
+    try:
+        assert _cache_row_count(missing) is None    # absent -> None, never 0
+    finally:
+        missing.close()
 
 
 def test_fetch_feed_refuses_non_https():
     from tools.doc_modernization.nist_pubs_sync import _fetch_feed
 
-    assert _fetch_feed("http://insecure.example/feed.xml", 5) is None
+    body, status = _fetch_feed("http://insecure.example/feed.xml", 5)
+    assert body is None and status == "not_https"
 
 
 # ── policy_refs dynamic superseded-revision detection ────────────────────────

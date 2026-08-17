@@ -2060,3 +2060,7 @@ tests/test_lens_quality.py
 tests/test_lens_quality_anomaly.py
 tests/test_lens_workflow_patterns_anomaly.py
 tests/test_lesson_learned_kph.py
+
+# docmod external-feed wiring (cef-fnd-02): gates the regression guard that a
+# retired feed URL reports 'feed_not_found' rather than reading as air-gap.
+tests/docmod/test_feed_wiring.py

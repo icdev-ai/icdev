@@ -18,6 +18,36 @@ swallows every network/parse error — the cache keeps its seed/import rows and 
 nightly sweep never fails because egress is unavailable. True push/webhooks are
 out of scope: this is scheduled pull only.
 
+THE FEED IS GONE, AND THAT USED TO LOOK LIKE AIR-GAP (cef-fnd-02). Measured
+2026-08-17 from a host with working egress: ``DEFAULT_FEED_URL`` answers HTTP
+404 — NIST retired the CSRC publications RSS feed. Every one of those runs
+reported ``"feed unavailable (offline?)"``, which is what a genuinely
+air-gapped site reports, so a dead URL was indistinguishable from the posture
+this module is designed for and nobody noticed. ``fetch_status`` now names the
+cause instead: see ``FETCH_STATUS`` below. Nothing about a real air-gap
+changed — ``unreachable`` is still swallowed and still returns cleanly.
+
+No live replacement was adopted, and the two candidates are recorded here so
+the next reader does not re-derive them:
+
+  * ``/CSRC/media/feeds/pubs/drafts-open-for-comment.xml`` is the only feed CSRC
+    still serves. It lists DRAFTS. Treating a draft as "the latest revision NIST
+    publishes" would flag a document citing the current FINAL revision as
+    superseded — a false finding, which is worse than a missing one.
+  * ``NIST-Cybersecurity-Publications.xlsx`` is a real inventory with a
+    Final/Draft stage column, but the copy served on 2026-08-17 still had SP
+    800-171 Rev 3 and SP 800-63-4 as "Public Draft" — roughly three years stale,
+    and adopting it would REGRESS the curated seed (which has 800-171 Rev 3
+    right) to Rev 2.
+
+So the static seed remains the most accurate source available, and ``sync()``
+now falls back to it when the cache is EMPTY. That fallback is the substrate
+fix: ``doc_modernization_sweep`` only ever calls ``sync()``, never
+``load_seed()``, so before this change a deployment where nobody hand-ran
+``--seed`` left the cache at zero rows forever and the policy_refs pack's
+dynamic half answered "unknown" for every citation. The fallback never
+overwrites live rows — it only runs when there is nothing at all to overwrite.
+
 CLI:
     python -m tools.doc_modernization.nist_pubs_sync --seed --json
     python -m tools.doc_modernization.nist_pubs_sync --sync --json
@@ -44,7 +74,28 @@ SEED_PATH = _REPO_ROOT / "args" / "docmod" / "nist_pubs.yaml"
 # Default NIST CSRC publications feed. Operators may override in
 # args/docmod/docmod_config.yaml (nist_pubs_feed_url); the static seed is the
 # air-gap source of truth when no egress is available.
+#
+# RETIRED BY NIST — this URL answered HTTP 404 when measured 2026-08-17. It is
+# kept as the default deliberately: it costs one cadence-gated request, it is
+# the endpoint to restore if NIST brings the feed back, and a run against it now
+# reports fetch_status 'feed_not_found' rather than implying air-gap. Do NOT
+# repoint it at the drafts feed or the stale XLSX inventory — see the module
+# docstring for why both were rejected.
 DEFAULT_FEED_URL = "https://csrc.nist.gov/CSRC/media/feeds/rss/publications.xml"
+
+# Why the live pull produced no rows. FOUR of these are not defects and only
+# 'feed_not_found' / 'http_error' point at a broken configuration — collapsing
+# them into one "offline?" string is what hid a dead feed for months.
+FETCH_STATUS = {
+    "offline":        "offline flag set",                    # deliberate air-gap
+    "not_attempted":  "within cadence window",               # nothing was fetched
+    "not_https":      "refused non-https feed url",          # egress policy
+    "unreachable":    "feed unreachable (network/TLS/timeout)",  # genuine offline
+    "feed_not_found": "feed url returned HTTP 404 (retired by NIST?)",
+    "http_error":     "feed url returned an HTTP error",
+    "empty_feed":     "feed served no NIST publication rows",
+    "ok":             "",
+}
 
 # "NIST SP 800-53 Rev. 5" / "SP 800-171r3" -> pub_id 'SP 800-53', revision 5.
 _PUB_RE = re.compile(
@@ -150,21 +201,34 @@ def parse_feed(xml_text: str) -> list[dict]:
     return list(best.values())
 
 
-def _fetch_feed(url: str, timeout: int) -> str | None:
-    """Best-effort https-only GET. Returns body text, or None on any failure."""
+def _fetch_feed(url: str, timeout: int) -> tuple[str | None, str]:
+    """Best-effort https-only GET -> ``(body_text_or_None, status)``.
+
+    ``status`` is a FETCH_STATUS key. A 404 is reported as 'feed_not_found', not
+    as the generic offline status: a retired URL and an air-gapped host are
+    different problems with different fixes, and only one of them is a defect.
+    Still swallows every error — the caller never sees an exception.
+    """
+    import urllib.error
+    import urllib.request
+
     if not url.lower().startswith("https://"):
         logger.warning("nist_pubs_sync: refusing non-https feed url: %s", url)
-        return None
-    import urllib.request
+        return None, "not_https"
 
     req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-docmod/1.0"})
     try:
         # https-only enforced above; default SSL context verifies the cert chain.
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 -- https scheme validated above; TLS verified
-            return resp.read().decode("utf-8", errors="replace")
+            return resp.read().decode("utf-8", errors="replace"), "ok"
+    except urllib.error.HTTPError as exc:
+        # The server answered — this is a configuration fact, not an egress fact.
+        status = "feed_not_found" if exc.code == 404 else "http_error"
+        logger.warning("nist_pubs_sync: feed url %s returned HTTP %s", url, exc.code)
+        return None, status
     except Exception as exc:  # network/TLS/timeout — offline is a normal state
         logger.info("nist_pubs_sync: feed fetch skipped (%s)", exc)
-        return None
+        return None, "unreachable"
 
 
 def _within_cadence(conn, cadence_hours: float) -> bool:
@@ -189,15 +253,21 @@ def _within_cadence(conn, cadence_hours: float) -> bool:
     return datetime.now(timezone.utc) - ts < timedelta(hours=cadence_hours)
 
 
-def load_seed(path: Path | None = None) -> dict:
-    """Load args/docmod/nist_pubs.yaml into the cache (source='seed')."""
+def load_seed(path: Path | None = None, conn=None) -> dict:
+    """Load args/docmod/nist_pubs.yaml into the cache (source='seed').
+
+    ``conn`` lets sync() reuse its open connection for the empty-cache fallback
+    (opening a second one mid-transaction deadlocks on some backends).
+    """
     import yaml
 
     path = path or SEED_PATH
     if not path.exists():
         return {"loaded": 0, "error": f"seed not found: {path}"}
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    conn = _connect()
+    own = conn is None
+    if own:
+        conn = _connect()
     loaded = 0
     try:
         for pub_id, row in (raw.get("publications") or {}).items():
@@ -205,8 +275,46 @@ def load_seed(path: Path | None = None) -> dict:
             loaded += 1
         conn.commit()
     finally:
-        conn.close()
+        if own:
+            conn.close()
     return {"loaded": loaded, "source": "seed"}
+
+
+def _cache_row_count(conn) -> int | None:
+    """Rows currently in the cache. None when the table is ABSENT.
+
+    Absent and empty are different failures — a missing migration versus a
+    writer that never ran — so they must not both read as 0.
+    """
+    try:
+        row = conn.execute("SELECT COUNT(*) AS n FROM docmod_nist_pubs").fetchone()
+        return int(dict(row)["n"])
+    except Exception:
+        try:
+            conn.rollback()  # PG: failed statement poisons the transaction
+        except Exception:
+            pass
+        return None
+
+
+def _seed_if_empty(conn) -> dict:
+    """Populate from the static seed ONLY when the cache holds nothing.
+
+    The live pull is the preferred source; this is the floor that keeps the
+    policy_refs pack from having no substrate at all on a deployment where
+    nobody hand-ran ``--seed``. It never overwrites live rows because it never
+    runs when there are any.
+    """
+    count = _cache_row_count(conn)
+    if count is None:
+        return {"seeded": 0, "cache_rows": None,
+                "cache_status": "absent (docmod_nist_pubs table does not exist)"}
+    if count > 0:
+        return {"seeded": 0, "cache_rows": count, "cache_status": "populated"}
+    seeded = load_seed(conn=conn)
+    return {"seeded": seeded.get("loaded", 0), "cache_rows": seeded.get("loaded", 0),
+            "cache_status": "seeded (live pull unavailable, cache was empty)",
+            **({"seed_error": seeded["error"]} if seeded.get("error") else {})}
 
 
 def sync(force: bool = False) -> dict:
@@ -215,30 +323,49 @@ def sync(force: bool = False) -> dict:
     Offline-safe: honors the docmod_config ``offline`` flag, gates on
     ``nist_pubs_cadence_hours`` (skip if a live sync ran inside the window unless
     ``force``), and swallows network errors so the sweep never fails.
+
+    Always reports ``fetch_status`` (a FETCH_STATUS key) so a caller can tell a
+    retired URL from an air-gapped host from a cadence skip. When the pull lands
+    nothing AND the cache is empty, falls back to the static seed so the
+    policy_refs pack is never left without a substrate.
     """
     cfg = _config()
     if cfg.get("offline"):
-        return {"synced": 0, "skipped": "offline flag set"}
+        # Air-gap: no egress attempt at all, and no seed fallback either — an
+        # offline site loads its substrate deliberately (--seed / --import).
+        return {"synced": 0, "skipped": FETCH_STATUS["offline"],
+                "fetch_status": "offline"}
 
     cadence = float(cfg.get("nist_pubs_cadence_hours", 24) or 0)
     conn = _connect()
     try:
         if not force and _within_cadence(conn, cadence):
-            return {"synced": 0, "skipped": "within cadence window"}
+            return {"synced": 0, "skipped": FETCH_STATUS["not_attempted"],
+                    "fetch_status": "not_attempted"}
 
         url = cfg.get("nist_pubs_feed_url") or DEFAULT_FEED_URL
         timeout = int(cfg.get("nist_pubs_timeout_seconds", 15) or 15)
-        body = _fetch_feed(url, timeout)
+        body, status = _fetch_feed(url, timeout)
         if body is None:
-            return {"synced": 0, "skipped": "feed unavailable (offline?)"}
+            return {"synced": 0, "skipped": FETCH_STATUS[status],
+                    "fetch_status": status, "feed_url": url,
+                    **_seed_if_empty(conn)}
 
         rows = parse_feed(body)
+        if not rows:
+            # 200 OK but nothing parsed: a live-but-wrong endpoint, distinct
+            # from both a 404 and an unreachable host.
+            return {"synced": 0, "skipped": FETCH_STATUS["empty_feed"],
+                    "fetch_status": "empty_feed", "feed_url": url,
+                    **_seed_if_empty(conn)}
+
         synced = 0
         for row in rows:
             _upsert(conn, row["pub_id"], row, "nist.gov")
             synced += 1
         conn.commit()
-        return {"synced": synced, "publications": [r["pub_id"] for r in rows]}
+        return {"synced": synced, "fetch_status": "ok",
+                "publications": [r["pub_id"] for r in rows]}
     finally:
         conn.close()
 
@@ -317,13 +444,13 @@ def main(argv=None) -> int:
     result: dict = {}
     if args.seed:
         result["seed"] = load_seed()
-    if args.sync:
+    # Bare invocation runs the namesake action. It used to print help and exit 1,
+    # so the documented `python -m tools.doc_modernization.nist_pubs_sync` did
+    # nothing at all; --sync stays accepted and every other flag is unchanged.
+    if args.sync or not (args.seed or args.import_path):
         result["sync"] = sync(force=args.force)
     if args.import_path:
         result["import"] = import_dataset(args.import_path)
-    if not result:
-        parser.print_help()
-        return 1
     print(json.dumps(result, indent=2, default=str))
     return 0
 

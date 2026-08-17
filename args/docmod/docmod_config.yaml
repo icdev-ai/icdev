@@ -19,6 +19,17 @@ offline: false
 # degrade gracefully (skip + log, never fail the sweep) when egress is absent.
 #
 # NIST publication revision feed → docmod_nist_pubs cache (policy_refs evidence).
+#
+# RETIRED BY NIST — this URL answered HTTP 404 when measured 2026-08-17 from a
+# host with working egress (cef-fnd-02). It is kept as the default on purpose:
+# it is the endpoint to restore if NIST brings the feed back, and a run now
+# reports fetch_status 'feed_not_found' instead of implying air-gap. When the
+# pull lands nothing and the cache is empty, nist_pubs_sync falls back to the
+# static seed (args/docmod/nist_pubs.yaml), which is currently the most accurate
+# source available. Do NOT repoint this at CSRC's drafts-open-for-comment feed
+# (drafts would flag current FINAL revisions as superseded) or at
+# NIST-Cybersecurity-Publications.xlsx (~3 years stale; it would regress the
+# seed's correct SP 800-171 Rev 3 to Rev 2). See nist_pubs_sync.py's docstring.
 nist_pubs_feed_url: "https://csrc.nist.gov/CSRC/media/feeds/rss/publications.xml"
 nist_pubs_cadence_hours: 24        # skip live sync if one ran inside this window
 nist_pubs_timeout_seconds: 15      # tight timeout on the outbound feed GET
