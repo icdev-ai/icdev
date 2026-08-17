@@ -160,32 +160,44 @@ grandfathered:
   # once enforcement is on; lower it then rather than waiting for a task.
   mcp_tool_authorization: 4
 
-  # Extension hook points. 10 declared, 10 never consumed — measured 2026-08-16
-  # against the live PostgreSQL board (audit_trail: 100,265 rows, well clear of
-  # the anchor) with
-  # `python tools/awareness/capability_consumption.py --class extension_hook_point --json`.
+  # Extension hook points. 10 declared, 10 never consumed — re-measured
+  # 2026-08-17 against the live PostgreSQL board with
+  # `python tools/awareness/capability_consumption.py --class extension_hook_point --json`
+  # (telemetry_available: true — the class is MEASURABLE, which is the thing
+  # hcx-live-02 changed; the zero is a measured zero, not a missing counter).
   #
   # This class is ARGUING ITS WAY IN, as the note above requires of a new one,
   # and the argument is that the 10 is a measurement artefact of its own first
   # day rather than an accommodation. hcx-live-02 is the commit that made a
   # dispatch countable at all: before it, `ExtensionManager.dispatch` wrote
   # nothing anywhere, so every point's lifetime count is necessarily zero on the
-  # day the counter lands, however busy the seam is. Two points
-  # (chat_message_before, chat_message_after) have a live call site in
-  # tools/dashboard/chat_manager.py and nine registered handlers between them, so
-  # they drain on the first chat message the platform serves.
+  # day the counter lands, however busy the seam is.
   #
-  # The other EIGHT are the real finding and the reason the class is here rather
-  # than deferred: they have no dispatch call site anywhere in the tree.
-  # tool_execute_after is the sharpest — tools/awareness/hooks.py registers a
-  # handler on it at process start and nothing has ever dispatched it, which is
-  # the "no handlers ever fired" incident this class exists to make visible.
-  # hcx-live-01 (PR #1723) wires tool_execute_before; that one drains when it
-  # lands and its first tool call runs.
+  # Static call sites, per `python -m tools.extensions.liveness` against the
+  # merged tree (this is the DECLARED half — a dispatcher in the source, not a
+  # recorded dispatch in the database, and only the latter drains a unit):
   #
-  # Lower this as they drain — it should reach 8 within a day and 7 when #1723
-  # merges. Do NOT raise it: a new hook point added to the enum without a
-  # dispatch call site is precisely the defect, and it should trip the check.
+  #   live (6)           tool_execute_before (hcx-live-01, agent_runtime/dispatch.py),
+  #                      tool_execute_after (.claude/hooks/post_tool_use.py),
+  #                      chat_message_before / chat_message_after
+  #                      (dashboard/chat_manager.py, nine builtin handlers),
+  #                      agent_start / agent_end (hcx-live-03, agent_runtime/
+  #                      runtime.py + chat_manager.py)
+  #   handlers_only (2)  memory_save_before / memory_save_after — a handler can
+  #                      register, nothing dispatches
+  #   dead (2)           compliance_check_before / compliance_check_after —
+  #                      enumerated with written reasons in
+  #                      args/extension_liveness.yaml
+  #
+  # So six of the ten drain on the first chat message, tool call or agent turn
+  # the platform serves after this lands, and the remaining four are the finding
+  # the class exists to keep visible. tool_execute_after was the sharpest case:
+  # tools/awareness/hooks.py registers a handler on it at process start and for
+  # a long time nothing dispatched it — the "no handlers ever fired" incident.
+  #
+  # Lower this as they drain; 4 is the floor the static picture supports today.
+  # Do NOT raise it: a new hook point added to the enum without a dispatch call
+  # site is precisely the defect, and it should trip the check.
   extension_hook_point: 10
 
   # GEPA — RESOLVED by rem-cap-01, budget lowered 1 -> 0. It was dispatched
