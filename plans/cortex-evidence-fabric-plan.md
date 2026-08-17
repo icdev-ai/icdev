@@ -258,7 +258,7 @@ and return `BackendResults([], errors=[...])` rather than raising.
 - `cef-ci-02` Tests added to `args/ci_test_files/core.txt` in their own PR, red-first proof, E2E
   against a second dashboard on a Chrome-safe port
 
-**24 tasks across 6 epics.**
+**23 tasks across 6 epics** (fnd 5, bck 4, rsv 3, di 6, ui 3, ci 2).
 
 ---
 
