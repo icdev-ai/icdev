@@ -51,7 +51,35 @@ from __future__ import annotations
 # "Union-merged" is only literally true for three of these: `.gitattributes`
 # declares `tools/manifest*` (kax-conflict-03), `args/ci_test_files/*.txt`
 # (kax-conflict-07) and `docs/reference/commands.md` (kax-conflict-11)
-# `merge=union`, so concurrent appends there really do resolve without a human.
+# `merge=union`, so concurrent appends there resolve without a human IN GIT.
+#
+# NOT ON THE FORGE (kpr-watch-07). GitHub does not apply `.gitattributes` merge
+# drivers when it computes PR mergeability, so two PRs appending to a union path
+# still both go CONFLICTING/DIRTY and each needs a rebase. Measured 2026-08-17:
+# nine of ten open PRs were DIRTY and a without-union merge reproduced the
+# forge's verdict on ten of ten. #1777 merging that morning re-DIRTIED all four
+# of its siblings at once. So excluding these paths does NOT mean two PRs sharing
+# one can both sail through — it means the watcher declines to serialise them and
+# lets `pr_watcher`'s rebase recovery clean up after each merge instead.
+#
+# THAT IS THE RIGHT TRADE, AND IT WAS MEASURED RATHER THAN ASSUMED.
+# `python tools/ci/sibling_hold_survey.py` replays real PRs under both postures.
+# Over 120 merged PRs on 2026-08-17:
+#
+#     posture   held at their own merge moment   max clique
+#     current   35/120  (29.2%)                   5
+#     widened   78/120  (65.0%)                  13
+#
+# Widening more than doubles the hold rate and produces cliques of 13, each step
+# of which costs a full CI cycle — hours of strictly serial merging, for no
+# throughput gain, because the board already drains at one merge per CI cycle
+# either way. Do NOT move these entries; re-run the survey if you think the
+# balance has changed.
+#
+# What the survey DID find worth fixing is one level up, in the tie-break rather
+# than in this list: it keyed on PR NUMBER alone, so a PR held behind a draft or
+# CONFLICTING sibling waited for a queue slot that never came free. See
+# `pr_watcher._wins_sibling_tiebreak`.
 # The remaining paths are structured config/code, where union would produce
 # duplicate keys or broken syntax — they are excluded from the sibling check as
 # a heuristic about how they are edited, NOT because git resolves them
