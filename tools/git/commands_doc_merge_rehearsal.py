@@ -271,7 +271,19 @@ def _inspect(result: ScenarioResult, body: str, names: List[str]) -> None:
 def run_scenario(scenario: str, mode: str, branches: int, source: Path,
                  union: bool = True) -> ScenarioResult:
     result = ScenarioResult(scenario=scenario, mode=mode, branches=branches)
-    with tempfile.TemporaryDirectory(prefix="icdev-cmddoc-") as td:
+    # NOT TemporaryDirectory(). Its cleanup raises, and git makes it raise: a
+    # `git gc`/pack process can still be writing `.git/objects/pack` when the
+    # context manager unlinks the tree, which surfaced on the Linux CI runner as
+    # `OSError: [Errno 39] Directory not empty: 'pack'` — a failure in TEARDOWN
+    # of a scenario whose assertions had all passed. Windows adds its own
+    # variant, where git leaves pack files read-only. `ignore_cleanup_errors=`
+    # would say this declaratively but is 3.10+, and this repo is `>=3.9`.
+    #
+    # Leaking a temp dir is strictly better than failing a green rehearsal: the
+    # OS reclaims it, and a rehearsal that reports a conflict it did not find
+    # is worse than one that leaves a directory behind.
+    td = tempfile.mkdtemp(prefix="icdev-cmddoc-")
+    try:
         repo = Path(td) / "repo"
         try:
             _init_repo(repo, source, union=union)
@@ -285,6 +297,8 @@ def run_scenario(scenario: str, mode: str, branches: int, source: Path,
         except RehearsalError as exc:
             result.conflicted = True
             result.detail = f"setup failed: {exc}"
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
     return result
 
 
