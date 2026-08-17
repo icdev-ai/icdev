@@ -558,6 +558,80 @@ def test_every_registered_handler_accepts_the_one_dict_the_contract_passes():
     assert bad == [], f"handler(s) dispatch can never call: {bad}"
 
 
+def test_a_builtin_that_declares_itself_disabled_is_not_registered(tmp_path):
+    """``EXTENSION_HOOKS[...]["enabled"]`` — the same defect, one layer down.
+
+    Two builtins ship the key and ``_auto_load_builtins`` read neither, so the
+    ONLY way to stand a single builtin handler down was to edit or delete its
+    file. That matters here because repairing the ``081_build_kanban_sync``
+    signature turns on a handler that has never once run in production and that
+    writes tasks to the live board: the operator taking delivery of it needs a
+    switch that is not "delete the file", and ``hook_points.chat_message_after.
+    enabled: false`` is too coarse — it would also stop the eight chat handlers
+    that ARE in use.
+
+    ``ExtensionHandler.enabled`` and the ``if h.enabled`` filter in dispatch
+    both already existed. Only the read was missing.
+    """
+    builtins = tmp_path / "builtins"
+    builtins.mkdir()
+    (builtins / "010_on.py").write_text(
+        "def handle(context):\n"
+        "    context['ran'] = context.get('ran', []) + ['on']\n"
+        "    return context\n"
+        "EXTENSION_HOOKS = {'memory_save_before': {'handler': handle,\n"
+        "    'name': 'on', 'allow_modification': True, 'enabled': True}}\n",
+        encoding="utf-8",
+    )
+    (builtins / "020_off.py").write_text(
+        "def handle(context):\n"
+        "    context['ran'] = context.get('ran', []) + ['off']\n"
+        "    return context\n"
+        "EXTENSION_HOOKS = {'memory_save_before': {'handler': handle,\n"
+        "    'name': 'off', 'allow_modification': True, 'enabled': False}}\n",
+        encoding="utf-8",
+    )
+
+    mgr = _manager()
+    for py in sorted(builtins.glob("*.py")):
+        module = mgr._load_file(py)
+        for hook_name, meta in module.EXTENSION_HOOKS.items():
+            mgr.register(
+                hook_point=ExtensionPoint(hook_name),
+                handler=meta["handler"],
+                name=meta["name"],
+                allow_modification=meta.get("allow_modification", False),
+                enabled=meta.get("enabled", True),
+            )
+
+    listed = {h["name"]: h["enabled"] for h in mgr.list_handlers(ExtensionPoint.MEMORY_SAVE_BEFORE)}
+    assert listed == {"on": True, "off": False}, listed
+
+    # The disabled one is registered and INTROSPECTABLE — it just never runs.
+    # Dropping it entirely would make "declared off" look like "never declared".
+    out = mgr.dispatch(ExtensionPoint.MEMORY_SAVE_BEFORE, {})
+    assert out.get("ran") == ["on"], out
+
+
+def test_auto_load_builtins_honours_the_enabled_key_the_builtins_declare():
+    """The real loader, not a hand-rolled stand-in.
+
+    The test above pins ``register(enabled=...)``; this one pins that
+    ``_auto_load_builtins`` actually PASSES it. Both are needed — wiring the
+    parameter and never handing it the declared value is how a key stays inert
+    while looking wired.
+    """
+    import inspect
+
+    from tools.extensions.extension_manager import ExtensionManager as EM
+
+    assert "enabled" in inspect.signature(EM.register).parameters
+    source = inspect.getsource(EM._auto_load_builtins)
+    assert 'meta.get("enabled"' in source, (
+        "_auto_load_builtins does not read the enabled key its builtins declare"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 7. The mirror
 # ---------------------------------------------------------------------------

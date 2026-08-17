@@ -142,11 +142,29 @@ def _inject_advisory(context_id: str, tasks: list[dict], canvas: str) -> None:
 # Extension registration
 # ---------------------------------------------------------------------------
 
+# `enabled` is read by ExtensionManager._auto_load_builtins as of hcx-live-02;
+# before that it was declared here and consumed nowhere.
+#
+# Held OFF on delivery, and the reason is the repair above rather than a doubt
+# about the feature. This handler took a second REQUIRED positional, so it
+# raised TypeError on every chat message the platform ever served and has never
+# once run in production. Fixing the signature therefore does not resume a
+# working feature — it starts an untested one, and what it does on its first
+# run is write three tasks to the LIVE board (tools/chat/kanban_bridge.
+# create_vv_chain) which the kanban runner may then auto-dispatch. The triggers
+# are broad: BUILD_COMPLETION_SIGNALS matches an assistant simply saying "all
+# tests passed".
+#
+# So the signature fix and the decision to start writing to the board are two
+# separate changes, and only the first is hcx-live-02's to make. Flip this to
+# True to take delivery of the second; nothing else needs to change, and
+# `python tools/awareness/capability_consumption.py --class extension_hook_point`
+# will show the dispatches once it is on.
 EXTENSION_HOOKS = {
     "chat_message_after": {
         "handler": handle_chat_message_after,
         "priority": 81,
         "description": "Auto-create CodeLens+Coherence+E2E Kanban chain on build completion",
-        "enabled": True,
+        "enabled": False,
     }
 }

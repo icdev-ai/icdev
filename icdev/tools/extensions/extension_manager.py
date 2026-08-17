@@ -236,8 +236,16 @@ class ExtensionManager:
         scope_id: str = "",
         description: str = "",
         file_path: Optional[str] = None,
+        enabled: bool = True,
     ) -> ExtensionHandler:
         """Register an extension handler programmatically.
+
+        ``enabled=False`` registers the handler WITHOUT running it: it still
+        appears in :meth:`list_handlers`, and the ``if h.enabled`` filter in
+        :meth:`dispatch` skips it. Registering it rather than dropping it is
+        deliberate — "declared and switched off" and "never declared" are
+        different states, and collapsing them is the defect this module is
+        being repaired for.
 
         Returns the created ExtensionHandler.
         """
@@ -251,6 +259,7 @@ class ExtensionManager:
             scope_id=scope_id,
             description=description,
             file_path=file_path,
+            enabled=enabled,
         )
         with self._lock:
             self._handlers[hook_point].append(ext)
@@ -636,8 +645,14 @@ class ExtensionManager:
                     "priority": 10,
                     "allow_modification": True,
                     "description": "...",
+                    "enabled": True,
                 },
             }
+
+        ``enabled`` defaults to True and is the per-HANDLER switch; the
+        per-POINT one is ``hook_points.<point>.enabled`` in
+        ``args/extension_config.yaml``. A handler declaring ``enabled: False``
+        is still registered and still listed — it simply never runs.
 
         Returns the number of handlers registered.
         """
@@ -681,6 +696,12 @@ class ExtensionManager:
                         scope="builtin",
                         description=meta.get("description", ""),
                         file_path=str(py_file),
+                        # Two builtins ship this key and nothing read either of
+                        # them, so the only way to stand ONE builtin handler
+                        # down was to edit its file — while
+                        # `hook_points.<point>.enabled: false` is too coarse,
+                        # taking every handler at the point with it.
+                        enabled=meta.get("enabled", True) is not False,
                     )
                     loaded += 1
 
