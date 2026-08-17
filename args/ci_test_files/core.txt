@@ -2246,3 +2246,14 @@ tests/currency/test_entity_currency.py
 # — declared-but-unconsumed being the defect this platform ships most.
 # 28 tests, ~1s: temp SQLite files only, no network, no shared board.
 tests/test_cache_regression.py
+
+# kpr-dup-04. Two background writers rewrite the record of a COMPLETED task,
+# and both end as a REVERT PR: the orphan sweep rolled a `done` task back to
+# backlog whenever its dependency parent was unfinished (80 firings, 100% of
+# them done->backlog, and 20 of the 61 tasks were already ON MAIN), and
+# pr_linker repointed a task away from a MERGED PR because it only knew
+# "not open". Both are NARROWED here, not disarmed, so the tests that matter
+# most are the negative ones: the 41 genuine orphans still roll back, and a
+# genuinely CLOSED-unmerged link is still repaired. Also pins the fail-safe
+# direction — an unverifiable landed check holds instead of rolling back.
+tests/kanban/test_completed_work_is_not_rewritten.py

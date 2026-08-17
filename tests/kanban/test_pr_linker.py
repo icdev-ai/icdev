@@ -70,12 +70,36 @@ class FakeConn:
         self.closed = True
 
 
-def _rows(*pairs):
-    return [{"id": tid, "executor_url": url} for tid, url in pairs]
+def _rows(*pairs, status="pr_opened"):
+    """Task rows as the SELECT actually returns them.
+
+    `status` joined the query in kpr-dup-04: a TERMINAL task's PR history is
+    settled, so the linker must not rewrite it. The double carries the column
+    rather than being defaulted away in the module, because a silent default
+    there would disarm that guard the moment a row type stopped supplying it —
+    and a guard nothing can observe failing is the defect this repo ships most.
+    """
+    return [
+        {"id": tid, "status": status, "executor_url": url}
+        for tid, url in pairs
+    ]
 
 
-def _runner(prs, returncode=0, stdout=None):
+def _runner(prs, returncode=0, stdout=None, pr_state="CLOSED"):
+    """gh double for the TWO calls the linker makes.
+
+    `pr view --json state` joined in kpr-dup-04: the open-PR listing cannot tell
+    a merged link from an abandoned one, and those need opposite actions. A
+    double that answered the listing payload to every call made the state lookup
+    read a list and crash, so it dispatches on the command like the real thing.
+    """
     def run(cmd, **kwargs):
+        if "view" in cmd:
+            return SimpleNamespace(
+                returncode=returncode,
+                stdout=json.dumps({"state": pr_state}),
+                stderr="",
+            )
         return SimpleNamespace(
             returncode=returncode,
             stdout=json.dumps(prs) if stdout is None else stdout,
@@ -250,7 +274,8 @@ def test_no_open_prs_is_a_noop():
     conn = FakeConn(_rows(("gdx-aud-01", "")))
     out = pr_linker.link_open_prs(lambda: conn, runner=_runner([]))
     assert out == {"linked": [], "ambiguous": [], "already_linked": [],
-                   "unmatched": [], "relinked": [], "stale_ambiguous": []}
+                   "unmatched": [], "relinked": [], "stale_ambiguous": [],
+                   "settled": [], "terminal": []}
     assert conn.updates == []
 
 

@@ -37,7 +37,19 @@ import subprocess
 import sys
 from typing import Callable, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from pathlib import Path
+
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory — never
+# the import root. Bootstrap it before the first first-party import below.
+# parents[N] is whatever holds this file's `tools` package: the repo root in
+# tools/, and <repo>/icdev in the icdev/ mirror (which is what a wheel ships).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 BRANCH_PREFIX = "kanban/"
 _PR_URL_RE = re.compile(r"https?://[^\s]*/pull/\d+")
@@ -99,6 +111,74 @@ def fetch_open_prs(
         raise RuntimeError(f"gh pr list returned non-JSON: {exc}") from exc
 
 
+#: Statuses whose PR history is settled. Rewriting the link on one of these can
+#: only point finished work at something that is not what delivered it.
+TERMINAL_STATUSES = frozenset({"done", "cancelled", "decomposed", "superseded"})
+
+
+def _pr_number_of(url: str) -> Optional[str]:
+    m = re.search(r"/pull/(\d+)", url or "")
+    return m.group(1) if m else None
+
+
+def fetch_pr_state(
+    number: str,
+    *,
+    runner: Optional[Callable] = None,
+    gh_bin: str = "gh",
+) -> Optional[str]:
+    """``MERGED`` / ``CLOSED`` / ``OPEN`` for one PR, or None if unknowable.
+
+    Costs one API call and is reached only on the rare stale-link path, so it is
+    not fetched for every task on every poll.
+    """
+    run = runner or subprocess.run
+    try:
+        proc = run(  # nosec B603 — fixed argv, shell=False
+            [gh_bin, "pr", "view", str(number), "--json", "state"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=60, shell=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("pr_linker: state lookup for #%s failed: %s", number, exc)
+        return None
+    if getattr(proc, "returncode", 1) != 0:
+        return None
+    try:
+        payload = json.loads(getattr(proc, "stdout", "") or "{}")
+    except json.JSONDecodeError:
+        return None
+    # A non-dict payload means we are not looking at what we asked for. None
+    # reads as "settled", so an unreadable answer declines to relink rather
+    # than authorising an overwrite on a shape nobody recognised.
+    if not isinstance(payload, dict):
+        return None
+    return payload.get("state")
+
+
+def _stored_link_is_settled(state: Optional[str]) -> bool:
+    """Whether a stored link must NOT be overwritten, given the PR's state.
+
+    MERGED AND CLOSED ARE NOT THE SAME THING, and treating them alike is what
+    made this function necessary. A merged PR is the RECORD OF WHERE THE WORK
+    LANDED; a closed-unmerged one is a dead pointer worth repairing. The
+    original test was "is it among the open PRs", which answers neither.
+
+    Measured 2026-08-17: cef-fnd-05 was already done via #1777 (MERGED) when a
+    PR appeared on its branch carrying the branch's stale pre-rebase head. The
+    linker repointed the task at it, so the board recorded a finished task as
+    owning #1784 — whose diff against main was -10,615 lines across 73 files and
+    would have deleted 30 files main currently had.
+
+    UNKNOWN counts as settled. The two ways of being wrong are not symmetric:
+    a wrong relink puts a revert in the merge pipeline, a missed relink costs
+    one poll and a human noticing.
+    """
+    if state is None:
+        return True
+    return str(state).upper() != "CLOSED"
+
+
 def _stored_pr_is_open(stored_url: str, open_numbers: set) -> bool:
     """True when the PR named by ``stored_url`` is among the forge's open PRs.
 
@@ -123,6 +203,8 @@ def link_open_prs(
     gh_bin: str = "gh",
     limit: int = 200,
     dry_run: bool = False,
+    pr_lister: Optional[Callable] = None,
+    pr_state: Optional[Callable] = None,
 ) -> Dict[str, list]:
     """Fill in `executor_url` for tasks whose open PR is not linked.
 
@@ -134,18 +216,23 @@ def link_open_prs(
     """
     result: Dict[str, list] = {
         "linked": [], "ambiguous": [], "already_linked": [], "unmatched": [],
-        "relinked": [], "stale_ambiguous": [],
+        "relinked": [], "stale_ambiguous": [], "settled": [], "terminal": [],
     }
-    prs = fetch_open_prs(runner=runner, gh_bin=gh_bin, limit=limit)
+    lister = pr_lister or fetch_open_prs
+    prs = lister(runner=runner, gh_bin=gh_bin, limit=limit)
     if not prs:
         return result
+    state_of = pr_state or (
+        lambda number: fetch_pr_state(number, runner=runner, gh_bin=gh_bin)
+    )
 
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, executor_url FROM kanban_tasks"
+            "SELECT id, status, executor_url FROM kanban_tasks"
         ).fetchall()
         existing = {r["id"]: (r["executor_url"] or "") for r in rows}
+        statuses = {r["id"]: (r["status"] or "") for r in rows}
 
         # Group candidate PRs by the task their head branch resolves to.
         by_task: Dict[str, List[dict]] = {}
@@ -168,10 +255,35 @@ def link_open_prs(
 
         for tid, cands in sorted(by_task.items()):
             current = existing.get(tid, "")
+            # A TERMINAL TASK'S PR HISTORY IS SETTLED. Whether it carries a link
+            # or not, writing one now can only point finished work at something
+            # that did not deliver it — and the board is what decides whether
+            # the task gets dispatched again.
+            if (statuses.get(tid) or "").lower() in TERMINAL_STATUSES:
+                result["terminal"].append({"task_id": tid, "url": current})
+                continue
             match = _PR_URL_RE.search(current)
             if match:
                 if _stored_pr_is_open(current, open_numbers):
                     result["already_linked"].append({"task_id": tid, "url": current})
+                    continue
+                # NOT OPEN IS NOT THE SAME AS CLOSED. The listing above only
+                # enumerates OPEN PRs, so a merged link and an abandoned one are
+                # indistinguishable here — and they call for opposite actions.
+                # Ask the forge which it is; the call is reached only on this
+                # rare path, not once per task per poll.
+                number = _pr_number_of(current)
+                state = state_of(number) if number else None
+                if _stored_link_is_settled(state):
+                    result["settled"].append({
+                        "task_id": tid, "url": current,
+                        "state": state or "unknown",
+                    })
+                    logger.info(
+                        "pr_linker: %s stays linked to %s (state=%s) — a merged "
+                        "PR is the record of where the work landed, not a stale "
+                        "pointer", tid, current, state or "unknown",
+                    )
                     continue
                 # STALE LINK. The stored PR is closed or merged while an open PR
                 # sits on this task's own branch. Until now this fell in the gap
