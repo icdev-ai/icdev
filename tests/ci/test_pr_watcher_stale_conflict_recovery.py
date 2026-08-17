@@ -19,9 +19,10 @@ Two separate defects kept them there, and the first hid the second:
 """
 from __future__ import annotations
 
-import pytest
-
-pr_watcher = pytest.importorskip("tools.ci.pr_watcher")
+# A plain import, not `importorskip`: `tools.ci.pr_watcher` is first-party and
+# always present, so the guard could only ever convert a real breakage into a
+# green skip — which is the whole reason this file was not gated before.
+import tools.ci.pr_watcher as pr_watcher
 
 
 class _Proc:
@@ -119,7 +120,7 @@ def test_a_stale_conflict_routes_to_REBASE_not_to_merge():
     """
     import inspect
     src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    head = src[src.index("_conflict_is_real(state)"):]
+    head = src[src.index("classify_conflict(state)"):]
     block = head[:head.index("cycle = self._resume_cycle")]
     assert '"mergeable": "MERGEABLE"' not in block, (
         "reclassifying a stale conflict to MERGEABLE routes it to the merge the "
@@ -141,7 +142,7 @@ def test_the_refund_happens_at_most_once_per_pr(monkeypatch):
     conflict stale again, so every poll would return the budget it just spent."""
     import inspect
     src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    block = src[src.index("_conflict_is_real(state)"):]
+    block = src[src.index("classify_conflict(state)"):]
     block = block[:block.index("cycle = self._resume_cycle")]
     assert '"pr_watcher.rebase_refund"' in block and "== 0" in block, (
         "the refund must be guarded on there being no prior refund for this PR")

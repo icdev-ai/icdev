@@ -73,7 +73,6 @@ tests/ci/test_pr_watcher_rebase.py
 tests/ci/test_pr_watcher_sibling.py
 tests/ci/test_pr_watcher_sibling_tiebreak.py
 tests/ci/test_pr_watcher_stale_conflict.py
-tests/ci/test_pr_watcher_stale_conflict_recovery.py
 tests/ci/test_pr_watcher_stale_hitl_sweep.py
 tests/ci/test_pr_watcher_worktree_reclaim.py
 tests/ci/test_premium_leak_guard.py

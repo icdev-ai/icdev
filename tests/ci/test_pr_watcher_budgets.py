@@ -302,8 +302,12 @@ def test_the_refund_only_fires_for_a_conflict_proved_phantom():
     import inspect
 
     src = inspect.getsource(pw.PRWatcher.poll_once)
-    phantom = src.index("_conflict_is_real")
+    phantom = src.index("classify_conflict(state)")
     call = src.index("_refund_resume_budget")
     assert phantom < call, (
-        "the refund must sit inside the branch guarded by _conflict_is_real"
+        "the refund must sit inside the branch guarded by classify_conflict"
+    )
+    assert "!= CONFLICT_REAL" in src[phantom:call], (
+        "a conflict git reproduces must never be refunded — that loops forever "
+        "on real work"
     )

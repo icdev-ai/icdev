@@ -2186,6 +2186,29 @@ tests/test_ideation_frames.py
 tests/ci/test_ungated_red_report.py
 tests/test_databridge_first_grant.py
 tests/rag/test_provenance_ledger_retrieval.py
+
+# kpr-watch-07. GitHub does not apply `.gitattributes` merge drivers, so a PR
+# that appends to a union-merged path — which CLAUDE.md requires of every PR
+# adding a test file, via this very list — goes DIRTY while merging clean under
+# git. pr_watcher called that whole class a stale forge cache, spent a one-shot
+# budget on it and then went silent: nine of ten open PRs stuck, hcx-evt-03 with
+# 499 escalate rows and AWAITING MERGE never draining. This pins the three-way
+# classification (real / union_only / phantom), that a probe which could not RUN
+# is not read as a conflict, that only the union lines are stripped from the
+# comparison tree, and that the rebase budget is counted per base era.
+tests/ci/test_pr_watcher_union_conflict.py
+
+# Modified by kpr-watch-07, green alone and in-suite, and it carries the
+# structural guards that keep a stale conflict routed to the REBASE rather
+# than to the merge the forge refuses — deletable, until now, without anything
+# going red. Its `importorskip` on a first-party module went with it: that
+# guard could only ever turn a real breakage into a green skip.
+#
+# tests/ci/test_pr_watcher_rebase.py is deliberately NOT gated here. It is
+# green too, but it carries two legitimate environment guards (git absent;
+# suite pinned to SQLite), and registering them would need skip_max raised —
+# which may only go DOWN. Gating it belongs with whatever removes those two.
+tests/ci/test_pr_watcher_stale_conflict_recovery.py
 # cef-fnd-04: the domain-agnostic entity-currency store, and the reason
 # docmod_defacto_standards held 0 rows — its ONLY input, ni_devices, held 0 rows,
 # so the writer ran nightly and had nothing to learn from. Pins the shape, not
