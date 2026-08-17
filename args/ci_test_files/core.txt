@@ -2017,3 +2017,56 @@ tests/test_ollama_prefix_latency.py
 # (call site deleted / checked ignored / mode ignored); each is caught by a
 # different test. No network, no git, no DB.
 tests/ci/test_pr_watcher_landed.py
+
+# rem-tst-02 — first promotion batch off the ungated census (rem-tst-01).
+#
+# docs/testing/ungated_test_census.json measured all 1,792 grandfathered modules
+# one process each: 1,691 pass ALONE. That number is not a licence to bulk-add —
+# green alone and green in-suite are different questions, and this batch answers
+# both for 25 of them rather than the first for all 1,691.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so a
+# module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one of these is under 1s alone, 93s of pytest for the
+# batch; (c) ZERO static skip sites, because a gated file that skips is unmeasured
+# and registering a new site would breach skip_census.skip_max, which only goes
+# down. Re-measured on this branch on 2026-08-16, not trusted from the census
+# file: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH, 456
+# tests, zero skipped) and green IN-SUITE appended after the existing list in one
+# process, which is the order-dependence half CLAUDE.md requires and the census
+# explicitly does not cover.
+#
+# args/test_gating_gate.yaml's backlog_max falls 1810 -> 1766, which is 44, NOT
+# the 25 moved. The census itself falls by exactly 25 (1,791 -> 1,766); the other
+# 19 is pre-existing HEADROOM being surrendered at the same time. main's ceiling
+# sat 19 above its effective backlog, and that gap is room for the gap to regrow
+# unobserved — the exact thing the "no headroom, deliberately" note in that file
+# says the number is not for. It is re-pinned to EQUAL the effective backlog, as
+# that note specifies, and per the ratchet may only go down from here. Nothing a
+# PR is allowed to do can push the effective count back up: the census only ever
+# shrinks, and a new test file has to be gated here rather than appended to it.
+tests/agent_runtime/test_skills_lifecycle.py
+tests/agent_runtime/test_standing_goals.py
+tests/agent_runtime/test_profile_memory.py
+tests/agent_runtime/test_profiles.py
+tests/agent_runtime/test_safety.py
+tests/agent_toolkit/test_composer.py
+tests/agent_toolkit/test_fs.py
+tests/bi_dashboard/test_db_init.py
+tests/bi_dashboard/test_echarts_adapter.py
+tests/bi_dashboard/test_spec_generator.py
+tests/bi_dashboard/test_end_to_end_flow.py
+tests/bom/test_categorize.py
+tests/bom/test_conformance.py
+tests/test_hook_session_correlation.py
+tests/test_iac_cli.py
+tests/test_idr_conflict_gate.py
+tests/test_kg_entity_resolution.py
+tests/test_kg_llm_relationship_extractor.py
+tests/test_kg_pair_generator.py
+tests/test_kg_themes_by_collection.py
+tests/test_lens_migration_anomaly.py
+tests/test_lens_quality.py
+tests/test_lens_quality_anomaly.py
+tests/test_lens_workflow_patterns_anomaly.py
+tests/test_lesson_learned_kph.py
