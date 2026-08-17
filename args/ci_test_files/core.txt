@@ -2068,3 +2068,10 @@ tests/test_lens_quality.py
 tests/test_lens_quality_anomaly.py
 tests/test_lens_workflow_patterns_anomaly.py
 tests/test_lesson_learned_kph.py
+# cef-fnd-01: the DataBridge agent broker's audit trail. Promoted OUT of
+# args/ci_test_backlog.txt in the PR that made it pass — the whole point of this
+# change is that an unrecorded access decision must go red, and a test that has
+# never gated a merge cannot do that. Covers: the table's PG-native migration,
+# the SQLite init DDL kept in step with it, and an audit-write failure surfacing
+# instead of being swallowed. No network, no live DB (conftest forces SQLite).
+tests/test_databridge_broker.py
