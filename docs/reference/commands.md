@@ -6421,6 +6421,28 @@ python tools/ci/ungated_test_census.py --run --deadline-s 3600 --timeout 240   #
 python tools/ci/ungated_test_census.py --verify docs/testing/ungated_test_census.json  # measured + not-reached + out-of-scope == backlog
 python tools/ci/ungated_test_census.py --summarize docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
 
+# RAW BOARD-WRITER census (rem-hyg-05) — a kanban INSERT that bypasses the canonical seeder.
+# tools/kanban/task_factory.py opens with "Canonical task seeder — never use raw INSERT
+# directly" and nothing had ever checked it. Measured 2026-08-16 over tools/ + the
+# icdev/tools/ mirror: 231 raw board INSERT sites in 209 files, 219 of them debt once the
+# seeder and db/migrations/** are excluded — roughly seven writers in ten bypass it, and 42
+# of those sites are the autonomous path (tools/genesis/reflexes/*). The bypass skips
+# VALID_TASK_TYPES (enforced by PG, silently ignored by SQLite), the _assert_real_board
+# refusal that stops a seed landing in a throwaway worktree database, the gate-id/risk-marker
+# checks and the dedupe — and reports success anyway. A gate INSIDE create_tasks only ever
+# sees the 30% that already call it, which is why this is a separate census.
+# Per SITE (<file>::<qualname>[<n>]), not per file, so a grandfathered module cannot grow a
+# second writer unobserved. ENUMERATED by name in args/kanban_raw_insert_census.txt;
+# raw_insert_max in args/board_writer_gate.yaml may only go DOWN. The fix is
+# `from tools.kanban.task_factory import create_tasks`. Converting the 219 is rem-hyg-06.
+python tools/kanban/raw_insert_census.py --check             # exit 1 on an unregistered raw INSERT
+python tools/kanban/raw_insert_census.py --json              # per-file site census
+python tools/kanban/raw_insert_census.py --check --staged    # pre-commit fast path
+python tools/kanban/raw_insert_census.py --check --changed tools/foo.py
+python tools/kanban/raw_insert_census.py --prune             # drop entries whose site is gone
+python tools/kanban/raw_insert_census.py --seed              # adoption only; refuses to overwrite
+python tools/workflow/coherence_checker.py --check board_writer_census --gate
+
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
 # all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored

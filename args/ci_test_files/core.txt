@@ -1905,6 +1905,7 @@ tests/test_coherence_log_standard.py
 # function, so router.invoke() returned before ever reaching the telemetry seam.
 # 16 tests, <1s: temp SQLite files only, no network, no shared board.
 tests/test_ai_telemetry_cache_tokens.py
+tests/test_raw_insert_census.py
 # rem-hyg-03: the fire-rate survey that must run BEFORE rem-hyg-04 arms the
 # identity check. Guards the three properties that fail while looking like
 # success — an unmeasurable survey reporting a 0% rate, a gate sentinel counted

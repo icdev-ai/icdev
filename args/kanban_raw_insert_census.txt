@@ -1,0 +1,251 @@
+# CUI // SP-CTI
+# RAW `INSERT INTO kanban_tasks` CENSUS (rem-hyg-05) — enumerated, never counted
+#
+# tools/kanban/task_factory.py says "Canonical task seeder — never use raw INSERT
+# directly". Every line below is a place that does it anyway. A raw INSERT skips
+# the task-type validation, the SQLite-fallback refusal, the gate-id/risk-marker
+# checks and the dedupe — and still reports success.
+#
+# FORMAT
+#   <file>::<qualname>[<ordinal>]  # <written reason>
+#
+# THE RULES
+#   * A raw-INSERT site that is not on this list FAILS the coherence gate by name.
+#   * A reason must be a reason. "legacy" and "TBD" are refused.
+#   * `raw_insert_census.raw_insert_max` in args/board_writer_gate.yaml is a
+#     ceiling on the number of lines here and MAY ONLY GO DOWN. Lower it when a
+#     writer is converted; never raise it to get a commit through.
+#   * The right fix is `from tools.kanban.task_factory import create_tasks`.
+#     Registering a site is the fallback, and it is a debt you have written down.
+#
+# Per SITE, not per file: a per-file census would grandfather a module once and
+# then let it grow a second and third raw INSERT without a word.
+#
+# The `shape:` word in each reason is the migration hint for rem-hyg-06 —
+# `reflex` is the autonomous path and the highest-value cohort, `seeder` is a
+# one-shot script, `mixed` already calls create_tasks elsewhere in the same file
+# (so the import is there and only the call site needs moving), `runtime` is
+# everything else.
+#
+# Gate:  python tools/kanban/raw_insert_census.py --check
+#        python tools/workflow/coherence_checker.py --check board_writer_census --gate
+
+icdev/tools/ace/controller.py::ACEController._create_probationary_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/ace/coworker_thread.py::CoWorkerThread._create_hitl_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/agent_toolkit/_planning.py::write_todos[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/agentic_ai_canvas/ops_config_generator.py::create_kanban_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/agentic_ai_canvas/workflow.py::launch_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/ai_augmentation/blueprint.py::api_send_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/ai_augmentation/blueprint.py::api_send_to_kanban[2]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/ai_augmentation/engine.py::_promote_phase_opportunities[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/ai_augmentation/engine.py::_promote_top_opportunities[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/aisg/sprint_seeder.py::seed_for_maturity[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/awareness/suggested_card_writer.py::_insert_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/chat/kanban_bridge.py::create_context_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/chat/requirement_intake_hook.py::_create_hitl_review[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/dashboard/api/kanban.py::create_from_plan[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/dashboard/api/kanban.py::create_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_cu_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_nwa_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_oracle_fix_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_pint_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_sg_cyber_ext.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_sg_twin.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_sgx_osint_epics.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_wfs_decomp.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_wfs_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_wne_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/db/seeds/seed_wne_writeguard.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/demo/canvas_seeders.py::seed_kanban_canvas[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/foundry/engine.py::_ensure_hitl_circuit_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/gameday/judge_agent.py::_route_to_suggested_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/aadc_reflex.py::_create_kanban_suggestion[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/academy_reflex.py::_promote_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/aidp_monitor.py::_emit_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/coherence_to_kanban_reflex.py::_insert_coherence_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/cpmp_monitor.py::_suggest_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/e2e_runner.py::_create_run_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/harness.py::_create_degradation_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/harness.py::_create_meta_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/harness.py::_create_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/integrity_monitor.py::_open_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/kanban.py::_decompose_batch_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/kanban.py::_decompose_one_task[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/kanban.py::_decompose_phase_exit_gates[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/kanban.py::_detect_and_queue_ci_failures[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/migration_canvas.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/pma_credential_monitor.py::_seed_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/pma_int_gap_monitor.py::_seed_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/pmo_option_tracker.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/pmo_weekly_report.py::_push_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/qa_agent_reflex.py::_insert_gap_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/qa_agent_reflex.py::_insert_smoke_bug_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/qa_agent_reflex.py::_insert_sweep_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/reflexion_loop.py::_create_amendment_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/route_perf_reflex.py::_insert_perf_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/genesis/reflexes/skill_security_monitor.py::_create_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_aadc_aimc_appmigration.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_aadc_enhancement.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_ace_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_aisg.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_aisg_ship.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_appendix_initiatives.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_chyg_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_cot_cod.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_ddc_datasci.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_ddx_extensions.py::insert_task[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_dic_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_dsyn_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_fdt_amendment.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_fdt_tradingagents.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_foundry.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_irad_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_llm_cache.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_mce_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_nmce_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_ohc_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_ontology.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_pma_gaps_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_pmo_demo_wow.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_prop_security_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_remaining_tasks.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_rted_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_security_framework.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_showcase.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_sipa_integrity.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_wgint.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/kanban/seed_zig_kanban.py::_upsert_task[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/monitor/auto_resolver.py::_do_hitl_escalation[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/notifications/adapters/listener_base.py::_create_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/notifications/adapters/telegram_listener.py::_create_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/requirements/intake_kanban_promoter.py::promote[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/decompose_backlog.py::create_subtask[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_enterprise_frontend_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_fathomdesk_news_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_phase_7_10_traps_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_phase_7_11_news_2_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_phase_7_6_ai_options_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_phase_7_7_prob_compare_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_phase_7_8_greeks_share_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/schedule_phase_7_9_ta_foundation_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/scripts/seed_fde_epic_e.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/studio/seed_wex_kanban.py::_insert[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/studio/seed_wex_pg.py::main[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/testing/api_contract_tester.py::file_failure_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/testing/dep_health.py::_file_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/testing/flaky_tracker.py::_file_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/testing/seed_gcpl_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/testing/visual_regression.py::file_regression_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/twin_core/event_bridge.py::create_twin_drift_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/workflow/failure_triage.py::_create_diagnostic_card_with_patch[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+icdev/tools/workflow/self_debug.py::_create_diagnostic_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/ace/controller.py::ACEController._create_probationary_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/ace/coworker_thread.py::CoWorkerThread._create_hitl_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/agent_toolkit/_planning.py::write_todos[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/agentic_ai_canvas/ops_config_generator.py::create_kanban_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+tools/agentic_ai_canvas/workflow.py::launch_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/ai_augmentation/blueprint.py::api_send_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/ai_augmentation/blueprint.py::api_send_to_kanban[2]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/ai_augmentation/engine.py::_promote_phase_opportunities[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/ai_augmentation/engine.py::_promote_top_opportunities[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/aisg/sprint_seeder.py::seed_for_maturity[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/awareness/suggested_card_writer.py::_insert_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/chat/kanban_bridge.py::create_context_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/chat/requirement_intake_hook.py::_create_hitl_review[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/dashboard/api/kanban.py::create_from_plan[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/dashboard/api/kanban.py::create_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_cu_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_nwa_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_oracle_fix_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_pint_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_sg_cyber_ext.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_sg_twin.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_sgx_osint_epics.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_wfs_decomp.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_wfs_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_wne_plan.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/db/seeds/seed_wne_writeguard.py::<module>[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/demo/canvas_seeders.py::seed_kanban_canvas[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/foundry/engine.py::_ensure_hitl_circuit_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/gameday/judge_agent.py::_route_to_suggested_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/aadc_reflex.py::_create_kanban_suggestion[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/academy_reflex.py::_promote_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/aidp_monitor.py::_emit_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/coherence_to_kanban_reflex.py::_insert_coherence_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/cpmp_monitor.py::_suggest_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/e2e_runner.py::_create_run_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/harness.py::_create_degradation_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/harness.py::_create_meta_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/harness.py::_create_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/integrity_monitor.py::_open_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/kanban.py::_decompose_batch_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/kanban.py::_decompose_one_task[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/kanban.py::_decompose_phase_exit_gates[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/kanban.py::_detect_and_queue_ci_failures[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/migration_canvas.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/pma_credential_monitor.py::_seed_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/pma_int_gap_monitor.py::_seed_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/pmo_option_tracker.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/pmo_weekly_report.py::_push_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/qa_agent_reflex.py::_insert_gap_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/qa_agent_reflex.py::_insert_smoke_bug_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/qa_agent_reflex.py::_insert_sweep_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/reflexion_loop.py::_create_amendment_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/route_perf_reflex.py::_insert_perf_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/genesis/reflexes/skill_security_monitor.py::_create_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_aadc_aimc_appmigration.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_aadc_enhancement.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_ace_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_aisg.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_aisg_ship.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_appendix_initiatives.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_chyg_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_cot_cod.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_ddc_datasci.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_ddx_extensions.py::insert_task[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_dic_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_dsyn_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: mixed; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_fdt_amendment.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_fdt_tradingagents.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_foundry.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_irad_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_llm_cache.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_mce_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_nmce_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_ohc_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_ontology.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_pma_gaps_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_pmo_demo_wow.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_prop_security_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_remaining_tasks.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_rted_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_security_framework.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_showcase.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_sipa_integrity.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_wgint.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/kanban/seed_zig_kanban.py::_upsert_task[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/monitor/auto_resolver.py::_do_hitl_escalation[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/notifications/adapters/listener_base.py::_create_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/notifications/adapters/telegram_listener.py::_create_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/requirements/intake_kanban_promoter.py::promote[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/decompose_backlog.py::create_subtask[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_enterprise_frontend_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_fathomdesk_news_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_phase_7_10_traps_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_phase_7_11_news_2_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_phase_7_6_ai_options_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_phase_7_7_prob_compare_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_phase_7_8_greeks_share_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/schedule_phase_7_9_ta_foundation_plan.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/scripts/seed_fde_epic_e.py::enqueue[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/studio/seed_wex_kanban.py::_insert[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/studio/seed_wex_pg.py::main[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/testing/api_contract_tester.py::file_failure_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/testing/dep_health.py::_file_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/testing/flaky_tracker.py::_file_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/testing/seed_gcpl_kanban.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
+tools/testing/verify_board_stall_rule.py::_seed_task[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/testing/visual_regression.py::file_regression_tasks[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/twin_core/event_bridge.py::create_twin_drift_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/workflow/failure_triage.py::_create_diagnostic_card_with_patch[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
+tools/workflow/self_debug.py::_create_diagnostic_card[1]  # grandfathered at adoption (rem-hyg-05); shape: runtime; convert to task_factory.create_tasks in rem-hyg-06
