@@ -547,16 +547,25 @@ def test_an_absent_runtime_invocations_is_unmeasurable_not_zero(conn_factory):
     assert "runtime_invocations" in cls["unmeasured_reason"]
 
 
-def test_the_enum_is_read_without_importing_the_module():
+def test_the_enum_is_read_without_importing_the_module(monkeypatch):
     """Importing it builds the singleton, which auto-loads nine chat builtins.
 
     A measurement tool that executes eleven extension modules to count ten names
     reports on the importer as much as on the seam — and this probe runs twice
     per commit inside check_capability_liveness.
+
+    ``monkeypatch.delitem`` rather than a bare ``sys.modules.pop``: the entry
+    holds the process-wide ``extension_manager`` singleton, and dropping it
+    permanently makes the NEXT ``from tools.extensions.extension_manager import
+    extension_manager`` build a second one. Nothing raises — a later test
+    registers a handler on the singleton it bound at collection time while the
+    runtime dispatches through the replacement, and the dispatch runs zero
+    handlers, silently. That is how this test took the whole hcx-live-03
+    lifecycle suite down in-suite while every file passed alone.
     """
     import sys
 
-    sys.modules.pop("tools.extensions.extension_manager", None)
+    monkeypatch.delitem(sys.modules, "tools.extensions.extension_manager", raising=False)
     points = capcon._extension_points_from_source()
 
     assert "tool_execute_before" in points and len(points) == 10
