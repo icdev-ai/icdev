@@ -24601,13 +24601,15 @@ CREATE TABLE IF NOT EXISTS public.rag_provenance_ledger (
     signature text,
     event_type text NOT NULL DEFAULT 'ingest'::text,
     ingest_timestamp timestamp without time zone,
+    retrieval_log_id integer,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text])))
+    CONSTRAINT rag_provenance_ledger_event_type_check CHECK ((event_type = ANY (ARRAY['ingest'::text, 'chain_of_custody'::text, 'retrieval'::text])))
 );
 
 CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON public.rag_provenance_ledger(chunk_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc ON public.rag_provenance_ledger(parent_doc_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON public.rag_provenance_ledger(event_type);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_retrieval_log ON public.rag_provenance_ledger(retrieval_log_id);
 
 --
 -- Name: rag_queries; Type: TABLE; Schema: public; Owner: -
