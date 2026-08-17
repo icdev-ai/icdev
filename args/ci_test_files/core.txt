@@ -2078,6 +2078,51 @@ tests/test_lens_quality.py
 tests/test_lens_quality_anomaly.py
 tests/test_lens_workflow_patterns_anomaly.py
 tests/test_lesson_learned_kph.py
+
+# rem-tst-03 — second promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02, on the next 25. The census is the shortlist and
+# never the evidence: it answers "green ALONE" for all 1,792 grandfathered
+# modules and says nothing about order-dependence, so both halves were
+# re-measured on this branch on 2026-08-16 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one is under 4s alone, ~16s of pytest for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_agent_mailbox_placeholders.py
+tests/test_integrity_event_emitter.py
+tests/test_lens_workflow_patterns.py
+tests/test_icdev_logger.py
+tests/test_instrumentation.py
+tests/test_integrity_claim_parser.py
+tests/test_news_stream_fetcher.py
+tests/browser/test_get_driver_backend.py
+tests/chat_router/test_url_analyzer_query_wiring.py
+tests/test_iqe_infra_adapter.py
+tests/test_lens_trajectory_confidence.py
+tests/test_network_intelligence.py
+tests/browser/test_page_vv.py
+tests/chat_router/test_intent_classifier_cortex_adoption.py
+tests/ci/test_pr_watcher_enforced_gate.py
+tests/test_evidence_corpus.py
+tests/test_icdev_client.py
+tests/test_iqe_data_adapter.py
+tests/test_iqe_executor.py
+tests/browser/cdp/test_launcher.py
+tests/ci/modules/test_agent.py
+tests/ci/modules/test_state.py
+tests/perf/test_perf_benchmark.py
+tests/test_agent_shap.py
+tests/test_aggregation_guard.py
 # cef-fnd-01: the DataBridge agent broker's audit trail. Promoted OUT of
 # args/ci_test_backlog.txt in the PR that made it pass — the whole point of this
 # change is that an unrecorded access decision must go red, and a test that has
