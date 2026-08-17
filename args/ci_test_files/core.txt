@@ -2246,3 +2246,12 @@ tests/currency/test_entity_currency.py
 # — declared-but-unconsumed being the defect this platform ships most.
 # 28 tests, ~1s: temp SQLite files only, no network, no shared board.
 tests/test_cache_regression.py
+
+# kpr-watch-08. The survey that decides whether hold_on_sibling_conflict may
+# be widened to the union-merged paths, and the tie-break narrowing it found.
+# Gated because the survey's whole value is being trustworthy in ONE direction
+# — it must not under-report how much serialization widening would cause — and
+# that rests on details a refactor would quietly break: `*` not crossing `/`,
+# union patterns read from .gitattributes rather than hardcoded, and an
+# unavailable corpus exiting 2 instead of printing a clean report.
+tests/ci/test_sibling_hold_survey.py

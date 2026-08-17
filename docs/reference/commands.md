@@ -6700,3 +6700,22 @@ with an id deterministic in (rung, provider).
 ```bash
 pytest tests/test_cache_regression.py -v   # both directions: fires, and does not (28 tests)
 ```
+
+```bash
+# Sibling-conflict hold — survey BEFORE widening it (#kpr-watch-08)
+python tools/ci/sibling_hold_survey.py --json
+python tools/ci/sibling_hold_survey.py --limit 120
+python tools/ci/sibling_hold_survey.py --open-only
+# GitHub does NOT apply .gitattributes merge drivers, so the union-merged paths
+# coordination_paths.py excludes from the sibling check DO conflict on the forge.
+# Widening the check anyway is the change GENERATED_PATH_MARKERS records being
+# burned by. Measured 2026-08-17 over 120 merged PRs:
+#   current  35/120 held at their own merge moment (29.2%), max clique 5
+#   widened  78/120 (65.0%), max clique 13
+# so it is NOT armed. Union patterns are parsed from .gitattributes rather than
+# hardcoded. `moments_with_nobody_free` can only ever read 0 — the replay samples
+# only instants where a merge HAPPENED — so read `held_by_unmergeable` instead:
+# that is what found #1769 waiting on #1744 and #1781 on #1773 under the CURRENT
+# posture, each behind a sibling the forge would refuse to merge.
+# An unavailable corpus exits 2; a survey nobody could run is not a clean survey.
+```
