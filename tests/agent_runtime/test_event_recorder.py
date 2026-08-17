@@ -509,6 +509,26 @@ class TestBlockedAndUnregisteredCallsStillAppear:
         assert _types() == ["tool_call", "tool_result"]
 
 
+def _assert_ordered_subset(actual, expected):
+    """`expected` occurs in `actual`, in order, ignoring events in between.
+
+    These tests are about WHICH events a path records and in what order — never
+    about the absence of others. Pinning the exact list made every one of them a
+    tripwire for any new event type, and hcx-evt-03 is that: `request_context`
+    now lands on every context injection, so four assertions broke while the
+    properties they exist to protect were never in question.
+
+    A subsequence check still fails on a missing event, on a reordered one, and
+    on a duplicate that breaks the order — it only stops asserting that nothing
+    ELSE was recorded, which was never the claim.
+    """
+    it = iter(actual)
+    missing = [e for e in expected if not any(a == e for a in it)]
+    assert not missing, (
+        f"{missing} missing from {actual!r} (or out of order)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 5. turn_end happens exactly once, on every exit path
 # ---------------------------------------------------------------------------
@@ -534,7 +554,17 @@ class TestTurnEndIsExactlyOnce:
         with pytest.raises(RuntimeError, match="provider exploded"):
             rt.run_turn("hi")
         types = _types()
-        assert types == ["turn_start", "turn_end"]
+        # BRACKETS, not the whole list. What this test is about is that the turn
+        # is CLOSED on a path the loop does not control — so it asserts the first
+        # and last events and that turn_end happens once. Pinning the exact
+        # sequence made it a tripwire for any new event type recorded between
+        # them, and hcx-evt-03 is exactly that: `request_context` now lands on
+        # every context injection, which broke this assertion while the property
+        # it exists to protect was never in question.
+        assert types[0] == "turn_start"
+        assert types[-1] == "turn_end"
+        assert types.count("turn_end") == 1, "exactly once, on every exit path"
+        assert "turn_start" not in types[1:]
         assert _events()[-1]["payload"]["truncation_reason"] == "loop_raised:RuntimeError"
 
     def test_a_stopped_turn_records_the_stop_reason(self, event_db):
@@ -603,7 +633,7 @@ class TestRunTurnWiring:
         rt = AgentRuntime(router=object())
         ctx_id = rt.session.context_id
         rt.run_turn("hi")
-        assert _types(ctx_id) == ["turn_start", "turn_end"]
+        _assert_ordered_subset(_types(ctx_id), ["turn_start", "turn_end"])
         assert read_session("loop-sess-1") == []
 
     def test_the_existing_persistence_contract_is_unchanged(
@@ -679,7 +709,8 @@ class TestTheCapabilityIsActuallyConsumed:
         result = rt.run_turn("what is the answer?")
 
         assert result.done is True
-        assert _types(ctx_id) == ["turn_start", "assistant_message", "turn_end"]
+        _assert_ordered_subset(
+            _types(ctx_id), ["turn_start", "assistant_message", "turn_end"])
         end = _events(ctx_id)[-1]["payload"]
         assert end["truncation_reason"] == "completed"
         assert end["loop_session_id"] == result.session_id
@@ -702,5 +733,5 @@ class TestTheCapabilityIsActuallyConsumed:
         ctx_id = rt.session.context_id
         rt.stop()
         rt.run_turn("do the thing")
-        assert _types(ctx_id) == ["turn_start", "turn_end"]
+        _assert_ordered_subset(_types(ctx_id), ["turn_start", "turn_end"])
         assert _events(ctx_id)[-1]["payload"]["truncation_reason"] == "stop_event"
