@@ -30,11 +30,19 @@ search:
   # re-orders the fused list. A backend with no entry here weighs 1.0
   # (neutral); a negative or non-numeric entry is clamped to 0.0, which
   # demotes that backend rather than inverting the ordering.
+  #
+  # sme is 0.0 ON PURPOSE and is not a tuning knob. It is the advisory backend
+  # (ADVISORY_BACKENDS in tools/cortex/schemas.py): it returns an ACE persona's
+  # OPINION, authored by an LLM at query time, not a row that existed before the
+  # query. Weight 0.0 means its RRF contribution is 0.0, so it always sorts
+  # BELOW every evidentiary hit and can never carry a fused ranking. Raising it
+  # would let an opinion outrank evidence, which base_pack TRUST rule 1 forbids.
   strategy_weights:
     rag: 1.0
     graph: 0.8
     dic: 0.9
     kb: 0.6
+    sme: 0.0
 
   # Reciprocal Rank Fusion constant: fused = weight / (rrf_k + rank).
   rrf_k: 60
@@ -48,15 +56,23 @@ search:
   # timeout is abandoned and the router returns partial results from the
   # backends that finished. "default" applies to any backend without an
   # explicit entry.
+  # sme is far larger than the rest because it can pay for TWO LLM calls on a
+  # cold domain — minting the persona, then asking it — where a retrieval
+  # backend does one DB/vector round trip.
   timeouts:
     default: 10.0
     rag: 10.0
     graph: 8.0
     dic: 10.0
     kb: 5.0
+    sme: 60.0
 
   fan_out:
     # Backends queried in parallel when a query is ambiguous (2-3 recommended).
+    #
+    # sme is absent and must stay absent: fan-out is the AUTOMATIC path, and an
+    # advisory backend is reached only when a caller names it. Adding it here
+    # would put an LLM opinion into the result set of every ambiguous query.
     backends: [rag, graph, dic]
     max_workers: 4
 

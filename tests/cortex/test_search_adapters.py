@@ -457,9 +457,10 @@ def test_adapters_importable_via_canonical_namespace():
         search_graph,
         search_kb,
         search_rag,
+        search_sme,
     )
 
-    assert set(BACKEND_ADAPTERS) == {"rag", "graph", "dic", "kb"}
+    assert set(BACKEND_ADAPTERS) == {"rag", "graph", "dic", "kb", "sme"}
 
 
 # ---------------------------------------------------------------------------

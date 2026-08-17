@@ -7498,7 +7498,9 @@ TOOL_REGISTRY = {
         "description": (
             "Unified Cortex search across all retrieval backends (rag / graph / dic / kb) with "
             "agentic strategy routing + CRAG corrective loop. Returns normalized CortexSearchResults "
-            "(score 0-1, per-result citation + routing metadata)."
+            "(score 0-1, per-result citation + routing metadata). strategy='sme' instead consults an "
+            "ACE domain-expert persona: an ADVISORY opinion, marked metadata.advisory, never selected "
+            "by auto/all, and never a verdict."
         ),
         "input_schema": {
             "type": "object",
@@ -7507,7 +7509,7 @@ TOOL_REGISTRY = {
                 "top_k": {"type": "integer", "description": "Results per backend (default 5)", "default": 5},
                 "strategy": {
                     "type": "string",
-                    "description": "auto | rag | graph | dic | kb | all (auto classifies + routes)",
+                    "description": "auto | rag | graph | dic | kb | all (auto classifies + routes) | sme (ADVISORY opinion, opt-in only)",
                     "default": "auto",
                 },
                 "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},

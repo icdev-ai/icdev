@@ -4516,7 +4516,7 @@ python tools/llm/model_monitor.py --gate                                        
 ## ICDEV Cortex — Unified AI Facade (ctx-*)
 
 Cortex is a Python **API facade** (`tools/cortex/`, mirrored to `icdev/tools/cortex/`) over
-LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), IQE, and the enforced
+LLMRouter, the four retrieval backends (RAG / GraphRAG / DIC / KB), the advisory SME backend, IQE, and the enforced
 TRUST governance chain. There is no standalone argparse CLI — call it in-process or via
 `python -c`. Routing is config-driven (`cortex_*` chains in `args/llm_config.yaml`); behavior
 tuning lives in `args/cortex_config.yaml` (`$ICDEV_CORTEX_CONFIG` overrides). All chains keep a
@@ -4539,6 +4539,13 @@ python -c "from tools.cortex import search; [print(h.backend, round(h.score,3), 
 
 # Force a specific backend or full fan-out (bypass classification): rag|graph|dic|kb|all
 python -c "from tools.cortex import search; print(len(search('quarterly revenue trend', strategy='all')))"
+
+# ADVISORY rung (cef-bck-03): ask an ACE domain-expert persona instead of the corpus.
+# Opt-in ONLY — 'auto' and 'all' never select it. The result is an OPINION, not
+# evidence: metadata.advisory is True, RRF weight is 0.0, and it must never become
+# a deterministic verdict. With no provider available it returns [] with .errors,
+# never a fabricated opinion.
+python -c "from tools.cortex import search, is_advisory; rs = search('how is hull risk priced', strategy='sme'); print([(r.metadata['role_id'], is_advisory(r)) for r in rs], getattr(rs,'errors',[]))"
 
 # Inspect the routing decision without running backends
 python -c "from tools.cortex import classify_route; print(classify_route('list all vendors linked to CVE-2024-1234'))"

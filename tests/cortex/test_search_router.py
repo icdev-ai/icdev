@@ -402,4 +402,4 @@ def test_router_importable_via_canonical_namespace():
         search,
     )
 
-    assert set(CORTEX_STRATEGIES) == {"auto", "all", "rag", "graph", "dic", "kb"}
+    assert set(CORTEX_STRATEGIES) == {"auto", "all", "rag", "graph", "dic", "kb", "sme"}

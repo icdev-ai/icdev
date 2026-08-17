@@ -2,7 +2,7 @@
 """ICDEV Cortex unified schemas.
 
 The ICDEV Cortex facade is the platform's Snowflake-Cortex-style unified AI
-layer. The four existing search backends (rag, knowledge_graph,
+layer. The four retrieval backends (rag, knowledge_graph,
 document_intelligence, keyword KB) return four incompatible result shapes;
 the dataclasses in this module are the single normalization contract every
 backend adapter maps into and every Cortex consumer reads from.
@@ -20,8 +20,31 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 from typing import Optional
 
-# The four normalized retrieval backends behind the Cortex facade.
-CORTEX_BACKENDS = ("rag", "graph", "dic", "kb")
+# Every normalized backend behind the Cortex facade.
+CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "sme")
+
+# The split inside CORTEX_BACKENDS, and the reason it exists (cef-bck-03).
+#
+# The first four backends RETRIEVE: every hit is a row that existed before the
+# query and can be re-read. ``sme`` does not — it asks an ACE domain-expert
+# persona for an OPINION, which the model authors at query time. Both shapes
+# normalize into CortexSearchResult, so nothing downstream can tell them apart
+# from the dataclass alone; this tuple pair is what tells them apart.
+#
+# base_pack TRUST rule 1 requires a verdict to derive from deterministic
+# evidence and never from an LLM. An advisory backend therefore:
+#   * is NEVER selected automatically — not by ``strategy="all"``, not by
+#     ``search_all()``'s default, not by a ``ROUTE_LABEL_BACKENDS`` label, and
+#     not by ``search.fan_out.backends``. A caller reaches it only by naming it.
+#   * carries ``metadata["advisory"] = True`` on every result, which
+#     ``is_advisory()`` reads (tools/cortex/search_service.py).
+#   * weighs 0.0 in RRF (``search.strategy_weights.sme``), so it can never
+#     outrank an evidentiary hit in a fused list.
+#
+# Adding a backend to ADVISORY_BACKENDS is the whole opt-out: EVIDENTIARY_BACKENDS
+# is derived, so it cannot drift from it.
+ADVISORY_BACKENDS = ("sme",)
+EVIDENTIARY_BACKENDS = tuple(b for b in CORTEX_BACKENDS if b not in ADVISORY_BACKENDS)
 
 
 def _known_fields(cls: type, data: Optional[dict]) -> dict:

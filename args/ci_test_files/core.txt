@@ -2007,3 +2007,25 @@ tests/test_gemini_managed_object_cache.py
 # for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
 # absent. No Ollama process, no network, no DB.
 tests/test_ollama_prefix_latency.py
+
+# cef-bck-03: the Cortex `sme` ADVISORY backend, and the proof that ACE's
+# ensure_sme can actually mint a role (before this card, no file in
+# args/ace/roles/ carried the generated_at stamp and _generated_smes.json
+# existed nowhere — i.e. the generation path had never once completed).
+# The advisory/evidentiary split is the load-bearing part: these pin that an
+# opinion is never selected automatically, never outranks evidence in RRF,
+# never triggers CRAG, and degrades with .errors instead of fabricating.
+# Only the MODEL is stubbed, at the LLMRouter seam; role_policy, the shipped
+# capability bundles, and the YAML/index writes are all real, against a
+# redirected project root. No network, no LLM, no DB.
+tests/cortex/test_search_sme.py
+# cef-bck-03, gated because this PR modified them: adding `sme` to
+# CORTEX_BACKENDS changes the constants these assert, and the CRAG suite is
+# what caught the regression where excluding advisory results from the CRAG
+# trigger also disabled correction for an EMPTY first pass. Moved out of
+# args/ci_test_backlog.txt (census 1791 -> 1787), verified green alone and
+# in-suite. No network, no LLM, no DB.
+tests/cortex/test_schemas.py
+tests/cortex/test_search_adapters.py
+tests/cortex/test_search_crag.py
+tests/cortex/test_search_router.py

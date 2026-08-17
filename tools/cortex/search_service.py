@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """Cortex search backend adapters — the retrieval layer of unified Cortex Search.
 
-The four existing search backends return four incompatible native shapes:
+The four RETRIEVAL backends return four incompatible native shapes:
 
 - ``rag``   — ``tools/rag/retriever.py`` ``RAGRetriever.search()`` returns
   ``SearchResult`` dataclasses (vector/bm25/rerank/final scores).
@@ -14,6 +14,14 @@ The four existing search backends return four incompatible native shapes:
   citation pack and clearance-aware filtering.
 - ``kb``    — the ``search_knowledge`` keyword KB
   (``tools/mcp/knowledge_server.py``) returns pattern dicts.
+
+A fifth backend, ``sme``, does not retrieve at all: it asks an ACE
+domain-expert persona (``tools/ace/sme_registry.py`` +
+``tools/ace/persona_query.py``) for an OPINION, authored by a model at query
+time. It normalizes into the same dataclass, so the split that keeps an opinion
+out of a verdict is carried by ADVISORY_BACKENDS / EVIDENTIARY_BACKENDS in
+``tools/cortex/schemas.py`` and by ``is_advisory()`` below — never by the shape
+of the result.
 
 Each adapter takes ``(query, top_k, ctx)`` and normalizes its backend's
 native hits into ``CortexSearchResult`` (score clamped to [0, 1], native
@@ -46,7 +54,14 @@ from tools.logging.icdev_logger import get_logger
 from tools.rag.retriever_common import clamp_unit, run_rag_search
 
 from .config import load_cortex_config, resolve_strategy_weights
-from .schemas import CORTEX_BACKENDS, Citation, CortexContext, CortexSearchResult
+from .schemas import (
+    ADVISORY_BACKENDS,
+    CORTEX_BACKENDS,
+    EVIDENTIARY_BACKENDS,
+    Citation,
+    CortexContext,
+    CortexSearchResult,
+)
 
 logger = get_logger(__name__)
 
@@ -579,12 +594,181 @@ def search_kb(
         )
 
 
+# ---------------------------------------------------------------------------
+# Advisory backend (cef-bck-03) — an OPINION, never a verdict
+# ---------------------------------------------------------------------------
+
+#: The only bundle this backend will ever ask ``ensure_sme`` for. ``advisory``
+#: ships ``folder_access: []`` and ``icdev_tools: []`` in
+#: args/ace/sme_capability_bundles.yaml, so a persona minted on this path cannot
+#: write or execute anything. Hard-coded rather than caller-configurable: a
+#: search backend is not a place to hand out agency, and "which bundle" is a
+#: human decision (see the promotion note in that YAML).
+SME_CAPABILITY_BUNDLE = "advisory"
+
+#: An opinion carries no retrieval confidence, so ``score`` is 0.0 — and that
+#: 0.0 must not be read as "measured a terrible match". Three things keep it from
+#: being read that way, none of them a tooltip: ``metadata["advisory"]`` says the
+#: result is an opinion, ``raw_scores["scored"] = False`` says no score was ever
+#: computed, and ``search.strategy_weights.sme = 0.0`` demotes it in RRF anyway.
+#: ``_corrective_pass`` also excludes advisory results from the CRAG trigger —
+#: an opinion is not evidence that retrieval succeeded OR that it failed.
+_SME_SCORE = 0.0
+
+
+def is_advisory(result) -> bool:
+    """True when *result* is an OPINION rather than retrieved evidence.
+
+    The one predicate every consumer that forms a VERDICT must call.
+
+    Two independent signals, either of which is sufficient: the
+    ``metadata["advisory"]`` flag the adapter stamps, and membership of
+    ``result.backend`` in ADVISORY_BACKENDS. Metadata is a plain dict that any
+    consumer may rebuild or drop (``_routed_pass`` already rewrites keys in it);
+    ``backend`` is what the result IS. Requiring both would let a dropped flag
+    promote an opinion into a verdict, so this is deliberately an ``or``.
+    """
+    if (getattr(result, "backend", "") or "") in ADVISORY_BACKENDS:
+        return True
+    return bool((getattr(result, "metadata", None) or {}).get("advisory"))
+
+
+def search_sme(
+    query: str,
+    top_k: int = 10,
+    ctx: Optional[CortexContext] = None,
+) -> list[CortexSearchResult]:
+    """ACE domain-expert opinion -> CortexSearchResult (backend='sme').
+
+    Two ACE calls, in order:
+
+    1. ``sme_registry.ensure_sme`` resolves the domain to a role — reusing one
+       of the ~90 catalog roles when it covers the domain, and minting a new
+       ``advisory`` persona only when none does.
+    2. ``persona_query.query_persona`` asks THAT role the question, in one
+       synchronous LLM call framed by its SOUL.md identity.
+
+    ``top_k`` is accepted for adapter-signature parity and deliberately unused:
+    one expert gives one opinion, so this backend returns at most one result.
+    Asking for ten would mean ten LLM calls to manufacture a majority, which is
+    the opposite of what an advisory rung is for.
+
+    WHAT THIS IS NOT. The returned text is an opinion an LLM authored at query
+    time, not a row that existed before the query. It is marked
+    ``metadata["advisory"] = True`` and must never become a deterministic
+    verdict — see the ADVISORY_BACKENDS note in tools/cortex/schemas.py. The
+    persona is only ever *read* here (identity preamble + one completion); this
+    backend never launches a team, so a reused catalog role's tool permissions
+    are never exercised.
+
+    Degrades, never fabricates: if the domain cannot be resolved or no provider
+    can serve the completion, the return is a :class:`BackendResults` with a
+    populated ``.errors`` and NO result. An empty opinion is not a neutral
+    opinion.
+    """
+    ctx = ctx or CortexContext()
+    q = (query or "").strip()
+    if not q:
+        return BackendResults(
+            [],
+            errors=[{
+                "backend": "sme",
+                "stage": "input",
+                "message": "empty query — no question to put to an expert",
+            }],
+        )
+
+    # Stage 1 — resolve/mint the persona. ctx.domain (a configured domain lens)
+    # is the better SME domain when present: it is already the canonical label
+    # for this call, so two differently-worded questions in one lens converge on
+    # one expert instead of minting a near-duplicate per phrasing.
+    domain_description = (ctx.domain or "").strip() or q
+    try:
+        registry = _backend("ace.sme_registry")
+        sme = registry.ensure_sme(
+            domain_description, capability_bundle=SME_CAPABILITY_BUNDLE
+        )
+    except Exception as exc:
+        logger.warning("Cortex sme backend failed to resolve a persona: %s", exc)
+        return BackendResults(
+            [],
+            errors=[{"backend": "sme", "stage": "ensure_sme", "message": str(exc)}],
+        )
+
+    # Stage 2 — ask that persona. A failure here is reported separately from a
+    # stage-1 failure on purpose: "no expert exists for this domain" and "the
+    # expert exists but no provider could answer" are different outages with
+    # different fixes, and merging them is how a budget ceiling reads as a
+    # missing capability.
+    try:
+        pq = _backend("ace.persona_query")
+        opinion = (pq.query_persona(sme.role_id, q, context=ctx.domain or "") or "").strip()
+    except Exception as exc:
+        logger.warning("Cortex sme backend persona query failed: %s", exc)
+        return BackendResults(
+            [],
+            errors=[{
+                "backend": "sme",
+                "stage": "persona_query",
+                "message": str(exc),
+                "role_id": sme.role_id,
+            }],
+        )
+
+    if not opinion:
+        return BackendResults(
+            [],
+            errors=[{
+                "backend": "sme",
+                "stage": "persona_query",
+                "message": f"persona {sme.role_id!r} returned an empty opinion",
+                "role_id": sme.role_id,
+            }],
+        )
+
+    return [
+        CortexSearchResult(
+            content=opinion,
+            score=_SME_SCORE,
+            backend="sme",
+            strategy="persona_opinion",
+            # The citation names WHO said it, not what it is evidence for —
+            # which is the honest provenance for an opinion. source_table is
+            # empty because no row backs it; the persona's two on-disk halves
+            # are in metadata.
+            citation=Citation(
+                source_id=sme.role_id,
+                source_type="sme_opinion",
+                source_table="",
+                title=sme.role_id.replace("_", " ").title(),
+                snippet=opinion[:_SNIPPET_CHARS],
+                url=f"/ace/roles/{sme.role_id}" if sme.role_id else "",
+                classification=ctx.classification or "CUI",
+            ),
+            raw_scores={"scored": False},
+            metadata={
+                "advisory": True,
+                "verdict_eligible": False,
+                "role_id": sme.role_id,
+                "sme_status": sme.status,
+                "domain_label": sme.domain_label,
+                "capability_bundle": sme.capability_bundle,
+                "matched_existing": sme.matched_existing,
+                "role_yaml_path": sme.role_yaml_path,
+                "soul_path": sme.soul_path,
+                "tenant_id": ctx.tenant_id,
+            },
+        )
+    ]
+
+
 # Dispatch table for the Cortex facade — keys match CORTEX_BACKENDS.
 BACKEND_ADAPTERS = {
     "rag": search_rag,
     "graph": search_graph,
     "dic": search_dic,
     "kb": search_kb,
+    "sme": search_sme,
 }
 
 
@@ -594,7 +778,11 @@ def search_all(
     ctx: Optional[CortexContext] = None,
     backends: Optional[list] = None,
 ) -> list[CortexSearchResult]:
-    """Run the requested backends (default: all four) and merge results.
+    """Run the requested backends and merge results.
+
+    The default is EVIDENTIARY_BACKENDS, not CORTEX_BACKENDS: an advisory
+    backend costs an LLM call and returns an opinion, so it is named explicitly
+    (``backends=["sme"]``) or not run at all.
 
     Returns the combined list sorted by normalized score descending, as a
     :class:`BackendResults` whose ``.errors`` names the backends that failed.
@@ -603,7 +791,7 @@ def search_all(
     """
     merged: list[CortexSearchResult] = []
     errors: list[dict] = []
-    for name in backends or CORTEX_BACKENDS:
+    for name in backends or EVIDENTIARY_BACKENDS:
         adapter = BACKEND_ADAPTERS.get(name)
         if adapter is None:
             logger.warning("Cortex search: unknown backend %r skipped", name)
@@ -625,6 +813,13 @@ CORTEX_STRATEGIES = ("auto", "all") + CORTEX_BACKENDS
 
 # Routing labels the classifier can emit and the backends each one selects.
 # "ambiguous" fans out to search.fan_out.backends from args/cortex_config.yaml.
+#
+# `sme` has NO label here, deliberately. The classifier answers "what shape is
+# this query", and no query shape means "consult an expert instead of the
+# corpus" — that judgement belongs to whatever forms the verdict, once the
+# deterministic backends have come back silent or in conflict. Giving it a label
+# would make the advisory rung fire on a query pattern, i.e. automatically,
+# which is exactly what ADVISORY_BACKENDS exists to prevent.
 ROUTE_LABEL_BACKENDS = {
     "relational": ["graph"],
     "document": ["dic"],
@@ -632,7 +827,12 @@ ROUTE_LABEL_BACKENDS = {
     "exact_term": ["kb"],
 }
 
-_DEFAULT_TIMEOUTS = {"default": 10.0, "rag": 10.0, "graph": 8.0, "dic": 10.0, "kb": 5.0}
+# `sme` gets a far larger budget than the retrieval backends because it may pay
+# for TWO LLM calls on a cold domain (persona generation, then the opinion),
+# where the others do one DB/vector round trip.
+_DEFAULT_TIMEOUTS = {
+    "default": 10.0, "rag": 10.0, "graph": 8.0, "dic": 10.0, "kb": 5.0, "sme": 60.0,
+}
 _DEFAULT_FAN_OUT_BACKENDS = ["rag", "graph", "dic"]
 _DEFAULT_FACTUAL_CONFIDENCE = 0.75
 
@@ -856,7 +1056,10 @@ def _routed_pass(
         backends = list(route["backends"])
     elif strategy == "all":
         label = "override"
-        backends = list(CORTEX_BACKENDS)
+        # "all" means every backend that RETRIEVES. An advisory backend is not
+        # part of "all" — a caller asking to search everything is asking for
+        # evidence, not for an LLM to be consulted on their behalf.
+        backends = list(EVIDENTIARY_BACKENDS)
     else:
         label = "override"
         backends = [strategy]
@@ -1013,7 +1216,20 @@ def _corrective_pass(
     # Best raw confidence across the fused set. results[0] is now the top-RRF
     # item, not necessarily the max-raw-score one, so take the max explicitly to
     # keep the CRAG trigger keyed on our best backend confidence.
-    top_score = max((r.score for r in results), default=0.0)
+    #
+    # Advisory results are excluded (cef-bck-03): CRAG's evaluator asks "did
+    # RETRIEVAL do well enough", and an opinion is evidence of neither outcome.
+    # Its 0.0 would answer "retrieval failed", so an sme-only search would pay
+    # for a query rewrite plus a whole second advisory pass — two more LLM calls
+    # to correct a retrieval that never ran.
+    # ``results and not evidentiary`` — NOT ``not evidentiary``. An EMPTY first
+    # pass has no evidentiary results either, and that case must still correct:
+    # "retrieval found nothing" is the strongest reason there is to rewrite the
+    # query. Only a set that is non-empty AND entirely advisory is skipped.
+    evidentiary = [r for r in results if not is_advisory(r)]
+    if results and not evidentiary:
+        return results
+    top_score = max((r.score for r in evidentiary), default=0.0)
     if top_score >= threshold:
         return results
 
