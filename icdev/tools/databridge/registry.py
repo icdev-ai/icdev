@@ -11,6 +11,8 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 from tools.db.storage import get_connection
+import importlib
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Type
 
@@ -20,6 +22,29 @@ DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
 
 # Global connector class registry: connector_name -> class
 _REGISTRY: Dict[str, Type] = {}
+
+# A connector registers itself as an IMPORT SIDE EFFECT of the @register_connector
+# decorator, so a connector module nobody imported does not exist as far as this
+# registry is concerned. Nothing imported the connector modules: the package has
+# no __init__.py that pulls them in, and the agent broker's only lookup is
+# get_connector_instance(). Every brokered fetch therefore died at
+# "connector 'rss' is not registered" — a name that reads like a missing
+# implementation when in fact 33 connectors were sitting on disk unimported.
+#
+# The import below is RELATIVE to this module's own package, not spelled
+# "tools.databridge.connectors...". That distinction is load-bearing: this file
+# is mirrored at tools/ and icdev/tools/, `tools.databridge.registry` and
+# `icdev.tools.databridge.registry` resolve to two DISTINCT module objects with
+# two DISTINCT _REGISTRY dicts (the tools/__init__.py shim redirects attribute
+# access, not `import tools.x.y`), and the broker imports the icdev one. An
+# absolute "tools." import here would register the class into the other copy's
+# dict and this one would still answer "not registered".
+_CONNECTOR_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+#: Names already attempted, so a miss costs one import attempt rather than one
+#: per call. Holds failures too — a connector that does not exist must not be
+#: re-probed on every fetch.
+_AUTOLOAD_ATTEMPTED: set[str] = set()
 
 
 def register_connector(cls: Type) -> Type:
@@ -50,12 +75,44 @@ def register_connector(cls: Type) -> Type:
     return cls
 
 
+def autoload_connector(name: str) -> bool:
+    """Import ``<this package>.connectors.<name>_connector`` for its side effect.
+
+    Returns True when *name* is registered afterwards.
+
+    Only ``[a-z][a-z0-9_]*`` is accepted. The caller in practice is the agent
+    broker, which has already matched *name* against its manifest allowlist
+    before reaching here — but this function is public and the value it appends
+    ``_connector`` to becomes a module path, so it is validated here rather than
+    trusted from a caller that might change.
+    """
+    if name in _REGISTRY:
+        return True
+    if not _CONNECTOR_NAME_RE.match(name or "") or name in _AUTOLOAD_ATTEMPTED:
+        return name in _REGISTRY
+    _AUTOLOAD_ATTEMPTED.add(name)
+
+    module = f"{__package__}.connectors.{name}_connector"
+    try:
+        importlib.import_module(module)
+    except Exception as exc:  # noqa: BLE001 — a connector's optional dep may be absent
+        # Not an error: only a granted connector is ever looked up, and an
+        # optional dependency (feedparser, boto3, hvac) being uninstalled is a
+        # deployment fact, not a fault. The caller reports "not registered".
+        logger.debug("Connector autoload failed for %r (%s): %s", name, module, exc)
+        return False
+    return name in _REGISTRY
+
+
 def get_connector_instance(name: str) -> Optional[Any]:
     """Instantiate and return a connector by registered name.
 
-    Returns None if the name is not found in the registry.
+    Falls back to importing the connector module on a miss — see the note at
+    ``_CONNECTOR_NAME_RE``. Returns None if the name cannot be resolved.
     """
     cls = _REGISTRY.get(name)
+    if cls is None and autoload_connector(name):
+        cls = _REGISTRY.get(name)
     if cls is None:
         logger.warning("Connector '%s' not found in registry", name)
         return None
@@ -108,5 +165,9 @@ def load_forge_connectors(db_path: Optional[str] = None) -> int:
 
 
 def list_registered() -> Dict[str, str]:
-    """Return dict of registered connector_name -> class_name."""
+    """Return dict of registered connector_name -> class_name.
+
+    Reports what has been IMPORTED, not what exists on disk — see
+    ``autoload_connector``. Call that first if you need a specific name.
+    """
     return {name: cls.__name__ for name, cls in _REGISTRY.items()}

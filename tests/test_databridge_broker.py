@@ -43,6 +43,12 @@ def granted(monkeypatch):
     # Redaction verified separately; here it is a pass-through so authorization
     # is what is under test.
     monkeypatch.setattr(broker, "_redact_outbound", lambda t: (t, 0))
+    # Likewise the connection lookup. `corp-github` has no db_connections row and
+    # the broker refuses a grant whose connection cannot be read (fail-closed) —
+    # correct, but it would short-circuit every test below into the same denial.
+    # The real lookup, and that refusal, are covered in
+    # tests/test_databridge_first_grant.py.
+    monkeypatch.setattr(broker, "_connection_config", lambda _cid: {})
 
 
 # ---------------------------------------------------------------------------
@@ -282,11 +288,28 @@ def test_egress_refusal_is_reported_not_raised(granted):
 # ---------------------------------------------------------------------------
 
 
-def test_shipped_manifest_grants_nothing():
-    """An install must not silently authorise agents against customer systems."""
+def test_shipped_manifest_grants_no_customer_system():
+    """An install must not silently authorise agents against customer systems.
+
+    This used to assert `enabled is False` and `connectors == []`, which is not
+    the invariant — it is one way of satisfying it, and the one that left 33
+    connectors and 0 authorized (cef-fnd-03). The invariant is about WHAT is
+    granted: a public, credential-free, world-readable source discloses nothing
+    by being reachable, while anything holding a credential is a per-deployment
+    decision. The `auth_method: none` half of that rule is enforced in
+    tests/test_databridge_first_grant.py, which reads the connection descriptors;
+    here we pin the properties visible on the grant itself.
+    """
     manifest = broker.load_manifest()
-    assert manifest["enabled"] is False
-    assert manifest["connectors"] == []
+    for grant in manifest["connectors"]:
+        assert grant.get("agents"), (
+            f"{grant.get('name')!r} is granted to EVERY agent, including "
+            f"runtime-generated SMEs"
+        )
+        assert grant.get("tables"), f"{grant.get('name')!r} has no table allowlist"
+        assert grant.get("classification_ceiling") == "UNCLASSIFIED", (
+            f"{grant.get('name')!r} ships a ceiling above UNCLASSIFIED"
+        )
 
 
 def test_mcp_tools_are_registered():
