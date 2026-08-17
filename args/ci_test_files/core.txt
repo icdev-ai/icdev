@@ -2075,3 +2075,4 @@ tests/test_lesson_learned_kph.py
 # the SQLite init DDL kept in step with it, and an audit-write failure surfacing
 # instead of being swallowed. No network, no live DB (conftest forces SQLite).
 tests/test_databridge_broker.py
+tests/test_databridge_first_grant.py

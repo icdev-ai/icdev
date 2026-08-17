@@ -1,0 +1,71 @@
+# CUI // SP-CTI
+# Connection RECORDS for the connectors granted in databridge_agent_access.yaml.
+#
+# Seeded into db_connections by:
+#     python -m tools.databridge.seed_connections --seed --json
+#
+# ---------------------------------------------------------------------------
+# Two files, on purpose. databridge_agent_access.yaml answers "MAY this agent
+# read this connector and table"; this file answers "WHERE does that connector
+# read from, and how does it authenticate". They are separate because they have
+# different reviewers and different change cadences: a grant is a security
+# decision, an endpoint is an operations one, and merging them would mean every
+# endpoint edit reopened the authorization review.
+#
+# The link between them is `id` here == `connection_id` in the grant. A grant
+# pointing at an id with no row is a configuration error; the seeder's
+# --verify reports it.
+#
+# ---------------------------------------------------------------------------
+# NO SECRET VALUE MAY APPEAR IN THIS FILE.
+#
+# `auth_secret_ref` holds a REFERENCE resolved at use time by
+# tools/databridge/connection_manager.py::resolve_secret, and the seeder REFUSES
+# any value that is not one:
+#
+#     env:VAR_NAME          environment variable
+#     vault:path#field      HashiCorp Vault KV
+#     aws:name[#key]        AWS Secrets Manager (GovCloud)
+#     file:secret_id        controlled path, air-gap fallback
+#
+# The refusal is not advisory. A literal here would be committed to a public
+# repository, would survive every later rotation, and would be indistinguishable
+# from a reference to anything reading the column. `auth_method: none` must
+# carry no ref at all.
+
+version: databridge-connections-1.0
+
+connections:
+  # -------------------------------------------------------------------------
+  # Federal Register — NIST documents. No credential exists for this source: the
+  # feed is world-readable, so auth_method is `none` and there is no secret to
+  # resolve — the strongest possible form of "no secret literal in YAML".
+  #
+  # classification is the LABEL `UNCLASSIFIED`, never the banner
+  # 'CUI // SP-CTI' the column defaults to. get_connection() injects
+  # `classification IN (<labels the caller's clearance dominates>)` into every
+  # SELECT, and that set is drawn from the label vocabulary — a row labelled
+  # with a banner string matches no member of it at any clearance and would be
+  # written, retained and invisible.
+  - id: federal-register-nist
+    name: Federal Register - NIST Documents
+    connector_name: rss
+    connector_type: saas_api
+    auth_method: none
+    sync_direction: read
+    status: configured
+    classification: UNCLASSIFIED
+    impact_level: IL2
+    config:
+      feed_url: https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=national-institute-of-standards-and-technology
+      feed_id: federal_register_nist
+      # Passed to tools/http/egress_guard.py by the connector, which the broker
+      # now reaches by loading this row and calling connect() with it — before
+      # that, this key would have been declared and never enforced. It is a
+      # second, independent restriction on top of the grant's exact-URL
+      # allowlist: the grant says which URL an agent may name, this says which
+      # host a socket may open to. Note what it does NOT cover — feedparser
+      # follows redirects itself, so only the first hop is checked.
+      egress_allowlist:
+        - www.federalregister.gov
+      egress_denylist: []
