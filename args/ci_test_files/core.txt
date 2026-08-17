@@ -2217,3 +2217,19 @@ tests/ci/test_pr_watcher_stale_conflict_recovery.py
 # design evidence is never pooled into one percentage. Temp SQLite DB, no
 # network.
 tests/currency/test_entity_currency.py
+# cch-obs-02: caching that stops working goes red instead of quiet. cch-tel-01
+# made the per-call cache count exist; nothing watched it CHANGE, and a provider
+# that was caching and stops renders identically to one never enabled — both are
+# zero. Gated because the load-bearing half is the NEGATIVE direction: the
+# thresholds were fitted against 79 historical window pairs out of this ledger
+# (0.00% false-fire at 0.7 relative drop; 8.86% at 0.5), and a signal that fires
+# on normal variation is muted within a week, so the "does not fire" cases are
+# what keep it alive — ordinary movement, a swing on traffic too thin to judge, a
+# `local` mechanism that bills nothing back, an undeclared provider, and the
+# BACKFILLED pre-instrumentation zeros that would otherwise indict all 8
+# providers on the live board's 13,073 rows on the first run. Also pins that an
+# empty or unmigrated ledger reports `unmeasurable` rather than a clean bill, and
+# that the reflex is actually dispatched by the daemon rather than merely written
+# — declared-but-unconsumed being the defect this platform ships most.
+# 28 tests, ~1s: temp SQLite files only, no network, no shared board.
+tests/test_cache_regression.py

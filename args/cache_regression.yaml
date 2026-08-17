@@ -1,0 +1,153 @@
+# CUI // SP-CTI
+# ---------------------------------------------------------------------------
+# Prompt-cache regression signal  (cch-obs-02)
+# ---------------------------------------------------------------------------
+# Consumed by: tools/cache_savings/regression.py :: load_config
+# Reflex:      tools/genesis/reflexes/cache_regression_reflex.py
+# Substrate:   ai_telemetry.cache_read_input_tokens / .cache_creation_input_tokens
+#              (added by cch-tel-01, migration 20260816135136)
+#
+# Caching that worked and stops looks EXACTLY like caching that was never
+# enabled: both render as zero. Azure served cached tokens and discarded the
+# count for its entire life and nothing went red. cch-tel-01 made the number
+# exist; this file decides when a change in it is worth waking a human for.
+#
+# ---------------------------------------------------------------------------
+# THE THRESHOLDS ARE MEASURED, NOT CHOSEN
+# ---------------------------------------------------------------------------
+# A signal that fires on normal variation is muted within a week, so
+# `collapse_drop_ratio` was fitted against real data before it was armed.
+#
+# It could not be fitted to cache data directly: on the live board (2026-08-16,
+# 13,073 ai_telemetry rows, 8 providers, span 2026-06-11..2026-08-16) EVERY
+# cache-token value is 0, because the columns landed the same day. So the fit
+# used a structurally identical quantity out of the SAME ledger -- a bounded
+# per-provider token share, output/(output+input) -- swept over every historical
+# 7d-recent / 21d-baseline window pair, counting how often the collapse rule
+# would have fired on traffic nobody considers regressed:
+#
+#     relative drop >= 30%   24/82 evaluations   29.27%
+#     relative drop >= 50%    7/82 evaluations    8.54%
+#     relative drop >= 60%    4/79 evaluations    5.06%
+#     relative drop >= 70%    0/79 evaluations    0.00%   <-- armed here
+#     relative drop >= 80%    0/79 evaluations    0.00%
+#
+# 0.5 would have fired roughly weekly on this deployment's ordinary traffic --
+# that is the muted-within-a-week failure, with a number on it. 0.7 is the
+# smallest swept value with a measured zero false-fire rate, so it is the most
+# sensitive setting the data supports rather than the safest one available.
+#
+# The `stopped` rung (recent window falls to exactly zero) was swept the same
+# way: 0/79 evaluations, 0.00%, at both min_calls 5 and 20.
+#
+# Re-measure with:  .tmp scratch in PR #<cch-obs-02>, or replay
+#   python -m tools.cache_savings.regression --json --window-end <ISO>
+# over historical window ends once the cache columns have real history.
+# ---------------------------------------------------------------------------
+
+classification: "CUI // SP-CTI"
+
+enabled: true
+
+windows:
+  # The window a regression is claimed IN.
+  recent_days: 7
+  # The window it is claimed AGAINST, immediately preceding the recent one.
+  baseline_days: 21
+
+thresholds:
+  # Minimum calls in EACH window before either comparative rung may speak.
+  # Below this a ratio is a rounding artefact, not a trend. Raising it past 5
+  # cost almost nothing on the live ledger (82 -> 79 evaluable windows), so 20
+  # buys small-sample safety essentially free.
+  min_calls_per_window: 20
+
+  # A relative drop in cache-read share of at least this much, recent vs
+  # baseline, is a collapse. Measured 0.00% false-fire rate (see above).
+  collapse_drop_ratio: 0.7
+
+  # A baseline share below this is not "caching that worked", so a fall from it
+  # is not a collapse. This guard can only ever SUPPRESS a finding -- it cannot
+  # raise the fire rate above the ceiling measured for collapse_drop_ratio.
+  min_baseline_share: 0.05
+
+  # `never_cached` needs a provider to have had a real chance. Fewer than this
+  # many instrumented calls and "never once" is a sample-size claim.
+  never_cached_min_calls: 50
+
+# ---------------------------------------------------------------------------
+# THE OBSERVABILITY FLOOR
+# ---------------------------------------------------------------------------
+# Rows written before the cache columns existed hold 0 because they were
+# BACKFILLED, not because a provider was asked and answered zero. Counting them
+# would make every provider on this board look like it has never cached --
+# 13,073 fabricated findings, the fresh-database failure mode that
+# check_capability_liveness exists to avoid.
+#
+# The `never_cached` rung therefore only counts rows at or after this instant,
+# and reports `pre_instrumentation_unknown` -- never a finding -- when it cannot
+# be established. The two comparative rungs are self-guarding: both require a
+# NON-ZERO baseline, which a backfilled window cannot produce.
+#
+# Resolution order: this value, then the applied_at of the cch-tel-01 migration
+# in schema_migrations, then unknown. The explicit value exists because that
+# migration's row is ABSENT on the live PostgreSQL board -- the columns were
+# applied there without a ledger entry -- so auto-detection alone would leave
+# the rung permanently mute on the one deployment that matters.
+#
+# 2026-08-16T12:38:21+00:00 is when cch-tel-01 (#1736) landed on main, i.e. the
+# first instant any row COULD carry a real cache count.
+instrumented_since: "2026-08-16T12:38:21+00:00"
+
+# Version whose applied_at is used when `instrumented_since` is null.
+instrumented_migration: "20260816135136"
+
+# ---------------------------------------------------------------------------
+# PROVIDER CACHE MECHANISMS
+# ---------------------------------------------------------------------------
+# Caching is a provider capability expressed four different ways, and the rungs
+# below mean different things per mechanism. A provider whose mechanism has no
+# per-token billing has nothing to regress in this ledger -- reporting $0.00 or
+# "0% hit rate" for it is the blur cch-obs-01 exists to end, not a finding.
+#
+#   explicit         markers requested on the wire, cached tokens billed back
+#   automatic        cached above a prefix threshold, nothing to ask for
+#   managed_object   a handle with its own TTL
+#   local            server-side KV reuse; pays off in LATENCY, never dollars
+#   none             no prompt cache at all
+#
+# INTERIM: cch-cap-01 makes each provider DECLARE this on itself, and this block
+# is then read from that declaration instead of restated here. Until it lands,
+# these are claims sourced from the adapters that populate the cache fields
+# today (anthropic_provider.py:223, bedrock_provider.py:180,
+# azure_openai_provider.py:228, openai_provider.py:133). A provider absent from
+# this map is `unknown` and is never a finding -- guessing is how a detector
+# earns its own suppression.
+mechanisms:
+  anthropic: explicit
+  bedrock: explicit
+  openai: automatic
+  azure_openai: automatic
+  azure: automatic
+  gemini: managed_object     # cch-prov-01/02 -- reads nothing today
+  ollama: local
+  ollama_cloud: local
+  cli_bridge: none           # discards the counts it is handed (cch-tel-01, "found not fixed")
+  claude-cli: none           # same discard, one layer out
+  cli: none
+  featherless: none
+  chain_orchestrator: none   # an aggregate of other calls, not a provider
+
+# Which mechanisms the `never_cached` rung may speak about. A `local` provider
+# has no billed cache read to miss, so a permanent zero there is correct rather
+# than broken.
+never_cached_mechanisms:
+  - explicit
+  - automatic
+
+# Card defaults for findings this signal files.
+card:
+  id_prefix: "cache-regr-"
+  task_type: "fix"
+  priority: "high"
+  status: "backlog"
