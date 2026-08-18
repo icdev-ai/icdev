@@ -169,3 +169,25 @@ restart_on_code_change: true
 # Escape hatch: any of hold / do-not-merge / wip / no-automerge / blocked as a
 # LABEL, or leave the PR as a draft. Requested changes are never merged over.
 merge_unlinked_prs: true
+
+# Reconcile from the PR side: a MERGED PR whose task is not done (kpr-watch-09).
+#
+# Every other repair path starts from list_pr_tasks, which polls BY STATUS. So
+# once a task carrying a live PR lands in a status outside that set — `backlog`,
+# most often — the only component that closes the loop stops looking at it, and
+# the board can never self-correct. There was no reconciler in the other
+# direction anywhere in the tree.
+#
+# MEASURED: kpr-watch-01 was dispatched 16:09 on 2026-08-16, opened PR #1744 at
+# 16:27 and was reaped to backlog at 16:35 — eight minutes AFTER its PR existed.
+# The PR merged two days later with nothing watching; the task still read
+# `backlog` while its work was on main, and it blocked five siblings behind it.
+# One live case out of 424 PR-carrying tasks: not frequent, but PERMANENT and
+# SILENT when it happens, and it took a human noticing.
+#
+# Scoped to the COMPLEMENT of the polled set, so it costs nothing on a healthy
+# board: 20 rows selected on the live board, 1 of them carrying a PR url, hence
+# at most one `gh pr view` per cycle. It only ever moves a task FORWARD to done,
+# only on a PR the forge reports MERGED into the default branch, and never for a
+# manual gate. Set false to disable the sweep entirely.
+reconcile_merged_orphans: true

@@ -1,0 +1,20 @@
+# kpr-watch-09. Gates the merged-orphan reconciler: a task whose PR is MERGED
+# and whose status is NOT terminal is finished, whatever writer moved it.
+#
+# `pr_watcher.list_pr_tasks` polls BY STATUS, and nothing anywhere reconciled the
+# other direction — there was no such reconciler in the tree. So once a task
+# carrying a live PR landed outside the polled set, the only component that
+# closes the loop stopped looking at it and the board could never self-correct.
+# kpr-watch-01 was reaped to `backlog` eight minutes AFTER its PR existed, that
+# PR merged two days later with nothing watching, and the task still read
+# `backlog` while its work was on main — blocking five siblings behind it until
+# a human noticed.
+#
+# Gated because the defect is invisible by construction: nothing goes red, no
+# alert fires, and the only symptom is a card that stops moving. The two
+# assertions that matter most are the REFUSALS — a polled task is left to the
+# watch loop, and only a MERGED PR (into the default branch, never a manual
+# gate) completes anything — because a reconciler that revived tasks would
+# fight the reaper on every poll, and one that trusted MERGED alone would mark a
+# task done for work stranded on a feature branch.
+tests/ci/test_pr_watcher_merged_orphans.py

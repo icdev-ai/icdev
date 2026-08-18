@@ -8,6 +8,9 @@ import tools.ci.pr_watcher as prw
 
 class _FakeReport:
     tasks_checked = 0
+    # kpr-watch-09 added the unpolled-task census to the real report, and main()
+    # prints it. A fake that omits it would pass this test while main() raised.
+    orphans_checked = 0
     actions: list = []
 
     def to_dict(self):

@@ -138,12 +138,21 @@ class WatcherReport:
     finished_at: str
     tasks_checked: int
     actions: List[WatcherAction] = field(default_factory=list)
+    #: PR-carrying tasks the poll does NOT poll, examined by the merged-orphan
+    #: reconciler (kpr-watch-09). Reported separately from `tasks_checked`
+    #: because they are a different population asked a different question:
+    #: `tasks_checked` is "what is this PR waiting on", this is "did this PR
+    #: already land while nobody was looking". Folding them into one number
+    #: would make a healthy board (0 orphans) read the same as a board whose
+    #: reconciler never ran.
+    orphans_checked: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "tasks_checked": self.tasks_checked,
+            "orphans_checked": self.orphans_checked,
             "actions": [asdict(a) for a in self.actions],
         }
 
@@ -462,6 +471,61 @@ def reverify_is_allowed(latest: Optional[dict], *, allow_when_missing: bool) -> 
     return True, f"prior verification result={result or 'unknown'}, not a conformance failure"
 
 
+#: THE STATUSES THE WATCH LOOP POLLS. A task in one of these is being actively
+#: serviced — fetched from the forge, classified, resumed, rebased, merged.
+#:
+#: 'pr_opened' is the state a task sits in from the moment its PR is opened
+#: until it merges — it is THE state this watcher exists to service. Omitting it
+#: meant the watcher lost sight of a task the instant it had a PR.
+#:
+#: Hoisted out of the SQL (kpr-watch-09) so `list_unpolled_pr_tasks` can be
+#: defined as this set's COMPLEMENT rather than as a second hand-maintained
+#: list. Two lists would drift, and the drift would be a status that neither
+#: query selects — which is exactly the defect being fixed.
+POLLED_STATUSES: Tuple[str, ...] = (
+    "in_progress", "scheduled", "pr_opened",
+    "ci_failed", "merge_conflict", "changes_requested",
+)
+
+#: Statuses that are already an answer, and so are never reconciled FROM a merge.
+#: `done` is the outcome this module writes. `failed` is a decision somebody
+#: made — reviving it because a PR merged would overwrite a judgment with an
+#: observation, and a merge is not new information about whether the work was
+#: acceptable. Everything else is in scope for the reconciler below.
+TERMINAL_STATUSES: Tuple[str, ...] = ("done", "failed")
+
+#: The `SELECT` both listers share, so `_task_row` can normalize either one.
+_TASK_COLUMNS = (
+    "SELECT id, title, description, status, executor_url FROM kanban_tasks"
+)
+
+
+def _task_row(row) -> Optional[dict]:
+    """Normalize one `kanban_tasks` row and attach its PR url, or None if it has none.
+
+    psycopg2 rows behave like both tuples and dicts depending on the factory, so
+    access is by column name throughout.
+
+    The url is read from `executor_url` (the column OPT-31 added to link tasks to
+    their executor artifacts), falling back to a scrape of the description text.
+    Shared by both listers deliberately: a reconciler that extracted the url
+    differently from the poller would disagree with it about which tasks even
+    have a PR.
+    """
+    data = {
+        "id": row["id"],
+        "title": row["title"],
+        "description": row["description"] or "",
+        "status": row["status"],
+        "executor_url": row["executor_url"] or "",
+    }
+    pr_url = _parse_pr_url(data["executor_url"]) or _parse_pr_url(data["description"])
+    if not pr_url:
+        return None
+    data["pr_url"] = pr_url
+    return data
+
+
 def list_pr_tasks(
     get_connection,
     task_id: Optional[str] = None,
@@ -471,25 +535,21 @@ def list_pr_tasks(
     Uses `executor_url` (the column OPT-31 added to link tasks to their
     executor artifacts) or scrapes it out of the description text.
     Returns a list of dicts: {id, title, pr_url, executor_url}.
+
+    Selects BY STATUS. A task outside `POLLED_STATUSES` is invisible here by
+    construction — `list_unpolled_pr_tasks` is the other half.
     """
     conn = get_connection()
     try:
         if task_id:
             rows = conn.execute(
-                "SELECT id, title, description, status, executor_url "
-                "FROM kanban_tasks WHERE id = %s",
-                (task_id,),
+                _TASK_COLUMNS + " WHERE id = %s", (task_id,),
             ).fetchall()
         else:
+            placeholders = ", ".join(["%s"] * len(POLLED_STATUSES))
             rows = conn.execute(
-                "SELECT id, title, description, status, executor_url "
-                "FROM kanban_tasks WHERE status IN "
-                # 'pr_opened' is the state a task sits in from the moment its PR
-                # is opened until it merges — it is THE state this watcher exists
-                # to service. Omitting it meant the watcher lost sight of a task
-                # the instant it had a PR.
-                "('in_progress', 'scheduled', 'pr_opened', "
-                " 'ci_failed', 'merge_conflict', 'changes_requested')"
+                _TASK_COLUMNS + " WHERE status IN (" + placeholders + ")",
+                tuple(POLLED_STATUSES),
             ).fetchall()
     finally:
         try:
@@ -499,20 +559,62 @@ def list_pr_tasks(
 
     out: List[dict] = []
     for row in rows:
-        # psycopg2 rows behave like both tuples and dicts depending on
-        # the factory. Normalize to dict access by column name.
-        data = {
-            "id": row["id"],
-            "title": row["title"],
-            "description": row["description"] or "",
-            "status": row["status"],
-            "executor_url": row["executor_url"] or "",
-        }
-        pr_url = _parse_pr_url(data["executor_url"]) or _parse_pr_url(
-            data["description"]
-        )
-        if pr_url:
-            data["pr_url"] = pr_url
+        data = _task_row(row)
+        if data:
+            out.append(data)
+    return out
+
+
+def list_unpolled_pr_tasks(get_connection) -> List[dict]:
+    """PR-carrying tasks the watch loop does NOT poll and that are not finished.
+
+    THE GAP THIS CLOSES (kpr-watch-09). `list_pr_tasks` polls BY STATUS, and
+    nothing anywhere reconciled the other direction — "a merged PR whose task is
+    not done". There was no such reconciler in the tree. So the moment a task
+    carrying a live PR landed in a status outside `POLLED_STATUSES`, the only
+    component that closes the loop stopped looking at it, and the board could
+    never self-correct.
+
+    MEASURED: kpr-watch-01 was dispatched 16:09 on 2026-08-16, opened PR #1744 at
+    16:27, and was reaped to `backlog` at 16:35 — eight minutes AFTER its PR
+    existed. The PR merged two days later with nothing watching. The task still
+    read `backlog` while its work was on main, and it blocked five kpr-watch-*
+    tasks behind it. One live case out of 424 PR-carrying tasks, so this is not
+    frequent — but it is PERMANENT and SILENT when it happens, and it takes a
+    human noticing.
+
+    THE ENTRY PATHS ARE MANY; THE TRAP IS ONE. The stale reaper, the PR-flow
+    rollback, auto-revive, the orphan sweep and a manual board move can each put
+    a PR-carrying task outside the polled set, and more will be written.
+    Enumerating them is a race nobody wins, so this asks the COMPLEMENTARY
+    question instead: the set is derived from `POLLED_STATUSES`, never listed
+    separately. A status added to the poll leaves this set automatically, and a
+    status added to neither falls in here rather than between the two.
+
+    COSTS NOTHING ON A HEALTHY BOARD. On the live board (2026-08-18, 3,281 tasks,
+    424 of them PR-carrying) this selects 20 rows, of which exactly 1 carries a
+    PR url — so the reconciler makes at most one forge call per cycle, and none
+    once that one is closed. `done` alone accounts for 3,256 rows and is excluded
+    in SQL rather than in Python.
+    """
+    conn = get_connection()
+    excluded = tuple(POLLED_STATUSES) + tuple(TERMINAL_STATUSES)
+    try:
+        placeholders = ", ".join(["%s"] * len(excluded))
+        rows = conn.execute(
+            _TASK_COLUMNS + " WHERE status NOT IN (" + placeholders + ")",
+            excluded,
+        ).fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    out: List[dict] = []
+    for row in rows:
+        data = _task_row(row)
+        if data:
             out.append(data)
     return out
 
@@ -2337,10 +2439,17 @@ class PRWatcher:
                     # recorded 'done' in the audit trail and left kanban_tasks
                     # untouched, so the board could not tell an open PR from a
                     # finished one. CI-green-but-not-merged stays in pr_opened.
-                    if merged and task.get("status") in (
-                        "pr_opened", "in_progress", "ci_failed",
-                        "merge_conflict", "changes_requested",
-                    ):
+                    #
+                    # THE ALLOW-LIST HERE WAS THE SAME TRAP A SECOND TIME
+                    # (kpr-watch-09). `list_pr_tasks(task_id=...)` has no status
+                    # filter, so `--task kpr-watch-01` DID reach this branch with
+                    # a merged PR — and then declined to complete it, because
+                    # 'backlog' was not on the list. Two independent status
+                    # gates, both of which had to name every live status, and
+                    # both of which silently dropped a task the moment some other
+                    # writer moved it. Asking "is this already an answer" instead
+                    # cannot acquire that blind spot.
+                    if merged and task.get("status") not in TERMINAL_STATUSES:
                         _set_task_status(
                             get_conn, task["id"], "done",
                             reason=f"PR merged: {pr_url}",
@@ -2797,6 +2906,17 @@ class PRWatcher:
             report.actions.append(action)
             self._audit(action)
 
+        # RECONCILE FROM THE PR SIDE (kpr-watch-09). Everything above this line
+        # started from `list_pr_tasks`, which selects BY STATUS — so a task that
+        # left the polled set while carrying a live PR was invisible to all of
+        # it. Runs BEFORE the stale-alert sweep so a task completed here is
+        # already terminal when that sweep asks, and its alert drains in the same
+        # poll rather than the next one.
+        try:
+            self._sweep_merged_orphans(report)
+        except Exception as exc:  # noqa: BLE001 — a sweep must never stop the poll
+            logger.warning("pr_watcher: merged-orphan sweep failed: %s", exc)
+
         # After the loop, because a task that reached a terminal state is not IN
         # the loop — that is precisely why its alert was stranded.
         self._sweep_stale_hitl_alerts()
@@ -2805,6 +2925,135 @@ class PRWatcher:
         # Liveness proof, written only once the poll has actually completed.
         self._record_heartbeat(report)
         return report
+
+    def _sweep_merged_orphans(self, report: "WatcherReport") -> int:
+        """Close the loop from the PR side: a MERGED PR whose task is not done.
+
+        THE GAP THIS CLOSES. `list_pr_tasks` polls BY STATUS, and nothing
+        anywhere reconciled the other direction. Once a task carrying a live PR
+        landed in a status outside `POLLED_STATUSES` — `backlog`, most often —
+        the only component that closes the loop stopped looking at it and the
+        board could never self-correct. kpr-watch-01 sat that way for two days:
+        reaped to backlog eight minutes AFTER its PR existed, PR merged with
+        nothing watching, task still reading `backlog` while its work was on
+        main, blocking five siblings behind it. A human found it.
+
+        THE EVIDENCE IS THE MERGE, NOT THE STATUS. A task whose PR is MERGED is
+        finished, whatever writer moved it and whatever it now reads. So this
+        asks the forge, using what is already on the row — `executor_url` — and
+        does not try to reconstruct which of the many entry paths (stale reaper,
+        PR-flow rollback, auto-revive, orphan sweep, a manual board move) put it
+        there. That history is not recoverable and, for this decision, not
+        needed.
+
+        TWO REFUSALS, EACH BECAUSE THE MERGE DOES NOT PROVE WHAT IT LOOKS LIKE:
+
+          * a PR merged into something other than the default branch has NOT put
+            its work on main — it is the mirror of the base-branch guard the
+            auto-merge path already applies, and without it a PR merged into a
+            feature branch would mark its task done while the change is stranded
+            off-main;
+          * a manual gate is never completed by a merge. That refusal lives in
+            `_set_task_status`, which covers every caller including this one, and
+            it writes its own audit row.
+
+        NOT A REVIVER. It only ever moves a task FORWARD to `done`. An OPEN PR on
+        an unpolled task is a different defect with a different owner (whatever
+        reaped the task), and pulling it back into the polled set here would put
+        this sweep in a fight with that writer every 30 seconds. It is logged and
+        left alone.
+
+        DRY-RUN STILL LOOKS. `_sweep_unlinked_prs` returns immediately under
+        --dry-run, which is precisely why kpr-watch-01 had to note that the
+        pipeline could merge a PR but could not say why one was not merging. A
+        reconciler that reports nothing in the mode an operator uses to ASK is
+        not observable, so this one fetches and reports as usual and writes
+        nothing.
+
+        Returns the number of tasks reconciled, for the caller to log.
+        """
+        if not self.config.get("reconcile_merged_orphans", True):
+            return 0
+        get_conn = self._connection()
+        try:
+            tasks = list_unpolled_pr_tasks(get_conn)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "pr_watcher: merged-orphan sweep could not list tasks: %s", exc)
+            return 0
+        report.orphans_checked += len(tasks)
+        if not tasks:
+            return 0
+
+        default_branch = self._default_branch()
+        reconciled = 0
+        for task in tasks:
+            pr_url = task["pr_url"]
+            was = task.get("status") or "?"
+            try:
+                state = self._fetch_state(pr_url)
+            except Exception as exc:  # noqa: BLE001 — one bad PR must not stop the sweep
+                logger.debug(
+                    "pr_watcher: merged-orphan sweep could not read %s: %s",
+                    pr_url, exc)
+                continue
+
+            pr_state = (state.get("state") or "").upper()
+            if pr_state != "MERGED":
+                logger.info(
+                    "pr_watcher: %s reads '%s' and its PR %s is %s — not "
+                    "reconciling (this sweep only ever completes a MERGED PR)",
+                    task["id"], was, pr_url, pr_state or "<unknown>")
+                continue
+
+            base_ref = (state.get("baseRefName") or "").strip()
+            if base_ref != default_branch:
+                logger.warning(
+                    "pr_watcher: refusing to complete %s — %s merged into '%s', "
+                    "not the default branch '%s', so its work is not on main",
+                    task["id"], pr_url, base_ref or "<unknown>", default_branch)
+                continue
+
+            reason = (
+                f"PR merged: {pr_url} (reconciled from PR state; the task read "
+                f"'{was}', which the watch loop does not poll)"
+            )
+            action = WatcherAction(
+                task_id=task["id"], pr_url=pr_url,
+                classification="done",
+                action="dry_run" if self.dry_run else "merge",
+                reason=reason,
+            )
+            if self.dry_run:
+                report.actions.append(action)
+                reconciled += 1
+                continue
+
+            # Reclaiming belongs where the merge is OBSERVED, which is here for
+            # this population — the main loop never sees these tasks, so their
+            # worktrees were leaking for the same reason their status was.
+            # Best-effort: a failed reclaim must never hold up the completion.
+            try:
+                verdict = self.reclaim_worktree(task["id"])
+                if not verdict.get("reclaimed"):
+                    logger.debug(
+                        "pr_watcher: worktree for %s not reclaimed (%s)",
+                        task["id"], verdict.get("reason"))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("pr_watcher: worktree reclaim errored: %s", exc)
+
+            if not _set_task_status(get_conn, task["id"], "done", reason=reason):
+                # Refused (a manual gate) or the write failed. Both are already
+                # recorded by _set_task_status; recording a `merge` action here
+                # too would claim a completion that did not happen.
+                continue
+            logger.info(
+                "pr_watcher: reconciled %s -> done (%s was merged while the task "
+                "read '%s')", task["id"], pr_url, was)
+            report.actions.append(action)
+            self._audit(action)
+            reconciled += 1
+        return reconciled
 
     def _sweep_unlinked_prs(self, report: "WatcherReport") -> None:
         """Auto-merge green PRs that no kanban task points at.
@@ -3000,6 +3249,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         print(
             f"pr_watcher: checked {report.tasks_checked} task(s), "
+            f"{report.orphans_checked} unpolled PR-carrying task(s), "
             f"{len(report.actions)} action(s)"
         )
         for a in report.actions:

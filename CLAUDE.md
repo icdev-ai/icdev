@@ -300,6 +300,36 @@ python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
 # changes_requested | ready. `no_checks` (empty rollup) is never merged into
 # `awaiting_ci`, and mergeable=UNKNOWN reports a different REASON from
 # CONFLICTING. Exit 2 = the report could not be produced, never an empty table.
+
+# A merged PR whose task is not done was invisible FOREVER (kpr-watch-09)
+python tools/ci/pr_watcher.py --once --dry-run --json   # `orphans_checked` is the census
+# `list_pr_tasks` polls BY STATUS and `backlog` is absent, and nothing anywhere
+# reconciled the other direction -- there was no such reconciler in the tree. So
+# once a task carrying a live PR landed in a status outside the polled set, the
+# ONLY component that closes the loop stopped looking at it and the board could
+# never self-correct. kpr-watch-01 was reaped to `backlog` eight minutes AFTER
+# its PR existed; that PR merged two days later with nothing watching, the task
+# still read `backlog` while its work was on main, and it blocked five siblings
+# until a human noticed. One live case out of 424 PR-carrying tasks -- not
+# frequent, but PERMANENT and SILENT.
+# `PRWatcher._sweep_merged_orphans` reconciles from the PR SIDE: a task whose PR
+# the forge reports MERGED, and whose status is not terminal, is finished --
+# whatever writer moved it. The entry paths are many (stale reaper, PR-flow
+# rollback, auto-revive, orphan sweep, a manual move) and enumerating them is a
+# race nobody wins, so the swept set is the COMPLEMENT of `POLLED_STATUSES`,
+# never a second hand-maintained list; a status added to the poll leaves it
+# automatically. Costs nothing on a healthy board: 20 rows selected on the live
+# board, 1 carrying a PR url, so at most one `gh pr view` per cycle.
+# It only ever moves a task FORWARD. An OPEN PR on an unpolled task is a
+# DIFFERENT defect owned by whatever reaped it -- reviving it here would fight
+# that writer every 30s. MERGED is not enough either: a PR merged into a
+# non-default branch is refused, because its work is not on main. A manual gate
+# is never completed by a merge (`_set_task_status` refuses, for every caller).
+# The DONE branch's own status allow-list was the SAME trap a second time --
+# `--task <id>` bypasses the status filter, so the watcher DID see the merged PR
+# and then declined to complete it because 'backlog' was not on that list. It now
+# asks `not in TERMINAL_STATUSES`, which cannot acquire that blind spot.
+# Toggle: `reconcile_merged_orphans` in args/pr_watcher_config.yaml (default on).
 # Raw board writers — does this INSERT bypass the canonical seeder? (rem-hyg-05)
 python tools/kanban/raw_insert_census.py --check          # the gate; exit 1 on a NEW raw INSERT
 python tools/kanban/raw_insert_census.py --json           # full report
