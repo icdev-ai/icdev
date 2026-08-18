@@ -21,6 +21,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("e2e_runner")
@@ -109,32 +110,27 @@ def _last_completed_at(conn) -> datetime | None:
     return None
 
 
-def _create_run_task(conn) -> str:
-    """Insert the nightly runner task and return its ID."""
+def _create_run_task() -> str | None:
+    """Seed the nightly runner task through the canonical seeder (rem-hyg-06).
+
+    Takes no ``conn``: ``create_tasks`` opens and commits its own. Returns None
+    when the seeder skipped the row (an id that already exists).
+    """
     import uuid
+
     task_id = f"task-e2e-{uuid.uuid4().hex[:8]}"
     now = _utcnow()
-    conn.execute(
-        """
-        INSERT INTO kanban_tasks
-            (id, title, description, task_type, priority, status,
-             scheduled_at, created_at, updated_at, dispatch_source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (
-            task_id,
-            _TASK_TITLE,
-            _TASK_DESC,
-            "test",
-            "high",
-            "backlog",
-            now.isoformat(),
-            now.isoformat(),
-            now.isoformat(),
-            "e2e_runner_reflex",
-        ),
-    )
-    return task_id
+    created = create_tasks([{
+        "id": task_id,
+        "title": _TASK_TITLE,
+        "description": _TASK_DESC,
+        "task_type": "test",
+        "priority": "high",
+        "status": "backlog",
+        "scheduled_at": now.isoformat(),
+        "dispatch_source": "e2e_runner_reflex",
+    }])
+    return task_id if created else None
 
 
 def _get_recent_run_history(conn, lookback_runs: int) -> list[dict]:
@@ -272,8 +268,11 @@ def run(config: dict, state: object) -> dict:
                 return results
 
         # Create the task
-        task_id = _create_run_task(conn)
+        task_id = _create_run_task()
         conn.commit()
+        if not task_id:
+            results["reason"] = "seeder skipped the task (id already on the board)"
+            return results
         results["action"] = "created"
         results["task_id"] = task_id
         logger.info("e2e_runner: created Kanban task %s", task_id)

@@ -165,3 +165,39 @@ exemptions:
       correct outcome for a smoke test, not a defect in it. (`*` crosses `/` in
       this matcher, as in args/test_gating_gate.yaml, so this covers
       tests/test_x_smoke.py and tests/security/test_x_smoke.py alike.)
+
+  - pattern: "tests/cortex/test_search_router.py"
+    reason: >-
+      DETERMINISM FIX (tsg-iso-02), same shape as the CPMP entry above and
+      scoped per-file for the same reason. The fan-out timeout test asserted
+      `elapsed < 1.5` after a backend that slept 2.0s: a wall-clock budget that
+      tests the RUNNER, not the router. It failed PR #1773 twice on shared CI
+      (1.6727s, 1.7075s) while passing three of three locally, and blocked an
+      unrelated PR for hours. The fix replaces the clock with a state check —
+      the slow backend blocks on a threading.Event the router can never satisfy
+      and the test asserts the worker was still inside the adapter when
+      search() returned — and it lives ENTIRELY inside this test file. The gate
+      applies only the changed test file on top of the merge base, so applying
+      it also applies the fix: both runs are identical by construction. No
+      production code changed, so there is no pre-change tree in which a
+      correct version of this test could fail.
+      This does NOT license a vacuous test here, and the file proves that
+      itself: test_abandonment_probe_is_not_vacuous drives the SAME
+      instrumented backend under a budget it finishes inside, where the router
+      awaits it and `finished` IS set at return — so the timeout test's
+      `assert not finished_at_return` is discriminating rather than trivially
+      true. Measured directly too: patching _run_backends to await the future
+      and then drop the late result fails both timeout tests, while the real
+      router passes them. Remove this exemption the moment this file is edited
+      for anything but that determinism fix.
+
+  - pattern: "tests/cortex/test_search_golden.py"
+    reason: >-
+      The same determinism fix (tsg-iso-02) applied to the golden suite's copy
+      of the fan-out timeout branch — identical `elapsed < 1.5` assertion,
+      identical replacement by an abandoned-worker state check, identical
+      absence of any production change for a pre-change tree to fail against.
+      Non-vacuity is proved by test_abandonment_probe_is_not_vacuous in
+      tests/cortex/test_search_router.py, which exercises the same probe
+      against a backend the router awaits to completion. Remove this exemption
+      the moment this file is edited for anything but that determinism fix.

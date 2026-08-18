@@ -11,6 +11,9 @@ Usage:
         "task_type": "build",          # optional, default 'build'
         "priority": "medium",          # optional, default 'high'
         "status": "backlog",           # optional, default 'backlog'
+        "scheduled_at": None,          # optional — ISO ts; makes the row
+                                       #   dispatchable without waiting for
+                                       #   promote_backlog_to_scheduled
         "depends_on_task_id": None,    # optional
         "source_doc_id": "abc123",     # optional — DIC document source
         "source_collection_id": "c1", # optional — DIC collection source
@@ -348,13 +351,14 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
             conn.execute(
                 """INSERT INTO kanban_tasks
                    (id, title, description, task_type, priority, status,
+                    scheduled_at,
                     depends_on_task_id, source_prediction_id,
                     source_doc_id, source_collection_id,
                     dispatch_source, idempotency_key, max_retries,
                     max_runtime_seconds, loop_type, adversarial_enabled,
                     acceptance_criteria,
                     created_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     task_id,
                     str(t.get("title", "Untitled task"))[:255],
@@ -364,6 +368,12 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
                     t.get("task_type", "build"),
                     t.get("priority", "high"),
                     t.get("status", "backlog"),
+                    # rem-hyg-06: a raw-INSERT writer that set scheduled_at could
+                    # not be routed through this seeder without it — the column is
+                    # what makes the row dispatchable, so dropping it on the way in
+                    # would have silently parked every converted reflex card in
+                    # backlog. NULL when absent, which is the pre-existing default.
+                    t.get("scheduled_at"),
                     t.get("depends_on_task_id"),
                     t.get("source_prediction_id"),
                     t.get("source_doc_id"),

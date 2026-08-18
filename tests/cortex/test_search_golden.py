@@ -28,7 +28,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import time
+import threading
 from pathlib import Path
 
 import pytest
@@ -55,6 +55,12 @@ GOLDEN_CONFIG = {
         "fan_out": {"backends": ["rag", "graph", "dic"], "max_workers": 4},
     }
 }
+
+
+# Bounded wait for a deliberately-blocked backend worker. A HANG guard, never a
+# timing assertion: the timeout branch below asserts abandonment as a STATE
+# (started, not finished), so nothing in this suite measures the machine.
+_WORKER_HANG_GUARD_SECONDS = 30.0
 
 
 def _hit(backend: str, score: float) -> CortexSearchResult:
@@ -238,11 +244,28 @@ def test_corrective_branch_disabled_by_high_confidence(monkeypatch):
 
 
 def test_timeout_branch_returns_partial_results(monkeypatch):
-    def slow_rag(query, top_k=5, ctx=None):
-        time.sleep(2.0)
+    """The timed-out backend is abandoned, asserted as state (tsg-iso-02).
+
+    Backend attribution and ``timed_out == ["rag"]`` are both satisfied by an
+    implementation that awaits the slow call and then discards its late result,
+    so abandonment needs its own assertion. It is made against the worker's
+    STATE at the moment ``search()`` returned rather than against a wall-clock
+    budget — the old ``elapsed < 1.5`` measured the CI runner (it failed twice
+    at ~1.7s under load while passing locally), not the router.
+    """
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def blocking_rag(query, top_k=5, ctx=None):
+        started.set()
+        # HANG guard only — the router abandons this call in 0.2s and no
+        # assertion below depends on how long anything took.
+        release.wait(_WORKER_HANG_GUARD_SECONDS)
+        finished.set()
         return [_hit("rag", 0.9)]
 
-    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", slow_rag)
+    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", blocking_rag)
     monkeypatch.setitem(
         search_service.BACKEND_ADAPTERS, "graph", lambda q, top_k=5, ctx=None: [_hit("graph", 0.6)]
     )
@@ -257,14 +280,25 @@ def test_timeout_branch_returns_partial_results(monkeypatch):
             "timeouts": {"default": 5.0, "rag": 0.2},
         }
     }
-    start = time.monotonic()
-    results = search("something slow", config=cfg)
-    elapsed = time.monotonic() - start
+    try:
+        results = search("something slow", config=cfg)
+        # Sampled at the instant search() returned — this is the proof.
+        finished_at_return = finished.is_set()
 
-    assert elapsed < 1.5  # slow backend abandoned, not awaited to completion
-    assert {r.backend for r in results} == {"graph", "dic"}
-    for r in results:
-        assert r.metadata["router"]["timed_out"] == ["rag"]
+        assert not finished_at_return, (
+            "search() returned only after the slow backend completed — it was "
+            "awaited and its result dropped, not abandoned"
+        )
+        # The adapter really was invoked (bounded wait is a hang guard: the
+        # pool may schedule its worker at any moment).
+        assert started.wait(_WORKER_HANG_GUARD_SECONDS)
+        assert {r.backend for r in results} == {"graph", "dic"}
+        for r in results:
+            assert r.metadata["router"]["timed_out"] == ["rag"]
+    finally:
+        # Never let the abandoned worker outlive the test on the shared pool.
+        release.set()
+        finished.wait(_WORKER_HANG_GUARD_SECONDS)
 
 
 # ---------------------------------------------------------------------------
