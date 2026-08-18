@@ -8025,6 +8025,53 @@ _current_exec_tier: Optional[str] = None
 # for every live subprocess, see _refresh_running_heartbeats); this threshold is
 # only the fallback for a task that never recorded a heartbeat at all.
 _SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 10 * 60)
+
+def _parse_utc_timestamp(raw) -> Optional[datetime]:
+    """A UTC-aware datetime from whatever the DB handed back, or None.
+
+    STDLIB FIRST, and `dateutil` only as an optional extra.
+
+    This replaces a bare `from dateutil.parser import parse` that sat INSIDE the
+    stale reaper's per-task `except Exception: continue`. `python-dateutil` is
+    not in requirements.txt, is not in pyproject, and is not installed on the CI
+    runner — so on every row the import raised ImportError, the except swallowed
+    it, and the loop moved to the next task. The sweep therefore skipped EVERY
+    task and reported nothing, everywhere dateutil happened to be absent. Not a
+    test artefact: the reaper has never once run on CI, and would not run on any
+    air-gapped install either, which is the deployment this project targets.
+
+    Reproduced by blocking the import locally — 5 of the 8 reaper tests fail
+    with the task left `in_progress`, matching the CI result exactly.
+
+    Handles what the codebase actually writes: a driver-native datetime
+    (PostgreSQL), and `datetime.now(timezone.utc).isoformat()` strings
+    (SQLite). `Z` is normalised because `fromisoformat` did not accept it before
+    3.11 and rows outlive interpreters. Naive values are read as UTC, which is
+    what every writer here means.
+    """
+    if raw is None:
+        return None
+    if hasattr(raw, "tzinfo"):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        try:  # optional, and never load-bearing
+            from dateutil.parser import parse as _dp
+        except ImportError:
+            return None
+        try:
+            parsed = _dp(str(raw))
+        except Exception:  # noqa: BLE001 — an unparseable stamp is not fatal
+            return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 _ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)
 
 # Anomaly detection parameters for _detect_execution_anomaly.
@@ -9343,16 +9390,15 @@ def _reap_stale_in_progress() -> None:
             if updated_raw is None:
                 continue
 
-            # Parse updated_at
-            try:
-                if hasattr(updated_raw, "tzinfo"):
-                    updated_at = updated_raw if updated_raw.tzinfo else updated_raw.replace(tzinfo=timezone.utc)
-                else:
-                    from dateutil.parser import parse as _dp
-                    updated_at = _dp(str(updated_raw))
-                    if updated_at.tzinfo is None:
-                        updated_at = updated_at.replace(tzinfo=timezone.utc)
-            except Exception:
+            # Parse updated_at. A stamp this cannot read is ONE task's problem
+            # and is said out loud; it used to be silent, and that silence is
+            # what let a missing dependency read as "no stale tasks".
+            updated_at = _parse_utc_timestamp(updated_raw)
+            if updated_at is None:
+                logger.warning(
+                    "stale-reaper: %s has an unreadable updated_at (%r) — "
+                    "skipping this task, not the sweep", tid, updated_raw,
+                )
                 continue
 
             age_seconds = (now - updated_at).total_seconds()

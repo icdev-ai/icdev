@@ -33,6 +33,7 @@ Harness borrowed from tests/test_kanban_stale_reaper_manual_actor.py.
 from __future__ import annotations
 
 import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -289,3 +290,110 @@ class TestOpenPrListingAvailability:
         monkeypatch.setattr(_sp, "run", lambda *_a, **_kw: _R())
         assert km._open_pr_head_branches("/repo-y") == set()
         assert km._open_pr_listing_unavailable("/repo-y") is False
+
+
+# ---------------------------------------------------------------------------
+# The sweep must not depend on an undeclared package
+# ---------------------------------------------------------------------------
+class _BlockDateutil:
+    """Import blocker mimicking a runner without `python-dateutil`."""
+
+    def find_spec(self, name, path=None, target=None):
+        if name == "dateutil" or name.startswith("dateutil."):
+            raise ImportError(f"No module named {name!r}")
+        return None
+
+
+@pytest.fixture
+def no_dateutil():
+    blocker = _BlockDateutil()
+    saved = {k: v for k, v in sys.modules.items()
+             if k == "dateutil" or k.startswith("dateutil.")}
+    for k in saved:
+        del sys.modules[k]
+    sys.meta_path.insert(0, blocker)
+    try:
+        yield
+    finally:
+        sys.meta_path.remove(blocker)
+        sys.modules.update(saved)
+
+
+class TestTheSweepRunsWithoutDateutil:
+    """`python-dateutil` is in neither requirements.txt nor pyproject, and is not
+    installed on the CI runner.
+
+    The timestamp parse used to be `from dateutil.parser import parse` INSIDE the
+    reaper's per-task ``except Exception: continue``. So on every row the import
+    raised ImportError, the except swallowed it, and the loop moved on — the
+    sweep skipped EVERY task and reported nothing. The reaper has never once run
+    on CI, and would not run on an air-gapped install either.
+
+    Measured: with the import blocked, 5 of the 8 tests above fail with the task
+    left `in_progress` — exactly the result CI reported on #1754.
+    """
+
+    def test_a_stale_task_is_still_reaped(self, reaper_ctx, no_dateutil):
+        km = reaper_ctx["km"]
+        _insert_task(reaper_ctx["db"], "kpr-nodu-01", "in_progress", _stale(km))
+        km._reap_stale_in_progress()
+        assert _task_row(reaper_ctx["db"], "kpr-nodu-01")["status"] == "backlog", (
+            "a missing optional package must not silently disable the sweep"
+        )
+
+    def test_an_open_pr_task_is_still_held(self, reaper_ctx, no_dateutil):
+        """The other direction: without dateutil the sweep used to skip every
+        task, which LOOKS like this test passing. It has to hold for the right
+        reason, so the case above pins that the sweep ran at all."""
+        km = reaper_ctx["km"]
+        reaper_ctx["monkeypatch"].setattr(
+            km, "_open_pr_head_branches", lambda root: {"kanban/kpr-nodu-02"},
+        )
+        _insert_task(reaper_ctx["db"], "kpr-nodu-02", "in_progress", _stale(km))
+        km._reap_stale_in_progress()
+        assert _task_row(reaper_ctx["db"], "kpr-nodu-02")["status"] == "pr_opened"
+
+
+class TestTimestampParsing:
+    """`_parse_utc_timestamp` is the seam; these are its edges."""
+
+    def test_an_isoformat_string_is_read_as_utc(self):
+        import tools.genesis.reflexes.kanban as km
+
+        got = km._parse_utc_timestamp("2026-08-17T23:41:42.587933+00:00")
+        assert got == datetime(2026, 8, 17, 23, 41, 42, 587933, tzinfo=timezone.utc)
+
+    def test_a_trailing_Z_is_accepted(self):
+        """fromisoformat rejected `Z` before 3.11, and rows outlive interpreters."""
+        import tools.genesis.reflexes.kanban as km
+
+        assert km._parse_utc_timestamp("2026-08-17T23:41:42Z") == datetime(
+            2026, 8, 17, 23, 41, 42, tzinfo=timezone.utc)
+
+    def test_a_naive_stamp_is_read_as_utc(self):
+        import tools.genesis.reflexes.kanban as km
+
+        got = km._parse_utc_timestamp("2026-08-17T23:41:42")
+        assert got.tzinfo is timezone.utc
+
+    def test_a_driver_native_datetime_passes_through(self):
+        import tools.genesis.reflexes.kanban as km
+
+        aware = datetime(2026, 8, 17, tzinfo=timezone.utc)
+        assert km._parse_utc_timestamp(aware) is aware
+        naive = datetime(2026, 8, 17)
+        assert km._parse_utc_timestamp(naive).tzinfo is timezone.utc
+
+    def test_junk_is_None_not_an_exception(self):
+        """The caller distinguishes 'this row is bad' from 'the sweep is broken',
+        and can only do that if a bad row is a value rather than a raise."""
+        import tools.genesis.reflexes.kanban as km
+
+        assert km._parse_utc_timestamp("not a timestamp") is None
+        assert km._parse_utc_timestamp("") is None
+        assert km._parse_utc_timestamp(None) is None
+
+    def test_it_does_not_need_dateutil(self, no_dateutil):
+        import tools.genesis.reflexes.kanban as km
+
+        assert km._parse_utc_timestamp("2026-08-17T23:41:42+00:00") is not None
