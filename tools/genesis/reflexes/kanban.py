@@ -9102,30 +9102,106 @@ def _reclaim_zombie_tasks() -> None:
             conn.close()
 
 
-def _has_open_pr(task_id: str) -> bool:
-    """Respawn guard: return True if an open PR already exists for kanban/<task_id>.
+#: Per-task open-PR query timeout. Was 10s inline; a `gh` call that overruns it
+#: now reports PR_UNKNOWN rather than "no PR", so this is a latency knob and no
+#: longer decides whether pushed work survives.
+_OPEN_PR_QUERY_TIMEOUT_SECONDS = _int_env("KANBAN_OPEN_PR_QUERY_TIMEOUT_SECONDS", 30)
 
-    Uses the gh CLI; returns False on any error so dispatch proceeds normally
-    when gh is unavailable (air-gap environments).
+#: The three answers to "is there an open PR for this task?".
+#:
+#: They exist because two DIFFERENT callers ask that question and need opposite
+#: defaults when it cannot be answered. `_open_pr_listing_unavailable` already
+#: draws this distinction for the stale reaper, in the same words: "no evidence
+#: of a PR" and "could not look for a PR" lead to opposite decisions about a
+#: task's fate. This is that seam extended to the PR-flow caller, not a second
+#: copy of it.
+PR_OPEN = "open"
+PR_NONE = "none"
+PR_UNKNOWN = "unknown"
+
+
+def _pr_open_state(task_id: str) -> str:
+    """PR_OPEN / PR_NONE / PR_UNKNOWN for ``kanban/<task_id>``.
+
+    PR_NONE means gh answered and there is no open PR. PR_UNKNOWN means we could
+    not ask — a timeout, a non-zero exit, missing gh, or output we cannot parse.
+    Collapsing those two into False is what made a slow `gh` indistinguishable
+    from a PR that never opened.
+
+    An exit code of 0 with empty stdout is UNKNOWN, not NONE: gh printing
+    nothing told us nothing, and the previous code read exactly that case as
+    "no PR" because it only tested stdout for truthiness.
     """
     # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
     # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
     _repo_root = _task_repo_root(task_id)
-    _base_branch = _task_base_branch(task_id)
     branch_name = f"kanban/{task_id}"
     try:
-        import subprocess as _sp
         import json as _json
+        import subprocess as _sp
+
         result = _sp.run(
             ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number"],
-            capture_output=True, text=True, timeout=10, cwd=str(_repo_root),
+            capture_output=True, text=True,
+            timeout=_OPEN_PR_QUERY_TIMEOUT_SECONDS, cwd=str(_repo_root),
         )
-        if result.returncode == 0 and result.stdout.strip():
-            prs = _json.loads(result.stdout)
-            return len(prs) > 0
-    except Exception:
-        pass
-    return False
+    except Exception as exc:  # noqa: BLE001 — every failure is "could not ask"
+        logger.debug("open-PR query for %s could not run: %s", task_id, exc)
+        return PR_UNKNOWN
+    if getattr(result, "returncode", 1) != 0:
+        logger.debug(
+            "open-PR query for %s exited %s: %s", task_id,
+            getattr(result, "returncode", "?"),
+            (getattr(result, "stderr", "") or "").strip()[:160],
+        )
+        return PR_UNKNOWN
+    raw = (getattr(result, "stdout", "") or "").strip()
+    if not raw:
+        return PR_UNKNOWN
+    try:
+        prs = _json.loads(raw)
+    except ValueError:
+        logger.debug("open-PR query for %s returned non-JSON", task_id)
+        return PR_UNKNOWN
+    return PR_OPEN if prs else PR_NONE
+
+
+def _pr_flow_outcome(state: str) -> Tuple[Optional[str], str]:
+    """``(target_status, reason)`` for the post-push PR-flow confirmation.
+
+    A target of None means LEAVE THE TASK WHERE IT IS. That is the whole fix:
+    `PR flow: branch pushed but the PR could not be opened` accounted for 66 of
+    the 126 backwards transitions on this board — more than orphan_sweep, the
+    stale reaper and auto-revive combined — and every one of them threw away a
+    branch that had real commits on it, because the boolean could not say "I
+    could not tell".
+
+    Leaving it alone is safe in both directions: if a PR really did open,
+    `pr_linker` links it on the next poll; if the dispatch genuinely died, the
+    stale reaper still reaps it on its own threshold. Rolling back is the only
+    option that destroys work.
+    """
+    if state == PR_OPEN:
+        return "pr_opened", "PR opened — awaiting CI + merge"
+    if state == PR_NONE:
+        return "backlog", "PR flow: branch pushed but the PR could not be opened"
+    return None, (
+        "PR flow: branch pushed, but whether a PR opened could not be "
+        "determined (gh unreachable) — leaving the task as-is rather than "
+        "discarding pushed commits; pr_linker or the stale reaper will settle it"
+    )
+
+
+def _has_open_pr(task_id: str) -> bool:
+    """Respawn guard: True only when an open PR is CONFIRMED for kanban/<task_id>.
+
+    Deliberately unchanged: an unanswerable query still reads as False here, so
+    dispatch proceeds when gh is unavailable (air-gap environments). That is the
+    right default for THIS caller — the cost of being wrong is one extra
+    dispatch. It is the wrong default for the post-push confirmation, which is
+    why that caller now uses `_pr_open_state` instead.
+    """
+    return _pr_open_state(task_id) == PR_OPEN
 
 
 _open_pr_branch_cache: Dict[str, Tuple[float, Set[str]]] = {}
@@ -10473,18 +10549,25 @@ def _check_completed():
                     # Reflect that on the board: the task is awaiting merge, not
                     # done. pr_watcher takes it from here.
                     if _pr_flow_enabled() and has_commits:
-                        if _has_open_pr(task_id):
-                            _move_task(
-                                task_id, "pr_opened", actor="scheduler",
-                                reason="PR opened — awaiting CI + merge",
-                            )
+                        # THREE answers, not two. "gh says there is no PR" and
+                        # "gh could not be reached" are different facts and this
+                        # branch used to act on them identically — rolling the
+                        # task back to backlog either way, with real commits
+                        # already pushed. That was 66 of the 126 backwards
+                        # transitions on this board (kpr-dup-06).
+                        _state = _pr_open_state(task_id)
+                        _target, _reason = _pr_flow_outcome(_state)
+                        if _target is None:
+                            # Leave it exactly where it is. pr_linker links the
+                            # PR if one opened; the stale reaper still reaps a
+                            # dispatch that genuinely died. Rolling back is the
+                            # only option here that destroys work.
+                            logger.warning(
+                                "PR flow: %s — %s", task_id, _reason)
                         else:
-                            # The branch has commits but no PR exists: the work is
-                            # real and must not be silently marked done. Send it
-                            # back so the failure is visible.
                             _move_task(
-                                task_id, "backlog", actor="scheduler",
-                                reason="PR flow: branch pushed but the PR could not be opened",
+                                task_id, _target, actor="scheduler",
+                                reason=_reason,
                             )
                 elif not verified and task_id in _worktrees:
                     # Preserve worktree for debugging/retry
