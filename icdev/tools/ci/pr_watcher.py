@@ -2801,10 +2801,136 @@ class PRWatcher:
         # the loop — that is precisely why its alert was stranded.
         self._sweep_stale_hitl_alerts()
 
+        # A task whose status drifted OUT of the polled set never reaches the
+        # loop above, so the merge it is waiting on is never observed. This is
+        # the only place that looks from the PR side (kpr-watch-09).
+        try:
+            self.reconcile_stranded_tasks()
+        except Exception as exc:  # noqa: BLE001 — never break the poll
+            logger.debug("pr_watcher: stranded reconcile failed: %s", exc)
+
         report.finished_at = datetime.now(timezone.utc).isoformat()
         # Liveness proof, written only once the poll has actually completed.
         self._record_heartbeat(report)
         return report
+
+
+    #: Statuses `list_pr_tasks` polls. A task outside this set is invisible to
+    #: the main loop — which is the whole reason `reconcile_stranded_tasks`
+    #: exists. Kept next to the sweep that compensates for it so the two cannot
+    #: drift apart silently.
+    _POLLED_STATUSES = (
+        "in_progress", "scheduled", "pr_opened",
+        "ci_failed", "merge_conflict", "changes_requested",
+    )
+    #: Nothing to reconcile — the task is already finished or abandoned.
+    _TERMINAL_STATUSES = ("done", "cancelled", "decomposed", "superseded")
+
+    def _pr_state(self, number, runner=None):
+        """`MERGED` / `CLOSED` / `OPEN` for one PR, or None if unknowable.
+
+        None is deliberately distinct from CLOSED. An unanswerable query is not
+        evidence, and the one thing this sweep must never do is mark a task done
+        because `gh` timed out.
+        """
+        run = runner or subprocess.run
+        try:
+            proc = run(  # nosec B603 — fixed argv, shell=False
+                ["gh", "pr", "view", str(number), "--json", "state"],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=60, shell=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("pr_watcher: state lookup for #%s failed: %s", number, exc)
+            return None
+        if getattr(proc, "returncode", 1) != 0:
+            return None
+        try:
+            payload = json.loads(getattr(proc, "stdout", "") or "{}")
+        except ValueError:
+            return None
+        return payload.get("state") if isinstance(payload, dict) else None
+
+    def reconcile_stranded_tasks(self) -> Dict[str, Any]:
+        """Mark done any task whose PR MERGED while nothing was watching it.
+
+        `list_pr_tasks` polls BY STATUS, but the thing that has to be observed —
+        a merged PR — is a property of the PR. So a task whose status drifts out
+        of the polled set becomes permanently invisible to the only component
+        that closes the loop, and the board can never self-correct.
+
+        MEASURED 2026-08-18: kpr-watch-01 was dispatched at 16:09, opened PR
+        #1744 at 16:27, and was reaped to `backlog` at 16:35 — eight minutes
+        AFTER its PR existed. The PR merged two days later with nothing
+        watching; the task still read `backlog` while its work sat on main, and
+        five kpr-watch-* tasks were queued behind it.
+
+        Rare — one case out of 424 PR-carrying tasks — but permanent and silent,
+        and it took a human noticing. The entry paths are many (the stale
+        reaper, the PR-flow rollback, auto-revive, the orphan sweep, a manual
+        move); the trap is ONE, so it is closed here rather than at each writer.
+        Reconciling from the PR side is what makes it writer-agnostic.
+
+        SCOPED TO COST NOTHING ON A HEALTHY BOARD: only tasks that carry a PR
+        url AND sit outside both the polled and the terminal sets are looked up,
+        so a board with no stranded tasks makes no forge calls at all.
+        """
+        out: Dict[str, Any] = {
+            "reconciled": [], "unknown": [], "checked": 0, "written": False,
+        }
+        try:
+            get_conn = self._connection()
+            conn = get_conn()
+        except Exception:  # noqa: BLE001 — a reconcile must never break the poll
+            return out
+        try:
+            rows = conn.execute(
+                "SELECT id, status, executor_url FROM kanban_tasks"
+            ).fetchall()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr_watcher: stranded reconcile query failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+            return out
+
+        skip = set(self._POLLED_STATUSES) | set(self._TERMINAL_STATUSES)
+        try:
+            for raw in rows:
+                row = dict(raw) if not isinstance(raw, dict) else raw
+                status = (row.get("status") or "").strip()
+                url = (row.get("executor_url") or "").strip()
+                if status in skip or "/pull/" not in url:
+                    continue
+                number = _pr_number(url)
+                out["checked"] += 1
+                # Injection point, matching this file's existing convention
+                # (`_rebase_fn`, `_pr_list_runner`, `_auto_merge_runner`).
+                lookup = getattr(self, "_pr_state_runner", None)
+                state = ((lookup(number) if lookup else self._pr_state(number))
+                         or "").upper()
+                if state != "MERGED":
+                    if not state:
+                        out["unknown"].append(row.get("id"))
+                    continue
+                reason = (
+                    f"reconciled: PR {url} is MERGED but the task was left in "
+                    f"{status!r} — nothing polls that status, so the merge was "
+                    f"never observed"
+                )
+                out["reconciled"].append({"task_id": row.get("id"), "reason": reason})
+                logger.warning("pr_watcher: %s — %s", row.get("id"), reason)
+                if not self.dry_run:
+                    _set_task_status(
+                        self._connection(), row.get("id"), "done", reason=reason)
+                    out["written"] = True
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return out
 
     def _sweep_unlinked_prs(self, report: "WatcherReport") -> None:
         """Auto-merge green PRs that no kanban task points at.
