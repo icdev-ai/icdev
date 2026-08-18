@@ -4,7 +4,8 @@
 
 Cortex is ICDEV's single, governed facade over every AI capability on the
 platform: the LLM router, the four retrieval backends (RAG / GraphRAG / Document
-Intelligence / Keyword), IQE ask-your-data, and the multi-agent runtime — all
+Intelligence / Keyword) plus one ADVISORY backend (ACE SME), IQE ask-your-data,
+and the multi-agent runtime — all
 behind one import surface, one TRUST governance chain, and one row-level-security
 model. It is the Snowflake-Intelligence / Palo-Alto-Cortex analogue for the
 ICDEV stack: callers ask for an *outcome* (search, ask, complete, reason,
@@ -33,7 +34,7 @@ wrapping (enforced by `tests/cortex/test_api_governed.py`).
 
 | Facade | Purpose | Returns |
 |--------|---------|---------|
-| `search(query, top_k, strategy, ctx)` | Unified retrieval with agentic strategy routing + CRAG corrective loop across rag/graph/dic/kb | `list[CortexSearchResult]` |
+| `search(query, top_k, strategy, ctx)` | Unified retrieval with agentic strategy routing + CRAG corrective loop across rag/graph/dic/kb. `strategy='sme'` instead returns an ACE domain expert's ADVISORY opinion — opt-in only, never selected by `auto`/`all`, `metadata.advisory=True`, RRF weight 0.0, and never a verdict (see [Advisory vs evidentiary](#advisory-vs-evidentiary-backends)) | `list[CortexSearchResult]` |
 | `ask(question, mode, ctx)` | Ask-your-data — IQE primary, NL→SQL fallback, TRUST-labelled | `CortexResult` (rows + executed IQE/SQL + citations) |
 | `complete(prompt, ctx)` | Free-form completion via the config-routed LLM chain | `CortexResult` |
 | `reason(prompt, mode, ctx)` | Multi-step reasoning — `cot` / `debate` / `council` over the router's chain orchestration, governed | `CortexResult` (`metadata.reason_mode`) |
@@ -46,6 +47,50 @@ wrapping (enforced by `tests/cortex/test_api_governed.py`).
 `fail_closed`. Identity fields are **always derived server-side** on the exposed
 surfaces (REST / MCP) — never from the client body — so a caller can only narrow
 (`domain`), never widen, access.
+
+### Advisory vs evidentiary backends
+
+`CORTEX_BACKENDS` splits in two (`tools/cortex/schemas.py`):
+
+| | Backends | What a hit IS |
+|---|---|---|
+| `EVIDENTIARY_BACKENDS` | `rag`, `graph`, `dic`, `kb` | A row that existed **before** the query and can be re-read |
+| `ADVISORY_BACKENDS` | `sme` | An **opinion** a model authored **at** query time |
+
+Both normalize into the same `CortexSearchResult`, so nothing downstream can
+tell them apart from the dataclass alone — the split is what tells them apart.
+It exists because base_pack TRUST rule 1 requires a verdict to derive from
+deterministic evidence and never from an LLM.
+
+The `sme` backend (`search_sme`, cef-bck-03) resolves a domain to an ACE persona
+via `sme_registry.ensure_sme` — reusing one of the ~90 catalog roles when one
+covers the domain, minting a new `advisory`-bundled role (trust_tier `red`, empty
+`folder_access` and `icdev_tools`, so it can neither write nor execute) only when
+none does — then asks that role the question through `persona_query.query_persona`.
+One expert, one opinion; `top_k` is deliberately unused.
+
+Five mechanisms keep that opinion out of a verdict, and none of them is a comment:
+
+1. **Never automatic.** `strategy="all"`, `search_all()`'s default,
+   `ROUTE_LABEL_BACKENDS` and `search.fan_out.backends` all resolve to
+   `EVIDENTIARY_BACKENDS`. A caller reaches `sme` only by naming it.
+2. **Marked.** Every result carries `metadata.advisory = True` and
+   `metadata.verdict_eligible = False`.
+3. **Outranked.** `search.strategy_weights.sme` is `0.0`, so its RRF
+   contribution is `0.0` and it sorts below *every* evidentiary hit — including
+   a bad one. This is a policy floor, not a tuning knob.
+4. **Excluded from CRAG.** An opinion is evidence of neither retrieval success
+   nor retrieval failure, so `_corrective_pass` ignores advisory results when
+   evaluating `crag_threshold`. (An *empty* result set still corrects — that is
+   the strongest reason there is to rewrite a query.)
+5. **Never fabricated.** With no provider available the backend returns
+   `BackendResults([], errors=[...])` with the failing stage (`input` /
+   `ensure_sme` / `persona_query`), not an empty-string opinion.
+
+`is_advisory(result)` is the predicate any verdict-forming consumer must call.
+It reads both the `metadata` flag and `result.backend`, because metadata is a
+plain dict that consumers rewrite and a dropped key must not be able to promote
+an opinion into a verdict.
 
 ## 3. The TRUST governance chain
 

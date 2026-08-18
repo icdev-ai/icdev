@@ -458,6 +458,7 @@ def test_adapters_importable_via_canonical_namespace():
         search_currency,
         search_kb,
         search_rag,
+        search_sme,
     )
 
     from tools.cortex.schemas import CORTEX_BACKENDS

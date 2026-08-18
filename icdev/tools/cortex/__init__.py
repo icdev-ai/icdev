@@ -40,7 +40,9 @@ from .governance import (
     resolve_profile,
 )
 from .schemas import (
+    ADVISORY_BACKENDS,
     CORTEX_BACKENDS,
+    EVIDENTIARY_BACKENDS,
     Citation,
     CortexContext,
     CortexResult,
@@ -57,7 +59,7 @@ from .domains import (
     load_domain_profile,
     triage_summary,
 )
-from .search_service import CORTEX_STRATEGIES, classify_route
+from .search_service import CORTEX_STRATEGIES, classify_route, is_advisory
 
 __all__ = [
     "SECURITY_DOMAIN",
@@ -68,9 +70,11 @@ __all__ = [
     "list_domain_names",
     "load_domain_profile",
     "triage_summary",
+    "ADVISORY_BACKENDS",
     "AIRGAP_ENV_VAR",
     "CORTEX_ANALYST_FUNCTION",
     "CORTEX_BACKENDS",
+    "EVIDENTIARY_BACKENDS",
     "CORTEX_CLASSIFY_FUNCTION",
     "CORTEX_COMPLETE_FUNCTION",
     "CORTEX_EXTRACT_FUNCTION",
@@ -102,6 +106,7 @@ __all__ = [
     "assert_airgap_ready",
     "classify",
     "classify_route",
+    "is_advisory",
     "complete",
     "extract",
     "govern",

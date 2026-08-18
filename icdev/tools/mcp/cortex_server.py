@@ -107,7 +107,13 @@ def _blocked_response(exc) -> Dict[str, Any]:
 # Handlers — one thin call into tools.cortex per tool
 # ---------------------------------------------------------------------------
 def handle_cortex_search(arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Unified Cortex search across rag / graph / dic / kb with strategy routing."""
+    """Unified Cortex search across rag / graph / dic / kb with strategy routing.
+
+    ``strategy="sme"`` additionally reaches the ADVISORY backend — an ACE
+    domain-expert persona's opinion, not retrieved evidence. It is never
+    selected by ``auto`` or ``all``; a caller must name it, and must not treat
+    what it returns as a verdict (results carry ``metadata.advisory``).
+    """
     query = arguments.get("query", "")
     if not query:
         return {"error": "query is required", "results": []}
@@ -398,14 +404,16 @@ CORTEX_TOOLS = (
         "description": (
             "Unified Cortex search across all retrieval backends (rag / graph / dic / kb) with "
             "agentic strategy routing + CRAG corrective loop. Returns normalized CortexSearchResults "
-            "(score 0-1, per-result citation + routing metadata)."
+            "(score 0-1, per-result citation + routing metadata). strategy='sme' instead consults an "
+            "ACE domain-expert persona: an ADVISORY opinion, marked metadata.advisory, never selected "
+            "by auto/all, and never a verdict."
         ),
         "properties": {
             "query": {"type": "string", "description": "Natural language search query"},
             "top_k": {"type": "integer", "description": "Results per backend (default 5)", "default": 5},
             "strategy": {
                 "type": "string",
-                "description": "auto | rag | graph | dic | kb | all (auto classifies + routes)",
+                "description": "auto | rag | graph | dic | kb | all (auto classifies + routes) | sme (ADVISORY opinion, opt-in only)",
                 "default": "auto",
             },
         },

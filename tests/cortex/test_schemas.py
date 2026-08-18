@@ -34,7 +34,7 @@ def test_import_via_package_init():
 
 
 def test_backend_constant():
-    assert CORTEX_BACKENDS == ("rag", "graph", "dic", "kb", "currency")
+    assert CORTEX_BACKENDS == ("rag", "graph", "dic", "kb", "currency", "sme")
 
 
 # ---------------------------------------------------------------------------

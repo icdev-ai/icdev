@@ -69,8 +69,14 @@ CORTEX_ROUTING_FUNCTIONS = (
 # The YAML file is the source of truth — keep this minimal, not a mirror.
 CORTEX_CONFIG_DEFAULTS: Dict = {
     "search": {
+        # sme: 0.0 is a policy floor, not a default to tune — see the note on
+        # this key in args/cortex_config.yaml. It must survive an unreadable
+        # config file, because "config missing" is exactly when an advisory
+        # result would otherwise fall back to the neutral 1.0 and outrank
+        # evidence. currency (cef-bck-01) is an ordinary retrieval weight.
         "strategy_weights": {
-            "rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6, "currency": 0.7,
+            "rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6,
+            "currency": 0.7, "sme": 0.0,
         },
         "rrf_k": 60,
         "crag_threshold": 0.55,

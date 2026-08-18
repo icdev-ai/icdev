@@ -18,6 +18,7 @@ import pytest
 from tools.cortex import search_service
 from tools.cortex.schemas import (
     CORTEX_BACKENDS,
+    EVIDENTIARY_BACKENDS,
     Citation,
     CortexContext,
     CortexSearchResult,
@@ -230,9 +231,15 @@ def test_strategy_all_runs_every_backend(monkeypatch):
 
     results = search_service.search("anything", strategy="all", config=TEST_CONFIG)
 
-    assert sorted(calls) == sorted(CORTEX_BACKENDS)
-    assert {r.backend for r in results} == set(CORTEX_BACKENDS)
-    expected = "all:override[" + "+".join(CORTEX_BACKENDS) + "]"
+    # "all" means every EVIDENTIARY backend, not every backend. `sme` is
+    # advisory and is reached only when a caller names it — see
+    # ADVISORY_BACKENDS in tools/cortex/schemas.py. Deriving this from
+    # CORTEX_BACKENDS was right until an advisory backend existed; keeping that
+    # derivation would assert that asking for "everything" hands the caller an
+    # LLM opinion, which base_pack TRUST rule 1 forbids.
+    assert sorted(calls) == sorted(EVIDENTIARY_BACKENDS)
+    assert {r.backend for r in results} == set(EVIDENTIARY_BACKENDS)
+    expected = "all:override[" + "+".join(EVIDENTIARY_BACKENDS) + "]"
     assert all(r.strategy == expected for r in results)
 
 

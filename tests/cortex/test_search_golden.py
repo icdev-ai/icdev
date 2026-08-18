@@ -35,7 +35,7 @@ import pytest
 
 from tools.cortex import CortexSearchResult, search
 from tools.cortex import search_service
-from tools.cortex.schemas import CORTEX_BACKENDS, Citation
+from tools.cortex.schemas import EVIDENTIARY_BACKENDS, Citation
 
 # ---------------------------------------------------------------------------
 # Golden corpus + fixed routing config
@@ -171,11 +171,16 @@ def test_strategy_all_returns_every_backend(monkeypatch):
 
     results = search("anything", strategy="all", config=GOLDEN_CONFIG)
 
-    # Pinned against CORTEX_BACKENDS: "all" means every registered backend, so
-    # a backend added to the facade and forgotten in the dispatch table fails
-    # here rather than quietly never running.
-    assert [r.backend for r in results] == list(CORTEX_BACKENDS)
-    expected = "all:override[" + "+".join(CORTEX_BACKENDS) + "]"
+    # Pinned against EVIDENTIARY_BACKENDS, which keeps the property this
+    # assertion was written for — a backend added to the facade and forgotten in
+    # the dispatch table still fails here rather than quietly never running —
+    # while excluding the one class that is deliberately NOT reachable this way.
+    # "all" means every EVIDENTIARY backend: `sme` is advisory and is reached
+    # only when a caller names it (ADVISORY_BACKENDS, tools/cortex/schemas.py).
+    # Asserting it appears here would assert that asking for "everything" hands
+    # the caller an LLM opinion, which base_pack TRUST rule 1 forbids.
+    assert [r.backend for r in results] == list(EVIDENTIARY_BACKENDS)
+    expected = "all:override[" + "+".join(EVIDENTIARY_BACKENDS) + "]"
     assert all(r.strategy == expected for r in results)
 
 
