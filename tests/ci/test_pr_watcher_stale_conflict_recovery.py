@@ -129,12 +129,32 @@ def test_a_stale_conflict_routes_to_REBASE_not_to_merge():
     assert "_maybe_rebase(task, state)" in src, "the rebase path must still exist"
 
 
-def test_the_rebase_path_is_still_gated_on_merge_conflict():
-    """If that gate ever widens, the assertion above stops meaning anything."""
+def test_every_rebase_call_site_is_gated_on_a_named_condition():
+    """If a gate ever widens, the assertion above stops meaning anything.
+
+    There are TWO call sites, and neither may be reached unconditionally:
+
+    * MERGE_CONFLICT -- the original, for a branch the forge reports DIRTY;
+    * the staleness hold (kpr-stale-02) -- for a branch that is green and
+      MERGEABLE and simply too far behind the default branch to merge safely.
+      A rebase is the same repair for both, which is why it reuses this path
+      rather than growing a second one.
+    """
     import inspect
     src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    i = src.index("_maybe_rebase(task, state)")
-    assert "KanbanState.MERGE_CONFLICT" in src[max(0, i - 300):i]
+    sites = [i for i in range(len(src))
+             if src.startswith("_maybe_rebase(task, state)", i)]
+    assert len(sites) == 2, "expected two rebase call sites, got %d" % len(sites)
+    # 800 chars: enough to reach past each site's audit/log preamble to the
+    # condition that guards it, and far too short to reach the OTHER site's.
+    gates = [src[max(0, i - 800):i] for i in sites]
+    assert any("KanbanState.MERGE_CONFLICT" in g for g in gates), (
+        "the conflict-driven rebase lost its gate")
+    assert any("if stale is not None" in g for g in gates), (
+        "the staleness-driven rebase lost its gate")
+    # ...and the two gates are on DIFFERENT sites, not both on one.
+    assert not any("KanbanState.MERGE_CONFLICT" in g and "if stale is not None" in g
+                   for g in gates), "the two rebase gates collapsed onto one site"
 
 
 def test_the_refund_happens_at_most_once_per_pr(monkeypatch):
@@ -224,7 +244,7 @@ def test_every_raise_site_is_negated_by_the_recovery_check():
     pass, forever."""
     import inspect
     poll = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    assert poll.count("self._hitl_alert(") == 3, (
+    assert poll.count("self._hitl_alert(") == 4, (
         "a new raise site must also be negated in _hitl_recovered")
     rec = inspect.getsource(pr_watcher.PRWatcher._hitl_recovered)
     assert "max_cycles" in rec and "_ci_never_fired" in rec
@@ -233,6 +253,12 @@ def test_every_raise_site_is_negated_by_the_recovery_check():
     # MERGEABLE by construction — every other condition here says "recovered".
     assert 'landed.get("landed")' in rec, (
         "the already-landed raise site is not negated in _hitl_recovered — it "
+        "will resolve and re-raise on every pass")
+    # Fourth raise site (kpr-stale-02): a branch too far BEHIND the default
+    # branch to merge safely, whose automatic rebase was declined. Same flap
+    # shape as the third — such a PR is green AND MERGEABLE by construction.
+    assert "_stale_verdict" in rec, (
+        "the behind-main raise site is not negated in _hitl_recovered — it "
         "will resolve and re-raise on every pass")
     # the DONE path must still clear it
     assert poll.count("_resolve_hitl_alert") >= 2
