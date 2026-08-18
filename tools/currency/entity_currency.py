@@ -546,10 +546,31 @@ def resolve(
     rows = query(entity_key, entity_type, namespace, entity_version, conn=conn)
     if not rows:
         return None
+    spec_by_id, order = _policy()
+    return _resolution_view(rows, spec_by_id, order)
+
+
+def _policy() -> tuple:
+    """``(spec_by_id, resolution order)`` as declared in the YAML.
+
+    Read once per resolution rather than per row: both :func:`resolve` and
+    :func:`search` need the same two values, and a search over many entities
+    must not re-parse the config for each one.
+    """
     spec_by_id = {str(s["id"]): s for s in declared_sources(enabled_only=False)}
     order = (load_config().get("resolution") or {}).get("order") or [
         "authoritative", "confidence", "as_of"
     ]
+    return spec_by_id, order
+
+
+def _resolution_view(rows: list[dict], spec_by_id: dict, order: list[str]) -> dict:
+    """One entity's assertions ranked under the policy, with the losers attached.
+
+    Callers get the winner's fields flattened and every other source's row under
+    ``others`` — the disagreement travels WITH the answer rather than being
+    dropped by whoever reads the verdict.
+    """
     ranked = _sort_by_policy(rows, spec_by_id, order)
     winner = ranked[0]
     others = ranked[1:]
@@ -557,6 +578,10 @@ def resolve(
     return {
         "entity_key": winner.get("entity_key"),
         "entity_type": winner.get("entity_type"),
+        "namespace": winner.get("namespace"),
+        "entity_version": winner.get("entity_version"),
+        "entity_label": winner.get("entity_label"),
+        "classification": winner.get("classification"),
         "verdict": winner.get("verdict"),
         "superseded_by": winner.get("superseded_by"),
         "source": winner.get("source"),
@@ -575,6 +600,148 @@ def resolve(
         "sources_consulted": sorted({str(r.get("source")) for r in rows}),
         "others": others,
     }
+
+
+#: Words a free-text currency question carries that say nothing about WHICH
+#: entity is being asked about. English question scaffolding and the currency
+#: verbs themselves — not domain vocabulary, and deliberately short: a long
+#: stoplist starts deciding which entities are askable.
+_SEARCH_STOPWORDS = frozenset({
+    "a", "an", "and", "any", "are", "as", "at", "be", "been", "by", "can",
+    "do", "does", "for", "from", "has", "have", "in", "is", "it", "longer",
+    "no", "of", "on", "or", "our", "out", "should", "that", "the", "their",
+    "there", "this", "to", "up", "use", "used", "using", "version", "was",
+    "we", "what", "when", "which", "with", "you",
+    # The currency verbs themselves. They say WHAT is being asked, never about
+    # WHICH entity, and the router has already read them — leaving them in
+    # would score every entity down by the same fraction for carrying none of
+    # them. Hyphenated forms are listed because the tokenizer keeps `-`.
+    "current", "currently", "deprecated", "eol", "eos", "eosl", "end-of-life",
+    "end-of-support", "end-of-sale", "life", "obsolete", "retired", "still",
+    "sunset", "superseded", "supported",
+})
+
+#: A search token: starts alphanumeric, may carry the punctuation real product
+#: and version strings contain (``tls 1.1``, ``c9300-48``, ``rhel_8``).
+_SEARCH_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")
+
+#: Rows scanned per search before the read stops. The cap exists so a two-token
+#: query cannot pull the whole table into memory; when it is hit, every returned
+#: view carries ``scan_truncated: True`` — a bounded read that does not SAY it
+#: was bounded reads as full coverage, which is the defect this platform keeps
+#: finding.
+SEARCH_ROW_CAP = 400
+
+
+def search_terms(text: Any) -> list[str]:
+    """Entity-bearing tokens of a free-text question, lowercased, in order."""
+    seen: list[str] = []
+    for token in _SEARCH_TOKEN_RE.findall(str(text or "")):
+        low = token.casefold()
+        if low in _SEARCH_STOPWORDS or len(low) < 2:
+            continue
+        if low not in seen:
+            seen.append(low)
+    return seen
+
+
+def match_score(terms: list[str], haystack: str) -> float:
+    """Fraction of the query's entity terms present in one entity's own text."""
+    if not terms:
+        return 0.0
+    return sum(1 for t in terms if t in haystack) / len(terms)
+
+
+def search(
+    text: str,
+    limit: int = 10,
+    entity_type: Optional[str] = None,
+    conn=None,
+) -> list[dict]:
+    """Free-text lookup: every entity whose text matches, each one RESOLVED.
+
+    The shape is :func:`resolve`'s, once per matched entity, plus ``match`` (the
+    fraction of query terms the entity's own text carries) and
+    ``scan_truncated``. Ordered by the same authority the store resolves with —
+    authoritative sources first — so a caller that renders the list in order is
+    already showing curated evidence above a feed's.
+
+    UNLIKE :func:`query`, THIS RAISES. ``query`` logs and returns ``[]`` on a DB
+    failure, which makes a dead table indistinguishable from an entity nobody
+    has heard of. The Cortex ``currency`` backend needs that distinction to
+    annotate ``BackendResults.errors``, so the exception is the return value
+    here and swallowing it would silently defeat the whole reporting contract.
+    """
+    terms = search_terms(text)
+    if not terms:
+        return []
+    own = conn is None
+    if own:
+        conn = _connect()
+    try:
+        clauses = []
+        params: list = []
+        for term in terms:
+            like = f"%{term}%"
+            clauses.append(
+                "(LOWER(entity_key) LIKE %s OR LOWER(entity_label) LIKE %s "
+                "OR LOWER(namespace) LIKE %s)"
+            )
+            params.extend([like, like, like])
+        sql = (
+            f"SELECT * FROM {TABLE} WHERE ({' OR '.join(clauses)})"  # nosec B608 - constant identifier; every value bound
+        )
+        if entity_type:
+            sql += " AND entity_type = %s"
+            params.append(normalize_key(entity_type))
+        # Deterministic order so the cap always truncates the same tail rather
+        # than a different one per query plan.
+        sql += " ORDER BY entity_type, namespace, entity_key, entity_version, source"
+        sql += " LIMIT %s"
+        params.append(SEARCH_ROW_CAP + 1)
+        rows = [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+    finally:
+        if own:
+            conn.close()
+
+    truncated = len(rows) > SEARCH_ROW_CAP
+    if truncated:
+        rows = rows[:SEARCH_ROW_CAP]
+        logger.warning(
+            "entity_currency.search: scan capped at %d rows for %r — the result "
+            "set is a prefix, not the whole match",
+            SEARCH_ROW_CAP, text,
+        )
+
+    groups: dict = {}
+    for row in rows:
+        key = (
+            str(row.get("entity_type") or ""), str(row.get("namespace") or ""),
+            str(row.get("entity_key") or ""), str(row.get("entity_version") or ""),
+        )
+        groups.setdefault(key, []).append(row)
+
+    spec_by_id, order = _policy()
+    views = []
+    for key, group in groups.items():
+        view = _resolution_view(group, spec_by_id, order)
+        haystack = " ".join(str(v or "").casefold() for v in (
+            key[0], key[1], key[2], key[3], view.get("entity_label"),
+        ))
+        view["match"] = match_score(terms, haystack)
+        view["scan_truncated"] = truncated
+        views.append(view)
+
+    # Least significant key first (stable sorts compose into a lexicographic
+    # multi-key sort), so as_of stays a plain descending string sort instead of
+    # being folded into a negated composite — same rule as _sort_by_policy.
+    views.sort(key=lambda v: _iso(v.get("as_of")), reverse=True)
+    views.sort(key=lambda v: (
+        0 if v.get("authoritative") else 1,
+        -float(v.get("match") or 0.0),
+        -float(v.get("confidence") or 0.0),
+    ))
+    return views[:max(1, int(limit or 1))]
 
 
 def stats(conn=None) -> dict:

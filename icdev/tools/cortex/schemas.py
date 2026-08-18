@@ -20,8 +20,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 from typing import Optional
 
-# The four normalized retrieval backends behind the Cortex facade.
-CORTEX_BACKENDS = ("rag", "graph", "dic", "kb")
+# The normalized retrieval backends behind the Cortex facade. ``currency``
+# (cef-bck-01) answers "is this entity still current?" over the entity-currency
+# store and the learned de-facto standards; it is a retrieval backend like the
+# other four, not a separate facade.
+CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "currency")
 
 
 def _known_fields(cls: type, data: Optional[dict]) -> dict:

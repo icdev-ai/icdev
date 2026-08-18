@@ -403,7 +403,21 @@ def test_repo_cortex_config_has_required_blocks():
     assert path.is_file(), f"missing {path}"
     config = load_cortex_config(config_path=path, refresh=True)
     search = config["search"]
-    assert set(search["strategy_weights"]) == {"rag", "graph", "dic", "kb"}
+    # Every registered backend carries a fusion weight — pinned against
+    # CORTEX_BACKENDS rather than a literal set, so a backend added to the
+    # facade without a weight fails here instead of silently fusing at the
+    # neutral 1.0 default.
+    from tools.cortex.schemas import CORTEX_BACKENDS
+
+    assert set(search["strategy_weights"]) == set(CORTEX_BACKENDS)
+    # cef-bck-01: the currency backend is declared in all three search blocks,
+    # not merely registered in code. A backend with no timeout entry silently
+    # inherits `default` (10s) — ten seconds of budget for two indexed LIKE
+    # reads is only ever spent waiting on a database that is already unhealthy.
+    # Also asserted in the gated tests/cortex/test_search_currency_backend.py;
+    # this file is where the SHIPPED config's shape is pinned.
+    assert "currency" in search["timeouts"]
+    assert "currency" in search["fan_out"]["backends"]
     assert search["rrf_k"] == 60
     assert 0.0 < search["crag_threshold"] < 1.0
     assert "default" in search["timeouts"]

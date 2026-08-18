@@ -7,8 +7,8 @@ ordering of fused results across backends — so a future backend change
 cannot silently reorder or drop results without a golden failure.
 
 The corpus of labeled queries lives in ``fixtures/golden_queries.json``:
-~12 queries across the five routing categories (factual, relational/entity,
-document/clearance, exact-term, ambiguous fan-out). Each carries its expected
+~15 queries across the six routing categories (factual, relational/entity,
+document/clearance, exact-term, currency/lifecycle, ambiguous fan-out). Each carries its expected
 routing label + backend set and a per-backend score map. Assertions are on
 *attribution and order* ("backend X ranks above backend Y for query Q"),
 never on absolute scores — scores are fixture-controlled only to establish a
@@ -35,7 +35,7 @@ import pytest
 
 from tools.cortex import CortexSearchResult, search
 from tools.cortex import search_service
-from tools.cortex.schemas import Citation
+from tools.cortex.schemas import CORTEX_BACKENDS, Citation
 
 # ---------------------------------------------------------------------------
 # Golden corpus + fixed routing config
@@ -145,7 +145,11 @@ def test_golden_corpus_shape():
     ids = [c["id"] for c in GOLDEN_QUERIES]
     assert len(ids) == len(set(ids)), "duplicate golden query ids"
     categories = {c["category"] for c in GOLDEN_QUERIES}
-    assert categories == {"factual", "relational", "document", "exact_term", "ambiguous"}
+    assert categories == {
+        "factual", "relational", "document", "exact_term", "ambiguous",
+        # cef-bck-01 — "is this entity still current?" is its own route.
+        "currency",
+    }
     for c in GOLDEN_QUERIES:
         # expected_order must be a permutation of the routed backend set.
         assert set(c["expected_order"]) == set(c["expected_backends"]), c["id"]
@@ -161,13 +165,18 @@ def test_golden_corpus_shape():
 
 def test_strategy_all_returns_every_backend(monkeypatch):
     _install_golden_backends(
-        monkeypatch, {"rag": 0.9, "graph": 0.7, "dic": 0.5, "kb": 0.3}
+        monkeypatch,
+        {"rag": 0.9, "graph": 0.7, "dic": 0.5, "kb": 0.3, "currency": 0.1},
     )
 
     results = search("anything", strategy="all", config=GOLDEN_CONFIG)
 
-    assert [r.backend for r in results] == ["rag", "graph", "dic", "kb"]
-    assert all(r.strategy == "all:override[rag+graph+dic+kb]" for r in results)
+    # Pinned against CORTEX_BACKENDS: "all" means every registered backend, so
+    # a backend added to the facade and forgotten in the dispatch table fails
+    # here rather than quietly never running.
+    assert [r.backend for r in results] == list(CORTEX_BACKENDS)
+    expected = "all:override[" + "+".join(CORTEX_BACKENDS) + "]"
+    assert all(r.strategy == expected for r in results)
 
 
 def test_strategy_override_bypasses_routing(monkeypatch):

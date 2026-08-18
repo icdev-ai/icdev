@@ -2364,3 +2364,12 @@ tests/kanban/test_reflex_board_writers.py
 # and isolation_run both scope to CHANGED TEST FILES and this PR changes none,
 # so neither of them can speak to a promotion out of the backlog.
 tests/test_extension_manager.py
+# cef-bck-01: the Cortex `currency` backend. Gated in the PR that adds it,
+# per the test-gating policy. The assertion that has to stay green is the
+# error one: a dead entity_currency / docmod_defacto_standards table must
+# produce BackendResults carrying .errors, never an empty success — the two
+# are byte-identical to every caller that only reads the list, which is the
+# defect ctx-perf-04 added the annotation for. Also pins the authority
+# ordering (curated catalog above feed above learner), which is banded in
+# code precisely so it cannot be overturned by a bumped confidence prior.
+tests/cortex/test_search_currency_backend.py
