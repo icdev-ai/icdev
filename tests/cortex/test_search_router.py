@@ -352,6 +352,42 @@ def test_fan_out_timeout_returns_partial_results(monkeypatch, caplog):
         finished.wait(_WORKER_HANG_GUARD_SECONDS)
 
 
+def test_abandonment_probe_is_not_vacuous(monkeypatch):
+    """`finished` CAN be set at return time — so asserting it is not is real.
+
+    Same instrumented backend and the same fan-out as the test above, but with
+    a timeout budget the backend finishes inside. The router therefore awaits
+    it, and at the instant ``search()`` returns the worker HAS finished and its
+    results ARE fused in. That is exactly the state the timeout test asserts
+    must not hold, which is what makes the assertion there load-bearing rather
+    than trivially true: this probe distinguishes an abandoned backend from a
+    completed one, so it would also distinguish an abandoned one from a backend
+    that was awaited to completion and then discarded.
+    """
+    finished = threading.Event()
+
+    def instrumented_rag(query, top_k=5, ctx=None):
+        finished.set()
+        return [_hit("rag")]
+
+    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", instrumented_rag)
+    _patch_adapters(monkeypatch, backends=("graph", "dic"))
+    _patch_taxonomy(monkeypatch, label="reasoning", confidence=0.8)
+
+    cfg = {
+        "search": {
+            "fan_out": {"backends": ["rag", "graph", "dic"]},
+            "timeouts": {"default": 5.0, "rag": 5.0},
+        }
+    }
+    results = search_service.search("something fast", config=cfg)
+    finished_at_return = finished.is_set()
+
+    assert finished_at_return
+    assert {r.backend for r in results} == {"rag", "graph", "dic"}
+    assert results[0].metadata["router"]["timed_out"] == []
+
+
 def test_single_backend_timeout_returns_empty(monkeypatch, caplog):
     def slow_kb(query, top_k=5, ctx=None):
         time.sleep(2.0)
