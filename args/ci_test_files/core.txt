@@ -2290,3 +2290,16 @@ tests/agent_runtime/test_context_events.py
 # reaped and still counted. 8 tests, ~1s, sqlite fixture, no network (`gh` is
 # monkeypatched out).
 tests/test_kanban_reaper_pr_opened.py
+
+# hcx-vv-01 -- the reverse-direction acceptance test for the request_context
+# event. One live turn through the REAL run_agent_loop with all four injectors
+# genuinely active, then: every block that reached the provider must be named
+# by an event, and the event's body_sha256 must be that block's digest.
+# "Some rows exist" is the assertion that HIDES a partially-covered log, so
+# this one starts from the system prompt and works backwards. It is what found
+# agent_loop's own retrieved-memory injector, uninstrumented while the other
+# three were covered. 17 tests, ~35s: no network, no LLM, the migration's own
+# up.sql for the events table and the injector modules' own _ensure_schema for
+# theirs. Added in the PR that makes it pass; no skips (args/ci_skip_census.txt
+# names none for this file, and none exist).
+tests/agent_runtime/test_context_events_live_turn.py

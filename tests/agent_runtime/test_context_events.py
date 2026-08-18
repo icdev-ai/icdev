@@ -188,14 +188,39 @@ class TestEveryInjectorRecords:
         assert entries[0]["detail"]["facts_shown"] == 1
         assert entries[0]["detail"]["memory_searched"] is False
 
-    def test_all_three_land_in_one_ordered_session(self, event_db):
+    def test_every_source_lands_in_one_ordered_session(self, event_db):
+        """Counted from ``SOURCES``, not from the three that existed when this
+        was written. A literal 3 here made the test a tripwire for a fourth
+        injector rather than a check on the ordering it exists to protect --
+        and hcx-vv-01 is that fourth injector.
+        """
         for source in SOURCES:
             record_injection(SESSION, source, f"block from {source}", policy=RETAIN)
         rows = _rows(event_db)
-        assert [r["seq"] for r in rows] == [1, 2, 3]
+        assert [r["seq"] for r in rows] == list(range(1, len(SOURCES) + 1))
         assert all(r["event_type"] == EVENT_TYPE for r in rows)
-        assert coverage(SESSION)["total"] == 3
+        assert coverage(SESSION)["total"] == len(SOURCES)
         assert all(s["recorded"] for s in coverage(SESSION)["sources"].values())
+
+    def test_the_loop_is_a_registered_injector(self):
+        """``agent_loop`` injects too, and this module's vocabulary must say so.
+
+        The complement of generalising the count above. Relaxing an assertion so
+        a new source stops breaking it is only honest if something still asserts
+        the new source IS there -- otherwise the relaxation is a coverage cut
+        wearing a refactor's clothes.
+
+        ``agent_loop`` appends its retrieved-memory block to ``system_prompt``
+        after the runtime has handed the prompt over, so it is the last text
+        added before the request goes out and the one injector the runtime
+        cannot see. It was uninstrumented while the other three were covered,
+        which is a partially-covered log -- and a partially-covered log reads as
+        coverage. Found by ``tests/agent_runtime/test_context_events_live_turn.py``
+        asking the question backwards (hcx-vv-01).
+        """
+        from icdev.tools.llm.agent_loop import MEMORY_INJECTION_SOURCE
+
+        assert MEMORY_INJECTION_SOURCE in SOURCES
 
     def test_request_context_is_a_real_event_type(self):
         # The vocabulary is event_log's; this module must not invent a seventh.

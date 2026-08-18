@@ -12,6 +12,9 @@ system prompt at session start and none of them left a trace:
 * :mod:`tools.agent_runtime.goal_context` — the operator's active standing goals
 * :mod:`tools.agent_runtime.profile_memory` — durable profile facts,
   preferences, and the top hybrid-memory hits
+* :mod:`icdev.tools.llm.agent_loop` — the retrieved-memory block the LOOP
+  appends to the system prompt itself, after the runtime has handed the prompt
+  over (hcx-vv-01, found by the reverse-direction acceptance test)
 
 A tree-wide grep for ``context_injection|injected_context|prompt_snapshot|
 rendered_prompt`` before this card returned three unrelated files
@@ -153,6 +156,16 @@ SOURCES = (
     "project_context",
     "goal_context",
     "profile_memory",
+    # hcx-vv-01. The FOURTH injector, and the only one that does not live in
+    # `tools/agent_runtime/`: `agent_loop` appends its own retrieved-memory
+    # block to the system prompt after the runtime has handed the prompt over,
+    # so it is the last thing added before the request goes out and the one
+    # block the runtime cannot see. It went uninstrumented while the other three
+    # were covered -- a partially-covered log, which reads as coverage. It is
+    # announced through the loop's `on_context_injection` hook rather than
+    # written from inside the loop, so `icdev.tools.llm` does not acquire a
+    # dependency on the audit layer.
+    "agent_loop_memory",
 )
 
 #: Fallback tokens-per-character when ``context_budget`` is unimportable (a
