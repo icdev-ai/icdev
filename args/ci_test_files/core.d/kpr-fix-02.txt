@@ -1,7 +1,27 @@
-# kpr-fix-02 — dispatch was gated by seeding order as if it were a
-# dependency, so a false linear chain overrode the real graph and exactly
-# one task was ever in flight across a full day. Gated because the safe half
-# is invisible in the happy path: with no junction rows the scalar must STILL
-# hold a task behind a manual gate, and only a test says so.
+# kpr-fix-02 — seeding order was gating dispatch as if it were a dependency,
+# so a false linear chain overrode the real graph and exactly one task was
+# ever in flight across a full day.
+#
+# Gated in the PR that makes them pass, per docs/ci/test-gating-policy.md, and in
+# their own fragment so they cannot collide with a sibling's append to core.txt
+# (tsg-policy-03).
+#
+# test_dependency_gate_precedence.py pins the rule at the promoter, including the
+# half that is invisible in the happy path: with no junction rows the scalar must
+# STILL hold a task behind a manual gate, and only a test says so.
+#
+# test_dep_supersede.py holds the shared rule and, more importantly, the two
+# things that would fail SILENTLY if it drifted: the manual-gate carve-out (a
+# gate is a HOLD, not seeding order, and releasing one ships work a human
+# deliberately held) and the agreement between the SQL and Python renderings of
+# the same rule — the dispatcher uses the SQL one and nothing else compares them.
+#
+# The other three cover the sites a released task would still stall at, which is
+# why they join the allowlist now: the HTTP done-guard a worker session uses to
+# report its own completion, the draft-ready guard on its PR, and the reports
+# that otherwise describe a merge/dispatch policy the board does not have.
 tests/kanban/test_dependency_gate_precedence.py
 tests/kanban/test_dep_supersede.py
+tests/kanban/test_dep_supersede_consumers.py
+tests/kanban/test_cli_list_shows_blockers.py
+tests/ci/test_pr_watcher_draft_ready.py
