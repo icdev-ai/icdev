@@ -119,6 +119,11 @@ def test_every_state_is_reachable_and_declared():
         _pr(state="MERGED"), default_branch="main").state)
     seen.add(mr.classify_merge_readiness(
         _pr(), default_branch="main", linked_urls=[_URLS[0]]).state)
+    # kpr-stale-02. Not reachable from `_matrix()` because staleness is not a
+    # field of the PR json — it is measured (`measure_behind_by`) and passed in.
+    seen.add(mr.classify_merge_readiness(
+        _pr(), default_branch="main", behind_by=99,
+        max_behind_commits=10).state)
     assert seen == set(mr.MERGE_STATES), (
         "unreachable or undeclared states: %s"
         % (seen.symmetric_difference(mr.MERGE_STATES),))
@@ -284,25 +289,39 @@ def test_cli_is_read_only():
 
     tree = ast.parse(pathlib.Path(mr.__file__).read_text(encoding="utf-8"))
 
-    # Exactly one thing may shell out, and only through the injectable runner.
+    # Everything that shells out does so through an injectable runner, and
+    # EVERY argv must be a read. kpr-stale-02 added the second one
+    # (`measure_behind_by`), so this counts argvs rather than asserting there
+    # is one -- but each is checked, and a new one cannot arrive unlisted.
     shells = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute)
               and n.attr in ("run", "Popen", "call", "check_call", "check_output")]
-    assert len(shells) == 1, (
-        "expected one subprocess reference, got %s"
+    assert len(shells) == 2, (
+        "expected two subprocess references, got %s"
         % [ast.unparse(n) for n in shells])
 
-    # ...and its argv must be a read. The command literals are what execute;
-    # prose in a docstring or an --help string is not.
+    # The command literals are what execute; prose in a docstring or an --help
+    # string is not.
     argvs = [n for n in ast.walk(tree)
              if isinstance(n, ast.Call) and n.args
              and isinstance(n.args[0], ast.List)]
-    assert len(argvs) == 1, "expected one argv list, got %d" % len(argvs)
-    words = [e.value for e in argvs[0].args[0].elts
-             if isinstance(e, ast.Constant) and isinstance(e.value, str)]
-    assert words == ["pr", "list", "--state", "open", "--limit", "--json"], words
-    for verb in ("merge", "push", "close", "edit", "delete", "comment",
-                 "create", "squash", "checkout", "commit", "ready"):
-        assert verb not in words, "read-only argv grew a write verb: %s" % verb
+    assert len(argvs) == 2, "expected two argv lists, got %d" % len(argvs)
+    literals = [[e.value for e in a.args[0].elts
+                 if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+                for a in argvs]
+    assert ["pr", "list", "--state", "open", "--limit", "--json"] in literals, literals
+    assert ["api", "--jq", ".behind_by"] in literals, literals
+
+    for words in literals:
+        for verb in ("merge", "push", "close", "edit", "delete", "comment",
+                     "create", "squash", "checkout", "commit", "ready"):
+            assert verb not in words, (
+                "read-only argv grew a write verb: %s" % verb)
+        # `gh api` is read-only ONLY while it stays a GET. `-X POST` on the
+        # same argv shape would make this module an actor, which is the one
+        # thing it must never become.
+        for method_flag in ("-X", "--method", "-f", "-F", "--input"):
+            assert method_flag not in words, (
+                "gh api argv grew a write flag: %s" % method_flag)
 
 
 def test_build_report_counts_and_sorts(tmp_path):
