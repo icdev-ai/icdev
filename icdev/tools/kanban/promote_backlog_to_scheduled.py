@@ -5,9 +5,11 @@ SQL is authored for PostgreSQL (%s placeholders). This module previously used
 bare `?` and leaned on translate_sql, which is an init-only fallback and must
 never be load-bearing at runtime (see CLAUDE.md).
 
-This script identifies backlog tasks whose dependencies are satisfied
-(scalar + junction deps all done/decomposed), sets their status to 'scheduled'
-with a current timestamp, and logs the promotion.
+This script identifies backlog tasks whose dependencies are satisfied, sets their
+status to 'scheduled' with a current timestamp, and logs the promotion. Which
+dependencies GATE is decided by ``tools.kanban.deps`` — junction rows are the
+declaration when a task has them, and the scalar ``depends_on_task_id`` is
+honoured when it has none (or when it points at a manual gate).
 
 Usage:
     python tools/kanban/promote_backlog_to_scheduled.py [--dry-run]
@@ -34,35 +36,11 @@ def _utcnow_iso() -> str:
 
 from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
 
-def _deps_satisfied(task_id: str, conn) -> bool:
-    """Check if ALL dependencies (scalar + junction) are done/decomposed."""
-    # Scalar dep
-    row = conn.execute(
-        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (task_id,)
-    ).fetchone()
-    if row:
-        scalar_dep = dict(row).get("depends_on_task_id")
-        if scalar_dep:
-            dep_row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = %s", (scalar_dep,)
-            ).fetchone()
-            if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
-                return False
-
-    # Junction deps
-    jdeps = conn.execute(
-        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
-        (task_id,),
-    ).fetchall()
-    for r in jdeps:
-        dep_id = dict(r)["depends_on_id"]
-        dep_row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = %s", (dep_id,)
-        ).fetchone()
-        if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
-            return False
-
-    return True
+#: The gating rule itself lives in ``tools.kanban.deps`` so the dispatcher, the
+#: done-guards and every report ask ONE question (kpr-fix-02). This module used
+#: to AND the scalar ``depends_on_task_id`` with the junction table, which let
+#: SEEDING ORDER override the real dependency graph.
+from tools.kanban.deps import deps_satisfied as _deps_satisfied  # noqa: E402
 
 
 def promote(

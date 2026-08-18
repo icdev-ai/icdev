@@ -58,6 +58,7 @@ from tools.ci.merge_readiness import (
     classify_merge_readiness,
 )
 from tools.kanban.state_machine import KanbanState
+from tools.kanban import deps as kanban_deps
 
 
 logger = get_logger(__name__)
@@ -220,30 +221,24 @@ def _held_by_a_gate(conn, task_id: str) -> bool:
 
     This is the predicate that keeps auto-ready honest. A MANUAL-ONLY card (AGOV)
     expresses "a human decides when this ships" by holding a gate row that every
-    task depends on — `depends_on_task_id`, which is what
-    promote_backlog_to_scheduled actually checks, not the held row alone. So a
-    task whose dependency is unsatisfied must keep its draft: the draft is that
-    card's brake, and taking it off would ship work a human deliberately held.
+    task depends on. So a task whose dependency is unsatisfied must keep its
+    draft: the draft is that card's brake, and taking it off would ship work a
+    human deliberately held.
+
+    WHICH dependency is asked of ``tools.kanban.deps``, the same predicate
+    ``promote_backlog_to_scheduled`` and the dispatcher use — holding a PR on a
+    scalar the junction graph superseded would leave a released task's PR in
+    draft forever, which is the same stall one step downstream (kpr-fix-02).
 
     Errs toward HELD. A lookup that fails answers True, because the cost of a
     false "held" is one PR a human marks ready, and the cost of a false "free"
     is auto-merging gated work.
     """
     try:
-        row = conn.execute(
-            "SELECT d.status AS dep_status "
-            "FROM kanban_tasks t "
-            "LEFT JOIN kanban_tasks d ON d.id = t.depends_on_task_id "
-            "WHERE t.id = %s AND t.depends_on_task_id IS NOT NULL",
-            (task_id,),
-        ).fetchone()
+        return bool(kanban_deps.blocking_deps(task_id, conn))
     except Exception as exc:  # noqa: BLE001
         logger.warning("pr_watcher: dependency lookup failed for %s: %s", task_id, exc)
         return True
-    if row is None:
-        return False  # no dependency declared — nothing holding it
-    data = dict(row) if not isinstance(row, dict) else row
-    return (data.get("dep_status") or "") not in ("done", "decomposed")
 
 
 def _record_gate_refusal(conn, task_id: str, reason: str) -> None:

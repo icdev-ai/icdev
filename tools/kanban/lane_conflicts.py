@@ -89,6 +89,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.git.coordination_paths import is_coordination_path  # noqa: E402
+from tools.kanban.deps import effective_dep_ids  # noqa: E402
 from tools.kanban.gates import is_manual_gate  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
@@ -480,9 +481,12 @@ def load_board(conn=None) -> Tuple[List[Task], Dict[str, Set[str]], Dict[str, st
     terminal middle would break the chain.
 
     Both dependency mechanisms are read — the scalar ``depends_on_task_id`` and
-    the ``kanban_task_deps`` junction — because ``_deps_satisfied`` ANDs them, so
-    either one alone is a serialization and consulting only one would report a
-    hand-serialized pair as a live race.
+    the ``kanban_task_deps`` junction — but the edge set is what
+    ``tools.kanban.deps`` says actually GATES, not the union of the two. That
+    distinction is load-bearing HERE, not merely cosmetic: an edge suppresses a
+    conflict, so keeping a scalar the junction graph superseded would report two
+    tasks as safely serialized that the dispatcher will now run at the same time
+    (kpr-fix-02). This module exists to catch exactly that race.
     """
     owns = conn is None
     if owns:
@@ -494,6 +498,7 @@ def load_board(conn=None) -> Tuple[List[Task], Dict[str, Set[str]], Dict[str, st
             "SELECT id, title, description, status, depends_on_task_id "
             "FROM kanban_tasks"
         ).fetchall()]
+        titles = {str(r["id"]): str(r.get("title") or "") for r in rows}
         try:
             junction = [dict(r) for r in conn.execute(
                 "SELECT task_id, depends_on_id FROM kanban_task_deps"
@@ -510,14 +515,23 @@ def load_board(conn=None) -> Tuple[List[Task], Dict[str, Set[str]], Dict[str, st
 
     edges: Dict[str, Set[str]] = {}
     statuses: Dict[str, str] = {}
+    junction_by_task: Dict[str, List[str]] = {}
+    for j in junction:
+        junction_by_task.setdefault(str(j["task_id"]), []).append(
+            str(j["depends_on_id"])
+        )
     for r in rows:
         tid = str(r["id"])
         statuses[tid] = str(r.get("status") or "")
         scalar = r.get("depends_on_task_id")
-        if scalar:
-            edges.setdefault(tid, set()).add(str(scalar))
-    for j in junction:
-        edges.setdefault(str(j["task_id"]), set()).add(str(j["depends_on_id"]))
+        gating = effective_dep_ids(
+            scalar,
+            junction_by_task.get(tid, ()),
+            scalar_is_gate=bool(scalar)
+            and is_manual_gate(scalar, titles.get(str(scalar))),
+        )
+        if gating:
+            edges.setdefault(tid, set()).update(gating)
 
     tasks = [
         Task(
@@ -562,9 +576,9 @@ def is_serialized(a: str, b: str, closure: Dict[str, Set[str]]) -> bool:
 def dispatch_state(task: Task, statuses: Dict[str, str]) -> str:
     """``active`` | ``ready`` | ``blocked`` — can this task be built right now?
 
-    ``ready`` re-derives what ``promote_backlog_to_scheduled._deps_satisfied``
-    decides: every dependency, scalar and junction, must be ``done`` or
-    ``decomposed``. A manual gate is never ready — that is the point of a gate —
+    ``ready`` re-derives what ``promote_backlog_to_scheduled`` decides: every
+    GATING dependency — the set ``load_board`` already narrowed via
+    ``tools.kanban.deps`` — must be ``done`` or ``decomposed``. A manual gate is never ready — that is the point of a gate —
     and a ``suggested`` row is in quarantine, not in a queue.
     """
     if task.status in ACTIVE_STATUSES:

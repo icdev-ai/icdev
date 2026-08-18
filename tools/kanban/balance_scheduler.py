@@ -38,33 +38,9 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _deps_satisfied(task_id: str, conn) -> bool:
-    """Return True only when ALL scalar + junction deps are done/decomposed."""
-    row = conn.execute(
-        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (task_id,)
-    ).fetchone()
-    if row:
-        scalar_dep = dict(row).get("depends_on_task_id")
-        if scalar_dep:
-            dep_row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = %s", (scalar_dep,)
-            ).fetchone()
-            if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
-                return False
-
-    jdeps = conn.execute(
-        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
-        (task_id,),
-    ).fetchall()
-    for r in jdeps:
-        dep_id = dict(r)["depends_on_id"]
-        dep_row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = %s", (dep_id,)
-        ).fetchone()
-        if not dep_row or dict(dep_row)["status"] not in ("done", "decomposed"):
-            return False
-
-    return True
+#: Same predicate the dispatcher uses (kpr-fix-02). A balancer that answered a
+#: different question would report a queue depth the runner cannot drain.
+from tools.kanban.deps import deps_satisfied as _deps_satisfied  # noqa: E402
 
 
 def _count_by_project(conn) -> dict[str, dict[str, int]]:
