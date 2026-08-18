@@ -142,6 +142,38 @@ exemptions:
       and days_overdue must move 44 -> 45, so a freeze production never reads
       cannot pass.
 
+  - pattern: "tests/cortex/test_search_router.py"
+    reason: >-
+      FLAKINESS FIX, same structural shape as the CPMP determinism exemption
+      above: the change lives ENTIRELY inside the test file, so the gate applies
+      it to the merge base too and both runs are identical by construction — 29
+      passed either side. No production code changed, so there is no pre-change
+      tree in which a correct version of this test could fail.
+      What changed: `assert elapsed < 1.5` after a fan-out whose slow backend
+      sleeps 2.0s. It failed CI twice at 1.6727s and 1.7075s while passing three
+      of three locally, on a shared runner consistently ~15% over budget under
+      load, and it blocked an unrelated PR for hours (tsg-iso-02). The property
+      it carried is real and is NOT proved by the neighbouring assertions — an
+      implementation that awaited the full sleep and then discarded the late
+      result would satisfy both of them — so it was kept, and re-expressed as a
+      state check: the slow backend blocks on an Event the test never sets, and
+      the router must return while it is still running.
+      This exemption does NOT license a vacuous test here. The discrimination is
+      proved by a test IN the file — `test_the_abandonment_assertion_is_not_vacuous`
+      runs the same fan-out with a generous timeout and asserts the backend does
+      reach completion, i.e. exactly the state the abandonment assertion rejects.
+      An Event that could not tell the two apart fails that test.
+
+  - pattern: "tests/cortex/test_search_golden.py"
+    reason: >-
+      The twin of the exemption above and covered by the same argument: the same
+      `assert elapsed < 1.5` on the same fan-out, changed to the same Event-based
+      state check, entirely inside the test file (24 passed, 1 skipped either
+      side of the merge base). Its discrimination rests on the in-file
+      counterfactual in tests/cortex/test_search_router.py, which exercises the
+      shared `search_service` fan-out path both files drive; duplicating that
+      test here would assert the same property about the same code twice.
+
   - pattern: "tests/e2e_selenium/**"
     reason: >-
       Requires a live dashboard and a Selenium driver, and the module's autouse

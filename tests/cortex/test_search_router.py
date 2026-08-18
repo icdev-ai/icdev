@@ -347,6 +347,51 @@ def test_fan_out_timeout_returns_partial_results(monkeypatch, caplog):
         assert r.strategy == "auto:ambiguous[rag+graph+dic]"
 
 
+def test_the_abandonment_assertion_is_not_vacuous(monkeypatch):
+    """The counterfactual for the test above, kept executable rather than claimed.
+
+    Swapping a stopwatch for an Event only preserves coverage if the Event can
+    still tell the two cases apart. So this runs the SAME fan-out with a timeout
+    generous enough that the router waits for rag, and asserts the backend
+    reaches completion — which is exactly the state
+    ``assert not finished.is_set()`` above would reject.
+
+    Without this, "the assertion still discriminates" would be an assertion about
+    the test suite that nothing in the test suite checks — and a test that cannot
+    fail is the defect red_first_gate exists to catch. This file is exempt from
+    that gate (no production code changed, so both sides of the proof are
+    identical by construction), which is precisely why the discrimination is
+    proved here instead.
+    """
+    started, finished = threading.Event(), threading.Event()
+
+    def prompt_rag(query, top_k=5, ctx=None):
+        started.set()
+        finished.set()
+        return [_hit("rag")]
+
+    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", prompt_rag)
+    _patch_adapters(monkeypatch, backends=("graph", "dic"))
+    _patch_taxonomy(monkeypatch, label="reasoning", confidence=0.8)
+
+    cfg = {
+        "search": {
+            "fan_out": {"backends": ["rag", "graph", "dic"]},
+            # Generous: the router awaits rag rather than abandoning it.
+            "timeouts": {"default": 5.0, "rag": 5.0},
+        }
+    }
+    results = search_service.search("something slow", config=cfg)
+
+    assert started.is_set() and finished.is_set(), (
+        "an awaited backend must reach completion — if it cannot, the "
+        "abandonment assertion above is vacuous and proves nothing"
+    )
+    assert "rag" in {r.backend for r in results}, (
+        "and its result must actually be used, not discarded"
+    )
+
+
 def test_single_backend_timeout_returns_empty(monkeypatch, caplog):
     def slow_kb(query, top_k=5, ctx=None):
         time.sleep(2.0)
