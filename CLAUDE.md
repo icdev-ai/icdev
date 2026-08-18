@@ -210,9 +210,10 @@ python tools/cache_savings/by_provider.py --provider anthropic --json
 # `citation_report.evidence_path`: cortex | cortex_empty_fallback | legacy | caller.
 # `pack_evidence` citations are dropped at the seam — a pack's own verdict
 # returning through the fan-out must never become the evidence for a control.
-# The module is CANONICAL under icdev/tools/; tools/document_intelligence/
-# ssp_evidence.py is a RE-EXPORT, not a copy, because it holds thread-local run
-# state and two copies would be two budgets. Patch the icdev one in a test.
+# The module ships byte-identical in BOTH trees and they are separate module
+# objects with separate thread-local run state. Reach it through
+# acoic._ssp_evidence_module() (icdev first) — never by importing a namespace
+# and resetting it, and in a test patch the copy that function returns.
 # dic_ssp_fragments held 0 rows before this change and still does — the drafting
 # entry point (process_regen_item) has never been invoked; all 72 regen-queue
 # items are still `queued`. This card migrated the evidence chain, not the

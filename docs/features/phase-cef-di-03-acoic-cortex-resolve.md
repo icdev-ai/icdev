@@ -180,7 +180,6 @@ its own review, not a line in an evidence migration.
 | File | Role |
 |------|------|
 | `args/dic_acoic_config.yaml` | new — the `cortex:` toggle block, default off |
-| `icdev/tools/document_intelligence/ssp_evidence.py` | new — the seam (canonical namespace) |
-| `tools/document_intelligence/ssp_evidence.py` | new — a **re-export**, not a copy: the module holds thread-local run state and two copies would be two budgets, and `tools.X is icdev.tools.X` is False |
+| `tools/document_intelligence/ssp_evidence.py` + `icdev/` twin | new — the seam, byte-identical in both trees. They are separate module objects with separate thread-local run state, so `acoic._ssp_evidence_module()` (icdev first) is the single resolution point and what a test must patch. `CONFIG_PATH` walks up for `args/` rather than hardcoding `parents[N]`, which cannot be right at both depths without the two copies differing. |
 | `tools/document_intelligence/acoic.py` | `_gather_evidence` + provenance persisted on the fragment; `_retrieve_evidence` untouched |
 | `tests/test_acoic_cortex_evidence.py` | 18 tests, gated via `args/ci_test_files/core.d/cef-di-03.txt` |

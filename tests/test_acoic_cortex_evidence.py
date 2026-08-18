@@ -21,10 +21,10 @@ import pytest
 
 from tools.document_intelligence import acoic
 
-# The CANONICAL module, not the `tools.document_intelligence.ssp_evidence`
-# re-export. Patching the re-export would set an attribute on a namespace the
-# seam's own functions never read — they resolve `load_config` out of the
-# canonical module's globals — so the patch would silently do nothing.
+# The `icdev.` copy, deliberately: `tools.X is icdev.tools.X` is False, they
+# have separate `_STATE` thread-locals, and `acoic._ssp_evidence_module()`
+# resolves `icdev` first. Patching the `tools.` copy would patch a module
+# acoic never touches, and every assertion here would pass against nothing.
 from icdev.tools.document_intelligence import ssp_evidence as seam
 
 _ON = {"cortex": {"enabled": True, "top_k": 5, "max_resolves_per_run": 5,

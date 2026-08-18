@@ -69,6 +69,21 @@ So no drafting run can be FAILED by this module, and
 ``cortex.enabled: false`` in ``args/dic_acoic_config.yaml`` restores the
 pre-migration behaviour exactly.
 
+TWO COPIES, ONE OF WHICH IS THE ONE ACOIC USES
+----------------------------------------------
+This module ships byte-identical at ``tools/document_intelligence/`` and
+``icdev/tools/document_intelligence/``, like the rest of this canvas. They are
+SEPARATE module objects (``tools.X is icdev.tools.X`` -> ``False``), so they have
+separate ``_STATE`` thread-locals: separate memo caches, separate budgets,
+separate re-entrancy flags.
+
+Reach the seam through :func:`acoic._ssp_evidence_module`, which resolves ONE of
+them (``icdev`` first) and is what every call inside ``acoic`` goes through, so a
+process only ever touches one. Resetting or inspecting the run state by importing
+a namespace directly can reset the copy nobody is using — and a test that patches
+``tools.document_intelligence.ssp_evidence`` while ``acoic`` holds the ``icdev``
+one patches nothing. Patch what ``_ssp_evidence_module()`` returns.
+
 THE MEASURED CAVEAT
 -------------------
 Measured on the live DIC canvas, 2026-08-18, same controls both ways:
@@ -106,12 +121,36 @@ from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
 
-#: Behaviour config. Flat ``args/dic_*.yaml`` like the rest of the DIC canvas.
-#: ``parents[3]`` because this module lives one level deeper than its
-#: ``tools/`` re-export twin (``icdev/tools/document_intelligence/`` vs
-#: ``tools/document_intelligence/``), and the config is one file in ``args/``
-#: either way — there is no second copy of it to drift.
-CONFIG_PATH = Path(__file__).resolve().parents[3] / "args" / "dic_acoic_config.yaml"
+#: Config filename. Flat ``args/dic_*.yaml`` like the rest of the DIC canvas.
+CONFIG_FILENAME = "dic_acoic_config.yaml"
+
+
+def _default_config_path() -> Path:
+    """``args/dic_acoic_config.yaml``, found by walking up from this file.
+
+    A hardcoded ``parents[N]`` cannot be right in both trees: this module ships
+    byte-identical at ``tools/document_intelligence/`` and
+    ``icdev/tools/document_intelligence/``, which are different depths, and the
+    two copies must stay identical or the mirror-drift gate fires on a
+    difference that is correct. Walking up finds the one ``args/`` directory
+    from either depth.
+
+    The neighbouring mirrored modules use ``parents[2]`` and the ``icdev/`` copy
+    silently resolves to ``icdev/args/...``, reads nothing, and falls back to
+    built-in defaults — a config that is quietly not consulted. Falling back to
+    ``parents[2]`` here keeps that behaviour as the floor and nothing worse: an
+    unfound config is ``{}``, which reads as the shipped default (OFF).
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "args" / CONFIG_FILENAME
+        if candidate.is_file():
+            return candidate
+    return here.parents[2] / "args" / CONFIG_FILENAME
+
+
+#: Resolved once at import. Behaviour config for this seam.
+CONFIG_PATH = _default_config_path()
 
 #: Block within that file which governs this seam.
 CONFIG_KEY = "cortex"
