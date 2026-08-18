@@ -31,7 +31,13 @@ from pathlib import Path
 
 import pytest
 
-from tools.cortex import api, governance, resolver, search_service
+from tools.cortex import (
+    api,
+    governance,
+    resolution_provenance,
+    resolver,
+    search_service,
+)
 from tools.cortex.resolver import CortexResolutionBlocked
 from tools.cortex.schemas import (
     RESOLVE_VERDICTS,
@@ -172,7 +178,7 @@ def _canvas_grant_provisioned(monkeypatch):
 @pytest.fixture
 def gates(monkeypatch):
     """Benign governance gate seams; the audit payloads are recorded."""
-    record = {"audit": [], "provenance": []}
+    record = {"audit": [], "provenance": [], "resolution_provenance": []}
     monkeypatch.setattr(governance, "_gate_check_text",
                         lambda text: {"allowed": True, "warnings": [], "blocked_reason": None})
     monkeypatch.setattr(governance, "_gate_redact_input", lambda text, cls: (text, 0))
@@ -183,6 +189,16 @@ def gates(monkeypatch):
     )
     monkeypatch.setattr(governance, "_gate_record_audit",
                         lambda payload: record["audit"].append(payload))
+    # The resolver's OWN registry write (cef-rsv-03) is a second seam, and it is
+    # patched here for the same reason the gate's is: these are facade tests and
+    # must not open a connection or land a row. What the write actually persists
+    # is asserted against a real database in test_resolve_trust_loop.py, which is
+    # where a stub could not observe it.
+    monkeypatch.setattr(
+        resolution_provenance, "_register_citation",
+        lambda **kwargs: record["resolution_provenance"].append(kwargs)
+        or "scr-resolution-1",
+    )
     return record
 
 
@@ -790,8 +806,30 @@ class TestSurfaces:
         body = resp.get_json()
         assert body["blocked"] is True
         assert body["gate"] == "citation_grounding"
+        # WHICH of the three refusals, from resolver's closed BLOCK_*
+        # vocabulary (cef-rsv-03) — a renderer bug, a detector bug and a pack
+        # bug must not all arrive at the caller as one word.
+        assert body["reason"] == "hallucinated_citation"
         assert body["entity"] == "TLS 1.1"
         assert "nowhere" in body["citation_report"]["hallucinated_citations"]
+
+    def test_rest_returns_403_on_an_unbacked_replacement(self, gates, packs, evidence):
+        """The second refusal over the wire, distinguishable from the first.
+
+        A pack naming a successor it cannot point at is refused rather than
+        having its guess rendered as "Recommended replacement:" — the line a
+        redline is drafted from (cef-rsv-03).
+        """
+        packs(make_pack(replacement="TLS 1.3", evidence_source=""))
+        evidence(results=[hit()])
+
+        resp = self._client().post("/cortex/api/v1/resolve", json={"entity": "TLS 1.1"})
+
+        assert resp.status_code == 403
+        body = resp.get_json()
+        assert body["blocked"] is True
+        assert body["reason"] == "unattested_replacement"
+        assert body["citation_report"]["successor"] == "TLS 1.3"
 
     def test_rest_requires_authentication(self, gates):
         resp = self._client(authed=False).post("/cortex/api/v1/resolve",
@@ -925,6 +963,7 @@ class TestSurfaces:
 
         assert out["blocked"] is True
         assert out["blocked_gate"] == "citation_grounding"
+        assert out["reason"] == "hallucinated_citation"
 
 
 # ---------------------------------------------------------------------------

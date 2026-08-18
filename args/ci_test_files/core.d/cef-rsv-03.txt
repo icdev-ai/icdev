@@ -1,0 +1,15 @@
+# cef-rsv-03 — the resolve() TRUST loop: every finding cited, every resolution
+# registered, every unattested claim refused.
+#
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md, and in
+# its own fragment so it cannot collide with a sibling's append (tsg-policy-03).
+#
+# Worth gating rather than merely running once, for the reason the file's own
+# docstring gives: the assertions here are SELECTs against a real
+# source_citation_registry, not "the gate was invoked". Every other test of the
+# Cortex provenance path patches the writer and asserts the call — the exact
+# shape that let cxo-trust-01 write 0 of 285 rows for the subsystem's entire
+# lifetime while CI stayed green. A regression that stops the row landing, or
+# that turns one of the three hard blocks back into a degraded field, is
+# invisible to any test that does not read the database.
+tests/cortex/test_resolve_trust_loop.py

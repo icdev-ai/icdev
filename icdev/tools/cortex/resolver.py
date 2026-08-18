@@ -45,6 +45,32 @@ an LLM. Concretely, in this module:
    from it, and a citation that resolves to nothing is how an invented
    authority gets into a document.
 
+EVERY FINDING IS CITED, AND EVERY RESOLUTION IS REGISTERED
+----------------------------------------------------------
+cef-rsv-03 closes the TRUST loop over the three surfaces the prose validation
+above does not reach — see ``tools/cortex/resolution_provenance.py`` for the
+reasoning; in this module it is three blocks and one write:
+
+* every ``gaps`` and ``conflicts`` entry carries ``citations`` for the evidence
+  that produced it, and an id one of them points at that is NOT in the
+  resolution's own citation set BLOCKS, exactly as a prose tag does. Same
+  allowed set for both surfaces, so the two can never disagree about what an id
+  is;
+* a ``superseded_by`` rendered as "Recommended replacement:" must be attested
+  by a citation. An unbacked successor BLOCKS — the resolve-side analogue of
+  ``redline_drafter``'s out-of-candidate hard block, since that line is the one
+  a redline is drafted from;
+* every resolution that RETURNS writes one ``source_citation_registry`` row of
+  type ``cortex`` attesting its evidence SET, and every citation carries that
+  row's id in ``provenance_id``. The governance chain's own provenance row
+  hashes the egress prose and names no source, so before this the evidence a
+  verdict rests on was never registered at all.
+
+An ADVISORY hit is excluded from cross-backend claim building for the same
+reason it is excluded from citations: it is not evidence. Feeding one to the
+detector let an LLM-authored opinion become a SIDE of a reported conflict,
+carrying a source id no citation covers.
+
 UNKNOWN IS A FINDING
 --------------------
 A verdict of ``unknown`` always carries a ``gaps`` entry naming WHY, and the
@@ -81,6 +107,13 @@ from .entity_resolution import (
     GAP_PACKS_FAILED,
     entity_ident,
     resolve_entities,
+)
+from .resolution_provenance import (
+    attach_conflict_citations,
+    attach_gap_citations,
+    finding_citation_report,
+    register_resolution,
+    replacement_attestation,
 )
 from .schemas import (
     Citation,
@@ -174,6 +207,16 @@ _SNIPPET_CHARS = 240
 #:   is a question about the evidence and not about the verdict.
 
 
+#: Why a resolution was refused. A CLOSED vocabulary, so a caller can branch on
+#: the cause rather than on the message text, and so the three refusals stay
+#: distinguishable in an audit row — an unresolvable prose tag, a finding
+#: pointing outside the evidence set, and an unbacked successor send you to
+#: three different fixes (a render bug, a detector bug, a pack bug).
+BLOCK_HALLUCINATED_CITATION = "hallucinated_citation"
+BLOCK_UNATTESTED_FINDING = "unattested_finding"
+BLOCK_UNATTESTED_REPLACEMENT = "unattested_replacement"
+
+
 class CortexResolutionBlocked(RuntimeError):
     """A resolution was refused rather than returned.
 
@@ -182,12 +225,18 @@ class CortexResolutionBlocked(RuntimeError):
     refusal before re-raising — the same shape as ``CortexQueryBlocked`` on the
     analyst path. Carries the citation report so a caller can say WHICH tag was
     unresolvable instead of "resolution failed".
+
+    ``reason`` is one of the ``BLOCK_*`` values above and defaults to the
+    citation case, which is the only one that existed in cef-rsv-01.
     """
 
-    def __init__(self, message: str, *, entity: str = "", report: Optional[dict] = None):
+    def __init__(self, message: str, *, entity: str = "",
+                 report: Optional[dict] = None,
+                 reason: str = BLOCK_HALLUCINATED_CITATION):
         super().__init__(message)
         self.entity = entity
         self.report = dict(report or {})
+        self.reason = reason
 
 
 # ---------------------------------------------------------------------------
@@ -497,19 +546,28 @@ def _pack_citations(assessments: list) -> list:
 
 
 def _evidence_citations(hits: list) -> tuple:
-    """Retrieved hits -> ``(citations, advisory)``.
+    """Retrieved hits -> ``(citations, advisory, evidentiary)``.
 
     Advisory hits are split off, never cited. An ``sme`` opinion is authored by
     a model at query time; citing it would make an LLM the authority behind a
     deterministic verdict through the back door.
+
+    ``evidentiary`` is the hits that survived that split, returned so every
+    consumer downstream reads the SAME set the citations were built from. It is
+    what cross-backend claim building and the gap reasons are given: a claim
+    derived from an advisory hit would appear as a side of a reported conflict
+    carrying a source id no citation covers, which is the same smuggling path
+    through a different door (cef-rsv-03).
     """
     citations: list = []
     advisory: list = []
+    evidentiary: list = []
     seen: set = set()
     for hit in hits:
         if is_advisory(hit):
             advisory.append(hit.to_dict() if hasattr(hit, "to_dict") else hit)
             continue
+        evidentiary.append(hit)
         citation = getattr(hit, "citation", None)
         if citation is None:
             continue
@@ -518,7 +576,7 @@ def _evidence_citations(hits: list) -> tuple:
             continue
         seen.add(key)
         citations.append(citation)
-    return citations, advisory
+    return citations, advisory, evidentiary
 
 
 def _allowed_ids(citations: list) -> set:
@@ -690,9 +748,13 @@ def resolve(
     hits, backend_errors, backends = _gather_evidence(
         entity, question, context, top_k, config
     )
-    evidence_citations, advisory = _evidence_citations(hits)
+    # `evidentiary` is `hits` minus the advisory ones, and it is what everything
+    # below reads. An `sme` opinion must not count as a corpus match either:
+    # answering `no_evidence` off a response that contained nothing BUT an
+    # LLM-authored opinion is the same category error as citing it.
+    evidence_citations, advisory, evidentiary = _evidence_citations(hits)
     citations = _pack_citations(assessments) + evidence_citations
-    gaps = _gaps(entity, verdict, assessments, hits, backend_errors,
+    gaps = _gaps(entity, verdict, assessments, evidentiary, backend_errors,
                  pack_errors, backends)
 
     # cef-rsv-02 — resolve hits from different backends onto the SAME
@@ -705,7 +767,7 @@ def resolve(
     # packs, and nothing below reassigns it — a conflict is reported ALONGSIDE
     # the verdict, never instead of it and never as a tie-break.
     entity_report = resolve_entities(
-        hits,
+        evidentiary,
         assessments=assessments,
         backend_errors=backend_errors,
         entities=[entity] + [a.entity for a in assessments],
@@ -722,10 +784,17 @@ def resolve(
         gap for gap in entity_report["gaps"] if gap.get("entity_key") != subject_key
     ]
 
+    # cef-rsv-03 — a finding that names no evidence is an assertion. Both
+    # surfaces get the citations for what PRODUCED them, from the resolution's
+    # own citation set: a gap cites the sources that mentioned the entity and
+    # did not answer for it, a conflict cites the row behind each side.
+    allowed = _allowed_ids(citations)
+    gaps = attach_gap_citations(gaps, evidentiary, citations)
+    conflicts = attach_conflict_citations(conflicts, citations)
+
     text = render(entity, verdict, winner, assessments, citations, gaps, conflicts)
 
     # Citation validation through the SHARED module — and this one BLOCKS.
-    allowed = _allowed_ids(citations)
     report = validate_citations(text, allowed)
     if report.get("hallucinated_citations"):
         raise CortexResolutionBlocked(
@@ -733,6 +802,35 @@ def resolve(
             f"{report['hallucinated_citations']}",
             entity=entity,
             report=report,
+            reason=BLOCK_HALLUCINATED_CITATION,
+        )
+
+    # The same rule over the STRUCTURED ids the findings point at, against the
+    # same allowed set. A conflict side citing a row outside the resolution's
+    # evidence is the identical defect as a prose tag doing it, so it gets the
+    # identical answer: refusal, not a degraded field.
+    finding_report = finding_citation_report(gaps, conflicts, allowed)
+    if finding_report.get("hallucinated_citations"):
+        raise CortexResolutionBlocked(
+            f"a finding in the resolution for {entity!r} cites unknown source(s): "
+            f"{finding_report['hallucinated_citations']}",
+            entity=entity,
+            report=finding_report,
+            reason=BLOCK_UNATTESTED_FINDING,
+        )
+
+    # The successor named in "Recommended replacement:" is the actionable claim
+    # in a resolution — it is what a redline is drafted from — so it is the one
+    # that must not be unbacked. redline_drafter hard-blocks the mirror image of
+    # this (a draft naming a replacement outside the candidate list).
+    attestation = replacement_attestation(winner, allowed)
+    if attestation["claimed"] and not attestation["attested"]:
+        raise CortexResolutionBlocked(
+            f"resolution for {entity!r} recommends {attestation['successor']!r} "
+            "with no cited evidence backing the replacement",
+            entity=entity,
+            report=attestation,
+            reason=BLOCK_UNATTESTED_REPLACEMENT,
         )
 
     result = CortexResolution(
@@ -759,6 +857,13 @@ def resolve(
     )
     result.metadata.update({
         "citation_report": report,
+        # The structured half of the same check: what the gaps and conflicts
+        # pointed at, how much of it resolved, and how many sides/gaps are
+        # honestly uncitable. Reported rather than folded into the prose report,
+        # because "no gap cites anything" and "no tag was hallucinated" are
+        # different facts.
+        "finding_citation_report": finding_report,
+        "replacement_attestation": attestation,
         "verdict_source": verdict_source,
         "pack_ids": sorted({a.pack_id for a in assessments}),
         "evidence_hits": len(hits),
@@ -778,4 +883,15 @@ def resolve(
     result.governance.outcomes[GATE_CITATION] = (
         "pass" if report.get("valid") and citations else "warn"
     )
+
+    # One source_citation_registry row per resolution, attesting the EVIDENCE
+    # SET, with its id stamped onto every citation. Runs LAST and only on a
+    # resolution that survived the three blocks above — a refused resolution has
+    # no evidence set worth registering, and its refusal is already in the
+    # cortex_audit row the pipeline writes for the failed operation.
+    #
+    # Never raises and never blocks; it records `provenance` = pass | warn |
+    # fail on the report above, and `fail` specifically means MISCONFIGURED
+    # rather than momentarily unavailable.
+    register_resolution(result, context)
     return result

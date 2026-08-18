@@ -209,6 +209,9 @@ def handle_cortex_resolve(arguments: Dict[str, Any]) -> Dict[str, Any]:
                 "error": str(exc),
                 "blocked": True,
                 "blocked_gate": "citation_grounding",
+                # resolver's closed BLOCK_* vocabulary (cef-rsv-03) — three
+                # refusals, three different fixes.
+                "reason": getattr(exc, "reason", ""),
                 "entity": getattr(exc, "entity", ""),
                 "citation_report": getattr(exc, "report", {}),
             }
