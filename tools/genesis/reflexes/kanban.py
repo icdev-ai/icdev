@@ -8109,49 +8109,16 @@ _current_exec_tier: Optional[str] = None
 _SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 10 * 60)
 
 def _parse_utc_timestamp(raw) -> Optional[datetime]:
-    """A UTC-aware datetime from whatever the DB handed back, or None.
+    """A UTC-aware datetime, or None. Thin alias over the shared helper.
 
-    STDLIB FIRST, and `dateutil` only as an optional extra.
-
-    This replaces a bare `from dateutil.parser import parse` that sat INSIDE the
-    stale reaper's per-task `except Exception: continue`. `python-dateutil` is
-    not in requirements.txt, is not in pyproject, and is not installed on the CI
-    runner — so on every row the import raised ImportError, the except swallowed
-    it, and the loop moved to the next task. The sweep therefore skipped EVERY
-    task and reported nothing, everywhere dateutil happened to be absent. Not a
-    test artefact: the reaper has never once run on CI, and would not run on any
-    air-gapped install either, which is the deployment this project targets.
-
-    Reproduced by blocking the import locally — 5 of the 8 reaper tests fail
-    with the task left `in_progress`, matching the CI result exactly.
-
-    Handles what the codebase actually writes: a driver-native datetime
-    (PostgreSQL), and `datetime.now(timezone.utc).isoformat()` strings
-    (SQLite). `Z` is normalised because `fromisoformat` did not accept it before
-    3.11 and rows outlive interpreters. Naive values are read as UTC, which is
-    what every writer here means.
+    The implementation moved to `tools.common.helpers` (tsg-iso-03) so the
+    notification service could stop importing `dateutil` for the same job. The
+    name stays here because the reaper's tests pin it, and because a second
+    implementation of "read a timestamp" is how the two would drift.
     """
-    if raw is None:
-        return None
-    if hasattr(raw, "tzinfo"):
-        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
-    text = str(raw).strip()
-    if not text:
-        return None
-    if text.endswith(("Z", "z")):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        try:  # optional, and never load-bearing
-            from dateutil.parser import parse as _dp
-        except ImportError:
-            return None
-        try:
-            parsed = _dp(str(raw))
-        except Exception:  # noqa: BLE001 — an unparseable stamp is not fatal
-            return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    from tools.common.helpers import parse_utc_timestamp
+
+    return parse_utc_timestamp(raw)
 
 
 _ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)

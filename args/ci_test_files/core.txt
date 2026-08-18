@@ -2405,3 +2405,13 @@ tests/cortex/test_search_currency_backend.py
 # when they arrived. A regression in any of those is silent by construction --
 # it looks exactly like an empty corpus -- so an ungated file would not catch it.
 tests/cortex/test_search_external_backend.py
+
+# tsg-iso-03. `python-dateutil` was imported by two runtime modules and
+# declared in NEITHER requirements.txt nor pyproject.toml, both times inside a
+# bare `except Exception` returning a benign value — so the stale reaper
+# skipped every task and every notification duration read 'unknown', silently,
+# on CI and on any air-gapped install. It passed on Windows, where dateutil
+# arrives transitively, which is why it survived. Gated for the AST gate: an
+# import added back, even inside a try, reopens the defect and nothing else
+# would notice.
+tests/test_no_undeclared_dateutil.py
