@@ -196,8 +196,11 @@ def test_fresh_session_system_prompt_carries_project_instructions(runtime):
 def test_project_context_is_cached_per_session_and_cleared_by_new(runtime, monkeypatch):
     first = runtime._effective_system_prompt("hello")
     calls: list[str] = []
+    # **kw absorbs the hcx-evt-03 event ids (session_id / correlation_id) the
+    # runtime now passes; a positional-only stub would raise TypeError into the
+    # runtime's best-effort except and read as "the block was empty".
     monkeypatch.setattr(
-        pc, "build_for_runtime", lambda fn, sp="": calls.append(fn) or "REBUILT"
+        pc, "build_for_runtime", lambda fn, sp="", **kw: calls.append(fn) or "REBUILT"
     )
     # cached — no rebuild on the next turn of the same session
     assert runtime._effective_system_prompt("again") == first
@@ -217,5 +220,8 @@ def test_build_for_runtime_never_raises(monkeypatch):
     def _boom(**_kw):
         raise RuntimeError("nope")
 
-    monkeypatch.setattr(pc, "build_project_context", _boom)
+    # `describe`, not `build_project_context`: since hcx-evt-03 build_for_runtime
+    # calls describe directly, because the recorded event carries the budget
+    # accounting and only describe reports it.
+    monkeypatch.setattr(pc, "describe", _boom)
     assert pc.build_for_runtime("code_generation") == ""

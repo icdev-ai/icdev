@@ -1322,6 +1322,58 @@ there is no unaudited `danger-full-access`. Any other posture is applied with
 would strand an operator in the *looser* posture whenever the database is
 unreachable.
 
+### Context injections — the `request_context` writer (hcx-evt-03)
+
+Nothing recorded a context injection anywhere. Three modules put text into the
+system prompt at session start and none of them left a trace:
+`tools/agent_runtime/project_context.py` (CLAUDE.md / AGENTS.md / MEMORY.md plus
+the `session_context_builder` summary), `goal_context.py` (standing goals) and
+`profile_memory.py` (durable facts, preferences, hybrid-memory hits). A tree-wide
+grep for `context_injection|injected_context|prompt_snapshot|rendered_prompt`
+returned three unrelated files. So the log's invariant — "anything that reaches a
+model request must be reconstructable from the log" — was a lie by omission, and
+its `request_context` event type was declared and never emitted.
+
+```bash
+python tools/agent_runtime/context_events.py --session <context_id> --json
+python tools/agent_runtime/context_events.py --session <context_id> --with-body
+python tools/agent_runtime/context_events.py --sources
+```
+
+`record_injection(session_id, source, text, detail=…)` writes one event **naming
+the source**. It is the one seam in this subsystem allowed to swallow:
+`event_log.append` raises on a failed INSERT by design, and that rule is wrong
+here — each injector is deliberately best-effort so a missing subsystem never
+blocks a turn, and recording must not become a new way for injection to fail.
+
+**Swallowed is not unmeasured.** Every call lands in exactly one `stats()`
+counter — `recorded`, `skipped_empty`, `skipped_no_session`, `failed` (plus
+`last_error`) — and a failure logs at WARNING. The counters are process-local on
+purpose: a durable failure counter would itself be a database write on the path
+that must not fail. The durable signal is the events, via `coverage()`.
+
+**The envelope is always stored; only the body is policy-gated.** A row whose
+payload the retention policy suppressed could not say which injector produced it,
+which is the one thing this card requires it to say — so `source`, the two sizes,
+`body_sha256` and the injector's budget accounting are always kept, while
+`args/agent_event_log.yaml` still governs the injected text (including
+`never_store: [request_context]`, which that file names as the setting's intended
+use). `payload_withheld` describes the envelope and `body_stored` describes the
+text; they are two flags because merging them would make "retention is off"
+read identically to "no context was injected".
+
+**`session_id` here is the chat `context_id`, not `AgentLoopResult.session_id`.**
+The loop id does not exist until the first turn *completes*, and injection happens
+before the first turn *starts* — keying on it would leave turn one unrecorded,
+which is the gap this card closes. The loop id is passed as `correlation_id` and
+is legitimately empty on turn one rather than back-filled.
+
+An injector that produced no text injected nothing, so there is no event: a
+disabled subsystem, an absent `AGENTS.md` or an operator with no goals reach the
+model with nothing, and a row saying so would be fabricated coverage rather than
+measured absence. There is no `--stats` flag for the same reason — a fresh CLI
+process could only ever print zeros, which reads as a clean bill of health.
+
 ---
 
 ## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)

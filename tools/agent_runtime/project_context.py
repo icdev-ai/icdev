@@ -445,18 +445,40 @@ def describe(
     }
 
 
-def build_for_runtime(llm_function: str, system_prompt: str = "") -> str:
+#: Injector name this module records under (hcx-evt-03). One of
+#: ``context_events.SOURCES``.
+INJECTION_SOURCE = "project_context"
+
+
+def build_for_runtime(
+    llm_function: str,
+    system_prompt: str = "",
+    *,
+    session_id: str = "",
+    correlation_id: str = "",
+) -> str:
     """Entry point the runtime calls at session start. Never raises.
 
     ``ICDEV_SAG_PROJECT_CONTEXT=0`` disables the block entirely;
     ``ICDEV_SAG_PROJECT_STATE=0`` keeps the instruction files but skips the
     (DB-backed) project-state summary. Both fall back to
     ``args/agent_runtime.yaml`` when unset (hgx-cfg-01).
+
+    ``session_id`` (the runtime's chat ``context_id``) records the injection as a
+    ``request_context`` event — hcx-evt-03, "anything that reaches a model
+    request must be reconstructable from the log". Empty means there is no
+    session, which is the case when this is called from the CLI or a test, and
+    nothing is recorded. Recording never affects what is returned.
+
+    Calls :func:`describe` rather than :func:`build_project_context` because the
+    event carries the budget accounting — which files were truncated and by how
+    much — and only ``describe`` reports it. A block recorded without it would
+    say the model saw ``CLAUDE.md`` when it saw a third of it.
     """
     if not context_enabled():
         return ""
     try:
-        return build_project_context(
+        report = describe(
             llm_function=llm_function,
             system_prompt=system_prompt,
             include_project_state=project_state_enabled(),
@@ -464,6 +486,29 @@ def build_for_runtime(llm_function: str, system_prompt: str = "") -> str:
     except Exception as exc:  # noqa: BLE001 — context injection is best-effort
         logger.debug("project_context: injection skipped: %s", exc)
         return ""
+
+    text = report.get("text") or ""
+    # hcx-evt-03. `record_injection` never raises; the guard is for the IMPORT,
+    # which can fail in a stripped runtime that ships no event log.
+    try:
+        from tools.agent_runtime.context_events import record_injection
+
+        record_injection(
+            session_id,
+            INJECTION_SOURCE,
+            text,
+            size_tokens=report.get("tokens_used"),
+            detail={
+                "budget": report.get("budget"),
+                "window": report.get("window"),
+                "llm_function": llm_function,
+                "sections": report.get("sections") or [],
+            },
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — recording must never block a turn
+        logger.debug("project_context: injection not recorded: %s", exc)
+    return text
 
 
 # ---------------------------------------------------------------------------
