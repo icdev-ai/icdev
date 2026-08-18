@@ -23,8 +23,15 @@ from typing import Optional
 # Every normalized backend behind the Cortex facade.
 # ``currency`` (cef-bck-01) answers "is this entity still current?" over the
 # entity-currency store and the learned de-facto standards; it is a retrieval
-# backend like the first four. ``sme`` (cef-bck-03) is not — see below.
-CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "currency", "sme")
+# backend like the first four. ``external`` (cef-bck-02) retrieves too — a feed
+# item existed before the query and can be re-read — but it is the only backend
+# whose evidence comes from OUTSIDE the boundary: it reads authorized external
+# sources through the DataBridge agent broker, inheriting that broker's
+# authorization model whole rather than restating any part of it. That makes it
+# EVIDENTIARY and separately governed, which are different axes; the second one
+# lives in the rung, not in this tuple. ``sme`` (cef-bck-03) is not a retrieval
+# backend at all — see below.
+CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "currency", "external", "sme")
 
 # The split inside CORTEX_BACKENDS, and the reason it exists (cef-bck-03).
 #
@@ -299,6 +306,21 @@ class CortexContext:
     # STILL applied: trust affects the *input* screen only, never egress or the
     # NIST-AU record. Default False — callers must opt in explicitly.
     trusted_content: bool = False
+    # Service-key scopes when the caller presented one (rest_v1 copies them off
+    # ``g.cortex_binding``); None when no key was presented at all — a
+    # session-authenticated dashboard user, an in-process caller, a reflex.
+    #
+    # Tri-state on purpose, and the third state is the point: None means "no key
+    # was presented, so this context carries no scope claim" and defers to
+    # whatever the downstream rung's own authorization is, while an EMPTY LIST
+    # means "a key WAS presented and it carries no scopes" — a denial, not an
+    # absence. Collapsing the two would make an unscoped key indistinguishable
+    # from a trusted internal caller, which is the wrong direction to guess in.
+    #
+    # Read by the ``external`` search backend (cef-bck-02), which requires
+    # ``databridge:<connector>:read``; that scope is never in DEFAULT_SCOPES, so
+    # reaching an external source over REST is an explicit grant.
+    scopes: Optional[list] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -15,13 +15,24 @@ The four RETRIEVAL backends return four incompatible native shapes:
 - ``kb``    — the ``search_knowledge`` keyword KB
   (``tools/mcp/knowledge_server.py``) returns pattern dicts.
 
-A fifth backend, ``sme``, does not retrieve at all: it asks an ACE
+- ``external`` — authorized EXTERNAL sources, reached through the DataBridge
+  agent broker (``tools/databridge/broker.py``). It retrieves like the four
+  above, but it is the only backend whose evidence comes from OUTSIDE the
+  boundary; it inherits the broker's authorization model whole (air-gap
+  interlock, connector+table allowlist, per-agent grants, classification
+  ceiling, read-only, fail-closed outbound redaction, egress guard, row caps,
+  one audit row per outcome) and adds a service-key scope check in front of it.
+  Pinned fail-closed regardless of ``governance.fail_closed``.
+
+A sixth backend, ``sme``, does not retrieve at all: it asks an ACE
 domain-expert persona (``tools/ace/sme_registry.py`` +
 ``tools/ace/persona_query.py``) for an OPINION, authored by a model at query
 time. It normalizes into the same dataclass, so the split that keeps an opinion
 out of a verdict is carried by ADVISORY_BACKENDS / EVIDENTIARY_BACKENDS in
 ``tools/cortex/schemas.py`` and by ``is_advisory()`` below — never by the shape
-of the result.
+of the result. Note that ``external`` is EVIDENTIARY: being separately governed
+is a different axis from being an opinion, and only the second one belongs in
+that split.
 
 Each adapter takes ``(query, top_k, ctx)`` and normalizes its backend's
 native hits into ``CortexSearchResult`` (score clamped to [0, 1], native
@@ -995,6 +1006,382 @@ def search_sme(
     ]
 
 
+# ---------------------------------------------------------------------------
+# external (cef-bck-02) — authorized external sources, via the DataBridge broker
+# ---------------------------------------------------------------------------
+#
+# The only backend whose evidence comes from OUTSIDE the boundary. Everything
+# about who may reach what is the broker's (tools/databridge/broker.py) and is
+# inherited whole, not restated here: the air-gap interlock, the connector+table
+# allowlist, the per-agent role grants, the classification ceiling, read-only
+# enforcement, fail-closed GovConSanitizer redaction of the outbound query, the
+# per-connection egress guard, the 200/1000 row caps and the append-only audit
+# row on every outcome. This adapter contributes exactly two things the broker
+# cannot: a scope check on the presenting service key, and normalization of
+# whatever rows come back into CortexSearchResult.
+#
+# It does NOT hold its own source list. The (connector, table) pairs come from
+# ``broker.list_available(agent_id)``, which is the manifest read through the
+# same authorization it enforces — a second list here would be a copy that
+# drifts, and drift in an authorization list has one direction that matters.
+
+
+#: The role this rung presents to the broker. NOT ``ctx.agent_id``, which is the
+#: LLM router's budget-attribution key (a per-tenant string) and is a different
+#: identity with a different lifetime — spending money under a key and reading a
+#: customer's system under a role must not be the same claim. Declared in
+#: args/cortex_config.yaml (``search.external.agent_id``) so the role Cortex
+#: presents is reviewable next to the grant that names it.
+DEFAULT_EXTERNAL_AGENT_ID = "cortex_analyst"
+
+#: How many authorized (connector, table) pairs one search may fetch. Each pair
+#: is a network round trip inside a search timeout, so this bounds latency, not
+#: authorization — a pair dropped by this cap is REPORTED on ``.errors``, never
+#: silently trimmed.
+_DEFAULT_EXTERNAL_MAX_SOURCES = 2
+
+#: Rows requested per source. The broker clamps to DEFAULT_MAX_ROWS/HARD_MAX_ROWS
+#: regardless; this is the retrieval-shaped number, well below either.
+_DEFAULT_EXTERNAL_ROW_LIMIT = 25
+
+#: Score band for external evidence. External sources return no native relevance
+#: score at all — a feed hands back what it published, in publication order — so
+#: a score here is computed by this adapter and must not be able to outrank an
+#: in-boundary backend that actually measured similarity. Banded for the same
+#: structural reason as _CURRENCY_BANDS: an ordering that a tuning constant can
+#: overturn is not an ordering.
+_EXTERNAL_BAND = (0.10, 0.60)
+
+_EXTERNAL_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+
+
+def _broker():
+    """The DataBridge agent broker, resolved in this module's namespace root.
+
+    Falls back to the canonical namespace the way ``_currency_store`` does: the
+    two copies are byte-identical and both delegate to ``icdev.tools.databridge``
+    internally, so either answers the same — but resolving THIS module's root
+    first keeps a monkeypatched broker visible to a test that patched the
+    namespace it imported Cortex from.
+    """
+    try:
+        return _backend("databridge.broker")
+    except ModuleNotFoundError:
+        return importlib.import_module("icdev.tools.databridge.broker")
+
+
+def _egress_context(ctx: Optional[CortexContext]) -> CortexContext:
+    """The caller's context with ``fail_closed`` pinned True for this rung.
+
+    The platform default is ``governance.fail_closed: false`` — degrade rather
+    than block when a gate cannot run. That is a defensible default for reading
+    the platform's own corpora and the wrong one for egress: a gate that cannot
+    run on an outbound call means nobody can say what left, and "we could not
+    check, so we sent it" is not a posture. So this rung does not consult
+    ``resolve_fail_closed`` at all; it pins True, and an explicit
+    ``ctx.fail_closed=False`` from a caller cannot lower it.
+
+    Returns a COPY. Mutating the caller's context would silently re-post every
+    later gate in that request as fail-closed, which is a decision this rung has
+    no standing to make on the rest of the call's behalf.
+    """
+    base = ctx or CortexContext()
+    egress = CortexContext.from_dict(base.to_dict())
+    egress.fail_closed = True
+    return egress
+
+
+def _external_airgap(ctx: CortexContext) -> bool:
+    """Whether this call is air-gapped, by context OR by platform mode.
+
+    NOT a second control — the broker applies its own interlock and refuses
+    independently; this exists so the rung can SAY air-gap. ``list_available()``
+    returns ``[]`` under air-gap exactly as it does when nothing is granted, and
+    an empty result whose ``.errors`` is empty means "the corpus matched
+    nothing". Reporting an air-gapped rung that way would be a third distinct
+    state rendered as the one state that means everything is fine.
+    """
+    if getattr(ctx, "air_gap", False):
+        return True
+    try:
+        return bool(_backend("airgap").is_airgap())
+    except Exception:  # noqa: BLE001 — unknowable air-gap is not an assertion of one
+        return False
+
+
+def external_scope(connector: str) -> str:
+    """The service-key scope required to reach *connector* through this rung."""
+    return f"databridge:{connector}:read"
+
+
+def _scope_granted(ctx: CortexContext, scope: str) -> bool:
+    """Whether the caller's key carries *scope*.
+
+    ``ctx.scopes is None`` means no service key was presented — an in-process
+    caller, a reflex, a session-authenticated dashboard user — and the decision
+    falls to the broker's own per-agent grant, which is the control that has
+    always governed those callers. An empty LIST is a presented key with no
+    scopes, and that is a denial: the two are different facts and only one of
+    them is an absence of a claim.
+    """
+    scopes = getattr(ctx, "scopes", None)
+    if scopes is None:
+        return True
+    return scope in [str(s) for s in scopes]
+
+
+def _external_cfg(config: Optional[dict] = None) -> dict:
+    """The ``search.external`` block, with code-side fallbacks."""
+    try:
+        cfg = config if config is not None else load_cortex_config()
+        block = ((cfg.get("search") or {}).get("external") or {})
+    except Exception as exc:  # noqa: BLE001 — an unreadable config is not a grant
+        logger.warning("Cortex external backend: config unreadable (%s)", exc)
+        block = {}
+    return block if isinstance(block, dict) else {}
+
+
+def _external_score(query: str, row: dict, rank: int) -> tuple:
+    """Place one external row inside _EXTERNAL_BAND. Returns (score, raw_scores).
+
+    ``native_score`` is None rather than 0.0, and stays None: the source did not
+    supply one. A 0.0 there would read as "the source scored this zero", which is
+    a measurement nobody made — the same distinction the cache-effectiveness and
+    capability-consumption tooling draws between an unreported metric and a
+    measured zero.
+    """
+    text = " ".join(
+        str(row.get(field) or "")
+        for field in ("headline", "title", "body_excerpt", "summary", "source")
+    ).lower()
+    terms = {t.lower() for t in _EXTERNAL_TOKEN_RE.findall(query or "") if len(t) > 2}
+    hits = sum(1 for t in terms if t in text) if terms else 0
+    overlap = (hits / len(terms)) if terms else 0.0
+    # Publication order is the only ordering a feed gives; it decays slowly so it
+    # breaks ties without ever overtaking term overlap.
+    recency = 1.0 / (1.0 + max(0, int(rank)))
+    quality = _clamp(0.8 * overlap + 0.2 * recency)
+    low, high = _EXTERNAL_BAND
+    return low + (high - low) * quality, {
+        "native_score": None,
+        "term_overlap": round(overlap, 4),
+        "feed_rank": int(rank),
+    }
+
+
+def _external_result(
+    row: dict,
+    connector: str,
+    table: str,
+    query: str,
+    rank: int,
+    source: dict,
+    ctx: CortexContext,
+) -> CortexSearchResult:
+    """One brokered external row -> CortexSearchResult."""
+    headline = str(row.get("headline") or row.get("title") or "").strip()
+    body = str(row.get("body_excerpt") or row.get("summary") or "").strip()
+    content = " — ".join(p for p in (headline, body) if p) or str(row)[:500]
+    score, raw_scores = _external_score(query, row, rank)
+    url = str(row.get("link") or row.get("url") or "")
+    return CortexSearchResult(
+        content=content,
+        score=score,
+        backend="external",
+        strategy="brokered",
+        citation=Citation(
+            # The identifier the SOURCE gave the item, falling back to its URL
+            # and finally to a positional id — never empty, because a Cortex
+            # answer fragment with no citation is suppressed, and evidence from
+            # outside the boundary is the last thing that should reach a reader
+            # unattributed.
+            source_id=str(row.get("entry_id") or row.get("id") or url
+                          or f"{connector}:{table}#{rank}"),
+            source_type="external_document",
+            # Deliberately EMPTY: this row is not in an ICDEV table. Naming the
+            # audit log or db_connections here would send a reader to the record
+            # of the fetch instead of to the evidence. ``url`` is the pointer.
+            source_table="",
+            title=headline or url,
+            snippet=(body or content)[:_SNIPPET_CHARS],
+            url=url,
+            # The grant's declared ceiling for this source, not the caller's
+            # clearance: labelling a public feed CUI because a CUI-cleared user
+            # asked would over-mark it, and labelling it below its ceiling is not
+            # this adapter's call to make.
+            classification=str(source.get("classification_ceiling")
+                               or ctx.classification or "CUI"),
+        ),
+        raw_scores=raw_scores,
+        metadata={
+            "connector": connector,
+            "table": table,
+            "external": True,
+            # Stamped so a consumer can see that this rung ran fail-closed
+            # without having to know that it does.
+            "fail_closed": True,
+            "broker_agent_id": source.get("agent_id", ""),
+            "signal_date": row.get("signal_date", ""),
+            "author": row.get("author", ""),
+            "feed_source": row.get("source", ""),
+        },
+    )
+
+
+def search_external(
+    query: str,
+    top_k: int = 5,
+    ctx: Optional[CortexContext] = None,
+) -> list[CortexSearchResult]:
+    """Authorized external sources -> CortexSearchResult (backend='external').
+
+    cef-bck-02. Before this, ``tools/cortex`` had no DataBridge import at all:
+    "leverage DataBridge to reach external content that is configured and
+    authorized" was a description of two subsystems that had never been
+    introduced. This is the introduction, and it is deliberately thin — every
+    authorization decision belongs to ``broker.fetch()``.
+
+    Fail-closed for the whole rung (see ``_egress_context``). Concretely, each
+    of these DENIES rather than degrades:
+
+    * the broker module will not import — no fetch, error annotated;
+    * ``list_available`` raises — no fetch against a guessed source list;
+    * the presenting service key lacks ``databridge:<connector>:read`` — that
+      source is skipped and the refusal is written to
+      ``databridge_agent_access_log`` through ``broker.record_denial``, so a
+      Cortex-side refusal lands in the same trail as a broker-side one;
+    * the broker reports ``audited=False`` — the rows are dropped even if they
+      arrived, matching the broker's own position that an unaudited fetch is not
+      an authorised one.
+
+    Never raises. An empty return with EMPTY ``.errors`` means the authorized
+    sources genuinely matched nothing; every other emptiness says why.
+    """
+    ctx = _egress_context(ctx)
+    errors: list[dict] = []
+    results: list[CortexSearchResult] = []
+    top_k = max(1, int(top_k or 1))
+
+    def _fail(stage: str, message: str):
+        logger.warning("Cortex external backend (%s): %s", stage, message)
+        return BackendResults(
+            [], errors=[{"backend": "external", "stage": stage, "message": message}]
+        )
+
+    if _external_airgap(ctx):
+        # Reported, not raised, and reported as its own stage: an air-gapped
+        # deployment is a correct configuration, not a fault, and it must not
+        # read as "the external corpus is empty".
+        return _fail(
+            "airgap",
+            "air-gap mode is active; no external source was contacted",
+        )
+
+    try:
+        broker = _broker()
+    except Exception as exc:  # noqa: BLE001
+        return _fail("broker", f"DataBridge broker unavailable: {exc}")
+
+    cfg = _external_cfg()
+    agent_id = str(cfg.get("agent_id") or DEFAULT_EXTERNAL_AGENT_ID)
+    row_limit = int(cfg.get("row_limit") or _DEFAULT_EXTERNAL_ROW_LIMIT)
+    max_sources = max(1, int(cfg.get("max_sources") or _DEFAULT_EXTERNAL_MAX_SOURCES))
+
+    try:
+        sources = list(broker.list_available(agent_id) or [])
+    except Exception as exc:  # noqa: BLE001
+        return _fail("authorization", f"could not read the access manifest: {exc}")
+
+    pairs = [
+        (str(s.get("connector") or ""), str(table), s)
+        for s in sources
+        for table in (s.get("tables") or [])
+        if s.get("connector") and table
+    ]
+    if not pairs:
+        # Not a match failure and not a crash: nothing is granted to this role.
+        # Said out loud, because "you have no reach" and "your reach found
+        # nothing" send an operator to two different files.
+        return _fail(
+            "authorization",
+            f"no external connector/table is granted to role {agent_id!r}",
+        )
+
+    if len(pairs) > max_sources:
+        errors.append({
+            "backend": "external",
+            "stage": "cap",
+            "message": (
+                f"{len(pairs)} authorized (connector, table) pairs; only the "
+                f"first {max_sources} were queried (search.external.max_sources)"
+            ),
+        })
+        pairs = pairs[:max_sources]
+
+    for connector, table, source in pairs:
+        scope = external_scope(connector)
+        if not _scope_granted(ctx, scope):
+            reason = f"presented service key lacks scope {scope!r}"
+            try:
+                audited = bool(broker.record_denial(agent_id, connector, table, reason))
+            except Exception as exc:  # noqa: BLE001 — record_denial should not raise
+                audited = False
+                logger.error("Cortex external backend: denial not recorded: %s", exc)
+            errors.append({
+                "backend": "external",
+                "stage": "scope",
+                "message": reason if audited else f"{reason} (NOT AUDITED)",
+            })
+            continue
+
+        try:
+            outcome = broker.fetch(
+                agent_id,
+                connector,
+                table,
+                query=query,
+                limit=row_limit,
+                # The caller's classification is what the broker bounds against
+                # the grant's ceiling. UNCLASSIFIED only when the context carries
+                # nothing — never as a convenient floor.
+                classification=str(ctx.classification or "UNCLASSIFIED"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            # The broker's contract is that it never raises. The adapter's
+            # contract is that it never raises EITHER, and one of them not
+            # depending on the other is why a broker regression cannot take the
+            # whole search down with it.
+            logger.warning("Cortex external backend: broker raised: %s", exc)
+            errors.append({
+                "backend": "external",
+                "stage": "fetch",
+                "message": f"{connector}/{table}: {exc}",
+            })
+            continue
+
+        if not getattr(outcome, "ok", False):
+            errors.append({
+                "backend": "external",
+                # An unaudited decision is a control failure, an ordinary denial
+                # is a normal outcome. Same emptiness, different alarm.
+                "stage": "audit" if not getattr(outcome, "audited", True) else "denied",
+                "message": f"{connector}/{table}: {getattr(outcome, 'error', '')}",
+            })
+            continue
+
+        source_meta = dict(source)
+        source_meta["agent_id"] = agent_id
+        for rank, row in enumerate(list(getattr(outcome, "rows", []) or [])):
+            if not isinstance(row, dict):
+                continue
+            results.append(
+                _external_result(row, connector, table, query, rank, source_meta, ctx)
+            )
+
+    results.sort(key=lambda r: r.score, reverse=True)
+    return BackendResults(results[:top_k], errors=errors)
+
+
 # Dispatch table for the Cortex facade — keys match CORTEX_BACKENDS.
 BACKEND_ADAPTERS = {
     "rag": search_rag,
@@ -1002,6 +1389,7 @@ BACKEND_ADAPTERS = {
     "dic": search_dic,
     "kb": search_kb,
     "currency": search_currency,
+    "external": search_external,
     "sme": search_sme,
 }
 
@@ -1069,12 +1457,23 @@ _DEFAULT_TIMEOUTS = {
     "default": 10.0, "rag": 10.0, "graph": 8.0, "dic": 10.0, "kb": 5.0,
     # Two indexed LIKE reads, no embedding call and no model call.
     "currency": 5.0,
+    # cef-bck-02: the only backend that opens a socket to a host ICDEV does not
+    # run. A DNS lookup, a TLS handshake and a feed parse against a third party
+    # is a different budget from a local index read, and the timeout is what
+    # stops a slow external source holding a whole fan-out open.
+    "external": 15.0,
     "sme": 60.0,
 }
 # `currency` (cef-bck-01) IS in the automatic fan-out: it retrieves rows that
 # existed before the query. `sme` (cef-bck-03) is deliberately absent and must
 # stay absent — it is advisory, and fan-out is the automatic path, so adding it
 # here would put an LLM opinion into the result set of every ambiguous query.
+# `external` (cef-bck-02) is absent for an unrelated reason — it IS evidentiary,
+# so the sme argument does not reach it. Fan-out is what an unclassifiable query
+# falls back to, so putting the external rung in it would make "Cortex could not
+# tell what you meant" the trigger for an outbound call to a third party. It is
+# reached by an explicit strategy, or by a deployment that adds it to
+# search.fan_out.backends having decided that.
 _DEFAULT_FAN_OUT_BACKENDS = ["rag", "graph", "dic", "currency"]
 _DEFAULT_FACTUAL_CONFIDENCE = 0.75
 

@@ -302,6 +302,38 @@ def _audit(agent_id: str, connector: str, table: str, decision: str,
         ) from exc
 
 
+def record_denial(agent_id: str, connector: str, table: str, reason: str) -> bool:
+    """Record a refusal reached by a caller sitting IN FRONT of the broker.
+
+    ``fetch()`` audits its own decisions. A caller that applies its own policy
+    BEFORE calling it would otherwise refuse silently — and a refusal nobody
+    recorded is indistinguishable from a call nobody made, which is the exact
+    blind spot ``databridge_agent_access_log`` exists to close. The Cortex
+    ``external`` backend (cef-bck-02) is the first such caller: it requires a
+    ``databridge:<connector>:read`` scope on the presenting service key, and a
+    key without it never reaches ``fetch()``.
+
+    Same table and same row shape as an ordinary denial, so an operator reads
+    ONE trail rather than correlating two. This is not a second authorization
+    path: the broker still applies every check independently when a fetch does
+    happen, and nothing here can allow anything.
+
+    Returns True when the row landed, False when it did not. Never raises: the
+    refusal stands either way, and a caller that must distinguish "refused" from
+    "refused and unrecorded" reads the return value — the same split
+    ``FetchOutcome.audited`` makes for an allowed call.
+    """
+    try:
+        _audit(agent_id, connector, table, "denied", reason)
+        return True
+    except AuditWriteFailed as exc:
+        logger.error(
+            "databridge broker: pre-broker denial for agent=%s connector=%s "
+            "table=%s was NOT recorded: %s", agent_id, connector, table, exc,
+        )
+        return False
+
+
 def fetch(
     agent_id: str,
     connector: str,
@@ -476,6 +508,6 @@ def list_available(agent_id: str = "") -> list[dict]:
     return out
 
 
-__all__ = ["fetch", "list_available", "FetchOutcome", "BrokerDenied",
-           "AuditWriteFailed", "load_manifest", "DEFAULT_MAX_ROWS",
-           "HARD_MAX_ROWS"]
+__all__ = ["fetch", "list_available", "record_denial", "FetchOutcome",
+           "BrokerDenied", "AuditWriteFailed", "load_manifest",
+           "DEFAULT_MAX_ROWS", "HARD_MAX_ROWS"]
