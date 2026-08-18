@@ -51,6 +51,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from tools.ci import error_classifier as ec
+from tools.ci.merge_readiness import (
+    NO_AUTOMERGE_LABELS,
+    READY,
+    HELD_LABEL,
+    classify_merge_readiness,
+)
 from tools.kanban.state_machine import KanbanState
 
 
@@ -541,8 +547,10 @@ from tools.git.coordination_paths import (  # noqa: E402,F401
 #: Any of these on a PR stops the unlinked sweep. A human may open a PR to
 #: discuss rather than to land, and the cost of guessing wrong is a merge nobody
 #: asked for — so the escape hatch is cheap, obvious, and checked first.
-_NO_AUTOMERGE_LABELS = frozenset({"hold", "do-not-merge", "do not merge", "wip",
-                                  "no-automerge", "blocked"})
+#: kpr-watch-01 moved the list itself to `tools/ci/merge_readiness.py` so the
+#: merger and the report cannot hold two different lists. Alias kept for
+#: existing importers.
+_NO_AUTOMERGE_LABELS = NO_AUTOMERGE_LABELS
 
 _GH_JSON_FIELDS = (
     "state,statusCheckRollup,reviews,mergeable,isDraft,"
@@ -2819,6 +2827,13 @@ class PRWatcher:
         draft stops it too — an unlinked PR is NOT un-drafted, since for a human
         the draft IS the "not ready" signal (a kanban task has a gate and a
         dependency to say that instead).
+
+        THE LADDER ITSELF LIVES IN `tools/ci/merge_readiness.py` (kpr-watch-01).
+        It used to be a run of bare `continue` statements here, which meant the
+        pipeline could merge a PR but could not answer "why is this one not
+        merging" — and the read-only report that answers it must not be a second
+        transcription of this policy. Same table, two consumers: this one merges
+        on `ready`, `python -m tools.ci.merge_readiness` only prints.
         """
         if not self.config.get("merge_unlinked_prs", True):
             return
@@ -2853,27 +2868,17 @@ class PRWatcher:
         default_branch = self._default_branch()
         for pr in prs:
             url = (pr.get("url") or "").strip()
-            if not url or url in linked:
-                continue
-            if pr.get("isDraft"):
-                continue
-            labels = {
-                (lbl.get("name") or "").strip().lower()
-                for lbl in (pr.get("labels") or [])
-            }
-            if labels & _NO_AUTOMERGE_LABELS:
-                logger.info("pr_watcher: %s carries a hold label — leaving it", url)
-                continue
-            if (pr.get("baseRefName") or "") != default_branch:
-                continue
-            if (pr.get("mergeable") or "").upper() != "MERGEABLE":
-                continue
-            state = dict(pr)
-            if not ec.is_passing(state):
-                continue
-            if ec.is_changes_requested(state):
-                # A reviewer asked for changes. Merging over that is the one
-                # thing an automation must never do.
+            verdict = classify_merge_readiness(
+                pr, default_branch=default_branch, linked_urls=linked)
+            if verdict.state != READY:
+                # The refusals used to be bare `continue`s and so were entirely
+                # invisible; the hold label was the only one that said anything.
+                if verdict.state == HELD_LABEL:
+                    logger.info(
+                        "pr_watcher: %s carries a hold label — leaving it", url)
+                else:
+                    logger.debug("pr_watcher: not merging %s — %s: %s",
+                                 url or "<no url>", verdict.state, verdict.reason)
                 continue
             if self._auto_merge(url):
                 logger.info("pr_watcher: auto-merged unlinked PR %s (%s)",
