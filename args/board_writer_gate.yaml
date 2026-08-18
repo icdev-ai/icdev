@@ -56,7 +56,14 @@ raw_insert_census:
   # By migration shape, for rem-hyg-06: 106 seeder, 59 runtime, 42 reflex,
   # 12 mixed. The 42 reflex sites are the autonomous path and the highest-value
   # cohort — nothing supervises those writes.
-  raw_insert_max: 219
+  #
+  # 2026-08-17, rem-hyg-06 batch 1: the `scheduled_at` cohort of the autonomous
+  # path is converted — coherence_to_kanban_reflex, qa_agent_reflex (x3),
+  # route_perf_reflex and e2e_runner, 6 sites mirrored to 12 entries. Three of
+  # the six wrote task_type='bug', which kanban_tasks_task_type_check forbids;
+  # they could never have filed a card on PostgreSQL, and the board carries zero
+  # 'bug' rows. 219 -> 207. Remaining reflex debt: 30 entries / 15 sites.
+  raw_insert_max: 207
 
   # A reason shorter than this is not a reason. Applies to census entries and to
   # the exclusions below.

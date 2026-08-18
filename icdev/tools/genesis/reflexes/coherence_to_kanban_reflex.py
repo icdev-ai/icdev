@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Genesis Coherence→Kanban Reflex — bridges coherence violations into kanban bug tasks.
+"""Genesis Coherence→Kanban Reflex — bridges coherence violations into kanban fix tasks.
 
 Runs a targeted subset of coherence checks on each firing, diffs results against the
-last-known-clean baseline stored in the DB, and files [COHERENCE] kanban bug tasks for
+last-known-clean baseline stored in the DB, and files [COHERENCE] kanban fix tasks for
 *new* violations only — so the same finding isn't re-filed every cycle.
 
 GREEN tier — reads codebase, queries kanban_tasks, creates tasks. No file writes,
@@ -23,6 +23,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("coherence_to_kanban_reflex")
@@ -138,11 +139,21 @@ def _pending_task_exists(conn, check_id: str, violation_key: str) -> bool:
 
 
 def _insert_coherence_task(
-    conn,
     check_id: str,
     violations: List[str],
     check_message: str,
 ) -> Optional[str]:
+    """Seed one [COHERENCE] card through the canonical seeder.
+
+    rem-hyg-06: this used to be a raw ``INSERT INTO kanban_tasks`` with
+    ``task_type='bug'`` — a value ``kanban_tasks_task_type_check`` forbids, so
+    on PostgreSQL (the primary backend) the statement raised every time a new
+    violation was found and the reflex has never filed a card. There are zero
+    ``bug`` rows on the live board. ``create_tasks`` refuses that value in
+    Python instead, which is how it surfaced; the correct type is ``fix``.
+
+    Takes no ``conn``: the seeder opens and commits its own.
+    """
     task_id = f"task-coh-{uuid.uuid4().hex[:8]}"
     now = _utcnow().isoformat()
     priority = _CHECK_PRIORITY.get(check_id, "medium")
@@ -160,20 +171,17 @@ def _insert_coherence_task(
         "```\n"
         "Fix the root cause and re-run the check. Close this task when the check passes."
     )
-    conn.execute(
-        """
-        INSERT INTO kanban_tasks
-            (id, title, description, task_type, priority, status,
-             scheduled_at, created_at, updated_at, dispatch_source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (
-            task_id, title, desc,
-            "bug", priority, "backlog",
-            now, now, now, "coherence_to_kanban_reflex",
-        ),
-    )
-    return task_id
+    created = create_tasks([{
+        "id": task_id,
+        "title": title,
+        "description": desc,
+        "task_type": "fix",
+        "priority": priority,
+        "status": "backlog",
+        "scheduled_at": now,
+        "dispatch_source": "coherence_to_kanban_reflex",
+    }])
+    return task_id if created else None
 
 
 def run(config: dict, state: object) -> dict:
@@ -214,7 +222,7 @@ def run(config: dict, state: object) -> dict:
                 total_new_violations += len(new_viols)
                 first_viol = new_viols[0]
                 if not _pending_task_exists(conn, check_id, first_viol):
-                    task_id = _insert_coherence_task(conn, check_id, new_viols, cr.get("message", ""))
+                    task_id = _insert_coherence_task(check_id, new_viols, cr.get("message", ""))
                     if task_id:
                         new_task_ids.append(task_id)
                         logger.warning(
