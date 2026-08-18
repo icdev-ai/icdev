@@ -691,6 +691,20 @@ def resolve_evidence(
         # would recurse without bound. Thread-local rather than global because
         # the search fan-out runs backends in a worker pool and a global flag
         # would suppress an unrelated concurrent drafting run's evidence.
+        #
+        # THREAD-LOCAL IS CORRECT HERE, and it is NOT correct everywhere — check
+        # before copying this. cef-di-04 found that `search_service._run_backends`
+        # submits every backend onto a shared ThreadPoolExecutor, so a surface
+        # that IS one of Cortex's own rungs gets the re-entrant call back on a
+        # DIFFERENT thread and a thread-local guard is structurally blind to it
+        # (it passes a single-threaded test and then exhausts the pool in
+        # production). The rungs are `BACKEND_ADAPTERS` in
+        # tools/cortex/search_service.py — rag, graph, dic, kb, currency,
+        # external, sme. `doc_generator` is a DRAFTING surface and none of those
+        # adapters reaches it, so the only re-entrancy possible is a
+        # `DomainPack.evaluate()` calling back — and `resolver.assess()` runs the
+        # packs SYNCHRONOUSLY on the calling thread, which this flag sees.
+        # Same carve-out as acoic (cef-di-03) and the docmod packs (cef-di-01).
         logger.debug("docgen evidence: re-entrant ask for %r — legacy path", label[:80])
         return None
 
