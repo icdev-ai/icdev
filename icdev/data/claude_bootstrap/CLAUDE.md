@@ -340,15 +340,40 @@ python -m tools.ci.merge_readiness --json          # every open PR, task-linked 
 python -m tools.ci.merge_readiness                 # human table
 python -m tools.ci.merge_readiness --state awaiting_ci --state conflicting
 python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
+python -m tools.ci.merge_readiness --state behind_main       # the stale ones
+python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
 # READ-ONLY: it never merges, pushes, un-drafts or closes. `pr_watcher`'s unlinked
 # sweep and this report read the SAME pure function,
-# classify_merge_readiness(pr, *, default_branch, linked_urls) -> (state, reason),
-# so the report can never describe a merge policy the merger does not have. Do
-# NOT write a second copy of the ladder. States: merged | linked | draft |
-# held_label | wrong_base | conflicting | no_checks | ci_failed | awaiting_ci |
-# changes_requested | ready. `no_checks` (empty rollup) is never merged into
-# `awaiting_ci`, and mergeable=UNKNOWN reports a different REASON from
-# CONFLICTING. Exit 2 = the report could not be produced, never an empty table.
+# classify_merge_readiness(pr, *, default_branch, linked_urls, behind_by) ->
+# (state, reason), so the report can never describe a merge policy the merger
+# does not have. Do NOT write a second copy of the ladder. States: merged |
+# linked | draft | held_label | wrong_base | conflicting | no_checks |
+# ci_failed | awaiting_ci | changes_requested | behind_main | ready.
+# `no_checks` (empty rollup) is never merged into `awaiting_ci`, and
+# mergeable=UNKNOWN reports a different REASON from CONFLICTING. Exit 2 = the
+# report could not be produced, never an empty table.
+#
+# `behind_main` (kpr-stale-02) is THE SAFETY HOLE this ladder was missing.
+# `mergeable` answers only "does this collide TEXTUALLY", and GitHub reports
+# MERGEABLE for a branch arbitrarily far behind main — so the CONFLICTING
+# interlock caught only the colliding subset and the rest merged CLEANLY,
+# re-applying their diff over a tree that had moved on (#1651: -38/+26 on
+# rest_v1.py, 36 commits behind). Do NOT key this on `mergeStateStatus` alone:
+# it is BEHIND only where the base branch has `required_status_checks.strict`,
+# which this repo does NOT — measured 2026-08-18, it reads CLEAN for a branch
+# 217 commits behind. The forge verdict is the belt; the measured count from
+# `measure_behind_by` (the /compare endpoint, NOT a local git rev-list, which
+# understates staleness whenever origin/main is itself stale) is the check.
+# Threshold `max_behind_commits: 10` in args/pr_watcher_config.yaml, surveyed:
+# over 120 merged PRs the routine population tops out at 8 behind at merge
+# (p50 1, p90 5, p95 6), so it fires on 0 of them and on #1651.
+# Measured LAST, and only for a PR every cheaper rung already passed — it is
+# the one rung that costs a forge round-trip. UNMEASURED is `None` and prints
+# "?", NEVER 0, and is FAIL-OPEN: a forge that cannot answer must not freeze
+# the pipeline. The repair differs by door — a task-linked kanban/<id> branch
+# goes to the existing `_maybe_rebase` path (same ownership refusal, same
+# per-base-era budget) and raises a HITL alert when that declines; an UNLINKED
+# PR is reported and LEFT ALONE, because the sweep never pushes.
 # Raw board writers — does this INSERT bypass the canonical seeder? (rem-hyg-05)
 python tools/kanban/raw_insert_census.py --check          # the gate; exit 1 on a NEW raw INSERT
 python tools/kanban/raw_insert_census.py --json           # full report

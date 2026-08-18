@@ -106,6 +106,64 @@ hold_on_sibling_conflict: true
 # unavailable git reports checked:false, which is never read as a finding.
 landed_check_on_poll: true
 
+# Stale-branch guard (kpr-stale-02) — THE SAFETY HOLE this closes.
+#
+# Nothing in this watcher ever asked how far behind the default branch a PR
+# was. The merge decision reads `mergeable`, and GitHub reports MERGEABLE for a
+# branch arbitrarily far behind main so long as nothing collides TEXTUALLY. So
+# the CONFLICTING interlock only ever caught the subset that happened to
+# collide; the non-conflicting subset merged CLEANLY and re-applied its whole
+# diff over a tree that had moved on — a revert wearing a feature's clothes.
+# #1651 was -38/+26 on rest_v1.py and 36 commits behind main. It was closed by
+# a human; nothing in the pipeline could see it. `auto_rebase_on_conflict`
+# above is not the answer on its own: it repairs a branch that has ALREADY gone
+# DIRTY, which is exactly the subset that never had this problem.
+#
+# THE FORGE'S OWN VERDICT IS NOT ENOUGH, and this is the trap to avoid.
+# `mergeStateStatus == BEHIND` is authoritative when it appears, but it appears
+# ONLY when the base branch has "require branches to be up to date"
+# (`required_status_checks.strict`) turned on. Measured on this repo
+# 2026-08-18: strict is FALSE. mergeStateStatus is CLEAN for a branch 217
+# commits behind main, so a check keyed on it alone could never fire once. The
+# measured count below is the real check; the forge verdict is the belt.
+#
+# WHERE THE NUMBER COMES FROM. Measured 2026-08-18 over the last 120 MERGED
+# PRs, counting commits on main that each branch was missing at the moment it
+# merged (`merge-base(main-at-merge, head)..main-at-merge`):
+#
+#     0 commits behind : 41 (34.2%)      p50 =  1
+#     1-2              : 38 (31.7%)      p75 =  3
+#     3-5              : 31 (25.8%)      p90 =  5
+#     6-10             : 10 ( 8.3%)      p95 =  6
+#     11+              :  0 ( 0.0%)      max =  8
+#
+# The routine population tops out at 8. The known true positive, #1651, was 36
+# behind when it was closed (217 today). So 10 sits two commits above the
+# highest routine merge ever observed and an order of magnitude below the case
+# it exists to catch: it would have fired on 0 of those 120 merges and on
+# #1651. It is NOT a number chosen to keep the check quiet — lower it and it
+# starts refusing the p95 of ordinary work, which the repair path (a rebase per
+# PR) can absorb but which CLAUDE.md is right to call refusing routine work.
+# Re-measure before changing it; do not raise it to get a PR through.
+#
+# THE REPAIR DIFFERS BY DOOR, and only one of them pushes:
+#   * a task-linked kanban/<id> branch is handed to the SAME `_maybe_rebase`
+#     path `auto_rebase_on_conflict` uses — same ownership refusal, same
+#     per-base-era budget, same audit. When it declines (not this task's
+#     branch, budget spent, disabled) the PR is held and a HITL alert names a
+#     human, because a hold nobody can see is how work goes quiet.
+#   * an UNLINKED PR is reported and left alone. The unlinked sweep never
+#     pushes — it has no task to carry the state and no claim on the branch.
+#
+# FAIL-OPEN, and never silently. When the count cannot be measured (no gh, a
+# fork PR, a rate limit) the PR is NOT held, and the report prints "?" rather
+# than 0 — an unmeasured branch and a branch level with main are different
+# facts, and only one of them is evidence. Same posture landed_check takes for
+# the same class of question. Set refuse_merge_when_behind false to disable the
+# hold entirely; `python -m tools.ci.merge_readiness` still reports it.
+refuse_merge_when_behind: true
+max_behind_commits: 10
+
 # Bounded self-heal of a stale done-gate block (kpr-rvfy-03).
 # The enforced done-gate reads only the LATEST kanban_verifications row, and
 # nothing writes one except a dispatch — so a green PR whose verification went

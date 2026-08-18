@@ -6661,17 +6661,38 @@ python tools/workflow/coherence_checker.py --check board_writer_census --gate
 # can never describe a merge policy the merger does not have (the same shape
 # CLAUDE.md mandates for `decide_discrimination`). Do NOT write a second copy.
 # States: merged | linked | draft | held_label | wrong_base | conflicting |
-# no_checks | ci_failed | awaiting_ci | changes_requested | ready (+ unknown).
+# no_checks | ci_failed | awaiting_ci | changes_requested | behind_main | ready
+# (+ unknown).
 # `no_checks` (empty rollup, nothing ever reported) is NOT `awaiting_ci` (checks
 # running), and mergeable=UNKNOWN carries a different REASON from CONFLICTING so
 # nobody rebases a branch that has no conflict.
-# READ-ONLY, proven by AST in tests/test_merge_readiness.py: exactly one
-# subprocess reference and one argv, which must be `gh pr list`. It never merges,
-# pushes, un-drafts or closes. Exit 0 = reported, 2 = COULD NOT BE PRODUCED (an
-# unreadable `gh pr list` must not print the same empty table as a quiet repo).
+# READ-ONLY, proven by AST in tests/test_merge_readiness.py: every subprocess
+# argv is a read (`gh pr list` and `gh api .../compare`, the latter asserted to
+# carry no -X/--method/-f write flag). It never merges, pushes, un-drafts or
+# closes. Exit 0 = reported, 2 = COULD NOT BE PRODUCED (an unreadable
+# `gh pr list` must not print the same empty table as a quiet repo).
+#
+# `behind_main` (kpr-stale-02) — THE SAFETY HOLE. `mergeable` answers only
+# "does this collide TEXTUALLY", so GitHub reports MERGEABLE for a branch
+# arbitrarily far behind main and the CONFLICTING interlock caught only the
+# colliding subset; the rest merged CLEANLY and re-applied their diff over a
+# tree that had moved on (#1651: -38/+26 on rest_v1.py, 36 behind).
+# `mergeStateStatus == BEHIND` alone is NOT the check — it appears only where
+# the base branch has `required_status_checks.strict`, false on this repo, so
+# it reads CLEAN at 217 commits behind. `measure_behind_by(base, head_sha)`
+# reads the forge /compare endpoint (a local `git rev-list` understates
+# staleness whenever origin/main is itself stale, the one direction that fails
+# silently) and returns None for UNMEASURED, never 0. Threshold
+# `max_behind_commits` in args/pr_watcher_config.yaml, default 10 — surveyed
+# over 120 merged PRs whose routine population tops out at 8 behind at merge.
+# Measured LAST and only for otherwise-`ready` PRs: it is the one rung that
+# costs a forge round-trip.
 python -m tools.ci.merge_readiness                           # human table
 python -m tools.ci.merge_readiness --json
 python -m tools.ci.merge_readiness --state awaiting_ci --state conflicting
+python -m tools.ci.merge_readiness --state behind_main       # only the stale ones
+python -m tools.ci.merge_readiness --max-behind 5            # override the threshold
+python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
 python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
 
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
