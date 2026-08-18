@@ -8107,6 +8107,53 @@ _current_exec_tier: Optional[str] = None
 # for every live subprocess, see _refresh_running_heartbeats); this threshold is
 # only the fallback for a task that never recorded a heartbeat at all.
 _SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 10 * 60)
+
+def _parse_utc_timestamp(raw) -> Optional[datetime]:
+    """A UTC-aware datetime from whatever the DB handed back, or None.
+
+    STDLIB FIRST, and `dateutil` only as an optional extra.
+
+    This replaces a bare `from dateutil.parser import parse` that sat INSIDE the
+    stale reaper's per-task `except Exception: continue`. `python-dateutil` is
+    not in requirements.txt, is not in pyproject, and is not installed on the CI
+    runner — so on every row the import raised ImportError, the except swallowed
+    it, and the loop moved to the next task. The sweep therefore skipped EVERY
+    task and reported nothing, everywhere dateutil happened to be absent. Not a
+    test artefact: the reaper has never once run on CI, and would not run on any
+    air-gapped install either, which is the deployment this project targets.
+
+    Reproduced by blocking the import locally — 5 of the 8 reaper tests fail
+    with the task left `in_progress`, matching the CI result exactly.
+
+    Handles what the codebase actually writes: a driver-native datetime
+    (PostgreSQL), and `datetime.now(timezone.utc).isoformat()` strings
+    (SQLite). `Z` is normalised because `fromisoformat` did not accept it before
+    3.11 and rows outlive interpreters. Naive values are read as UTC, which is
+    what every writer here means.
+    """
+    if raw is None:
+        return None
+    if hasattr(raw, "tzinfo"):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        try:  # optional, and never load-bearing
+            from dateutil.parser import parse as _dp
+        except ImportError:
+            return None
+        try:
+            parsed = _dp(str(raw))
+        except Exception:  # noqa: BLE001 — an unparseable stamp is not fatal
+            return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 _ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)
 
 # Anomaly detection parameters for _detect_execution_anomaly.
@@ -9084,6 +9131,10 @@ def _has_open_pr(task_id: str) -> bool:
 _open_pr_branch_cache: Dict[str, Tuple[float, Set[str]]] = {}
 _OPEN_PR_CACHE_TTL_SECONDS = 45.0
 
+#: Monotonic stamp of the last _open_pr_head_branches call that could not
+#: reach `gh` for a given repo root. See _open_pr_listing_unavailable.
+_open_pr_listing_failed_at: Dict[str, float] = {}
+
 
 def _open_pr_head_branches(repo_root: str) -> Set[str]:
     """Head branch names of every open PR in *repo_root*, cached per cycle.
@@ -9110,17 +9161,46 @@ def _open_pr_head_branches(repo_root: str) -> Set[str]:
              "--json", "headRefName"],
             capture_output=True, text=True, timeout=20, cwd=repo_root,
         )
-        if result.returncode == 0 and result.stdout.strip():
+        if result.returncode != 0:
+            # gh missing, unauthenticated, or the repo has no remote. Record it
+            # so callers that must distinguish "no open PRs" from "could not
+            # ask" can (see _open_pr_listing_unavailable), and do NOT cache the
+            # empty set as an answer.
+            _open_pr_listing_failed_at[repo_root] = time.monotonic()
+            logger.debug(
+                "open-PR branch listing failed for %s (gh exit %d)",
+                repo_root, result.returncode,
+            )
+            return set()
+        if result.stdout.strip():
             branches = {
                 str(p.get("headRefName"))
                 for p in _json.loads(result.stdout)
                 if p.get("headRefName")
             }
     except Exception as exc:
+        _open_pr_listing_failed_at[repo_root] = time.monotonic()
         logger.debug("open-PR branch listing unavailable for %s: %s", repo_root, exc)
         return set()
+    _open_pr_listing_failed_at.pop(repo_root, None)
     _open_pr_branch_cache[repo_root] = (time.monotonic(), branches)
     return branches
+
+
+def _open_pr_listing_unavailable(repo_root: str) -> bool:
+    """True when the most recent open-PR listing for *repo_root* could not run.
+
+    _open_pr_head_branches returns an empty set both when a repo genuinely has
+    no open PRs and when `gh` is unavailable. That conflation is deliberate and
+    correct for the dispatch window — "do not filter" is the safe default there
+    — but not for the reaper, where "no evidence of a PR" and "could not look
+    for a PR" lead to opposite decisions about a task's fate. This reads the
+    failure stamp the listing already records; it never calls `gh` itself.
+    """
+    failed_at = _open_pr_listing_failed_at.get(repo_root)
+    if failed_at is None:
+        return False
+    return (time.monotonic() - failed_at) < _OPEN_PR_CACHE_TTL_SECONDS
 
 
 def _tasks_with_recent_success(task_ids: List[str], within_minutes: int = 30) -> Set[str]:
@@ -9207,6 +9287,72 @@ def _drop_respawn_guarded(tasks: List[dict]) -> List[dict]:
     return kept
 
 
+def _task_executor_url(conn, task_id: str) -> Optional[str]:
+    """kanban_tasks.executor_url for *task_id*, or None.
+
+    Read per-task rather than in the reaper's sweep SELECT: this column is one
+    of several that arrived by migration, and the reaper is the last line of
+    defence against a wedged board — it must not lose its whole sweep to a
+    schema variance in one column it only needs for tasks it is about to touch.
+    Only reached for a task already past its threshold, so the extra query is
+    rare by construction.
+    """
+    try:
+        row = conn.execute(
+            "SELECT executor_url FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
+    except Exception as exc:  # noqa: BLE001 — absent column is not a reaper failure
+        logger.debug("executor_url unavailable for %s: %s", task_id, exc)
+        return None
+    if not row:
+        return None
+    value = dict(row).get("executor_url")
+    return str(value) if value else None
+
+
+def _finished_with_open_pr(task_id: str, executor_url: Optional[str]) -> Optional[str]:
+    """Evidence that an in_progress task has ALREADY OPENED ITS PR.
+
+    A worker that pushed its branch, opened a PR and then went quiet — no log
+    output, no heartbeat — is indistinguishable from a dead subprocess when
+    liveness is judged on the heartbeat alone. It is not dead, it is finished,
+    and the proof is sitting in the same row the reaper is about to update.
+
+    Observed 2026-08-16: last_heartbeat_at 16:24:36Z, PR #1744 created
+    16:27:16Z, stale-reaper fired 16:35:00Z against a row that already carried
+    executor_url=https://github.com/icdev-ai/icdev/pull/1744. The task was
+    recorded as a failure, its failure_count incremented, and its status set to
+    backlog while an open PR existed — and enough of those feed the fc>=5 sweep
+    that parks a healthy task in 'suggested'.
+
+    Returns a human-readable evidence string, or None when there is none.
+
+    Evidence order matters:
+
+    1. ``kanban/<task_id>`` among the open-PR head branches. Authoritative, and
+       it is the SAME per-cycle cached listing the dispatch window already uses
+       (_open_pr_head_branches) — no second `gh` call is made here.
+    2. ``executor_url`` naming a pull request, but ONLY when that listing could
+       not run at all. The column is never cleared on re-dispatch, so a task
+       whose earlier PR merged still carries the URL; treating it as proof of a
+       *currently* open PR would park a genuinely dead task in pr_opened. Where
+       `gh` is unreachable (air-gapped runners) it is the only record there is.
+    """
+    try:
+        root = str(_task_repo_root(task_id))
+    except Exception:  # noqa: BLE001 — fall back to this repo, as elsewhere
+        root = str(BASE_DIR)
+
+    if f"kanban/{task_id}" in _open_pr_head_branches(root):
+        return f"open PR on branch kanban/{task_id}"
+
+    url = (executor_url or "").strip()
+    if url and "/pull/" in url and _open_pr_listing_unavailable(root):
+        return f"executor_url records an opened PR ({url}); open-PR listing unavailable"
+
+    return None
+
+
 def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
     """Respawn guard: return True if this task completed successfully very recently.
 
@@ -9272,6 +9418,10 @@ def _reap_stale_in_progress() -> None:
          expected (not evidence of a dead subprocess) for externally/manually
          managed work.
 
+    A task whose PR is already open is NOT reaped in any of those three modes.
+    It has finished, not stalled: it is moved to pr_opened and gains no
+    failure_count and no last_failure_reason (see _finished_with_open_pr).
+
     Normal threshold: 2× task timeout (30–80 min).
     Silent-dispatch threshold: _SILENT_DISPATCH_THRESHOLD (log empty AND no
     fresh heartbeat AND not in _running AND last in_progress transition actor
@@ -9301,6 +9451,7 @@ def _reap_stale_in_progress() -> None:
 
         now = datetime.now(timezone.utc)
         reaped = []
+        finished = []
         for r in rows:
             d = dict(r)
             tid = d["id"]
@@ -9321,16 +9472,15 @@ def _reap_stale_in_progress() -> None:
             if updated_raw is None:
                 continue
 
-            # Parse updated_at
-            try:
-                if hasattr(updated_raw, "tzinfo"):
-                    updated_at = updated_raw if updated_raw.tzinfo else updated_raw.replace(tzinfo=timezone.utc)
-                else:
-                    from dateutil.parser import parse as _dp
-                    updated_at = _dp(str(updated_raw))
-                    if updated_at.tzinfo is None:
-                        updated_at = updated_at.replace(tzinfo=timezone.utc)
-            except Exception:
+            # Parse updated_at. A stamp this cannot read is ONE task's problem
+            # and is said out loud; it used to be silent, and that silence is
+            # what let a missing dependency read as "no stale tasks".
+            updated_at = _parse_utc_timestamp(updated_raw)
+            if updated_at is None:
+                logger.warning(
+                    "stale-reaper: %s has an unreadable updated_at (%r) — "
+                    "skipping this task, not the sweep", tid, updated_raw,
+                )
                 continue
 
             age_seconds = (now - updated_at).total_seconds()
@@ -9400,6 +9550,24 @@ def _reap_stale_in_progress() -> None:
             if age_seconds < threshold:
                 continue  # task is recent enough — let it run
 
+            # FINISHED, not silent. Before recording a failure, ask whether the
+            # task already opened its PR. A worker that has done so and gone
+            # quiet looks exactly like a dead one to a heartbeat-only liveness
+            # test — and this is not a threshold problem, so raising the
+            # threshold again is not the fix. Move it to pr_opened, where
+            # pr_watcher owns it, and do NOT touch failure_count or
+            # last_failure_reason: neither describes what happened.
+            #
+            # Nothing is killed on this path. The kill below exists to stop a
+            # reaped task's orphan from wedging while the scheduler re-dispatches
+            # it; pr_opened is not a dispatcher pickup state, so that cycle
+            # cannot occur, and a session still posting its own bookkeeping must
+            # not be shot for it.
+            pr_evidence = _finished_with_open_pr(tid, _task_executor_url(conn, tid))
+            if pr_evidence:
+                finished.append((tid, pr_evidence, age_seconds))
+                continue
+
             # Kill what we are reaping. Without this the reap only flips a
             # status: the tree keeps running, the scheduler re-dispatches, and
             # the orphan wedges forever holding its worktree and its port. That
@@ -9452,10 +9620,43 @@ def _reap_stale_in_progress() -> None:
                 f"(in_progress {age_seconds / 60:.0f} min, {reap_label}) -> {next_status}"
             )
 
-        if reaped:
+        # Tasks that had already opened their PR: status only. No
+        # failure_count, no last_failure_reason, no last_failure_at — none of
+        # the three describes what happened, and the first two are what made
+        # the failure history fictional.
+        finished_rows = []
+        for _tid, _evidence, _age in finished:
+            _reason = (
+                f"stale-reaper: task was in_progress for {_age / 60:.0f} min with no "
+                f"heartbeat, but its PR is already open ({_evidence}) — finished, "
+                "not stalled. Moved to pr_opened; no failure recorded."
+            )
+            conn.execute(
+                "UPDATE kanban_tasks SET status = 'pr_opened', updated_at = %s "
+                "WHERE id = %s AND status = 'in_progress'",
+                (now.isoformat(), _tid),
+            )
+            finished_rows.append((_tid, _reason))
+            print(
+                f"  Kanban: stale-reaper found {_tid} already has an open PR "
+                f"(in_progress {_age / 60:.0f} min) -> pr_opened (no failure recorded)"
+            )
+
+        if reaped or finished_rows:
             conn.commit()
             reaped_ids = [r[0] for r in reaped]
-            logger.info("stale-reaper: reset %d orphaned in_progress task(s): %s", len(reaped_ids), reaped_ids)
+            if reaped_ids:
+                logger.info(
+                    "stale-reaper: reset %d orphaned in_progress task(s): %s",
+                    len(reaped_ids), reaped_ids,
+                )
+            for _tid, _rsn in finished_rows:
+                logger.info("stale-reaper: %s", _rsn)
+                _record_status_transition(
+                    _tid, "in_progress", "pr_opened",
+                    actor="stale-reaper",
+                    reason=_rsn,
+                )
             # Guard: emit audit-log transitions for every reaped task.
             # The direct SQL UPDATE above bypasses _move_task, so we must
             # call _record_status_transition here to keep the forensic trail
