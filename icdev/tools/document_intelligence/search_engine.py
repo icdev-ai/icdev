@@ -1063,166 +1063,67 @@ class DICQueryIntent:
 
 
 # --------------------------------------------------------------------------- #
-# Karpathy LLM Wiki integration (items 1 & 4)
-# Item 4: after a high-confidence answer, file Q&A to the memory wiki so
-#         future queries can be answered without full RAG.
-# Item 1: before running the 5-stage RAG pipeline, check the memory wiki for
-#         a cached Q&A for the exact query (wiki bypass for small collections).
+# The filesystem wiki cache was REMOVED here (cef-di-04). It is not coming back.
+#
+# `_file_qa_to_wiki` wrote high-confidence `answer()` results into the Claude
+# Code auto-memory directory as markdown, and `_check_wiki_cache` /
+# `_wiki_keyword_search` read them back BEFORE any retrieval ran. That put an
+# evidence source outside the database and outside the vector store, in front of
+# the canvas's mandatory chokepoint, where four controls this canvas exists to
+# enforce could not see it:
+#
+#   * TENANT. The cache key was `sha256(collection_id | query)` -- no tenant_id
+#     anywhere in it, and the reader took no tenant either. One tenant's answer
+#     was served verbatim to the next.
+#   * CLEARANCE. A cached answer carried no document classification, so the
+#     clearance drop in `search()` -- the one this file is careful to run BEFORE
+#     the top_k cap -- had nothing to filter and was bypassed entirely.
+#   * CITATIONS. A hit returned `grounded=True` with an EMPTY citation list and
+#     a `citation_quality` set to the filing threshold rather than measured.
+#     This module's own contract is that results are "never returned uncited";
+#     the cache was the one path that returned an ungrounded answer labelled
+#     grounded.
+#   * FRESHNESS. Files were never invalidated: `if topic_file.exists(): return`.
+#     A re-ingested or superseded document could not dislodge a cached answer.
+#
+# The fuzzy lane was worse than the exact one: at >= 0.70 keyword overlap it
+# returned a DIFFERENT question's answer as this question's.
+#
+# It was governed by nobody and it was also INERT: measured 2026-08-18 on the
+# live deployment, 0 of 567 files in the auto-memory directory carried the
+# `dic-qa-` prefix, so the cache had never filed or served a single answer.
+# Removing it is behaviour-preserving in the strict sense.
+#
+# The alternative -- "bring it under the governed seam" -- was considered and
+# rejected: a per-query answer cache already exists inside Cortex
+# (`cache.operations` in args/cortex_config.yaml), keyed by the governed context
+# and invalidated with it. Re-implementing one on the filesystem, in the user's
+# cross-project memory directory, would be a second cache to govern rather than
+# a governed cache.
 # --------------------------------------------------------------------------- #
-
-_QA_WIKI_CONFIDENCE_THRESHOLD = 0.85  # min citation_quality to file to wiki
-_QA_WIKI_SLUG_PREFIX = "dic-qa-"
-_QA_WIKI_SEARCH_SCORE_FLOOR = 0.70   # min hybrid-search score to trust a wiki hit
-
-
-def _qa_slug(query: str, collection_id: str | None = None) -> str:
-    """Stable slug for a query+collection pair (truncated sha256)."""
-    import hashlib
-    key = f"{(collection_id or 'all')}|{query.strip().lower()[:200]}"
-    return _QA_WIKI_SLUG_PREFIX + hashlib.sha256(key.encode()).hexdigest()[:14]
-
-
-def _file_qa_to_wiki(query: str, answer: str, collection_id: str | None) -> None:
-    """Best-effort: write a Q&A pair to the Claude Code auto-memory wiki.
-
-    Called after answer() produces a high-confidence grounded result.  Errors
-    are silently swallowed so they never break the caller.
-    """
-    try:
-        from tools.memory.claude_memory_path import claude_memory_dir
-        from tools.memory.memory_write import update_crossrefs
-
-        auto_dir = claude_memory_dir()
-        if not auto_dir.is_dir():
-            return
-
-        slug = _qa_slug(query, collection_id)
-        topic_file = auto_dir / f"{slug}.md"
-        if topic_file.exists():
-            return  # already filed
-
-        col_tag = f" (collection: {collection_id})" if collection_id else ""
-        body = (
-            f"---\n"
-            f"name: {slug}\n"
-            f"description: DIC Q&A cache{col_tag} — {query[:80]}\n"
-            f"metadata:\n"
-            f"  type: project\n"
-            f"---\n\n"
-            f"**Q:** {query}\n\n"
-            f"**A (DIC grounded):** {answer}\n\n"
-            f"*Synthesized from DIC search{col_tag}. Filed automatically.*\n"
-        )
-        topic_file.write_text(body, encoding="utf-8", newline="")
-
-        # Append index entry
-        mem_index = auto_dir / "MEMORY.md"
-        if mem_index.exists():
-            existing = mem_index.read_text(encoding="utf-8")
-            entry = f"- [DIC Q&A: {query[:60]}]({slug}.md) — cached grounded answer{col_tag}\n"
-            if slug not in existing:
-                with open(mem_index, "a", encoding="utf-8") as fh:
-                    fh.write(entry)
-
-        # Cross-link related wiki topics
-        update_crossrefs(slug, f"{query} {answer}", memory_dir=auto_dir)
-
-    except Exception:
-        pass  # never crash the caller
-
-
-def _wiki_keyword_search(
-    query: str, wiki_dir: Any, prefix_filter: str = "", top_k: int = 5
-) -> list[tuple[float, str, str]]:
-    """BM25-style keyword overlap search over wiki .md files.
-
-    Returns list of (score, stem, content) tuples sorted descending.
-    Never raises — returns [] on any error.
-    """
-    try:
-        stop = frozenset({"the", "a", "an", "in", "of", "to", "is", "it", "for", "on", "and", "or", "with", "that", "this", "be", "as", "by"})
-        terms = [t for t in re.findall(r"[a-z]{3,}", query.lower()) if t not in stop]
-        if not terms:
-            return []
-
-        scored: list[tuple[float, str, str]] = []
-        for fpath in wiki_dir.glob("*.md"):
-            if fpath.name == "MEMORY.md":
-                continue
-            if prefix_filter and not fpath.stem.startswith(prefix_filter):
-                continue
-            try:
-                content = fpath.read_text(encoding="utf-8")
-                cl = content.lower()
-                hits = sum(cl.count(t) for t in terms)
-                if hits > 0:
-                    score = hits / (len(content) / 500 + 1)
-                    scored.append((score, fpath.stem, content))
-            except Exception:
-                continue
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return scored[:top_k]
-    except Exception:
-        return []
-
-
-def _check_wiki_cache(query: str, collection_id: str | None) -> "DICAnswer | None":
-    """Check memory wiki for a cached Q&A answer matching this query.
-
-    Returns a DICAnswer with origin='wiki_cache' if a high-confidence cached
-    answer exists, otherwise None (caller should run full RAG pipeline).
-    Called at the start of answer() as the wiki bypass (Item 1 of the
-    Karpathy-wiki integration plan).
-    """
-    try:
-        from tools.memory.claude_memory_path import claude_memory_dir
-
-        auto_dir = claude_memory_dir()
-        if not auto_dir.is_dir():
-            return None
-
-        # Exact-match lookup by slug first (O(1), fastest path)
-        slug = _qa_slug(query, collection_id)
-        cached_file = auto_dir / f"{slug}.md"
-        if cached_file.exists():
-            text = cached_file.read_text(encoding="utf-8")
-            m = re.search(r"\*\*A \(DIC grounded\):\*\* (.+?)(?:\n\n|\Z)", text, re.DOTALL)
-            if m:
-                return DICAnswer(
-                    answer=m.group(1).strip(),
-                    grounded=True,
-                    result_count=0,
-                    citation_quality=_QA_WIKI_CONFIDENCE_THRESHOLD,
-                    origin="wiki_cache",
-                )
-
-        # Fuzzy fallback: keyword search over cached Q&A files only
-        for score, _stem, content in _wiki_keyword_search(
-            query, auto_dir, prefix_filter=_QA_WIKI_SLUG_PREFIX, top_k=3
-        ):
-            if score < _QA_WIKI_SEARCH_SCORE_FLOOR:
-                continue
-            m = re.search(r"\*\*A \(DIC grounded\):\*\* (.+?)(?:\n\n|\Z)", content, re.DOTALL)
-            if m:
-                return DICAnswer(
-                    answer=m.group(1).strip(),
-                    grounded=True,
-                    result_count=0,
-                    citation_quality=min(score, 1.0),
-                    origin="wiki_cache",
-                )
-
-    except Exception:
-        pass
-
-    return None
-
 
 class DICSearchEngine:
     """Grounded search over DIC collections.
 
     Wraps RAGRetriever with DIC-specific citation packing and result filtering.
+
+    LAYERING (cef-di-04) — read this before adding a call to Cortex anywhere in
+    this class. ``search()`` IS Cortex's ``dic`` rung: ``search_service.py
+    ::search_dic`` constructs a ``DICSearchEngine`` and calls this exact method,
+    and ``dic`` is in ``resolve.backends`` in ``args/cortex_config.yaml``. So the
+    graph is a cycle by construction and the only question is where it is cut.
+
+    It is cut in :mod:`tools.document_intelligence.search_evidence`, by a
+    PROCESS-WIDE interlock — not a thread-local one, because Cortex's fan-out
+    submits each backend onto a shared ``ThreadPoolExecutor`` and the re-entrant
+    call therefore arrives on a different thread. The rule: **the innermost DIC
+    search inside a resolve fan-out is always the raw rung.** DIC asks Cortex;
+    Cortex asks DIC; DIC does not ask Cortex again. Depth is bounded at 1.
+
+    Which means: only :meth:`_rag_search` may consult the seam, and it must do so
+    through :meth:`_governed_candidates`. A second, unguarded ``cortex.*`` call
+    added elsewhere in this class re-opens the cycle, and it will look fine in a
+    single-threaded test.
     """
 
     def __init__(self, tenant_id: str = "default"):
@@ -1259,7 +1160,16 @@ class DICSearchEngine:
 
         max_rank = _clearance_rank(clearance) if clearance else None
 
-        raw_results = self._rag_search(query, top_k=top_k * 2, mode=mode, collection_id=collection_id)
+        # `clearance` reaches retrieval as well as the drop below. On the
+        # governed path it becomes the CortexContext classification, so the
+        # fan-out's own read-down applies at every rung; on the direct path the
+        # retriever ignores it, exactly as before. Either way the authoritative
+        # screen is still the drop below, over the document's OWN classification
+        # read from `dic_documents`, and it still runs before the top_k cap.
+        raw_results = self._rag_search(
+            query, top_k=top_k * 2, mode=mode, collection_id=collection_id,
+            clearance=clearance,
+        )
         if not raw_results:
             return []
 
@@ -1281,10 +1191,30 @@ class DICSearchEngine:
 
                 doc_info = _doc_meta(conn, doc_id) if doc_id else {"title": doc_id, "classification": "CUI"}
 
+                # Effective marking is the MORE RESTRICTIVE of the document's own
+                # and the one the retrieval rung reported for this candidate.
+                #
+                # `_doc_meta` answers from `dic_documents` and returns "CUI" when
+                # there is no row — which there is not for a candidate from a rung
+                # that is not DIC. The governed path can return one (a `kb` entry
+                # surfaced as `icdev-tool-…` in the live comparison), and taking
+                # `_doc_meta`'s default for it would hand a caller a marking the
+                # source never claimed. Max, not override, so this can only ever
+                # tighten: `SearchResult.classification` defaults to "CUI", the
+                # same rank as `_doc_meta`'s default, so a candidate whose rung
+                # reported nothing is unchanged. It differs only when a rung
+                # explicitly reported something MORE restrictive than the document
+                # row, and returning that to an under-cleared caller is a defect,
+                # not a behaviour worth preserving.
+                classification = doc_info["classification"]
+                reported = getattr(r, "classification", "") or ""
+                if reported and _clearance_rank(reported) > _clearance_rank(classification):
+                    classification = reported
+
                 # Access control: drop results above the caller's clearance before
                 # the top_k cap so accessible results are never starved by withheld
                 # ones. Skipped entirely when no clearance is supplied.
-                if max_rank is not None and _clearance_rank(doc_info["classification"]) > max_rank:
+                if max_rank is not None and _clearance_rank(classification) > max_rank:
                     continue
 
                 matched = [t for t in terms if t in (r.content or "").lower()]
@@ -1295,7 +1225,7 @@ class DICSearchEngine:
                     page=meta["page"],
                     section=meta["section"],
                     chunk_id=chunk_id,
-                    classification=doc_info["classification"],
+                    classification=classification,
                 )
 
                 out.append(DICSearchResult(
@@ -1362,7 +1292,99 @@ class DICSearchEngine:
             anomaly_report=detect_search_anomalies(results),
         )
 
-    def _rag_search(self, query: str, top_k: int, mode: str, collection_id: str | None = None):
+    @staticmethod
+    def _search_evidence_module():
+        """The ONE copy of the governed evidence seam this process talks to.
+
+        ``search_evidence`` ships byte-identical under ``tools/`` and
+        ``icdev/tools/`` and they are SEPARATE module objects with separate run
+        state. Resolving through here (``icdev`` first, matching the canonical
+        namespace) means a process only ever touches one -- and a test patches
+        what this returns, never a namespace it guessed at.
+
+        Returns ``None`` when neither imports, which reads as "seam off" at
+        every call site.
+        """
+        import importlib
+
+        for name in (
+            "icdev.tools.document_intelligence.search_evidence",
+            "tools.document_intelligence.search_evidence",
+        ):
+            try:
+                return importlib.import_module(name)
+            except Exception:  # noqa: BLE001 -- try the other tree
+                continue
+        return None
+
+    def _governed_candidates(
+        self, query: str, top_k: int, collection_id: str | None, clearance: str | None
+    ):
+        """Governed candidates for ``query``, or ``None`` for the legacy path.
+
+        The whole of the cef-di-04 migration is this call plus the branch in
+        :meth:`_rag_search` below. Everything the caller does WITH a candidate --
+        the citation pack, the collection post-filter, the clearance drop before
+        the ``top_k`` cap, the attribution rerank -- is deliberately downstream
+        of here and identical on both paths.
+        """
+        module = self._search_evidence_module()
+        if module is None:
+            return None
+        try:
+            return module.resolve_evidence(
+                query,
+                collection_id=collection_id,
+                tenant_id=self._tenant_id,
+                clearance=clearance,
+                top_k=top_k,
+            )
+        except Exception as exc:  # noqa: BLE001 -- the seam can never fail a search
+            logger.warning(
+                "DICSearchEngine: governed evidence seam failed (%s) — direct retriever",
+                exc,
+            )
+            return None
+
+    def _rag_search(
+        self,
+        query: str,
+        top_k: int,
+        mode: str,
+        collection_id: str | None = None,
+        clearance: str | None = None,
+    ):
+        """Candidate retrieval. Governed seam first when armed, direct retriever always.
+
+        The governed path (``cortex.enabled`` in ``args/dic_search_config.yaml``,
+        DEFAULT OFF) resolves the query through ``cortex.resolve`` -- one call
+        that fans out over the currency store, RAG, DIC, the knowledge graph and
+        the KB under the TRUST chain -- and returns candidates in exactly the
+        shape this method has always returned, so nothing downstream changes.
+
+        Three ways it hands back to the direct retriever, and all three are the
+        pre-migration behaviour rather than a failure: the seam declined
+        (``None`` -- off, re-entrant, collection-scoped, capped, or no Cortex),
+        the resolution was REFUSED by governance (a bundle carrying ``blocked``),
+        or it came back with no candidate at all and ``fallback_on_empty`` is on.
+        """
+        bundle = self._governed_candidates(query, top_k, collection_id, clearance)
+        if bundle is not None:
+            module = self._search_evidence_module()
+            if not bundle.is_empty:
+                return bundle.candidates
+            # Empty is not the same as "the seam did not run": a governance
+            # refusal and a dead fan-out are both empty here, and `errors` /
+            # `blocked` on the bundle are what tell them apart from a corpus
+            # that genuinely matched nothing.
+            logger.info(
+                "DICSearchEngine: governed evidence empty for %r "
+                "(blocked=%s, backends=%s, errors=%s)",
+                query[:60], bundle.blocked or "-", bundle.backends, bundle.errors,
+            )
+            if module is not None and not module.fallback_on_empty():
+                return []
+
         try:
             from tools.rag.retriever import RAGRetriever
 
@@ -1496,6 +1518,7 @@ class DICSearchEngine:
         collection_id: str | None = None,
         top_k: int = 10,
         mode: str = "grounded",
+        clearance: str | None = None,
     ) -> DICAnswer:
         """Synthesize a grounded LLM answer over cited DIC search results.
 
@@ -1508,6 +1531,13 @@ class DICSearchEngine:
             collection_id: Restrict to a specific collection (None = all).
             top_k: How many results to retrieve before synthesis.
             mode: "grounded" (BM25+KG, default) or "hybrid".
+            clearance: Caller's maximum classification; results above it are
+                dropped before the ``top_k`` cap (see :meth:`search`). ``None``
+                (the default) applies no access filtering, which is what this
+                method did unconditionally before cef-di-04 -- it called
+                :meth:`search` with no clearance at all, so a synthesized answer
+                could be composed over evidence the caller could not have been
+                shown by :meth:`search` itself.
 
         Returns:
             A :class:`DICAnswer`. ``grounded`` is True only when the LLM produced
@@ -1516,12 +1546,10 @@ class DICSearchEngine:
             ("llm_unavailable"), or the model declined for lack of grounding
             ("insufficient_evidence"). The answer is NEVER fabricated.
         """
-        # Karpathy wiki bypass (Item 1): check cached Q&A before full RAG pipeline
-        cached = _check_wiki_cache(query, collection_id)
-        if cached is not None:
-            return cached
-
-        results = self.search(query, collection_id=collection_id, top_k=top_k, mode=mode)
+        results = self.search(
+            query, collection_id=collection_id, top_k=top_k, mode=mode,
+            clearance=clearance,
+        )
         if not results:
             return DICAnswer(grounded=False, refusal_reason="no_evidence", result_count=0)
 
@@ -1587,18 +1615,13 @@ class DICSearchEngine:
                 citation_quality=cq,
             )
 
-        result = DICAnswer(
+        return DICAnswer(
             answer=text,
             grounded=True,
             citations=[r.citation for r in used],
             result_count=len(results),
             citation_quality=cq,
         )
-        # Karpathy wiki filing (Item 4): persist high-confidence answers so
-        # future identical queries can bypass the full RAG pipeline.
-        if cq >= _QA_WIKI_CONFIDENCE_THRESHOLD:
-            _file_qa_to_wiki(query, text, collection_id)
-        return result
 
     def expand_query(self, query: str, max_terms: int = _EXPANSION_MAX_TERMS) -> DICQueryExpansion:
         """Suggest extra search keywords to broaden fulltext match recall.

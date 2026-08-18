@@ -1,0 +1,3 @@
+# cef-di-04 — DIC search candidates through the governed cortex.resolve() seam,
+# plus the removal of the ungoverned filesystem wiki cache.
+tests/test_dic_search_evidence.py
