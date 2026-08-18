@@ -13,6 +13,14 @@ from ._triage import grounded_triage
 
 DOCUMENT_DOMAIN = "document"
 
+# The DIC-corpus-only lens (cef-bck-04). Same records/compliance framing as
+# `document` — a triage over document hits is the same shape whether or not the
+# hits were row-scoped to dic_ — so it reuses this module rather than adding a
+# near-identical sibling. Only the reported `domain` label differs, and it has
+# to: a brief that says "document" for a document_intelligence query misreports
+# which lens produced it.
+DOCUMENT_INTELLIGENCE_DOMAIN = "document_intelligence"
+
 _HEADERS = {
     "title": "Document triage",
     "empty": "No document-scoped findings.",
@@ -47,5 +55,13 @@ def _recommended_actions(ranked: list) -> List[str]:
 def triage_summary(results, query: str = "", profile=None, top_n: int = 5) -> dict:
     return grounded_triage(
         results, DOCUMENT_DOMAIN, _HEADERS, _recommended_actions,
+        query=query, top_n=top_n,
+    )
+
+
+def di_triage_summary(results, query: str = "", profile=None, top_n: int = 5) -> dict:
+    """Triage for the ``document_intelligence`` lens (DIC corpus only)."""
+    return grounded_triage(
+        results, DOCUMENT_INTELLIGENCE_DOMAIN, _HEADERS, _recommended_actions,
         query=query, top_n=top_n,
     )

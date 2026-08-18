@@ -59,6 +59,13 @@ CORTEX_DOMAIN_LENSES = [
      "desc": "Threat intel, vulnerabilities, ZTA posture."},
     {"key": "document", "label": "Documents", "icon": "📄",
      "desc": "Ingested corpora — DIC collections, SOPs, runbooks."},
+    # Narrower than "document": row-scoped to the DIC corpus (sources: [dic_]),
+    # so a DI question cannot return the compliance-corpus chunks that share
+    # rag_chunks with it. Listed here because /cortex/api/chat validates the
+    # requested domain against CORTEX_DOMAIN_KEYS — a lens absent from this list
+    # is unreachable from the canvas no matter what args/cortex_config.yaml says.
+    {"key": "document_intelligence", "label": "Document Intelligence", "icon": "🗂️",
+     "desc": "DIC corpus only — collections, documents and sections, row-scoped."},
 ]
 
 CORTEX_DOMAIN_KEYS = [d["key"] for d in CORTEX_DOMAIN_LENSES]

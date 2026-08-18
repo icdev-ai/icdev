@@ -2405,3 +2405,13 @@ tests/cortex/test_search_currency_backend.py
 # when they arrived. A regression in any of those is silent by construction --
 # it looks exactly like an empty corpus -- so an ungated file would not catch it.
 tests/cortex/test_search_external_backend.py
+# cef-bck-04. The `document_intelligence` lens is the first after `security` to
+# populate `sources:`, and a wrong prefix list is SILENT: filter_by_sources drops
+# hits before the caller ever sees them, so an over-broad prefix returns the
+# compliance corpus for a DI question and an over-narrow one returns nothing at
+# all -- both read as "the corpus does not cover it". Measured on the live board,
+# rag_chunks holds 559 dic_documents rows against 3552 rag_compliance_corpus
+# rows in the SAME table, so this lens is the only thing standing between a DI
+# query and 86% unrelated evidence. Gated so a config edit that widens, narrows
+# or empties the prefix list fails here instead of degrading retrieval quietly.
+tests/cortex/test_document_intelligence_lens.py
