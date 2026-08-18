@@ -348,6 +348,25 @@ resolve:
   # operator typo in a YAML list must not take the verb offline.
   backends: [currency, rag, dic, graph, kb]
 
+  # Cross-backend entity resolution (cef-rsv-02): may a DOCUMENT's prose make a
+  # currency claim that gets compared against the curated catalog's?
+  #
+  # This is the only lane that can express what a retrieved chunk merely STATES
+  # — structured claims come from typed fields, and no RAG/DIC/KB hit has any.
+  # Turning it off leaves conflict detection running over the structured and
+  # pack lanes alone, which means a document contradicting the catalog goes back
+  # to being invisible. That is exactly the defect this card exists to fix, so
+  # the shipped default is on.
+  #
+  # Turn it OFF for a corpus whose prose the declared patterns misread. The
+  # patterns are entity-ANCHORED and directional (tools/cortex/
+  # entity_resolution.py::TEXT_CLAIM_RULES) so "TLS 1.2 supersedes TLS 1.1"
+  # cannot claim TLS 1.2 is superseded, and every claim this lane produces is
+  # stamped extraction="text_pattern" on the claim and on every conflict side —
+  # a reader can discount it per side without the detector having discounted it
+  # first. Prefer narrowing a rule to disabling the lane.
+  text_claims: true
+
 governance:
   # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
   # CortexContext.fail_closed (i.e. ctx.fail_closed is None). Resolved by
