@@ -2317,3 +2317,13 @@ tests/test_kanban_reaper_pr_opened.py
 # theirs. Added in the PR that makes it pass; no skips (args/ci_skip_census.txt
 # names none for this file, and none exist).
 tests/agent_runtime/test_context_events_live_turn.py
+
+# kpr-dup-06. `_has_open_pr` returns False on ANY error, which is correct for
+# the respawn guard it was written for (False = 'dispatch', cost of being
+# wrong = one extra dispatch) and WRONG for the post-push confirmation that
+# reused it, where False = 'throw the pushed branch back to backlog'. That one
+# reuse was 66 of the 126 backwards transitions on the board — more than
+# orphan_sweep, the stale reaper and auto-revive combined. Gated because the
+# defect is invisible in behaviour: both callers keep working either way, and
+# only the two structural tests here catch a revert to the boolean.
+tests/test_kanban_pr_flow_confirmation.py
