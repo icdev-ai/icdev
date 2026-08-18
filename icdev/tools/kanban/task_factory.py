@@ -114,8 +114,90 @@ def _sentinel_shaped_work(task_specs: list[dict]) -> list[str]:
     return impostors
 
 
-def create_tasks(task_specs: list[dict]) -> list[str]:
+#: How long a seeded-and-claimed task stays claimed. Long enough to cover a real
+#: build; short enough that a session which dies frees the task the same working
+#: day rather than stranding it.
+SEED_CLAIM_TTL_SECONDS = 4 * 60 * 60
+
+
+def claim_seeded_tasks(created: list[str]) -> dict:
+    """Take the per-task coordination lease for every id in `created`.
+
+    Extracted from `create_tasks` so it can be tested against the REAL code
+    rather than a copy of it in the test file.
+
+    BEST-EFFORT BY DESIGN. A claim that cannot be taken must not undo an insert
+    that already succeeded: the rows exist and the board is correct, and the
+    caller only needs to know to watch for a parallel build. Failing the seed
+    here would turn a coordination nicety into a seeding outage.
+
+    Every refusal and every error is logged, because a task seeded WITHOUT a
+    claim is precisely the situation this exists to prevent — silence would hand
+    the caller the old behaviour while looking like the new one.
+
+    Returns ``{claimed, refused, failed}`` so a caller can act on it.
+    """
+    out = {"claimed": [], "refused": [], "failed": []}
+    if not created:
+        return out
+
+    from tools.coordination import leases
+
+    for task_id in created:
+        try:
+            lease = leases.acquire(
+                f"kanban:task:{task_id}",
+                intent="seeded-and-claimed by this session",
+                ttl_seconds=SEED_CLAIM_TTL_SECONDS,
+                block=False,
+            )
+        except Exception as exc:  # noqa: BLE001 — a lease must not break seeding
+            out["failed"].append(task_id)
+            logger.warning(
+                "task_factory: %s seeded but the claim failed (%s) — release is "
+                "not needed, but watch for a parallel build", task_id, exc,
+            )
+            continue
+        if lease is None:
+            out["refused"].append(task_id)
+            logger.warning(
+                "task_factory: %s was seeded but could NOT be claimed — another "
+                "live session holds it, so the runner may build it in parallel",
+                task_id,
+            )
+        else:
+            out["claimed"].append(task_id)
+    return out
+
+
+def create_tasks(task_specs: list[dict], *, claim: bool = False) -> list[str]:
     """Insert tasks that don't already exist. Returns list of inserted IDs.
+
+    ``claim=True`` also takes the per-task coordination lease for THIS
+    session on every row it inserts, so the autonomous runner will not build
+    a task you seeded in order to build yourself.
+
+    That race is not hypothetical and the seeder is where it starts. A
+    session seeds a task and begins implementing; the runner sees an
+    eligible row and builds the same task in parallel; two implementations
+    exist and one must be closed by hand. Four times in two days — PRs
+    #1784, #1792, #1806 and #1807 — and #1807 also sat open on
+    ``kanban/kpr-fix-02``, which made the respawn guard withhold that task
+    from dispatch while the board reported ``review_bound`` with capacity
+    free. A duplicate does not just waste a build; it blocks the queue.
+
+    THE MECHANISM ALREADY EXISTED and was not the gap. ``cli.py --claim``
+    takes this same lease, and the runner already refuses a task another
+    live session holds. What was missing is that seeding and claiming were
+    two separate acts with a window between them, and nothing pointed a
+    seeder at the second one — so the reliable-looking alternative,
+    ``--pause-runner``, got used instead. That halts the whole board to
+    protect one task and lapses silently after 4h with no renewal, which is
+    exactly how #1806 and #1807 were built hours after a pause was taken.
+
+    Release with ``tools/kanban/cli.py --release <id>`` when the work lands.
+    A claim from a session that dies is freed by its TTL, so forgetting to
+    release delays a task rather than stranding it.
 
     Raises ``ValueError`` for a ``task_type`` the DB forbids and for a work task
     wearing a gate sentinel's id, and ``BoardBackendError`` when the write would
@@ -408,4 +490,8 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
         conn.close()
 
     logger.info("task_factory: inserted %d / %d tasks", len(created), len(task_specs))
+
+    if claim:
+        claim_seeded_tasks(created)
+
     return created
