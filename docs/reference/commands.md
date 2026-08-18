@@ -6537,6 +6537,34 @@ python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what 
 python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
 python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
 
+# UNDECLARED third-party import that fails SILENTLY (tsg-iso-03)
+# The finding is a CONJUNCTION, never the undeclared import on its own: an
+# UNDECLARED third-party package imported inside a handler that SWALLOWS --
+# returns/passes/continues without logging, raising, or otherwise recording that
+# it fired. Only that combination is indistinguishable from working code, so a
+# site leaves by fixing EITHER half. A genuinely optional dependency behind a
+# handler that NAMES the missing package is CORRECT and passes --
+# tools/blockchain/transports/__init__.py does it properly.
+# `python-dateutil` had the bad shape at two sites and was declared in neither
+# requirements.txt nor pyproject.toml: the stale reaper skipped EVERY task and
+# had never once run on CI, and every notification duration rendered "unknown".
+# It passed on Windows, where dateutil arrives transitively as somebody else's
+# dependency, and failed on the CI runner and on any air-gapped install -- the
+# deployment this project targets. Both sites are now stdlib
+# (tools.common.helpers.parse_utc_timestamp); dateutil was DELETED rather than
+# declared, and tests/test_no_undeclared_dateutil.py bans it outright.
+# Import name is mapped to DISTRIBUTION name (`yaml` -> `pyyaml`) from a curated
+# table, NOT from packages_distributions(), which only knows what is INSTALLED
+# and so reports nothing on the very runner where a package is missing.
+# 210 sites grandfathered BY NAME in args/undeclared_import_census.txt --
+# enumerated, not counted; `undeclared_max` in args/undeclared_import_gate.yaml
+# may only go DOWN.
+python tools/ci/undeclared_import_census.py --check           # the gate; exit 1 on a NEW site
+python tools/ci/undeclared_import_census.py --json            # full report
+python tools/ci/undeclared_import_census.py --changed tools/foo.py --check
+python tools/ci/undeclared_import_census.py --staged          # only what this commit touches
+python tools/ci/undeclared_import_census.py --prune           # drop entries whose site is gone
+
 # UNGATED test census (rem-tst-01) — which of the backlog modules are GREEN today?
 # The ratchet above stops the ungated census GROWING and the drift reflex watches for
 # regressions inside it, but a promotion batch has to start from a different question:
