@@ -1,0 +1,6 @@
+# kpr-watch-09 — pr_watcher polls BY STATUS, so a task whose status drifts
+# out of the polled set is invisible to the only component that closes the
+# loop, permanently and silently. Gated because the SCOPE is the fragile
+# part: this sweep must make zero forge calls on a healthy board, and only a
+# test says so.
+tests/ci/test_pr_watcher_stranded_reconcile.py
