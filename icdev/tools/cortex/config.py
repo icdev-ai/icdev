@@ -76,7 +76,7 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
         # evidence. currency (cef-bck-01) is an ordinary retrieval weight.
         "strategy_weights": {
             "rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6,
-            "currency": 0.7, "sme": 0.0,
+            "currency": 0.7, "external": 0.5, "sme": 0.0,
         },
         "rrf_k": 60,
         "crag_threshold": 0.55,

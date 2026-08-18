@@ -48,6 +48,15 @@ search:
     # the question. Raise it for a deployment whose queries are mostly "is this
     # still current?".
     currency: 0.7
+    # external (cef-bck-02) is the lowest weight of any EVIDENTIARY backend,
+    # and structurally so: it is the only one whose evidence was not retrieved
+    # by a measured similarity — an external feed returns what it published, in
+    # publication order, with no relevance score of its own
+    # (raw_scores.native_score is None, never 0.0). It is also the only evidence
+    # that came from outside the boundary. Corroboration, never the passage an
+    # answer is built on. (sme below is 0.0, but that is an advisory floor
+    # rather than a ranking — a different axis.)
+    external: 0.5
     sme: 0.0
 
   # Reciprocal Rank Fusion constant: fused = weight / (rrf_k + rank).
@@ -75,6 +84,11 @@ search:
     # No embedding call, no model call — a 10s budget here would only ever be
     # spent waiting on a database that is already unhealthy.
     currency: 5.0
+    # The only backend that opens a socket to a host ICDEV does not run: DNS,
+    # TLS handshake and a third-party parse. Longer than every local backend
+    # and still bounded, because a slow external source must not hold a whole
+    # fan-out open.
+    external: 15.0
     sme: 60.0
 
   fan_out:
@@ -84,8 +98,38 @@ search:
     # sme is absent and must stay absent: fan-out is the AUTOMATIC path, and an
     # advisory backend is reached only when a caller names it. Adding it here
     # would put an LLM opinion into the result set of every ambiguous query.
+    # external is absent too, for a DIFFERENT reason — it is evidentiary, so the
+    # sme argument does not apply to it. Fan-out is where an UNCLASSIFIABLE
+    # query lands, so listing the external rung here would make "Cortex could
+    # not tell what you meant" the trigger for an outbound call to a third
+    # party. Adding it is a deployment decision with an egress consequence, not
+    # a tuning knob — the rung is otherwise reached by strategy="external" or
+    # strategy="all".
     backends: [rag, graph, dic, currency]
     max_workers: 4
+
+  # The `external` backend (cef-bck-02) — authorized external sources reached
+  # through the DataBridge agent broker. There is NO source list here on
+  # purpose: the (connector, table) pairs come from
+  # broker.list_available(<agent_id>), i.e. from args/databridge_agent_access.yaml
+  # read through the same authorization it enforces. A second list in this file
+  # would be a copy of an authorization boundary, and a copy of an
+  # authorization boundary drifts in exactly one direction.
+  external:
+    # The ROLE Cortex presents to the broker. It must appear in the grant's
+    # `agents:` list for anything to be reachable, so this value and that list
+    # are reviewed together. NOT CortexContext.agent_id, which is the LLM
+    # router's budget-attribution key — spending tokens and reading a
+    # customer's system are different claims and must not share an identity.
+    agent_id: cortex_analyst
+    # Authorized (connector, table) pairs fetched in one search. Bounds latency
+    # and outbound volume, never authorization. A pair dropped by this cap is
+    # REPORTED on BackendResults.errors (stage "cap") — a silent truncation
+    # would read as "we searched everything you granted".
+    max_sources: 2
+    # Rows requested per source. The broker clamps to its own 200/1000 caps
+    # regardless; this is the retrieval-shaped number and is well below either.
+    row_limit: 25
 
   # Domain lenses (ctx-canvas-04). When ctx.domain matches a key here the
   # Cortex layer applies that lens as a configuration profile over the
