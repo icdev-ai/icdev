@@ -1,0 +1,85 @@
+# CUI // SP-CTI
+# Undeclared Import Gate (tsg-iso-03)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# `python-dateutil` was imported by two runtime modules and declared in NEITHER
+# requirements.txt nor pyproject.toml. Both imports sat inside a bare
+# `except Exception` that returned a benign-looking value, so on any install
+# without the package the feature degraded with nothing anywhere to say why:
+# the stale reaper skipped EVERY task (and had never once run on CI), and every
+# notification duration rendered "unknown". It passed on Windows, where dateutil
+# arrives transitively as somebody else's dependency, and failed on the CI
+# runner and on any air-gapped install — the deployment this project targets.
+#
+# WHAT IS AND IS NOT A FINDING
+# ----------------------------
+# The defect is NOT "an undeclared import". A genuinely optional dependency
+# behind a handler that SAYS SO is correct, and this repo already does it
+# properly: tools/blockchain/transports/__init__.py raises a message naming
+# `fabric-sdk-py (hfc)` as an undeclared optional dependency, so an operator who
+# hits it learns what to install. Banning that shape would be wrong.
+#
+# The finding is the CONJUNCTION —
+#
+#     an import of an UNDECLARED third-party package,
+#     inside a handler that SWALLOWS: returns, passes or continues without
+#     logging, raising, or otherwise recording that it fired.
+#
+# — because that is the only combination which cannot be distinguished from
+# working code. A site stops being a finding by fixing EITHER half.
+#
+# The policy is a RATCHET, not a sweep:
+#
+#   1. A NEW site fails `python tools/ci/undeclared_import_census.py --check`
+#      by name.
+#   2. The sites that existed at adoption are grandfathered BY NAME in
+#      args/undeclared_import_census.txt. They are debt, enumerated so it is
+#      countable — and so the SET cannot churn behind a constant count, which is
+#      exactly how the ungated-test gap regrew behind a green gate.
+#   3. `undeclared_max` may ONLY go DOWN. Lower it when a site is fixed.
+#      Raising it is the visible, reviewable act of taking on more silent
+#      degradation, and it belongs in a PR description — never in a drive-by
+#      edit to get a commit through.
+#
+# Gate:  python tools/ci/undeclared_import_census.py --check
+#        python tools/ci/undeclared_import_census.py --changed <files> --check
+
+undeclared_import_census:
+  # The enumerated census. Flat and line-oriented, so `merge=union` is safe for
+  # it the way it is for the manifest shards (see .gitattributes).
+  census_file: args/undeclared_import_census.txt
+
+  # Ceiling on REGISTERED sites. MAY ONLY GO DOWN.
+  #
+  # 2026-08-18 adoption: measured over tools/ and its icdev/tools/ mirror. Set
+  # to exactly today's count, not a round number above it — headroom is
+  # permission. The two dateutil sites this task fixed are NOT in it; they were
+  # deleted rather than declared, which is why the count is what it is.
+  #
+  # The largest cohorts are optional cloud/ML SDKs (google, azure, mlflow,
+  # evidently, opentelemetry) that a deployment genuinely may not have. Those
+  # are fixable the cheap way — make the handler log which package was missing —
+  # and each one that is drops this ceiling by one.
+  undeclared_max: 210
+
+  # A reason shorter than this is not a reason.
+  min_reason_chars: 12
+
+  # icdev/tools/ is in scope on purpose: CLAUDE.md directs all NEW code at
+  # `icdev.tools.*`, so omitting the mirror would leave the growth path open.
+  scan_roots:
+    - tools
+    - icdev/tools
+
+  # An EXCLUSION asserts the pattern is CORRECT here — a different claim from a
+  # census entry, and it must not count against the ceiling we are driving down.
+  exclude:
+    - path: tools/ci/undeclared_import_census.py
+      reason: >-
+        this census tool's own source names the forbidden packages in its
+        IMPORT_TO_DIST map and parses import statements, so it would otherwise
+        census itself.
+    - path: icdev/tools/ci/undeclared_import_census.py
+      reason: >-
+        packaged mirror of the census tool — same reason as the tools/ copy.

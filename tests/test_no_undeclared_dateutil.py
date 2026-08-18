@@ -15,6 +15,21 @@ deployment this project targets. That asymmetry is what kept it alive: the
 machine where it was written could not reproduce it.
 
 The parser is now stdlib-only and lives in `tools.common.helpers`.
+
+RELATIONSHIP TO tests/test_undeclared_import_census.py
+------------------------------------------------------
+Two gates, deliberately, because they encode two different rules:
+
+  * THIS file bans `dateutil` OUTRIGHT — anywhere under tools/, in any form,
+    including behind a handler that logs honestly. The package was DELETED
+    rather than declared, and the stdlib does the job, so there is no correct
+    use left to permit.
+  * The census gates the SHAPE for every other package: an undeclared import
+    inside a SWALLOWING handler. It permits the same import behind a handler
+    that names the missing package, because that degradation is visible and a
+    genuinely optional dependency is allowed to be optional.
+
+Neither subsumes the other. Do not delete one as redundant.
 """
 from __future__ import annotations
 

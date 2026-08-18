@@ -7,3 +7,10 @@
 # import added back, even inside a try, reopens the defect and nothing else
 # would notice.
 tests/test_no_undeclared_dateutil.py
+
+# tsg-iso-03, the general gate. The dateutil file above bans ONE package by
+# name; this one enumerates the SHAPE -- an undeclared third-party import inside
+# a handler that swallows -- across tools/ and icdev/tools/. It asserts both
+# directions, because a gate that never fires and a gate that fires on
+# everything are indistinguishable from outside.
+tests/test_undeclared_import_census.py

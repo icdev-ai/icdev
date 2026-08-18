@@ -179,6 +179,26 @@ jobs:
       - name: Skip census (static)
         working-directory: ${{ github.workspace }}
         run: python tools/ci/skip_census.py --check
+
+      # tsg-iso-03 -- an undeclared third-party import inside a SWALLOWING
+      # handler cannot be distinguished from working code. `python-dateutil`
+      # was imported by two runtime modules and declared in neither
+      # requirements.txt nor pyproject.toml, both times inside a bare
+      # `except Exception` returning a benign value: the stale reaper skipped
+      # EVERY task and had never once run on this runner, and every
+      # notification duration rendered "unknown". It passed on Windows, where
+      # dateutil arrives transitively, which is why it survived.
+      #
+      # NOT a ban on optional dependencies -- a handler that LOGS or RAISES
+      # naming the missing package is correct and passes. The finding is the
+      # conjunction of undeclared AND silent. The 210 sites that existed at
+      # adoption are grandfathered by name in
+      # args/undeclared_import_census.txt; `undeclared_max` may only go DOWN.
+      #
+      # Do NOT add `|| true`. The failure names the file, line and package.
+      - name: Undeclared-import census
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/undeclared_import_census.py --check
       - name: Run core unit tests
         working-directory: ${{ github.workspace }}
         run: |
