@@ -60,9 +60,15 @@ raw_insert_census:
   # 2026-08-17, rem-hyg-06 batch 1: the `scheduled_at` cohort of the autonomous
   # path is converted — coherence_to_kanban_reflex, qa_agent_reflex (x3),
   # route_perf_reflex and e2e_runner, 6 sites mirrored to 12 entries. Three of
-  # the six wrote task_type='bug', which kanban_tasks_task_type_check forbids;
-  # they could never have filed a card on PostgreSQL, and the board carries zero
-  # 'bug' rows. 219 -> 207. Remaining reflex debt: 30 entries / 15 sites.
+  # the six wrote task_type='bug', which kanban_tasks_task_type_check forbids,
+  # so those three could never have filed a card on PostgreSQL. That is a
+  # LATENT blocker, proved from the constraint definition alone — the board's
+  # zero 'bug' rows does NOT prove it fired, since all four reflexes are
+  # circuit-broken (0 successes, breaker open) and may never have reached the
+  # INSERT. Converting a writer does not revive a broken reflex; do not read a
+  # still-empty board as a failed conversion. 219 -> 207.
+  # Remaining autonomous-path debt: 48 entries / 24 sites (38/19 under
+  # tools/genesis/reflexes/, plus the ace, chat and awareness writers).
   raw_insert_max: 207
 
   # A reason shorter than this is not a reason. Applies to census entries and to
