@@ -1,0 +1,6 @@
+# kpr-fix-02 — dispatch was gated by seeding order as if it were a
+# dependency, so a false linear chain overrode the real graph and exactly
+# one task was ever in flight across a full day. Gated because the safe half
+# is invisible in the happy path: with no junction rows the scalar must STILL
+# hold a task behind a manual gate, and only a test says so.
+tests/kanban/test_dependency_gate_precedence.py
