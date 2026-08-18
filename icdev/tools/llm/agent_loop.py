@@ -293,6 +293,27 @@ TurnCallback = Callable[[int, Any, list[dict[str, Any]]], None]
 PreToolUseHook = Callable[[str, dict[str, Any]], "str | None"]
 PostToolUseHook = Callable[[str, dict[str, Any], str, bool], None]
 StopHook = Callable[["AgentLoopResult"], None]
+#: ``hook(source, text, detail)`` — the loop announcing that it has put a block
+#: of text into the system prompt itself (hcx-vv-01). Observational only: the
+#: return value is ignored and the block is injected either way.
+#:
+#: It exists because the loop is an INJECTOR, not merely a carrier. Everything
+#: else in the system prompt is assembled by the caller and can therefore be
+#: recorded by the caller; ``_retrieve_memory_context`` is assembled HERE, after
+#: the caller has handed its prompt over, and nothing downstream can tell the
+#: retrieved block apart from the text it was appended to. A caller that logs
+#: what it injected and never hears about this one produces a log that is
+#: complete for three injectors out of four and looks complete for all of them.
+#:
+#: A hook rather than a direct write, for the same reason the four above are
+#: hooks: this module must not acquire a dependency on the audit layer to stay
+#: honest about what it sends.
+ContextInjectionHook = Callable[[str, str, dict[str, Any]], None]
+
+#: The source name the loop's own injection is announced under. Registered in
+#: ``tools.agent_runtime.context_events.SOURCES``; referenced from there rather
+#: than re-spelled at the call site so the two cannot drift.
+MEMORY_INJECTION_SOURCE = "agent_loop_memory"
 
 
 # ---------------------------------------------------------------------------
@@ -582,6 +603,32 @@ def _retrieve_memory_context(user_prompt: str, top_k: int, tier: str) -> str:
     except Exception as exc:
         logger.debug("agent_loop: memory retrieval failed: %s", exc)
         return ""
+
+
+def _announce_context_injection(
+    hook: "ContextInjectionHook | None",
+    source: str,
+    text: str,
+    detail: dict[str, Any],
+) -> None:
+    """Tell the caller the loop injected ``text``. Never raises (hcx-vv-01).
+
+    The four existing hooks are load-bearing in at least one direction —
+    ``on_pre_tool_use`` can block a call, ``on_stop`` receives the result. This
+    one is purely observational, and it is on the path that assembles a model
+    request, so an audit sink that fell over must not become the reason a turn
+    fails. Same posture as ``context_events.record_injection`` one layer up, for
+    the same reason, and stated here as well because this module does not import
+    that one.
+    """
+    if hook is None or not text:
+        return
+    try:
+        hook(source, text, dict(detail))
+    except Exception as exc:  # noqa: BLE001 — observational; must not end a turn
+        logger.warning(
+            "agent_loop: on_context_injection hook failed for %s: %s", source, exc
+        )
 
 
 def _maybe_compress_messages(
@@ -1126,6 +1173,7 @@ def run_agent_loop(
     on_pre_tool_use: PreToolUseHook | None = None,
     on_post_tool_use: PostToolUseHook | None = None,
     on_stop: StopHook | None = None,
+    on_context_injection: ContextInjectionHook | None = None,
     approval_gate: PreToolUseHook | bool | None = None,
     max_total_tokens: int | None = None,
     max_cost_usd: float | None = None,
@@ -1203,6 +1251,14 @@ def run_agent_loop(
                        called after each tool execution for audit/sidecar use.
         on_stop:       Optional ``hook(result)`` called once when the loop ends,
                        regardless of exit reason, before returning to the caller.
+        on_context_injection: Optional ``hook(source, text, detail)`` called when
+                       the loop puts a block into ``system_prompt`` itself —
+                       today only the retrieved-memory block. Observational; the
+                       block is injected whether or not the hook is given, and a
+                       hook that raises is logged and ignored. Not called when
+                       nothing was retrieved: an injector with nothing to say
+                       injected nothing, and announcing it would fabricate
+                       coverage rather than report it.
         approval_gate: Reversibility gate for irreversible tool calls
                        (ars-appr-01). ``True`` builds the default gate from
                        :func:`tools.agent_runtime.approval_gate.build_approval_hook`;
@@ -1416,6 +1472,22 @@ def run_agent_loop(
         _mem_ctx = _retrieve_memory_context(user_prompt, memory_top_k, memory_tier)
         if _mem_ctx:
             system_prompt = system_prompt + "\n\n" + _mem_ctx
+            # hcx-vv-01. This is the loop's own injection, and it is the last
+            # thing appended before the request goes out — so the caller's
+            # record of "what the model was given" is wrong by exactly this
+            # block unless the caller is told. Announced AFTER the append, so
+            # the hook can never be the reason the block is or is not there.
+            _announce_context_injection(
+                on_context_injection,
+                MEMORY_INJECTION_SOURCE,
+                _mem_ctx,
+                {
+                    "top_k": memory_top_k,
+                    "tier": memory_tier,
+                    "query_chars": len(user_prompt or ""),
+                    "llm_function": llm_function,
+                },
+            )
 
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)

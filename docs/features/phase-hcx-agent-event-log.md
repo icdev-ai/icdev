@@ -246,6 +246,10 @@ python tools/awareness/capability_consumption.py --probe-substrate agent_session
   (hcx-live-03).
 - [hcx-post-01-permission-postures.md](hcx-post-01-permission-postures.md)
   — §3.2, named permission postures.
-- `hcx-evt-03` (in flight at time of writing) records every context injection as
-  a `request_context` event — the gap §3.1 names where nothing recorded what was
-  injected into a prompt.
+- `hcx-evt-03` records every context injection as a `request_context` event —
+  the gap §3.1 names where nothing recorded what was injected into a prompt.
+- [hcx-vv-01-request-context-live-turn-proof.md](hcx-vv-01-request-context-live-turn-proof.md)
+  — the reverse-direction acceptance test for that event, and the fourth
+  injector it found: `agent_loop` appends its own retrieved-memory block after
+  the runtime hands the prompt over, and was uninstrumented while the other
+  three were covered.
