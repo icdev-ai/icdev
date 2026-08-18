@@ -240,12 +240,24 @@ def set_preference(
 # ---------------------------------------------------------------------------
 # Session-start injection
 # ---------------------------------------------------------------------------
+#: Injector name this module records under (hcx-evt-03). One of
+#: ``context_events.SOURCES``.
+INJECTION_SOURCE = "profile_memory"
+
+#: Most durable facts rendered into the preamble. Named rather than inline
+#: because the recorded event reports ``facts_total`` beside ``facts_shown``, and
+#: a truncation the log could not see would be a truncation nobody could audit.
+_MAX_FACTS_SHOWN = 10
+
+
 def build_profile_context(
     user_id: str = _DEFAULT_USER,
     tenant_id: str = "",
     *,
     query: str = "",
     memory_hits: int = 5,
+    session_id: str = "",
+    correlation_id: str = "",
 ) -> str:
     """Render a compact preamble of profile facts + top hybrid-memory hits.
 
@@ -253,6 +265,18 @@ def build_profile_context(
     skip prepending). The agent loop already injects hybrid memory for the
     current prompt; this adds durable profile facts and, when ``query`` is given,
     a few extra memory hits keyed to it.
+
+    ``session_id`` (the runtime's chat ``context_id``) records the injection as a
+    ``request_context`` event — hcx-evt-03. Empty means there is no session and
+    nothing is recorded. Recording never affects what is returned, and never
+    raises.
+
+    One event, not two, although the block has two origins (durable profile facts
+    and hybrid-memory hits): it is prepended to the prompt as a single block, and
+    an event per origin would claim two injections where one happened. The
+    ``detail`` breaks the two apart, including ``memory_searched`` — an operator
+    seeing zero hits needs to know whether the search ran and found nothing or
+    never ran at all.
     """
     lines: list[str] = []
     profile = load_profile(user_id, tenant_id)
@@ -263,12 +287,18 @@ def build_profile_context(
         lines.append(f"User preferences: {pretty}")
 
     facts = sorted(profile.get("facts", []), key=lambda f: f.get("confidence", 0), reverse=True)
+    facts_shown = 0
     if facts:
         lines.append("Known facts about the user:")
-        for f in facts[:10]:
+        for f in facts[:_MAX_FACTS_SHOWN]:
             lines.append(f"  - {f.get('text', '')}")
+            facts_shown += 1
 
+    hits_shown = 0
+    memory_searched = False
+    memory_failed = False
     if query:
+        memory_searched = True
         try:
             from tools.memory.hybrid_search import search as _mem_search
 
@@ -279,12 +309,38 @@ def build_profile_context(
                     content = str(h.get("content", "")).strip().replace("\n", " ")
                     if content:
                         lines.append(f"  - {content[:200]}")
+                        hits_shown += 1
         except Exception as exc:  # noqa: BLE001
             logger.debug("profile_memory: memory search failed: %s", exc)
+            memory_failed = True
 
     if not lines:
         return ""
-    return "## Operator profile & memory\n" + "\n".join(lines)
+    text = "## Operator profile & memory\n" + "\n".join(lines)
+
+    # hcx-evt-03. `record_injection` never raises; the guard is for the IMPORT,
+    # which can fail in a stripped runtime that ships no event log.
+    try:
+        from tools.agent_runtime.context_events import record_injection
+
+        record_injection(
+            session_id,
+            INJECTION_SOURCE,
+            text,
+            detail={
+                "preferences": len(prefs),
+                "facts_total": len(facts),
+                "facts_shown": facts_shown,
+                "memory_searched": memory_searched,
+                "memory_failed": memory_failed,
+                "memory_hits_shown": hits_shown,
+                "memory_hit_limit": memory_hits,
+            },
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — recording must never block a turn
+        logger.debug("profile_memory: injection not recorded: %s", exc)
+    return text
 
 
 # ---------------------------------------------------------------------------

@@ -168,12 +168,36 @@ def test_parse_feed_bad_xml_returns_empty():
 
 # ── NIST poller: feed -> policy evidence row ─────────────────────────────────
 
+def _cfg(**over):
+    """Deterministic docmod config for the poller tests.
+
+    The live catalog URL is blanked unless a test opts in, so sync() exercises
+    exactly the source under test and never reaches the network.
+    """
+    base = {
+        "offline": False,
+        "nist_pubs_cadence_hours": 24,
+        "nist_pubs_timeout_seconds": 5,
+        "nist_pubs_catalog_url": "",
+        "nist_pubs_feed_url": "https://feed.example/publications.xml",
+    }
+    base.update(over)
+    return base
+
+
+def _fetch_ok(body: bytes):
+    """Stand in for nist_pubs_sync._fetch — returns (body, status)."""
+    return lambda url, timeout: (body, "ok")
+
+
 def test_sync_writes_policy_evidence_row(db, monkeypatch):
     from tools.doc_modernization import nist_pubs_sync as nps
 
-    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: _RSS)
+    monkeypatch.setattr(nps, "_config", _cfg)
+    monkeypatch.setattr(nps, "_fetch", _fetch_ok(_RSS.encode("utf-8")))
     out = nps.sync(force=True)
     assert out["synced"] == 2
+    assert out["source"] == "feed"
 
     row = nps.get_latest_revision("SP 800-53")
     assert row is not None
@@ -189,16 +213,17 @@ def test_sync_cadence_gates_recent_run(db, monkeypatch):
     # A recent live sync already exists -> the next non-forced sync must skip
     # WITHOUT fetching the feed.
     _seed_nist_pub("SP 800-53", 5, source="nist.gov")
+    monkeypatch.setattr(nps, "_config", _cfg)
 
     def _boom(url, timeout):
         raise AssertionError("feed must not be fetched inside the cadence window")
 
-    monkeypatch.setattr(nps, "_fetch_feed", _boom)
+    monkeypatch.setattr(nps, "_fetch", _boom)
     out = nps.sync(force=False)
     assert out["synced"] == 0 and "cadence" in out["skipped"]
 
     # force=True bypasses the cadence gate and fetches.
-    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: _ATOM)
+    monkeypatch.setattr(nps, "_fetch", _fetch_ok(_ATOM.encode("utf-8")))
     out2 = nps.sync(force=True)
     assert out2["synced"] == 1
 
@@ -208,8 +233,8 @@ def test_sync_cadence_gates_recent_run(db, monkeypatch):
 def test_sync_offline_flag_skips(db, monkeypatch):
     from tools.doc_modernization import nist_pubs_sync as nps
 
-    monkeypatch.setattr(nps, "_config", lambda: {"offline": True})
-    monkeypatch.setattr(nps, "_fetch_feed",
+    monkeypatch.setattr(nps, "_config", lambda: _cfg(offline=True))
+    monkeypatch.setattr(nps, "_fetch",
                         lambda url, timeout: (_ for _ in ()).throw(AssertionError("no fetch")))
     out = nps.sync()
     assert out["synced"] == 0 and "offline" in out["skipped"]
@@ -218,11 +243,13 @@ def test_sync_offline_flag_skips(db, monkeypatch):
 def test_sync_feed_unavailable_skips_clean(db, monkeypatch):
     from tools.doc_modernization import nist_pubs_sync as nps
 
-    # Egress down: _fetch_feed returns None. sync() must not raise and must not
-    # write rows.
-    monkeypatch.setattr(nps, "_fetch_feed", lambda url, timeout: None)
+    # Egress down: every source reports unreachable. sync() must not raise and
+    # must not write rows.
+    monkeypatch.setattr(nps, "_config", _cfg)
+    monkeypatch.setattr(nps, "_fetch", lambda url, timeout: (None, "unreachable"))
     out = nps.sync(force=True)
-    assert out["synced"] == 0 and "unavailable" in out["skipped"]
+    assert out["synced"] == 0 and "no live source" in out["skipped"]
+    assert out["sources"]["feed"] == "unreachable"
     assert nps.get_latest_revision("SP 800-53") is None
 
 
@@ -230,6 +257,180 @@ def test_fetch_feed_refuses_non_https():
     from tools.doc_modernization.nist_pubs_sync import _fetch_feed
 
     assert _fetch_feed("http://insecure.example/feed.xml", 5) is None
+
+
+# ── a dead URL is NOT an air-gap (cef-fnd-02) ────────────────────────────────
+
+def test_fetch_separates_dead_url_from_no_egress(monkeypatch):
+    """A 4xx means the URL is retired; a socket error means no egress.
+
+    Merging the two is how the retired CSRC RSS feed reported a benign-looking
+    "offline?" skip while never once landing a row.
+    """
+    import urllib.error
+    import urllib.request
+
+    from tools.doc_modernization import nist_pubs_sync as nps
+
+    def _raise(exc):
+        def _open(req, timeout=None):
+            raise exc
+        return _open
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen",
+        _raise(urllib.error.HTTPError("https://x/y.xml", 404, "Not Found", {}, None)),
+    )
+    assert nps._fetch("https://x/y.xml", 5)[1] == "url_dead_http_404"
+
+    monkeypatch.setattr(urllib.request, "urlopen",
+                        _raise(urllib.error.URLError("no route to host")))
+    assert nps._fetch("https://x/y.xml", 5)[1] == "unreachable"
+
+    # Never-configured and plaintext are their own answers, not "unreachable".
+    assert nps._fetch("", 5)[1] == "not_configured"
+    assert nps._fetch("http://x/y.xml", 5)[1] == "refused_non_https"
+
+
+def test_sync_reports_dead_url_rather_than_offline(db, monkeypatch):
+    from tools.doc_modernization import nist_pubs_sync as nps
+
+    monkeypatch.setattr(nps, "_config", _cfg)
+    monkeypatch.setattr(nps, "_fetch", lambda url, timeout: (None, "url_dead_http_404"))
+    out = nps.sync(force=True)
+    assert out["synced"] == 0
+    # The operator must be able to tell "fix the URL" from "you are air-gapped".
+    assert out["sources"]["feed"] == "url_dead_http_404"
+
+
+# ── CSRC catalog (XLSX) parsing ──────────────────────────────────────────────
+
+def _catalog_bytes(rows):
+    """Build a minimal CSRC-shaped publications workbook in memory."""
+    import io
+
+    # NOT importorskip: openpyxl is a declared requirement and the catalog parser
+    # is useless without it. Skipping here would leave the whole live-source path
+    # unmeasured while still reporting green.
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Stage", "Substage", "PubID", "Series", "Publication Number",
+               "Title", "Citation Date", "Release Date", "URL", "CurrentURL"])
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_parse_catalog_keeps_final_highest_revision():
+    from tools.doc_modernization.nist_pubs_sync import parse_catalog
+
+    body = _catalog_bytes([
+        ["Final", "", "NIST SP 800-53r4", "SP", "800-53 Rev. 4", "Older", "", "2013", "", ""],
+        ["Final", "", "NIST SP 800-53r5", "SP", "800-53 Rev. 5", "Current", "", "12/10/2020",
+         "", "https://csrc.nist.gov/pubs/sp/800/53/r5/final"],
+        ["Final", "", "NIST SP 800-171r3", "SP", "800-171 Rev. 3", "CUI", "", "05/14/2024", "", ""],
+    ])
+    rows = {r["pub_id"]: r for r in parse_catalog(body)}
+    assert rows["SP 800-53"]["revision_num"] == 5
+    assert rows["SP 800-53"]["latest_revision"] == "Rev 5"
+    assert rows["SP 800-53"]["url"].endswith("/r5/final")
+    assert rows["SP 800-171"]["revision_num"] == 3
+
+
+def test_parse_catalog_excludes_drafts():
+    """A DRAFT does not supersede a final publication.
+
+    Caching a draft revision would flag every document citing the current final
+    revision as superseded — a manufactured finding.
+    """
+    from tools.doc_modernization.nist_pubs_sync import parse_catalog
+
+    body = _catalog_bytes([
+        ["Final", "", "NIST SP 800-53r5", "SP", "800-53 Rev. 5", "Current", "", "2020", "", ""],
+        ["Draft", "", "NIST SP 800-53r6", "SP", "800-53 Rev. 6", "IPD", "", "2026", "", ""],
+    ])
+    rows = {r["pub_id"]: r for r in parse_catalog(body)}
+    assert rows["SP 800-53"]["revision_num"] == 5
+
+
+def test_parse_catalog_skips_unrevised_publications():
+    """SP 800-207 has no revision — inventing 'Rev 1' would fabricate evidence."""
+    from tools.doc_modernization.nist_pubs_sync import parse_catalog
+
+    body = _catalog_bytes([
+        ["Final", "", "NIST SP 800-207", "SP", "800-207", "Zero Trust", "", "2020", "", ""],
+    ])
+    assert parse_catalog(body) == []
+
+
+def test_parse_catalog_degrades_on_renamed_columns():
+    """A schema change upstream yields nothing, not a half-understood catalog."""
+    import io
+
+    import openpyxl
+
+    from tools.doc_modernization.nist_pubs_sync import parse_catalog
+
+    wb = openpyxl.Workbook()
+    wb.active.append(["Phase", "Series", "Number"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    assert parse_catalog(buf.getvalue()) == []
+
+
+def test_parse_catalog_bad_bytes_returns_empty():
+    from tools.doc_modernization.nist_pubs_sync import parse_catalog
+
+    assert parse_catalog(b"not an xlsx at all") == []
+
+
+def test_sync_prefers_catalog_over_feed(db, monkeypatch):
+    from tools.doc_modernization import nist_pubs_sync as nps
+
+    body = _catalog_bytes([
+        ["Final", "", "NIST SP 800-53r5", "SP", "800-53 Rev. 5", "Current", "", "2020", "", ""],
+    ])
+    monkeypatch.setattr(nps, "_config",
+                        lambda: _cfg(nist_pubs_catalog_url="https://csrc.example/pubs.xlsx"))
+
+    def _fetch(url, timeout):
+        if url.endswith(".xlsx"):
+            return body, "ok"
+        raise AssertionError("feed must not be fetched once the catalog succeeds")
+
+    monkeypatch.setattr(nps, "_fetch", _fetch)
+    out = nps.sync(force=True)
+    assert out["synced"] == 1 and out["source"] == "catalog"
+    assert nps.get_latest_revision("SP 800-53")["revision_num"] == 5
+
+
+def test_refresh_seeds_when_live_sync_lands_nothing(db, monkeypatch, tmp_path):
+    """An empty cache makes policy_refs answer 'unknown' forever."""
+    from tools.doc_modernization import nist_pubs_sync as nps
+
+    seed = tmp_path / "nist_pubs.yaml"
+    seed.write_text(
+        "publications:\n"
+        "  SP 800-53:\n"
+        "    latest_revision: Rev 5\n"
+        "    revision_num: 5\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(nps, "SEED_PATH", seed)
+    monkeypatch.setattr(nps, "_config", _cfg)
+    monkeypatch.setattr(nps, "_fetch", lambda url, timeout: (None, "unreachable"))
+
+    out = nps.refresh(force=True)
+    assert out["sync"]["synced"] == 0
+    assert out["seed"]["loaded"] == 1
+    assert out["rows"] == 1
+    row = nps.get_latest_revision("SP 800-53")
+    # The seed fallback must never be presented as a live pull.
+    assert row["source"] == "seed"
 
 
 # ── policy_refs dynamic superseded-revision detection ────────────────────────

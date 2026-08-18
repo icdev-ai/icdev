@@ -6884,6 +6884,10 @@ CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_expires
 -- RAG provenance ledger — append-only AIA chain-of-custody log (D-AIDP, NIST AU-3)
 -- event_type='ingest': chunk bound to source document with hash verification
 -- event_type='chain_of_custody': LLM invocation audit block (model, hyperparams, prompt hash, signature)
+-- event_type='retrieval': chunk served to a caller as citable evidence (cef-fnd-05)
+-- The CHECK list is derived from tools/rag/provenance_ledger.py::PROVENANCE_EVENT_TYPES.
+-- Widen BOTH together — a value the CHECK rejects is dropped by the caller's
+-- best-effort INSERT and the row silently never appears.
 CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chunk_uuid TEXT NOT NULL,
@@ -6897,8 +6901,12 @@ CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
     prompt_sha256 TEXT,
     signature TEXT,
     event_type TEXT NOT NULL DEFAULT 'ingest'
-        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+        CHECK(event_type IN ('ingest', 'chain_of_custody', 'retrieval')),
     ingest_timestamp TIMESTAMP,
+    -- rag_retrieval_log.id of the search that served this chunk (cef-fnd-05).
+    -- Nullable: a row is still worth keeping when the retrieval-log INSERT
+    -- itself failed, since prompt_sha256 equals that table's query_hash.
+    retrieval_log_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -6908,6 +6916,8 @@ CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc
     ON rag_provenance_ledger(parent_doc_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type
     ON rag_provenance_ledger(event_type);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_retrieval_log
+    ON rag_provenance_ledger(retrieval_log_id);
 
 -- rag_queries: tracks RAG knowledge search requests and their lifecycle
 CREATE TABLE IF NOT EXISTS rag_queries (
@@ -7601,6 +7611,20 @@ CREATE INDEX IF NOT EXISTS idx_db_sync_time ON db_sync_log(synced_at);
 -- failed silently and the trail was empty exactly when it mattered.
 --
 -- Append-only (NIST AU) -- see APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+--
+-- THIS IS THE SQLITE INIT FALLBACK, NOT THE PRIMARY DEFINITION. On the primary
+-- PostgreSQL backend the table is created by migration
+-- 20260817010532_databridge_agent_access_log, which carries the PG-native DDL.
+-- This block being the ONLY definition is why the table did not exist on PG at
+-- all: AUTOINCREMENT and datetime('now') are SQLite syntax, so nothing here ever
+-- ran there, and every audit insert raised UndefinedTable into a swallowed
+-- warning. Keep the two in step -- a column added in one belongs in the other.
+--
+-- tenant_id and classification are the RLS predicate columns get_connection()
+-- injects. classification holds the LABEL ('CUI'), never the banner
+-- ('CUI // SP-CTI'): the predicate is `classification IN (<labels dominated by
+-- the caller's clearance>)`, and a banner string matches no label at any
+-- clearance, so such a row is written, retained and unreadable.
 CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL DEFAULT 'unknown',
@@ -7608,13 +7632,15 @@ CREATE TABLE IF NOT EXISTS databridge_agent_access_log (
     table_name TEXT NOT NULL DEFAULT '',
     decision TEXT NOT NULL DEFAULT 'denied' CHECK(decision IN ('allowed','denied')),
     reason TEXT NOT NULL DEFAULT '',
-    rows_returned INTEGER DEFAULT 0,
-    redactions_applied INTEGER DEFAULT 0,
-    classification TEXT DEFAULT 'CUI // SP-CTI',
-    created_at TEXT DEFAULT (datetime('now'))
+    rows_returned INTEGER NOT NULL DEFAULT 0,
+    redactions_applied INTEGER NOT NULL DEFAULT 0,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_db_agent_access_agent ON databridge_agent_access_log(agent_id);
 CREATE INDEX IF NOT EXISTS idx_db_agent_access_decision ON databridge_agent_access_log(decision);
+CREATE INDEX IF NOT EXISTS idx_db_agent_access_tenant ON databridge_agent_access_log(tenant_id, created_at);
 
 -- Connector configuration registry
 CREATE TABLE IF NOT EXISTS db_connector_configs (

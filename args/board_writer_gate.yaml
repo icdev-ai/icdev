@@ -1,0 +1,101 @@
+# CUI // SP-CTI
+# Board Writer Gate (rem-hyg-05)
+#
+# THE POLICY THIS ENCODES
+# -----------------------
+# tools/kanban/task_factory.py opens with "Canonical task seeder — never use raw
+# INSERT directly." Nothing has ever checked that sentence.
+#
+# Measured 2026-08-16 over tools/ and its icdev/tools/ mirror: 231 raw board
+# INSERT sites across 209 files. Twenty-one of the
+# bypassers are the AUTONOMOUS path — tools/genesis/reflexes/* plus
+# tools/ace/controller.py, tools/ace/coworker_thread.py,
+# tools/awareness/suggested_card_writer.py, tools/chat/kanban_bridge.py and
+# tools/chat/requirement_intake_hook.py. Roughly seven board writers in ten do
+# not go through the seeder.
+#
+# Everything create_tasks provides is skipped with it: the VALID_TASK_TYPES check
+# that PostgreSQL enforces and SQLite silently does not, the _assert_real_board
+# refusal that stops a seed run landing in a throwaway worktree database, the
+# gate-id and risk-marker validation in tools/kanban/gates.py, and the dedupe
+# that makes a re-run idempotent. A raw INSERT gets none of them and reports
+# success regardless.
+#
+# The policy is a RATCHET, not a sweep:
+#
+#   1. A NEW raw-INSERT site fails `coherence_checker --check board_writer_census`
+#      by name. The fix is `from tools.kanban.task_factory import create_tasks`.
+#   2. The sites that existed at adoption are grandfathered BY NAME in
+#      args/kanban_raw_insert_census.txt. They are debt, enumerated so it is
+#      countable — and so the SET cannot churn behind a constant count, which is
+#      exactly how the ungated-test gap regrew behind a green gate.
+#   3. `raw_insert_max` may ONLY go DOWN. Lower it when a writer is converted.
+#      Raising it is the visible, reviewable act of taking on more unchecked
+#      board writes, and it belongs in a PR description — never in a drive-by
+#      edit to get a commit through.
+#
+# Converting the existing 237 is rem-hyg-06. This gate only stops the set
+# growing.
+#
+# Gate:  python tools/kanban/raw_insert_census.py --check
+#        python tools/workflow/coherence_checker.py --check board_writer_census --gate
+
+raw_insert_census:
+  # The enumerated census. Flat and line-oriented, so `merge=union` is safe for
+  # it the way it is for the manifest shards (see .gitattributes).
+  census_file: args/kanban_raw_insert_census.txt
+
+  # Ceiling on REGISTERED sites. MAY ONLY GO DOWN.
+  #
+  # 2026-08-16 adoption: 231 sites across 209 files in the raw tree, of which the
+  # exclusions below account for 12 (the two task_factory copies and the ten
+  # migration sites). 219 sites across 199 files are debt, and that is the number
+  # this ceiling holds. It is set to exactly today's count, not a round number
+  # above it — headroom is permission.
+  #
+  # By migration shape, for rem-hyg-06: 106 seeder, 59 runtime, 42 reflex,
+  # 12 mixed. The 42 reflex sites are the autonomous path and the highest-value
+  # cohort — nothing supervises those writes.
+  raw_insert_max: 219
+
+  # A reason shorter than this is not a reason. Applies to census entries and to
+  # the exclusions below.
+  min_reason_chars: 12
+
+  # icdev/tools/ is in scope on purpose: CLAUDE.md directs all NEW code at
+  # `icdev.tools.*`, so omitting the mirror would leave the growth path open.
+  scan_roots:
+    - tools
+    - icdev/tools
+
+  # An EXCLUSION asserts that a raw INSERT is CORRECT here — which is a different
+  # claim from a census entry, and it must not count against the ceiling we are
+  # trying to drive down. Every one needs a written reason.
+  exclude:
+    - path: tools/kanban/task_factory.py
+      reason: >-
+        the canonical seeder itself. This is the one place the raw INSERT
+        belongs; every census entry exists because it is not here.
+    - path: icdev/tools/kanban/task_factory.py
+      reason: >-
+        packaged mirror of the canonical seeder — same reason as the tools/ copy.
+
+    - path: tools/db/migrations/**
+      reason: >-
+        a migration runs against kanban_tasks mid-shape, before or after the
+        columns create_tasks binds exist. 012_kanban_id_text_pk rebuilds the
+        table and copies the rows back; calling the seeder there would import a
+        module that expects the finished schema. A migration is DDL plus its own
+        data move, not a board write.
+    - path: icdev/tools/db/migrations/**
+      reason: >-
+        packaged mirror of the migrations tree — same reason as the tools/ copy.
+
+    - path: tools/kanban/raw_insert_census.py
+      reason: >-
+        this census tool's own source carries the INSERT pattern as a regex, so
+        it would otherwise census itself. Excluded by name rather than left to
+        the accident that `\s+` does not match literal whitespace.
+    - path: icdev/tools/kanban/raw_insert_census.py
+      reason: >-
+        packaged mirror of the census tool — same reason as the tools/ copy.

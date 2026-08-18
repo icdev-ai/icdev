@@ -1,0 +1,91 @@
+# CUI // SP-CTI
+#
+# De-facto standard learner — inventory feeds (cef-fnd-04).
+#
+# WHY THIS FILE EXISTS
+#
+# docmod_defacto_standards held 0 rows and the writer was not the problem:
+# defacto_learner.recompute() runs on the nightly docmod sweep, reads ni_devices,
+# and ni_devices holds 0 rows. It ran and had nothing to learn from.
+#
+# ni_devices is populated by tools/network/network_ingester.py from a NetBox
+# instance or a CSV export — both of which are OUTSIDE this deployment. Nothing
+# can conjure one. So the learner stops depending on a single table: it reads
+# whatever feeds are declared here, and a deployment that HAS a NetBox simply
+# turns the first feed on and outranks the rest.
+#
+# NOTHING HERE IS A DOMAIN CONSTANT
+#
+# `domain`, `category`, `vendor`, `product`, `version` are the COLUMN NAMES of
+# docmod_defacto_standards. No vendor, product, protocol or industry appears in
+# this file or in defacto_learner.py — those arrive as row data from the feeds.
+#
+# FEED SPEC
+#
+#   id             written to docmod_defacto_standards.source_feed
+#   domain         pack domain the learned rows belong to
+#   evidence_kind  written to docmod_defacto_standards.evidence_kind. THE
+#                  HONESTY FIELD — see `precedence` below.
+#   precedence     lower wins. get_recommended() answers from the BEST-precedence
+#                  feed that has data for the category and does not blend two.
+#   kind           table | json_nodes
+#   fields         canonical field -> candidate source keys, first non-empty
+#                  wins. `a.b` descends one dict level.
+#
+# PRECEDENCE IS AN EVIDENCE ORDERING, NOT A PREFERENCE
+#
+# An observed deployed estate beats a drawing of one, always, and no amount of
+# drawings adds up to an observation. share_pct is computed WITHIN a feed and
+# never across two, so a share is always a share of like evidence — the
+# alternative (one pooled percentage) would let 16 design topologies read as
+# deployment reality, which is the exact laundering this engine exists to catch.
+
+classification: CUI // SP-CTI
+
+feeds:
+  - id: ni_devices
+    enabled: true
+    domain: network_hardware
+    evidence_kind: inventory
+    precedence: 10
+    kind: table
+    table: ni_devices
+    note: >-
+      The real deployment inventory — NetBox sync, CSV import, or topology
+      re-ingest via tools/network/network_ingester.py. Empty in this deployment
+      (0 rows) because no external inventory system is reachable from it. Left
+      ENABLED on purpose: the day one is connected this feed starts winning with
+      no config change, and an enabled feed that reports 0 rows is visible in the
+      sweep result where a commented-out one would not be.
+    fields:
+      category: [device_type]
+      vendor: [vendor]
+      product: [model]
+      version: [firmware_version]
+      observed_at: [updated_at, created_at]
+
+  - id: topology_nodes
+    enabled: true
+    domain: network_hardware
+    evidence_kind: design
+    precedence: 20
+    kind: json_nodes
+    table: topologies
+    json_column: graph_json
+    node_path: nodes
+    note: >-
+      Network-design topologies already in this platform — 16 of them, 211
+      nodes, 48 carrying a vendor/model pair. This is DESIGN evidence, not a
+      deployed estate, and it is labelled `design` everywhere it surfaces so no
+      reader can mistake "this is what we draw" for "this is what we run". It is
+      still the strongest currency signal available here, and it is what makes
+      docmod_defacto_standards non-empty.
+    fields:
+      category: [type, device_type]
+      vendor: [vendor, config.vendor]
+      product: [model, config.model]
+      version: [config.firmware, firmware_version]
+    # Nodes carry no timestamp of their own, so recency weighting falls back to
+    # the topology row's clock — every node in one diagram is exactly as fresh as
+    # the diagram.
+    row_observed_at: [updated_at, created_at]

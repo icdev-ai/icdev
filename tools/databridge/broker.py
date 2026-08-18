@@ -23,8 +23,18 @@ which applies, in order:
 4. **Outbound redaction** — any free-text filter value is sanitized
    fail-closed, because a query string is the one part of a fetch that carries
    caller content.
-5. **Egress guard** — applied in ``saas_base`` before the socket opens.
-6. **Audit** — one append-only row per call, whatever the outcome.
+5. **Connection resolution** — the grant's ``connection_id`` is read from
+   ``db_connections`` and handed to the connector as its config, and any
+   ``auth_secret_ref`` on that row is resolved through the configured secret
+   backend. An unreadable connection or an unresolvable credential is a
+   refusal, not an empty config: running a connector on ``{}`` is how a
+   per-connection ``egress_allowlist`` came to be declared and never enforced.
+6. **Egress guard** — applied in the connector before the socket opens
+   (``saas_base._guard_egress``; ``rss_connector`` carries its own copy).
+7. **Audit** — one append-only row per call, whatever the outcome. An audit
+   write that fails is raised, not logged: a decision that could not be
+   recorded must not read as a clean call, and rows are withheld from the
+   caller rather than delivered unaudited.
 
 Deliberately NOT reachable through ``ToolRunner``: it matches command strings
 exactly, so a parameterised data fetch cannot be usefully allowlisted there.
@@ -55,6 +65,16 @@ class BrokerDenied(PermissionError):
     """Raised when a fetch is refused. Carries the reason for the audit row."""
 
 
+class AuditWriteFailed(RuntimeError):
+    """Raised when an access decision could not be recorded.
+
+    Distinct from BrokerDenied: the decision itself was reached, the TRAIL is
+    what is missing. Kept as its own type because the two need opposite
+    handling — a denial is a normal outcome to report, an unrecorded decision is
+    a control failure to escalate.
+    """
+
+
 @dataclass
 class FetchOutcome:
     """Result of a brokered fetch."""
@@ -66,6 +86,11 @@ class FetchOutcome:
     row_count: int = 0
     error: str = ""
     redactions: int = 0
+    #: Whether this call's decision reached databridge_agent_access_log.
+    #: A separate field rather than a note inside ``error`` because "the audit
+    #: row is missing" and "the fetch was refused" are different facts, and a
+    #: caller that wants to alert on the first must not have to parse prose.
+    audited: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +101,7 @@ class FetchOutcome:
             "row_count": self.row_count,
             "error": self.error,
             "redactions": self.redactions,
+            "audited": self.audited,
         }
 
 
@@ -151,6 +177,80 @@ def _redact_outbound(text: str) -> tuple[str, int]:
     return sanitized, count
 
 
+#: Config key a resolved ``auth_secret_ref`` is injected under when a connection
+#: does not name its own. SaaS connectors read their credential from their config
+#: dict (see ``saas_base._build_auth_headers``), and ``api_key`` is the key that
+#: docstring uses.
+DEFAULT_SECRET_CONFIG_KEY = "api_key"
+
+
+def _connection_config(connection_id: str) -> dict:
+    """Load the db_connections row for *connection_id* and return its config.
+
+    ``connection_id`` was decorative until now: the grant carried it, the broker
+    passed it through to ``ConnectorRequest`` and nothing ever read the row, so
+    the connector ran on an empty config — which meant, among other things, that
+    a per-connection ``egress_allowlist`` was declared and never enforced.
+
+    Fail-closed in both directions. A grant naming a connection whose row cannot
+    be read is refused rather than run on ``{}``: an unreadable connection is
+    the case where we cannot say what the connector would contact or as whom.
+    A credential reference that will not resolve is refused for the same reason,
+    and the resolved VALUE is never logged or returned — it goes into the config
+    dict handed to ``connect()`` and nowhere else.
+
+    Raises BrokerDenied.
+    """
+    try:
+        from icdev.tools.databridge.connection_manager import (
+            get_connection as _get_connection_row,
+            resolve_secret,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise BrokerDenied(f"connection manager unavailable: {exc}") from exc
+
+    row = _get_connection_row(connection_id)
+    if not row:
+        # get_connection() swallows a store failure into None, so this covers
+        # both "no such row" and "could not ask". Stated as the ambiguity it is
+        # rather than asserting the row is missing.
+        raise BrokerDenied(
+            f"connection {connection_id!r} could not be read from db_connections "
+            f"(no such row, or the store is unreachable)"
+        )
+
+    config: dict[str, Any] = {}
+    raw = row.get("config_yaml") or ""
+    if str(raw).strip():
+        try:
+            parsed = yaml.safe_load(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise BrokerDenied(
+                f"connection {connection_id!r} has unparseable config_yaml: {exc}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise BrokerDenied(
+                f"connection {connection_id!r} config_yaml is not a mapping"
+            )
+        config = parsed
+
+    secret_ref = str(row.get("auth_secret_ref") or "").strip()
+    if secret_ref:
+        try:
+            secret = resolve_secret(secret_ref)
+        except Exception as exc:  # noqa: BLE001
+            # The reference, never the value — the ref is a location, which is
+            # what an operator needs to fix this, and the value is what must not
+            # reach a log line.
+            raise BrokerDenied(
+                f"credential for connection {connection_id!r} could not be "
+                f"resolved from {secret_ref!r}: {exc}"
+            ) from exc
+        config[str(config.get("secret_config_key") or DEFAULT_SECRET_CONFIG_KEY)] = secret
+
+    return config
+
+
 def _audit(agent_id: str, connector: str, table: str, decision: str,
            reason: str = "", rows: int = 0, redactions: int = 0) -> None:
     """Append one row per call, allowed or denied.
@@ -164,6 +264,15 @@ def _audit(agent_id: str, connector: str, table: str, decision: str,
 
     Denials are the interesting half: a connector an agent keeps being refused
     is either a misconfiguration or someone probing.
+
+    Raises AuditWriteFailed when the row does not land. It used to swallow the
+    failure into a warning, and that is how the trail stayed empty for the whole
+    life of this module: the table did not exist on the PostgreSQL backend at
+    all -- its only DDL was authored in SQLite syntax in init_icdev_db.py and so
+    never ran there -- and every insert raised UndefinedTable while every fetch
+    reported success. A control whose failure mode is a log line nobody reads is
+    indistinguishable from a control that works, which is the same defect as a
+    security hook wrapped in `|| true`.
     """
     try:
         from icdev.tools.db.storage import get_connection
@@ -182,8 +291,15 @@ def _audit(agent_id: str, connector: str, table: str, decision: str,
             conn.commit()
         finally:
             conn.close()
-    except Exception as exc:  # noqa: BLE001 — auditing must not block the decision
-        logger.warning("databridge broker: audit write failed: %s", exc)
+    except Exception as exc:  # noqa: BLE001 — re-raised as AuditWriteFailed below
+        logger.error(
+            "databridge broker: AUDIT WRITE FAILED for %s agent=%s connector=%s "
+            "table=%s — the decision was NOT recorded: %s",
+            decision, agent_id, connector, table, exc,
+        )
+        raise AuditWriteFailed(
+            f"access decision {decision!r} could not be recorded: {exc}"
+        ) from exc
 
 
 def fetch(
@@ -213,8 +329,18 @@ def fetch(
             "databridge broker: DENIED agent=%s connector=%s table=%s — %s",
             agent_id, connector, table, reason,
         )
-        _audit(agent_id, connector, table, "denied", reason)
-        return FetchOutcome(ok=False, connector=connector, table=table, error=reason)
+        audited = True
+        try:
+            _audit(agent_id, connector, table, "denied", reason)
+        except AuditWriteFailed as exc:
+            # The refusal stands — nothing left. But an agent that keeps being
+            # refused a connector is the signal this table exists to carry, so a
+            # denial that went unrecorded is reported as such rather than
+            # returned as an ordinary denial.
+            audited = False
+            reason = f"{reason} (NOT AUDITED: {exc})"
+        return FetchOutcome(ok=False, connector=connector, table=table,
+                            error=reason, audited=audited)
 
     if not connector or not table:
         return _deny("connector and table are required")
@@ -265,7 +391,8 @@ def fetch(
     except BrokerDenied as exc:
         return _deny(str(exc))
 
-    # 5. Dispatch. egress_guard fires inside saas_base before the socket opens.
+    # 5. Dispatch. egress_guard fires in the connector before the socket opens.
+    connection_id = str(grant.get("connection_id") or "")
     try:
         from icdev.tools.databridge.connector import ConnectorRequest
         from icdev.tools.databridge.registry import get_connector_instance
@@ -274,21 +401,48 @@ def fetch(
         if instance is None:
             return _deny(f"connector {connector!r} is not registered")
 
+        # A grant with no connection_id keeps the old behaviour — an empty
+        # config — because a connector needing neither endpoint nor credential
+        # is a legitimate shape and denying it would be a new refusal with no
+        # security story behind it.
+        config = _connection_config(connection_id) if connection_id else {}
+        if not instance.connect(config):
+            return _deny(
+                f"connector {connector!r} refused to connect using connection "
+                f"{connection_id or '<none>'!r}"
+            )
+
         response = instance.read(ConnectorRequest(
             table_name=table,
-            connection_id=str(grant.get("connection_id") or ""),
+            connection_id=connection_id,
             query=query,
             limit=limit,
             filters=safe_filters,
         ))
+    except BrokerDenied as exc:  # connection record / credential resolution
+        return _deny(str(exc))
     except PermissionError as exc:  # egress guard, credential refusal
         return _deny(f"blocked: {exc}")
     except Exception as exc:  # noqa: BLE001
         return _deny(f"connector error: {exc}")
 
     rows = list(getattr(response, "data", None) or [])[:limit]
-    _audit(agent_id, connector, table, "allowed", "",
-           rows=len(rows), redactions=redactions)
+    try:
+        _audit(agent_id, connector, table, "allowed", "",
+               rows=len(rows), redactions=redactions)
+    except AuditWriteFailed as exc:
+        # The read already happened — the rows are in this process. What is
+        # still preventable is the agent RECEIVING them unaudited, so they are
+        # withheld and the outcome is not ok. "Auto-fetch, and log it" is not a
+        # fetch that logs when convenient: an unlogged fetch is not the
+        # authorised behaviour, and returning the rows anyway with a warning in
+        # the log is exactly the swallow this replaced.
+        return FetchOutcome(
+            ok=False, connector=connector, table=table,
+            row_count=0, redactions=redactions, audited=False,
+            error=(f"fetch succeeded but its audit row could not be written, so "
+                   f"the rows are withheld: {exc}"),
+        )
 
     return FetchOutcome(
         ok=True, connector=connector, table=table,
@@ -323,4 +477,5 @@ def list_available(agent_id: str = "") -> list[dict]:
 
 
 __all__ = ["fetch", "list_available", "FetchOutcome", "BrokerDenied",
-           "load_manifest", "DEFAULT_MAX_ROWS", "HARD_MAX_ROWS"]
+           "AuditWriteFailed", "load_manifest", "DEFAULT_MAX_ROWS",
+           "HARD_MAX_ROWS"]

@@ -615,7 +615,7 @@ class RAGRetriever:
         # Step 6: Log retrieval
         duration_ms = int(time.time() * 1000) - start_ms
         top_score = results[0].final_score if results else 0.0
-        self._log_retrieval(
+        retrieval_log_id = self._log_retrieval(
             query,
             len(results),
             top_score,
@@ -628,7 +628,14 @@ class RAGRetriever:
 
         # Step 7: Record provenance (optional)
         if self._rag_cfg.get("provenance", {}).get("enabled", True):
-            self._record_provenance(query, results, project_id)
+            self._record_provenance(
+                query,
+                results,
+                project_id,
+                retrieval_log_id=retrieval_log_id,
+                retrieval_mode=retrieval_mode,
+                model_id=getattr(provider, "model_id", None),
+            )
 
         return results
 
@@ -667,10 +674,16 @@ class RAGRetriever:
         project_id: str,
         source_types: Optional[List[str]] = None,
         rerank_used: bool = False,
-    ):
-        """Log retrieval to rag_retrieval_log (append-only, D-RAG-8)."""
+    ) -> Optional[int]:
+        """Log retrieval to rag_retrieval_log (append-only, D-RAG-8).
+
+        Returns the new ``rag_retrieval_log.id``, or None when the row was not
+        written. cef-fnd-05 needs it: it is the "retrieval event" half of the
+        chunk -> source -> retrieval event link written to
+        ``rag_provenance_ledger``.
+        """
         if not ICDEV_DB.exists():
-            return
+            return None
         # Hash query by default (D282)
         query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()
         import os
@@ -680,12 +693,16 @@ class RAGRetriever:
 
         try:
             conn = get_connection()
-            conn.execute(
+            # RETURNING id is PG-native and correct on both backends. cur.lastrowid
+            # is UNSAFE on psycopg2 — it returns the table OID (or 0), not the
+            # serial PK — which would tie provenance rows to a nonexistent event.
+            cur = conn.execute(
                 """INSERT INTO rag_retrieval_log
                    (query_hash, query_text, results_count, top_score,
                     retrieval_mode, vector_top_k, final_top_k, rerank_used,
                     source_types_queried, duration_ms, tenant_id, project_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING id""",
                 (
                     query_hash,
                     query_text,
@@ -701,13 +718,67 @@ class RAGRetriever:
                     project_id,
                 ),
             )
+            row = cur.fetchone()
             conn.commit()
             conn.close()
+            return int(row[0]) if row else None
         except Exception as exc:  # noqa: BLE001 - best-effort persistence; logged, never raised
             logger.warning("_log_retrieval: best-effort INSERT into rag_retrieval_log failed (non-blocking): %s", exc)
+            return None
 
-    def _record_provenance(self, query: str, results: List[SearchResult], project_id: str):
-        """Record PROV-AGENT provenance for this retrieval (D-RAG-8)."""
+    def _record_provenance(
+        self,
+        query: str,
+        results: List[SearchResult],
+        project_id: str,
+        retrieval_log_id: Optional[int] = None,
+        retrieval_mode: str = "",
+        model_id: Optional[str] = None,
+    ):
+        """Record provenance for this retrieval — in BOTH stores (D-RAG-8).
+
+        Two stores, because they answer different questions and only one of them
+        was ever written here:
+
+        * ``rag_provenance_ledger`` — the append-only AIA chain-of-custody
+          ledger (NIST AU-3) that ``dic/provenance_adapter``,
+          ``genesis/reflexes/aidp_monitor`` and ``quality/citation_grounding``
+          READ. Until cef-fnd-05 nothing in the tree wrote it, so it held 0 rows
+          against 2,430 retrievals and every citation was untraceable after the
+          fact.
+        * PROV-AGENT via ``ProvRecorder`` — the graph view, which this method
+          already wrote. Its presence is why the gap was invisible: step 7 was
+          named "record provenance" and did record *something*, just not into
+          the table the TRUST invariant is checked against.
+
+        Neither failure is silent any more. Both are non-blocking — a retrieval
+        that found results must still return them — but both are LOGGED with the
+        exception, which is what a bare ``except Exception: pass`` destroyed.
+        """
+        # --- Ledger row per chunk: chunk -> source -> retrieval event ---------
+        try:
+            from tools.rag.provenance_ledger import record_retrieval
+
+            record_retrieval(
+                results,
+                query=query,
+                retrieval_log_id=retrieval_log_id,
+                retrieval_mode=retrieval_mode,
+                model_id=model_id,
+                tenant_id=self._tenant_id,
+                project_id=project_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - non-blocking, but never silent
+            logger.warning(
+                "_record_provenance: rag_provenance_ledger write failed for %s "
+                "retrieved chunk(s) (retrieval_log_id=%s) — these citations are "
+                "NOT traceable: %s",
+                len(results),
+                retrieval_log_id,
+                exc,
+            )
+
+        # --- PROV-AGENT graph (pre-existing behaviour) ------------------------
         try:
             from tools.observability.provenance.prov_recorder import ProvRecorder
 
@@ -734,8 +805,11 @@ class RAGRetriever:
                     target_id=entity_id,
                     relation_type="used",
                 )
-        except Exception:
-            pass  # Provenance is best-effort
+        except Exception as exc:  # noqa: BLE001 - non-blocking, but never silent
+            logger.warning(
+                "_record_provenance: PROV-AGENT graph write failed (non-blocking): %s",
+                exc,
+            )
 
 
 def main():

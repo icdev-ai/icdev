@@ -157,6 +157,14 @@ Ordered by value per unit of work:
    only — `cache_creation_input_tokens` stays 0 there because Gemini bills cache storage
    by time and reports no creation-token count.
 4. **Gemini explicit caching** via `cachedContents`, mapped onto `managed_object`.
+   **Done — cch-prov-02.** `tools/llm/managed_cache.py` owns the create/reuse/expire
+   lifecycle and the adapter reads `usageMetadata.cachedContentTokenCount` back into
+   `cache_read_input_tokens` (so item 3 is done for Gemini too). Note the shape §1
+   did not anticipate: a managed object is the one caching mode with a **standing**
+   cost — billed per token per hour of storage whether or not anything reads it —
+   so `enabled: false` is the default and an object is created only for a prefix
+   measured over 4096 tokens AND seen again inside its 300 s TTL. See
+   [docs/features/cch-prov-02-gemini-managed-object-cache.md](../features/cch-prov-02-gemini-managed-object-cache.md).
 5. **Ollama**: declare `local` and measure **latency**, not dollars. Prompt-eval time
    with and without a shared prefix is the honest metric for a local model.
    **Done — cch-prov-03.** Measured 2026-08-16 with

@@ -30,3 +30,4 @@
 | Adaptive Chunker | tools/rag/chunker.py | Adaptive chunking: <500 tok whole, >2000 tok sliding window with 10% overlap at sentence boundaries (D-RAG-4) | text, source_type | List[VectorChunk] |
 | Source Registry | tools/rag/source_registry.py | Declarative SOURCE_REGISTRY mapping 20+ source types to tables, columns, priority, chunk strategy | (import) | Registry dict |
 
+| RAG Provenance Ledger | tools/rag/provenance_ledger.py | Writes append-only rag_provenance_ledger rows linking chunk -> source -> retrieval event; owns PROVENANCE_EVENT_TYPES, the source of the event_type CHECK (cef-fnd-05) | (import) record_retrieval, lineage_for_chunk | Rows written / lineage dicts |

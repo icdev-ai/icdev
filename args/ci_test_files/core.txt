@@ -1828,6 +1828,19 @@ tests/test_route_smoke.py
 tests/genesis/test_ingestion_manager_anomaly.py
 tests/test_project_prefix_scope.py
 tests/test_canvas_dedicated_pg_database.py
+
+# hcx-live-02 — args/extension_config.yaml declared a hook_points: block with
+# per-point enabled/allow_modification/max_handlers/timeout_ms for all ten
+# points, and ExtensionManager.dispatch() read NONE of them: the only working
+# kill switch was the global one, which also stops the nine chat handlers in
+# use. Nothing counted a dispatch either, so capability_consumption could not
+# tell a consumed hook point from one never called in the platform's history.
+# The first dispatch under the new telemetry found 081_build_kanban_sync
+# raising TypeError on EVERY chat message since it landed — registered,
+# enabled, and structurally incapable of running, swallowed by
+# catch_handler_exceptions. 23 tests, <1s: isolated managers, no builtins
+# loaded except in the one signature test, SQLite temp file for the telemetry.
+tests/test_extension_dispatch_governance.py
 # hcx-live-01 pins TOOL_EXECUTE_BEFORE to a production dispatcher. The hook
 # point had ten declared siblings and no caller outside tests -- the GATING
 # point, and the whole reason the behavioral tier exists. The seven ordering
@@ -1919,6 +1932,7 @@ tests/test_coherence_log_standard.py
 # function, so router.invoke() returned before ever reaching the telemetry seam.
 # 16 tests, <1s: temp SQLite files only, no network, no shared board.
 tests/test_ai_telemetry_cache_tokens.py
+tests/test_raw_insert_census.py
 # rem-hyg-03: the fire-rate survey that must run BEFORE rem-hyg-04 arms the
 # identity check. Guards the three properties that fail while looking like
 # success — an unmeasurable survey reporting a 0% rate, a gate sentinel counted
@@ -1926,6 +1940,26 @@ tests/test_ai_telemetry_cache_tokens.py
 # findings. 22 tests, <1s, synthetic rows and an injected registry: no board, no
 # network, no LLM.
 tests/test_identity_survey.py
+
+# cch-obs-01 -- per-provider prompt-cache effectiveness, and the four zeroes the
+# single aggregate hit rate merged into one. A provider nobody called, a
+# provider whose transport reports no cache counters, a provider that genuinely
+# cached nothing, and a provider that is not billed at all ALL rendered as
+# "0% / $0.00" on the old card; only the third is a defect. The first three
+# tests are the acceptance criteria (no_data vs a measured zero must differ in
+# status AND in cached_share_pct -- None vs 0.0); the rest hold the rules that
+# keep those states honest against the real provider mix: an unreported
+# transport is never 0%, a local provider shows latency and no dollars,
+# evidence overrides the declared claim, and inclusive vs disjoint token
+# accounting are never summed (doing so double-counts every OpenAI cached
+# token). Also pins that a database with no history reports UNMEASURABLE
+# rather than a wall of fabricated findings, that the route and the home tile
+# preserve the null share instead of coercing it to 0, and that all four states
+# RENDER distinctly -- `no_cache_hits` was absent from the live 7d window the
+# day this shipped, so that branch is proven by a stubbed-parent Jinja render
+# rather than by waiting for a real cache miss. 22 tests, <1s, in-memory sqlite
+# through the real translate_sql: no board, no network, no LLM.
+tests/test_cache_effectiveness_by_provider.py
 tests/ci/test_pr_watcher_budgets.py
 # rem-hyg-04: arming that check behind KANBAN_IDENTITY_CHECK. Gated in the PR
 # that adds it. Every property here fails while looking correct: a kill switch
@@ -1989,9 +2023,264 @@ tests/test_approval_gate_arming.py
 # tmp sqlite file and the chat manager, saver and loader are injected, so no
 # board, no canvas DB, no network, no LLM.
 tests/agent_runtime/test_fork.py
+
+# cch-prov-02: Gemini explicit caching as the managed_object capability —
+# create / reuse / expire a cachedContents object, and the economics gate in
+# front of it (default OFF, size floor, never on a prefix's first sighting).
+# Fake SDK: no vendor package, key, network or DB.
+tests/test_gemini_managed_object_cache.py
 # cch-prov-03: Ollama's prefix cache pays in LATENCY, so the savings card must
 # report "not applicable" for a local provider rather than a dollar figure — it
 # was reporting a fabricated NON-ZERO one ($0.0040 against Anthropic's rate card
 # for inference nobody was billed for). Also pins prompt_eval_ms as None-when-
 # absent. No Ollama process, no network, no DB.
 tests/test_ollama_prefix_latency.py
+# trust-disc-05 (extended to the merge path): pr_watcher must not auto-merge a
+# PR whose work is ALREADY on main under a different number — that merge is a
+# REVERT wearing a feature's clothes (#1651 was -38/+26 on rest_v1.py) and every
+# gate on the board reports green, because every gate asks about the PR.
+# The suite is behavioural: `not merge_calls` under enforce is what proves the
+# check runs BEFORE _auto_merge, and the checked:False/landed:True case is what
+# proves fail-open is read rather than incidental. Regressed three ways
+# (call site deleted / checked ignored / mode ignored); each is caught by a
+# different test. No network, no git, no DB.
+tests/ci/test_pr_watcher_landed.py
+# kax-conflict-11: the union-merge guard for .gitattributes. It was RED on main
+# from the moment trust-disc-03 landed `args/ci_skip_census.txt merge=union`
+# without registering it in _UNION_SAFE_PATHS, and nothing reported that for as
+# long as it sat in args/ci_test_backlog.txt — a guard that gates nothing is the
+# declared-but-unconsumed defect in its purest form. Gated here so it can fail.
+# Runs real git against throwaway repos (no network, no DB); 18 tests, ~9s.
+tests/git/test_manifest_merge_rehearsal.py
+
+# rem-tst-02 — first promotion batch off the ungated census (rem-tst-01).
+#
+# docs/testing/ungated_test_census.json measured all 1,792 grandfathered modules
+# one process each: 1,691 pass ALONE. That number is not a licence to bulk-add —
+# green alone and green in-suite are different questions, and this batch answers
+# both for 25 of them rather than the first for all 1,691.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so a
+# module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one of these is under 1s alone, 93s of pytest for the
+# batch; (c) ZERO static skip sites, because a gated file that skips is unmeasured
+# and registering a new site would breach skip_census.skip_max, which only goes
+# down. Re-measured on this branch on 2026-08-16, not trusted from the census
+# file: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH, 456
+# tests, zero skipped) and green IN-SUITE appended after the existing list in one
+# process, which is the order-dependence half CLAUDE.md requires and the census
+# explicitly does not cover.
+#
+# args/test_gating_gate.yaml's backlog_max falls 1810 -> 1766, which is 44, NOT
+# the 25 moved. The census itself falls by exactly 25 (1,791 -> 1,766); the other
+# 19 is pre-existing HEADROOM being surrendered at the same time. main's ceiling
+# sat 19 above its effective backlog, and that gap is room for the gap to regrow
+# unobserved — the exact thing the "no headroom, deliberately" note in that file
+# says the number is not for. It is re-pinned to EQUAL the effective backlog, as
+# that note specifies, and per the ratchet may only go down from here. Nothing a
+# PR is allowed to do can push the effective count back up: the census only ever
+# shrinks, and a new test file has to be gated here rather than appended to it.
+tests/agent_runtime/test_skills_lifecycle.py
+tests/agent_runtime/test_standing_goals.py
+tests/agent_runtime/test_profile_memory.py
+tests/agent_runtime/test_profiles.py
+tests/agent_runtime/test_safety.py
+tests/agent_toolkit/test_composer.py
+tests/agent_toolkit/test_fs.py
+tests/bi_dashboard/test_db_init.py
+tests/bi_dashboard/test_echarts_adapter.py
+tests/bi_dashboard/test_spec_generator.py
+tests/bi_dashboard/test_end_to_end_flow.py
+tests/bom/test_categorize.py
+tests/bom/test_conformance.py
+tests/test_hook_session_correlation.py
+tests/test_iac_cli.py
+tests/test_idr_conflict_gate.py
+tests/test_kg_entity_resolution.py
+tests/test_kg_llm_relationship_extractor.py
+tests/test_kg_pair_generator.py
+tests/test_kg_themes_by_collection.py
+tests/test_lens_migration_anomaly.py
+tests/test_lens_quality.py
+tests/test_lens_quality_anomaly.py
+tests/test_lens_workflow_patterns_anomaly.py
+tests/test_lesson_learned_kph.py
+
+# rem-tst-03 — second promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02, on the next 25. The census is the shortlist and
+# never the evidence: it answers "green ALONE" for all 1,792 grandfathered
+# modules and says nothing about order-dependence, so both halves were
+# re-measured on this branch on 2026-08-16 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one is under 4s alone, ~16s of pytest for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_agent_mailbox_placeholders.py
+tests/test_integrity_event_emitter.py
+tests/test_lens_workflow_patterns.py
+tests/test_icdev_logger.py
+tests/test_instrumentation.py
+tests/test_integrity_claim_parser.py
+tests/test_news_stream_fetcher.py
+tests/browser/test_get_driver_backend.py
+tests/chat_router/test_url_analyzer_query_wiring.py
+tests/test_iqe_infra_adapter.py
+tests/test_lens_trajectory_confidence.py
+tests/test_network_intelligence.py
+tests/browser/test_page_vv.py
+tests/chat_router/test_intent_classifier_cortex_adoption.py
+tests/ci/test_pr_watcher_enforced_gate.py
+tests/test_evidence_corpus.py
+tests/test_icdev_client.py
+tests/test_iqe_data_adapter.py
+tests/test_iqe_executor.py
+tests/browser/cdp/test_launcher.py
+tests/ci/modules/test_agent.py
+tests/ci/modules/test_state.py
+tests/perf/test_perf_benchmark.py
+tests/test_agent_shap.py
+tests/test_aggregation_guard.py
+# cef-fnd-01: the DataBridge agent broker's audit trail. Promoted OUT of
+# args/ci_test_backlog.txt in the PR that made it pass — the whole point of this
+# change is that an unrecorded access decision must go red, and a test that has
+# never gated a merge cannot do that. Covers: the table's PG-native migration,
+# the SQLite init DDL kept in step with it, and an audit-write failure surfacing
+# instead of being swallowed. No network, no live DB (conftest forces SQLite).
+tests/test_databridge_broker.py
+
+# cef-fnd-02: the docmod NIST publication cache. Gated because the live pull it
+# guards had NEVER landed a row — the CSRC RSS feed it shipped against is retired
+# (HTTP 404) and _fetch_feed reported that as "offline?", so a dead URL and an
+# air-gap were the same observable. These tests pin the four fetch outcomes apart,
+# hold drafts and unrevised publications out of the supersession cache, and keep
+# the offline flag a clean no-op. No network, no live DB (conftest forces SQLite).
+tests/docmod/test_feed_wiring.py
+# rem-tst-04 — third promotion batch off the ungated census (rem-tst-01).
+#
+# Same procedure as rem-tst-02 and rem-tst-03, on the next 25. The census is the
+# shortlist and never the evidence: it answers "green ALONE" for all 1,792
+# grandfathered modules and says nothing about order-dependence, so both halves
+# were re-measured on this branch on 2026-08-17 rather than read off the file.
+#
+# Selection, in order: (a) census status `passed` with a non-zero test count, so
+# a module that collects nothing cannot be promoted as if it were coverage;
+# (b) fastest first — every one under 4.5s alone, 292 tests for the batch;
+# (c) ZERO static skip sites, because a gated file that skips is UNMEASURED, not
+# passing, and registering a new site would breach skip_census.skip_max, which
+# only goes down.
+#
+# Measured: 25/25 green ALONE (one pytest process each, per-file ICDEV_DB_PATH)
+# and 25/25 green IN-SUITE in one process in this list's order — the two
+# directions are different defects and neither run substitutes for the other.
+#
+# args/test_gating_gate.yaml's backlog_max falls by the same 25.
+tests/test_iqe_data_seeds.py
+tests/test_dcpr_anomaly_detector.py
+tests/test_heartbeat_kanban_wakeup.py
+tests/test_iqe_infra_seeds.py
+tests/test_eval_suggestions.py
+tests/test_dic_filters.py
+tests/test_eval_harness_anomaly_detection.py
+tests/test_dcpr_append_only_tables.py
+tests/test_iqe_compliance_seeds.py
+tests/test_govcon_rfi_parser.py
+tests/test_dcpr_ai_mapper_llm.py
+tests/test_iqe_compliance_adapter.py
+tests/test_dic_layout_probe.py
+tests/quality/test_rigor_gates.py
+tests/test_embedding_feasibility.py
+tests/test_pipeline_delta.py
+tests/test_atlas_red_team.py
+tests/test_helm_emitter.py
+tests/test_ingestion_pipeline.py
+tests/ci/test_pr_watcher_unlinked_sweep.py
+tests/test_dwo_mcp_node_type.py
+tests/rag/test_retriever_common.py
+tests/test_alert_service_ai_narrative.py
+tests/test_dwo_event_tables.py
+tests/test_ideation_frames.py
+
+# rem-tst-04, the tool half. Gated in the PR that adds it, per the test-gating
+# policy — the red report is only worth reading if its arithmetic is checked, and
+# a check that never runs in CI cannot do that. Covers the failure-shape
+# classifier (including the two lines that made it wrong: a driver name quoted
+# inside an assertion message, and a table named before the word "table"), the
+# refusal to bucket a line with no usable signature, and the committed
+# docs/testing/ungated_red_modules.md agreeing with the committed census.
+tests/ci/test_ungated_red_report.py
+tests/test_databridge_first_grant.py
+tests/rag/test_provenance_ledger_retrieval.py
+
+# kpr-watch-07. GitHub does not apply `.gitattributes` merge drivers, so a PR
+# that appends to a union-merged path — which CLAUDE.md requires of every PR
+# adding a test file, via this very list — goes DIRTY while merging clean under
+# git. pr_watcher called that whole class a stale forge cache, spent a one-shot
+# budget on it and then went silent: nine of ten open PRs stuck, hcx-evt-03 with
+# 499 escalate rows and AWAITING MERGE never draining. This pins the three-way
+# classification (real / union_only / phantom), that a probe which could not RUN
+# is not read as a conflict, that only the union lines are stripped from the
+# comparison tree, and that the rebase budget is counted per base era.
+tests/ci/test_pr_watcher_union_conflict.py
+
+# Modified by kpr-watch-07, green alone and in-suite, and it carries the
+# structural guards that keep a stale conflict routed to the REBASE rather
+# than to the merge the forge refuses — deletable, until now, without anything
+# going red. Its `importorskip` on a first-party module went with it: that
+# guard could only ever turn a real breakage into a green skip.
+#
+# tests/ci/test_pr_watcher_rebase.py is deliberately NOT gated here. It is
+# green too, but it carries two legitimate environment guards (git absent;
+# suite pinned to SQLite), and registering them would need skip_max raised —
+# which may only go DOWN. Gating it belongs with whatever removes those two.
+tests/ci/test_pr_watcher_stale_conflict_recovery.py
+# cef-fnd-04: the domain-agnostic entity-currency store, and the reason
+# docmod_defacto_standards held 0 rows — its ONLY input, ni_devices, held 0 rows,
+# so the writer ran nightly and had nothing to learn from. Pins the shape, not
+# any vendor: sources are read from config, curated evidence keeps its authority
+# over a fresher feed, disagreement survives to the caller, and inventory vs
+# design evidence is never pooled into one percentage. Temp SQLite DB, no
+# network.
+tests/currency/test_entity_currency.py
+# cch-obs-02: caching that stops working goes red instead of quiet. cch-tel-01
+# made the per-call cache count exist; nothing watched it CHANGE, and a provider
+# that was caching and stops renders identically to one never enabled — both are
+# zero. Gated because the load-bearing half is the NEGATIVE direction: the
+# thresholds were fitted against 79 historical window pairs out of this ledger
+# (0.00% false-fire at 0.7 relative drop; 8.86% at 0.5), and a signal that fires
+# on normal variation is muted within a week, so the "does not fire" cases are
+# what keep it alive — ordinary movement, a swing on traffic too thin to judge, a
+# `local` mechanism that bills nothing back, an undeclared provider, and the
+# BACKFILLED pre-instrumentation zeros that would otherwise indict all 8
+# providers on the live board's 13,073 rows on the first run. Also pins that an
+# empty or unmigrated ledger reports `unmeasurable` rather than a clean bill, and
+# that the reflex is actually dispatched by the daemon rather than merely written
+# — declared-but-unconsumed being the defect this platform ships most.
+# 28 tests, ~1s: temp SQLite files only, no network, no shared board.
+tests/test_cache_regression.py
+
+# kpr-watch-08. The survey that decides whether hold_on_sibling_conflict may
+# be widened to the union-merged paths, and the tie-break narrowing it found.
+# Gated because the survey's whole value is being trustworthy in ONE direction
+# — it must not under-report how much serialization widening would cause — and
+# that rests on details a refactor would quietly break: `*` not crossing `/`,
+# union patterns read from .gitattributes rather than hardcoded, and an
+# unavailable corpus exiting 2 instead of printing a clean report.
+tests/ci/test_sibling_hold_survey.py
+# hcx-evt-03 -- every context injection is recorded as a request_context event.
+# Before this, project_context / goal_context / profile_memory all put text in
+# front of the model and NONE of them left a trace, so the log's coverage claim
+# was only as good as its least-covered injector. Added in the PR that makes it
+# pass. 36 tests, ~6s, no DB and no network: same migration-sourced fixture as
+# test_agent_event_log.py, and the injectors are exercised against a tmp_path
+# repo root rather than the real checkout.
+tests/agent_runtime/test_context_events.py
