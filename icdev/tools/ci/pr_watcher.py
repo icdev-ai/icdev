@@ -52,10 +52,13 @@ import yaml
 
 from tools.ci import error_classifier as ec
 from tools.ci.merge_readiness import (
+    BEHIND_MAIN,
+    DEFAULT_MAX_BEHIND_COMMITS,
     NO_AUTOMERGE_LABELS,
     READY,
     HELD_LABEL,
     classify_merge_readiness,
+    measure_behind_by,
 )
 from tools.kanban.state_machine import KanbanState
 
@@ -163,6 +166,8 @@ def load_config(path: Optional[pathlib.Path] = None) -> dict:
             "auto_merge_enabled": False,
             "auto_merge_require_approval": True,
             "ci_log_max_chars": DEFAULT_CI_LOG_MAX,
+            "refuse_merge_when_behind": True,
+            "max_behind_commits": DEFAULT_MAX_BEHIND_COMMITS,
         }
     with open(p, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
@@ -552,9 +557,17 @@ from tools.git.coordination_paths import (  # noqa: E402,F401
 #: existing importers.
 _NO_AUTOMERGE_LABELS = NO_AUTOMERGE_LABELS
 
+#: `mergeStateStatus` and `headRefOid` are kpr-stale-02. `mergeable` answers
+#: only "does this collide TEXTUALLY", and reports MERGEABLE for a branch
+#: arbitrarily far behind main — so neither this watcher nor the report could
+#: SEE a stale branch, and the CONFLICTING interlock caught only the subset that
+#: happened to collide. `mergeStateStatus` is the forge's own verdict (BEHIND
+#: only where the base branch has `strict` protection, which this repo does NOT
+#: — measured 2026-08-18), and `headRefOid` is what `measure_behind_by` compares
+#: against the base tip to get the count the check actually runs on.
 _GH_JSON_FIELDS = (
-    "state,statusCheckRollup,reviews,mergeable,isDraft,"
-    "headRefName,baseRefName,updatedAt,createdAt,number,url"
+    "state,statusCheckRollup,reviews,mergeable,mergeStateStatus,isDraft,"
+    "headRefName,headRefOid,baseRefName,updatedAt,createdAt,number,url"
 )
 
 
@@ -813,6 +826,7 @@ class PRWatcher:
         default_branch_resolver=None,
         pr_list_runner=None,
         rebase_fn=None,
+        behind_probe=None,
         dry_run: bool = False,
     ):
         self.config = config or load_config()
@@ -825,6 +839,10 @@ class PRWatcher:
         self._auto_merge_runner = auto_merge_runner or subprocess.run
         self._pr_list_runner = pr_list_runner or subprocess.run
         self._rebase_fn = rebase_fn
+        # kpr-stale-02: (base, head sha) -> commits behind, or None for
+        # UNMEASURED. Injectable so tests never touch a live forge.
+        self._behind_probe = behind_probe or measure_behind_by
+        self._behind_cache: Dict[tuple, Optional[int]] = {}
         self._default_branch_resolver = (
             default_branch_resolver or repo_default_branch
         )
@@ -980,6 +998,59 @@ class PRWatcher:
             if shared:
                 conflicts[url] = shared
         return conflicts
+
+    # ── staleness (kpr-stale-02) ────────────────────────────────────
+
+    def _max_behind(self) -> int:
+        return int(self.config.get(
+            "max_behind_commits", DEFAULT_MAX_BEHIND_COMMITS))
+
+    def _behind_by(self, state: dict) -> Optional[int]:
+        """Commits this PR's branch is behind its base. ``None`` = UNMEASURED.
+
+        Cached per (base, head sha) for the life of the watcher, because the
+        answer cannot change without the head sha or the base tip changing, and
+        this is called from a loop that runs every `poll_interval_seconds`.
+        Keyed on the BASE NAME rather than the base sha on purpose: the cache
+        would otherwise never hit, since the base tip moves constantly — and a
+        count that is one or two commits stale still separates a routine branch
+        from a `#1651` (36 behind) by an order of magnitude. The cache is
+        dropped when the process restarts, which `restart_on_code_change`
+        already does on every merged change to this file.
+        """
+        base = (state.get("baseRefName") or "").strip() or self._default_branch()
+        head = (state.get("headRefOid") or "").strip()
+        if not head:
+            return None
+        key = (base, head)
+        if key not in self._behind_cache:
+            self._behind_cache[key] = self._behind_probe(base, head)
+        return self._behind_cache[key]
+
+    def _stale_verdict(self, state: dict) -> Optional[Tuple[int, str]]:
+        """``(behind_by, reason)`` when this PR is TOO FAR BEHIND to merge.
+
+        ``None`` means "do not hold": within the limit, unmeasured, or the check
+        is switched off. Unmeasured is FAIL-OPEN and the callers say so — a
+        forge that cannot answer must not freeze the whole pipeline, and that is
+        the posture `landed_check` already takes for the same class of question.
+        """
+        if not self.config.get("refuse_merge_when_behind", True):
+            return None
+        merge_state = (state.get("mergeStateStatus") or "").strip().upper()
+        limit = self._max_behind()
+        behind = self._behind_by(state)
+        if merge_state == "BEHIND":
+            # The forge will refuse this merge itself; the count is a detail.
+            return (behind if behind is not None else -1,
+                    "the forge reports mergeStateStatus=BEHIND")
+        if behind is not None and behind > limit:
+            return (behind,
+                    "%d commits behind %s (limit %d) -- it merges CLEANLY and "
+                    "would re-apply its diff over a tree that has moved on"
+                    % (behind, (state.get("baseRefName") or "the base branch"),
+                       limit))
+        return None
 
     def _default_branch(self) -> str:
         if self._default_branch_cache is None:
@@ -1816,9 +1887,16 @@ class PRWatcher:
         written to prevent.
 
         The raise sites are the resume cap (`cycle >= max_cycles`), CI that
-        never fired, and a task whose work is ALREADY on the default branch, so
-        all three are negated here. Anything that adds a fourth must negate it
-        here too, or the alert flaps again.
+        never fired, a task whose work is ALREADY on the default branch, and
+        (kpr-stale-02) a branch too far BEHIND the default branch to merge
+        safely whose automatic rebase was declined — so all four are negated
+        here. Anything that adds a fifth must negate it here too, or the alert
+        flaps again.
+
+        The staleness check is asked LAST, and that ordering is a cost decision
+        as much as a correctness one: it is the only condition here that can
+        reach the forge, so it is only ever asked about a PR every cheaper
+        condition has already called recovered.
 
         The already-landed case is the one most able to flap: such a PR is green
         AND MERGEABLE by construction — that is exactly why it is dangerous —
@@ -1833,7 +1911,14 @@ class PRWatcher:
             return False
         if landed and landed.get("checked") and landed.get("landed"):
             return False
-        return not self._ci_never_fired(state)
+        if self._ci_never_fired(state):
+            return False
+        # Same flap shape as the already-landed case above, for the same
+        # reason: a stale branch is green AND MERGEABLE by construction — that
+        # is exactly what makes it dangerous — so every condition above says
+        # "recovered". It stops being true when the branch is rebased, which
+        # changes the head sha and so is re-measured rather than cached.
+        return self._stale_verdict(state) is None
 
     #: Task states after which nothing will poll the task again, so nothing will
     #: ever revisit its alert. `list_pr_tasks` selects only the live states.
@@ -2526,6 +2611,75 @@ class PRWatcher:
                             self._audit(action)
                             continue
 
+                    # BEHIND MAIN (kpr-stale-02). THE SAFETY HOLE, and the
+                    # last gate before the merge because it is the only one
+                    # that costs a forge round-trip — every cheaper refusal
+                    # above has already passed by the time we ask.
+                    #
+                    # `mergeable` is MERGEABLE for a branch arbitrarily far
+                    # behind main so long as nothing collides TEXTUALLY, so the
+                    # CONFLICTING interlock only ever caught the colliding
+                    # subset. The rest merged cleanly and re-applied their diff
+                    # over a tree that had moved on. #1651 was -38/+26 on
+                    # rest_v1.py and 36 commits behind main; a human closed it
+                    # by hand, because nothing here could see it.
+                    # `auto_rebase_on_conflict` is not the answer on its own —
+                    # it repairs a branch that has ALREADY gone DIRTY, which is
+                    # precisely the subset that never had this problem.
+                    #
+                    # THE REPAIR IS THE ONE THAT ALREADY EXISTS. A stale branch
+                    # needs exactly what a conflicted one needs — a rebase onto
+                    # its base — so this reuses `_maybe_rebase` rather than
+                    # inventing a second push path: same ownership refusal
+                    # (kanban/<task-id> only), same per-base-era budget, same
+                    # audit. A branch it declines to touch is held and a human
+                    # is told, which is the honest end state for a PR nobody
+                    # can safely rebase automatically.
+                    stale = self._stale_verdict(state)
+                    if stale is not None:
+                        behind_n, stale_why = stale
+                        logger.warning(
+                            "pr_watcher: refusing auto-merge for %s — %s",
+                            pr_url, stale_why)
+                        self._audit(WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done", action="behind_main_hold",
+                            reason=stale_why[:500], resume_cycle=cycle,
+                        ))
+                        rebase = self._maybe_rebase(task, state)
+                        if rebase.get("pushed"):
+                            # The branch moved, so the head sha changed and CI
+                            # will re-run against it. Next poll re-measures.
+                            self._audit(WatcherAction(
+                                task_id=task["id"], pr_url=pr_url,
+                                classification="done", action="rebase",
+                                reason=("rebased a stale branch onto %s: %s"
+                                        % (base_ref, rebase.get("reason", "")))[:500],
+                                resume_cycle=cycle,
+                            ))
+                        elif not rebase.get("attempted"):
+                            # Nothing automatic can move this branch. A hold
+                            # nobody can see is how work goes quiet, so say so.
+                            self._hitl_alert(
+                                task["id"], pr_url,
+                                "this PR is %s behind %s and merges CLEANLY, so "
+                                "merging it would revert whatever it touches. "
+                                "Automatic rebase declined (%s) — rebase it by "
+                                "hand, or close it."
+                                % ("%d commits" % behind_n if behind_n >= 0
+                                   else "reported BEHIND", base_ref,
+                                   rebase.get("reason", "no reason given")),
+                            )
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification="done", action="wait",
+                            reason=("held: %s" % stale_why)[:500],
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+
                     approved_ok = (
                         not require_approval
                         or ec.is_approved_and_passing(state)
@@ -2968,8 +3122,8 @@ class PRWatcher:
         try:
             proc = self._pr_list_runner(
                 ["gh", "pr", "list", "--state", "open", "--limit", "100", "--json",
-                 "number,url,headRefName,baseRefName,isDraft,mergeable,labels,"
-                 "statusCheckRollup,reviews,state"],
+                 "number,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
+                 "mergeStateStatus,labels,statusCheckRollup,reviews,state"],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=60,
             )
@@ -2996,12 +3150,38 @@ class PRWatcher:
             url = (pr.get("url") or "").strip()
             verdict = classify_merge_readiness(
                 pr, default_branch=default_branch, linked_urls=linked)
+            if verdict.state == READY:
+                # STALENESS IS MEASURED LAST, and only here (kpr-stale-02).
+                # It is the one rung that costs a forge round-trip, so it is
+                # paid for exactly the PRs that were otherwise about to merge —
+                # never for the drafts, the red ones or the task-linked ones.
+                verdict = classify_merge_readiness(
+                    pr, default_branch=default_branch, linked_urls=linked,
+                    behind_by=self._behind_by(pr),
+                    max_behind_commits=self._max_behind(),
+                ) if self.config.get("refuse_merge_when_behind", True) else verdict
             if verdict.state != READY:
                 # The refusals used to be bare `continue`s and so were entirely
                 # invisible; the hold label was the only one that said anything.
                 if verdict.state == HELD_LABEL:
                     logger.info(
                         "pr_watcher: %s carries a hold label — leaving it", url)
+                elif verdict.state == BEHIND_MAIN:
+                    # AND NOTHING ELSE. The unlinked sweep deliberately never
+                    # pushes — it has no task to carry the state and no claim on
+                    # the branch, so rebasing somebody's PR here would be the
+                    # sweep exceeding its own charter. Report it, audit it,
+                    # leave it for whoever opened it. (A kanban/* branch takes
+                    # the linked path below, which DOES rebase.)
+                    logger.warning(
+                        "pr_watcher: %s is green and MERGEABLE but %s — "
+                        "refusing to merge it; a human should rebase it",
+                        url, verdict.reason)
+                    self._audit(WatcherAction(
+                        task_id="", pr_url=url, classification="done",
+                        action="behind_main_hold", reason=verdict.reason[:500],
+                        resume_cycle=0,
+                    ))
                 else:
                     logger.debug("pr_watcher: not merging %s — %s: %s",
                                  url or "<no url>", verdict.state, verdict.reason)

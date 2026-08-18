@@ -21,8 +21,21 @@ copy of this ladder anywhere.
 
 PURITY. ``classify_merge_readiness`` does no I/O: no subprocess, no database, no
 network, no clock, no LLM. It takes the parsed ``gh pr list --json`` dict plus
-the two facts the ladder needed from outside (the default branch, and the set of
-PR urls a kanban task already points at) and returns ``(state, reason)``.
+the facts the ladder needed from outside (the default branch, the set of PR urls
+a kanban task already points at, and — kpr-stale-02 — how many commits behind
+its base the branch is) and returns ``(state, reason)``. The one measurement
+that cannot come from the PR json lives in ``measure_behind_by``, deliberately
+OUTSIDE the table, so the table stays a pure function of its inputs.
+
+STALENESS (kpr-stale-02) is the rung that was missing. Every other rung reads a
+field the forge hands over for free, and none of them asked how far behind the
+branch was: ``mergeable`` is MERGEABLE for a branch arbitrarily far behind main
+so long as nothing collides TEXTUALLY. The CONFLICTING interlock therefore only
+ever caught the colliding subset; the non-conflicting subset merged cleanly and
+re-applied its diff over a tree that had moved on. Both consumers refuse it now,
+and they differ ONLY in the repair: the watcher rebases a ``kanban/*`` branch
+it owns, while the unlinked sweep reports and leaves the branch alone (it never
+pushes, by design).
 
 ORDER IS THE LADDER'S ORDER, deliberately. Which refusal a blocked PR reports is
 a choice, and the honest choice is the one the merger actually makes first — so
@@ -61,6 +74,7 @@ AWAITING_CI = "awaiting_ci"
 CI_FAILED = "ci_failed"
 NO_CHECKS = "no_checks"
 CHANGES_REQUESTED = "changes_requested"
+BEHIND_MAIN = "behind_main"
 LINKED = "linked"
 UNKNOWN = "unknown"
 
@@ -68,12 +82,24 @@ UNKNOWN = "unknown"
 #: because it is the degenerate case (a PR record with no url), not a rung.
 MERGE_STATES: tuple = (
     MERGED, LINKED, DRAFT, HELD_LABEL, WRONG_BASE, CONFLICTING,
-    NO_CHECKS, CI_FAILED, AWAITING_CI, CHANGES_REQUESTED, READY, UNKNOWN,
+    NO_CHECKS, CI_FAILED, AWAITING_CI, CHANGES_REQUESTED, BEHIND_MAIN,
+    READY, UNKNOWN,
 )
 
 #: States in which the pipeline is waiting on something OTHER than a human
 #: decision about this PR's content. Used by the report's summary line.
-BLOCKED_ON_AUTOMATION = frozenset({AWAITING_CI, CONFLICTING, CI_FAILED, NO_CHECKS})
+#: ``behind_main`` is here because the repair is a rebase, which the watcher
+#: performs itself for a ``kanban/*`` branch.
+BLOCKED_ON_AUTOMATION = frozenset(
+    {AWAITING_CI, CONFLICTING, CI_FAILED, NO_CHECKS, BEHIND_MAIN})
+
+#: How many commits a branch may sit behind the default branch and still be
+#: merged. kpr-stale-02: `mergeable` is MERGEABLE for a branch arbitrarily far
+#: behind main so long as nothing collides TEXTUALLY, so the CONFLICTING
+#: interlock only ever caught the colliding subset. The default is overridden
+#: from ``max_behind_commits`` in args/pr_watcher_config.yaml, where the
+#: measured distribution that chose it is recorded.
+DEFAULT_MAX_BEHIND_COMMITS = 10
 
 #: A human may open a PR to discuss rather than to land, and the cost of
 #: guessing wrong is a merge nobody asked for — so the escape hatch is cheap,
@@ -105,6 +131,8 @@ def classify_merge_readiness(
     *,
     default_branch: str,
     linked_urls: Iterable[str] = (),
+    behind_by: Optional[int] = None,
+    max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
 ) -> MergeReadiness:
     """Why is this PR not merging? Pure — no I/O, no clock, no LLM.
 
@@ -129,6 +157,16 @@ def classify_merge_readiness(
       ``conflicting`` STATE, because the merger refuses both identically and
       the state must not claim otherwise, but the ``reason`` names which it was
       so nobody rebases a branch that has no conflict.
+    * ``behind_main`` (the branch is stale but merges cleanly) is not
+      ``conflicting`` (it is stale AND collides). Same cause, opposite
+      visibility: the forge refuses the second and cheerfully merges the first.
+
+    ``behind_by`` is the number of commits on ``default_branch`` that this
+    branch does not have — ``measure_behind_by`` below computes it, or pass
+    ``None`` when it could not be measured. ``None`` is FAIL-OPEN and never
+    silent: it is not a finding, and the caller is told the count is absent
+    rather than being handed a reassuring zero. That is the posture
+    ``landed_check`` already takes for the same question one layer up.
     """
     linked = {(u or "").strip() for u in linked_urls}
     url = (pr.get("url") or "").strip()
@@ -197,7 +235,148 @@ def classify_merge_readiness(
         return MergeReadiness(
             CHANGES_REQUESTED, "a reviewer requested changes")
 
-    return MergeReadiness(READY, "green, mergeable and unblocked")
+    # ── STALE (kpr-stale-02) ────────────────────────────────────────────────
+    # THE SAFETY HOLE. Every rung above reads a field GitHub hands over for
+    # free, and none of them asks the one question that matters here: how far
+    # behind the default branch is this? `mergeable` answers "does it collide
+    # TEXTUALLY", which is MERGEABLE for a branch arbitrarily far behind main.
+    # So a green, mergeable, months-old branch merged cleanly and re-applied
+    # its whole diff over a tree that had moved on — a revert wearing a
+    # feature's clothes. #1651 was -38/+26 on rest_v1.py and 36 commits behind
+    # main when a human closed it by hand; nothing in this ladder saw it.
+    # `auto_rebase_on_conflict` repairs a branch that has ALREADY gone DIRTY,
+    # which is exactly the subset that never had this problem.
+    #
+    # LAST RUNG ON PURPOSE, and it is the one placement decision here that is
+    # not free. Every rung above reads the `gh pr list --json` record the
+    # caller already has; this one needs a count nobody gets for free (see
+    # `measure_behind_by`). Putting it last means the merger only pays for it
+    # once every cheaper refusal has passed — and the module docstring's rule
+    # is that the report describes the merger's OWN order, so the rung goes
+    # where the merger actually asks. A red-CI branch that is also stale is
+    # reported `ci_failed`, which is true and is what the merger saw first.
+    #
+    # TWO SIGNALS, and the forge's own is not the load-bearing one.
+    # `mergeStateStatus == BEHIND` is authoritative when it appears — GitHub
+    # will refuse the merge outright — but it appears ONLY when the base
+    # branch has "require branches to be up to date" (`required_status_checks.
+    # strict`) turned on. Measured on this repo 2026-08-18: strict is FALSE, so
+    # mergeStateStatus is CLEAN for a branch 200 commits behind and keying the
+    # check on it alone would build a gate that can never fire. The measured
+    # count is therefore the real check, and the forge verdict is the belt.
+    merge_state = (pr.get("mergeStateStatus") or "").strip().upper()
+    if merge_state == "BEHIND":
+        return MergeReadiness(
+            BEHIND_MAIN,
+            "the forge reports mergeStateStatus=BEHIND -- %s requires branches "
+            "to be up to date, so this merge is refused until it is rebased"
+            % default_branch)
+    if behind_by is not None and behind_by > max_behind_commits:
+        return MergeReadiness(
+            BEHIND_MAIN,
+            "%d commits behind %s (limit %d) -- it merges CLEANLY and would "
+            "re-apply its diff over a tree that has moved on; rebase it"
+            % (behind_by, default_branch, max_behind_commits))
+
+    if behind_by is None:
+        # Not a refusal — but the reason must not claim a freshness nobody
+        # measured. A silent fail-open is how the hole stayed open.
+        return MergeReadiness(
+            READY, "green, mergeable and unblocked (staleness UNMEASURED)")
+    return MergeReadiness(
+        READY, "green, mergeable and %d commit(s) behind %s -- within the "
+        "limit of %d" % (behind_by, default_branch, max_behind_commits))
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Measuring staleness — the ONE impure part, kept out of the table
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def measure_behind_by(
+    base: str,
+    head: str,
+    *,
+    runner=None,
+    gh_bin: str = "gh",
+    repo: Optional[str] = None,
+    timeout: int = 30,
+) -> Optional[int]:
+    """How many commits on ``base`` is ``head`` missing? ``None`` if unmeasured.
+
+    ``head`` should be a SHA (``headRefOid``) rather than a branch name: a sha
+    survives a branch rename, a delete-on-merge and a re-push, and it is what
+    the forge's own verdict was computed against.
+
+    WHY THE FORGE AND NOT LOCAL GIT. A local ``git rev-list`` needs both objects
+    present and an ``origin/<base>`` that is actually current, and this runs
+    from worktrees, from CI checkouts and from a daemon that may not have
+    fetched in hours. A stale local ``origin/main`` UNDERSTATES how far behind a
+    branch is, which is the one direction that fails silently — it would report
+    a stale branch as fresh. ``/compare`` is computed by the forge against the
+    real tip.
+
+    NEVER RAISES, and ``None`` is not zero. A missing gh, a fork PR whose head
+    sha the base repo cannot resolve, a rate limit — all report "unmeasured", and
+    every caller is required to keep that distinct from "measured as fresh".
+    """
+    base = (base or "").strip()
+    head = (head or "").strip()
+    if not base or not head:
+        return None
+    if runner is None:
+        runner = subprocess.run
+    slug = repo or "{owner}/{repo}"   # gh substitutes from the current remote
+    # per_page=1 because the compare payload embeds up to 250 commits and every
+    # changed file, and the only field wanted is a single integer.
+    path = "repos/%s/compare/%s...%s?per_page=1" % (slug, base, head)
+    try:
+        proc = runner(
+            [gh_bin, "api", path, "--jq", ".behind_by"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout,
+        )
+    except Exception:  # noqa: BLE001 — unmeasured, never a crash in the poll
+        return None
+    if getattr(proc, "returncode", 1) != 0:
+        return None
+    try:
+        return int((getattr(proc, "stdout", "") or "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def measure_behind_map(
+    prs: Iterable[Dict[str, Any]],
+    *,
+    default_branch: str,
+    runner=None,
+    gh_bin: str = "gh",
+    repo: Optional[str] = None,
+) -> Dict[str, Optional[int]]:
+    """``url -> behind_by`` for each PR, measured against its OWN base.
+
+    Measured against ``baseRefName``, falling back to ``default_branch``: a PR
+    onto a release branch is stale relative to THAT branch, and comparing it to
+    main would invent a number describing a merge nobody proposed. (The
+    ``wrong_base`` rung refuses it long before this anyway.)
+
+    Deduplicated by ``(base, head sha)`` so two PRs on one sha cost one call.
+    """
+    out: Dict[str, Optional[int]] = {}
+    cache: Dict[tuple, Optional[int]] = {}
+    for pr in prs:
+        url = (pr.get("url") or "").strip()
+        if not url:
+            continue
+        base = (pr.get("baseRefName") or "").strip() or default_branch
+        head = (pr.get("headRefOid") or "").strip()
+        key = (base, head)
+        if key not in cache:
+            cache[key] = measure_behind_by(
+                base, head, runner=runner, gh_bin=gh_bin, repo=repo)
+        out[url] = cache[key]
+    return out
 
 
 def _check_name(check: Dict[str, Any]) -> str:
@@ -223,8 +402,12 @@ def _pending_names(rollup: List[Dict[str, Any]]) -> str:
 # Report — READ ONLY. Nothing below merges, pushes, un-drafts or closes.
 # ────────────────────────────────────────────────────────────────────────────
 
-_GH_FIELDS = ("number,url,title,headRefName,baseRefName,isDraft,mergeable,"
-              "labels,statusCheckRollup,reviews,state,updatedAt")
+#: `mergeStateStatus` and `headRefOid` are kpr-stale-02: the first is the
+#: forge's own staleness verdict (free, but only ever BEHIND on a base branch
+#: with `strict` protection), the second is what `measure_behind_by` compares.
+_GH_FIELDS = ("number,url,title,headRefName,headRefOid,baseRefName,isDraft,"
+              "mergeable,mergeStateStatus,labels,statusCheckRollup,reviews,"
+              "state,updatedAt")
 
 
 def list_open_prs(*, runner=None, limit: int = 100,
@@ -269,18 +452,29 @@ def build_report(
     default_branch: str,
     linked_urls: Iterable[str] = (),
     linked_lookup_ok: bool = True,
+    behind_by_url: Optional[Dict[str, Optional[int]]] = None,
+    max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
 ) -> Dict[str, Any]:
-    """Classify every PR. Pure — takes data, returns data."""
+    """Classify every PR. Pure — takes data, returns data.
+
+    ``behind_by_url`` maps PR url -> commits behind base, as
+    ``measure_behind_map`` returns it. A url absent from the mapping, or
+    mapped to ``None``, is UNMEASURED — reported as such and never as fresh.
+    """
     linked = frozenset((u or "").strip() for u in linked_urls)
+    behind_map = dict(behind_by_url or {})
     rows: List[Dict[str, Any]] = []
     counts: Dict[str, int] = {}
     for pr in prs:
+        url = (pr.get("url") or "").strip()
+        behind = behind_map.get(url)
         verdict = classify_merge_readiness(
-            pr, default_branch=default_branch, linked_urls=linked)
+            pr, default_branch=default_branch, linked_urls=linked,
+            behind_by=behind, max_behind_commits=max_behind_commits)
         counts[verdict.state] = counts.get(verdict.state, 0) + 1
         rows.append({
             "number": pr.get("number"),
-            "url": (pr.get("url") or "").strip(),
+            "url": url,
             "title": pr.get("title") or "",
             "head": pr.get("headRefName") or "",
             "base": pr.get("baseRefName") or "",
@@ -288,10 +482,15 @@ def build_report(
             "reason": verdict.reason,
             "ready": verdict.ready,
             "mergeable": (pr.get("mergeable") or "").upper(),
+            "merge_state_status": (pr.get("mergeStateStatus") or "").upper(),
+            # None, never 0 — an unmeasured branch and a branch measured level
+            # with main are different facts and only one of them is evidence.
+            "behind_by": behind,
+            "behind_measured": behind is not None,
             "is_draft": bool(pr.get("isDraft")),
             "labels": sorted((lbl.get("name") or "").strip()
                              for lbl in (pr.get("labels") or [])),
-            "linked": (pr.get("url") or "").strip() in linked,
+            "linked": url in linked,
         })
     rows.sort(key=lambda r: (r["state"] != READY, r["number"] or 0))
     return {
@@ -300,6 +499,8 @@ def build_report(
         # so every PR is classified on its own merits and the caller is told.
         "linked_lookup_ok": bool(linked_lookup_ok),
         "linked_count": len(linked),
+        "max_behind_commits": int(max_behind_commits),
+        "behind_measured_count": sum(1 for r in rows if r["behind_measured"]),
         "total": len(rows),
         "ready": counts.get(READY, 0),
         "counts": dict(sorted(counts.items())),
@@ -320,15 +521,24 @@ def render_table(report: Dict[str, Any]) -> str:
     if not report["prs"]:
         return "\n".join(lines)
     lines.append("")
-    lines.append("%-7s %-18s %-38s %s" % ("PR", "STATE", "BRANCH", "REASON"))
-    lines.append("%-7s %-18s %-38s %s" % ("-" * 7, "-" * 18, "-" * 38, "-" * 40))
+    lines.append("%-7s %-14s %-7s %-32s %s"
+                 % ("PR", "STATE", "BEHIND", "BRANCH", "REASON"))
+    lines.append("%-7s %-14s %-7s %-32s %s"
+                 % ("-" * 7, "-" * 14, "-" * 7, "-" * 32, "-" * 40))
     for row in report["prs"]:
-        lines.append("%-7s %-18s %-38s %s" % (
-            "#%s" % row["number"], row["state"],
-            (row["head"] or "?")[:38], row["reason"]))
+        # "?" not "0" -- an unmeasured branch must not read as an up-to-date one.
+        behind = "?" if row.get("behind_by") is None else str(row["behind_by"])
+        lines.append("%-7s %-14s %-7s %-32s %s" % (
+            "#%s" % row["number"], row["state"], behind,
+            (row["head"] or "?")[:32], row["reason"]))
     lines.append("")
     lines.append("by state: " + ", ".join(
         "%s=%d" % (k, v) for k, v in report["counts"].items()) or "by state: -")
+    lines.append(
+        "staleness: refused above %d commit(s) behind %s; measured for %d of %d PR(s)"
+        % (report.get("max_behind_commits", DEFAULT_MAX_BEHIND_COMMITS),
+           report["default_branch"], report.get("behind_measured_count", 0),
+           report["total"]))
     return "\n".join(lines)
 
 
@@ -355,6 +565,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--from-json", default=None, metavar="PATH",
                         help="classify a saved `gh pr list --json` file instead "
                              "of calling gh (offline / parity checking)")
+    parser.add_argument("--max-behind", type=int, default=None, metavar="N",
+                        help="commits behind the base branch above which a PR is "
+                             "refused as behind_main (default: max_behind_commits "
+                             "in args/pr_watcher_config.yaml)")
+    parser.add_argument("--no-measure-behind", action="store_true",
+                        help="skip the /compare call; every PR then reports its "
+                             "staleness as UNMEASURED rather than as fresh")
     args = parser.parse_args(argv)
 
     if args.state:
@@ -389,8 +606,28 @@ def main(argv: Optional[List[str]] = None) -> int:
         linked, linked_lookup_ok = frozenset(), False
         print("warning: kanban board unreadable (%s)" % exc, file=sys.stderr)
 
+    max_behind = args.max_behind
+    if max_behind is None:
+        max_behind = _configured_max_behind()
+
+    # TWO PHASES, because the staleness rung is the only one that costs a forge
+    # round-trip. Classify with what `gh pr list` already gave us, then measure
+    # ONLY the PRs that came back `ready` -- those are the ones whose verdict a
+    # behind-count can still change, and the ones the merger would act on. The
+    # rest keep the refusal the merger reached first.
     report = build_report(prs, default_branch=default_branch,
-                          linked_urls=linked, linked_lookup_ok=linked_lookup_ok)
+                          linked_urls=linked, linked_lookup_ok=linked_lookup_ok,
+                          max_behind_commits=max_behind)
+    if not args.no_measure_behind:
+        ready_urls = {r["url"] for r in report["prs"] if r["state"] == READY}
+        if ready_urls:
+            behind = measure_behind_map(
+                [pr for pr in prs if (pr.get("url") or "").strip() in ready_urls],
+                default_branch=default_branch)
+            report = build_report(
+                prs, default_branch=default_branch, linked_urls=linked,
+                linked_lookup_ok=linked_lookup_ok, behind_by_url=behind,
+                max_behind_commits=max_behind)
     if args.state:
         wanted = set(args.state)
         report["prs"] = [r for r in report["prs"] if r["state"] in wanted]
@@ -401,6 +638,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         print(render_table(report))
     return 0
+
+
+def _configured_max_behind() -> int:
+    """``max_behind_commits`` from the watcher config, so the report and the
+    merger cannot hold two different thresholds. Falls back to the module
+    default when the file is unreadable — never to "no limit"."""
+    try:
+        import yaml  # noqa: PLC0415 — optional at import time
+
+        raw = yaml.safe_load(
+            (REPO_ROOT / "args" / "pr_watcher_config.yaml").read_text(
+                encoding="utf-8")) or {}
+        return int(raw.get("max_behind_commits", DEFAULT_MAX_BEHIND_COMMITS))
+    except Exception:  # noqa: BLE001
+        return DEFAULT_MAX_BEHIND_COMMITS
 
 
 def _fail(as_json: bool, message: str) -> int:
