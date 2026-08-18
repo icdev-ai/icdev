@@ -66,6 +66,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -454,26 +455,72 @@ def probe_mcp_dispatch_tool(conn, since: datetime, threshold: int, max_listed: i
 
 
 def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed: int) -> ClassResult:
-    """Tools the approval policy enumerates by tier vs. gate decisions recorded."""
+    """Tools the approval policy REQUIRES APPROVAL FOR vs. gate decisions recorded.
+
+    Two narrowings, both rem-cap-05, both because the naive reading of this class
+    could never reach zero even with a perfectly wired gate.
+
+    1. ``declared`` is scoped to the tiers in ``require_approval_tiers``. The hook
+       ``build_approval_hook`` returns early for a call that does not require
+       approval (approval_gate.py, "allowed without ceremony and without a row"),
+       which is the right design for an audit trail of DECISIONS — but it means
+       the 37 tools in the ``reversible``/``recoverable`` tiers could be
+       classified ten thousand times a day and ``agent_approval_log`` would still
+       hold nothing for any of them. Counting them as declared-and-inert made a
+       working gate indistinguishable from an absent one, in the direction that
+       pins the budget at >= 37 forever. They are reported in
+       ``extra.not_measurable_by_design``, ENUMERATED rather than merely counted,
+       so a tier change or a policy edit is visible — a class that quietly shrank
+       its own denominator would be the same dishonesty pointed the other way.
+       The tier list is read from the policy, never hardcoded: an operator who
+       adds ``recoverable`` to ``require_approval_tiers`` moves those 13 tools
+       into the measurable set on the next run.
+
+    2. Events are filtered on ``tier``. ``tools/quality/hitl_delta.py``
+       legitimately reuses ``record_decision()`` and this table for a different
+       kind of decision (tiers ``review`` / ``trust_delta``, rules
+       ``claim_guard`` / ``hitl_delta``) — tiers ``classify()`` can never emit.
+       The probe previously reported zero only because those rows' ``tool_name``
+       values happened not to collide with a policy-enumerated tool; a collision
+       would have reported FALSE consumption for a gate that has never run.
+    """
     res = ClassResult(
         capability_class="agent_approval_rule",
-        declaration_source="args/agent_approval_policy.yaml (tools.*)",
-        telemetry_table="agent_approval_log",
+        declaration_source="args/agent_approval_policy.yaml (tools.* in require_approval_tiers)",
+        telemetry_table="agent_approval_log (tier IN approval_gate.TIERS)",
     )
     try:
         from tools.agent_runtime.approval_gate import TIERS, load_policy
 
         policy = load_policy()
         tools_by_tier = policy.get("tools") or {}
+        require = {
+            str(t).strip().lower() for t in (policy.get("require_approval_tiers") or [])
+        }
+        measurable = tuple(t for t in TIERS if t in require)
         declared = [
             str(name).lower()
-            for tier in TIERS
+            for tier in measurable
             for name in (tools_by_tier.get(tier) or [])
         ]
+        excluded_by_tier = {
+            tier: sorted({str(n).lower() for n in (tools_by_tier.get(tier) or [])})
+            for tier in TIERS
+            if tier not in require and (tools_by_tier.get(tier) or [])
+        }
     except Exception as exc:  # noqa: BLE001
         return _unmeasured(
             "agent_approval_rule", res.declaration_source, res.telemetry_table,
             f"declaration source unreadable: {exc}",
+        )
+
+    if not measurable:
+        # No tier requires approval, so the hook records nothing for any tool.
+        # Reporting a clean 0 declared / 0 inert here would launder a gate that
+        # cannot write a row into a gate with nothing left to prove.
+        return _unmeasured(
+            "agent_approval_rule", res.declaration_source, res.telemetry_table,
+            "require_approval_tiers is empty — no call can produce a decision row",
         )
 
     from tools.db.storage import table_exists
@@ -483,8 +530,20 @@ def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed:
             "agent_approval_rule", res.declaration_source, res.telemetry_table,
             "agent_approval_log does not exist",
         )
+    if _column_type(conn, "agent_approval_log", "tier") is None:
+        # Without the discriminator the count cannot exclude hitl_delta's rows,
+        # and an over-count here reads as a live gate. Say so instead.
+        return _unmeasured(
+            "agent_approval_rule", res.declaration_source, res.telemetry_table,
+            "agent_approval_log has no tier column — consumption is indistinguishable "
+            "from other record_decision() writers",
+        )
     try:
-        counts = _count_by_key(conn, "agent_approval_log", "tool_name", "decided_at", since)
+        counts = _count_by_key(
+            conn, "agent_approval_log", "tool_name", "decided_at", since,
+            extra_sql="AND LOWER(tier) IN (" + ", ".join(["%s"] * len(TIERS)) + ")",
+            extra_params=tuple(TIERS),
+        )
     except Exception as exc:  # noqa: BLE001
         _rollback(conn)
         return _unmeasured(
@@ -492,7 +551,22 @@ def probe_agent_approval_rule(conn, since: datetime, threshold: int, max_listed:
             f"query failed: {exc}",
         )
     counts = {str(k).lower(): v for k, v in counts.items()}
-    return _finish(res, declared, counts, threshold, max_listed)
+    res = _finish(res, declared, counts, threshold, max_listed)
+    excluded_flat = sorted({n for names in excluded_by_tier.values() for n in names})
+    res.extra["require_approval_tiers"] = sorted(require)
+    res.extra["not_measurable_by_design"] = {
+        "count": len(excluded_flat),
+        "tiers": sorted(excluded_by_tier),
+        "tools_by_tier": {
+            tier: names[:max_listed] for tier, names in sorted(excluded_by_tier.items())
+        },
+        "truncated": any(len(names) > max_listed for names in excluded_by_tier.values()),
+        "why": (
+            "build_approval_hook auto-allows a tier outside require_approval_tiers "
+            "without writing a row; these tools can never appear in agent_approval_log"
+        ),
+    }
+    return res
 
 
 def probe_mcp_tool_authorization(
@@ -800,6 +874,122 @@ def probe_skill_optimizer(conn, since: datetime, threshold: int, max_listed: int
     return res
 
 
+#: Where the hook-point enum lives. Read with ``ast`` rather than imported: the
+#: module creates its singleton at import time and the singleton auto-loads the
+#: nine chat builtins, which pull in RAG, Bayesian learning and the genesis
+#: status reader. ``check_capability_liveness`` runs this twice per commit, so a
+#: measurement tool must not execute eleven extension modules to count ten
+#: names — and a builtin that failed to import would turn a count into an
+#: unmeasurable, which is a reading about the importer, not about the seam.
+_EXTENSION_MANAGER_SRC = "tools/extensions/extension_manager.py"
+
+
+def _extension_points_from_source() -> List[str]:
+    """The ``ExtensionPoint`` enum's values, parsed without importing it."""
+    tree = ast.parse(
+        _repo_file(_EXTENSION_MANAGER_SRC).read_text(encoding="utf-8")
+    )
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ClassDef) and node.name == "ExtensionPoint"):
+            continue
+        values = []
+        for stmt in node.body:
+            if (
+                isinstance(stmt, ast.Assign)
+                and isinstance(stmt.value, ast.Constant)
+                and isinstance(stmt.value.value, str)
+            ):
+                values.append(stmt.value.value)
+        return values
+    raise ValueError("ExtensionPoint enum not found")
+
+
+def probe_extension_hook_point(
+    conn, since: datetime, threshold: int, max_listed: int
+) -> ClassResult:
+    """Extension hook points declared vs. dispatches actually recorded.
+
+    The seam ``args/extension_config.yaml`` declares ten points for. Until
+    hcx-live-02 nothing counted a dispatch anywhere, so "this point is consumed"
+    and "this point has never been called in the platform's history" were the
+    same reading — and eight of the ten have no dispatch call site at all.
+
+    Declared units are points present in BOTH the enum and an enabled config
+    block, for the same reason ``probe_reflex`` requires both halves: a point
+    the config disables is stood down on purpose and is not the defect, and a
+    config key with no matching enum member can never be dispatched at all.
+    Both exclusions are reported in ``extra`` rather than dropped silently.
+    """
+    res = ClassResult(
+        capability_class="extension_hook_point",
+        declaration_source="ExtensionPoint x args/extension_config.yaml (hook_points)",
+        telemetry_table="runtime_invocations (surface='extension')",
+    )
+    try:
+        import yaml
+
+        enum_points = _extension_points_from_source()
+        cfg = yaml.safe_load(
+            _repo_file("args/extension_config.yaml").read_text(encoding="utf-8")
+        ) or {}
+        points_cfg = ((cfg.get("extensions") or {}).get("hook_points") or {})
+    except Exception as exc:  # noqa: BLE001
+        return _unmeasured(
+            "extension_hook_point", res.declaration_source, res.telemetry_table,
+            f"declaration source unreadable: {exc}",
+        )
+
+    def _point_enabled(name: str) -> bool:
+        block = points_cfg.get(name)
+        # An absent block is the permissive default dispatch() itself applies.
+        return not isinstance(block, dict) or block.get("enabled") is not False
+
+    declared = [p for p in enum_points if _point_enabled(p)]
+    res.extra["enum_points_total"] = len(enum_points)
+    res.extra["disabled_in_config"] = sorted(
+        p for p in enum_points if not _point_enabled(p)
+    )[:max_listed]
+    # A hook_points key naming no enum member configures a point that cannot be
+    # dispatched — declared-but-unconsumable, one notch worse than inert.
+    res.extra["config_points_not_in_enum"] = sorted(
+        set(points_cfg) - set(enum_points)
+    )[:max_listed]
+
+    from tools.db.storage import table_exists
+
+    if not table_exists(conn, "runtime_invocations"):
+        return _unmeasured(
+            "extension_hook_point", res.declaration_source, res.telemetry_table,
+            "runtime_invocations does not exist",
+        )
+    try:
+        counts = _count_by_key(
+            conn, "runtime_invocations", "name", "started_at", since,
+            extra_sql="AND surface = %s", extra_params=("extension",),
+        )
+        failed = _count_by_key(
+            conn, "runtime_invocations", "name", "started_at", since,
+            extra_sql="AND surface = %s AND status = %s",
+            extra_params=("extension", "error"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        return _unmeasured(
+            "extension_hook_point", res.declaration_source, res.telemetry_table,
+            f"query failed: {exc}",
+        )
+
+    res = _finish(res, declared, counts, threshold, max_listed)
+    # A dispatch whose handler raised is still a dispatch — it counts as
+    # consumption. It is reported separately because a point that only ever
+    # fails is consumed and broken, and the two readings must not cancel out.
+    res.extra["failed_dispatch_events"] = sum(failed.get(p, 0) for p in set(declared))
+    res.extra["points_with_failures"] = sorted(
+        p for p in declared if failed.get(p, 0) > 0
+    )[:max_listed]
+    return res
+
+
 PROBES: Dict[str, Callable[..., ClassResult]] = {
     "reflex": probe_reflex,
     "mcp_dispatch_tool": probe_mcp_dispatch_tool,
@@ -808,6 +998,7 @@ PROBES: Dict[str, Callable[..., ClassResult]] = {
     "prompt_template": probe_prompt_template,
     "audit_chain": probe_audit_chain,
     "skill_optimizer": probe_skill_optimizer,
+    "extension_hook_point": probe_extension_hook_point,
 }
 
 

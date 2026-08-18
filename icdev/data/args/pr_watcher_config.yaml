@@ -39,6 +39,21 @@ ci_log_max_chars: 4000
 # sibling). A rebase with real conflicts aborts, pushes nothing, and escalates
 # exactly as before. Rebase attempts are counted separately from resumes, so
 # this never eats into the resume budget.
+#
+# THE CAP IS PER BASE ERA, NOT PER PR LIFETIME (kpr-watch-07).
+# Two attempts is right for a verdict that goes stale once and wrong for a
+# conflict that RECURS. GitHub does not apply `.gitattributes` merge drivers, so
+# every PR that appends to a union-merged path — `args/ci_test_files/core.txt`
+# above all, which CLAUDE.md requires of every PR adding a test file — is
+# reported CONFLICTING again each time main appends to the same file. A rebase
+# clears it every time, by writing the union resolution into the branch. With a
+# lifetime cap the PR ran out after two and could never take the one action that
+# works: measured 2026-08-17, nine of ten open PRs were DIRTY, hcx-evt-03 had
+# spent its budget the previous afternoon and had 499 `escalate` rows, and a
+# rebase run by hand flipped five of them to MERGEABLE in seconds.
+# `_rebase_attempts` therefore discounts attempts spent against a DIFFERENT base
+# sha. Attempts against the current base still count, so a genuinely stuck PR is
+# still capped at this number and cannot rebase on every poll.
 auto_rebase_on_conflict: true
 max_rebase_attempts_per_task: 2
 
@@ -64,6 +79,32 @@ max_rebase_attempts_per_task: 2
 # below is the repair path; this is the prevention, and prevention is cheaper.
 sibling_conflict_check: true
 hold_on_sibling_conflict: true
+
+# Already-on-main guard (trust-disc-05, extended to the merge path).
+# The board tracks task -> PR. Nothing checked task -> MAIN, and those are
+# different questions: a PR whose work already merged under a different number
+# stays green, stays MERGEABLE, and merging it re-applies a diff against a
+# branch that has moved on. #1651 was -38/+26 on rest_v1.py — merging it would
+# have DELETED 38 lines main currently has. Every gate on the board said green,
+# because every gate on the board asks about the PR.
+#
+# `tools.kanban.landed_check` already answers this and is already consulted at
+# SEED time (task_factory) and DISPATCH time (reflexes/kanban.py). This wires
+# the third moment — one `git log --grep` for the whole batch, once per cycle,
+# same shape as the sibling map above.
+#
+# POSTURE. Warn + audit always; the HOLD is opt-in via KANBAN_LANDED_CHECK=enforce,
+# reusing landed_check's own switch rather than inventing a second one. Surveyed
+# at THIS call site before wiring (the earlier survey measured the dispatch
+# population and does not transfer): 2026-08-16, the 6 task-linked open PRs the
+# merge path sees produced 0 fires, with 1 body-only reference, which never
+# blocks. Against the 3 known true positives — rem-hyg-02 (#1738), ctx-perf-02
+# (#1646), ctx-trust-02 (#1651) — it fires on 3 of 3 with `subject` evidence.
+# Re-survey before defaulting the mode to enforce.
+#
+# Set false to skip the batch lookup entirely. It is FAIL-OPEN either way: an
+# unavailable git reports checked:false, which is never read as a finding.
+landed_check_on_poll: true
 
 # Bounded self-heal of a stale done-gate block (kpr-rvfy-03).
 # The enforced done-gate reads only the LATEST kanban_verifications row, and

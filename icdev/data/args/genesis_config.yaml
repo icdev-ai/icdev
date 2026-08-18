@@ -1690,6 +1690,30 @@ reflexes:
       operator: gte
     sample_per_run: 40
 
+  # cch-obs-02 -- prompt-cache regression signal over cch-tel-01's per-call record.
+  # 6h rather than hourly: the windows are 7d/21d, so a shorter cadence re-asks a
+  # question whose answer cannot have moved, and the deterministic card ids mean a
+  # standing finding is filed once regardless.
+  cache_regression_reflex:
+    timeout_seconds: 120
+    enabled: true
+    risk_tier: green
+    a2a_eligible: false
+    schedule: every 6h
+    description: >-
+      Report prompt-cache REGRESSIONS from ai_telemetry - a provider that was
+      reporting cached tokens and stops, a cache-read share that collapses past a
+      threshold measured against this ledger's own historical variation (0.00%
+      false-fire rate), or a provider whose mechanism bills cached tokens and has
+      never once reported one. Backfilled pre-instrumentation zeros, `local`
+      mechanisms and undeclared providers are NAMED non-findings, never cards, and
+      a ledger with no history reports unmeasurable rather than indicting every
+      provider. Thresholds: args/cache_regression.yaml.
+    success_metric:
+      name: providers_evaluated
+      threshold: 0
+      operator: gte
+
 # ── Reflex Health & Alerting (crx-gen-02) ────────────────────────────────────
 # Turns critical-reflex failures into operator alerts on the /monitoring page
 # (via the shared `alerts` table) and backs the reflex health-trend queries in

@@ -22,6 +22,18 @@ This module is that measurement for the identity check: replay
 :func:`~tools.kanban.task_identity.resolve` over every id the board actually
 holds, and count what an armed rem-hyg-04 would have refused.
 
+WHAT THE MEASUREMENT DECIDED (rem-hyg-04)
+=========================================
+Run against the live board it answered 35.17% naive / 10.85% narrowed lifetime /
+**15.81% narrowed over 30 days**, so rem-hyg-04 shipped the switch defaulting to
+``report`` rather than ``enforce``. ``NARROWED`` is not a hypothetical column any
+more: it is computed through
+:func:`~tools.kanban.task_identity.is_enforceable`, the same predicate
+``task_factory`` calls, so the number here is exactly the population
+``KANBAN_IDENTITY_CHECK=enforce`` refuses. Re-run this before ever changing that
+default, and read ``enforcement.mode`` in the output to see which posture the
+rate is currently describing.
+
 REPORT ONLY. It refuses nothing, writes nothing, and has no ``--gate``. The one
 database statement is a ``SELECT``.
 
@@ -90,7 +102,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
@@ -108,8 +119,14 @@ from tools.kanban.task_identity import (  # noqa: E402
     REASON_GATE,
     REASON_NO_CARD,
     REASON_NO_EPIC,
+    MODE_ENV,
     REASON_NOT_ID_SHAPED,
+    SHAPE_CARD,
+    SHAPE_OPAQUE,
+    classify_shape,
+    is_enforceable,
     load_cards,
+    mode,
     resolve,
     suggested_id,
     unregistered_prefixes,
@@ -126,41 +143,13 @@ DEFAULT_WINDOWS_DAYS = (7, 30, 90)
 UNMEASURABLE_NO_REGISTRY = "no_registry"
 UNMEASURABLE_EMPTY_BOARD = "empty_board"
 
-#: The id follows the card contract ``<...>-<N>``, so a card is genuinely missing.
-SHAPE_CARD = "card_shaped"
-#: An opaque machine id — ``task-fd99a9c8ae``, ``mc-reflex-0f01f09f``. Never card work.
-SHAPE_OPAQUE = "opaque"
-
-# A decomposed child carries one or more ``-d<N>`` suffixes: ``mvs-audit-03-d1``,
-# ``chore-yaml-dupkeys-de15d6f3-d3-d1``. The suffix says nothing about whether the
-# work is card work — the PARENT does — so it is stripped before classifying.
-_DECOMPOSED_SUFFIX = re.compile(r"(-d\d+)+$")
-# The card contract's tail: at least three "-"-separated segments ending in a
-# small integer, i.e. <task_prefix><epic_key>-<N>. The 1-3 digit bound is what
-# separates "-01" from a 10-character hex token that happens to be all digits.
-_CARD_SHAPED = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+-\d{1,3}$", re.IGNORECASE)
-
-
-def classify_shape(task_id: str) -> str:
-    """Does this id LOOK like card work? A named heuristic, not a declaration.
-
-    Only ever applied to ``no_card`` rows, and only to sort a finding list — it
-    never decides whether an id is claimed, which is :func:`resolve`'s job alone.
-
-    The distinction is the one that decides whether arming rem-hyg-04 is safe.
-    ``task-<hex>`` is the id shape the dashboard's own task-creation API and
-    ``awareness/suggested_card_writer`` generate (``f"task-{uuid4().hex[:10]}"``);
-    those rows are not card work and were never meant to be counted by a card. A
-    refusal that treated them as findings would be refusing routine work, which
-    is precisely how eight of the twelve PreToolUse checks came to refuse 4.86%
-    of all tool calls.
-
-    It is a heuristic over id TEXT and is named as one: nothing stops an
-    autonomous writer emitting a card-shaped id, and nothing stops a human
-    seeding an opaque one. It is a sorting aid for a human reading the report.
-    """
-    base = _DECOMPOSED_SUFFIX.sub("", str(task_id or "").strip())
-    return SHAPE_CARD if _CARD_SHAPED.match(base) else SHAPE_OPAQUE
+# ``classify_shape``, ``SHAPE_CARD`` and ``SHAPE_OPAQUE`` were written here and
+# MOVED to task_identity when rem-hyg-04 armed the check. They stay importable
+# from this module because that is where every existing caller looks for them,
+# but there is deliberately only one copy: this survey's NARROWED column has to
+# be the exact population ``KANBAN_IDENTITY_CHECK=enforce`` refuses, and two
+# copies of the predicate is how a surveyed rate and an enforced rate drift
+# apart while both look measured.
 
 
 # --------------------------------------------------------------------------
@@ -311,11 +300,14 @@ def survey(rows: Iterable, cards: Optional[Sequence] = None,
 
         actionable = reason in ACTIONABLE_REASONS
         # An opaque no_card id is not a missing card, so it is not part of the
-        # narrowed population an armed check should act on.
+        # narrowed population an armed check should act on. Asked through
+        # task_identity.is_enforceable — the predicate the armed seeder itself
+        # calls — so this column cannot describe a different population from the
+        # one KANBAN_IDENTITY_CHECK=enforce would actually refuse.
         shape = classify_shape(tid) if reason == REASON_NO_CARD else None
         if shape:
             shapes[shape] += 1
-        narrowed = actionable and shape != SHAPE_OPAQUE
+        narrowed = is_enforceable(reason, tid)
         for days, bucket in window_counts.items():
             if _created_within(created_at, days, now=now):
                 bucket["rows"] += 1
@@ -375,6 +367,10 @@ def survey(rows: Iterable, cards: Optional[Sequence] = None,
     return {
         "measured": True,
         "unmeasurable_reason": None,
+        # What the seeder would do RIGHT NOW with these numbers. A survey that
+        # did not say which posture is live leaves the reader unable to tell a
+        # rate that is being enforced from one that is only being logged.
+        "enforcement": {"mode": mode(), "refuses": "actionable_narrowed"},
         "board": {"rows": len(rows), "backend": _backend_name()},
         "registry": {
             "cards": len(registry),
@@ -450,6 +446,13 @@ def render(report: dict, show_ids: bool = False) -> str:
             t["actionable"], t["fire_rate"] * 100),
         "NARROWED         %6d   fire rate %.2f%%  (exempt opaque machine ids)" % (
             t["actionable_narrowed"], t["fire_rate_narrowed"] * 100),
+        "",
+        "%s=%s -- %s" % (
+            MODE_ENV, report["enforcement"]["mode"],
+            {"enforce": "the NARROWED population above is REFUSED at seed time",
+             "report": "every ACTIONABLE row is logged; nothing is refused",
+             "off": "the check does not run at all"}[report["enforcement"]["mode"]],
+        ),
         "",
         "Recent windows (rem-hyg-04 refuses at SEED time, so this is the population",
         "arming would actually hit):",

@@ -43,18 +43,78 @@
 
 version: databridge-agent-access-1.0
 
-# Master switch. Off by default: agent access to customer systems is opt-in per
-# deployment, never on because a connector happens to be configured.
-enabled: false
+# Master switch. On, for exactly one grant — see below.
+#
+# What "on" is NOT allowed to mean: a shipped grant against a CUSTOMER system.
+# The rule this file has always stated is that an install must not silently
+# authorise agents against systems the operator never reviewed, and that rule is
+# unchanged. The grant below is a PUBLIC, credential-free, read-only government
+# publications feed — a source whose entire content is already world-readable,
+# so authorising it discloses nothing and its blast radius is the reading of a
+# public web page.
+#
+# Anything with credentials — Splunk, ServiceNow, SolarWinds, Tenable, a private
+# GitHub org — stays commented out, stays a per-deployment decision, and belongs
+# to the operator, not to this file. Enforced by tests/test_databridge_first_grant.py,
+# which fails on a shipped grant carrying an auth_secret_ref.
+enabled: true
 
-connectors: []
+connectors:
+  # -------------------------------------------------------------------------
+  # Federal Register — NIST documents. DOCUMENT CURRENCY.
+  #
+  # The question a currency backend has to answer is "is the document this one
+  # cites still the operative one?", and the Federal Register is the official
+  # daily journal of record for exactly that: what an agency has published,
+  # corrected, superseded or withdrawn, with a stable public API.
+  #
+  # Why this one is the right first grant:
+  #   * read-only in the strongest sense — the source has no write API at all;
+  #   * no credential exists, so there is no secret to leak and no
+  #     db_connections.auth_secret_ref to resolve;
+  #   * agency-scoped by the query string, so the grant is narrow by
+  #     construction rather than by convention;
+  #   * UNCLASSIFIED end to end, so the ceiling below is the true ceiling and
+  #     not a convenient one.
+  #
+  # NOT the NIST CSRC publications feed, which is what this grant was first
+  # written against. Measured 2026-08-17: every CSRC RSS path 404s
+  # (…/CSRC/media/feeds/rss/publications.xml and six variants) while
+  # csrc.nist.gov itself serves 200 — the feed has been retired. That URL is
+  # also tools/doc_modernization/nist_pubs_sync.py's DEFAULT_FEED_URL, whose
+  # live pull swallows every network error by design, so docmod_nist_pubs has
+  # been fed by its static seed alone; that is cef-fnd-02's to fix, not this
+  # grant's.
+  #
+  # `tables` is the FEED URL because that is what RSSConnector reads as its
+  # table name. That makes this allowlist an exact-URL allowlist: an agent
+  # cannot point the connector at another host or widen the agency filter,
+  # which matters more here than for a typical connector because feedparser
+  # follows redirects and the egress guard only validates the first hop.
+  - name: rss
+    description: >-
+      Federal Register documents published by NIST — the official record of
+      which agency documents are current, corrected or superseded. Read-only,
+      public, no credentials. Use it to decide whether a document cites a
+      superseded publication.
+    connection_id: federal-register-nist
+    tables:
+      - https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=national-institute-of-standards-and-technology
+    # Scoped, not empty. An empty list grants EVERY agent including
+    # runtime-generated SMEs; naming the roles that review documents for
+    # currency keeps the grant reviewable and keeps `databridge_sources`
+    # answering [] for everyone else.
+    agents:
+      - doc_reviewer
+      - docgen_analyst
+      - cortex_analyst
+    classification_ceiling: UNCLASSIFIED
 
 # ---------------------------------------------------------------------------
-# Example, left commented. A manifest shipping with live grants would mean an
-# install silently authorising agents against systems the operator never
-# reviewed.
+# Further examples, left commented. These reach CUSTOMER systems and each needs
+# its own operator review, its own db_connections row and its own secret
+# reference — never a literal secret here.
 #
-# connectors:
 #   - name: github
 #     description: Read-only repository and issue search.
 #     connection_id: corp-github

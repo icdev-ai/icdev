@@ -36,6 +36,23 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
+python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
+python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
+python tools/llm/ollama_prefix_latency.py --base-url http://gpu-box:11434
+# A local model has no per-token price, so cache_read_input_tokens stays 0 however
+# well caching works. The honest metric is server-side prompt-eval (prefill) time.
+# Measured 2026-08-16, ~1.9k-token prefix, 3 consecutive runs of n=5:
+#   qwen3:4b   440-471 -> 20-21 ms  (21.8-22.7x)
+#   qwen3:0.6b 103-278 -> 16-23 ms  (4.6-16.8x; noisier, short prefill, GPU load)
+# The cold seed is a per-run NONCE: Ollama's KV cache outlives the process, so a
+# fixed seed measures correctly once and then compares warm against warm.
+# prompt_eval_count is NOT the hit signal — it reports full prompt length on every
+# call, cached or not (constant at 1,914 across one cold and four warm). Only the
+# duration moves. Reports status=unmeasurable, never a number, when Ollama is down.
+# The /cache-savings card reads the DECLARED capability and shows "not applicable"
+# for a local provider instead of a dollar figure.
+
 # Semantic loop detection for the agent loop (ars-loop-01)
 # Library: tools/llm/loop_detector.py — detect_semantic_loop(records, config=) -> LoopDetection
 #   Config: args/llm_config.yaml -> agent_loop.loop_detection (enabled, window, similarity_threshold,
@@ -1163,6 +1180,202 @@ works and it is tested. This is the audit / fork / replay path running beside it
 
 ---
 
+## Forking a Session at a `seq` (hcx-evt-05)
+
+The branching primitive ICDEV did not have. `parent_session_id` on
+`run_agent_loop` records sub-agent *lineage*; this is "this session is that one
+up to turn N, and then something else".
+
+```bash
+icdev chat --fork <ctx-id>                  # survey: the legal boundaries, creates nothing
+icdev chat --fork <ctx-id> --at 12          # branch here, then drop into the REPL
+icdev chat --fork <ctx-id> --at 12 -q "try the other approach"
+
+python -m tools.agent_runtime.fork --session <ctx-id> --boundaries
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --dry-run --json
+python -m tools.agent_runtime.fork --session <ctx-id> --at 12 --title "branch B"
+```
+
+In the chat REPL:
+
+```
+/fork                    # the seqs this session may be forked at
+/fork 12                 # fork here and switch into the branch
+/fork 12 | branch B      # …with a title
+```
+
+**The boundary is resolved against the log, never against `messages_json`.**
+`--at` names a `seq` in `agent_session_events`, which is monotonic per session
+under a UNIQUE `(session_id, seq)` index. A number naming no event is refused
+rather than clamped: an operator who mistypes a boundary and silently gets a
+different fork has been handed a wrong answer that looks like a right one.
+
+**A boundary inside an open turn is REFUSED, not rounded.** Borrowed from DSH
+rather than rediscovered. A prefix ending mid-turn is not a shorter conversation,
+it is an illegal one — an assistant `tool_use` block with no matching
+`tool_result`, which the next provider call rejects (a constraint `agent_loop`
+already states at the budget check it placed *before* appending the assistant
+message). A legal boundary is one where no turn is open, every announced tool
+call has been answered, no `tool_result` is left over, and no projected payload
+is withheld. Every refusal names the legal boundaries either side, so the correct
+fork is one re-run away and never a guess.
+
+**A withheld payload cannot be forked, and says so.** `payload_json IS NULL`
+beside a NOT NULL `payload_hash` means WITHHELD BY POLICY
+(`args/agent_event_log.yaml`), which is not the same as empty. Projecting one
+would seed the branch with a message the model never saw, carrying a
+correct-looking digest. A hash-only deployment gets a refusal naming the policy,
+not a fork with holes in it.
+
+**The event order is not the message order.** `run_agent_loop` fires `on_turn`
+after the post-tool hooks, so a tool-using iteration lands in the log as
+`tool_call, tool_result, …, assistant_message` — the assistant message carrying
+the `tool_use` blocks arrives *after* the results answering them. The projection
+buffers a result until the message that announced its call lands, so both that
+order and the reverse project to the same legal message list. `tool_call` events
+are not projected: they carry no `tool_use` id, so the assistant message is the
+authoritative source for the blocks, and a result whose name matches no
+outstanding call is left orphaned rather than attached to a different tool.
+
+**What a fork writes:** a new `agent_loop_sessions` row holding the projected
+messages (read back before it is trusted — a `resume_session_id` pointing at a
+row that was never written produces a session that looks continued and remembers
+nothing), a new `chat_contexts` row whose `context_config.fork` carries the
+parent id, the boundary seq, the seed length and a digest over the seeded
+events' hashes, one `session_fork` event at `seq` 1 of the new session's own log,
+and the projected user/assistant turns replayed into `chat_messages`. The prefix
+events themselves are **not** copied: the digest proves which prefix was seeded
+without duplicating a byte of it, and copying would have needed a second write
+verb on a module whose surface is deliberately `append` / `read_session` /
+`next_seq`.
+
+**One inherited limitation.** The forked session's next turn behaves exactly as
+`--resume`'s does, including that `run_agent_loop` does not append a new
+`user_prompt` to a transcript loaded from `resume_session_id`
+(`tests/test_agent_loop.py::test_resume_loads_prior_messages` passes
+`user_prompt="ignored"`). That is a pre-existing property of the resume seam, not
+of forking, and fixing it belongs to `AgentRuntime.run_turn`.
+
+---
+
+## Permission Posture Selection — Operator Intent, Separately From the Knobs (hcx-post-02)
+
+hcx-post-01 named the combination of safety knobs. This is the half that records
+a *choice* of one.
+
+```bash
+python -m tools.agent_runtime.posture_selection --json            # what is in force
+python -m tools.agent_runtime.posture_selection --list            # selectable postures
+python -m tools.agent_runtime.posture_selection \
+    --select workspace-write --session <ctx-id> --actor <who>
+```
+
+In the chat REPL:
+
+```
+/posture                 # the posture in force, its source, and its four knobs
+/posture list            # selectable postures
+/posture <name>          # select it — records the decision
+/usage                   # token/cost stats, and the posture in force
+```
+
+**Why a separate event.** The resolved knobs say what the posture *is*; they can
+never say who decided it, or when, or what it was before. `approval_mode == "off"`
+read out of a running process does not distinguish a deployment default nobody
+looked at from something a named operator turned off eleven minutes ago — and
+those call for different responses. So selection appends a `permission_posture`
+event to `agent_session_events` carrying the posture, the actor and the resolved
+knob values, in the same `seq` ordering as the turns it governs. "The posture
+widened, and then these four tool calls happened" is one `ORDER BY seq`.
+
+**The event is log-only, and it is written first.** Nothing reads it back to
+decide a knob; deleting every row would change no behaviour. It is appended
+*before* anything is applied, so an intent survives a crash during the act, and a
+reader who finds an intent with no following change learns the apply failed.
+
+**Re-selecting the effective posture appends nothing.** Same name and no knob
+delta is a look, not a decision.
+
+**It writes one variable and never the four per-knob ones.** Selection sets
+`ICDEV_PERMISSION_POSTURE`; the knobs follow through hcx-post-01's chain
+(`argument > env > agent_runtime.yaml > posture > built-in`). A knob already
+pinned by `ICDEV_SAG_APPROVAL_MODE` or an explicit config key therefore does
+**not** move — including when the operator is tightening. That is reported, not
+worked around:
+
+```
+Posture: workspace-write -> danger-full-access (actor: alice)
+  sandbox: 'workspace-write' -> 'danger-full-access'
+  NOT MOVED  approval_mode stays 'manual'; the posture asks for 'off' but
+             ICDEV_SAG_APPROVAL_MODE pins it. Unset it to let the posture govern.
+```
+
+Having the selection overwrite those variables was rejected: it reverses an
+intent stated at a layer hcx-post-01 put *above* this one, and it would do so
+invisibly. Under-delivering loudly is recoverable; over-delivering silently is
+not.
+
+**An unwritable log refuses to widen, and only to widen.** A posture flagged
+`requires_explicit_selection` is refused when the event cannot be appended —
+there is no unaudited `danger-full-access`. Any other posture is applied with
+`logged: false` and a warning, because refusing in the tightening direction too
+would strand an operator in the *looser* posture whenever the database is
+unreachable.
+
+### Context injections — the `request_context` writer (hcx-evt-03)
+
+Nothing recorded a context injection anywhere. Three modules put text into the
+system prompt at session start and none of them left a trace:
+`tools/agent_runtime/project_context.py` (CLAUDE.md / AGENTS.md / MEMORY.md plus
+the `session_context_builder` summary), `goal_context.py` (standing goals) and
+`profile_memory.py` (durable facts, preferences, hybrid-memory hits). A tree-wide
+grep for `context_injection|injected_context|prompt_snapshot|rendered_prompt`
+returned three unrelated files. So the log's invariant — "anything that reaches a
+model request must be reconstructable from the log" — was a lie by omission, and
+its `request_context` event type was declared and never emitted.
+
+```bash
+python tools/agent_runtime/context_events.py --session <context_id> --json
+python tools/agent_runtime/context_events.py --session <context_id> --with-body
+python tools/agent_runtime/context_events.py --sources
+```
+
+`record_injection(session_id, source, text, detail=…)` writes one event **naming
+the source**. It is the one seam in this subsystem allowed to swallow:
+`event_log.append` raises on a failed INSERT by design, and that rule is wrong
+here — each injector is deliberately best-effort so a missing subsystem never
+blocks a turn, and recording must not become a new way for injection to fail.
+
+**Swallowed is not unmeasured.** Every call lands in exactly one `stats()`
+counter — `recorded`, `skipped_empty`, `skipped_no_session`, `failed` (plus
+`last_error`) — and a failure logs at WARNING. The counters are process-local on
+purpose: a durable failure counter would itself be a database write on the path
+that must not fail. The durable signal is the events, via `coverage()`.
+
+**The envelope is always stored; only the body is policy-gated.** A row whose
+payload the retention policy suppressed could not say which injector produced it,
+which is the one thing this card requires it to say — so `source`, the two sizes,
+`body_sha256` and the injector's budget accounting are always kept, while
+`args/agent_event_log.yaml` still governs the injected text (including
+`never_store: [request_context]`, which that file names as the setting's intended
+use). `payload_withheld` describes the envelope and `body_stored` describes the
+text; they are two flags because merging them would make "retention is off"
+read identically to "no context was injected".
+
+**`session_id` here is the chat `context_id`, not `AgentLoopResult.session_id`.**
+The loop id does not exist until the first turn *completes*, and injection happens
+before the first turn *starts* — keying on it would leave turn one unrecorded,
+which is the gap this card closes. The loop id is passed as `correlation_id` and
+is legitimately empty on turn one rather than back-filled.
+
+An injector that produced no text injected nothing, so there is no event: a
+disabled subsystem, an absent `AGENTS.md` or an operator with no goals reach the
+model with nothing, and a row saying so would be fabricated coverage rather than
+measured absence. There is no `--stats` flag for the same reason — a fresh CLI
+process could only ever print zeros, which reads as a clean bill of health.
+
+---
+
 ## Approval Inbox — Channel Delivery and Reply Resolution (agov-inbox-03)
 
 Mirrors a pending item to a messaging channel and turns the human's reply back
@@ -2066,7 +2279,56 @@ python -m tools.kanban.identity_survey --env-file /path/to/.env --json   # run f
 # Two zeroes that are NEVER a clean bill of health — both report measured:false, never 0%:
 # an unreadable args/projects.yaml (no_registry) and an empty board (empty_board, the worktree
 # trap where a missing .env silently reads a throwaway SQLite DB — use --env-file).
-# REPORT ONLY: no --gate, no writes, one SELECT. Arming is rem-hyg-04.
+# REPORT ONLY: no --gate, no writes, one SELECT. This module never refuses anything.
+
+# Kanban — the armed identity check and its kill switch (rem-hyg-04)
+KANBAN_IDENTITY_CHECK=report    # DEFAULT — log every unclaimed id, seed anyway
+KANBAN_IDENTITY_CHECK=enforce   # refuse the NARROWED population, before any insert
+KANBAN_IDENTITY_CHECK=off       # do not run the check at all
+# Read by tools/kanban/task_identity.py::mode (accepts the KANBAN_LANDED_CHECK spellings:
+# 1/true/yes => enforce, 0/false/no/none => off, warn => report). An UNRECOGNISED value
+# resolves to `report` and LOGS that it did — KANBAN_IDENTITY_CHECK=enforced is one keystroke
+# from enforce and must not read as armed. Consulted by task_factory.create_tasks BEFORE the
+# first INSERT, so a refusal can never half-land a batch; a broken check leaves seeding
+# exactly as it was. The refusal names each id, the id it should have carried
+# (`<prefix><epic>-<N>`), args/projects.yaml, and the way to stand it down.
+# WHY THE DEFAULT IS report: the rem-hyg-03 survey above. Refuse-everything = 35.17%;
+# narrowed (exempt opaque machine ids) = 10.85% lifetime but 15.81% over the last 30 days,
+# ten times the rate CLAUDE.md already calls refusing routine work. Both the survey's
+# NARROWED column and the seeder's refusal call ONE predicate, task_identity.is_enforceable,
+# so the measured rate is the enforced rate. Re-survey before changing the default; never
+# widen an exemption list to compensate, and never drop no_card — that is the HCX case.
+python -m tools.kanban.identity_survey --json | python -c "import json,sys; print(json.load(sys.stdin)['enforcement'])"
+
+# Kanban — will two tasks fight over the same file? Asked at SEED time (rem-hyg-07)
+python -m tools.kanban.lane_conflicts --json
+python -m tools.kanban.lane_conflicts                  # table grouped by shared file
+python -m tools.kanban.lane_conflicts --live-only      # only pairs BOTH dispatchable now
+python -m tools.kanban.lane_conflicts --from-branches  # exact paths, where a branch exists
+python -m tools.kanban.lane_conflicts --task <task-id>
+# pr_watcher's hold_on_sibling_conflict already asks this — about OPEN PRs, which is after both
+# sessions have BUILT. #1684 dispatched a producer and its consumer together, the loser's PR was
+# unlandable, and 1,058 lines were discarded. Measured 2026-08-16 across 44 non-terminal tasks:
+# 54 pairs shared a file with NO dependency path between them, 16 dispatchable simultaneously.
+# Reads BOTH dependency mechanisms (scalar depends_on_task_id AND the kanban_task_deps junction)
+# because _deps_satisfied ANDs them — either alone serializes, so consulting one would report a
+# hand-serialized pair as a live race. Ranks live vs latent: a task whose dependency is
+# unsatisfied cannot race today, and reporting the two identically buries the real finding.
+# Gate sentinels are excluded (gates.is_manual_gate) — a path in a RISK: description is not work.
+# TWO EVIDENCE GRADES, never merged: prose (seed-time, the only time it helps, and a heuristic)
+# and branch (git diff origin/main...kanban/<id>, exact but late). Where a branch exists its
+# paths REPLACE the prose guess. Each branch is compared to origin/main and NEVER to another
+# branch: merge-tree between two task tips reports conflicts the forge never sees, since the
+# forge merges each into main in sequence (hcx-live-02 vs hcx-live-03 said CONFLICT while
+# against main hcx-live-03 was CLEAN). Six suppressions, every one found by RUNNING it: command
+# (a path inside `python tools/...` is a tool to run), evidence (a specimen in a caps-led
+# MEASURED paragraph — deliberately NOT rescued by a write verb, since such a paragraph narrates
+# writes that already happened), precedent ("Follow args/ci_test_backlog.txt"), citation ("see X"
+# or a docs/ path with no write verb), negated ("Do NOT change ..."), coordination (the shared
+# list in tools/git/coordination_paths.py, which pr_watcher's merge-time guard also imports —
+# a second divergent copy is worse than none). Those took the board from 3 live findings of
+# which 0 were real to 0 live / 8 latent. REPORT ONLY at the create_tasks seam; arming it needs
+# a fire-rate survey first, exactly as rem-hyg-03/04 do for the identity check.
 
 # Kanban — re-queue a task for a clean rebuild without faking a failure (kax-recover-02)
 python tools/kanban/cli.py --requeue <task-id> --reason "closing stale PR; rebuild on main"
@@ -2170,6 +2432,34 @@ python tools/autoresearch/fitness_evaluator.py --list-domains --json
 
 # Hypothesis generator
 python tools/autoresearch/hypothesis_generator.py --domain compliance --max 5 --json
+```
+
+---
+
+## DataBridge Agent Access Commands
+```bash
+# Seed db_connections from args/databridge_connections.yaml (cef-fnd-03)
+python -m tools.databridge.seed_connections --seed --json
+python -m tools.databridge.seed_connections --dry-run --json    # validate, write nothing
+python -m tools.databridge.seed_connections --verify --json     # row present? credential resolves?
+python -m tools.databridge.seed_connections --list --json
+# REFUSES a literal secret: auth_secret_ref must be an env:/vault:/aws:/file: reference.
+# REFUSES the banner 'CUI // SP-CTI' as a classification -- that column feeds the RLS
+# predicate, which is drawn from the LABEL vocabulary, so a banner-labelled row is
+# written, retained and invisible to every reader at every clearance.
+# All-or-nothing: one bad descriptor writes none of them, because a half-wired
+# grant is harder to diagnose than an unseeded one.
+
+# What may this agent reach, and what happens when it reaches?
+python -c "from icdev.tools.databridge import broker; print(broker.list_available('doc_reviewer'))"
+python -c "from icdev.tools.databridge import broker; print(broker.fetch('doc_reviewer','rss','<granted feed url>',limit=5).to_dict())"
+# Grants: args/databridge_agent_access.yaml   Endpoints: args/databridge_connections.yaml
+# Every call -- allowed or denied -- writes one row to databridge_agent_access_log.
+# MCP surface: databridge_sources (discover) then databridge_fetch (read).
+
+# One RSS/Atom feed, standalone. Module form only: the file uses package-relative
+# imports so the mirrored icdev/ copy registers into the right connector registry.
+python -m tools.databridge.connectors.rss_connector --url URL --limit 10 --json
 ```
 
 ---
@@ -5354,8 +5644,16 @@ python -m tools.doc_modernization.eol_products_sync --seed --json
 python -m tools.doc_modernization.eol_products_sync --sync --json
 python -m tools.doc_modernization.eol_products_sync --import bundle.yaml --json
 
-# De facto deployment standards from ni_devices (recency-weighted)
+# De facto standards from the declared inventory feeds (recency-weighted)
 python -c "from tools.doc_modernization.defacto_learner import recompute; print(recompute())"
+python -c "from tools.doc_modernization.defacto_learner import load_feeds; print(load_feeds())"
+# cef-fnd-04: the input is args/docmod/inventory_feeds.yaml, not one hardcoded
+# table. docmod_defacto_standards held 0 rows for months because its only input,
+# ni_devices, held 0 rows — the writer ran nightly and had nothing to learn from.
+# Each row records source_feed + evidence_kind, share_pct is a share WITHIN one
+# feed, and get_recommended() answers from the best-precedence feed alone:
+# an observed estate beats a drawing of one, and no quantity of drawings adds up
+# to an observation.
 
 # Nightly sweep reflex (standalone)
 python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
@@ -5365,6 +5663,36 @@ python -m tools.genesis.reflexes.doc_modernization_sweep --dry-run --json
 # Config: args/docmod/docmod_config.yaml + args/docmod/packs/*.yaml + rulebooks
 # MCP tools: docmod_scan, docmod_findings, docmod_redline
 ```
+
+## Entity Currency Store — one domain-agnostic "is it still current" (cef-fnd-04)
+
+```bash
+python -m tools.currency.entity_currency --backfill --json
+python -m tools.currency.entity_currency --backfill --source docmod_eol_products
+python -m tools.currency.entity_currency --stats --json
+python -m tools.currency.entity_currency --resolve "<entity>" --entity-type hardware_model
+```
+
+Currency evidence used to live in three domain-narrow tables — a software-release
+feed (`docmod_eol_products`), a hardware EOL feed (`mc_net_eol_data`) and the
+curated catalog (`docmod_catalog_entries`) — each answering in its own shape, none
+able to describe an entity the others had never heard of, and no place for a
+fourth provider to write. `entity_currency` is one row per **(source, entity,
+version) assertion**.
+
+- **Sources are config**, not code: `args/entity_currency.yaml` supplies every
+  table, column mapping, entity type and verdict rule. `tools/currency/` names no
+  table, column, vendor, product or domain.
+- **Disagreement is preserved.** Two sources that disagree keep two rows;
+  `resolve()` picks a winner at read time and returns the losers under `others`
+  with `conflict: true`.
+- **Curated evidence is authoritative** — ahead of confidence, ahead of recency.
+- **`confidence` is a declared prior, not a measurement.**
+- `as_of` (the source's clock) is kept apart from `observed_at` (ours), so stale
+  evidence stays distinguishable from fresh evidence.
+- Refreshed on the nightly `doc_modernization_sweep` reflex; read by the docmod
+  network-hardware pack only when the catalog and the hardware feed are both
+  silent. Declared in `args/capability_consumption.yaml` `substrates:`.
 
 ## Twin Core — Cross-Canvas Digital-Twin Unification (TWX)
 
@@ -6137,6 +6465,15 @@ python tools/git/ci_test_list_merge_rehearsal.py             # inline vs externa
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
 
+# Command-reference union merge (kax-conflict-11) — THIS file. The registration
+# checklist sends every new tool here, so 18 of 40 recent branches appended to it
+# and it was the largest collision surface still unprotected. 14 of 14 branches
+# whose own diff touched it were pure additions; none edited an existing line.
+python tools/git/commands_doc_merge_rehearsal.py                  # 3 scenarios x both merge paths
+python tools/git/commands_doc_merge_rehearsal.py --branches 5     # 5 concurrent branches
+python tools/git/commands_doc_merge_rehearsal.py --gate --json    # exit 1 if the observed pattern is not clean
+python tools/git/commands_doc_merge_rehearsal.py --without-union  # CONTROL: must conflict, else the rehearsal is vacuous
+
 # CI test gating ratchet (tsg-policy-01) — the gap cannot silently REGROW.
 # --check above proves the allowlist did not shrink; this proves no test file is
 # gated by nothing. Every collectible module under tests/ must be in an allowlist,
@@ -6192,6 +6529,48 @@ python tools/ci/skip_census.py --check --changed tests/test_app.py
 python tools/ci/skip_census.py --from-report .tmp/ci-junit.xml --check   # what the run ACTUALLY skipped
 python tools/ci/skip_census.py --prune                       # drop entries whose site is gone
 python tools/ci/skip_census.py --seed                        # adoption only; refuses to overwrite
+
+# UNGATED test census (rem-tst-01) — which of the backlog modules are GREEN today?
+# The ratchet above stops the ungated census GROWING and the drift reflex watches for
+# regressions inside it, but a promotion batch has to start from a different question:
+# of the 1,794 modules in args/ci_test_backlog.txt, which already pass? They cannot be
+# bulk-added — an unknown fraction are red, a red file turns main red, and a red main
+# gets the gate disabled, which is strictly worse than the debt. So MEASURE FIRST.
+# Runs each backlog module ALONE via isolation_run.run_one (same execution path, so
+# "alone" cannot mean two things), each child pinned to its own scratch ICDEV_DB_PATH
+# and a root-only PYTHONPATH. no-tests (pytest exit 5) is NOT counted as passed, and
+# collection-error is NOT merged into failed — they are different promotion jobs.
+# MEASURES ONLY: edits no allowlist and exits 0 whatever it finds.
+python tools/ci/ungated_test_census.py                       # backlog size + cost estimate
+python tools/ci/ungated_test_census.py --run --out docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --run --limit 50 --workers 4    # sample the prefix
+python tools/ci/ungated_test_census.py --run --deadline-s 3600 --timeout 240   # unstarted -> not-reached
+python tools/ci/ungated_test_census.py --verify docs/testing/ungated_test_census.json  # measured + not-reached + out-of-scope == backlog
+python tools/ci/ungated_test_census.py --summarize docs/testing/ungated_test_census.json --md docs/testing/ungated_test_census.md
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json   # group the FAILING modules by failure shape
+python tools/ci/ungated_test_census.py --red-report docs/testing/ungated_test_census.json --red-md docs/testing/ungated_red_modules.md
+
+# RAW BOARD-WRITER census (rem-hyg-05) — a kanban INSERT that bypasses the canonical seeder.
+# tools/kanban/task_factory.py opens with "Canonical task seeder — never use raw INSERT
+# directly" and nothing had ever checked it. Measured 2026-08-16 over tools/ + the
+# icdev/tools/ mirror: 231 raw board INSERT sites in 209 files, 219 of them debt once the
+# seeder and db/migrations/** are excluded — roughly seven writers in ten bypass it, and 42
+# of those sites are the autonomous path (tools/genesis/reflexes/*). The bypass skips
+# VALID_TASK_TYPES (enforced by PG, silently ignored by SQLite), the _assert_real_board
+# refusal that stops a seed landing in a throwaway worktree database, the gate-id/risk-marker
+# checks and the dedupe — and reports success anyway. A gate INSIDE create_tasks only ever
+# sees the 30% that already call it, which is why this is a separate census.
+# Per SITE (<file>::<qualname>[<n>]), not per file, so a grandfathered module cannot grow a
+# second writer unobserved. ENUMERATED by name in args/kanban_raw_insert_census.txt;
+# raw_insert_max in args/board_writer_gate.yaml may only go DOWN. The fix is
+# `from tools.kanban.task_factory import create_tasks`. Converting the 219 is rem-hyg-06.
+python tools/kanban/raw_insert_census.py --check             # exit 1 on an unregistered raw INSERT
+python tools/kanban/raw_insert_census.py --json              # per-file site census
+python tools/kanban/raw_insert_census.py --check --staged    # pre-commit fast path
+python tools/kanban/raw_insert_census.py --check --changed tools/foo.py
+python tools/kanban/raw_insert_census.py --prune             # drop entries whose site is gone
+python tools/kanban/raw_insert_census.py --seed              # adoption only; refuses to overwrite
+python tools/workflow/coherence_checker.py --check board_writer_census --gate
 
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
@@ -6331,4 +6710,64 @@ project-root `extensions/` directory outside this repository, so a removal is an
 
 ```bash
 pytest tests/test_extension_point_liveness.py -v   # AGENT_START/END wiring + the census (12 tests)
+```
+
+---
+
+## Prompt-Cache Regression Signal (cch-obs-02)
+
+`cch-tel-01` made the per-call cache counts exist; nothing watched them CHANGE.
+A provider that was serving cached tokens and stops renders identically to one
+that was never enabled — both are zero — which is how Azure discarded its
+cached-token count for its entire life with nothing going red.
+
+```bash
+python -m tools.cache_savings.regression                       # per-provider table + verdicts
+python -m tools.cache_savings.regression --json
+python -m tools.cache_savings.regression --window-end 2026-08-01T00:00:00+00:00   # replay a past window
+python -m tools.cache_savings.regression --gate                # 0 clean / 1 regression / 2 unmeasurable
+python -m tools.genesis.reflexes.cache_regression_reflex --dry-run   # detect, file no cards
+```
+
+Three rungs: `stopped` (cache reads across the baseline window, exactly zero
+across the recent one), `collapsed` (share fell past `collapse_drop_ratio`) and
+`never_cached` (a mechanism that bills cached tokens, a real sample, never one
+read). The comparative rungs ignore the mechanism declaration — a provider that
+DID report cache reads was caching whatever any config claims.
+
+Every non-finding is NAMED, because a zero here has four meanings:
+`mechanism_no_billing` (Ollama's KV reuse bills nothing back — a permanent zero
+is correct), `pre_instrumentation_unknown`, `mechanism_unknown`,
+`insufficient_calls`, `no_traffic`. Rows predating `instrumented_since` hold a
+BACKFILLED zero and are excluded from the `never_cached` rung; an empty or
+unmigrated ledger reports `unmeasurable`, never a clean bill.
+
+`collapse_drop_ratio: 0.7` was fitted against 79 historical window pairs out of
+this ledger — 0.00% false-fire, against 8.86% at 0.5 and 29.27% at 0.3. **Never
+widen a threshold to silence a finding**; re-measure and say what you measured.
+Thresholds and the mechanism map: `args/cache_regression.yaml`. The genesis
+reflex `cache_regression_reflex` runs it every 6h and files one card per finding
+with an id deterministic in (rung, provider).
+
+```bash
+pytest tests/test_cache_regression.py -v   # both directions: fires, and does not (28 tests)
+```
+
+```bash
+# Sibling-conflict hold — survey BEFORE widening it (#kpr-watch-08)
+python tools/ci/sibling_hold_survey.py --json
+python tools/ci/sibling_hold_survey.py --limit 120
+python tools/ci/sibling_hold_survey.py --open-only
+# GitHub does NOT apply .gitattributes merge drivers, so the union-merged paths
+# coordination_paths.py excludes from the sibling check DO conflict on the forge.
+# Widening the check anyway is the change GENERATED_PATH_MARKERS records being
+# burned by. Measured 2026-08-17 over 120 merged PRs:
+#   current  35/120 held at their own merge moment (29.2%), max clique 5
+#   widened  78/120 (65.0%), max clique 13
+# so it is NOT armed. Union patterns are parsed from .gitattributes rather than
+# hardcoded. `moments_with_nobody_free` can only ever read 0 — the replay samples
+# only instants where a merge HAPPENED — so read `held_by_unmergeable` instead:
+# that is what found #1769 waiting on #1744 and #1781 on #1773 under the CURRENT
+# posture, each behind a sibling the forge would refuse to merge.
+# An unavailable corpus exits 2; a survey nobody could run is not a clean survey.
 ```

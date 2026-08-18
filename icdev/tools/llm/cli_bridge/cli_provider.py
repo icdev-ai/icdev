@@ -34,7 +34,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
+from tools.llm.provider import (
+    PREFIX_CACHE_NONE,
+    LLMProvider,
+    LLMRequest,
+    LLMResponse,
+    PrefixCacheCapability,
+)
 from tools.llm.router import LLMUnavailableError
 from tools.logging.icdev_logger import get_logger
 
@@ -246,6 +252,20 @@ class CLILLMProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "cli"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """None AT THIS SEAM: the vendor CLI owns whatever caching happens."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_NONE,
+            reason=(
+                "Requests are handed to a separate Claude CLI process as prompt "
+                "text. That subprocess decides its own caching and returns no token "
+                "accounting, so ICDEV can neither request a breakpoint nor read a "
+                "cached-token count. Anthropic caching may well be happening — it is "
+                "simply not observable or controllable here."
+            ),
+        )
 
     def _build_command(self, prompt: str) -> List[str]:
         """Build the Claude CLI argv for a one-shot, non-interactive prompt.

@@ -61,8 +61,10 @@ exclusions:
     reason: >-
       Requires a live dashboard at ICDEV_DASHBOARD_URL and a Selenium driver.
       tests/e2e_selenium/conftest.py has a session-scoped autouse fixture that
-      SKIPS the whole module when the port does not answer, so on a CI runner
-      every one of these reports green by skipping. Adding them would grow the
+      SKIPS the whole module unless GET /health reports a checkout_id equal to
+      this checkout's (rem-e2e-01 — a port answering is not evidence it serves
+      the tree under test), so on a CI runner every one of these reports green
+      by skipping. Adding them would grow the
       allowlist by 28 entries and buy exactly zero signal — file existence
       counted as evidence, which is the failure mode this project exists to
       close. They are run deliberately by tools/testing/e2e_runner.py against a
@@ -94,7 +96,7 @@ backlog_file: args/ci_test_backlog.txt
 # THIS NUMBER MAY ONLY GO DOWN. Lower it when you gate files; never raise it to
 # get a commit through. Raising it is the visible, reviewable act of deciding to
 # take on more untested-in-CI surface, and it should be argued for in the PR.
-backlog_max: 1810
+backlog_max: 1713
 
 # --------------------------------------------------------------------------- #
 # SKIP CENSUS — a gated test that skips is UNMEASURED, not passing (trust-disc-03)

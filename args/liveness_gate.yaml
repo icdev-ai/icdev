@@ -133,11 +133,25 @@ grandfathered:
   # dispatches is precisely the defect. Wire it, or do not register it yet.
   mcp_dispatch_tool: 467
 
-  # args/agent_approval_policy.yaml enumerates 62 tools across its tiers and
-  # agent_approval_log holds not one decision for any of them — 0 rows, whole
-  # table, whole lifetime. A gate whose decision log is empty has never gated
-  # anything. The policy file is read; nothing writes the verdict.
-  agent_approval_rule: 62
+  # agent_approval_log holds not one gate decision — 0 rows with a tier
+  # classify() can emit, whole table, whole lifetime. A gate whose decision log
+  # is empty has never gated anything. The policy file is read; nothing writes
+  # the verdict.
+  #
+  # 62 -> 25 is a DENOMINATOR CORRECTION, not an accommodation: nothing was
+  # wired, and no tool moved tier. args/agent_approval_policy.yaml enumerates 62
+  # tools, but only the 25 in require_approval_tiers (irreversible; unknown
+  # enumerates none) can ever produce a row — build_approval_hook auto-allows the
+  # other 37 without writing one, deliberately, because an audit trail of every
+  # read_file is noise. Counting those 37 as declared-and-inert pinned this
+  # budget at >= 37 no matter how well the gate were wired, so whoever wires it
+  # would watch the number refuse to move and conclude the wiring failed
+  # (rem-cap-05; docs/security/approval-gate-reachability.md §5). The probe now
+  # scopes `declared` to require_approval_tiers and enumerates the excluded 37 in
+  # extra.not_measurable_by_design, so the exclusion is visible rather than a
+  # quietly shrunken denominator. Widening require_approval_tiers RAISES the
+  # declared count; wire the gate before that lands, do not raise this.
+  agent_approval_rule: 25
 
   # 5 RBAC roles in the D261 role_tool_matrix, 1 seen in an MCPToolAuthorizer
   # verdict. exa-policy-05 landed the enforcement seam MONITOR-ONLY by design,
@@ -145,6 +159,46 @@ grandfathered:
   # and real traffic arrives under those roles. Expect this to drain on its own
   # once enforcement is on; lower it then rather than waiting for a task.
   mcp_tool_authorization: 4
+
+  # Extension hook points. 10 declared, 10 never consumed — re-measured
+  # 2026-08-17 against the live PostgreSQL board with
+  # `python tools/awareness/capability_consumption.py --class extension_hook_point --json`
+  # (telemetry_available: true — the class is MEASURABLE, which is the thing
+  # hcx-live-02 changed; the zero is a measured zero, not a missing counter).
+  #
+  # This class is ARGUING ITS WAY IN, as the note above requires of a new one,
+  # and the argument is that the 10 is a measurement artefact of its own first
+  # day rather than an accommodation. hcx-live-02 is the commit that made a
+  # dispatch countable at all: before it, `ExtensionManager.dispatch` wrote
+  # nothing anywhere, so every point's lifetime count is necessarily zero on the
+  # day the counter lands, however busy the seam is.
+  #
+  # Static call sites, per `python -m tools.extensions.liveness` against the
+  # merged tree (this is the DECLARED half — a dispatcher in the source, not a
+  # recorded dispatch in the database, and only the latter drains a unit):
+  #
+  #   live (6)           tool_execute_before (hcx-live-01, agent_runtime/dispatch.py),
+  #                      tool_execute_after (.claude/hooks/post_tool_use.py),
+  #                      chat_message_before / chat_message_after
+  #                      (dashboard/chat_manager.py, nine builtin handlers),
+  #                      agent_start / agent_end (hcx-live-03, agent_runtime/
+  #                      runtime.py + chat_manager.py)
+  #   handlers_only (2)  memory_save_before / memory_save_after — a handler can
+  #                      register, nothing dispatches
+  #   dead (2)           compliance_check_before / compliance_check_after —
+  #                      enumerated with written reasons in
+  #                      args/extension_liveness.yaml
+  #
+  # So six of the ten drain on the first chat message, tool call or agent turn
+  # the platform serves after this lands, and the remaining four are the finding
+  # the class exists to keep visible. tool_execute_after was the sharpest case:
+  # tools/awareness/hooks.py registers a handler on it at process start and for
+  # a long time nothing dispatched it — the "no handlers ever fired" incident.
+  #
+  # Lower this as they drain; 4 is the floor the static picture supports today.
+  # Do NOT raise it: a new hook point added to the enum without a dispatch call
+  # site is precisely the defect, and it should trip the check.
+  extension_hook_point: 10
 
   # GEPA — RESOLVED by rem-cap-01, budget lowered 1 -> 0. It was dispatched
   # every 24h with 7 successful runs and recorded nothing, because the only

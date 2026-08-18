@@ -21,8 +21,11 @@ The third theme is inertness. A posture key nothing reads would be the
 declared-but-never-consumed defect in miniature, so
 :func:`test_every_posture_knob_actually_moves_a_resolved_value` proves each of
 the four keys changes something, and
-:func:`test_the_shipped_config_does_not_pin_the_posture_governed_knobs` proves
-the shipped ``agent_runtime.yaml`` does not sit on top of them.
+:func:`test_the_shipped_config_pins_only_the_posture_governed_knobs_it_argues_for`
+proves the shipped ``agent_runtime.yaml`` does not sit on top of them — except
+for the pins enumerated, with their reasons, in :data:`SANCTIONED_PINS`. It is
+the ONE place the shipped defaults are asserted, so every other posture test can
+point the loader at its own config and stay about the mechanism.
 """
 from __future__ import annotations
 
@@ -115,12 +118,37 @@ def test_the_default_posture_reproduces_the_pre_posture_behaviour(monkeypatch):
     assert dispatch_mod.mutation_allowed() is False
 
 
-def test_the_shipped_config_does_not_pin_the_posture_governed_knobs():
+#: Posture-governed knobs the shipped ``agent_runtime.yaml`` is allowed to pin,
+#: each with the reason it earns the exception. Enumerated by name rather than
+#: counted, and never widened to "some pins are fine": a pin makes the posture
+#: partly inert for that knob, so each one has to be argued.
+SANCTIONED_PINS = {
+    # rem-cap-04. Both built-in postures would otherwise supply a mode that does
+    # not work: `workspace-write` gives `enforce`, and the gate's policy is
+    # fail-closed while 81% of the tools the SAG toolsets register are
+    # unenumerated — four refusals in five, unattended, with `console_approver`
+    # denying on EOF. `dry_run` records the decision and allows, which is the
+    # fire-rate survey CLAUDE.md requires before arming a security check.
+    # The inertness this costs is small and was checked, not assumed: `off`
+    # (danger-full-access) and `dry_run` BOTH write the row and BOTH allow, so
+    # the pin changes the recorded reason for that posture and not its
+    # behaviour. Promotion to `enforce` is a later, per-bundle task; when it
+    # lands the pin should move to the posture, not widen this set.
+    # Finding: docs/security/approval-gate-reachability.md
+    "subsystems.approval.command_mode": "dry_run",
+}
+
+
+def test_the_shipped_config_pins_only_the_posture_governed_knobs_it_argues_for():
     """``agent_runtime.yaml`` sits ABOVE the posture, so a value there is a pin.
 
-    The four posture-governed keys ship commented out for exactly this reason.
-    If one is uncommented, selecting a posture stops moving that knob and the
-    posture becomes partly inert — silently, because both files still parse.
+    The posture-governed keys ship commented out for exactly this reason. If one
+    is uncommented, selecting a posture stops moving that knob and the posture
+    becomes partly inert — silently, because both files still parse. So a pin is
+    allowed only when it is listed in :data:`SANCTIONED_PINS` with a written
+    reason, and the exact value is asserted too: an unreviewed edit from
+    ``dry_run`` to ``enforce`` is the failure mode this guards, and it would slip
+    past a mere "is it pinned?" check.
     """
     import yaml
 
@@ -129,10 +157,41 @@ def test_the_shipped_config_does_not_pin_the_posture_governed_knobs():
     )
     subsystems = shipped.get("subsystems") or {}
     approval = subsystems.get("approval") or {}
-    assert "mode" not in approval
-    assert "command_mode" not in approval
-    assert not (subsystems.get("sandbox") or {}).get("mode")
-    assert "allow" not in (subsystems.get("mutation") or {})
+    found = {
+        "subsystems.approval.mode": approval.get("mode"),
+        "subsystems.approval.command_mode": approval.get("command_mode"),
+        "subsystems.sandbox.mode": (subsystems.get("sandbox") or {}).get("mode"),
+        "subsystems.mutation.allow": (subsystems.get("mutation") or {}).get("allow"),
+    }
+    for dotted, value in found.items():
+        if value is None:
+            assert dotted not in SANCTIONED_PINS, (
+                f"{dotted} is sanctioned as a pin but is no longer set; drop it "
+                "from SANCTIONED_PINS so the posture is documented as governing it"
+            )
+            continue
+        assert dotted in SANCTIONED_PINS, (
+            f"{dotted}={value!r} pins a posture-governed knob. Selecting a posture "
+            "will no longer move it. Argue the pin in SANCTIONED_PINS or remove it."
+        )
+        assert value == SANCTIONED_PINS[dotted], (
+            f"{dotted} is pinned to {value!r}, but the sanctioned value is "
+            f"{SANCTIONED_PINS[dotted]!r}. Re-argue the pin before changing it."
+        )
+
+
+def test_the_packaged_config_pins_exactly_what_the_checkout_pins():
+    """A wheel resolves ``icdev/data/args/``; a checkout resolves ``args/``.
+
+    `_find_config_path` probes both layouts, so a pin present in one and absent
+    from the other is a knob that resolves differently depending on how ICDEV
+    was installed — in the deployment nobody tests locally.
+    """
+    checkout = (REPO_ROOT / "args" / "agent_runtime.yaml").read_text(encoding="utf-8")
+    packaged = (
+        REPO_ROOT / "icdev" / "data" / "args" / "agent_runtime.yaml"
+    ).read_text(encoding="utf-8")
+    assert checkout == packaged
 
 
 def test_every_posture_knob_actually_moves_a_resolved_value(monkeypatch):

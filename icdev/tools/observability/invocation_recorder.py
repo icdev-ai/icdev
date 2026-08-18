@@ -81,7 +81,14 @@ SURFACE_MCP = "mcp"
 SURFACE_AGENT = "agent"
 SURFACE_PERSONA = "persona"
 SURFACE_ROLE = "role"
-SURFACES = (SURFACE_MCP, SURFACE_AGENT, SURFACE_PERSONA, SURFACE_ROLE)
+#: Extension hook points (hcx-live-02). One row per ``ExtensionManager.dispatch``
+#: call, named for the hook point. ``args/extension_config.yaml`` declares ten of
+#: them and nothing counted a single dispatch, so "this seam is consumed" and
+#: "this seam has never been called" were the same reading — the measurement gap
+#: that is this platform's signature defect.
+SURFACE_EXTENSION = "extension"
+SURFACES = (SURFACE_MCP, SURFACE_AGENT, SURFACE_PERSONA, SURFACE_ROLE,
+            SURFACE_EXTENSION)
 
 STATUS_RUNNING = "running"
 STATUS_OK = "ok"

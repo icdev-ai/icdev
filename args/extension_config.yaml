@@ -13,7 +13,32 @@ extensions:
     - extensions/                    # Project root extensions
     - tools/extensions/builtins/     # Built-in extensions
 
-  # Per-hook-point configuration
+  # Per-hook-point configuration.
+  #
+  # Read by ExtensionManager.point_config() and enforced by dispatch(). Until
+  # hcx-live-02 this whole block was inert: dispatch() read `extensions.enabled`
+  # and two `safety` keys and nothing else, so an operator standing ONE point
+  # down edited a key with no effect and the only working switch was the global
+  # one — which also stops the nine chat handlers that are in use.
+  #
+  # Four keys, and dispatch consumes every one of them. Adding a fifth means
+  # wiring it too; tests/test_extension_dispatch_governance.py fails on a key
+  # nothing reads, because a declared-but-unconsumed key is the defect this
+  # block was an instance of.
+  #
+  #   enabled             the per-point kill switch. False = the point does
+  #                       nothing at all, including writing telemetry.
+  #   allow_modification  a CEILING on what a handler may declare, not a copy of
+  #                       the per-handler flag. False here discards a modified
+  #                       context even from a handler registered with
+  #                       allow_modification=True (logged, and counted in
+  #                       ExtensionManager.stats). It only ever lowers: it
+  #                       cannot grant modification to an observational handler.
+  #   max_handlers        how many handlers ONE dispatch runs, in priority
+  #                       order. Falls back to safety.max_handlers_per_point.
+  #   timeout_ms          the point's wall-clock budget, combined with
+  #                       safety.max_total_handler_time_ms by min() — a point
+  #                       may tighten the global ceiling, never raise it.
   hook_points:
     tool_execute_before:
       enabled: true
@@ -75,7 +100,13 @@ extensions:
 
   # Safety limits
   safety:
-    max_total_handler_time_ms: 30000   # All handlers for one dispatch
-    catch_handler_exceptions: true     # Never let extension crash core
+    max_total_handler_time_ms: 30000   # Ceiling for one dispatch; per-point timeout_ms may tighten it
+    # Never let an extension crash the caller. Kept true on purpose: this seam
+    # sits on the chat path and the tool path. What changed in hcx-live-02 is
+    # that a swallowed exception is no longer INVISIBLE — the dispatch is
+    # recorded as an `error` row on the `extension` surface of
+    # runtime_invocations, naming the handler and its exception, and counted in
+    # ExtensionManager.stats(). Fail-soft, not fail-silent.
+    catch_handler_exceptions: true
     log_handler_errors: true           # Log errors to stderr
-    max_handlers_per_point: 20         # Prevent runaway registration
+    max_handlers_per_point: 20         # Default bound for a point declaring no max_handlers

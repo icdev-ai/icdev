@@ -35,6 +35,9 @@ Checks:
  24. external_only_surfaces — the sanctioned exception to 22: a module with no in-repo caller BY DESIGN must carry a
                       decision doc its docstring names, zero production importers, a vendor pin and a gated test.
                       Obligations, not a budget — args/external_only_surfaces.yaml (ctx-reach-02)
+ 25. board_writer_census — a NEW raw board INSERT that bypasses tools/kanban/task_factory.py fails; the 219 that
+                      existed at adoption are grandfathered BY NAME in args/kanban_raw_insert_census.txt and the
+                      ceiling in args/board_writer_gate.yaml may only go DOWN (rem-hyg-05)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -3459,6 +3462,198 @@ def check_substrate_liveness(changed_files: Optional[List[Path]] = None) -> Cohe
     )
 
 
+_BOARD_WRITER_CHECK_ID = "board_writer_census"
+_BOARD_WRITER_CHECK_NAME = "Board Writer Census (rem-hyg-05)"
+_BOARD_WRITER_EXPECTED = [
+    "every raw `INSERT INTO kanban_tasks` under tools/ and icdev/tools/ is either "
+    "enumerated BY NAME in args/kanban_raw_insert_census.txt or excluded with a "
+    "written reason in args/board_writer_gate.yaml"
+]
+
+
+def _relative_changed(changed_files: List[Path]) -> List[str]:
+    """Changed paths as repo-relative forward-slash strings.
+
+    Callers hand this checker a mix of absolute paths (the post-merge reflex) and
+    repo-relative ones (``--changed-files``). The census matches on repo-relative
+    posix text, so an absolute path that is silently left alone would fall
+    outside every scan root and quietly report "touches nothing in scope" — a
+    clean answer to a question that was never asked. A path outside the repo is
+    dropped rather than guessed at.
+    """
+    out: List[str] = []
+    for entry in changed_files or []:
+        path = entry if isinstance(entry, Path) else Path(str(entry))
+        if path.is_absolute():
+            try:
+                path = path.resolve().relative_to(PROJECT_ROOT.resolve())
+            except (ValueError, OSError):
+                continue
+        out.append(path.as_posix())
+    return out
+
+
+def _board_writer_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_BOARD_WRITER_CHECK_ID,
+        check_name=_BOARD_WRITER_CHECK_NAME,
+        status=status,
+        expected=_BOARD_WRITER_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_board_writer_census(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """rem-hyg-05 — a NEW board writer that bypasses the canonical seeder.
+
+    ``tools/kanban/task_factory.py`` opens with "Canonical task seeder — never
+    use raw INSERT directly", and until now nothing checked it. Measured
+    2026-08-16 across ``tools/`` and its ``icdev/tools/`` mirror: 231 raw board
+    INSERT sites in 209 files, of which 219 sites in 199
+    files are debt once the seeder itself and the migrations tree are excluded.
+    Roughly seven board writers in ten do not go through the seeder, and 42 of
+    those sites are the AUTONOMOUS path — ``tools/genesis/reflexes/*``.
+
+    Everything ``create_tasks`` provides is skipped with it: ``VALID_TASK_TYPES``
+    (which PostgreSQL enforces and SQLite silently does not), the
+    ``_assert_real_board`` refusal that stops a seed run landing in a throwaway
+    worktree database, the gate-id and risk-marker validation, and the dedupe
+    that makes a re-run idempotent. A raw INSERT gets none of them and reports
+    success regardless.
+
+    WHY A GATE INSIDE ``create_tasks`` CANNOT BE THE WHOLE ANSWER: it only ever
+    sees the 30% that already call it. This is the other half, and it is
+    deliberately the same shape as the platform's other census gates
+    (``args/ci_test_backlog.txt``, ``args/ci_skip_census.txt``) — the existing
+    set is grandfathered BY NAME rather than counted, because a bare count can
+    be held constant while the set churns, which is exactly how the ungated-test
+    gap regrew behind a green gate.
+
+    This check does NOT migrate anything; that is rem-hyg-06. It stops the set
+    growing.
+
+    ``fail``, not ``warn``: unlike ``substrate_liveness`` the finding is about
+    the DIFF, not about whatever rows happen to be in the database in front of
+    the checker, so it is actionable by the session that caused it. With a diff
+    the scan is scoped to it and costs milliseconds; the ceiling and stale-entry
+    halves are suppressed on a partial scan, because a subset cannot tell a
+    deleted site from an unscanned one and "225 entries are stale" on a one-file
+    commit is how a check earns a ``|| true``.
+    """
+    try:
+        from tools.kanban.raw_insert_census import (
+            RawInsertCensusError,
+            census as _raw_insert_census,
+            filter_scope,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # NOT a pass. An unimportable census is an unmeasured one, and the whole
+        # point of this family of gates is that "did not run" must not read as
+        # "found nothing".
+        return _board_writer_check(
+            "warn",
+            f"tools/kanban/raw_insert_census.py could not be imported ({exc}) — raw "
+            "board writers NOT verified. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+
+    scoped: Optional[List[str]] = None
+    if changed_files:
+        try:
+            scoped = filter_scope(
+                [
+                    str(entry).replace("\\", "/")
+                    for entry in _relative_changed(changed_files)
+                ]
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _board_writer_check(
+                "warn",
+                f"could not resolve the census scope for this diff ({exc}) — "
+                "raw board writers NOT verified.",
+                [f"scope failed: {exc}"],
+            )
+        if not scoped:
+            return _board_writer_check(
+                "pass",
+                "this change touches no file under tools/ or icdev/tools/, so it "
+                "cannot add a raw `INSERT INTO kanban_tasks`.",
+                [],
+            )
+
+    try:
+        report = _raw_insert_census(files=scoped)
+    except RawInsertCensusError as exc:
+        return _board_writer_check(
+            "fail",
+            f"the raw-INSERT census could not be resolved: {exc}",
+            [str(exc)],
+            missing=[str(exc)],
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _board_writer_check(
+            "warn",
+            f"raw-INSERT census failed to run ({exc}) — board writers NOT verified.",
+            [f"census failed: {exc}"],
+        )
+
+    scope_label = "changed file(s)" if report["partial"] else "in-scope file(s)"
+    actual = [
+        f"{report['total_sites']} raw INSERT site(s) in {report['total_files']} file(s) "
+        f"across {report['scanned_files']} {scope_label}",
+        f"{report['registered']} registered (ceiling {report['raw_insert_max']})",
+    ]
+
+    if report["errors"]:
+        return _board_writer_check(
+            "fail",
+            " | ".join(str(e) for e in report["errors"]),
+            actual,
+            missing=list(report["unregistered"]) or [str(e) for e in report["errors"]],
+        )
+
+    if report["stale"]:
+        # A site that vanished is rem-hyg-06 doing its job. Never fail the PR
+        # that removed a raw INSERT — say thank you and point at the ratchet.
+        return _board_writer_check(
+            "warn",
+            f"{len(report['stale'])} census entr(ies) name a raw-INSERT site that no "
+            "longer exists — a writer was converted. Run `python "
+            "tools/kanban/raw_insert_census.py --prune` and LOWER "
+            "`raw_insert_census.raw_insert_max` in args/board_writer_gate.yaml to "
+            f"{report['registered']}.",
+            actual,
+            missing=list(report["stale"])[:20],
+        )
+
+    if report["partial"]:
+        # Say what was actually measured. "0 known bypassers against a ceiling of
+        # 219" is true of the diff and false of the tree, and a message that
+        # reads as a whole-tree claim after a one-file scan is the same lie as a
+        # skipped test reporting green.
+        return _board_writer_check(
+            "pass",
+            f"none of the {report['scanned_files']} changed in-scope file(s) adds an "
+            f"unregistered raw board INSERT ({report['total_sites']} site(s) seen, all "
+            f"registered). Tree-wide totals and the ceiling are checked by the full "
+            "tier, not by this diff-scoped run.",
+            actual,
+        )
+
+    return _board_writer_check(
+        "pass",
+        f"no unregistered raw board INSERT; {report['registered']} known bypasser(s) "
+        f"enumerated in {report['census_file']} against a ceiling of "
+        f"{report['raw_insert_max']} (rem-hyg-06 converts them).",
+        actual,
+    )
+
+
 _SENTINEL_CHECK_ID = "gate_sentinel_shape"
 _SENTINEL_CHECK_NAME = "Gate Sentinel Shape (kax-exec-04)"
 _SENTINEL_EXPECTED = [
@@ -3634,7 +3829,20 @@ _CARD_EXPECTED = [
 
 
 def _project_card_entries() -> list:
-    """Load args/projects.yaml entries that declare both a prefix and epics."""
+    """Load args/projects.yaml entries that declare a task_prefix.
+
+    A card with a prefix and NO epics is included, with ``epics == []``. It used
+    to be filtered out here, which made the check blind to the worst spelling of
+    the bug it exists to find: a card that can never claim a single row, so
+    ``total_all`` is 0 and it renders nothing no matter how much work carries its
+    prefix. ``pgrt`` sat in exactly that state with 22 board tasks, and running
+    this check reported it clean — the one card most in need of the finding was
+    the one card excluded from the audit.
+
+    The prefix alone is what makes an entry auditable: it is the claim "these
+    rows are mine". Whether any epic then claims them is the question, not the
+    entry criterion.
+    """
     import yaml
 
     path = PROJECT_ROOT / "args" / "projects.yaml"
@@ -3649,12 +3857,12 @@ def _project_card_entries() -> list:
             for e in (p.get("epics") or [])
             if isinstance(e, dict) and str(e.get("key") or "").strip()
         ]
-        if prefix and epics:
+        if prefix:
             out.append({"key": str(p.get("key") or ""), "prefix": prefix, "epics": epics})
     return out
 
 
-def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
+def check_project_card_coverage(*, conn_factory=None, entries=None) -> CoherenceCheck:
     """A project card that silently renders NOTHING while its work sits on the board.
 
     ``_compute_project_progress`` in ``tools/dashboard/app.py`` derives every
@@ -3674,13 +3882,19 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
     computed over a subset, which is the recurring "the card's own progress claim
     is wrong" complaint.
 
-    Two spellings of the same mistake produce it:
+    Three spellings of the same mistake produce it:
       * seeding ``<prefix><something>-NN`` for a ``<something>`` that is not a
-        registered epic key, and
-      * adding tasks for an epic that was never added to ``args/projects.yaml``.
+        registered epic key,
+      * adding tasks for an epic that was never added to ``args/projects.yaml``,
+        and
+      * registering a card with a ``task_prefix`` and NO ``epics:`` block at all,
+        which claims nothing however much work carries the prefix.
 
-    Both are invisible at seed time, because ``task_factory`` does not consult the
-    project registry.
+    All three are invisible at seed time, because ``task_factory`` does not consult
+    the project registry. The third was invisible HERE too until rem-hyg-01: the
+    entry loader required epics, so the maximal case — ``pgrt``, 22 board tasks,
+    zero epics, card rendering nothing — was excluded from its own audit and the
+    check reported clean.
 
     Gate sentinels are deliberately NOT counted as orphans: a ``<prefix>gate-NN``
     row holds the card, it is not work, and it should not appear in a progress
@@ -3689,7 +3903,8 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
     Reported as ``warn``: the finding is board DATA, so failing a per-task code
     gate on it would block commits that have nothing to do with it.
 
-    ``conn_factory`` is an injection seam for tests. It exists because the
+    ``conn_factory`` and ``entries`` are injection seams for tests. They exist
+    because the
     obvious alternative — monkeypatching ``tools.db.storage.get_connection`` —
     does not reliably work here: ``tools.db.storage`` and
     ``icdev.tools.db.storage`` are DISTINCT module objects with distinct
@@ -3708,7 +3923,7 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
         else:
             get_connection = conn_factory
 
-        projects = _project_card_entries()
+        projects = _project_card_entries() if entries is None else list(entries)
     except Exception as exc:  # noqa: BLE001
         return CoherenceCheck(
             check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
@@ -3773,9 +3988,16 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
         if not orphans:
             continue
         scope = "EVERY task" if len(orphans) == len(owned) else f"{len(orphans)}/{len(owned)}"
+        # An entry with no epics at all cannot claim a row by construction, and
+        # saying "epics: " with nothing after it reads like a truncation rather
+        # than the finding.
+        epic_note = (
+            f"epics: {','.join(proj['epics'])}" if proj["epics"]
+            else "NO epics registered — the card can never count anything"
+        )
         findings.append(
             f"{proj['key']}: {scope} unclaimed by any epic "
-            f"(epics: {','.join(proj['epics'])}) e.g. {', '.join(orphans[:3])}"
+            f"({epic_note}) e.g. {', '.join(orphans[:3])}"
         )
 
     if findings:
@@ -3783,7 +4005,7 @@ def check_project_card_coverage(*, conn_factory=None) -> CoherenceCheck:
         return CoherenceCheck(
             check_id=_CARD_CHECK_ID, check_name=_CARD_CHECK_NAME, status="warn",
             expected=_CARD_EXPECTED,
-            actual=[f"{len(projects)} card(s) with epics audited against {len(ids)} board task(s)"],
+            actual=[f"{len(projects)} card(s) audited against {len(ids)} board task(s)"],
             missing=[], extra=sorted(findings),
             message=(
                 f"{len(findings)} project card(s) own board tasks that no epic claims"
@@ -9511,6 +9733,19 @@ def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
 
     Delegates to tools/dx/mirror_parity.py — the audit already existed and
     already had ``--gate``; it was simply wired into nothing.
+
+    Intentional re-export shims are excluded, via the same :func:`_is_mirror_shim`
+    predicate ``check_mirror_drift`` already uses — one copy of the rule, not two.
+    A shim is the OPPOSITE of the defect this gate exists for: the gate's premise
+    is that the two trees are separate module objects (``a is b`` -> False), and
+    for a shim they are literally the same object, so there is no stale half to
+    run. Byte-comparing a 98-line re-export against the 2,672-line module it
+    re-exports reports permanent drift that can only be "fixed" by copying the
+    body back — recreating the physically-separate stale copy the shim was
+    written to delete. ``_is_mirror_shim``'s own docstring names
+    ``tools/llm/agent_loop.py`` and says it must never be flagged; that was true
+    of the report-only check and not of this gate, so touching the CANONICAL
+    module failed the gate on its shim (rem-cap-04).
     """
     try:
         from tools.dx.mirror_parity import audit_all
@@ -9525,8 +9760,12 @@ def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
     for report in result.get("reports") or []:
         pkg = report.get("path") or ""
         for rel in report.get("content_drift") or []:
-            if str(rel).endswith(exts):
-                out.append(f"tools/{pkg}/{rel}".replace("\\", "/"))
+            if not str(rel).endswith(exts):
+                continue
+            rel_path = f"tools/{pkg}/{rel}".replace("\\", "/")
+            if _is_mirror_shim(PROJECT_ROOT / rel_path):
+                continue
+            out.append(rel_path)
     return sorted(out)
 
 
@@ -9697,6 +9936,7 @@ CHECK_REGISTRY = {
     "mirror_drift": check_mirror_drift,
     "doc_command_paths": check_doc_command_paths,
     "insert_schema_parity": check_insert_schema_parity,
+    "board_writer_census": check_board_writer_census,
 }
 
 
@@ -9849,6 +10089,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "capability_liveness": "skip",  # wiring a capability to a consumer is the fix; a budget bump is not
     "external_only_surfaces": "skip",  # satisfy the obligation or drop the declaration — both are decisions
     "gate_sentinel_shape": "skip",  # rename the task or make it a real gate — both are decisions
+    "board_writer_census": "skip",  # route the write through create_tasks, or register it with a written reason — both are decisions, and auto-registering would be the gate widening its own allowlist
 }
 
 

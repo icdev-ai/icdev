@@ -15,9 +15,11 @@ import time
 from typing import Any, Dict, Iterator
 
 from tools.llm.provider import (
+    PREFIX_CACHE_EXPLICIT,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    PrefixCacheCapability,
     messages_to_anthropic,
     tools_to_anthropic,
 )
@@ -61,6 +63,20 @@ class BedrockLLMProvider(LLMProvider):
     @property
     def provider_name(self) -> str:
         return "bedrock"
+
+    @property
+    def prefix_cache_capability(self) -> PrefixCacheCapability:
+        """Explicit: Anthropic's model on Bedrock's transport, same wire field."""
+        return PrefixCacheCapability(
+            support=PREFIX_CACHE_EXPLICIT,
+            reason=(
+                "Bedrock passes the Anthropic native request through, so caching "
+                "is requested the same way — cache_control={'type':'ephemeral'} "
+                "breakpoints on the system block and the last user message — and "
+                "the usage block returns the same cache token counters."
+            ),
+            reports_cache_tokens=True,
+        )
 
     def _get_client(self):
         """Lazy-init boto3 bedrock-runtime client."""

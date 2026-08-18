@@ -108,14 +108,45 @@ External-source refresh is **scheduled pull, not webhook/push** (ADR **D370**) �
 the dashboard is not internet-reachable, so inbound webhooks cannot be delivered
 in the target isolated topologies.
 
-- **NIST Publications Sync** — a mutable revision cache (`docmod_nist_pubs`,
-  migration 282) structurally cloned from `eol_products_sync`. Stdlib-only
-  (`urllib` + `defusedxml`, no new deps) https-only, TLS-verified,
-  cadence-gated pull of the NIST CSRC publications RSS/Atom feed, with a YAML
-  seed and an `import_dataset()` air-gap bundle. The `policy_refs` pack flags a
-  document citing an OLDER revision than the cache records (deterministic
-  numeric compare). Swallows every network/parse error — the sweep never fails
-  because egress is down.
+- **NIST Publications Sync** — a mutable revision cache (`docmod_nist_pubs`)
+  structurally cloned from `eol_products_sync`. https-only, TLS-verified,
+  cadence-gated pull, with a YAML seed and an `import_dataset()` air-gap bundle.
+  The `policy_refs` pack flags a document citing an OLDER revision than the cache
+  records (deterministic numeric compare). Swallows every network/parse error —
+  the sweep never fails because egress is down.
+
+  **Live source corrected (cef-fnd-02).** This shipped pulling the CSRC RSS feed
+  at `/CSRC/media/feeds/rss/publications.xml`. That feed is **retired**: measured
+  2026-08-17 it returns HTTP 404 while `csrc.nist.gov` answers 200, so the live
+  pull had never landed a single row and every cached row was `source='seed'`.
+  Two changes:
+
+  1. The live source is now CSRC's spreadsheet of current draft + final
+     publications (`NIST-Cybersecurity-Publications.xlsx`, parsed with the
+     already-declared `openpyxl`). It carries a `Stage` column, so the sync keeps
+     **Final rows only**. The one publications feed CSRC still advertises,
+     `drafts-open-for-comment.xml`, is deliberately NOT used: a draft does not
+     supersede a final publication, and caching a draft revision would flag every
+     document citing the current final revision — a manufactured finding. A
+     publication with no revision in its number (e.g. SP 800-207) is not cached
+     at all rather than being assigned an invented "Rev 1". `parse_feed()` is
+     retained for operators who configure a working RSS/Atom mirror.
+  2. **A dead URL and a dead network are no longer the same observable.**
+     `_fetch` returns a status token — `url_dead_http_404` (the server answered
+     and refused: a misconfiguration, logged at warning) is distinct from
+     `unreachable` (no egress: a normal air-gap state, logged at info), and from
+     `not_configured` / `refused_non_https` / `oversized`. Reporting the first as
+     `"feed unavailable (offline?)"` is precisely how a retired feed stayed
+     broken while every sweep reported a benign-looking skip. `sync()` surfaces
+     the per-source tokens in `sources`.
+
+  Measured after the fix: 54 publications land from the live catalog with
+  `source='nist.gov'`, and `policy_refs` emits a real finding (SP 800-171 Rev 1
+  superseded by Rev 3, evidence dated 05/14/2024). A bare
+  `python -m tools.doc_modernization.nist_pubs_sync` now runs `refresh()`, which
+  falls back to the static seed when the live pull lands nothing — an empty cache
+  makes `policy_refs` answer `unknown` forever — and reports which path supplied
+  the rows so the seed fallback is never presented as a live pull.
 - **CVE Bridge** — adds NO poller; it REUSES the existing supply-chain
   `cve_triage` store. For each document it re-runs the network_hardware +
   software extractors to learn cited products, matches them against
@@ -169,7 +200,7 @@ MUTABLE — correctly NOT in `APPEND_ONLY_TABLES`:
 | Table | Migration / DDL | RLS cols | Mutability |
 |-------|-----------------|----------|------------|
 | `docmod_link_checks` | `link_check.py` init DDL | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — upserted per sweep |
-| `docmod_nist_pubs` | migration 282 | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — revision cache upsert |
+| `docmod_nist_pubs` | migration `20260817024050` (legacy `282_docmod_nist_pubs.sql` retained) | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — revision cache upsert |
 | `dic_cross_references` | `document_intelligence/db/init_db.py` | `tenant_id`, `classification` (DEFAULT 'CUI') | MUTABLE — resolution UPDATEs `target_doc_id` |
 
 The `dic_doc_freshness.last_notified_at` column (cooldown store) is also
