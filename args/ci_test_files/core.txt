@@ -2331,3 +2331,26 @@ tests/agent_runtime/test_context_events_live_turn.py
 # grew to take these callers without silently parking their cards in backlog.
 # 27 tests, ~3s, sqlite fixture, no network.
 tests/kanban/test_reflex_board_writers.py
+
+# hcx-vv-03 -- the extension manager's own regression test, promoted out of the
+# backlog rather than added to it. hcx-live-01/02/03 rewrote dispatch(): they
+# added the TOOL_EXECUTE_BEFORE and AGENT_START/AGENT_END dispatchers, made the
+# ten hook_points config blocks load-bearing, started counting every dispatch,
+# and stopped swallowing a handler exception silently. Three NEW gated files
+# cover that new behaviour -- and the behaviour those changes had to keep intact
+# had no gated coverage at all: registration and unregister, priority ordering,
+# behavioural-vs-observational dispatch, loading handlers from a directory,
+# list_handlers filtering, and the ExtensionPoint enum's ten members (the exact
+# surface hcx-live-03 handed to a human to decide). Gating it SHRINKS the census
+# by one; backlog_max drops 1713 -> 1711 in the same commit. 18 tests, ~1s, no
+# DB, no network, no LLM: a fresh ExtensionManager() per test and tempfile dirs
+# for the file-loading cases. No skips -- args/ci_skip_census.txt names none for
+# this file and the source declares none. Verified in its own process, and
+# in-suite in BOTH orders against the gated extension files (last, after
+# test_dispatch_extension_point / test_extension_dispatch_governance /
+# test_extension_point_liveness / test_event_recorder / test_context_events /
+# test_agent_event_log -- 186 passed; and first, to prove it pollutes none of
+# them -- 69 passed). The full gated in-suite run is CI's step: red_first_gate
+# and isolation_run both scope to CHANGED TEST FILES and this PR changes none,
+# so neither of them can speak to a promotion out of the backlog.
+tests/test_extension_manager.py
