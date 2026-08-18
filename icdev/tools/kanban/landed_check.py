@@ -122,8 +122,43 @@ _MAX_IDS_PER_CALL = 150
 #:   * Fire rate on the population the gate actually sees (the 10 non-terminal
 #:     tasks on the board that day): 0.
 #:
-#: Re-run the survey before ever defaulting this to ``enforce``:
-#: ``python -m tools.kanban.landed_check --all --status done --no-prs --json``.
+#: DISPATCH-PATH SURVEY, 2026-08-18 — the one that decides this default, and it
+#: says DO NOT ARM. The survey above measured the board on one afternoon (10
+#: rows, 0 fires) and the detector's coverage over ``done`` tasks. Neither is the
+#: population this gate acts on, which is the dispatch stream. Measured over all
+#: 6,218 recorded scheduler dispatches against 7,500 commits of origin/main
+#: (``python -m tools.kanban.landed_dispatch_survey --json``):
+#:
+#:   * 572 dispatches (9.20%) would have been REFUSED under ``enforce``.
+#:   * 406 (6.53%) correctly — nothing carrying the id ever landed afterwards,
+#:     so the dispatch rebuilt delivered work and produced the duplicate PR that
+#:     can only merge as a revert (#1651). Three ids account for 160 of them.
+#:   * 166 (2.67% of all dispatches, 29.0% of fires) WRONGLY — a further commit
+#:     carrying the id reached main after the dispatch, so refusing would have
+#:     withheld work the repo took.
+#:
+#: 2.67% is above the 1.63% this repo already calls "refusing routine work" in
+#: the PreToolUse rule, and no discriminator rescues it. THREE were tested and
+#: all three failed, which is the finding rather than a detail:
+#:
+#:   * AGE of the landing — wrong rate is 7-24% in every band from "under a
+#:     minute" to "over a week", so a fire seconds after a merge is not
+#:     preferentially the board-lag race it looks like.
+#:   * EVIDENCE TIER — 36.4% wrong on merge_ref, 25.5% on subject. The stronger
+#:     tier is not the safer one.
+#:   * REPEAT COUNT — flat at 27-37% wrong from the 1st re-dispatch to the 11th.
+#:     Even a task dispatched eleven times is wrong to refuse a third of the time.
+#:
+#: The premise is what fails: "the id is on main" is not "the task is delivered".
+#: A task legitimately spans several commits across several PRs, and this check
+#: cannot see the difference. It stays ``warn`` — genuinely useful in the prompt
+#: and the log, and not fit to refuse. The real signal for the case it was built
+#: for is PR identity: a MERGED PR carrying the id, where the task points at a
+#: different one. That is where to spend the next effort, not on a threshold.
+#:
+#: Re-run BOTH before changing this default:
+#: ``python -m tools.kanban.landed_dispatch_survey --json``   (the fire rate)
+#: ``python -m tools.kanban.landed_check --all --status done --no-prs --json``
 _MODE_ENV = "KANBAN_LANDED_CHECK"
 _VALID_MODES = ("off", "warn", "enforce")
 
@@ -172,12 +207,39 @@ def _grep_pattern(task_id: str) -> str:
     return rf"(^|[^A-Za-z0-9_-]){escaped}([^A-Za-z0-9_-]|$)"
 
 
+def _merge_target(subject: str) -> str:
+    """The ref a merge commit merged INTO, or "" when it does not name one.
+
+    ``Merge pull request #747 from icdev-ai/feat/dvg-core-02`` names only a
+    SOURCE, so the branch went into the default branch. ``Merge
+    remote-tracking branch \'origin/main\' into kanban/ground-sol-01`` names a
+    TARGET, and the direction is the other way round: main went into the task
+    branch. Both subjects contain the task id; only the first is a landing.
+    """
+    text = (subject or "").strip()
+    if not text.startswith("Merge "):
+        return ""
+    marker = text.rfind(" into ")
+    return text[marker + len(" into "):] if marker != -1 else ""
+
+
 def _classify(task_id: str, subject: str, body: str) -> Optional[str]:
     """Strongest evidence this commit is ``task_id``'s landing, or None."""
     pat = re.compile(_grep_pattern(task_id))
     if pat.search(subject or ""):
         # A merge commit names the branch it merged, so an id inside one means
-        # a branch carrying this task went into the default branch.
+        # a branch carrying this task went into the default branch — UNLESS the
+        # id names the merge TARGET, in which case something was merged into the
+        # task's own branch and nothing landed anywhere. Such a commit is
+        # reachable from main only because the branch merged LATER, so its date
+        # is the branch's sync, not the task's delivery, and reading it as a
+        # landing dates the delivery too early. Measured by
+        # ``tools.kanban.landed_dispatch_survey``: 7 fires, 5 of them wrong.
+        target = _merge_target(subject or "")
+        if target:
+            if pat.search(target):
+                return None
+            return CONFIDENCE_MERGE_REF
         if (subject or "").lstrip().startswith("Merge "):
             return CONFIDENCE_MERGE_REF
         return CONFIDENCE_SUBJECT
