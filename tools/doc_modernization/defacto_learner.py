@@ -303,6 +303,72 @@ def get_recommended(category: str, conn=None) -> dict | None:
     return max(scoped, key=lambda r: (r.get("weighted_score") or 0, r.get("deploy_count") or 0))
 
 
+#: Rows scanned per free-text search before the read stops. See the same
+#: constant's note in tools/currency/entity_currency.py: a bounded read that
+#: does not say it was bounded reads as full coverage.
+SEARCH_ROW_CAP = 200
+
+
+def search(text: str, limit: int = 10, conn=None) -> list[dict]:
+    """Free-text lookup over the learned de-facto rows — corroboration evidence.
+
+    Returns the matching ``docmod_defacto_standards`` rows, each carrying its
+    feed's ``precedence`` (best = lowest) and ``match`` (the fraction of query
+    terms the row's own text contains), ordered best-evidence first. The rows
+    are NOT blended across feeds and NOT merged with catalog evidence: the
+    caller ranks them below curated output, which is the whole authority rule
+    this module's docstring states.
+
+    UNLIKE ``get_recommended``, a missing/dead table RAISES here rather than
+    returning nothing — the Cortex ``currency`` backend distinguishes "the
+    learner table is gone" from "the learner has learned nothing", and it can
+    only do that if the failure reaches it.
+    """
+    # One copy of the tokenizing/matching rule, in the store that owns it.
+    from tools.currency.entity_currency import match_score, search_terms
+
+    terms = search_terms(text)
+    if not terms:
+        return []
+    own = conn is None
+    if own:
+        conn = _connect()
+    try:
+        clauses, params = [], []
+        for term in terms:
+            like = f"%{term}%"
+            clauses.append(
+                "(LOWER(product) LIKE %s OR LOWER(vendor) LIKE %s "
+                "OR LOWER(category) LIKE %s)"
+            )
+            params.extend([like, like, like])
+        sql = (
+            "SELECT * FROM docmod_defacto_standards "  # nosec B608 - constant identifier; every value bound
+            f"WHERE ({' OR '.join(clauses)}) "
+            "ORDER BY domain, category, vendor, product, version LIMIT %s"
+        )
+        params.append(SEARCH_ROW_CAP)
+        rows = [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+    finally:
+        if own:
+            conn.close()
+
+    precedence = _feed_precedence()
+    out = []
+    for row in rows:
+        haystack = " ".join(str(row.get(c) or "").lower() for c in
+                            ("domain", "category", "vendor", "product", "version"))
+        row["match"] = match_score(terms, haystack)
+        row["precedence"] = precedence.get(str(row.get("source_feed") or ""), 100)
+        out.append(row)
+    out.sort(key=lambda r: (
+        int(r.get("precedence") or 100),
+        -float(r.get("match") or 0.0),
+        -float(r.get("weighted_score") or 0.0),
+    ))
+    return out[:max(1, int(limit or 1))]
+
+
 def cross_check(catalog_provider, conn=None, min_share_pct: float = 25.0) -> dict:
     """Compare learned deployment reality against the curated catalog.
 

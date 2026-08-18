@@ -69,7 +69,9 @@ CORTEX_ROUTING_FUNCTIONS = (
 # The YAML file is the source of truth — keep this minimal, not a mirror.
 CORTEX_CONFIG_DEFAULTS: Dict = {
     "search": {
-        "strategy_weights": {"rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6},
+        "strategy_weights": {
+            "rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6, "currency": 0.7,
+        },
         "rrf_k": 60,
         "crag_threshold": 0.55,
         "timeouts": {"default": 10.0},

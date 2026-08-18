@@ -16,7 +16,12 @@ import time
 import pytest
 
 from tools.cortex import search_service
-from tools.cortex.schemas import Citation, CortexContext, CortexSearchResult
+from tools.cortex.schemas import (
+    CORTEX_BACKENDS,
+    Citation,
+    CortexContext,
+    CortexSearchResult,
+)
 
 
 # Test config keeps routing independent of args/cortex_config.yaml edits.
@@ -49,7 +54,7 @@ def _hit(backend, score=0.5, strategy="native", sid="1"):
     )
 
 
-def _patch_adapters(monkeypatch, backends=("rag", "graph", "dic", "kb"), calls=None):
+def _patch_adapters(monkeypatch, backends=CORTEX_BACKENDS, calls=None):
     """Replace every adapter with a fake returning one hit per call."""
     for name in backends:
         def fake(query, top_k=5, ctx=None, _name=name):
@@ -99,6 +104,11 @@ def _patch_taxonomy(monkeypatch, label="fact_single", confidence=0.8, calls=None
         ("db_connection_timeout keeps recurring", "exact_term", ["kb"]),
         ("Is CVE-2024-12345 patched?", "exact_term", ["kb"]),
         ("What raises tools.db.storage errors?", "exact_term", ["kb"]),
+        # currency/lifecycle -> currency (cef-bck-01). Checked AFTER the three
+        # rules above, so these are queries none of them was claiming.
+        ("Is the Catalyst 6500 end-of-life?", "currency", ["currency"]),
+        ("Is TLS 1.1 still supported?", "currency", ["currency"]),
+        ("Has the FortiGate 60F been superseded?", "currency", ["currency"]),
     ],
 )
 def test_pattern_routes_are_deterministic(query, label, backends):
@@ -220,9 +230,10 @@ def test_strategy_all_runs_every_backend(monkeypatch):
 
     results = search_service.search("anything", strategy="all", config=TEST_CONFIG)
 
-    assert sorted(calls) == ["dic", "graph", "kb", "rag"]
-    assert {r.backend for r in results} == {"rag", "graph", "dic", "kb"}
-    assert all(r.strategy == "all:override[rag+graph+dic+kb]" for r in results)
+    assert sorted(calls) == sorted(CORTEX_BACKENDS)
+    assert {r.backend for r in results} == set(CORTEX_BACKENDS)
+    expected = "all:override[" + "+".join(CORTEX_BACKENDS) + "]"
+    assert all(r.strategy == expected for r in results)
 
 
 def test_unknown_strategy_raises():
@@ -475,4 +486,4 @@ def test_router_importable_via_canonical_namespace():
         search,
     )
 
-    assert set(CORTEX_STRATEGIES) == {"auto", "all", "rag", "graph", "dic", "kb"}
+    assert set(CORTEX_STRATEGIES) == {"auto", "all"} | set(CORTEX_BACKENDS)
