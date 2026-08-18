@@ -181,7 +181,9 @@ search:
     # table prefixes are enumerated from the live schema, and confirm the
     # `filtered_out` count in the search metadata stays 0 for known-good queries.
 
-    # Document-intelligence lens (DIC chat / docgen / tech-writer).
+    # Broad documents lens (docgen, tech-writer, general document QA). Spans a
+    # federated corpus and so stays un-row-scoped; the DIC-corpus-only view is
+    # the `document_intelligence` lens below.
     document:
       display_name: "Documents"
       backends: [rag, dic, graph]
@@ -198,6 +200,62 @@ search:
         gaps. Prefer precise, quotable language over paraphrase. Structure any
         summary as: (1) What the documents say, (2) Gaps / unresolved items,
         (3) Required actions.
+
+    # ── Document Intelligence lens (cef-bck-04) ─────────────────────────────────
+    # The DIC canvas's OWN corpus, and the first lens after `security` to populate
+    # `sources:`. It is a separate key from `document` above on purpose: that lens
+    # is the BROAD documents view (docgen, tech-writer, general document QA over a
+    # federated corpus, deliberately un-row-scoped per the standing decision); this
+    # one answers "what does the Document Intelligence corpus say", which is a
+    # narrower question and a closed set of tables.
+    #
+    # The standing decision above permits `sources` only once the prefixes are
+    # ENUMERATED FROM THE LIVE SCHEMA. They were, on 2026-08-18:
+    #   SELECT source_table, COUNT(*) FROM rag_chunks GROUP BY source_table
+    #     -> rag_compliance_corpus  3552
+    #        dic_documents           559
+    # rag_chunks is SHARED across canvases, so 86% of what the rag backend can
+    # return for a DI query is compliance-corpus prose that no DI question asked
+    # for. `dic_` keeps the 559 and drops the 3,552 — which is the whole reason
+    # this lens exists rather than reusing `document`.
+    #
+    # Every token filter_by_sources inspects is covered by the one prefix:
+    #   dic backend  citation.source_table='dic_documents', source_type='dic_document'
+    #   rag backend  citation.source_table=rag_chunks.source_table, which is
+    #                'dic_documents' for a DI chunk, and metadata.source_type
+    #                ('dic_document' vs 'compliance_reference') agrees with it.
+    # A second prefix that matches no live token would be decoration, so there is
+    # exactly one. Widen it only after re-running the query above.
+    #
+    # backends is [rag, dic] and NOT [rag, dic, graph, kb]: graph hits carry
+    # source_table='kg_nodes'/source_type='kg_node' and kb hits carry
+    # 'knowledge_patterns'/'kb_entry', so a `dic_` row scope deletes 100% of both.
+    # Declaring a backend whose every hit the row filter then drops buys a fan-out
+    # round trip and an inflated `filtered_out`, not evidence — backend scope and
+    # row scope have to agree. Reach the graph through the `document` lens, which
+    # does not row-scope. currency/external/sme are out for the reasons stated at
+    # the top of this file (evidence about lifecycles, an egress decision, and an
+    # LLM opinion respectively — none of them a DI corpus row).
+    document_intelligence:
+      display_name: "Document Intelligence (DIC)"
+      backends: [rag, dic]
+      collections: [dic_documents, dic_collections]
+      sources: [dic_]
+      intents: [summarize, extract_requirements, cite_sources, collection_coverage]
+      triage: true
+      persona: >
+        You are a senior records analyst working ONLY over the Document
+        Intelligence corpus — the ingested collections, their documents, and
+        their extracted sections. Ground every statement in a retrieved DIC
+        document and cite its document id/title and section or page for each
+        claim; if the retrieved set does not answer the question, say that the
+        corpus does not cover it rather than reaching outside it. Report
+        collection coverage explicitly: which collections the evidence came
+        from, and whether any part of the question went unanswered. Flag
+        unresolved placeholders, missing required sections, and
+        classification/marking gaps. Prefer precise, quotable language over
+        paraphrase. Structure any summary as: (1) What the corpus says (cited),
+        (2) Collection coverage and gaps, (3) Required actions.
 
     # Proposal / capture lens (RFI workbench, proposal drafting).
     proposal:

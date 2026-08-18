@@ -33,7 +33,7 @@ from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
 from . import document, proposal, security
-from .document import DOCUMENT_DOMAIN
+from .document import DOCUMENT_DOMAIN, DOCUMENT_INTELLIGENCE_DOMAIN
 from .proposal import PROPOSAL_DOMAIN
 from .security import (  # noqa: F401 - re-exports
     SECURITY_DOMAIN,
@@ -54,6 +54,7 @@ _TRIAGE_FORMATTERS = {
     SECURITY_DOMAIN: security.triage_summary,
     PROPOSAL_DOMAIN: proposal.triage_summary,
     DOCUMENT_DOMAIN: document.triage_summary,
+    DOCUMENT_INTELLIGENCE_DOMAIN: document.di_triage_summary,
 }
 
 
@@ -232,6 +233,8 @@ def summarize(results, ctx=None, query: str = "", config: Optional[dict] = None)
 __all__ = [
     "DomainProfile",
     "SECURITY_DOMAIN",
+    "DOCUMENT_DOMAIN",
+    "DOCUMENT_INTELLIGENCE_DOMAIN",
     "load_domain_profile",
     "list_domain_names",
     "domain_intents",
