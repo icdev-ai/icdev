@@ -2565,6 +2565,12 @@ def _phase_complete(prefix: str, phase: str) -> tuple[bool, list[str]]:
 
 
 from tools.kanban.gates import is_manual_gate as _is_manual_gate  # noqa: F401
+from tools.kanban.deps import (  # noqa: E402
+    dep_clause_sql as _dep_clause_sql,
+    junction_dep_ids as _junction_dep_ids,
+    parent_holds_done as _parent_holds_done,
+    scalar_is_superseded as _scalar_is_superseded,
+)
 
 
 def _get_due_tasks() -> list:
@@ -2582,29 +2588,20 @@ def _get_due_tasks() -> list:
     """
     conn = get_connection()
     try:
-        # Native task dependency gating — a task is blocked if ANY of its
-        # declared dependencies (scalar AND/OR junction table) are not yet done.
-        # A task may have BOTH a scalar depends_on_task_id AND junction rows.
-        # Both must be satisfied. 'decomposed' counts as done (parent was split;
-        # it will never reach 'done' directly so dependents must not wait for it).
+        # Native task dependency gating. The rule is ONE rule and it lives in
+        # tools.kanban.deps, rendered here as SQL so the dispatch query can stay
+        # set-based (kpr-fix-02). It used to be written inline and ANDed the
+        # scalar depends_on_task_id with the junction table, which let SEEDING
+        # ORDER — the linear chain a seeder writes as it walks its list —
+        # override the real fan-in graph. Four CEF tasks with every genuine
+        # prerequisite already done sat in backlog for a day because of it.
         #
-        # Scalar dep check: always applied when depends_on_task_id is set.
-        # Junction dep check: when kanban_task_deps rows exist, ALL must be done.
-        # A task without either dependency is always eligible.
-        _scalar_dep_ok = (
-            "(kt.depends_on_task_id IS NULL "
-            " OR EXISTS (SELECT 1 FROM kanban_tasks dep "
-            "            WHERE dep.id = kt.depends_on_task_id "
-            "             AND dep.status IN ('done', 'decomposed')))"
-        )
-        _junction_dep_ok = (
-            "(NOT EXISTS (SELECT 1 FROM kanban_task_deps d WHERE d.task_id = kt.id) "
-            " OR NOT EXISTS (SELECT 1 FROM kanban_task_deps d2 "
-            "                JOIN kanban_tasks p ON p.id = d2.depends_on_id "
-            "                WHERE d2.task_id = kt.id "
-            "                 AND p.status NOT IN ('done', 'decomposed')))"
-        )
-        dep_clause = f"({_scalar_dep_ok} AND {_junction_dep_ok})"
+        # dep_params carries the manual-gate LIKE patterns as BOUND PARAMETERS.
+        # A literal % in the clause would be a psycopg format directive the
+        # moment any parameter is passed — including one RLS injects — so it
+        # must never be interpolated. Splice dep_params in at the POSITION the
+        # clause appears in each statement.
+        dep_clause, dep_params = _dep_clause_sql("kt")
 
         # Always pick up scheduled-and-due tasks.
         # Chain-priority (2026-04-15): tasks with depends_on_task_id IS NOT NULL
@@ -2625,7 +2622,8 @@ def _get_due_tasks() -> list:
             "  WHEN 'high' THEN 1 "
             "  WHEN 'medium' THEN 2 "
             "  ELSE 3 END, "
-            "kt.created_at ASC"
+            "kt.created_at ASC",
+            dep_params,
         ).fetchall()
         result = [
             dict(r) for r in scheduled
@@ -2742,7 +2740,7 @@ def _get_due_tasks() -> list:
             "  ELSE 3 END, "
             "kt.created_at ASC "
             "LIMIT %s",
-            ("QUARANTINED by self_debug%", slots),
+            ("QUARANTINED by self_debug%", *dep_params, slots),
         ).fetchall()
         result.extend(
             d for d in (dict(r) for r in backlog)
@@ -3452,48 +3450,23 @@ def _record_status_transition(
 
 
 def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
-    """Return (True, None) if task has no parent OR parent is done.
+    """Return (True, None) if every GATING dependency is done/decomposed.
 
     Used by _move_task's done-transition guard. Defense-in-depth against
     manually set status=done bypassing _get_due_tasks' dependency check
     (the E-gate orphan-done incident, 2026-04-15).
+
+    It asks ``tools.kanban.deps`` — the same question dispatch asked — so a task
+    the dispatcher released can actually be completed. Guarding on the raw
+    scalar would refuse to mark FINISHED work done because its seeding
+    predecessor is still open, which is not the incident this guard exists for
+    and is a refusal nothing on the board can clear (kpr-fix-02).
     """
     try:
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT t.depends_on_task_id, p.status AS parent_status "
-                "FROM kanban_tasks t "
-                "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-                "WHERE t.id = %s",
-                (task_id,),
-            ).fetchone()
-            if not row:
-                return True, None
-            row = dict(row)
-
-            # Check scalar dep
-            parent_id = row.get("depends_on_task_id")
-            if parent_id:
-                parent_status = row.get("parent_status")
-                if parent_status not in ("done", "decomposed"):
-                    return False, f"parent {parent_id} status={parent_status!r}"
-
-            # Check junction deps — any undone junction parent blocks
-            unmet = conn.execute(
-                "SELECT d.depends_on_id, p.status "
-                "FROM kanban_task_deps d "
-                "JOIN kanban_tasks p ON p.id = d.depends_on_id "
-                "WHERE d.task_id = %s AND p.status NOT IN ('done', 'decomposed')",
-                (task_id,),
-            ).fetchone()
-        if unmet:
-            unmet = dict(unmet)
-            return False, (
-                f"junction dep {unmet['depends_on_id']!r} status={unmet['status']!r}"
-            )
+            return _parent_holds_done(task_id, conn)
     except Exception:
         return True, None  # fail-open on DB error
-    return True, None
 
 
 def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") -> None:
@@ -3934,7 +3907,7 @@ def _orphan_rows() -> list[dict]:
             # Scalar dep orphans: done task whose depends_on_task_id parent isn't done
             scalar_rows = conn.execute(
                 "SELECT t.id AS id, t.depends_on_task_id AS parent_id, "
-                "       p.status AS parent_status "
+                "       p.status AS parent_status, p.title AS parent_title "
                 "FROM kanban_tasks t "
                 "JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
                 "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed') "
@@ -3946,7 +3919,7 @@ def _orphan_rows() -> list[dict]:
             # Junction dep orphans: done task with at least one unfinished junction parent
             junction_rows = conn.execute(
                 "SELECT DISTINCT t.id AS id, d.depends_on_id AS parent_id, "
-                "       p.status AS parent_status "
+                "       p.status AS parent_status, p.title AS parent_title "
                 "FROM kanban_tasks t "
                 "JOIN kanban_task_deps d ON d.task_id = t.id "
                 "JOIN kanban_tasks p ON p.id = d.depends_on_id "
@@ -3954,6 +3927,22 @@ def _orphan_rows() -> list[dict]:
                 "  AND p.id NOT LIKE '%%-gate-00' "
                 "  AND COALESCE(p.title, '') NOT LIKE '%%MANUAL-MODE GATE%%'"
             ).fetchall()
+            # A scalar parent the junction graph SUPERSEDED never gated this task,
+            # so finishing ahead of it is not evidence the work jumped a
+            # prerequisite — it is the parallelism the graph declared. Dropping
+            # these matters because this sweep ROLLS A DONE TASK BACK TO BACKLOG,
+            # and a rolled-back task is re-dispatched into a PR that can only land
+            # as a revert (kpr-fix-02, and the #1651/#1784 class before it).
+            scalar_rows = [
+                r for r in scalar_rows
+                if not _scalar_is_superseded(
+                    dict(r).get("parent_id"),
+                    _junction_dep_ids(dict(r)["id"], conn),
+                    scalar_is_gate=_is_manual_gate(
+                        dict(r).get("parent_id"), dict(r).get("parent_title")
+                    ),
+                )
+            ]
         finally:
             conn.close()
     except Exception as exc:

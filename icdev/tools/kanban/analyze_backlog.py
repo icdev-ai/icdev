@@ -2,7 +2,7 @@
 """Analyze backlog tasks to determine which batch can be promoted to SCHEDULED.
 
 This script queries kanban_tasks for all BACKLOG tasks and evaluates:
-1. Dependency satisfaction (scalar + junction deps)
+1. Dependency satisfaction (tools.kanban.deps — the dispatcher's own rule)
 2. Priority order (critical > high > medium > low)
 3. Phase-exit gates (for phased task IDs like efa-E3-*)
 4. Recent update cooldown (2 min)
@@ -21,6 +21,8 @@ if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban import deps as kanban_deps  # noqa: E402
+from tools.kanban.gates import is_manual_gate  # noqa: E402
 
 
 def _utcnow() -> datetime:
@@ -53,43 +55,25 @@ def _phase_complete(prefix: str, phase: str, conn) -> tuple[bool, list[str]]:
     return len(undone) == 0, undone
 
 
-def _deps_satisfied(task_id: str, conn) -> tuple[bool, list[str]]:
-    """Check if ALL dependencies (scalar + junction) are done/decomposed.
-    Returns (ok, list of blocking dep ids).
-    """
-    blocking: list[str] = []
-
-    # Scalar dep
+def _scalar_is_gate(dep_id: str | None, conn) -> bool:
+    """Is this scalar parent a manual gate? A gate holds regardless of junction rows."""
+    if not dep_id:
+        return False
     row = conn.execute(
-        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s",
-        (task_id,),
+        "SELECT title FROM kanban_tasks WHERE id = %s", (dep_id,)
     ).fetchone()
-    if row:
-        scalar_dep = dict(row).get("depends_on_task_id")
-        if scalar_dep:
-            dep_row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = %s", (scalar_dep,)
-            ).fetchone()
-            if not dep_row:
-                blocking.append(f"{scalar_dep} (missing)")
-            elif dict(dep_row)["status"] not in ("done", "decomposed"):
-                blocking.append(scalar_dep)
+    return is_manual_gate(dep_id, dict(row).get("title") if row else None)
 
-    # Junction deps
-    jdeps = conn.execute(
-        "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
-        (task_id,),
-    ).fetchall()
-    for r in jdeps:
-        dep_id = dict(r)["depends_on_id"]
-        dep_row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = %s", (dep_id,)
-        ).fetchone()
-        if not dep_row:
-            blocking.append(f"{dep_id} (missing)")
-        elif dict(dep_row)["status"] not in ("done", "decomposed"):
-            blocking.append(dep_id)
 
+def _deps_satisfied(task_id: str, conn) -> tuple[bool, list[str]]:
+    """``(ok, blocking dep ids)`` — the dispatcher's own predicate (kpr-fix-02).
+
+    This report exists to explain why a backlog is not draining, so it must ask
+    exactly what ``promote_backlog_to_scheduled`` asks. It used to AND the scalar
+    ``depends_on_task_id`` with the junction table and so named seeding-order
+    predecessors as blockers that dispatch would never have honoured.
+    """
+    blocking = kanban_deps.blocking_deps(task_id, conn)
     return len(blocking) == 0, blocking
 
 
@@ -201,12 +185,19 @@ def analyze_backlog() -> None:
             print(f"\n[{proj}] -- {len(tasks_in_proj)} task(s)")
             for t in tasks_in_proj:
                 dep_str = ""
+                jdeps = kanban_deps.junction_dep_ids(t["id"], conn)
                 if t.get("depends_on_task_id"):
-                    dep_str = f" -> after {t['depends_on_task_id']}"
-                jdeps = conn.execute(
-                    "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
-                    (t["id"],),
-                ).fetchall()
+                    # Say when the scalar is seeding order the junction graph
+                    # replaced, rather than printing a blocker dispatch ignores.
+                    superseded = kanban_deps.scalar_is_superseded(
+                        t["depends_on_task_id"], jdeps,
+                        scalar_is_gate=_scalar_is_gate(t["depends_on_task_id"], conn),
+                    )
+                    dep_str = (
+                        f" -> seeded after {t['depends_on_task_id']} (not gating)"
+                        if superseded
+                        else f" -> after {t['depends_on_task_id']}"
+                    )
                 if jdeps:
                     dep_str += f" +{len(jdeps)} junction dep(s)"
                 print(

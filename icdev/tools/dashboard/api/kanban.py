@@ -15,6 +15,7 @@ from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection, sql_placeholder
 from tools.dashboard.sse_manager import sse_manager
 from tools.kanban.gates import is_manual_gate
+from tools.kanban import deps as kanban_deps
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.dashboard.api.kanban")
@@ -430,20 +431,22 @@ def list_tasks():
             done_rows = conn.execute(done_sql).fetchall()
             rows = list(queue_rows) + list(active_rows) + list(done_rows)
         tasks = [dict(r) for r in rows]
+        # ONE bulk read for the whole page — blocking_deps per row would be an
+        # N+1 over the board.
+        _blocking = kanban_deps.blocking_deps_bulk([t["id"] for t in tasks], conn)
         # Stringify datetimes for JSON + compute is_blocked + derive
         # a stable oracle_rule label.
         for t in tasks:
             for k in ("scheduled_at", "completed_at", "created_at", "updated_at"):
                 if t.get(k) and hasattr(t[k], "isoformat"):
                     t[k] = t[k].isoformat()
-            # Native dependency: a task is blocked whenever it has a
-            # depends_on_task_id that is not yet `done`. NULL dependency
-            # (no parent) → is_blocked = False, matches the listener's
-            # _get_due_tasks gating exactly.
-            if t.get("depends_on_task_id"):
-                t["is_blocked"] = t.get("depends_on_status") != "done"
-            else:
-                t["is_blocked"] = False
+            # Native dependency: blocked when a GATING dependency is not yet
+            # done. Junction rows are the declaration when a task has them, so a
+            # scalar depends_on_task_id they superseded is seeding order and must
+            # not paint the row blocked — the board said "15 of 16 dependency-
+            # blocked" while the dispatcher would have released four of them
+            # (kpr-fix-02). Matches _get_due_tasks' gating exactly.
+            t["is_blocked"] = bool(_blocking.get(t["id"]))
             # Two prediction shapes coexist on the board:
             #   Legacy:  lens_name = '<rule>'   prediction_type = 'regression::<probe>' or 'gap::<rule>'
             #   New:     lens_name = 'internal_awareness'   prediction_type = 'gap::<rule>'
@@ -1551,32 +1554,32 @@ def move_task(task_id):
         # path (used by Claude CLI subprocess) enforces the same dependency gate.
         moving_to_done = new_status == "done" and existing["status"] != "done"
         if moving_to_done:
-            dep_row = conn.execute(
-                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s",
-                (task_id,),
-            ).fetchone()
-            # dict() first: on PostgreSQL a row is a RealDictRow (which has .get),
-            # but on the SQLite fallback it is a sqlite3.Row, which does not.
-            # Calling .get() straight on the row is an AttributeError on one
-            # backend and fine on the other.
-            parent_id = dict(dep_row or {}).get("depends_on_task_id")
-            parent_status = None
-            if parent_id:
+            # Which dependencies GATE is tools.kanban.deps' call, not this
+            # route's — the HTTP path is what a worker session uses to report
+            # its own completion, so refusing here on a dependency dispatch
+            # never honoured leaves finished work with no way to be marked done
+            # (kpr-fix-02).
+            blocking = kanban_deps.blocking_deps(task_id, conn)
+            if blocking:
+                parent_id = blocking[0]
                 parent_row = conn.execute(
                     "SELECT status FROM kanban_tasks WHERE id = %s",
                     (parent_id,),
                 ).fetchone()
-                parent_status = (parent_row or {}).get("status")
-            if parent_id and parent_status not in ("done", "decomposed", None):
-                    return jsonify({
-                        "error": "dependency_not_done",
-                        "detail": (
-                            f"Cannot mark task done: dependency {parent_id!r} "
-                            f"is still {parent_status!r}. Complete the parent task first."
-                        ),
-                        "depends_on_task_id": parent_id,
-                        "parent_status": parent_status,
-                    }), 409
+                # dict() first: on PostgreSQL a row is a RealDictRow (which has
+                # .get), but on the SQLite fallback it is a sqlite3.Row, which
+                # does not. Calling .get() straight on the row is an
+                # AttributeError on one backend and fine on the other.
+                parent_status = dict(parent_row or {}).get("status")
+                return jsonify({
+                    "error": "dependency_not_done",
+                    "detail": (
+                        f"Cannot mark task done: dependency {parent_id!r} "
+                        f"is still {parent_status!r}. Complete the parent task first."
+                    ),
+                    "depends_on_task_id": parent_id,
+                    "parent_status": parent_status,
+                }), 409
 
         # guard-22: block direct transitions to "done" unless verification
         # passed (or operator explicitly bypasses with a reason).

@@ -31,16 +31,27 @@ from tools.kanban import promote_backlog_to_scheduled as promote
 
 
 class _Conn:
-    """Minimal stand-in for the two queries `_deps_satisfied` makes."""
+    """Minimal stand-in for the queries `_deps_satisfied` makes.
 
-    def __init__(self, scalar_dep=None, junction=(), statuses=None):
+    Two shapes read the scalar, because the rule now lives in
+    `tools.kanban.deps` and that module reads the scalar and its parent's TITLE
+    in one LEFT JOIN — it has to know whether the scalar points at a manual gate
+    (see `test_a_scalar_pointing_at_a_manual_gate_holds_...` below). Both are
+    served so this stub pins BEHAVIOUR rather than one module's query text.
+    """
+
+    def __init__(self, scalar_dep=None, junction=(), statuses=None, titles=None):
         self.scalar_dep = scalar_dep
         self.junction = list(junction)
         self.statuses = statuses or {}
+        self.titles = titles or {}
         self.queries = []
 
     def execute(self, sql, params=()):
-        self.queries.append(sql)
+        self.queries.append((sql, tuple(params)))
+        if "LEFT JOIN kanban_tasks p" in sql:
+            return _R([{"dep_id": self.scalar_dep,
+                        "dep_title": self.titles.get(self.scalar_dep)}])
         if "depends_on_task_id FROM kanban_tasks" in sql:
             return _R([{"depends_on_task_id": self.scalar_dep}])
         if "kanban_task_deps" in sql:
@@ -51,6 +62,11 @@ class _Conn:
                 return _R([])
             return _R([{"status": self.statuses[tid]}])
         raise AssertionError(f"unexpected query: {sql}")
+
+    def status_reads(self):
+        """Ids whose STATUS was consulted — i.e. what actually gated."""
+        return [p[0] for sql, p in self.queries
+                if "status FROM kanban_tasks" in sql and p]
 
 
 class _R:
@@ -130,18 +146,52 @@ def test_a_dangling_scalar_still_blocks_when_there_is_no_junction_graph():
     assert promote._deps_satisfied("t", conn) is False
 
 
-# ── the scalar is not consulted at all once a junction graph exists ────────
-def test_the_scalar_is_not_even_read_when_a_junction_graph_exists():
+# ── a superseded scalar cannot gate ────────────────────────────────────────
+def test_a_superseded_scalar_never_gates_when_a_junction_graph_exists():
     """Structural, and it is the point of the change: if the scalar were still
-    consulted 'just as a warning', the next refactor would quietly restore it as
-    a gate. A satisfied junction graph ends the question."""
+    allowed to gate 'just as a warning', the next refactor would quietly restore
+    it. A satisfied junction graph ends the question.
+
+    Asserted on the STATUS read rather than on the scalar read, because
+    `tools.kanban.deps` must look the scalar up to see whether it points at a
+    manual gate. That lookup reads the parent's id and title and NOTHING about
+    whether it is finished — so if the scalar's status is never consulted, the
+    scalar cannot have gated. Gating is the thing this test exists to prevent.
+    """
     conn = _Conn(
         scalar_dep="anything",
         junction=["p"],
-        statuses={"p": "done"},
+        statuses={"p": "done", "anything": "in_progress"},
     )
     assert promote._deps_satisfied("t", conn) is True
-    assert not any("depends_on_task_id FROM kanban_tasks" in q
-                   for q in conn.queries), (
-        "the scalar was queried even though a junction graph exists — it is "
-        "seeding order, and reading it here is how it becomes a gate again")
+    assert "anything" not in conn.status_reads(), (
+        "the scalar's status was consulted even though a junction graph "
+        "exists — it is seeding order, and letting it decide here is how it "
+        "becomes a gate again")
+
+
+def test_a_scalar_pointing_at_a_manual_gate_holds_even_with_a_junction_graph():
+    """The one carve-out, and the reason the scalar is still LOOKED UP.
+
+    A gate is a HOLD — a human decided this card does not ship unattended — not
+    seeding order, so a junction graph must not release it. Measured 2026-08-18:
+    `kpr-stale-02` carries junction rows AND a scalar pointing at a held gate,
+    so without this the guarantee would be accidental rather than stated.
+    """
+    conn = _Conn(
+        scalar_dep="kpr-gate-02",
+        junction=["p"],
+        statuses={"p": "done", "kpr-gate-02": "in_progress"},
+    )
+    assert promote._deps_satisfied("kpr-stale-02", conn) is False
+
+
+def test_a_satisfied_gate_scalar_releases_alongside_the_junction_graph():
+    """Narrowed, not inverted: the carve-out HOLDS more, it never holds forever.
+    A gate a human has released stops holding."""
+    conn = _Conn(
+        scalar_dep="kpr-gate-02",
+        junction=["p"],
+        statuses={"p": "done", "kpr-gate-02": "done"},
+    )
+    assert promote._deps_satisfied("kpr-stale-02", conn) is True

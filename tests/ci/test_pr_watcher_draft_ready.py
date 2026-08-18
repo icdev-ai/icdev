@@ -22,25 +22,54 @@ class _Row(dict):
 
 
 class _Conn:
-    """Answers the two queries the guard makes: gate title, and dependency."""
+    """A three-row board: the task, its scalar parent, and its junction parent.
 
-    def __init__(self, *, title="", dep_status=None, has_dep=False, raises=False):
+    The dependency half of the guard is now ``tools.kanban.deps``, which asks
+    which dependency actually GATES rather than reading the scalar column
+    (kpr-fix-02) — so the stub has to model both mechanisms. ``dep_status=None``
+    with ``has_dep`` set is a dangling parent, which blocks.
+    """
+
+    _PARENT = "parent-01"
+    _JUNCTION_PARENT = "junction-01"
+
+    def __init__(self, *, title="", dep_status=None, has_dep=False, raises=False,
+                 parent_title="", junction_status=None):
         self.title = title
         self.dep_status = dep_status
         self.has_dep = has_dep
         self.raises = raises
+        self.parent_title = parent_title
+        self.junction_status = junction_status
         self.closed = False
 
     def execute(self, sql, params=None):
         if self.raises:
             raise RuntimeError("db down")
         self._last = sql
+        self._params = params or ()
         return self
 
     def fetchone(self):
-        if "depends_on_task_id IS NOT NULL" in self._last:
-            return _Row(dep_status=self.dep_status) if self.has_dep else None
+        sql, params = self._last, self._params
+        if "depends_on_task_id AS dep_id" in sql:
+            if not self.has_dep:
+                return _Row(dep_id=None, dep_title=None)
+            return _Row(dep_id=self._PARENT, dep_title=self.parent_title)
+        if "SELECT status FROM kanban_tasks" in sql:
+            wanted = params[0] if params else None
+            if wanted == self._PARENT:
+                return _Row(status=self.dep_status) if self.dep_status else None
+            if wanted == self._JUNCTION_PARENT:
+                return (_Row(status=self.junction_status)
+                        if self.junction_status else None)
+            return None
         return _Row(title=self.title)
+
+    def fetchall(self):
+        if "kanban_task_deps" in self._last and self.junction_status is not None:
+            return [_Row(depends_on_id=self._JUNCTION_PARENT)]
+        return []
 
     def close(self):
         self.closed = True
@@ -158,3 +187,30 @@ def test_undraft_happens_before_the_sibling_hold_can_return():
         "the un-draft must precede the sibling-conflict hold; below it, a held "
         "PR is never taken out of draft and auto-merge can never reach it"
     )
+
+
+def test_a_scalar_the_junction_graph_superseded_does_not_hold_the_draft():
+    """Seeding order must not strand a released task's PR in draft (kpr-fix-02).
+
+    ``cef-di-04`` is dispatched while ``cef-di-03`` — the predecessor a seeder
+    wrote as it walked the batch — is still open. If the draft guard still read
+    the scalar column, the PR would sit in draft until that unrelated task
+    finished, which is the same stall the dispatch fix removed, one step later.
+    """
+    conn = _Conn(title="freed work", has_dep=True, dep_status="in_progress",
+                 junction_status="done")
+    runner = _Runner()
+    w = _watcher(conn, runner)
+    assert w._mark_ready("https://x/pull/1", "cef-di-04", lambda: conn) is True
+    assert runner.calls == [["gh", "pr", "ready", "https://x/pull/1"]]
+
+
+def test_a_manual_gate_scalar_holds_the_draft_even_with_junction_rows():
+    """A gate is a HOLD. The junction graph must not release what a human held."""
+    conn = _Conn(title="AGOV work", has_dep=True, dep_status="in_progress",
+                 parent_title="MANUAL-MODE GATE — a human decides",
+                 junction_status="done")
+    runner = _Runner()
+    w = _watcher(conn, runner)
+    assert w._mark_ready("https://x/pull/1", "agov-det-02", lambda: conn) is False
+    assert runner.calls == []

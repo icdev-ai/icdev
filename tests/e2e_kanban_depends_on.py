@@ -6,7 +6,7 @@ Seeds a parent + dependent task pair via the dashboard API, navigates to
 
   1.  API list_tasks returns depends_on_task_id / depends_on_status / is_blocked
   2.  The dependent task renders with the blocked-by badge on-screen
-  3.  The dependent card is dimmed (opacity < 1)
+  3.  That badge names the blocker and its status
   4.  Marking the parent 'done' clears is_blocked on the next list call
   5.  Screenshot capture at 1920x1080
   6.  No SEVERE JS errors (favicon/404 excluded)
@@ -26,8 +26,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import http.cookiejar
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -66,6 +68,53 @@ class TestResult:
         }
 
 
+# Every mutating dashboard API is CSRF-protected (tools/security/csrf.py), and a
+# cookie session is established for this caller whether or not it asked for one —
+# so a bare urllib POST is rejected with 403 CSRF_FAILED. That reads as "the seed
+# route is broken" when the route is fine, which is exactly how this test failed.
+# A browser gets its token from the <meta name="csrf-token"> tag base.html
+# renders; do the same, over one cookie jar so the session the token belongs to is
+# the session the request arrives on.
+_COOKIE_JAR = http.cookiejar.CookieJar()
+_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_COOKIE_JAR))
+_CSRF_TOKEN: str | None = None
+
+
+def _csrf_token() -> str:
+    """Open a session against the dashboard and read its CSRF token (once).
+
+    Returns "" when no token is on offer — CSRF may be disabled
+    (ICDEV_CSRF_ENFORCE=0), in which case sending no header is correct and
+    failing here would invent a failure.
+    """
+    global _CSRF_TOKEN
+    if _CSRF_TOKEN is not None:
+        return _CSRF_TOKEN
+    _CSRF_TOKEN = ""
+    try:
+        with _OPENER.open(f"{BASE_URL}/", timeout=15) as resp:  # nosec B310
+            html = resp.read().decode("utf-8", "replace")
+        match = re.search(r'name="csrf-token"\s+content="([^"]+)"', html)
+        if match:
+            _CSRF_TOKEN = match.group(1)
+        else:
+            for cookie in _COOKIE_JAR:
+                if cookie.name == "icdev_csrf" and cookie.value:
+                    _CSRF_TOKEN = cookie.value
+                    break
+    except Exception:
+        _CSRF_TOKEN = ""
+    return _CSRF_TOKEN
+
+
+def _headers(json_body: bool = True) -> dict:
+    headers = {"Content-Type": "application/json"} if json_body else {}
+    token = _csrf_token()
+    if token:
+        headers["X-CSRF-Token"] = token
+    return headers
+
+
 def _post(path: str, payload: dict, *, retries: int = 3) -> dict:
     last_exc: Exception | None = None
     for attempt in range(retries):
@@ -75,10 +124,10 @@ def _post(path: str, payload: dict, *, retries: int = 3) -> dict:
             req = urllib.request.Request(
                 f"{BASE_URL}{path}",
                 data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers=_headers(),
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310
+            with _OPENER.open(req, timeout=45) as resp:  # nosec B310
                 return json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
             last_exc = exc
@@ -86,14 +135,16 @@ def _post(path: str, payload: dict, *, retries: int = 3) -> dict:
 
 
 def _get(path: str) -> dict:
-    with urllib.request.urlopen(f"{BASE_URL}{path}", timeout=10) as resp:  # nosec B310
+    with _OPENER.open(f"{BASE_URL}{path}", timeout=10) as resp:  # nosec B310
         return json.loads(resp.read().decode("utf-8"))
 
 
 def _delete(path: str) -> None:
-    req = urllib.request.Request(f"{BASE_URL}{path}", method="DELETE")
+    req = urllib.request.Request(
+        f"{BASE_URL}{path}", headers=_headers(json_body=False), method="DELETE"
+    )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
+        with _OPENER.open(req, timeout=10) as resp:  # nosec B310
             resp.read()
     except urllib.error.HTTPError:
         pass  # best-effort cleanup
@@ -217,11 +268,11 @@ def main() -> int:
             req = urllib.request.Request(
                 f"{BASE_URL}/api/kanban/tasks/{parent_id}",
                 data=json.dumps({"depends_on_task_id": parent_id}).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers=_headers(),
                 method="PATCH",
             )
             try:
-                urllib.request.urlopen(req, timeout=10)  # nosec B310
+                _OPENER.open(req, timeout=10)  # nosec B310
                 raise AssertionError("self-reference PATCH should have 400'd")
             except urllib.error.HTTPError as http_err:
                 assert http_err.code == 400, http_err.code
@@ -238,11 +289,11 @@ def main() -> int:
             req = urllib.request.Request(
                 f"{BASE_URL}/api/kanban/tasks/{parent_id}",
                 data=json.dumps({"depends_on_task_id": child_id}).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers=_headers(),
                 method="PATCH",
             )
             try:
-                urllib.request.urlopen(req, timeout=10)  # nosec B310
+                _OPENER.open(req, timeout=10)  # nosec B310
                 raise AssertionError("2-hop cycle PATCH should have 400'd")
             except urllib.error.HTTPError as http_err:
                 assert http_err.code == 400, http_err.code
@@ -286,15 +337,26 @@ def main() -> int:
                 )
             result.ok("blocked badge rendered", "'blocked by' present")
 
-            # Check that the card is dimmed (opacity < 1).
-            opacity = child_card.value_of_css_property("opacity")
-            try:
-                opacity_f = float(opacity)
-            except Exception:
-                opacity_f = 1.0
-            if opacity_f >= 1.0:
-                raise AssertionError(f"child card not dimmed (opacity={opacity})")
-            result.ok("child card dimmed", f"opacity={opacity_f:.2f}")
+            # The card used to be DIMMED as well as badged, and this step used to
+            # assert opacity < 1. The two kanban card renderers were unified into
+            # renderTaskKanban (e818307c7) and the dim did not survive that
+            # refactor — the shipped renderer signals blocked with the orange
+            # "Blocked by: <parent> [status]" line and nothing else. Asserting a
+            # dim no renderer emits was testing a renderer that no longer exists,
+            # so this step now asserts the affordance that IS shipped: the badge
+            # must NAME the blocker and its status, which is what makes a stalled
+            # column readable. Restoring the dim is a UI change, not a dependency
+            # fix; if it is wanted back, it needs its own card.
+            card_text = child_card.text
+            if "E2E-DEP-PARENT" not in card_text:
+                raise AssertionError(
+                    f"blocked badge does not name the blocker: {card_text!r}"
+                )
+            if "backlog" not in card_text.lower():
+                raise AssertionError(
+                    f"blocked badge does not state the blocker's status: {card_text!r}"
+                )
+            result.ok("blocked badge names blocker + status", "E2E-DEP-PARENT [backlog]")
 
             # Screenshot.
             shot = SCREENSHOT_DIR / "kanban-depends-on-badge-desktop.png"
