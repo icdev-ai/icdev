@@ -325,6 +325,129 @@ class EntityAssessment:
         return cls(**_known_fields(cls, data))
 
 
+#: How a claim was OBTAINED. Never merged, and carried onto every side of every
+#: conflict, because the three are not equally strong evidence:
+#:
+#: ``structured``    a backend handed over a typed field (the ``currency``
+#:                   backend's ``metadata["verdict"]``, off an ``entity_currency``
+#:                   row). The source asserted it; nothing inferred it.
+#: ``pack_evaluate`` a registered ``DomainPack.evaluate()`` derived it from
+#:                   catalog rows / EOL dates / rulebook matches. Deterministic,
+#:                   and the only thing that may set a resolution's VERDICT.
+#: ``text_pattern``  a declared, entity-anchored pattern matched retrieved prose.
+#:                   This is how a RAG chunk gets to disagree with the curated
+#:                   catalog at all — no other lane can express a claim a
+#:                   document merely states. It is also the only lane that can be
+#:                   WRONG about what a sentence meant, so a reader that wants to
+#:                   discount it can, per side, without the detector having
+#:                   quietly discounted it first.
+CLAIM_EXTRACTIONS = ("structured", "pack_evaluate", "text_pattern")
+
+#: What two claims disagreed ABOUT. One conflict per (entity, kind) carrying
+#: every side, rather than one per pair — three sources disagreeing is one
+#: disagreement with three sides, not three disagreements.
+CONFLICT_KINDS = ("status", "superseded_by", "eol_date")
+
+
+@dataclass
+class EntityClaim:
+    """ONE source's claim about ONE entity's currency, with its provenance.
+
+    The unit cross-backend entity resolution compares. A claim is never merged
+    with another claim: two sources that agree produce two claims and no
+    conflict, and two that disagree produce two claims and a
+    :class:`EntityConflict` carrying both.
+
+    ``status`` is normalized into :data:`RESOLVE_VERDICTS` so two vocabularies
+    can be compared at all; ``raw_status`` keeps the source's own word verbatim
+    beside it, so "eol" and "retired" are still distinguishable after both map
+    onto ``deprecated``.
+
+    ``backends`` is a LIST because one source retrieved by two backends is one
+    claim — see ``search_service.fusion_ident``. Recording it as two claims is
+    how a single document would be made to "agree with itself" and inflate the
+    apparent corroboration behind one side of a conflict.
+    """
+
+    entity_key: str = ""  # normalized join key (see entity_resolution.entity_ident)
+    entity_label: str = ""  # the label as the source spelled it
+    entity_type: str = ""
+    entity_version: str = ""
+    status: str = "unknown"  # one of RESOLVE_VERDICTS
+    raw_status: str = ""  # the source's own vocabulary, verbatim
+    superseded_by: str = ""
+    eol_date: str = ""
+    eos_date: str = ""
+    backend: str = ""  # a CORTEX_BACKENDS name, or "pack:<pack_id>"
+    backends: list = field(default_factory=list)  # every backend that returned it
+    strategy: str = ""  # backend-specific lane ("assertion", "defacto", ...)
+    source: str = ""  # the asserting AUTHORITY, when the source names one
+    source_id: str = ""
+    source_table: str = ""
+    authoritative: bool = False  # the source is declared authoritative
+    confidence: float = 0.0  # a DECLARED PRIOR, never a measurement
+    as_of: str = ""  # the SOURCE's clock, not ours
+    extraction: str = "structured"  # one of CLAIM_EXTRACTIONS
+    snippet: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "EntityClaim":
+        return cls(**_known_fields(cls, data))
+
+
+@dataclass
+class EntityConflict:
+    """Two or more sources making INCOMPATIBLE claims about one entity.
+
+    There is deliberately no ``winner``, no ``resolved_value``, no merged or
+    averaged field on this shape, and adding one would be the defect it exists
+    to prevent. A currency disagreement between the curated catalog and a
+    retrieved document is a finding a human acts on; picking a side inside the
+    detector deletes the finding and reports the survivor as fact.
+
+    ``sides`` is every :class:`EntityClaim` that took part, each carrying its
+    own provenance (backend, source, source_id, source_table, as_of,
+    authoritative, extraction). ``values`` is the distinct claimed values in
+    sorted order, so a consumer can render the disagreement without walking the
+    sides.
+    """
+
+    entity_key: str = ""
+    entity_label: str = ""
+    kind: str = "status"  # one of CONFLICT_KINDS
+    values: list = field(default_factory=list)  # distinct claimed values, sorted
+    sides: list = field(default_factory=list)  # list[EntityClaim]
+    backends: list = field(default_factory=list)  # distinct backends across sides
+    #: True when the sides span more than one backend — the case cef-rsv-02
+    #: exists for. False means one backend's own sources disagree (the
+    #: ``currency`` store resolving two feeds), which is a real finding too and
+    #: is reported the same way rather than being filtered out.
+    cross_backend: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "entity_key": self.entity_key,
+            "entity_label": self.entity_label,
+            "kind": self.kind,
+            "values": list(self.values),
+            "sides": [s.to_dict() if hasattr(s, "to_dict") else s for s in self.sides],
+            "backends": list(self.backends),
+            "cross_backend": self.cross_backend,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "EntityConflict":
+        kwargs = _known_fields(cls, data)
+        kwargs["sides"] = [
+            EntityClaim.from_dict(s) if isinstance(s, dict) else s
+            for s in kwargs.get("sides") or []
+        ]
+        return cls(**kwargs)
+
+
 @dataclass
 class CortexResolution(CortexResult):
     """The answer ``cortex.resolve(entity, question, ctx)`` returns.
@@ -347,10 +470,12 @@ class CortexResolution(CortexResult):
     ``gaps``            entities nothing could answer for. Present whenever the
                         verdict is ``unknown`` — that is what makes unknown a
                         finding rather than a shrug.
-    ``conflicts``       backends that disagree. Populated by cef-rsv-02
-                        (semantic entity resolution across backends); the field
-                        is declared here so the contract is stable and empty is
-                        honest — no conflict DETECTION has run yet.
+    ``conflicts``       sources that DISAGREE about one entity, resolved
+                        across backends by ``tools/cortex/entity_resolution.py``
+                        (cef-rsv-02). Each entry is an :class:`EntityConflict`
+                        carrying EVERY side with its own provenance and naming
+                        no winner. Empty means detection ran and every claim was
+                        compatible.
     ``backend_errors``  a backend that DIED, never merged with one that matched
                         nothing. Carried straight off ``BackendResults.errors``.
     """

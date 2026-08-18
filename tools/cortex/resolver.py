@@ -54,6 +54,17 @@ reasons are never merged, for the reason this repository keeps re-learning:
 (retrieval broke) and ``packs_failed`` (a pack raised) send you to four
 different fixes, and collapsing them turns an outage into a statement about
 the corpus.
+
+DISAGREEMENT IS A FINDING TOO
+-----------------------------
+``conflicts`` is populated by ``tools/cortex/entity_resolution.py``
+(cef-rsv-02), which resolves hits from DIFFERENT backends onto the same
+real-world entity and compares what each one claimed. It is the only thing in
+the platform that can notice a retrieved document and the curated catalog
+contradicting each other — RRF ranks them against one another and never reads
+them. A conflict carries every side with its own provenance and picks no
+winner; the verdict above is unaffected, since it comes from the packs and a
+disagreement between two evidence sources is not a vote.
 """
 from __future__ import annotations
 
@@ -63,6 +74,14 @@ from tools.logging.icdev_logger import get_logger
 from tools.quality.citation_grounding import validate_citations
 
 from .config import load_cortex_config
+from .entity_resolution import (
+    GAP_BACKENDS_FAILED,
+    GAP_NO_EVIDENCE,
+    GAP_NO_PACK,
+    GAP_PACKS_FAILED,
+    entity_ident,
+    resolve_entities,
+)
 from .schemas import (
     Citation,
     CortexContext,
@@ -134,10 +153,25 @@ GATE_CITATION = "citation_grounding"
 _SNIPPET_CHARS = 240
 
 #: Gap reasons. Never merged — each sends you to a different fix.
-GAP_NO_PACK = "no_pack_matched"
-GAP_NO_EVIDENCE = "no_evidence"
-GAP_BACKENDS_FAILED = "backends_failed"
-GAP_PACKS_FAILED = "packs_failed"
+#:
+#: Defined ONCE, in ``entity_resolution``, and re-exported here so
+#: ``resolver.GAP_*`` keeps resolving for everything that already reads it. Two
+#: copies of a vocabulary whose whole purpose is that its members stay
+#: distinguishable is the obvious way to lose that property.
+#:
+#: The two modules answer DIFFERENT questions with it, which is why the same
+#: word carries a different rule in each and they are not merged:
+#:
+#: * ``_gaps`` below asks "why is the SUBJECT's verdict unknown", and a dead
+#:   fan-out is a legitimate answer to that — hence ``GAP_BACKENDS_FAILED``
+#:   appears in its reason list (cef-rsv-01).
+#: * ``entity_resolution`` asks "did anything ANSWER for this entity", where a
+#:   dead fan-out is an outage rather than an answer, so it never emits a gap
+#:   for one — it emits a ``backend_error`` and an ``unresolved`` record
+#:   (cef-rsv-02, AC4). It also owns a fifth reason, ``GAP_NO_CLAIM``, which is
+#:   not re-exported here because nothing on this path can produce it: it means
+#:   the corpora MENTION the entity and none of them states its currency, which
+#:   is a question about the evidence and not about the verdict.
 
 
 class CortexResolutionBlocked(RuntimeError):
@@ -495,8 +529,31 @@ def _allowed_ids(citations: list) -> set:
     return allowed
 
 
+def _conflict_line(conflict: dict) -> str:
+    """One conflict -> one sentence naming EVERY side and who said it.
+
+    No ``[source: id]`` tag is emitted. The prose is validated against the
+    resolution's own citation ids and a conflict side may legitimately have no
+    citation of its own — the ``others`` a currency row carries name a source
+    but no row id. Emitting a tag for one would either block the resolution or
+    attribute the losing source's claim to the winning row's id.
+    """
+    sides = []
+    for side in conflict.get("sides") or []:
+        who = side.get("source") or side.get("backend") or "unknown source"
+        value = (side.get(conflict.get("kind") or "status")
+                 or side.get("status") or "?")
+        sides.append(f"{who} says {value}")
+    return (
+        f"Conflict ({conflict.get('kind')}): {conflict.get('entity_label')} — "
+        + "; ".join(sides)
+        + ". Both sides are reported; no winner is picked."
+    )
+
+
 def render(entity: str, verdict: str, winner: Optional[EntityAssessment],
-           assessments: list, citations: list, gaps: list) -> str:
+           assessments: list, citations: list, gaps: list,
+           conflicts: Optional[list] = None) -> str:
     """The resolution prose. DETERMINISTIC — assembled here, not generated.
 
     Every ``[source: id]`` tag emitted names an id that is already on
@@ -545,6 +602,8 @@ def render(entity: str, verdict: str, winner: Optional[EntityAssessment],
             + (f" from {', '.join(backends)}" if backends else "")
             + "."
         )
+    for conflict in conflicts or []:
+        lines.append(_conflict_line(conflict))
     for gap in gaps:
         lines.append(
             f"Gap: {gap.get('entity')} — " + ", ".join(gap.get("reasons") or []) + "."
@@ -636,7 +695,34 @@ def resolve(
     gaps = _gaps(entity, verdict, assessments, hits, backend_errors,
                  pack_errors, backends)
 
-    text = render(entity, verdict, winner, assessments, citations, gaps)
+    # cef-rsv-02 — resolve hits from different backends onto the SAME
+    # real-world entity and compare what each one CLAIMED. This is the only
+    # thing in the platform that can notice a retrieved document and the
+    # curated catalog contradicting each other; RRF ranks them against each
+    # other and never reads them.
+    #
+    # It cannot move the verdict. `verdict` is already fixed above, from the
+    # packs, and nothing below reassigns it — a conflict is reported ALONGSIDE
+    # the verdict, never instead of it and never as a tie-break.
+    entity_report = resolve_entities(
+        hits,
+        assessments=assessments,
+        backend_errors=backend_errors,
+        entities=[entity] + [a.entity for a in assessments],
+        backends=backends,
+        config=config,
+    )
+    conflicts = entity_report["conflicts"]
+    # The subject's own gap is `_gaps`' to report — it answers "why is the
+    # verdict unknown", which is a different question and a different reason
+    # vocabulary. Taking both would put two contradictory findings about one
+    # entity in one list.
+    subject_key = entity_ident(entity)
+    gaps = gaps + [
+        gap for gap in entity_report["gaps"] if gap.get("entity_key") != subject_key
+    ]
+
+    text = render(entity, verdict, winner, assessments, citations, gaps, conflicts)
 
     # Citation validation through the SHARED module — and this one BLOCKS.
     allowed = _allowed_ids(citations)
@@ -658,11 +744,11 @@ def resolve(
         verdict_source=verdict_source,
         assessments=assessments,
         gaps=gaps,
-        # cef-rsv-02 owns conflict DETECTION (semantic entity resolution across
-        # backends). Declared and empty here rather than half-populated from one
-        # backend's own `conflict` flag: "no conflicts" must mean "detection ran
-        # and found none", and until that card lands it would not be true.
-        conflicts=[],
+        # Detection HAS run (cef-rsv-02), so an empty list now means what it
+        # always had to mean: every source that made a claim about this entity
+        # made a compatible one. Each entry carries every side and its
+        # provenance and names no winner — see schemas.EntityConflict.
+        conflicts=conflicts,
         backend_errors=backend_errors + pack_errors,
         backends_consulted=list(backends),
         # A resolution is grounded when it has citations, none are hallucinated,
@@ -681,6 +767,12 @@ def resolve(
         "out_of_scope": out_of_scope,
         # An ADVISORY opinion is carried, visibly, and is not a citation.
         "advisory": advisory,
+        # The cross-backend entity resolution behind `conflicts` and the extra
+        # `gaps`: every claim with its provenance, the per-entity roll-up, and
+        # `unresolved` — entities that drew no claim because RETRIEVAL DIED
+        # rather than because nothing knows. That last list is deliberately not
+        # gaps: an outage must not read as a statement about the corpus.
+        "entity_resolution": entity_report,
     })
     result.governance.gates_run.append(GATE_CITATION)
     result.governance.outcomes[GATE_CITATION] = (

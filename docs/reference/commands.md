@@ -4673,6 +4673,41 @@ python tools/mcp/cortex_server.py
 #     never merged). An unresolvable [source: id] tag returns 403, it does not degrade.
 #     There is NO `backends`/`strategy` param: the rung set is `resolve.backends` in
 #     args/cortex_config.yaml, because it decides whether the `external` rung is reachable.
+#     `conflicts[]` is populated by cross-backend entity resolution (cef-rsv-02, below).
+
+# --- Cross-backend entity resolution (cef-rsv-02) ---
+# A LIBRARY, not a CLI. `resolve()` calls it; import it to run the comparison over
+# any hit set (a document sweep, a batch currency check) without the facade.
+python -c "from tools.cortex.entity_resolution import resolve_entities; print(resolve_entities([], entities=['TLS 1.1'], backends=['currency','rag'])['gaps'])"
+# Resolves hits from DIFFERENT backends onto the same real-world entity and compares what
+# each one CLAIMED — the thing RRF fusion never did, which is why a RAG chunk contradicting
+# the curated catalog was invisible. Returns
+#   {entities[], claims[], conflicts[], gaps[], unresolved[], backends_consulted,
+#    backends_failed, text_claims}
+# Four outcomes that used to render identically, and stay apart on purpose:
+#   AGREEMENT      no conflict, and the entity reads answered:<status>.
+#   CONFLICT       one EntityConflict per (entity, kind ∈ status|superseded_by|eol_date),
+#                  carrying EVERY side with its own provenance. There is no `winner`, no
+#                  `resolved_value` and no averaged field on the shape — a currency
+#                  disagreement is a finding a human acts on, and the verdict stays the
+#                  domain packs'. `deprecated` vs `superseded` is NOT a conflict (same
+#                  finding plus a successor); `unknown` vs anything is NOT a conflict.
+#   GAP            nothing answered. `no_evidence` (nothing mentioned it — an ingestion
+#                  problem) is kept apart from `no_claim` (documents mention it and none
+#                  states its currency — a content one).
+#   DEAD BACKEND   never a gap. A `backend_error` plus an `unresolved` record, because a
+#                  gap is a statement about the corpus and an outage is not. A PARTIAL
+#                  outage still yields a real gap, with the failures on the gap's own
+#                  `backends_failed` field rather than in its reasons.
+# Identity is search_service.fusion_ident — the SAME predicate RRF uses — so one document
+# retrieved by rag AND dic is ONE claim and cannot corroborate itself; the entity join key
+# is tools/currency/entity_currency.normalize_key. Three claim lanes, stamped on every
+# claim and every conflict side: structured (typed currency metadata, incl. each source the
+# store carried under `others`), pack_evaluate (each DomainPack assessment — this is what
+# makes reduce_assessments' winner-pick auditable), text_pattern (declared, entity-ANCHORED,
+# DIRECTIONAL rules over prose, so "TLS 1.2 supersedes TLS 1.1" cannot claim TLS 1.2 is
+# superseded). Disable the prose lane with `resolve.text_claims: false` in
+# args/cortex_config.yaml — prefer narrowing a rule to disabling the lane.
 #   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
 #   POST /cortex/api/v1/reason   {"prompt": "...", "mode": "cot"}   # mode: cot | debate | council
 #   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}

@@ -194,11 +194,25 @@ def _peak_norm(raw_scores: list) -> float:
 _DEFAULT_RRF_K = 60
 
 
-def _fusion_ident(r) -> str:
+def fusion_ident(r) -> str:
     """Backend-agnostic identity so the SAME source retrieved by two backends
-    fuses into one entry. Prefer the citation source_id; fall back to content."""
+    fuses into one entry. Prefer the citation source_id; fall back to content.
+
+    PUBLIC because cross-backend entity resolution (cef-rsv-02) asks the same
+    question before it will call two claims a disagreement: one document
+    retrieved by ``rag`` and by ``dic`` is ONE source, and counting it twice
+    would let a single chunk corroborate itself against the curated catalog.
+    Same predicate, one implementation — a second notion of "same source" that
+    drifted from this one would make fusion and conflict detection disagree
+    about what they were looking at.
+    """
     src = getattr(getattr(r, "citation", None), "source_id", "") or ""
     return str(src) if src else (getattr(r, "content", "") or "")
+
+
+#: Pre-cef-rsv-02 spelling. Kept so nothing that already reached for the private
+#: name breaks; both names are the one function object.
+_fusion_ident = fusion_ident
 
 
 def _rrf_fuse(results: list, k: int = _DEFAULT_RRF_K, weights: Optional[dict] = None) -> list:
