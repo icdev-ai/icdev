@@ -284,9 +284,14 @@ def dep_clause_sql(alias: str = "kt") -> tuple[str, tuple[str, str]]:
     appears in the statement. Returned rather than interpolated so the ``%``
     wildcards never reach psycopg's format pass.
     """
-    a = alias
+    a = str(alias)
+    if not a.isidentifier():
+        # The only interpolated value is a table alias. Refusing anything that is
+        # not a bare identifier is what makes the nosec below true rather than
+        # asserted — everything else in the clause is a literal or a bound param.
+        raise ValueError(f"dep_clause_sql: {alias!r} is not a valid SQL alias")
     clause = (
-        "("
+        "("  # nosec B608 — `a` is identifier-validated above; nothing else is interpolated
         # The scalar gates only when it is not superseded — or when it is a gate.
         "  ("
         f"    {a}.depends_on_task_id IS NULL"
