@@ -14,6 +14,43 @@ def now_isoformat() -> str:
 now_iso = now_isoformat
 
 
+def parse_utc_timestamp(raw) -> "datetime | None":
+    """A UTC-aware datetime from whatever a driver or a log handed back, or None.
+
+    STDLIB ONLY. This exists because `python-dateutil` was imported by two
+    runtime modules and declared in neither requirements.txt nor pyproject.toml,
+    at both sites inside a bare `except Exception` that returned a
+    benign-looking value. On any install without it — the CI runner, and any
+    air-gapped deployment, which is what this project targets — the stale reaper
+    skipped every task and every notification duration rendered "unknown", with
+    nothing anywhere to say why.
+
+    Handles what this codebase actually writes: a driver-native datetime
+    (PostgreSQL), and `datetime.now(timezone.utc).isoformat()` strings (SQLite,
+    logs, JSON payloads). A trailing `Z` is normalised because
+    `datetime.fromisoformat` did not accept it before 3.11 and stored rows
+    outlive interpreters. Naive values are read as UTC, which is what every
+    writer here means.
+
+    Returns None rather than raising: a stamp that cannot be read is one row's
+    problem, and the caller is the only thing that knows whether that is fatal.
+    """
+    if raw is None:
+        return None
+    if hasattr(raw, "tzinfo"):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def row_to_dict(row) -> dict:
     """Convert a sqlite3.Row to a plain dict."""
     if row is None:
