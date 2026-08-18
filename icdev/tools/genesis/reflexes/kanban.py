@@ -3922,16 +3922,11 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             logger.debug("harness record_outcome skipped for %s: %s", task_id, _ho_exc)
 
 
-def _detect_orphan_done_tasks() -> list[dict]:
-    """Find done tasks whose parent isn't done and roll them back.
+def _orphan_rows() -> list[dict]:
+    """Candidate orphans: `done` tasks whose dependency parent is not done.
 
-    Runs at the start of each scheduler cycle. Catches the class of bugs
-    where a row was SET to done without its prerequisite work completing
-    (E-gate incident 2026-04-15: E-gate done while E4/E5/E6 were not).
-
-    Returns a list of ``{id, parent_id, prior_parent_status}`` dicts for
-    every row rolled back. The rollback itself goes through ``_move_task``
-    so the audit trail captures the orphan-sweep actor.
+    Split out of :func:`_detect_orphan_done_tasks` so the landed check that now
+    filters them can be tested without a database.
     """
     try:
         conn = get_connection()
@@ -3976,10 +3971,96 @@ def _detect_orphan_done_tasks() -> list[dict]:
                 "parent_id": d["parent_id"],
                 "parent_status": d.get("parent_status"),
             })
+    return orphans
 
-    for o in orphans:
+
+def _landed_reports(task_ids) -> dict:
+    """``{task_id: landed-check report}`` \u2014 one ``git log --grep`` for the batch.
+
+    Same call and same batching as ``pr_watcher._landed_map``, so "is this task
+    already on the default branch" has one implementation and the sweep cannot
+    drift from the dispatch gate.
+
+    Returns {} on any failure, which the caller reads as "could not verify".
+    """
+    ids = [str(t) for t in task_ids if str(t or "").strip()]
+    if not ids:
+        return {}
+    try:
+        from tools.kanban import landed_check
+
+        return landed_check.check_landed_bulk(ids)
+    except Exception as exc:  # noqa: BLE001 \u2014 must never break the scheduler
+        logger.warning("orphan-done sweep: landed check failed: %s", exc)
+        return {}
+
+
+def _detect_orphan_done_tasks() -> list[dict]:
+    """Roll back a `done` task whose prerequisite work never happened.
+
+    Runs at the start of each scheduler cycle. Catches the class of bug where a
+    row was SET to done without its prerequisite completing (E-gate incident
+    2026-04-15: E-gate done while E4/E5/E6 were not).
+
+    IT CANNOT TELL THAT APART FROM WORK THAT GENUINELY LANDED, and until
+    kpr-dup-04 it did not try. MEASURED on kanban_status_transitions: 80
+    firings, **100% of them done->backlog**, across 61 distinct tasks \u2014 the
+    sweep has never reset anything else. Running `check_landed_bulk` over those
+    61 says 20 were ALREADY ON MAIN, with `merge_ref` or `subject` evidence, so
+    roughly a third of everything it ever did was un-completing merged work.
+
+    That is not a cosmetic error. A rolled-back task is dispatchable again, a
+    second session re-implements it, and the PR that opens can only merge as a
+    REVERT \u2014 #1651 was -38/+26 on rest_v1.py, and #1784 (2026-08-17) was -10,615
+    lines across 73 files, deleting 30 files main currently had.
+
+    So the rollback now asks the oracle this repo already built and already
+    consults at seed time and at dispatch time. Landed work is not an orphan:
+    the DEPENDENCY GRAPH is what is wrong there, and that gets reported instead.
+    The other 41 are still caught \u2014 this narrows the check, it does not disarm
+    it.
+
+    When the landed check cannot answer, the task is LEFT ALONE and the failure
+    is logged. A sweep that could not verify is not a sweep that found an orphan
+    (the same rule `red_first_gate` encodes as exit 2), and between the two ways
+    of being wrong, rolling back is the one that destroys a record.
+
+    Returns ``{id, parent_id, parent_status}`` for every row actually rolled
+    back. The rollback goes through ``_move_task`` so the audit trail captures
+    the orphan-sweep actor.
+    """
+    candidates = _orphan_rows()
+    if not candidates:
+        return []
+
+    reports = _landed_reports([o["id"] for o in candidates])
+
+    rolled: list[dict] = []
+    for o in candidates:
+        report = reports.get(o["id"]) or {}
+        if not report.get("checked"):
+            logger.warning(
+                "ORPHAN-DONE: %s has parent %s in %r, but the landed check "
+                "could not verify whether its work is on main \u2014 leaving it "
+                "alone. A sweep that could not verify has not found an orphan.",
+                o["id"], o["parent_id"], o["parent_status"],
+            )
+            continue
+        if report.get("landed"):
+            # The work IS on main. The task is finished; what is wrong is the
+            # dependency graph that still calls its parent unfinished.
+            logger.warning(
+                "ORPHAN-DONE: %s has parent %s in %r, but its work has already "
+                "LANDED on the default branch (%s evidence) \u2014 not rolling "
+                "back. The dependency declaration is what is stale here, not "
+                "the task.",
+                o["id"], o["parent_id"], o["parent_status"],
+                report.get("confidence") or "unknown",
+            )
+            continue
         logger.warning(
-            "ORPHAN-DONE detected: %s was done but parent %s is %r \u2014 rolling back to backlog",
+            "ORPHAN-DONE detected: %s was done but parent %s is %r, and its "
+            "work is NOT on the default branch \u2014 rolling back to backlog",
             o["id"], o["parent_id"], o["parent_status"],
         )
         # Roll back to backlog (not scheduled) \u2014 parent is not done so this
@@ -3989,8 +4070,9 @@ def _detect_orphan_done_tasks() -> list[dict]:
             actor="orphan_sweep",
             reason=f"parent {o['parent_id']} status={o['parent_status']!r} at sweep",
         )
+        rolled.append(o)
 
-    return orphans
+    return rolled
 
 
 def _get_resume_context(task_id: str) -> str:
