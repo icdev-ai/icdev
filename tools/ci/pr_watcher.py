@@ -55,10 +55,12 @@ from tools.ci.merge_readiness import (
     BEHIND_MAIN,
     DEFAULT_MAX_BEHIND_COMMITS,
     NO_AUTOMERGE_LABELS,
+    PROTECTED_PATH,
     READY,
     HELD_LABEL,
     classify_merge_readiness,
     measure_behind_by,
+    protected_hits,
 )
 from tools.kanban.state_machine import KanbanState
 from tools.kanban import deps as kanban_deps
@@ -940,6 +942,50 @@ class PRWatcher:
             }
         return out
 
+    def _protected_paths(self) -> List[str]:
+        """Paths no automation may merge a change to. Empty disables the guard."""
+        raw = self.config.get("protected_paths") or []
+        return [str(x).strip() for x in raw if str(x or "").strip()]
+
+    def _protected_hits(self, pr_url: str) -> List[str]:
+        """Protected paths this PR touches — [] when clean or unguarded.
+
+        Nearly free: `_open_pr_index` already fetches `url,files` for every open
+        PR in ONE gh call, every poll, to build the sibling-conflict map. This is
+        an intersection over a set already in memory.
+
+        FAIL-CLOSED, and deliberately the OPPOSITE default from that sibling map,
+        which degrades to a warning when the listing is unavailable. The
+        asymmetry is the point and it is not a bug: a missed sibling conflict
+        costs a retry, whereas a missed protected path costs the control itself —
+        this is the one guard standing between a defective merge ladder and its
+        own unreviewed merge. So a PR absent from the index is treated as
+        protected, not as clean.
+        """
+        paths = self._protected_paths()
+        if not paths:
+            return []
+        entry = self._open_pr_index().get(pr_url)
+        files = entry.get("files") if entry else None
+        return protected_hits(files, paths) or []
+
+    def _refuse_protected(self, pr_url: str, task_id: str = "") -> List[str]:
+        """Report and audit a protected-path refusal. Returns the hits (or [])."""
+        hits = self._protected_hits(pr_url)
+        if not hits:
+            return []
+        logger.warning(
+            "pr_watcher: REFUSING to merge %s — it touches protected path(s) %s. "
+            "A human must review and merge this by hand.",
+            pr_url, ", ".join(hits))
+        self._audit(WatcherAction(
+            task_id=task_id, pr_url=pr_url, classification="blocked",
+            action="protected_path_hold",
+            reason=("touches protected path(s): " + ", ".join(hits))[:500],
+            resume_cycle=0,
+        ))
+        return hits
+
     def _open_pr_files(self) -> Dict[str, set]:
         """Map every open PR's url -> set of changed file paths."""
         return {url: e["files"] for url, e in self._open_pr_index().items()}
@@ -1374,6 +1420,12 @@ class PRWatcher:
         return True
 
     def _auto_merge(self, pr_url: str) -> bool:
+        # LAST LINE, not the only one. Both merge paths call this, so the guard
+        # here cannot be routed around by a future caller — but the linked path
+        # also checks BEFORE it un-drafts, because un-drafting a PR that was
+        # never going to merge burns the one brake a human still has.
+        if self._refuse_protected(pr_url):
+            return False
         if self.dry_run:
             return True
         if not self.config.get("auto_merge_enabled", False):
@@ -2689,6 +2741,14 @@ class PRWatcher:
                     # branch a blocked merge takes.
                     # Belt-and-braces: normally the un-draft above already ran,
                     # but a PR can be converted back to a draft between polls.
+                    # AHEAD OF THE UN-DRAFT (kpr-watch-05). `_auto_merge`
+                    # refuses a protected PR too, but by then `_mark_ready` has
+                    # already cleared the draft — and the comment above says why
+                    # that must not happen for a PR that was not about to merge:
+                    # un-drafting is visible and hard to walk back, and the draft
+                    # is exactly the brake the per-episode manual gates relied on.
+                    if approved_ok and self._refuse_protected(pr_url, task["id"]):
+                        approved_ok = False
                     if approved_ok and state.get("isDraft"):
                         approved_ok = self._mark_ready(
                             pr_url, task["id"], self._connection())
@@ -3144,7 +3204,10 @@ class PRWatcher:
         for pr in prs:
             url = (pr.get("url") or "").strip()
             verdict = classify_merge_readiness(
-                pr, default_branch=default_branch, linked_urls=linked)
+                pr, default_branch=default_branch, linked_urls=linked,
+                changed_files=self._open_pr_index().get(url, {}).get("files")
+                if url in self._open_pr_index() else None,
+                protected_paths=self._protected_paths())
             if verdict.state == READY:
                 # STALENESS IS MEASURED LAST, and only here (kpr-stale-02).
                 # It is the one rung that costs a forge round-trip, so it is
@@ -3154,6 +3217,9 @@ class PRWatcher:
                     pr, default_branch=default_branch, linked_urls=linked,
                     behind_by=self._behind_by(pr),
                     max_behind_commits=self._max_behind(),
+                    changed_files=self._open_pr_index().get(url, {}).get("files")
+                    if url in self._open_pr_index() else None,
+                    protected_paths=self._protected_paths(),
                 ) if self.config.get("refuse_merge_when_behind", True) else verdict
             if verdict.state != READY:
                 # The refusals used to be bare `continue`s and so were entirely
@@ -3161,6 +3227,20 @@ class PRWatcher:
                 if verdict.state == HELD_LABEL:
                     logger.info(
                         "pr_watcher: %s carries a hold label — leaving it", url)
+                elif verdict.state == PROTECTED_PATH:
+                    # Named rather than dropped into the debug-level `else`:
+                    # the whole point is that a human can see what is waiting
+                    # and why. `_refuse_protected` is not called here — the
+                    # classifier already decided, and calling it would emit a
+                    # second audit row for one refusal.
+                    logger.warning(
+                        "pr_watcher: %s is green and MERGEABLE but %s",
+                        url, verdict.reason)
+                    self._audit(WatcherAction(
+                        task_id="", pr_url=url, classification="blocked",
+                        action="protected_path_hold", reason=verdict.reason[:500],
+                        resume_cycle=0,
+                    ))
                 elif verdict.state == BEHIND_MAIN:
                     # AND NOTHING ELSE. The unlinked sweep deliberately never
                     # pushes — it has no task to carry the state and no claim on
