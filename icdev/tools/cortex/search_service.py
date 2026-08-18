@@ -1704,6 +1704,7 @@ def _routed_pass(
     strategy: str,
     cfg: dict,
     search_cfg: dict,
+    backends_override: Optional[list] = None,
 ) -> list[CortexSearchResult]:
     """One route -> domain-scope -> fan-out -> stamp pass over the backends.
 
@@ -1711,9 +1712,20 @@ def _routed_pass(
     decision (``result.strategy`` tag + ``metadata["router"]``). search()
     runs this once, and a second time on the rewritten query when the CRAG
     corrective loop triggers.
+
+    ``backends_override`` names the backend set explicitly and BYPASSES
+    classification — the seam ``cortex.resolve`` uses so it can consult the
+    currency rung alongside the document rungs without either (a) building a
+    second fan-out or (b) reaching ``strategy="all"``, which would include the
+    ``external`` rung and turn every resolution into an outbound call. It is
+    deliberately NOT reachable from a request payload; see validate_search.
+    The domain lens still intersects it, exactly as it does a routed selection.
     """
     route: Optional[dict] = None
-    if strategy == "auto":
+    if backends_override:
+        label = "explicit"
+        backends = list(backends_override)
+    elif strategy == "auto":
         route = classify_route(query, config=cfg)
         label = route["label"]
         backends = list(route["backends"])
@@ -1944,6 +1956,8 @@ def search(
     ctx: Optional[CortexContext] = None,
     strategy: str = "auto",
     config: Optional[dict] = None,
+    backends: Optional[list] = None,
+    corrective: bool = True,
 ) -> list[CortexSearchResult]:
     """Unified Cortex search with agentic strategy routing + CRAG correction.
 
@@ -1969,6 +1983,15 @@ def search(
     ``cortex_search_rewrite``) and re-runs routing+fusion; see
     _corrective_pass() for the metadata contract.
 
+    ``backends`` names the set explicitly and bypasses classification (the
+    ``strategy`` argument is then only a label). ``corrective=False`` disables
+    the CRAG rewrite pass. Both exist for ``cortex.resolve`` (cef-rsv-01),
+    which needs a fixed, in-boundary rung set and — because its verdict is
+    deterministic and it makes no LLM call at all — must not pay for a query
+    rewrite. Neither is reachable from a REST/MCP payload: ``validate_search``
+    exposes ``strategy`` only, so a remote caller cannot name the ``external``
+    rung through this door.
+
     The return is a :class:`BackendResults` — a list of hits that ALSO carries
     ``.errors``, the backends that failed or timed out. An empty list with a
     non-empty ``.errors`` means retrieval broke, not that nothing matched; a
@@ -1983,6 +2006,16 @@ def search(
             f"Unknown Cortex search strategy {strategy!r}; "
             f"expected one of {CORTEX_STRATEGIES}"
         )
+    if backends is not None:
+        unknown = [b for b in backends if b not in BACKEND_ADAPTERS]
+        if unknown:
+            raise ValueError(
+                f"Unknown Cortex backend(s) {unknown}; "
+                f"expected a subset of {tuple(BACKEND_ADAPTERS)}"
+            )
 
-    results = _routed_pass(query, top_k, ctx, strategy, cfg, search_cfg)
+    results = _routed_pass(query, top_k, ctx, strategy, cfg, search_cfg,
+                           backends_override=backends)
+    if not corrective:
+        return results
     return _corrective_pass(query, results, top_k, ctx, strategy, cfg, search_cfg)

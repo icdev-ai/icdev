@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Cortex MCP server — 8 tools exposing the unified ICDEV Cortex facade.
+"""Cortex MCP server — 9 tools exposing the unified ICDEV Cortex facade.
 
 The Cortex facade (``tools/cortex/api.py``) is the platform's unified AI layer
 over LLMRouter / RAG / KG / DIC / IQE / ACE with a single enforced TRUST
@@ -12,6 +12,7 @@ Each handler is a thin one-liner into ``tools.cortex``:
 
     cortex_search        -> cortex.search()            -> [CortexSearchResult]
     cortex_ask           -> cortex.ask()               -> CortexResult
+    cortex_resolve       -> cortex.resolve()           -> CortexResolution
     cortex_complete      -> cortex.complete()          -> CortexResult
     cortex_reason        -> cortex.reason()            -> CortexResult
     cortex_classify      -> cortex.classify()          -> CortexResult
@@ -173,6 +174,48 @@ def handle_cortex_ask(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": "Cortex analyst subsystem not available"}
     except Exception as exc:
         return {"error": str(exc)}
+
+
+def handle_cortex_resolve(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Deterministic currency resolution for one entity, with its evidence.
+
+    The verdict comes from ``DomainPack.evaluate()`` and never from a model —
+    this is the one Cortex verb that makes no LLM call at all. A resolution
+    that cites a source it does not hold is REFUSED (``blocked: true``), not
+    returned with a warning.
+    """
+    entity = arguments.get("entity", "")
+    if not entity:
+        return {"error": "entity is required", "verdict": "unknown"}
+
+    try:
+        from tools.cortex import resolve
+        from tools.cortex.governance import GovernanceBlockedError
+        from tools.cortex.resolver import CortexResolutionBlocked
+
+        try:
+            result = resolve(
+                entity,
+                arguments.get("question") or "",
+                ctx=_build_context(arguments),
+                top_k=int(arguments.get("top_k", 5)),
+            )
+            return {"classification": _CLASSIFICATION, **result.to_dict()}
+        except GovernanceBlockedError as exc:
+            return _blocked_response(exc)
+        except CortexResolutionBlocked as exc:
+            return {
+                "classification": _CLASSIFICATION,
+                "error": str(exc),
+                "blocked": True,
+                "blocked_gate": "citation_grounding",
+                "entity": getattr(exc, "entity", ""),
+                "citation_report": getattr(exc, "report", {}),
+            }
+    except ImportError:
+        return {"error": "Cortex resolver subsystem not available", "verdict": "unknown"}
+    except Exception as exc:
+        return {"error": str(exc), "verdict": "unknown"}
 
 
 def handle_cortex_complete(arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -395,7 +438,7 @@ def _schema(properties: Dict[str, Any], required: list) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# MCPServer — register all 8 Cortex tools
+# MCPServer — register all 9 Cortex tools
 # ---------------------------------------------------------------------------
 CORTEX_TOOLS = (
     {
@@ -443,6 +486,38 @@ CORTEX_TOOLS = (
             },
         },
         "required": ["question"],
+    },
+    {
+        "name": "cortex_resolve",
+        "handler": handle_cortex_resolve,
+        "description": (
+            "Resolve ONE entity's currency deterministically: is it current, deprecated, superseded, "
+            "or unknown? The verdict comes from the registered domain packs' evaluate() -- catalog "
+            "rows, EOL dates, rulebook matches, inventory counts -- and NEVER from a model; this verb "
+            "makes no LLM call at all. Returns the verdict plus citations validated through "
+            "citation_grounding, gaps (unknown is a visible finding, with the reason), conflicts, and "
+            "backend_errors (a backend that DIED, never merged with one that matched nothing). "
+        ),
+        "properties": {
+            "entity": {
+                "type": "string",
+                "description": "The thing being resolved, e.g. 'TLS 1.1' or 'Catalyst 6500'",
+            },
+            "question": {
+                "type": "string",
+                "description": (
+                    "Optional framing. Shapes the evidence query only -- it never "
+                    "reaches a pack extractor, so it cannot move the verdict onto "
+                    "another entity."
+                ),
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Evidence hits per backend (default 5)",
+                "default": 5,
+            },
+        },
+        "required": ["entity"],
     },
     {
         "name": "cortex_complete",

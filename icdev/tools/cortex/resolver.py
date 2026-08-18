@@ -1,0 +1,689 @@
+# CUI // SP-CTI
+"""``cortex.resolve`` — the governed evidence-resolution facade (cef-rsv-01).
+
+    resolve(entity, question, ctx) -> CortexResolution
+
+Answers "is this entity still current, and what is the evidence?" for ONE
+entity, over the registered Cortex backends, with a DETERMINISTIC verdict.
+
+WHAT THIS MODULE IS NOT
+-----------------------
+It is not a second governance chain and it is not a second fan-out.
+
+* Governance is inherited whole. ``api.resolve`` is registered through
+  ``_governed_facade("cortex.resolve", ...)`` exactly as ``search`` and ``ask``
+  are, so the 8-gate TRUST chain, the ``cortex_audit`` row with
+  ``gates_json``/``outcome``/``blocked``/``provenance_id``, and real blocking
+  all apply without a line of governance code here.
+* Retrieval is inherited whole. Evidence comes from ``search_service.search``
+  — the same strategy router, the same bounded parallel pool with per-backend
+  timeouts, the same weighted RRF fusion, the same ``BackendResults.errors``
+  annotation. This module passes an explicit rung set and nothing else.
+
+THE ONE RULE THIS MODULE EXISTS TO ENFORCE
+------------------------------------------
+``base_pack`` TRUST rule 1: the verdict is derived from deterministic evidence
+— catalog rows, EOL dates, rulebook matches, inventory counts — and NEVER from
+an LLM. Concretely, in this module:
+
+1. The verdict comes from ``DomainPack.evaluate()`` and from nothing else.
+   ``verdict_source`` has exactly two values, ``pack_evaluate`` and ``none``.
+   There is no vocabulary entry for an LLM-authored verdict, so no code path
+   can produce one by accident.
+2. ``resolve`` makes NO LLM call. It passes ``corrective=False`` to search, so
+   even the CRAG query-rewrite — the one model call that lives inside
+   retrieval — does not run. A resolution is reproducible from the database.
+3. An ADVISORY hit (``search_service.is_advisory``: the ``sme`` rung, an
+   opinion an LLM authored at query time) is excluded from citations and can
+   never reach the verdict. It is surfaced under ``metadata["advisory"]`` so
+   it is visible without being evidence.
+4. Every ``[source: id]`` tag in the returned prose is validated against the
+   resolution's own citation ids through the SHARED
+   ``tools/quality/citation_grounding``. A tag naming anything else BLOCKS —
+   it does not degrade. That is stricter than the analyst's grading (which
+   flags and returns) because a resolution is acted on: a redline is drafted
+   from it, and a citation that resolves to nothing is how an invented
+   authority gets into a document.
+
+UNKNOWN IS A FINDING
+--------------------
+A verdict of ``unknown`` always carries a ``gaps`` entry naming WHY, and the
+reasons are never merged, for the reason this repository keeps re-learning:
+``no_pack_matched`` (nothing can evaluate this kind of entity),
+``no_evidence`` (the corpora genuinely matched nothing), ``backends_failed``
+(retrieval broke) and ``packs_failed`` (a pack raised) send you to four
+different fixes, and collapsing them turns an outage into a statement about
+the corpus.
+"""
+from __future__ import annotations
+
+from typing import Optional, Union
+
+from tools.logging.icdev_logger import get_logger
+from tools.quality.citation_grounding import validate_citations
+
+from .config import load_cortex_config
+from .schemas import (
+    Citation,
+    CortexContext,
+    CortexResolution,
+    EntityAssessment,
+)
+from .search_service import is_advisory
+from .search_service import search as _search_impl
+
+logger = get_logger("icdev.cortex.resolver")
+
+#: ``doc_modernization.constants.CURRENCY_VERDICTS`` -> ``schemas.RESOLVE_VERDICTS``.
+#: The ONE place the two vocabularies meet.
+#:
+#: Two mappings are worth their comment:
+#:
+#: * ``eol`` and ``retired`` both land on ``deprecated`` and are promoted to
+#:   ``superseded`` below only when the pack's ``recommend()`` NAMES a
+#:   successor. "Past its life" and "here is what to move to" are different
+#:   claims and the second one is what a consumer can act on.
+#: * ``divergent`` lands on ``unknown``, NOT on ``deprecated``. It means the
+#:   fielded estate disagrees with the curated catalog — a disagreement about
+#:   deployment, not a finding that the entity is stale. Promoting it would
+#:   make a disagreement auto-propose a redline. The pack's own word survives
+#:   verbatim on ``EntityAssessment.pack_verdict``, so nothing is lost.
+#:
+#: A pack verdict absent from this map is ``unknown`` and logs a warning —
+#: never guessed upward. Adding a seventh docmod verdict is an entry here.
+PACK_VERDICT_MAP = {
+    "current": "current",
+    "deprecated": "deprecated",
+    "eol": "deprecated",
+    "retired": "deprecated",
+    "divergent": "unknown",
+    "unknown": "unknown",
+}
+
+#: Reduction order when several packs assess the same entity. Higher wins.
+#:
+#: ``superseded > deprecated`` because it is the same finding plus a successor.
+#: ``deprecated > current`` because a currency check must fail TOWARD the
+#: finding: one pack recognising a deprecation must not be masked by a broader
+#: pack that recognised nothing wrong. ``current > unknown`` because a positive
+#: assertion beats an absence of one.
+_VERDICT_RANK = {"unknown": 0, "current": 1, "deprecated": 2, "superseded": 3}
+
+#: Backends consulted for EVIDENCE when the deployment declares no
+#: ``resolve.backends`` in args/cortex_config.yaml. In-boundary evidentiary
+#: rungs only.
+#:
+#: ``external`` is absent for the same reason it is absent from
+#: ``search.fan_out.backends``: it opens a socket to a host ICDEV does not run,
+#: and a currency question arriving from a document sweep must not be the
+#: trigger for that. ``sme`` is absent because it is ADVISORY — an opinion
+#: cannot be evidence for a deterministic verdict. A deployment may add either
+#: to ``resolve.backends`` having decided so; the advisory rung still cannot
+#: reach the verdict even then, because the verdict does not come from
+#: retrieval at all.
+DEFAULT_RESOLVE_BACKENDS = ("currency", "rag", "dic", "graph", "kb")
+
+#: Evidence hits requested per backend. Overridable per deployment.
+DEFAULT_RESOLVE_TOP_K = 5
+
+#: Gate name recorded on the resolution's own GovernanceReport, matching
+#: ``governance.GATE_CITATION_GROUNDING`` so one vocabulary describes both.
+GATE_CITATION = "citation_grounding"
+
+#: Chars of a pack rationale / evidence detail carried into the prose.
+_SNIPPET_CHARS = 240
+
+#: Gap reasons. Never merged — each sends you to a different fix.
+GAP_NO_PACK = "no_pack_matched"
+GAP_NO_EVIDENCE = "no_evidence"
+GAP_BACKENDS_FAILED = "backends_failed"
+GAP_PACKS_FAILED = "packs_failed"
+
+
+class CortexResolutionBlocked(RuntimeError):
+    """A resolution was refused rather than returned.
+
+    Raised from INSIDE the governed operation, so ``GovernancePipeline``
+    records the ``operation`` gate as failed and writes the audit row for the
+    refusal before re-raising — the same shape as ``CortexQueryBlocked`` on the
+    analyst path. Carries the citation report so a caller can say WHICH tag was
+    unresolvable instead of "resolution failed".
+    """
+
+    def __init__(self, message: str, *, entity: str = "", report: Optional[dict] = None):
+        super().__init__(message)
+        self.entity = entity
+        self.report = dict(report or {})
+
+
+# ---------------------------------------------------------------------------
+# Late-bound seams — patchable without importing the heavy subsystems
+# ---------------------------------------------------------------------------
+def _load_packs() -> dict:
+    """The registered domain packs, ``{pack_id: DomainPack}``.
+
+    Late import: ``tools.doc_modernization`` pulls in the whole pack tree, and
+    a Cortex deployment without it must degrade to ``unknown`` (a reported
+    gap), not fail to import.
+    """
+    from tools.doc_modernization.pack_loader import load_packs
+
+    return load_packs()
+
+
+def _chunk_ref():
+    """A synthetic ``ChunkRef`` for an entity that came from no document.
+
+    ``extract()`` requires one; the packs only carry it through onto the
+    candidate for reviewer display, so a resolution that did not originate in a
+    DIC document names itself as the origin rather than borrowing a doc id.
+    """
+    from tools.doc_modernization.base_pack import ChunkRef
+
+    return ChunkRef(doc_id="cortex.resolve", version_id="", section="entity")
+
+
+def _evidence_connection():
+    """A connection the packs read evidence on.
+
+    Separate from anything Cortex writes on, for the reason the docmod scanner
+    documents: on PostgreSQL one failed statement aborts the whole transaction,
+    so a pack's evidence error must not poison a caller's connection.
+    """
+    from tools.db.storage import get_connection
+
+    return get_connection()
+
+
+# ---------------------------------------------------------------------------
+# Deterministic assessment — DomainPack.evaluate(), and nothing else
+# ---------------------------------------------------------------------------
+def map_pack_verdict(pack_verdict: str, has_successor: bool) -> str:
+    """One pack verdict -> one ``RESOLVE_VERDICTS`` value. Pure, total."""
+    raw = (pack_verdict or "").strip().lower()
+    mapped = PACK_VERDICT_MAP.get(raw)
+    if mapped is None:
+        logger.warning(
+            "cortex.resolve: pack verdict %r is not in PACK_VERDICT_MAP — "
+            "reported as 'unknown' rather than guessed",
+            pack_verdict,
+        )
+        return "unknown"
+    if mapped == "deprecated" and has_successor:
+        return "superseded"
+    return mapped
+
+
+def in_scope(candidate, entity: str) -> bool:
+    """Was this candidate DERIVED FROM the entity text being resolved?
+
+    ``resolve`` answers about ONE entity. Most packs extract by matching the
+    text, so their candidate's ``label``/``raw_match`` is literally a slice of
+    it and this is True by construction. A DOCUMENT-scoped pack is the case
+    this exists for: ``evidence_currency`` "ignores ``text`` entirely — the
+    subject is the citation, not the prose", so run against the synthetic
+    ChunkRef a resolution carries it asserts "(no evidence anchors)" about a
+    document id (``cortex.resolve``) that is not a document. That is a
+    fabricated finding AND a fabricated citation, and it would have made every
+    resolution look grounded — the citation set was never empty.
+
+    Written as a property of the CANDIDATE rather than a list of pack ids: a
+    pack added later that is also document-scoped is excluded automatically,
+    and nothing here names a pack.
+    """
+    subject = (entity or "").casefold()
+    for field in ("raw_match", "label"):
+        value = str(getattr(candidate, field, "") or "").strip().casefold()
+        if value and value in subject:
+            return True
+    return False
+
+
+def _assessment(pack_id: str, candidate, verdict, replacement) -> EntityAssessment:
+    """``(CandidateEntity, Verdict, Replacement|None)`` -> EntityAssessment. Pure."""
+    successor = str(getattr(replacement, "label", "") or "")
+    evidence = [e for e in (getattr(verdict, "evidence", None) or []) if isinstance(e, dict)]
+    evidence += [
+        e for e in (getattr(replacement, "evidence", None) or []) if isinstance(e, dict)
+    ]
+    return EntityAssessment(
+        entity=str(getattr(candidate, "label", "") or ""),
+        entity_type=str(getattr(candidate, "entity_type", "") or ""),
+        pack_id=pack_id,
+        verdict=map_pack_verdict(
+            getattr(verdict, "currency_verdict", ""), bool(successor)
+        ),
+        pack_verdict=str(getattr(verdict, "currency_verdict", "") or ""),
+        finding_type=str(getattr(verdict, "finding_type", "") or ""),
+        severity=str(getattr(verdict, "severity", "") or ""),
+        confidence=float(getattr(verdict, "confidence", 0.0) or 0.0),
+        rationale=str(getattr(verdict, "rationale", "") or ""),
+        superseded_by=successor,
+        replacement_source=str(getattr(replacement, "source", "") or ""),
+        replacement_ref=str(getattr(replacement, "source_ref", "") or ""),
+        evidence=evidence,
+    )
+
+
+def assess(entity: str) -> tuple:
+    """Run every registered pack over ``entity``. Returns ``(assessments, errors, out_of_scope)``.
+
+    The packs extract from the ENTITY STRING ONLY — never from the question.
+    A question that mentions a second entity ("we replaced TLS 1.0 with this,
+    is it ok?") would otherwise produce a verdict about the wrong subject,
+    which is the one way a deterministic verdict can still be wrong.
+
+    Candidates that did not come from the entity text are dropped by
+    :func:`in_scope` and REPORTED (the third return value) rather than silently
+    discarded — a drop nobody can see is how a scoping rule becomes a mystery.
+
+    Never raises: a pack that blows up is recorded on ``errors`` (shaped like
+    ``BackendResults.errors`` so a consumer reads both the same way) and the
+    remaining packs still run.
+    """
+    assessments: list = []
+    errors: list = []
+    out_of_scope: list = []
+    try:
+        packs = _load_packs()
+    except Exception as exc:  # noqa: BLE001 — no packs is a GAP, not a crash
+        logger.warning("cortex.resolve: pack loading failed: %s", exc)
+        return [], [{"backend": "packs", "stage": "load", "message": str(exc)}], []
+
+    if not packs:
+        return [], [], []
+
+    chunk_ref = _chunk_ref()
+    conn = None
+    try:
+        conn = _evidence_connection()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("cortex.resolve: evidence connection unavailable: %s", exc)
+        errors.append({"backend": "packs", "stage": "connection", "message": str(exc)})
+
+    def _rollback():
+        if conn is None:
+            return
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 — best effort
+            pass
+
+    try:
+        for pack_id, pack in sorted(packs.items()):
+            try:
+                candidates = pack.extract(entity, chunk_ref)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("cortex.resolve: %s.extract failed: %s", pack_id, exc)
+                errors.append(
+                    {"backend": f"pack:{pack_id}", "stage": "extract", "message": str(exc)}
+                )
+                continue
+            for candidate in candidates or []:
+                if not in_scope(candidate, entity):
+                    out_of_scope.append({
+                        "pack_id": pack_id,
+                        "label": str(getattr(candidate, "label", "") or ""),
+                        "reason": "candidate not derived from the entity text",
+                    })
+                    continue
+                try:
+                    verdict = pack.evaluate(candidate, conn)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("cortex.resolve: %s.evaluate failed: %s", pack_id, exc)
+                    errors.append(
+                        {"backend": f"pack:{pack_id}", "stage": "evaluate",
+                         "message": str(exc)}
+                    )
+                    _rollback()
+                    continue
+                replacement = None
+                try:
+                    replacement = pack.recommend(candidate, verdict, conn)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("cortex.resolve: %s.recommend failed: %s", pack_id, exc)
+                    errors.append(
+                        {"backend": f"pack:{pack_id}", "stage": "recommend",
+                         "message": str(exc)}
+                    )
+                    _rollback()
+                assessments.append(_assessment(pack_id, candidate, verdict, replacement))
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+    return assessments, errors, out_of_scope
+
+
+def reduce_assessments(assessments: list) -> Optional[EntityAssessment]:
+    """The winning assessment under :data:`_VERDICT_RANK`, or None.
+
+    Deterministic on every axis so the same evidence always yields the same
+    verdict: rank, then confidence, then pack_id, then entity label. No
+    randomness, no dict iteration order, no clock.
+    """
+    if not assessments:
+        return None
+    return max(
+        assessments,
+        key=lambda a: (
+            _VERDICT_RANK.get(a.verdict, 0),
+            float(a.confidence or 0.0),
+            a.pack_id,
+            a.entity,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Evidence — the EXISTING fan-out, with an explicit in-boundary rung set
+# ---------------------------------------------------------------------------
+def resolve_backends(config: Optional[dict] = None) -> list:
+    """The rung set consulted for evidence, from ``resolve.backends`` in config.
+
+    Unknown names are dropped with a warning rather than raising: an operator
+    typo in a YAML list must not take the verb offline, and ``search()`` would
+    reject the whole call. An empty/absent declaration falls back to
+    :data:`DEFAULT_RESOLVE_BACKENDS`.
+    """
+    from .search_service import BACKEND_ADAPTERS
+
+    cfg = config if config is not None else load_cortex_config()
+    declared = ((cfg or {}).get("resolve") or {}).get("backends") or []
+    names = [str(b) for b in declared] or list(DEFAULT_RESOLVE_BACKENDS)
+    kept = [b for b in names if b in BACKEND_ADAPTERS]
+    dropped = [b for b in names if b not in BACKEND_ADAPTERS]
+    if dropped:
+        logger.warning(
+            "cortex.resolve: unknown backend(s) %s in resolve.backends — skipped",
+            dropped,
+        )
+    return kept or [b for b in DEFAULT_RESOLVE_BACKENDS if b in BACKEND_ADAPTERS]
+
+
+def _evidence_query(entity: str, question: str) -> str:
+    """The retrieval query. Entity first — it is the subject being resolved."""
+    return f"{entity} {question}".strip() if question else entity
+
+
+def _gather_evidence(entity: str, question: str, ctx: CortexContext,
+                     top_k: int, config: Optional[dict]) -> tuple:
+    """Fan out over the configured rungs. Returns ``(hits, errors, backends)``.
+
+    ``corrective=False``: the CRAG rewrite is the only LLM call inside
+    retrieval, and a resolution must be reproducible from the database alone.
+    """
+    backends = resolve_backends(config)
+    try:
+        hits = _search_impl(
+            _evidence_query(entity, question),
+            top_k=top_k,
+            ctx=ctx,
+            config=config,
+            backends=backends,
+            corrective=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — retrieval failure is a REPORTED gap
+        logger.warning("cortex.resolve: evidence retrieval failed: %s", exc)
+        return [], [{"backend": "search", "stage": "fanout", "message": str(exc)}], backends
+    return list(hits), list(getattr(hits, "errors", ()) or ()), backends
+
+
+# ---------------------------------------------------------------------------
+# Citations + prose
+# ---------------------------------------------------------------------------
+def _pack_citations(assessments: list) -> list:
+    """Pack evidence dicts -> Citations.
+
+    ``base_pack`` already documents ``Verdict.evidence`` as citation-shaped
+    (``{"source": ..., "detail": ..., "date": ...}``) precisely so
+    ``citation_grounding.validate_citations`` can gate a redline drafted from
+    the finding. This is that mapping and nothing more — no source is invented,
+    an entry without a ``source`` is dropped rather than given one.
+    """
+    out: list = []
+    seen: set = set()
+    for assessment in assessments:
+        for entry in assessment.evidence or []:
+            source = str(entry.get("source") or "").strip()
+            if not source or source in seen:
+                continue
+            seen.add(source)
+            detail = str(entry.get("detail") or "")
+            out.append(Citation(
+                source_id=source,
+                source_type="pack_evidence",
+                source_table=assessment.pack_id,
+                title=assessment.entity or source,
+                snippet=detail[:_SNIPPET_CHARS],
+            ))
+    return out
+
+
+def _evidence_citations(hits: list) -> tuple:
+    """Retrieved hits -> ``(citations, advisory)``.
+
+    Advisory hits are split off, never cited. An ``sme`` opinion is authored by
+    a model at query time; citing it would make an LLM the authority behind a
+    deterministic verdict through the back door.
+    """
+    citations: list = []
+    advisory: list = []
+    seen: set = set()
+    for hit in hits:
+        if is_advisory(hit):
+            advisory.append(hit.to_dict() if hasattr(hit, "to_dict") else hit)
+            continue
+        citation = getattr(hit, "citation", None)
+        if citation is None:
+            continue
+        key = (citation.source_id, citation.source_table)
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append(citation)
+    return citations, advisory
+
+
+def _allowed_ids(citations: list) -> set:
+    """Every id an inline ``[source: id]`` tag may legitimately name."""
+    allowed: set = set()
+    for citation in citations:
+        allowed.update(x for x in (citation.source_id, citation.source_table) if x)
+    return allowed
+
+
+def render(entity: str, verdict: str, winner: Optional[EntityAssessment],
+           assessments: list, citations: list, gaps: list) -> str:
+    """The resolution prose. DETERMINISTIC — assembled here, not generated.
+
+    Every ``[source: id]`` tag emitted names an id that is already on
+    ``citations``, so the validation below passes by construction. It is still
+    validated, because "passes by construction" is what every un-gated
+    invariant in this repository said about itself before it stopped holding.
+    """
+    lines: list = []
+    if winner is None:
+        lines.append(
+            f"{entity}: no registered domain pack recognises this entity, so no "
+            f"deterministic currency verdict could be derived. Verdict: unknown."
+        )
+    else:
+        lines.append(f"{entity}: {verdict} ({winner.pack_id}).")
+        if winner.rationale:
+            lines.append(winner.rationale.strip())
+        if winner.superseded_by:
+            lines.append(
+                f"Recommended replacement: {winner.superseded_by} "
+                f"(source: {winner.replacement_source or 'unspecified'})."
+            )
+        seen: set = set()
+        sources = []
+        for entry in winner.evidence or []:
+            source = entry.get("source") if isinstance(entry, dict) else None
+            if source and source not in seen:
+                seen.add(source)
+                sources.append(source)
+        if sources:
+            lines.append(" ".join(f"[source: {s}]" for s in sources))
+
+    other = [a for a in assessments if a is not winner]
+    if other:
+        lines.append(
+            "Other pack assessments: "
+            + "; ".join(f"{a.pack_id}={a.verdict}" for a in sorted(
+                other, key=lambda a: (a.pack_id, a.entity)))
+            + "."
+        )
+
+    if citations:
+        backends = sorted({c.source_type for c in citations if c.source_type})
+        lines.append(
+            f"Supporting evidence: {len(citations)} citation(s)"
+            + (f" from {', '.join(backends)}" if backends else "")
+            + "."
+        )
+    for gap in gaps:
+        lines.append(
+            f"Gap: {gap.get('entity')} — " + ", ".join(gap.get("reasons") or []) + "."
+        )
+    return "\n".join(line for line in lines if line)
+
+
+# ---------------------------------------------------------------------------
+# The operation the facade governs
+# ---------------------------------------------------------------------------
+def _gaps(entity: str, verdict: str, assessments: list, hits: list,
+          backend_errors: list, pack_errors: list, backends: list) -> list:
+    """``unknown`` -> a finding that says WHY. Empty for any other verdict.
+
+    The reasons are a LIST because they co-occur: no pack recognised the entity
+    AND the corpora matched nothing is a different situation from either alone,
+    and a consumer deciding whether to escalate to a human needs both.
+    """
+    if verdict != "unknown":
+        return []
+    reasons: list = []
+    if not assessments:
+        reasons.append(GAP_NO_PACK)
+    if pack_errors:
+        reasons.append(GAP_PACKS_FAILED)
+    if not hits:
+        # A dead backend and an empty corpus are NOT the same answer. Reporting
+        # `no_evidence` for a fan-out that failed is exactly how an
+        # infrastructure outage reaches a reader as a statement about the data.
+        reasons.append(GAP_BACKENDS_FAILED if backend_errors else GAP_NO_EVIDENCE)
+    if not reasons:
+        # Packs ran, hits came back, and the verdict is still unknown — the
+        # honest reason is that what came back did not resolve the question.
+        reasons.append(GAP_NO_EVIDENCE)
+    return [{
+        "entity": entity,
+        "reasons": reasons,
+        "backends_consulted": list(backends),
+        "backends_failed": sorted({str(e.get("backend") or "") for e in backend_errors}),
+    }]
+
+
+def resolve(
+    entity: str,
+    question: str = "",
+    ctx: Union[CortexContext, dict, None] = None,
+    top_k: int = DEFAULT_RESOLVE_TOP_K,
+) -> CortexResolution:
+    """Resolve one entity's currency against the registered backends.
+
+    This is the RAW implementation. Import the GOVERNED facade
+    (``tools.cortex.resolve`` / ``tools.cortex.api.resolve``) — calling this
+    directly bypasses the TRUST chain, the audit row and the provenance record.
+
+    Args:
+        entity: the thing being resolved ("TLS 1.1", "Catalyst 6500",
+            "NIST SP 800-53 Rev. 4"). Matched by the packs' own extractors, so
+            it may be raw document text; only what a pack RECOGNISES is
+            assessed.
+        question: optional natural-language framing. It shapes the evidence
+            query and NOTHING else — in particular it is never fed to a pack
+            extractor, so it cannot move the verdict onto a different entity.
+        ctx: caller identity/policy. Threaded into retrieval for RLS and into
+            the domain lens (``ctx.domain`` intersects the rung set).
+        top_k: evidence hits requested per backend.
+
+    Raises:
+        ValueError: ``entity`` is empty.
+        CortexResolutionBlocked: the assembled prose cites a source that is not
+            in the resolution's own citation set.
+    """
+    entity = (entity or "").strip()
+    if not entity:
+        raise ValueError("resolve() requires a non-empty 'entity'")
+    question = (question or "").strip()
+    context = ctx if isinstance(ctx, CortexContext) else CortexContext.from_dict(ctx or {})
+    config = load_cortex_config()
+
+    assessments, pack_errors, out_of_scope = assess(entity)
+    winner = reduce_assessments(assessments)
+    verdict = winner.verdict if winner is not None else "unknown"
+    verdict_source = "pack_evaluate" if winner is not None else "none"
+
+    hits, backend_errors, backends = _gather_evidence(
+        entity, question, context, top_k, config
+    )
+    evidence_citations, advisory = _evidence_citations(hits)
+    citations = _pack_citations(assessments) + evidence_citations
+    gaps = _gaps(entity, verdict, assessments, hits, backend_errors,
+                 pack_errors, backends)
+
+    text = render(entity, verdict, winner, assessments, citations, gaps)
+
+    # Citation validation through the SHARED module — and this one BLOCKS.
+    allowed = _allowed_ids(citations)
+    report = validate_citations(text, allowed)
+    if report.get("hallucinated_citations"):
+        raise CortexResolutionBlocked(
+            f"resolution for {entity!r} cites unknown source(s): "
+            f"{report['hallucinated_citations']}",
+            entity=entity,
+            report=report,
+        )
+
+    result = CortexResolution(
+        text=text,
+        citations=citations,
+        entity=entity,
+        question=question,
+        verdict=verdict,
+        verdict_source=verdict_source,
+        assessments=assessments,
+        gaps=gaps,
+        # cef-rsv-02 owns conflict DETECTION (semantic entity resolution across
+        # backends). Declared and empty here rather than half-populated from one
+        # backend's own `conflict` flag: "no conflicts" must mean "detection ran
+        # and found none", and until that card lands it would not be true.
+        conflicts=[],
+        backend_errors=backend_errors + pack_errors,
+        backends_consulted=list(backends),
+        # A resolution is grounded when it has citations, none are hallucinated,
+        # and a pack actually produced the verdict. An `unknown` from no pack at
+        # all is a REPORT, not a grounded answer.
+        grounded=bool(citations) and bool(report.get("valid"))
+        and verdict_source == "pack_evaluate",
+    )
+    result.metadata.update({
+        "citation_report": report,
+        "verdict_source": verdict_source,
+        "pack_ids": sorted({a.pack_id for a in assessments}),
+        "evidence_hits": len(hits),
+        # Candidates a pack produced that were NOT about this entity (see
+        # in_scope). Reported, never silent.
+        "out_of_scope": out_of_scope,
+        # An ADVISORY opinion is carried, visibly, and is not a citation.
+        "advisory": advisory,
+    })
+    result.governance.gates_run.append(GATE_CITATION)
+    result.governance.outcomes[GATE_CITATION] = (
+        "pass" if report.get("valid") and citations else "warn"
+    )
+    return result

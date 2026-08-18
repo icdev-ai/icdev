@@ -324,6 +324,30 @@ search:
         support. Structure any summary as: (1) Controls in scope, (2) Evidence
         found per control, (3) Gaps and required actions.
 
+# ── cortex.resolve — the governed evidence-resolution verb (cef-rsv-01) ──────
+# resolve(entity, question, ctx) answers "is this entity still current?" with a
+# DETERMINISTIC verdict from DomainPack.evaluate() plus the evidence behind it.
+resolve:
+  # Rungs consulted for EVIDENCE. The verdict never comes from here — it comes
+  # from the domain packs — so this list decides what a resolution can CITE, not
+  # what it can conclude.
+  #
+  # `external` is absent for the same reason it is absent from
+  # search.fan_out.backends: it opens a socket to a host ICDEV does not run, and
+  # a currency question arriving from an automated document sweep must not be
+  # the trigger for an outbound call to a third party. Adding it is a deployment
+  # decision with an egress consequence, not a tuning knob.
+  #
+  # `sme` is absent for the OTHER reason: it is ADVISORY. An opinion an LLM
+  # authored at query time cannot be evidence for a verdict that base_pack TRUST
+  # rule 1 requires to be deterministic. Adding it here would put the opinion in
+  # the result — resolver still excludes advisory hits from citations and from
+  # the verdict, and surfaces them under metadata.advisory instead.
+  #
+  # An unknown name here is DROPPED with a warning rather than raising: an
+  # operator typo in a YAML list must not take the verb offline.
+  backends: [currency, rag, dic, graph, kb]
+
 governance:
   # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
   # CortexContext.fail_closed (i.e. ctx.fail_closed is None). Resolved by

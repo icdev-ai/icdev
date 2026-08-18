@@ -176,6 +176,7 @@ def _sample_cortex_result():
 ENDPOINTS = [
     "/cortex/api/v1/search",
     "/cortex/api/v1/ask",
+    "/cortex/api/v1/resolve",
     "/cortex/api/v1/complete",
     "/cortex/api/v1/reason",
     "/cortex/api/v1/classify",
@@ -188,7 +189,8 @@ ENDPOINTS = [
 def test_unauthenticated_requests_rejected(path):
     client = make_client(authed=False)
     resp = client.post(path, json={"query": "x", "question": "x", "prompt": "x",
-                                   "text": "x", "labels": ["a"], "schema": {"a": 1}})
+                                   "text": "x", "labels": ["a"], "schema": {"a": 1},
+                                   "entity": "x"})
     assert resp.status_code == 401
     assert resp.get_json()["error"] == "authentication required"
 

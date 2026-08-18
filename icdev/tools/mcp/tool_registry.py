@@ -7555,6 +7555,47 @@ TOOL_REGISTRY = {
             "required": ["question"],
         },
     },
+    "cortex_resolve": {
+        "category": "cortex",
+        "module": "tools.mcp.cortex_server",
+        "handler": "handle_cortex_resolve",
+        "description": (
+            "Resolve ONE entity's currency deterministically: is it current, deprecated, superseded, "
+            "or unknown? The verdict comes from the registered domain packs' evaluate() -- catalog "
+            "rows, EOL dates, rulebook matches, inventory counts -- and NEVER from a model; this verb "
+            "makes no LLM call at all. Returns the verdict plus citations validated through "
+            "citation_grounding, gaps (unknown is a visible finding, with the reason), conflicts, and "
+            "backend_errors (a backend that DIED, never merged with one that matched nothing)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entity": {
+                    "type": "string",
+                    "description": "The thing being resolved, e.g. 'TLS 1.1' or 'Catalyst 6500'",
+                },
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "Optional framing. Shapes the evidence query only -- it never "
+                        "reaches a pack extractor, so it cannot move the verdict onto "
+                        "another entity."
+                    ),
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "Evidence hits per backend (default 5)",
+                    "default": 5,
+                },
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant RLS isolation"},
+                "classification": {"type": "string", "description": "Data classification (default CUI)"},
+                "domain": {"type": "string", "description": "Optional domain scope (intersects backends)"},
+                "user_id": {"type": "string", "description": "Caller user ID (RLS)"},
+                "fail_closed": {"type": "boolean", "default": False},
+            },
+            "required": ["entity"],
+        },
+    },
     "cortex_complete": {
         "category": "cortex",
         "module": "tools.mcp.cortex_server",
@@ -9322,6 +9363,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # -- cortex ------------------------------------------------------------
     "cortex_search":                            True,
     "cortex_ask":                               True,
+    # Retrieval + deterministic pack evaluation. Writes only what every governed
+    # facade writes (the audit + provenance rows), exactly like cortex_search.
+    "cortex_resolve":                           True,
     "cortex_complete":                          False,
     "cortex_reason":                            False,
     "cortex_classify":                          False,

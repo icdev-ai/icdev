@@ -4652,9 +4652,9 @@ python -c "from tools.cortex import assert_airgap_ready; assert_airgap_ready(); 
 # Load the security (XSIAM-style) lens; scope search to threat/vuln/incident sources
 python -c "from tools.cortex import load_domain_profile, list_domain_names; print(list_domain_names()); print(load_domain_profile('security').sources)"
 
-# --- MCP server (cortex_server.py: 8 cortex_* tools, ctx-expose-01) ---
-# Start the Cortex MCP server over stdio (cortex_search/ask/complete/reason/classify/extract/govern/agent_launch)
-# NOTE (ctx-reach-03): .mcp.json launches ONLY icdev-unified, which serves all 8
+# --- MCP server (cortex_server.py: 9 cortex_* tools, ctx-expose-01) ---
+# Start the Cortex MCP server over stdio (cortex_search/ask/resolve/complete/reason/classify/extract/govern/agent_launch)
+# NOTE (ctx-reach-03): .mcp.json launches ONLY icdev-unified, which serves all 9
 # of these from TOOL_REGISTRY — that is how they are reached in this repo. This
 # standalone command is the BOUNDED alternative for an external / air-gapped MCP
 # client that must see only the Cortex family. Both serve the same handlers.
@@ -4664,6 +4664,15 @@ python tools/mcp/cortex_server.py
 # POST JSON to the versioned surface (identity derived server-side; only `domain` is caller-supplied):
 #   POST /cortex/api/v1/search   {"query": "...", "top_k": 5, "strategy": "auto", "domain": "security"}
 #   POST /cortex/api/v1/ask      {"question": "...", "mode": "auto", "summarize": true}
+#   POST /cortex/api/v1/resolve  {"entity": "TLS 1.1", "question": "still approved?", "top_k": 5}
+#     -> {verdict: current|deprecated|superseded|unknown, verdict_source, citations[],
+#         gaps[], conflicts[], backend_errors[], assessments[]}   (cef-rsv-01)
+#     The verdict is DETERMINISTIC — from the docmod domain packs' evaluate(), never a model;
+#     this is the one Cortex verb that makes no LLM call at all. `unknown` always carries a
+#     gaps entry naming why (no_pack_matched / no_evidence / backends_failed / packs_failed,
+#     never merged). An unresolvable [source: id] tag returns 403, it does not degrade.
+#     There is NO `backends`/`strategy` param: the rung set is `resolve.backends` in
+#     args/cortex_config.yaml, because it decides whether the `external` rung is reachable.
 #   POST /cortex/api/v1/complete {"prompt": "...", "system_prompt": "..."}
 #   POST /cortex/api/v1/reason   {"prompt": "...", "mode": "cot"}   # mode: cot | debate | council
 #   POST /cortex/api/v1/classify {"text": "...", "labels": ["a", "b"]}

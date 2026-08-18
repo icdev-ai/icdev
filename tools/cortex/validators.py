@@ -190,6 +190,25 @@ def validate_classify(data: Any) -> dict:
     }
 
 
+def validate_resolve(data: Any) -> dict:
+    """Params for ``cortex.resolve`` (cef-rsv-01).
+
+    There is deliberately NO ``backends`` / ``strategy`` parameter. The rung set
+    a resolution consults is a DEPLOYMENT decision (``resolve.backends`` in
+    args/cortex_config.yaml) because it decides whether the ``external`` rung —
+    an outbound call to a third party — is reachable. A request payload naming
+    its own backends would be a caller choosing its own egress, which is the
+    same class of mistake as a remote caller choosing its agent's tool list
+    (see ``api_v1_agent``). ``domain`` remains settable because it only NARROWS.
+    """
+    data = _require_dict(data)
+    return {
+        "entity": _req_str(data, "entity"),
+        "question": _opt_str(data, "question", ""),
+        "top_k": _opt_int(data, "top_k", 5, _TOP_K_MIN, _TOP_K_MAX),
+    }
+
+
 def validate_extract(data: Any) -> dict:
     data = _require_dict(data)
     schema = data.get("schema")

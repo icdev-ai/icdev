@@ -49,6 +49,13 @@ API_KEY_PREFIX = "icdev_ctx_"
 # AGENT_SCOPES below — it is granted explicitly, never by default.
 REST_OPERATIONS = ("search", "ask", "complete", "reason", "classify", "extract",
                    "govern",
+                   # cef-rsv-01. Read-only over the SAME in-boundary rungs
+                   # `cortex:search` already reaches, and it makes no LLM call
+                   # at all, so it carries strictly less reach than the scopes
+                   # already in this tuple. `resolve.backends` in
+                   # args/cortex_config.yaml — not a request payload — is what
+                   # could widen that, and widening it is a deployment decision.
+                   "resolve",
                    # Deterministic deck assembly from a caller-supplied spec —
                    # no LLM spend, so it rides in the default grant.
                    "slides")
