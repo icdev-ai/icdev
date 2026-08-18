@@ -53,6 +53,38 @@ def _evidence_connect():
     return get_canvas_connection()
 
 
+def _reset_evidence_run() -> None:
+    """Re-arm the governed evidence seam for a new scan run. Never fatal."""
+    try:
+        from .evidence import reset_run_state
+
+        reset_run_state()
+    except Exception as exc:  # noqa: BLE001 — the seam must never fail a scan
+        logger.debug("docmod: evidence seam reset unavailable: %s", exc)
+
+
+def _enrich_findings_enabled(config: dict) -> bool:
+    """Is per-finding evidence enrichment live?
+
+    TWO conditions, not one: the master ``cortex.enabled`` toggle AND
+    ``cortex.enrich_findings``. Separate because they have different blast
+    radii — the pack-level lookups swap one store call for a governed one and
+    cost a resolution per DISTINCT entity, while enrichment costs one per
+    finding and writes into every ``evidence_json`` the corpus holds. A
+    deployment must be able to take the first without the second.
+    """
+    try:
+        from .evidence import cortex_config, cortex_enabled
+
+        return bool(
+            cortex_enabled(config)
+            and cortex_config(config).get("enrich_findings", True)
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("docmod: evidence seam unavailable: %s", exc)
+        return False
+
+
 def dedupe_key(doc_id: str, pack_id: str, entity_label: str, finding_type: str) -> str:
     raw = f"{doc_id}|{pack_id}|{entity_label.lower().strip()}|{finding_type}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -179,12 +211,68 @@ def _insert_finding(conn, run_id: str, doc_id: str, version_id: str, entity, ver
     return fid
 
 
+def _enrich_evidence(verdict, entity, tenant_id, classification) -> str:
+    """Attach the GOVERNED resolution's citations to a finding (cef-di-01).
+
+    The scanner half of the migration, and the half that covers every pack at
+    once: a pack keeps whatever hand-written evidence read its verdict needs,
+    and the finding it produced additionally carries the citations
+    ``cortex.resolve`` gathered for that entity across the currency store, RAG,
+    DIC, the knowledge graph and the KB — rungs no pack reaches on its own.
+
+    Three properties, each deliberate:
+
+    * It runs AFTER ``evaluate()`` and touches ``evidence`` only. The verdict,
+      the severity, the finding type, the confidence and the ``dedupe_key`` are
+      all already fixed, so a toggle-on rescan produces the SAME finding SET as
+      a toggle-off one, with more evidence on each row. That is what makes the
+      before/after comparison this card asks for a comparison at all.
+    * It runs only for entities that produced a FINDING. A corpus sweep names
+      thousands of candidates and roughly a hundred become findings; resolving
+      every candidate would be a five-backend fan-out per mention for evidence
+      no reviewer ever opens.
+    * It never raises. An unreachable Cortex, a refused resolution or a dead
+      backend leaves the finding exactly as the pack wrote it.
+
+    Returns the ``via`` marker (empty when nothing was attached), so the caller
+    can report how many findings the seam actually enriched instead of assuming.
+    """
+    try:
+        from . import evidence as docmod_evidence
+
+        bundle = docmod_evidence.resolve_evidence(
+            entity.label,
+            entity_type=entity.entity_type,
+            tenant_id=tenant_id,
+            classification=classification,
+        )
+    except Exception as exc:  # noqa: BLE001 — evidence enrichment never fails a scan
+        logger.warning("docmod: cortex evidence enrichment failed: %s", exc)
+        return ""
+    if bundle is None or not bundle.citations:
+        return ""
+    known = {str(e.get("source") or "") for e in (verdict.evidence or [])}
+    added = [c for c in bundle.citations if c["source"] not in known]
+    if not added:
+        return ""
+    verdict.evidence = list(verdict.evidence or []) + [
+        {**c, "via": "cortex.resolve"} for c in added
+    ]
+    return "cortex.resolve"
+
+
 def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = None,
                   run_id: str | None = None, force: bool = False) -> dict:
     """Scan one document. Returns {doc_id, scanned, findings_new, findings_resolved}."""
     own_conn = conn is None
     if own_conn:
         conn = _connect()
+    if run_id is None:
+        # Top-level scan: re-arm the governed seam's per-run memo cache and
+        # outbound budget. Per RUN rather than per process — the cache holds
+        # live database state, and memoising it for the lifetime of a dashboard
+        # worker would make a catalog edit invisible until restart.
+        _reset_evidence_run()
     try:
         packs = packs or load_packs()
         version_id = _latest_approved_version(conn, doc_id)
@@ -225,10 +313,13 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
                  started_at, tenant_id, classification),
             )
 
-        threshold = float(load_config().get("confidence_threshold", 0.0) or 0.0)
+        engine_config = load_config()
+        threshold = float(engine_config.get("confidence_threshold", 0.0) or 0.0)
+        enrich = _enrich_findings_enabled(engine_config)
         existing_open = _open_findings(conn, doc_id)
         seen_keys: set[str] = set()
         findings_new = 0
+        findings_enriched = 0
 
         # Packs read evidence on the SEPARATE RLS-free connection created above:
         # on PostgreSQL a single failed statement aborts the whole transaction,
@@ -266,6 +357,13 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
                             seen_keys.add(key)
                             continue
                         seen_keys.add(key)
+                        # cef-di-01 — governed evidence, attached AFTER the
+                        # verdict is fixed. Adds citations; changes no verdict,
+                        # no severity and no dedupe_key.
+                        if enrich and _enrich_evidence(
+                            verdict, entity, tenant_id, classification
+                        ):
+                            findings_enriched += 1
                         replacement = None
                         try:
                             replacement = pack.recommend(entity, verdict, ev_conn)
@@ -327,7 +425,12 @@ def scan_document(doc_id: str, conn=None, packs: dict[str, DomainPack] | None = 
         # unchanged version), so extraction fires once per NEW approved version.
         _maybe_extract_claims(doc_id, version_id, doc_chunks, tenant_id, classification)
         return {"doc_id": doc_id, "scanned": True, "findings_new": findings_new,
-                "findings_resolved": findings_resolved, "open_findings": open_count}
+                "findings_resolved": findings_resolved, "open_findings": open_count,
+                # How many findings the governed seam actually enriched. Reported
+                # rather than assumed: `enrich` being on and the seam having
+                # answered are different facts, and a scan that enriched nothing
+                # must not read like one that enriched everything.
+                "findings_enriched": findings_enriched}
     finally:
         if own_conn:
             conn.close()
@@ -380,6 +483,9 @@ def _maybe_extract_claims(doc_id: str, version_id: str, doc_chunks, tenant_id, c
 def scan_collection(collection_id: str | None = None, trigger: str = "manual",
                     force: bool = False) -> dict:
     """Scan every document in a collection (or the whole corpus when None)."""
+    # Re-arm the governed evidence seam once for the whole sweep, so an entity
+    # named by twenty documents costs ONE resolution rather than twenty.
+    _reset_evidence_run()
     conn = _connect()
     try:
         packs = load_packs()
