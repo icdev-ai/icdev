@@ -469,9 +469,17 @@ _GENESIS_EMAIL_TEMPLATE = (
 def _duration_str(start: str | None, end: str | None) -> str:
     if not start or not end:
         return "unknown"
+    # Stdlib, not dateutil (tsg-iso-03). This import used to sit inside the
+    # `try` below, so on any install without the undeclared package the
+    # ImportError landed in that `except` and EVERY duration rendered
+    # "unknown" -- indistinguishable from a genuinely unknown duration.
+    from tools.common.helpers import parse_utc_timestamp
+
+    started, ended = parse_utc_timestamp(start), parse_utc_timestamp(end)
+    if started is None or ended is None:
+        return "unknown"
     try:
-        from dateutil.parser import parse
-        delta = parse(end) - parse(start)
+        delta = ended - started
         secs = int(delta.total_seconds())
         minutes, remainder = divmod(secs, 60)
         hours, minutes = divmod(minutes, 60)
