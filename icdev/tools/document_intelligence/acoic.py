@@ -499,6 +499,112 @@ def _retrieve_evidence(query: str, tenant_id: str | None, k: int = 5) -> list[st
     return texts
 
 
+def _ssp_evidence_module():
+    """The governed evidence seam, or ``None`` when it cannot be imported.
+
+    A DIC install without the seam module behaves exactly like one with the
+    toggle off. DocDrift must not stop drafting because an evidence module
+    failed to import — that is the same fail-open the rest of this file already
+    applies to the crosswalk KG and the LLM router.
+    """
+    try:  # pragma: no cover - import shape varies by install layout
+        from icdev.tools.document_intelligence import ssp_evidence
+    except Exception:
+        try:
+            from tools.document_intelligence import ssp_evidence
+        except Exception:
+            return None
+    return ssp_evidence
+
+
+def _reset_evidence_run() -> None:
+    """Start a fresh evidence run — drop the memo cache, re-arm the budget."""
+    module = _ssp_evidence_module()
+    if module is not None:
+        module.reset_run_state()
+
+
+def _evidence_run_stats() -> dict[str, Any]:
+    """Resolutions spent and asks refused by the cap, for the caller to report."""
+    module = _ssp_evidence_module()
+    return module.run_stats() if module is not None else {}
+
+
+def _gather_evidence(
+    control_id: str,
+    frameworks: dict,
+    tenant_id: str | None,
+    classification: str | None,
+    k: int = 5,
+) -> tuple[list[str], list[dict], str, dict]:
+    """Evidence for one control: governed seam first, legacy retrieval otherwise.
+
+    Returns ``(texts, citations, path, detail)``.
+
+    * ``texts``     — what the drafter and :func:`verifier.verify` consume.
+      ``[SOURCE-1]`` is ``texts[0]``, unchanged from the legacy contract.
+    * ``citations`` — INDEX-ALIGNED provenance for those texts, or ``[]`` on the
+      legacy path, which has none to give. This is what makes a persisted
+      ``[SOURCE-N]`` resolvable to a source id after the drafting call returns.
+    * ``path``      — which chain produced the texts (``ssp_evidence.PATH_*``).
+      Recorded on the fragment, because a drafting run whose evidence chain is
+      unknowable afterwards is exactly what this migration is fixing.
+    * ``detail``    — the backends consulted, the ones that DIED, and a
+      governance refusal. Carried even when the legacy path was taken, so a
+      thin governed answer is never mistaken for a thin corpus.
+
+    Toggle off (the shipped default) short-circuits to the legacy call before
+    anything is imported, so ``cortex.enabled: false`` is the pre-migration
+    behaviour exactly rather than an approximation of it.
+    """
+    legacy_query = f"{control_id} {' '.join(str(x) for x in frameworks)} implementation"
+    detail: dict[str, Any] = {}
+
+    ssp_evidence = _ssp_evidence_module()
+    if ssp_evidence is None:
+        # No seam module at all — indistinguishable from the toggle being off,
+        # and treated identically.
+        return _retrieve_evidence(legacy_query, tenant_id, k), [], "legacy", detail
+
+    bundle = ssp_evidence.resolve_evidence(
+        control_id,
+        frameworks=sorted(str(x) for x in frameworks),
+        tenant_id=tenant_id,
+        classification=classification,
+        top_k=k,
+    )
+    if bundle is None:
+        # Toggle off / re-entrant / budget spent / Cortex absent. Each of those
+        # is logged with its own reason inside the seam; here they are one
+        # answer, because they all mean "do what you did before".
+        return _retrieve_evidence(legacy_query, tenant_id, k), [], ssp_evidence.PATH_LEGACY, detail
+
+    detail = {
+        "backends": list(bundle.backends),
+        "backend_errors": list(bundle.errors),
+        "blocked": bundle.blocked,
+        "resolve_verdict": bundle.verdict,
+    }
+    if not bundle.is_empty:
+        return list(bundle.texts), list(bundle.citations), ssp_evidence.PATH_CORTEX, detail
+
+    if ssp_evidence.fallback_on_empty():
+        # The governed fan-out answered with nothing a narrative can be written
+        # from — a governance refusal, or a fan-out where every rung failed.
+        # Falling back keeps the migration behaviour-preserving; `detail` keeps
+        # the reason visible rather than laundering an outage into "no evidence".
+        # A THIN answer does not reach here (it is not empty). That case is
+        # covered by `detail["backend_errors"]` being persisted on the fragment —
+        # see the measured cold/warm split in ssp_evidence's module docstring.
+        return (
+            _retrieve_evidence(legacy_query, tenant_id, k),
+            [],
+            ssp_evidence.PATH_CORTEX_EMPTY_FALLBACK,
+            detail,
+        )
+    return [], [], ssp_evidence.PATH_CORTEX, detail
+
+
 def _draft_fragment_text(control_id: str, frameworks: dict, evidence: list[str]) -> str:
     """Build a cited SSP-fragment draft.
 
@@ -598,10 +704,17 @@ def generate_ssp_fragment(
     control_id = str(control_id).strip().upper()
     frameworks = map_changed_controls([control_id]).get(control_id, {}).get("frameworks", {})
 
+    # Evidence acquisition (cef-di-03). Caller-supplied chunks still win — a
+    # caller that brought its own evidence asked for that evidence, not for a
+    # resolution of its own — and are recorded as such.
+    sources: list[dict] = []
+    evidence_path = "caller"
+    evidence_detail: dict[str, Any] = {}
     chunks = evidence_chunks
     if chunks is None:
-        query = f"{control_id} {' '.join(str(k) for k in frameworks)} implementation"
-        chunks = _retrieve_evidence(query, tenant_id)
+        chunks, sources, evidence_path, evidence_detail = _gather_evidence(
+            control_id, frameworks, tenant_id, classification
+        )
     evidence_texts = [_chunk_text(c) for c in (chunks or [])]
 
     draft = _draft_fragment_text(control_id, frameworks, evidence_texts)
@@ -616,6 +729,18 @@ def generate_ssp_fragment(
     fragment_id = _hid("dic_ssp", control_id, document_id or "", created_at)
     verified = 0 if vr.get("abstained") else 1
     fragment_text = vr.get("verified_text") or ""
+
+    # Provenance for the [SOURCE-N] tags the draft carries. Additive to the
+    # verifier's own structural report, which keeps its existing shape: this is
+    # WHAT each index pointed at, that is WHETHER the tags were well-formed, and
+    # they are different facts. `sources` is empty on the legacy path — which
+    # produced bare chunk texts with no source identity at all, so recording an
+    # empty list is the honest answer rather than a gap.
+    citation_report = dict(vr.get("citation_report") or {})
+    citation_report["evidence_path"] = evidence_path
+    citation_report["sources"] = sources
+    if evidence_detail:
+        citation_report["evidence_detail"] = evidence_detail
 
     conn = get_connection()
     try:
@@ -633,7 +758,7 @@ def generate_ssp_fragment(
                 fragment_id, document_id, control_id, json.dumps(frameworks),
                 fragment_text, verified, 1 if vr.get("abstained") else 0,
                 vr.get("reason", ""),
-                json.dumps(vr.get("citation_report", {})),
+                json.dumps(citation_report),
                 json.dumps(vr.get("claims", [])),
                 regen_item_id, created_at, tenant_id, classification,
             ),
@@ -666,7 +791,15 @@ def process_regen_item(item_id: str, control_ids: list[str] | None = None) -> di
     Pulls the impacted document + any control IDs recorded on the originating
     drift event, drafts one CoD-verified fragment per control, and advances the
     queue item to ``drafted`` (still HITL-gated for approval).
+
+    This call is the evidence-seam RUN boundary (cef-di-03): the per-control
+    memo cache is dropped and the outbound resolution budget is re-armed here,
+    so a long-lived Flask worker cannot serve a freshly ingested document's
+    evidence from a cache minted at startup. The budget actually spent is
+    returned under ``evidence_stats`` — a bounded run that reads as a complete
+    one is the defect "no silent caps" names.
     """
+    _reset_evidence_run()
     conn = get_connection()
     try:
         _ensure_schema(conn)
@@ -712,7 +845,12 @@ def process_regen_item(item_id: str, control_ids: list[str] | None = None) -> di
     ]
     if not fragments:
         _set_queue_state(item_id, "drafted")
-    return {"item_id": item_id, "document_id": document_id, "fragments": fragments}
+    return {
+        "item_id": item_id,
+        "document_id": document_id,
+        "fragments": fragments,
+        "evidence_stats": _evidence_run_stats(),
+    }
 
 
 # --------------------------------------------------------------------------- #
