@@ -113,6 +113,24 @@ LISTS: Dict[str, str] = {
     "windows": "windows.txt",
 }
 
+#: list name -> FRAGMENT DIRECTORY under LIST_DIR, read together with the file
+#: above (tsg-policy-03).
+#:
+#: `core.txt` was the largest collision surface on the board: 82.8% of merged
+#: kanban PRs touched it, because CLAUDE.md requires every PR that adds a test
+#: file to append to it. GitHub does not apply `.gitattributes merge=union`, so
+#: every one of those PRs went CONFLICTING the moment a sibling merged — 30.9%
+#: needed a rebase and 27.4% escalated to a human.
+#:
+#: A PR now writes ONE fragment named for its task instead of appending to a
+#: shared file, so two PRs never touch the same path and the collision surface
+#: for new work is zero. Purely ADDITIVE: `core.txt` keeps every entry it has,
+#: nothing migrates, and both are read as one list.
+FRAGMENT_DIRS: Dict[str, str] = {
+    "core": "core.d",
+    "windows": "windows.d",
+}
+
 #: Minimum entry count per list — a TRUNCATION backstop, not a quality bar.
 #:
 #: Set below the current count with headroom so that legitimately retiring a few
@@ -174,12 +192,46 @@ def parse(text: str) -> List[str]:
     return out
 
 
+def fragment_dir(name: str, root: Optional[Path] = None) -> Optional[Path]:
+    """The fragment directory for *name*, or None when the list has none."""
+    rel = FRAGMENT_DIRS.get(name)
+    if not rel:
+        return None
+    return (root or repo_root()) / LIST_DIR / rel
+
+
+def fragment_files(name: str, root: Optional[Path] = None) -> List[Path]:
+    """Fragment files for *name*, in a DETERMINISTIC order.
+
+    Sorted by filename so the pytest target order is identical on every machine
+    and every run. CI executes these in one process in list order, and an order
+    that varied by directory-listing would make a test's neighbours — and so its
+    isolation behaviour — depend on the filesystem.
+    """
+    d = fragment_dir(name, root)
+    if d is None or not d.is_dir():
+        return []
+    return sorted(d.glob("*.txt"), key=lambda p: p.name)
+
+
 def resolve(name: str = "core", root: Optional[Path] = None) -> List[str]:
-    """Read a list file and return its entries. Raises if the file is absent."""
+    """Entries for *name*: the list file, then every fragment, in order.
+
+    The single chokepoint — `check`, `gated_targets` and the `--print` CLI all
+    read the allowlist through here, so extending it covers every reader at
+    once and none of them can drift.
+
+    The list file is still REQUIRED: an empty fragment directory is normal, a
+    missing `core.txt` means the allowlist could not be resolved and the gate
+    must not quietly run nothing.
+    """
     path = list_path(name, root)
     if not path.is_file():
         raise AllowlistError(f"{path} is missing — the CI test allowlist cannot be resolved")
-    return parse(path.read_text(encoding="utf-8"))
+    entries = parse(path.read_text(encoding="utf-8"))
+    for frag in fragment_files(name, root):
+        entries.extend(parse(frag.read_text(encoding="utf-8")))
+    return entries
 
 
 def check(name: str = "core", root: Optional[Path] = None) -> Dict[str, object]:

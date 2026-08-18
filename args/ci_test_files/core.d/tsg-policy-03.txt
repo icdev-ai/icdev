@@ -1,0 +1,4 @@
+# tsg-policy-03 — the first fragment, gating its own tests.
+# Written here rather than appended to core.txt, which is the whole point:
+# a PR that adds a test now touches a path no other PR touches.
+tests/ci/test_gated_test_list_fragments.py
