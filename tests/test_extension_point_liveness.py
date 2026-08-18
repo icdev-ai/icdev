@@ -62,9 +62,12 @@ EXPECTED_MEMBERS = (
 )
 
 #: Measured 2026-08-16. Kept in step with ``args/extension_liveness.yaml``.
+# Measured against the merged tree, not carried over from the branch. Two points
+# this branch enumerated as dead — memory_save_before and memory_save_after —
+# gained a dispatcher on main while this PR was open, so they are alive now and
+# asserting them dead would be asserting a stale measurement. That is the
+# direction the class exists to track: the enumeration SHRINKS as points drain.
 EXPECTED_DEAD = (
-    "memory_save_before",
-    "memory_save_after",
     "compliance_check_before",
     "compliance_check_after",
 )

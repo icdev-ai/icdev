@@ -19,9 +19,10 @@ Two separate defects kept them there, and the first hid the second:
 """
 from __future__ import annotations
 
-import pytest
-
-pr_watcher = pytest.importorskip("tools.ci.pr_watcher")
+# A plain import, not `importorskip`: `tools.ci.pr_watcher` is first-party and
+# always present, so the guard could only ever convert a real breakage into a
+# green skip — which is the whole reason this file was not gated before.
+import tools.ci.pr_watcher as pr_watcher
 
 
 class _Proc:
@@ -119,7 +120,7 @@ def test_a_stale_conflict_routes_to_REBASE_not_to_merge():
     """
     import inspect
     src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    head = src[src.index("_conflict_is_real(state)"):]
+    head = src[src.index("classify_conflict(state)"):]
     block = head[:head.index("cycle = self._resume_cycle")]
     assert '"mergeable": "MERGEABLE"' not in block, (
         "reclassifying a stale conflict to MERGEABLE routes it to the merge the "
@@ -141,7 +142,7 @@ def test_the_refund_happens_at_most_once_per_pr(monkeypatch):
     conflict stale again, so every poll would return the budget it just spent."""
     import inspect
     src = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    block = src[src.index("_conflict_is_real(state)"):]
+    block = src[src.index("classify_conflict(state)"):]
     block = block[:block.index("cycle = self._resume_cycle")]
     assert '"pr_watcher.rebase_refund"' in block and "== 0" in block, (
         "the refund must be guarded on there being no prior refund for this PR")
@@ -195,15 +196,43 @@ def test_a_pr_whose_CI_NEVER_FIRED_is_not_recovered():
         _open_state(checks=()), cycle=0, max_cycles=5) is False
 
 
+def test_an_already_landed_pr_is_not_recovered():
+    """The third raise site, behaviourally.
+
+    An already-landed PR is green and MERGEABLE — that is precisely what makes
+    it dangerous — so every other clause in _hitl_recovered votes "recovered".
+    Without its own negation the alert resolves and re-raises on every pass,
+    which is the flap the two clauses above it were written to stop.
+    """
+    w = _watcher()
+    landed = {"checked": True, "landed": True, "confidence": "subject"}
+    assert w._hitl_recovered(_open_state(), cycle=0, max_cycles=5,
+                             landed=landed) is False
+    # ...and the negation must key on the FINDING, not merely on being passed a
+    # report: an unchecked or clean one is not a reason to hold an alert open.
+    assert w._hitl_recovered(_open_state(), cycle=0, max_cycles=5,
+                             landed={"checked": False, "landed": True}) is True
+    assert w._hitl_recovered(_open_state(), cycle=0, max_cycles=5,
+                             landed={"checked": True, "landed": False}) is True
+    assert w._hitl_recovered(_open_state(), cycle=0, max_cycles=5,
+                             landed=None) is True
+
+
 def test_every_raise_site_is_negated_by_the_recovery_check():
     """The invariant that keeps the flap from coming back: a raise condition
     with no matching clause in _hitl_recovered resolves and re-raises on every
     pass, forever."""
     import inspect
     poll = inspect.getsource(pr_watcher.PRWatcher.poll_once)
-    assert poll.count("self._hitl_alert(") == 2, (
+    assert poll.count("self._hitl_alert(") == 3, (
         "a new raise site must also be negated in _hitl_recovered")
     rec = inspect.getsource(pr_watcher.PRWatcher._hitl_recovered)
     assert "max_cycles" in rec and "_ci_never_fired" in rec
+    # Third raise site (trust-disc-05): a task already on the default branch.
+    # It is the most flap-prone of the three, because such a PR is green AND
+    # MERGEABLE by construction — every other condition here says "recovered".
+    assert 'landed.get("landed")' in rec, (
+        "the already-landed raise site is not negated in _hitl_recovered — it "
+        "will resolve and re-raise on every pass")
     # the DONE path must still clear it
     assert poll.count("_resolve_hitl_alert") >= 2

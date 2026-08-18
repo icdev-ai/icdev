@@ -48,13 +48,48 @@ from __future__ import annotations
 # (e.g. two branches each creating a different tools/cortex/blueprint.py). See
 # the merge-conflict-hotspots prevention notes.
 #
-# "Union-merged" is only literally true for the manifest entries: `.gitattributes`
-# declares `tools/manifest*` `merge=union` (kax-conflict-03), so concurrent
-# appends there really do resolve without a human. The remaining paths are
-# structured config/code, where union would produce duplicate keys or broken
-# syntax — they are excluded from the sibling check as a heuristic about how
-# they are edited, NOT because git resolves them automatically. Adding a path
-# here does not make it auto-mergeable.
+# "Union-merged" is only literally true for three of these: `.gitattributes`
+# declares `tools/manifest*` (kax-conflict-03), `args/ci_test_files/*.txt`
+# (kax-conflict-07) and `docs/reference/commands.md` (kax-conflict-11)
+# `merge=union`, so concurrent appends there resolve without a human IN GIT.
+#
+# NOT ON THE FORGE (kpr-watch-07). GitHub does not apply `.gitattributes` merge
+# drivers when it computes PR mergeability, so two PRs appending to a union path
+# still both go CONFLICTING/DIRTY and each needs a rebase. Measured 2026-08-17:
+# nine of ten open PRs were DIRTY and a without-union merge reproduced the
+# forge's verdict on ten of ten. #1777 merging that morning re-DIRTIED all four
+# of its siblings at once. So excluding these paths does NOT mean two PRs sharing
+# one can both sail through — it means the watcher declines to serialise them and
+# lets `pr_watcher`'s rebase recovery clean up after each merge instead.
+#
+# THAT IS THE RIGHT TRADE, AND IT WAS MEASURED RATHER THAN ASSUMED.
+# `python tools/ci/sibling_hold_survey.py` replays real PRs under both postures.
+# Over 120 merged PRs on 2026-08-17:
+#
+#     posture   held at their own merge moment   max clique
+#     current   35/120  (29.2%)                   5
+#     widened   78/120  (65.0%)                  13
+#
+# Widening more than doubles the hold rate and produces cliques of 13, each step
+# of which costs a full CI cycle — hours of strictly serial merging, for no
+# throughput gain, because the board already drains at one merge per CI cycle
+# either way. Do NOT move these entries; re-run the survey if you think the
+# balance has changed.
+#
+# What the survey DID find worth fixing is one level up, in the tie-break rather
+# than in this list: it keyed on PR NUMBER alone, so a PR held behind a draft or
+# CONFLICTING sibling waited for a queue slot that never came free. See
+# `pr_watcher._wins_sibling_tiebreak`.
+# The remaining paths are structured config/code, where union would produce
+# duplicate keys or broken syntax — they are excluded from the sibling check as
+# a heuristic about how they are edited, NOT because git resolves them
+# automatically. Adding a path here does not make it auto-mergeable.
+#
+# That gap is not hypothetical: `docs/reference/commands.md` sat in this tuple
+# with no union rule behind it, so the watcher stopped serializing PRs that
+# shared it while git still conflicted on every one. Two of the six conflicts
+# resolved by hand on 2026-08-16 were exactly that. When you add a path here,
+# decide explicitly which of the two claims you are making.
 #
 # `args/ci_test_files/` is the second entry that is literally union-merged
 # (kax-conflict-07). It holds the pytest allowlists that used to be a
@@ -77,6 +112,16 @@ COORDINATION_PATH_MARKERS = (
     "args/genesis_config.yaml",
     "tests/conftest.py",
     "docs/reference/commands.md",
+    # trust-disc-03 declared `args/ci_skip_census.txt` merge=union and never
+    # added it here — the exact MIRROR of the commands.md defect described
+    # above, which sat in this tuple with no union rule behind it. The
+    # consequence runs the other way: git resolves two concurrent skip
+    # registrations automatically, while the guard treated them as a genuine
+    # collision and serialised the PRs for a file that needed no arbitration.
+    # Found by tests/ci/test_sibling_hold_survey.py, which asserts that every
+    # merge=union pattern in .gitattributes resolves to a path this list
+    # excludes — the two must not be allowed to disagree in either direction.
+    "args/ci_skip_census.txt",
 )
 
 #: Substrings marking a DERIVED artifact — a file produced by a generator and

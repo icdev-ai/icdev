@@ -412,6 +412,11 @@ def describe(
     }
 
 
+#: Injector name this module records under (hcx-evt-03). One of
+#: ``context_events.SOURCES``.
+INJECTION_SOURCE = "goal_context"
+
+
 def build_for_runtime(
     llm_function: str,
     system_prompt: str = "",
@@ -419,24 +424,67 @@ def build_for_runtime(
     user_id: str = "default",
     tenant_id: str = "",
     context_id: str = "",
+    session_id: str = "",
+    correlation_id: str = "",
 ) -> str:
     """Entry point the runtime calls each time its goal cache is cold.
 
     Never raises. ``ICDEV_SAG_GOALS=0`` disables the block entirely.
+
+    ``session_id`` (the runtime's chat ``context_id``) records the injection as a
+    ``request_context`` event — hcx-evt-03. It is a separate parameter from
+    ``context_id`` even though the runtime passes the same value into both:
+    ``context_id`` scopes WHICH GOALS are in play and is legitimately empty for
+    operator-global goals, while ``session_id`` names the session the event
+    attaches to. Collapsing them would silently stop logging every session that
+    uses global goals.
+
+    Unlike the other two injectors this one runs more than once per session —
+    ``/goal`` calls ``AgentRuntime.invalidate_goals`` and the next turn rebuilds
+    the block. That is one injection per rebuild and therefore one event per
+    rebuild, which is correct: a changed block genuinely reached the model again,
+    and the log is append-only precisely so both versions survive.
     """
     if not goals_enabled():
         return ""
     try:
-        return describe(
+        report = describe(
             llm_function=llm_function,
             system_prompt=system_prompt,
             user_id=user_id,
             tenant_id=tenant_id,
             context_id=context_id,
-        )["text"]
+        )
     except Exception as exc:  # noqa: BLE001 — injection is best-effort
         logger.debug("goal_context: injection skipped: %s", exc)
         return ""
+
+    text = report.get("text") or ""
+    # hcx-evt-03. `record_injection` never raises; the guard is for the IMPORT,
+    # which can fail in a stripped runtime that ships no event log.
+    try:
+        from tools.agent_runtime.context_events import record_injection
+
+        record_injection(
+            session_id,
+            INJECTION_SOURCE,
+            text,
+            size_tokens=report.get("tokens"),
+            detail={
+                "budget": report.get("budget"),
+                "limit": report.get("limit"),
+                "llm_function": llm_function,
+                "total_active": report.get("total_active"),
+                "shown": report.get("shown"),
+                "withheld": report.get("withheld"),
+                "truncated": report.get("truncated"),
+                "shortened": report.get("shortened"),
+            },
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — recording must never block a turn
+        logger.debug("goal_context: injection not recorded: %s", exc)
+    return text
 
 
 # ---------------------------------------------------------------------------

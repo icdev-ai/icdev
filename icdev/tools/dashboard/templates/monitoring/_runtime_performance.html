@@ -7,7 +7,7 @@
    client-side: sorting and the surface filter never re-query.
 #}
 {# `.btn` has no `.active` variant in style.css/ux.css, so without this the
-   selected surface filter is indistinguishable from the other four. Scoped to
+   selected surface filter is indistinguishable from the other five. Scoped to
    this panel rather than added to the shared sheet — a global `.btn.active`
    would restyle every button on every page. #}
 <style>
@@ -30,6 +30,7 @@
             <button type="button" class="btn btn-sm rtperf-filter" data-surface="agent">Agents</button>
             <button type="button" class="btn btn-sm rtperf-filter" data-surface="persona">Personas</button>
             <button type="button" class="btn btn-sm rtperf-filter" data-surface="role">Roles</button>
+            <button type="button" class="btn btn-sm rtperf-filter" data-surface="extension">Extensions</button>
         </div>
     </div>
 

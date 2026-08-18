@@ -58,3 +58,72 @@ def test_the_verdict_is_stable_across_processes():
     first = pw._wins_sibling_tiebreak("https://x/pull/1494", sibs)
     for _ in range(5):
         assert pw._wins_sibling_tiebreak("https://x/pull/1494", sibs) is first
+
+
+# ── a blocker that cannot merge is not a queue position (kpr-watch-08) ──────
+#
+# The sentence at the top of this file applies one level up. A PR held behind a
+# sibling that CANNOT merge is not being serialised behind it — it is waiting for
+# a slot that never comes free, and the hold is recomputed every poll so the wait
+# never expires. MEASURED 2026-08-17 by tools/ci/sibling_hold_survey.py: of six
+# open PRs, #1769 was held behind #1744 (a draft carrying a real CLAUDE.md
+# conflict, open more than a day) and #1781 behind #1773 — under the posture that
+# ships today, not a hypothetical one.
+def test_a_sibling_that_cannot_merge_is_dropped_from_the_tiebreak():
+    sibs = _sibs(1744, 1799)
+    blocked = {"https://x/pull/1744"}
+    assert pw._wins_sibling_tiebreak("https://x/pull/1769", sibs) is False
+    assert pw._wins_sibling_tiebreak(
+        "https://x/pull/1769", sibs, blocked=blocked) is True
+
+
+def test_a_blocker_that_can_merge_still_holds():
+    """Narrowed, not disarmed — the queue must still form."""
+    assert pw._wins_sibling_tiebreak(
+        "https://x/pull/1769", _sibs(1744), blocked=set()) is False
+
+
+def test_dropping_blockers_cannot_merge_two_prs_on_one_file():
+    """The invariant the guard exists for. A sibling excluded here is one the
+    forge would refuse anyway, so no pair of file-sharing PRs both become free."""
+    group = [1744, 1769, 1781]
+    blocked = {"https://x/pull/1744"}  # draft / CONFLICTING
+    winners = [
+        n for n in group
+        if pw._wins_sibling_tiebreak(
+            f"https://x/pull/{n}",
+            {f"https://x/pull/{o}": {"shared.py"} for o in group if o != n},
+            blocked=blocked)
+    ]
+    assert winners == [1744, 1769], (
+        "the blocked PR still 'wins' vacuously — it cannot merge, so that is "
+        "inert — and exactly one MERGEABLE PR is freed")
+
+
+def test_the_exclusion_is_recomputed_not_permanent():
+    """A blocker rebased back to MERGEABLE rejoins the queue and wins it."""
+    sibs = _sibs(1744)
+    assert pw._wins_sibling_tiebreak(
+        "https://x/pull/1769", sibs, blocked={"https://x/pull/1744"}) is True
+    assert pw._wins_sibling_tiebreak(
+        "https://x/pull/1769", sibs, blocked=set()) is False
+
+
+# ── which PRs count as unable to merge ──────────────────────────────────────
+def test_a_draft_cannot_merge():
+    assert pw._pr_can_merge({"draft": True, "mergeable": "MERGEABLE"}) is False
+
+
+def test_a_conflicting_pr_cannot_merge():
+    assert pw._pr_can_merge({"draft": False, "mergeable": "CONFLICTING"}) is False
+
+
+def test_a_mergeable_pr_can():
+    assert pw._pr_can_merge({"draft": False, "mergeable": "MERGEABLE"}) is True
+
+
+def test_unknown_mergeability_counts_as_MERGEABLE():
+    """Erring the other way drops a sibling from the tie-break on no evidence,
+    and letting a PR past a hold is the direction with consequences."""
+    assert pw._pr_can_merge({"draft": False, "mergeable": None}) is True
+    assert pw._pr_can_merge({}) is True

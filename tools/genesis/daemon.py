@@ -201,6 +201,16 @@ REFLEX_NAMES = [
     # Samples the set and reports TRANSITIONS only; already-failing files are
     # known debt and are deliberately not re-reported.
     "ungated_test_drift",
+    # cch-obs-02: caching that worked and stops renders identically to caching
+    # that was never enabled -- both are zero. cch-tel-01 made the per-call count
+    # exist; nothing watched it change. Reports TRANSITIONS out of ai_telemetry
+    # (a provider that was reporting cache reads and stops, a share that
+    # collapses past a threshold measured against this ledger's own variation,
+    # or a billing mechanism that has never once cached) and files one card per
+    # finding. Backfilled pre-instrumentation zeros and `local` mechanisms are
+    # named non-findings, never cards -- on the live board it evaluates 3
+    # providers and files 0.
+    "cache_regression_reflex",
 ]
 
 # Backward-compat aliases for module-level access used by other code
