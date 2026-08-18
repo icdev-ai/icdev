@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import threading
 import time
 
 import pytest
@@ -289,8 +290,31 @@ def test_results_sorted_by_score(monkeypatch):
 
 
 def test_fan_out_timeout_returns_partial_results(monkeypatch, caplog):
+    """The slow backend is ABANDONED, not awaited and then discarded.
+
+    Asserted as a state check rather than a stopwatch. The two assertions below
+    it — results from graph+dic only, and ``timed_out == ["rag"]`` — do not prove
+    this on their own: an implementation that waited out the full sleep and then
+    dropped the late result would satisfy both. So the property is real and worth
+    a dedicated assertion; a wall-clock budget was simply the wrong instrument
+    for it, because it measures the RUNNER as much as the router. The old
+    ``assert elapsed < 1.5`` failed CI twice at 1.67s and 1.71s while passing
+    locally every time (tsg-iso-02).
+
+    The backend now blocks on an Event the test never sets, so "did the router
+    return while rag was still running?" is answered by ``finished.is_set()``
+    with no clock in it at all.
+    """
+    started, release, finished = (
+        threading.Event(), threading.Event(), threading.Event(),
+    )
+
     def slow_rag(query, top_k=5, ctx=None):
-        time.sleep(2.0)
+        started.set()
+        # Bounded purely as a HANG guard so a regression cannot wedge the
+        # suite — never as a timing assertion. The test releases it below.
+        release.wait(timeout=30)
+        finished.set()
         return [_hit("rag")]
 
     monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", slow_rag)
@@ -303,12 +327,20 @@ def test_fan_out_timeout_returns_partial_results(monkeypatch, caplog):
             "timeouts": {"default": 5.0, "rag": 0.2},
         }
     }
-    start = time.monotonic()
-    results = search_service.search("something slow", config=cfg)
-    elapsed = time.monotonic() - start
+    try:
+        results = search_service.search("something slow", config=cfg)
 
-    # Slow backend abandoned well before its 2s sleep completes
-    assert elapsed < 1.5
+        assert started.is_set(), (
+            "precondition: the slow backend was never invoked, so abandoning it "
+            "proves nothing"
+        )
+        assert not finished.is_set(), (
+            "the router returned only after rag completed — that is awaited-then-"
+            "discarded, not abandoned"
+        )
+    finally:
+        release.set()
+
     assert {r.backend for r in results} == {"graph", "dic"}
     for r in results:
         assert r.metadata["router"]["timed_out"] == ["rag"]

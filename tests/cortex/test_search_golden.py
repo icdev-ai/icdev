@@ -28,7 +28,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import time
+import threading
 from pathlib import Path
 
 import pytest
@@ -238,8 +238,18 @@ def test_corrective_branch_disabled_by_high_confidence(monkeypatch):
 
 
 def test_timeout_branch_returns_partial_results(monkeypatch):
+    """Same property, same instrument change as
+    tests/cortex/test_search_router.py::test_fan_out_timeout_returns_partial_results
+    — see that docstring. A stopwatch here measured the runner; an Event the
+    test never sets measures the router (tsg-iso-02)."""
+    started, release, finished = (
+        threading.Event(), threading.Event(), threading.Event(),
+    )
+
     def slow_rag(query, top_k=5, ctx=None):
-        time.sleep(2.0)
+        started.set()
+        release.wait(timeout=30)   # hang guard, not a timing assertion
+        finished.set()
         return [_hit("rag", 0.9)]
 
     monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", slow_rag)
@@ -257,11 +267,16 @@ def test_timeout_branch_returns_partial_results(monkeypatch):
             "timeouts": {"default": 5.0, "rag": 0.2},
         }
     }
-    start = time.monotonic()
-    results = search("something slow", config=cfg)
-    elapsed = time.monotonic() - start
+    try:
+        results = search("something slow", config=cfg)
+        assert started.is_set(), "precondition: the slow backend was never invoked"
+        assert not finished.is_set(), (
+            "the router returned only after rag completed — awaited-then-discarded, "
+            "not abandoned"
+        )
+    finally:
+        release.set()
 
-    assert elapsed < 1.5  # slow backend abandoned, not awaited to completion
     assert {r.backend for r in results} == {"graph", "dic"}
     for r in results:
         assert r.metadata["router"]["timed_out"] == ["rag"]
