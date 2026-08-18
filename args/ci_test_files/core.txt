@@ -2317,3 +2317,17 @@ tests/test_kanban_reaper_pr_opened.py
 # theirs. Added in the PR that makes it pass; no skips (args/ci_skip_census.txt
 # names none for this file, and none exist).
 tests/agent_runtime/test_context_events_live_turn.py
+# rem-hyg-06 batch 1: the six Genesis reflex board writers in the `scheduled_at`
+# cohort now seed through tools/kanban/task_factory.py::create_tasks instead of
+# a raw INSERT. Pins the defect the conversion surfaced -- three of the six sent
+# task_type='bug', a value kanban_tasks_task_type_check forbids, so those three
+# could never have filed a card on PostgreSQL. That is a LATENT blocker, proved
+# from the constraint definition; it is NOT proved by the board holding 0 'bug'
+# rows, because all four of these reflexes are circuit-broken and so may never
+# have reached the INSERT at all -- see
+# reflex-missing-success-key-is-scored-a-failure-forever. SQLite does not
+# enforce CHECK constraints, so the assertion is against VALID_TASK_TYPES
+# directly rather than a round-trip. Also pins scheduled_at, which the seeder
+# grew to take these callers without silently parking their cards in backlog.
+# 27 tests, ~3s, sqlite fixture, no network.
+tests/kanban/test_reflex_board_writers.py
