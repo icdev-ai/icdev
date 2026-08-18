@@ -469,13 +469,23 @@ class CortexResolution(CortexResult):
                         BLOCKS the resolution.
     ``gaps``            entities nothing could answer for. Present whenever the
                         verdict is ``unknown`` — that is what makes unknown a
-                        finding rather than a shrug.
+                        finding rather than a shrug. Each entry also carries
+                        ``citations`` for the evidence that produced it and a
+                        ``citation_basis`` naming which of the three causes an
+                        EMPTY list is (cef-rsv-03): sources mentioned the entity
+                        and did not answer, nothing matched at all, or retrieval
+                        died. Those are three different fixes, not one fact.
     ``conflicts``       sources that DISAGREE about one entity, resolved
                         across backends by ``tools/cortex/entity_resolution.py``
                         (cef-rsv-02). Each entry is an :class:`EntityConflict`
                         carrying EVERY side with its own provenance and naming
                         no winner. Empty means detection ran and every claim was
-                        compatible.
+                        compatible. Each entry also carries ``citations`` for
+                        the rows behind its sides and ``uncited_sides`` for the
+                        sides that name an authority and no row (cef-rsv-03) —
+                        a losing ``entity_currency`` source has no record id,
+                        and lending it the winner's would attribute one
+                        source's claim to another source's row.
     ``backend_errors``  a backend that DIED, never merged with one that matched
                         nothing. Carried straight off ``BackendResults.errors``.
     """

@@ -271,6 +271,12 @@ def _cortex_api(func: Callable) -> Callable:
                 "error": str(exc),
                 "blocked": True,
                 "gate": "citation_grounding",
+                # WHICH refusal, from resolver's closed BLOCK_* vocabulary
+                # (cef-rsv-03): an unresolvable prose tag, a finding pointing
+                # outside the evidence set, and an unbacked recommended
+                # replacement are three different bugs, and a caller told only
+                # "citation_grounding" cannot tell them apart.
+                "reason": getattr(exc, "reason", ""),
                 "entity": getattr(exc, "entity", ""),
                 "citation_report": getattr(exc, "report", {}),
             }), 403
