@@ -1,0 +1,22 @@
+# cef-di-01 — DocMod's evidence lookups migrated onto the governed
+# cortex.resolve() seam, behind a toggle.
+#
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md, and in
+# its own fragment so it cannot collide with a sibling's append (tsg-policy-03).
+#
+# Two invariants here are the kind that fail silently and are expensive to
+# rediscover, which is why this file gates rather than merely running once:
+#
+#   * cortex.resolve() runs the domain packs to get its verdict, so a pack
+#     asking the seam from inside evaluate() recurses without bound. The
+#     thread-local guard that stops it has no other observer —
+#     test_re_entrant_ask_returns_none_instead_of_recursing is it.
+#   * only `extraction: structured` claims may reach a verdict. A text_pattern
+#     claim is read off a retrieved document's PROSE, and letting one through
+#     would turn base_pack TRUST rule 1's deterministic verdict into an
+#     LLM-authored one while every other test stayed green.
+#
+# It also pins the rollback contract: with cortex.enabled false the seam is
+# never consulted and both migrated packs run their original query, which is
+# what makes "flip the flag" a real alternative to reverting a merge.
+tests/docmod/test_cortex_evidence_seam.py

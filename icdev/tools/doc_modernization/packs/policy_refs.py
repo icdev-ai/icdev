@@ -4,6 +4,13 @@
 Deterministic evidence: args/docmod/rulebook_policy.yaml. KG standard/document
 nodes corroborate when a graph exists (optional, guarded). Successors come
 only from the map (TRUST rule 1).
+
+cef-di-01: the KG corroboration read goes through the governed seam
+(tools/doc_modernization/evidence.py -> cortex.resolve, `graph` rung) when
+`cortex.enabled` is on, and through the hand-written kg_nodes SELECT otherwise.
+It is corroboration in both cases and moves no verdict. The NIST-pubs read is
+deliberately NOT migrated: it compares `revision_num` numerically, and an exact
+integer is not something a ranked retrieval seam can return.
 """
 from __future__ import annotations
 
@@ -171,6 +178,49 @@ class PolicyRefsPack(DomainPack):
             }],
         )
 
+    def _kg_corroboration(self, entity: CandidateEntity, conn) -> list[dict]:
+        """Knowledge-graph evidence that the graph knows this standard.
+
+        CORROBORATION ONLY — it has never been able to change a verdict and
+        still cannot: the caller appends these to ``Verdict.evidence`` after the
+        rulebook has already decided. That is precisely why it is the second
+        lookup cef-di-01 migrates: an evidence read with no verdict authority is
+        the safest thing to move onto a new seam.
+
+        Governed seam when ``cortex.enabled`` is on (the ``graph`` rung of
+        ``cortex.resolve``), the hand-written ``kg_nodes`` SELECT otherwise.
+        Both cap at one entry, both are best-effort, and a KG that is absent
+        leaves the rulebook evidence standing alone either way.
+        """
+        try:
+            from .. import evidence as docmod_evidence
+
+            bundle = docmod_evidence.resolve_evidence(
+                entity.label, entity_type="standard",
+            )
+            cited = docmod_evidence.graph_citations(bundle, entity.label)
+            if cited:
+                return cited
+        except Exception as exc:  # noqa: BLE001 — the seam must never fail a scan
+            logger.debug("docmod policy pack: cortex evidence seam unavailable: %s", exc)
+
+        try:
+            row = conn.execute(
+                "SELECT id FROM kg_nodes WHERE entity_type = 'standard' AND label = %s LIMIT 1",
+                (entity.label,),
+            ).fetchone()
+            if row:
+                return [{
+                    "source": f"kg:{dict(row)['id']}",
+                    "detail": f"KG standard node for {entity.label}", "date": "",
+                }]
+        except Exception:
+            try:
+                conn.rollback()  # PG: failed statement poisons the transaction
+            except Exception:
+                pass  # no KG — rulebook evidence stands alone
+        return []
+
     def evaluate(self, entity: CandidateEntity, conn) -> Verdict:
         # Dynamic NIST-pubs candidate: numeric revision comparison vs the cache.
         if entity.attributes.get("nist_pub_id"):
@@ -193,22 +243,8 @@ class PolicyRefsPack(DomainPack):
             "detail": rule.get("rationale", ""),
             "date": "",
         }]
-        # Optional KG corroboration — a matching standard node strengthens context
-        try:
-            row = conn.execute(
-                "SELECT id FROM kg_nodes WHERE entity_type = 'standard' AND label = %s LIMIT 1",
-                (entity.label,),
-            ).fetchone()
-            if row:
-                evidence.append({
-                    "source": f"kg:{dict(row)['id']}",
-                    "detail": f"KG standard node for {entity.label}", "date": "",
-                })
-        except Exception:
-            try:
-                conn.rollback()  # PG: failed statement poisons the transaction
-            except Exception:
-                pass  # no KG — rulebook evidence stands alone
+        # Optional KG corroboration — a matching standard node strengthens context.
+        evidence.extend(self._kg_corroboration(entity, conn))
         return Verdict(
             currency_verdict=rule.get("verdict", "retired"),
             finding_type="superseded_standard",

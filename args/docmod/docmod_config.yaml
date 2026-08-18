@@ -60,6 +60,40 @@ freshness_notifications:
     aging: warning
     stale: error
 
+# Governed evidence seam (cef-di-01). Routes the evidence lookups the scanner
+# and the packs hand-query today through ONE call — `cortex.resolve(entity)` —
+# so a pack reaches the currency store, RAG, DIC, the KG and the KB without
+# learning a table name, and every lookup lands a cortex_audit row and a
+# source_citation_registry row it never had before.
+# See tools/doc_modernization/evidence.py.
+#
+# DEFAULT OFF, and off is the LEGACY PATH EXACTLY: with enabled: false
+# tools/doc_modernization/evidence.py is never consulted, no outbound
+# resolution happens, and scanner + packs behave byte-for-byte as before the
+# migration. That is the rollback — flip this flag, do not revert a merge.
+#
+# TRUST rule 1 is unchanged and this toggle cannot weaken it: resolve() supplies
+# EVIDENCE and DomainPack.evaluate() still produces the verdict, deterministically,
+# from typed fields. resolve() makes no model call (corrective=False disables the
+# only LLM inside retrieval) and the seam accepts only `extraction: structured`
+# claims, so neither a retrieved document's prose nor an ADVISORY opinion can
+# reach a verdict. tests/docmod/test_cortex_evidence_seam.py arms the LLM router
+# to raise and asserts every pack still evaluates.
+cortex:
+  enabled: false          # master toggle — DEFAULT OFF (never remove)
+  top_k: 5                # evidence hits requested per Cortex backend
+  # Outbound resolutions per scan run. Each one is a five-backend fan-out, so an
+  # uncapped sweep over a large corpus is an outage rather than a slow scan.
+  # Entities are memoised per run, so this bounds DISTINCT entities, not mentions.
+  # Asks refused by the cap are counted and reported (evidence.run_stats), never
+  # silently dropped.
+  max_resolves_per_run: 250
+  # Attach the governed resolution's citations to each finding the scan writes
+  # (scanner.py). Only findings are enriched, never every extracted candidate:
+  # the corpus names thousands of entities and ~100 of them are findings, and
+  # evidence nobody reads is a fan-out nobody needed.
+  enrich_findings: true
+
 # Semantic claim tracking (dmx-claims-02). Extracts typed (subject, predicate,
 # object) claims anchored to a VERBATIM char span in an approved version, so a
 # rulebook/evidence change can flag the exact sentence rather than the whole

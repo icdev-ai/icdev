@@ -10,12 +10,19 @@ Evidence priority (deterministic — TRUST rule 1):
 1. Curated catalog (NetworkCatalogAdapter over team-maintained
    nc_hardware_profiles, merged with the central generic store) — AUTHORITATIVE
 2. tools/migration_canvas/eol_sync.get_eol_date (Cisco EoX + eol_data.yaml seed)
-3. The domain-agnostic entity-currency store (tools/currency/entity_currency),
-   consulted only when 1 and 2 both come back empty. It is the seam for a
-   provider neither of them knows about: a source declared in
-   args/entity_currency.yaml starts answering here with no change to this file,
-   which is the whole point of a source-agnostic store. It never overrides the
-   curated catalog — resolve() is not even called when the catalog answered.
+3. The domain-agnostic entity-currency store, consulted only when 1 and 2 both
+   come back empty. It is the seam for a provider neither of them knows about:
+   a source declared in args/entity_currency.yaml starts answering here with no
+   change to this file, which is the whole point of a source-agnostic store. It
+   never overrides the curated catalog — it is not even consulted when the
+   catalog answered.
+   Since cef-di-01 this lookup goes through the GOVERNED seam
+   (tools/doc_modernization/evidence.py -> cortex.resolve) when
+   `cortex.enabled` is on in args/docmod/docmod_config.yaml, and through the
+   direct tools/currency/entity_currency call otherwise. Same store, same typed
+   fields, same verdict derivation below — what the seam adds is the TRUST
+   chain, an audit row, a registered evidence set, and the RAG/DIC/KG/KB rungs
+   this pack could never reach by hand. See _currency_hit().
 4. Learned de facto stats (defacto_learner) — corroboration + replacement
    tie-breaker; divergence/gap findings are emitted by the sweep via
    defacto_learner.cross_check, not per-document here.
@@ -105,6 +112,47 @@ class NetworkHardwarePack(DomainPack):
 
     # ── evaluation ────────────────────────────────────────────────────────
 
+    def _currency_hit(self, label: str, conn) -> tuple:
+        """The entity-currency answer for ``label``, plus WHICH seam produced it.
+
+        Returns ``(hit | None, via)`` where ``hit`` is
+        ``entity_currency.resolve``'s dict shape either way — the caller reads
+        the same keys and derives the same verdict from them, which is the whole
+        design of the cef-di-01 migration.
+
+        Order, and why:
+
+        1. ``cortex.resolve`` when ``cortex.enabled`` is on. Its ``currency``
+           backend reads the SAME store this pack read directly, so the fields
+           are the same fields; what is added is the TRUST chain, the
+           ``cortex_audit`` row and a registered evidence set, plus the RAG/DIC/
+           KG/KB rungs the pack could never reach on its own.
+        2. The direct store call, unchanged, when the toggle is off, when the
+           seam is re-entrant (we are inside a resolution that is running this
+           very pack), or when the seam had nothing. The fallback is what keeps
+           the migration additive: the toggle can add an answer where there was
+           none, and cannot take one away.
+
+        No LLM on either branch (TRUST rule 1): ``resolve`` passes
+        ``corrective=False`` and makes no model call, and this method reads
+        typed fields, never prose.
+        """
+        try:
+            from .. import evidence as docmod_evidence
+
+            bundle = docmod_evidence.resolve_evidence(
+                label, entity_type="hardware_model",
+            )
+            hit = docmod_evidence.currency_assertion(bundle)
+            if hit:
+                return hit, "cortex.resolve"
+        except Exception as exc:  # noqa: BLE001 — the seam must never fail a scan
+            logger.debug("docmod hw pack: cortex evidence seam unavailable: %s", exc)
+
+        from tools.currency.entity_currency import resolve
+
+        return resolve(label, entity_type="hardware_model", conn=conn), "entity_currency"
+
     def evaluate(self, entity: CandidateEntity, conn) -> Verdict:
         from datetime import datetime, timezone
         today = datetime.now(timezone.utc).date().isoformat()
@@ -145,9 +193,16 @@ class NetworkHardwarePack(DomainPack):
             # Last: whatever any OTHER declared provider knows (cef-fnd-04).
             # Reached only when the catalog and the hardware EOL feed both had
             # nothing, so it can add evidence and can never overrule authority.
+            #
+            # cef-di-01 — this lookup is the one place this pack reaches OUTSIDE
+            # its own domain, and it is the lookup that now goes through the
+            # governed seam. `_currency_hit` asks cortex.resolve() when the
+            # toggle is on and falls back to the direct store call otherwise, in
+            # BOTH cases returning the identical dict shape. Everything below
+            # this line is untouched: the verdict is still derived here, from
+            # typed fields, with no LLM anywhere (TRUST rule 1).
             try:
-                from tools.currency.entity_currency import resolve
-                hit = resolve(entity.label, entity_type="hardware_model", conn=conn)
+                hit, hit_via = self._currency_hit(entity.label, conn)
                 if hit:
                     eol_date = hit.get("eol_date") or None
                     eos_date = hit.get("eos_date") or None
@@ -156,6 +211,12 @@ class NetworkHardwarePack(DomainPack):
                         "detail": f"{hit.get('verdict')} as of {hit.get('as_of')}"
                                   + (" (sources disagree)" if hit.get("conflict") else ""),
                         "date": eol_date or eos_date or "",
+                        # WHICH seam produced this evidence. A separate key
+                        # rather than a suffix on `detail`, so the finding text a
+                        # reviewer reads is identical either way and only the
+                        # provenance differs — that is what makes a toggle-on and
+                        # a toggle-off rescan comparable line for line.
+                        "via": hit_via,
                     })
                     # A source may assert a verdict WITHOUT a date (a curated
                     # status word does exactly that). Falling through to the
