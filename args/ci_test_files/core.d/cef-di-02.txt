@@ -1,0 +1,27 @@
+# cef-di-02 — the tech-writer's retrieval half: the collection scope, and the
+# governed cortex.resolve() seam behind a toggle.
+#
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md, and in
+# its own fragment so it cannot collide with a sibling's append (tsg-policy-03).
+#
+# What is gated here fails SILENTLY, which is why it gates rather than merely
+# running once:
+#
+#   * research_and_draft accepted `collection_id` from the day it was written
+#     and passed it to nothing. Reproduced on the live corpus 2026-08-18: an
+#     unscoped call for a document in the `default` collection returned 8
+#     chunks, all 8 from a document belonging to `isp-peering-demo`. Nothing
+#     went red, and a draft cited another collection's document. A regression
+#     here looks exactly like good recall.
+#   * the scope FAILS CLOSED. If membership cannot be read nothing is admitted;
+#     the opposite default would restore the defect the first time the query
+#     raised, and no test but this one would notice.
+#   * the rollback contract. With `cortex.enabled` false in
+#     args/dic_techwriter.yaml the seam is never consulted and the legacy chain
+#     runs unchanged, which is what makes "flip the flag" a real alternative to
+#     reverting a merge. The toggle-off test asserts resolve() is not called at
+#     all rather than that its result was ignored.
+#   * a Cortex refusal does NOT fall through to the ungoverned legacy chain. A
+#     governance chain you can route around by failing is decoration, and the
+#     failure mode is a draft that looks identical and was never governed.
+tests/test_dic_techwriter_cortex_scope.py

@@ -752,7 +752,14 @@ def api_techwriter_research():
             query=query,
             section_heading=body.get("section_heading", ""),
             template_type=body.get("template_type", ""),
-            collection_id=body.get("collection_id", "default"),
+            # "" (unscoped), not "default". The literal default was harmless
+            # while research_and_draft ignored the parameter; now that it SCOPES
+            # retrieval, defaulting an absent field to a collection that happens
+            # to be named "default" would silently confine a caller who named no
+            # collection to one — guessing a scope for a caller that asked for
+            # none is wrong in both directions. The editor always sends the
+            # document's own collection_id (doc_detail.html).
+            collection_id=body.get("collection_id") or "",
             tenant_id=tenant_id,
             classification=classification,
             web_urls=body.get("web_urls") or [],
@@ -771,6 +778,15 @@ def api_techwriter_research():
             # resolve is not a citation.
             "sources": result.sources,
             "citation_report": result.citation_report,
+            # cef-di-02. `collection_id` used to be accepted and ignored; it now
+            # scopes retrieval and fails closed, so the caller has to be able to
+            # see what the scope did — a draft that quietly lost its evidence
+            # reads as bad recall. `retrieval_path` says which chain produced
+            # the above, and `resolution` carries the governed verdict/gaps/
+            # conflicts the legacy chain cannot produce (empty on that chain).
+            "retrieval_path": result.retrieval_path,
+            "scope": result.scope,
+            "resolution": result.resolution,
         })
     except Exception as exc:
         logger.warning("dic: techwriter/research error: %s", exc)
