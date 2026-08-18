@@ -24,6 +24,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("qa_agent_reflex")
@@ -132,7 +133,12 @@ def _pending_smoke_bug_exists(conn, route: str) -> bool:
     return row is not None
 
 
-def _insert_smoke_bug_task(conn, route: str, status: object, error: str) -> str:
+def _insert_smoke_bug_task(route: str, status: object, error: str) -> str | None:
+    """Seed one card through the canonical seeder (rem-hyg-06).
+
+    Takes no ``conn``: ``create_tasks`` opens and commits its own. Returns None
+    when the seeder skipped the row.
+    """
     task_id = f"task-qa-smoke-{uuid.uuid4().hex[:8]}"
     now = _utcnow().isoformat()
     title = f"{_SMOKE_TASK_TITLE_PREFIX} {route} returned {status}"
@@ -148,20 +154,18 @@ def _insert_smoke_bug_task(conn, route: str, status: object, error: str) -> str:
         "4. Fix the root cause and re-run: `python tools/testing/route_smoke.py --all --json`\n"
         "5. Close this task when smoke passes.\n"
     )
-    conn.execute(
-        """
-        INSERT INTO kanban_tasks
-            (id, title, description, task_type, priority, status,
-             scheduled_at, created_at, updated_at, dispatch_source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (
-            task_id, title, desc,
-            "bug", "critical", "backlog",
-            now, now, now, "qa_agent_reflex",
-        ),
-    )
-    return task_id
+    created = create_tasks([{
+        "id": task_id,
+        "title": title,
+        "description": desc,
+        # rem-hyg-06: was "bug", which kanban_tasks_task_type_check forbids.
+        "task_type": "fix",
+        "priority": "critical",
+        "status": "backlog",
+        "scheduled_at": now,
+        "dispatch_source": "qa_agent_reflex",
+    }])
+    return task_id if created else None
 
 
 def _run_route_smoke(base: str = "http://localhost:5050") -> list:
@@ -178,26 +182,33 @@ def _run_route_smoke(base: str = "http://localhost:5050") -> list:
         return []
 
 
-def _insert_sweep_task(conn) -> str:
+def _insert_sweep_task() -> str | None:
+    """Seed one card through the canonical seeder (rem-hyg-06).
+
+    Takes no ``conn``: ``create_tasks`` opens and commits its own. Returns None
+    when the seeder skipped the row.
+    """
     task_id = f"task-qa-sweep-{uuid.uuid4().hex[:8]}"
     now = _utcnow().isoformat()
-    conn.execute(
-        """
-        INSERT INTO kanban_tasks
-            (id, title, description, task_type, priority, status,
-             scheduled_at, created_at, updated_at, dispatch_source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (
-            task_id, _SWEEP_TASK_TITLE, _SWEEP_TASK_DESC,
-            "test", "high", "backlog",
-            now, now, now, "qa_agent_reflex",
-        ),
-    )
-    return task_id
+    created = create_tasks([{
+        "id": task_id,
+        "title": _SWEEP_TASK_TITLE,
+        "description": _SWEEP_TASK_DESC,
+        "task_type": "test",
+        "priority": "high",
+        "status": "backlog",
+        "scheduled_at": now,
+        "dispatch_source": "qa_agent_reflex",
+    }])
+    return task_id if created else None
 
 
-def _insert_gap_task(conn, canvas_key: str, display_name: str, route: str) -> str:
+def _insert_gap_task(canvas_key: str, display_name: str, route: str) -> str | None:
+    """Seed one card through the canonical seeder (rem-hyg-06).
+
+    Takes no ``conn``: ``create_tasks`` opens and commits its own. Returns None
+    when the seeder skipped the row.
+    """
     task_id = f"task-qa-gap-{canvas_key[:20]}-{uuid.uuid4().hex[:6]}"
     now = _utcnow().isoformat()
     title = f"[QA-GAP] {canvas_key} — missing E2E spec"
@@ -206,20 +217,17 @@ def _insert_gap_task(conn, canvas_key: str, display_name: str, route: str) -> st
         display_name=display_name,
         route=route,
     )
-    conn.execute(
-        """
-        INSERT INTO kanban_tasks
-            (id, title, description, task_type, priority, status,
-             scheduled_at, created_at, updated_at, dispatch_source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (
-            task_id, title, desc,
-            "test", "medium", "backlog",
-            now, now, now, "qa_agent_reflex",
-        ),
-    )
-    return task_id
+    created = create_tasks([{
+        "id": task_id,
+        "title": title,
+        "description": desc,
+        "task_type": "test",
+        "priority": "medium",
+        "status": "backlog",
+        "scheduled_at": now,
+        "dispatch_source": "qa_agent_reflex",
+    }])
+    return task_id if created else None
 
 
 def run(config: dict, state: object) -> dict:
@@ -260,8 +268,8 @@ def run(config: dict, state: object) -> dict:
                     )
 
             if not result["skipped_pending_sweep"]:
-                sweep_id = _insert_sweep_task(conn)
-                result["sweep_task_created"] = True
+                sweep_id = _insert_sweep_task()
+                result["sweep_task_created"] = sweep_id is not None
                 result["sweep_task_id"] = sweep_id
                 logger.info("qa_agent_reflex: created sweep task %s", sweep_id)
 
@@ -284,11 +292,12 @@ def run(config: dict, state: object) -> dict:
                 logger.debug("qa_agent_reflex: gap task already pending for %s", canvas_key)
                 continue
             gap_id = _insert_gap_task(
-                conn,
                 canvas_key=canvas_key,
                 display_name=gap.get("display_name", canvas_key),
                 route=gap.get("route", f"/{canvas_key}"),
             )
+            if not gap_id:
+                continue
             created_gap_ids.append(gap_id)
             logger.info("qa_agent_reflex: gap task %s for canvas %s", gap_id, canvas_key)
 
@@ -303,11 +312,12 @@ def run(config: dict, state: object) -> dict:
                 logger.debug("qa_agent_reflex: smoke bug task already pending for %s", route)
                 continue
             bug_id = _insert_smoke_bug_task(
-                conn,
                 route=route,
                 status=fail.get("status", "?"),
                 error=fail.get("error", "unknown"),
             )
+            if not bug_id:
+                continue
             smoke_bug_ids.append(bug_id)
             logger.warning("qa_agent_reflex: smoke BUG task %s for route %s", bug_id, route)
 

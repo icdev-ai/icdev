@@ -96,7 +96,7 @@ backlog_file: args/ci_test_backlog.txt
 # THIS NUMBER MAY ONLY GO DOWN. Lower it when you gate files; never raise it to
 # get a commit through. Raising it is the visible, reviewable act of deciding to
 # take on more untested-in-CI surface, and it should be argued for in the PR.
-backlog_max: 1713
+backlog_max: 1711
 
 # --------------------------------------------------------------------------- #
 # SKIP CENSUS — a gated test that skips is UNMEASURED, not passing (trust-disc-03)

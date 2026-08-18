@@ -1892,6 +1892,20 @@ tests/agent_runtime/test_event_recorder.py
 # 30 tests, <1s, tmp_path YAML + monkeypatched env: no DB, no network.
 tests/agent_runtime/test_permission_postures.py
 
+# kpr-watch-01. Gates the merge-eligibility decision table that pr_watcher's
+# unlinked sweep and `python -m tools.ci.merge_readiness` BOTH read. The point
+# of the extraction is that the report can never describe a merge policy the
+# merger does not have, and only a test can hold that: the parity case
+# transcribes the pre-extraction `continue` ladder verbatim and asserts
+# `state == "ready"` agrees with it across 2,880 combinations of the seven
+# signals it read (verified live the same day against all 9 open PRs, 0
+# mismatches). Also pins the two distinctions the table refuses to blur --
+# no_checks (empty rollup, nothing ever reported) vs awaiting_ci (checks
+# running), and mergeable=UNKNOWN (GitHub still computing) vs CONFLICTING (go
+# rebase) -- and the read-only property of the CLI, by AST: exactly one
+# subprocess reference and exactly one argv, which must be `gh pr list`. Pure
+# functions and tmp_path JSON: no DB, no network, no gh. 26 tests, <1s.
+tests/test_merge_readiness.py
 # hcx-vv-02 — coherence check_log_standard_compliance, narrowed to allow the
 # prefer-get_logger-then-fall-back shape. The gate failed on
 # 20260815191145_seed_canvas_grants_for_existing_tenants/up.py, which prefers
@@ -2275,6 +2289,16 @@ tests/currency/test_entity_currency.py
 # 28 tests, ~1s: temp SQLite files only, no network, no shared board.
 tests/test_cache_regression.py
 
+# kpr-dup-04. Two background writers rewrite the record of a COMPLETED task,
+# and both end as a REVERT PR: the orphan sweep rolled a `done` task back to
+# backlog whenever its dependency parent was unfinished (80 firings, 100% of
+# them done->backlog, and 20 of the 61 tasks were already ON MAIN), and
+# pr_linker repointed a task away from a MERGED PR because it only knew
+# "not open". Both are NARROWED here, not disarmed, so the tests that matter
+# most are the negative ones: the 41 genuine orphans still roll back, and a
+# genuinely CLOSED-unmerged link is still repaired. Also pins the fail-safe
+# direction — an unverifiable landed check holds instead of rolling back.
+tests/kanban/test_completed_work_is_not_rewritten.py
 # kpr-watch-08. The survey that decides whether hold_on_sibling_conflict may
 # be widened to the union-merged paths, and the tie-break narrowing it found.
 # Gated because the survey's whole value is being trustworthy in ONE direction
@@ -2291,3 +2315,82 @@ tests/ci/test_sibling_hold_survey.py
 # test_agent_event_log.py, and the injectors are exercised against a tmp_path
 # repo root rather than the real checkout.
 tests/agent_runtime/test_context_events.py
+# kpr-dup-03: the stale-reaper recorded a FAILURE against a task that had
+# already opened its PR (kpr-watch-01, 2026-08-16: heartbeat 16:24:36Z, PR #1744
+# 16:27:16Z, reap 16:35:00Z) -- failure_count incremented, last_failure_reason
+# fabricated, status=backlog with an open PR. Gated because the reverse-direction
+# case is the one that regresses silently: a task with an open PR and a stale
+# heartbeat must NOT be reaped, and nothing else asserts that. Also pins the
+# over-correction guard -- a genuinely silent dispatch with no PR is still
+# reaped and still counted. 8 tests, ~1s, sqlite fixture, no network (`gh` is
+# monkeypatched out).
+tests/test_kanban_reaper_pr_opened.py
+
+# hcx-vv-01 -- the reverse-direction acceptance test for the request_context
+# event. One live turn through the REAL run_agent_loop with all four injectors
+# genuinely active, then: every block that reached the provider must be named
+# by an event, and the event's body_sha256 must be that block's digest.
+# "Some rows exist" is the assertion that HIDES a partially-covered log, so
+# this one starts from the system prompt and works backwards. It is what found
+# agent_loop's own retrieved-memory injector, uninstrumented while the other
+# three were covered. 17 tests, ~35s: no network, no LLM, the migration's own
+# up.sql for the events table and the injector modules' own _ensure_schema for
+# theirs. Added in the PR that makes it pass; no skips (args/ci_skip_census.txt
+# names none for this file, and none exist).
+tests/agent_runtime/test_context_events_live_turn.py
+
+# kpr-dup-06. `_has_open_pr` returns False on ANY error, which is correct for
+# the respawn guard it was written for (False = 'dispatch', cost of being
+# wrong = one extra dispatch) and WRONG for the post-push confirmation that
+# reused it, where False = 'throw the pushed branch back to backlog'. That one
+# reuse was 66 of the 126 backwards transitions on the board — more than
+# orphan_sweep, the stale reaper and auto-revive combined. Gated because the
+# defect is invisible in behaviour: both callers keep working either way, and
+# only the two structural tests here catch a revert to the boolean.
+tests/test_kanban_pr_flow_confirmation.py
+# rem-hyg-06 batch 1: the six Genesis reflex board writers in the `scheduled_at`
+# cohort now seed through tools/kanban/task_factory.py::create_tasks instead of
+# a raw INSERT. Pins the defect the conversion surfaced -- three of the six sent
+# task_type='bug', a value kanban_tasks_task_type_check forbids, so those three
+# could never have filed a card on PostgreSQL. That is a LATENT blocker, proved
+# from the constraint definition; it is NOT proved by the board holding 0 'bug'
+# rows, because all four of these reflexes are circuit-broken and so may never
+# have reached the INSERT at all -- see
+# reflex-missing-success-key-is-scored-a-failure-forever. SQLite does not
+# enforce CHECK constraints, so the assertion is against VALID_TASK_TYPES
+# directly rather than a round-trip. Also pins scheduled_at, which the seeder
+# grew to take these callers without silently parking their cards in backlog.
+# 27 tests, ~3s, sqlite fixture, no network.
+tests/kanban/test_reflex_board_writers.py
+
+# hcx-vv-03 -- the extension manager's own regression test, promoted out of the
+# backlog rather than added to it. hcx-live-01/02/03 rewrote dispatch(): they
+# added the TOOL_EXECUTE_BEFORE and AGENT_START/AGENT_END dispatchers, made the
+# ten hook_points config blocks load-bearing, started counting every dispatch,
+# and stopped swallowing a handler exception silently. Three NEW gated files
+# cover that new behaviour -- and the behaviour those changes had to keep intact
+# had no gated coverage at all: registration and unregister, priority ordering,
+# behavioural-vs-observational dispatch, loading handlers from a directory,
+# list_handlers filtering, and the ExtensionPoint enum's ten members (the exact
+# surface hcx-live-03 handed to a human to decide). Gating it SHRINKS the census
+# by one; backlog_max drops 1713 -> 1711 in the same commit. 18 tests, ~1s, no
+# DB, no network, no LLM: a fresh ExtensionManager() per test and tempfile dirs
+# for the file-loading cases. No skips -- args/ci_skip_census.txt names none for
+# this file and the source declares none. Verified in its own process, and
+# in-suite in BOTH orders against the gated extension files (last, after
+# test_dispatch_extension_point / test_extension_dispatch_governance /
+# test_extension_point_liveness / test_event_recorder / test_context_events /
+# test_agent_event_log -- 186 passed; and first, to prove it pollutes none of
+# them -- 69 passed). The full gated in-suite run is CI's step: red_first_gate
+# and isolation_run both scope to CHANGED TEST FILES and this PR changes none,
+# so neither of them can speak to a promotion out of the backlog.
+tests/test_extension_manager.py
+# cef-bck-01: the Cortex `currency` backend. Gated in the PR that adds it,
+# per the test-gating policy. The assertion that has to stay green is the
+# error one: a dead entity_currency / docmod_defacto_standards table must
+# produce BackendResults carrying .errors, never an empty success — the two
+# are byte-identical to every caller that only reads the list, which is the
+# defect ctx-perf-04 added the annotation for. Also pins the authority
+# ordering (curated catalog above feed above learner), which is banded in
+# code precisely so it cannot be overturned by a bumped confidence prior.
+tests/cortex/test_search_currency_backend.py

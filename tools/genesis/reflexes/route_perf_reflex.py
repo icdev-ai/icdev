@@ -25,6 +25,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban.task_factory import create_tasks  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("route_perf_reflex")
@@ -49,7 +50,11 @@ def _pending_perf_task_exists(conn, route: str) -> bool:
     return row is not None
 
 
-def _insert_perf_task(conn, route: str, baseline_ms: int, current_ms: int, ratio: float) -> str:
+def _insert_perf_task(route: str, baseline_ms: int, current_ms: int, ratio: float) -> str | None:
+    """Seed one [PERF] card through the canonical seeder (rem-hyg-06).
+
+    Takes no ``conn``: ``create_tasks`` opens and commits its own.
+    """
     task_id = f"task-perf-{uuid.uuid4().hex[:8]}"
     now = _utcnow().isoformat()
     title = f"[PERF] {route} — {ratio:.1f}x latency regression"
@@ -67,16 +72,19 @@ def _insert_perf_task(conn, route: str, baseline_ms: int, current_ms: int, ratio
         f"{route} --json` to confirm current latency.\n"
         "4. Fix root cause and re-run smoke. Close this task when p50 returns to baseline."
     )
-    conn.execute(
-        """
-        INSERT INTO kanban_tasks
-            (id, title, description, task_type, priority, status,
-             scheduled_at, created_at, updated_at, dispatch_source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (task_id, title, desc, "bug", "high", "backlog", now, now, now, "route_perf_reflex"),
-    )
-    return task_id
+    created = create_tasks([{
+        "id": task_id,
+        "title": title,
+        "description": desc,
+        # rem-hyg-06: was "bug", which kanban_tasks_task_type_check forbids —
+        # the raw INSERT would have raised the moment a regression was found.
+        "task_type": "fix",
+        "priority": "high",
+        "status": "backlog",
+        "scheduled_at": now,
+        "dispatch_source": "route_perf_reflex",
+    }])
+    return task_id if created else None
 
 
 def run(config: dict, state: object) -> dict:
@@ -120,12 +128,13 @@ def run(config: dict, state: object) -> dict:
                     logger.debug("route_perf_reflex: task already pending for %s", route)
                     continue
                 tid = _insert_perf_task(
-                    conn,
                     route=route,
                     baseline_ms=reg["baseline_p50_ms"],
                     current_ms=reg["current_p50_ms"],
                     ratio=reg["ratio"],
                 )
+                if not tid:
+                    continue
                 task_ids.append(tid)
                 logger.warning(
                     "route_perf_reflex: perf regression %s (%s) ratio=%.1f",

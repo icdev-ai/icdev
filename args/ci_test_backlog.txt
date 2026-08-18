@@ -846,7 +846,6 @@ tests/test_evidence_collector.py
 tests/test_evolutionary_intelligence.py
 tests/test_exa_policy_06_fail_closed.py
 tests/test_exa_policy_08_mcp_authz_evidence.py
-tests/test_extension_manager.py
 tests/test_external_repo_watchlist.py
 tests/test_extraction_deps_declared.py
 tests/test_failure_triage.py

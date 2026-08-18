@@ -502,6 +502,42 @@ class AgentRuntime:
         """
         return str(getattr(self.session, "resume_session_id", "") or "")
 
+    def _record_loop_injection(
+        self, source: str, text: str, detail: dict[str, Any]
+    ) -> None:
+        """Record a block the LOOP injected, as a ``request_context`` event.
+
+        hcx-vv-01. The three injectors above are called from this class, so this
+        class can record them. ``agent_loop`` appends its retrieved-memory block
+        to the system prompt AFTER :meth:`run_turn` has handed the prompt over —
+        it is the last text added before the request is sent, and it is the one
+        block nothing here can see. Left alone, the log covered three injectors
+        out of four and looked complete, which is worse than covering none: a
+        partially-covered log reads as coverage.
+
+        Wired through the loop's ``on_context_injection`` hook so the recording
+        happens HERE, next to the other three, under the same session id and the
+        same correlation id — and so ``icdev.tools.llm.agent_loop`` does not
+        acquire a dependency on the audit layer to stay honest.
+
+        Best-effort in both directions: ``record_injection`` never raises, and
+        the loop's own ``_announce_context_injection`` catches anything this
+        does. An audit sink must not be able to end a turn.
+        """
+        try:
+            from tools.agent_runtime.context_events import record_injection
+
+            record_injection(
+                self._event_session_id(),
+                source,
+                text,
+                detail=dict(detail or {}),
+                correlation_id=self._event_correlation_id(),
+                tenant_id=self.tenant_id or None,
+            )
+        except Exception as exc:  # noqa: BLE001 — recording must never block a turn
+            logger.debug("agent_runtime: loop injection not recorded: %s", exc)
+
     # -- project context (hgx-sess-01) --------------------------------------
 
     def _project_context(self) -> str:
@@ -691,6 +727,10 @@ class AgentRuntime:
                 on_pre_tool_use=recorder.on_pre_tool_use,
                 on_post_tool_use=recorder.on_post_tool_use,
                 on_stop=recorder.on_stop,
+                # The fifth hook (hcx-vv-01): the loop announcing its OWN
+                # injection into the system prompt, so the request_context log
+                # covers every injector and not only the ones assembled here.
+                on_context_injection=self._record_loop_injection,
                 # Joins an event row to the loop's OTel span and to
                 # AgentLoopResult.trace_id.
                 correlation_id=recorder.correlation_id,

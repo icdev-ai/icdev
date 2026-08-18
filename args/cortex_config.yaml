@@ -42,6 +42,12 @@ search:
     graph: 0.8
     dic: 0.9
     kb: 0.6
+    # currency (cef-bck-01) is EVIDENCE about an entity's lifecycle rather than
+    # prose about a topic, so it is weighted below rag/dic in the fused list:
+    # it should corroborate an answer, not displace the passage that answers
+    # the question. Raise it for a deployment whose queries are mostly "is this
+    # still current?".
+    currency: 0.7
     sme: 0.0
 
   # Reciprocal Rank Fusion constant: fused = weight / (rrf_k + rank).
@@ -65,15 +71,20 @@ search:
     graph: 8.0
     dic: 10.0
     kb: 5.0
+    # Two indexed LIKE reads over entity_currency + docmod_defacto_standards.
+    # No embedding call, no model call — a 10s budget here would only ever be
+    # spent waiting on a database that is already unhealthy.
+    currency: 5.0
     sme: 60.0
 
   fan_out:
-    # Backends queried in parallel when a query is ambiguous (2-3 recommended).
+    # Backends queried in parallel when a query is ambiguous (2-4 recommended).
     #
+    # currency IS here: it retrieves rows that existed before the query.
     # sme is absent and must stay absent: fan-out is the AUTOMATIC path, and an
     # advisory backend is reached only when a caller names it. Adding it here
     # would put an LLM opinion into the result set of every ambiguous query.
-    backends: [rag, graph, dic]
+    backends: [rag, graph, dic, currency]
     max_workers: 4
 
   # Domain lenses (ctx-canvas-04). When ctx.domain matches a key here the

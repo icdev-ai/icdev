@@ -7,8 +7,8 @@ ordering of fused results across backends — so a future backend change
 cannot silently reorder or drop results without a golden failure.
 
 The corpus of labeled queries lives in ``fixtures/golden_queries.json``:
-~12 queries across the five routing categories (factual, relational/entity,
-document/clearance, exact-term, ambiguous fan-out). Each carries its expected
+~15 queries across the six routing categories (factual, relational/entity,
+document/clearance, exact-term, currency/lifecycle, ambiguous fan-out). Each carries its expected
 routing label + backend set and a per-backend score map. Assertions are on
 *attribution and order* ("backend X ranks above backend Y for query Q"),
 never on absolute scores — scores are fixture-controlled only to establish a
@@ -28,14 +28,14 @@ from __future__ import annotations
 import importlib
 import json
 import os
-import time
+import threading
 from pathlib import Path
 
 import pytest
 
 from tools.cortex import CortexSearchResult, search
 from tools.cortex import search_service
-from tools.cortex.schemas import Citation
+from tools.cortex.schemas import EVIDENTIARY_BACKENDS, Citation
 
 # ---------------------------------------------------------------------------
 # Golden corpus + fixed routing config
@@ -55,6 +55,12 @@ GOLDEN_CONFIG = {
         "fan_out": {"backends": ["rag", "graph", "dic"], "max_workers": 4},
     }
 }
+
+
+# Bounded wait for a deliberately-blocked backend worker. A HANG guard, never a
+# timing assertion: the timeout branch below asserts abandonment as a STATE
+# (started, not finished), so nothing in this suite measures the machine.
+_WORKER_HANG_GUARD_SECONDS = 30.0
 
 
 def _hit(backend: str, score: float) -> CortexSearchResult:
@@ -139,7 +145,11 @@ def test_golden_corpus_shape():
     ids = [c["id"] for c in GOLDEN_QUERIES]
     assert len(ids) == len(set(ids)), "duplicate golden query ids"
     categories = {c["category"] for c in GOLDEN_QUERIES}
-    assert categories == {"factual", "relational", "document", "exact_term", "ambiguous"}
+    assert categories == {
+        "factual", "relational", "document", "exact_term", "ambiguous",
+        # cef-bck-01 — "is this entity still current?" is its own route.
+        "currency",
+    }
     for c in GOLDEN_QUERIES:
         # expected_order must be a permutation of the routed backend set.
         assert set(c["expected_order"]) == set(c["expected_backends"]), c["id"]
@@ -155,13 +165,23 @@ def test_golden_corpus_shape():
 
 def test_strategy_all_returns_every_backend(monkeypatch):
     _install_golden_backends(
-        monkeypatch, {"rag": 0.9, "graph": 0.7, "dic": 0.5, "kb": 0.3}
+        monkeypatch,
+        {"rag": 0.9, "graph": 0.7, "dic": 0.5, "kb": 0.3, "currency": 0.1},
     )
 
     results = search("anything", strategy="all", config=GOLDEN_CONFIG)
 
-    assert [r.backend for r in results] == ["rag", "graph", "dic", "kb"]
-    assert all(r.strategy == "all:override[rag+graph+dic+kb]" for r in results)
+    # Pinned against EVIDENTIARY_BACKENDS, which keeps the property this
+    # assertion was written for — a backend added to the facade and forgotten in
+    # the dispatch table still fails here rather than quietly never running —
+    # while excluding the one class that is deliberately NOT reachable this way.
+    # "all" means every EVIDENTIARY backend: `sme` is advisory and is reached
+    # only when a caller names it (ADVISORY_BACKENDS, tools/cortex/schemas.py).
+    # Asserting it appears here would assert that asking for "everything" hands
+    # the caller an LLM opinion, which base_pack TRUST rule 1 forbids.
+    assert [r.backend for r in results] == list(EVIDENTIARY_BACKENDS)
+    expected = "all:override[" + "+".join(EVIDENTIARY_BACKENDS) + "]"
+    assert all(r.strategy == expected for r in results)
 
 
 def test_strategy_override_bypasses_routing(monkeypatch):
@@ -238,11 +258,28 @@ def test_corrective_branch_disabled_by_high_confidence(monkeypatch):
 
 
 def test_timeout_branch_returns_partial_results(monkeypatch):
-    def slow_rag(query, top_k=5, ctx=None):
-        time.sleep(2.0)
+    """The timed-out backend is abandoned, asserted as state (tsg-iso-02).
+
+    Backend attribution and ``timed_out == ["rag"]`` are both satisfied by an
+    implementation that awaits the slow call and then discards its late result,
+    so abandonment needs its own assertion. It is made against the worker's
+    STATE at the moment ``search()`` returned rather than against a wall-clock
+    budget — the old ``elapsed < 1.5`` measured the CI runner (it failed twice
+    at ~1.7s under load while passing locally), not the router.
+    """
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def blocking_rag(query, top_k=5, ctx=None):
+        started.set()
+        # HANG guard only — the router abandons this call in 0.2s and no
+        # assertion below depends on how long anything took.
+        release.wait(_WORKER_HANG_GUARD_SECONDS)
+        finished.set()
         return [_hit("rag", 0.9)]
 
-    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", slow_rag)
+    monkeypatch.setitem(search_service.BACKEND_ADAPTERS, "rag", blocking_rag)
     monkeypatch.setitem(
         search_service.BACKEND_ADAPTERS, "graph", lambda q, top_k=5, ctx=None: [_hit("graph", 0.6)]
     )
@@ -257,14 +294,25 @@ def test_timeout_branch_returns_partial_results(monkeypatch):
             "timeouts": {"default": 5.0, "rag": 0.2},
         }
     }
-    start = time.monotonic()
-    results = search("something slow", config=cfg)
-    elapsed = time.monotonic() - start
+    try:
+        results = search("something slow", config=cfg)
+        # Sampled at the instant search() returned — this is the proof.
+        finished_at_return = finished.is_set()
 
-    assert elapsed < 1.5  # slow backend abandoned, not awaited to completion
-    assert {r.backend for r in results} == {"graph", "dic"}
-    for r in results:
-        assert r.metadata["router"]["timed_out"] == ["rag"]
+        assert not finished_at_return, (
+            "search() returned only after the slow backend completed — it was "
+            "awaited and its result dropped, not abandoned"
+        )
+        # The adapter really was invoked (bounded wait is a hang guard: the
+        # pool may schedule its worker at any moment).
+        assert started.wait(_WORKER_HANG_GUARD_SECONDS)
+        assert {r.backend for r in results} == {"graph", "dic"}
+        for r in results:
+            assert r.metadata["router"]["timed_out"] == ["rag"]
+    finally:
+        # Never let the abandoned worker outlive the test on the shared pool.
+        release.set()
+        finished.wait(_WORKER_HANG_GUARD_SECONDS)
 
 
 # ---------------------------------------------------------------------------

@@ -89,6 +89,18 @@ class TestRunReflex(unittest.TestCase):
         _p = patch(self._SMOKE, return_value=[])
         _p.start()
         self.addCleanup(_p.stop)
+        # create_tasks echoes back the ids it was handed, which is what the real
+        # seeder returns for a batch with no duplicates. Recorded so the specs
+        # below can assert on the SPEC the reflex built, not just on the count.
+        self.seeded: list[dict] = []
+
+        def _fake_create(specs):
+            self.seeded.extend(specs)
+            return [s["id"] for s in specs]
+
+        _c = patch(self._CREATE, side_effect=_fake_create)
+        _c.start()
+        self.addCleanup(_c.stop)
 
     def _mock_conn(self, sweep_pending=False, gap_pending=False):
         conn = MagicMock()
@@ -114,6 +126,10 @@ class TestRunReflex(unittest.TestCase):
     _GET_CONN = "tools.genesis.reflexes.qa_agent_reflex.get_connection"
     # discover_coverage_gaps is imported inline inside run(), so patch the source module
     _DISCOVER = "tools.testing.qa_agent_runner.discover_coverage_gaps"
+    # rem-hyg-06: the three _insert_* helpers now seed through the canonical
+    # task_factory, which opens its OWN connection rather than using the one
+    # _GET_CONN hands back. Without this the tests would seed the LIVE board.
+    _CREATE = "tools.genesis.reflexes.qa_agent_reflex.create_tasks"
 
     def test_returns_dict_with_required_keys(self):
         conn = self._mock_conn()

@@ -21,11 +21,14 @@ from dataclasses import asdict, dataclass, field, fields
 from typing import Optional
 
 # Every normalized backend behind the Cortex facade.
-CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "sme")
+# ``currency`` (cef-bck-01) answers "is this entity still current?" over the
+# entity-currency store and the learned de-facto standards; it is a retrieval
+# backend like the first four. ``sme`` (cef-bck-03) is not — see below.
+CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "currency", "sme")
 
 # The split inside CORTEX_BACKENDS, and the reason it exists (cef-bck-03).
 #
-# The first four backends RETRIEVE: every hit is a row that existed before the
+# Every backend but ``sme`` RETRIEVES: every hit is a row that existed before the
 # query and can be re-read. ``sme`` does not — it asks an ACE domain-expert
 # persona for an OPINION, which the model authors at query time. Both shapes
 # normalize into CortexSearchResult, so nothing downstream can tell them apart

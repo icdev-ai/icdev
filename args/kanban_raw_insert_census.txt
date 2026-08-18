@@ -62,9 +62,7 @@ icdev/tools/gameday/judge_agent.py::_route_to_suggested_kanban[1]  # grandfather
 icdev/tools/genesis/reflexes/aadc_reflex.py::_create_kanban_suggestion[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/academy_reflex.py::_promote_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/aidp_monitor.py::_emit_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/genesis/reflexes/coherence_to_kanban_reflex.py::_insert_coherence_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/cpmp_monitor.py::_suggest_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/genesis/reflexes/e2e_runner.py::_create_run_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/harness.py::_create_degradation_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/harness.py::_create_meta_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/harness.py::_create_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
@@ -78,11 +76,7 @@ icdev/tools/genesis/reflexes/pma_credential_monitor.py::_seed_kanban_task[1]  # 
 icdev/tools/genesis/reflexes/pma_int_gap_monitor.py::_seed_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/pmo_option_tracker.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/pmo_weekly_report.py::_push_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/genesis/reflexes/qa_agent_reflex.py::_insert_gap_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/genesis/reflexes/qa_agent_reflex.py::_insert_smoke_bug_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/genesis/reflexes/qa_agent_reflex.py::_insert_sweep_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/reflexion_loop.py::_create_amendment_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-icdev/tools/genesis/reflexes/route_perf_reflex.py::_insert_perf_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/genesis/reflexes/skill_security_monitor.py::_create_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/kanban/seed_aadc_aimc_appmigration.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 icdev/tools/kanban/seed_aadc_enhancement.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
@@ -171,9 +165,7 @@ tools/gameday/judge_agent.py::_route_to_suggested_kanban[1]  # grandfathered at 
 tools/genesis/reflexes/aadc_reflex.py::_create_kanban_suggestion[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/academy_reflex.py::_promote_to_kanban[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/aidp_monitor.py::_emit_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-tools/genesis/reflexes/coherence_to_kanban_reflex.py::_insert_coherence_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/cpmp_monitor.py::_suggest_kanban_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-tools/genesis/reflexes/e2e_runner.py::_create_run_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/harness.py::_create_degradation_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/harness.py::_create_meta_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/harness.py::_create_review_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
@@ -187,11 +179,7 @@ tools/genesis/reflexes/pma_credential_monitor.py::_seed_kanban_task[1]  # grandf
 tools/genesis/reflexes/pma_int_gap_monitor.py::_seed_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/pmo_option_tracker.py::run[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/pmo_weekly_report.py::_push_kanban_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-tools/genesis/reflexes/qa_agent_reflex.py::_insert_gap_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-tools/genesis/reflexes/qa_agent_reflex.py::_insert_smoke_bug_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-tools/genesis/reflexes/qa_agent_reflex.py::_insert_sweep_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/reflexion_loop.py::_create_amendment_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
-tools/genesis/reflexes/route_perf_reflex.py::_insert_perf_task[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/genesis/reflexes/skill_security_monitor.py::_create_card[1]  # grandfathered at adoption (rem-hyg-05); shape: reflex; convert to task_factory.create_tasks in rem-hyg-06
 tools/kanban/seed_aadc_aimc_appmigration.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06
 tools/kanban/seed_aadc_enhancement.py::seed[1]  # grandfathered at adoption (rem-hyg-05); shape: seeder; convert to task_factory.create_tasks in rem-hyg-06

@@ -119,5 +119,23 @@
     "expected_backends": ["rag", "graph", "dic"],
     "backend_scores": {"dic": 0.88, "rag": 0.55, "graph": 0.31},
     "expected_order": ["dic", "rag", "graph"]
+  },
+  {
+    "id": "currency-catalyst-eol",
+    "category": "currency",
+    "query": "Is the Catalyst 6500 end-of-life?",
+    "expected_label": "currency",
+    "expected_backends": ["currency"],
+    "backend_scores": {"currency": 0.93},
+    "expected_order": ["currency"]
+  },
+  {
+    "id": "currency-tls-still-current",
+    "category": "currency",
+    "query": "Is TLS 1.1 still supported?",
+    "expected_label": "currency",
+    "expected_backends": ["currency"],
+    "backend_scores": {"currency": 0.81},
+    "expected_order": ["currency"]
   }
 ]

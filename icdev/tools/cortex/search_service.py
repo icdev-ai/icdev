@@ -594,6 +594,239 @@ def search_kb(
         )
 
 
+def _currency_store():
+    """The entity-currency store, resolved from whichever namespace holds it.
+
+    ``tools/currency/`` has no ``icdev/tools/`` mirror, so ``_backend`` cannot
+    find it when this module was loaded canonically. Falling back to the shim
+    namespace keeps the backend ALIVE in both trees rather than reporting a
+    dead store for one that is present; a genuinely missing module still raises
+    and is reported as a failure.
+    """
+    try:
+        return _backend("currency.entity_currency")
+    except ModuleNotFoundError:
+        return importlib.import_module("tools.currency.entity_currency")
+
+
+def _defacto_learner():
+    """The de-facto standards learner, same two-namespace resolution."""
+    try:
+        return _backend("doc_modernization.defacto_learner")
+    except ModuleNotFoundError:
+        return importlib.import_module("tools.doc_modernization.defacto_learner")
+
+
+# Score bands for the currency backend, HIGH to LOW. The authority order is
+# structural rather than emergent: a curated catalog assertion cannot score
+# below an EOL feed's however confident the feed is, and no learner row can
+# reach either — which is the same rule args/entity_currency.yaml states for
+# read-time resolution ("a tie-break that a bumped prior can overturn is not
+# authority") applied to the ranking a caller actually reads.
+_CURRENCY_BANDS = {
+    "curated": (0.75, 1.00),   # an authoritative source (the curated catalog)
+    "feed": (0.45, 0.75),      # an external EOL feed
+    "learner": (0.10, 0.45),   # de-facto / learned corroboration
+}
+
+
+def _band_score(band: str, quality: float) -> float:
+    """Place a [0,1] quality inside its band, so bands never overlap."""
+    low, high = _CURRENCY_BANDS.get(band, (0.0, 1.0))
+    return low + (high - low) * _clamp(quality)
+
+
+def _currency_content(view: dict) -> str:
+    """One sentence a human (or an LLM) can read the verdict off."""
+    label = str(view.get("entity_label") or view.get("entity_key") or "")
+    parts = [f"{label} ({view.get('entity_type')})"]
+    version = str(view.get("entity_version") or "")
+    if version:
+        parts.append(f"version {version}")
+    text = " ".join(parts)
+    text += (
+        f" — {view.get('verdict')} per {view.get('source')}"
+        f" (as of {str(view.get('as_of') or '')[:10]})."
+    )
+    for field_name, prefix in (("eol_date", "End of life"), ("eos_date", "End of support")):
+        if view.get(field_name):
+            text += f" {prefix}: {view[field_name]}."
+    if view.get("superseded_by"):
+        text += f" Superseded by: {view['superseded_by']}."
+    if view.get("conflict"):
+        disagree = ", ".join(
+            f"{o.get('source')}={o.get('verdict')}" for o in (view.get("others") or [])
+        )
+        text += f" Sources disagree — also reported: {disagree}."
+    return text
+
+
+def _currency_assertion_result(view: dict, ctx: CortexContext) -> CortexSearchResult:
+    """One resolved entity-currency assertion -> CortexSearchResult."""
+    authoritative = bool(view.get("authoritative"))
+    band = "curated" if authoritative else "feed"
+    match = float(view.get("match") or 0.0)
+    confidence = _clamp(view.get("confidence"))
+    content = _currency_content(view)
+    provenance = view.get("provenance") or {}
+    return CortexSearchResult(
+        content=content,
+        # The declared prior is HALF the quality, never the whole of it: it is a
+        # constant per source, so on its own it would rank every row from one
+        # source identically regardless of what the caller asked about.
+        score=_band_score(band, 0.5 * match + 0.5 * confidence),
+        backend="currency",
+        strategy="assertion",
+        citation=Citation(
+            source_id=str(provenance.get("record_id") or ""),
+            source_type="currency_assertion",
+            # The row the verdict actually came from, not the store that
+            # aggregates it — a citation that names the aggregator sends a
+            # reader to a copy rather than to the evidence.
+            source_table=str(provenance.get("table") or "entity_currency"),
+            title=str(view.get("entity_label") or view.get("entity_key") or ""),
+            snippet=content[:_SNIPPET_CHARS],
+            classification=str(view.get("classification") or ctx.classification or "CUI"),
+        ),
+        raw_scores={
+            "confidence": view.get("confidence"),
+            "match": match,
+            "band": band,
+        },
+        metadata={
+            "lane": "assertion",
+            "store_table": "entity_currency",
+            "provenance_id": provenance.get("id"),
+            "entity_type": view.get("entity_type"),
+            "entity_key": view.get("entity_key"),
+            "namespace": view.get("namespace"),
+            "entity_version": view.get("entity_version"),
+            "verdict": view.get("verdict"),
+            "superseded_by": view.get("superseded_by"),
+            "eol_date": view.get("eol_date"),
+            "eos_date": view.get("eos_date"),
+            "source": view.get("source"),
+            "authoritative": authoritative,
+            "as_of": view.get("as_of"),
+            # Disagreement travels with the answer (see entity_currency.resolve).
+            "conflict": bool(view.get("conflict")),
+            "sources_consulted": list(view.get("sources_consulted") or []),
+            "others": [
+                {
+                    "source": o.get("source"),
+                    "verdict": o.get("verdict"),
+                    "confidence": o.get("confidence"),
+                    "as_of": o.get("as_of"),
+                }
+                for o in (view.get("others") or [])
+            ],
+            "scan_truncated": bool(view.get("scan_truncated")),
+            "tenant_id": ctx.tenant_id,
+        },
+    )
+
+
+def _currency_learner_result(row: dict, ctx: CortexContext) -> CortexSearchResult:
+    """One learned de-facto standard -> CortexSearchResult (corroboration)."""
+    share = float(row.get("share_pct") or 0.0)
+    match = float(row.get("match") or 0.0)
+    vendor = str(row.get("vendor") or "").strip()
+    product = str(row.get("product") or "").strip()
+    label = f"{vendor} {product}".strip()
+    content = (
+        f"{label} is the de-facto {row.get('category')} in "
+        f"{row.get('domain')}: {share:.1f}% of the {row.get('source_feed')} feed "
+        f"({row.get('deploy_count')} occurrences, evidence: "
+        f"{row.get('evidence_kind') or 'unlabelled'}). Corroboration only — the "
+        "curated catalog remains authoritative."
+    )
+    return CortexSearchResult(
+        content=content,
+        score=_band_score("learner", 0.5 * match + 0.5 * min(1.0, share / 100.0)),
+        backend="currency",
+        strategy="defacto",
+        citation=Citation(
+            source_id=str(row.get("id") or ""),
+            source_type="defacto_standard",
+            source_table="docmod_defacto_standards",
+            title=label,
+            snippet=content[:_SNIPPET_CHARS],
+            classification=str(row.get("classification") or ctx.classification or "CUI"),
+        ),
+        raw_scores={
+            "share_pct": row.get("share_pct"),
+            "weighted_score": row.get("weighted_score"),
+            "deploy_count": row.get("deploy_count"),
+            "match": match,
+            "band": "learner",
+        },
+        metadata={
+            "lane": "learner",
+            "domain": row.get("domain"),
+            "category": row.get("category"),
+            "vendor": vendor,
+            "product": product,
+            "entity_version": row.get("version"),
+            # WHICH feed and WHAT CLASS of evidence — never merged, because a
+            # modelled design and an observed estate are different claims.
+            "source_feed": row.get("source_feed"),
+            "evidence_kind": row.get("evidence_kind"),
+            "precedence": row.get("precedence"),
+            "computed_at": row.get("computed_at"),
+            "tenant_id": ctx.tenant_id,
+        },
+    )
+
+
+def search_currency(
+    query: str,
+    top_k: int = 5,
+    ctx: Optional[CortexContext] = None,
+) -> list[CortexSearchResult]:
+    """Entity currency -> CortexSearchResult (backend='currency') (cef-bck-01).
+
+    Answers "is this entity still current?" over TWO lanes, kept apart on
+    purpose:
+
+    * ASSERTION — ``tools/currency/entity_currency.py``, the domain-agnostic
+      store that already carries the curated catalog (authoritative), the
+      endoflife.date feed and the hardware EOL feed, and resolves them under
+      the authority policy declared in args/entity_currency.yaml.
+    * LEARNER — ``docmod_defacto_standards``, what the inventory feeds learned
+      is actually fielded. Corroboration and tie-breaker, never authority.
+
+    Ranking is BANDED (see ``_CURRENCY_BANDS``) so the authority order holds
+    structurally: curated above feed above learner, whatever the numbers inside
+    a band do.
+
+    Each lane is isolated separately: a dead learner table still returns the
+    store's hits, with the failure recorded on ``BackendResults.errors``. An
+    empty result with EMPTY errors means the corpus genuinely matched nothing —
+    that distinction is the point of the annotation and this adapter never
+    blurs it.
+    """
+    ctx = ctx or CortexContext()
+    results: list[CortexSearchResult] = []
+    errors: list[dict] = []
+
+    try:
+        views = _currency_store().search(query, limit=top_k) or []
+        results.extend(_currency_assertion_result(v, ctx) for v in views)
+    except Exception as exc:  # noqa: BLE001 — never raise; report instead
+        logger.warning("Cortex currency backend (assertion lane) failed: %s", exc)
+        errors.append({"backend": "currency", "stage": "store", "message": str(exc)})
+
+    try:
+        rows = _defacto_learner().search(query, limit=top_k) or []
+        results.extend(_currency_learner_result(r, ctx) for r in rows)
+    except Exception as exc:  # noqa: BLE001 — never raise; report instead
+        logger.warning("Cortex currency backend (learner lane) failed: %s", exc)
+        errors.append(
+            {"backend": "currency", "stage": "corroboration", "message": str(exc)}
+        )
+
+    results.sort(key=lambda r: r.score, reverse=True)
+    return BackendResults(results[:max(1, int(top_k or 1))], errors=errors)
 # ---------------------------------------------------------------------------
 # Advisory backend (cef-bck-03) — an OPINION, never a verdict
 # ---------------------------------------------------------------------------
@@ -768,6 +1001,7 @@ BACKEND_ADAPTERS = {
     "graph": search_graph,
     "dic": search_dic,
     "kb": search_kb,
+    "currency": search_currency,
     "sme": search_sme,
 }
 
@@ -825,15 +1059,23 @@ ROUTE_LABEL_BACKENDS = {
     "document": ["dic"],
     "factual": ["rag"],
     "exact_term": ["kb"],
+    "currency": ["currency"],
 }
 
 # `sme` gets a far larger budget than the retrieval backends because it may pay
 # for TWO LLM calls on a cold domain (persona generation, then the opinion),
 # where the others do one DB/vector round trip.
 _DEFAULT_TIMEOUTS = {
-    "default": 10.0, "rag": 10.0, "graph": 8.0, "dic": 10.0, "kb": 5.0, "sme": 60.0,
+    "default": 10.0, "rag": 10.0, "graph": 8.0, "dic": 10.0, "kb": 5.0,
+    # Two indexed LIKE reads, no embedding call and no model call.
+    "currency": 5.0,
+    "sme": 60.0,
 }
-_DEFAULT_FAN_OUT_BACKENDS = ["rag", "graph", "dic"]
+# `currency` (cef-bck-01) IS in the automatic fan-out: it retrieves rows that
+# existed before the query. `sme` (cef-bck-03) is deliberately absent and must
+# stay absent — it is advisory, and fan-out is the automatic path, so adding it
+# here would put an LLM opinion into the result set of every ambiguous query.
+_DEFAULT_FAN_OUT_BACKENDS = ["rag", "graph", "dic", "currency"]
 _DEFAULT_FACTUAL_CONFIDENCE = 0.75
 
 # Exact-term / identifier lookups -> keyword KB. Quoted phrases, snake_case
@@ -864,6 +1106,20 @@ _DOCUMENT_PATTERNS = re.compile(
     r"clearance|classified|cleared)\b",
     re.IGNORECASE,
 )
+
+# Currency / lifecycle queries -> the entity-currency backend. Checked AFTER
+# the three older pattern rules so no query that routes somewhere today changes
+# route: this rule only claims questions nothing else was claiming.
+_CURRENCY_PATTERNS = re.compile(
+    r"\b(end[- ]of[- ](?:life|support|sale|service)|eol|eos|eosl|"
+    r"deprecat(?:ed|es|ion)|obsolete|superseded|retired|sunset|"
+    r"still (?:current|supported|in support|valid|good|ok)|"
+    r"out of support|no longer supported|"
+    r"current(?:ly)? (?:approved|supported|standard)|"
+    r"supported (?:until|through)|refresh cycle|tech(?:nology)? refresh)\b",
+    re.IGNORECASE,
+)
+
 
 def _taxonomy_label(query: str) -> dict:
     """Label a query via the RAG query classifier (D-RAG-24 taxonomy).
@@ -930,6 +1186,14 @@ def classify_route(query: str, config: Optional[dict] = None) -> dict:
             "backends": list(ROUTE_LABEL_BACKENDS["document"]),
             "method": "pattern",
             "reason": "Query targets documents or clearance-scoped content.",
+        }
+    if _CURRENCY_PATTERNS.search(q):
+        return {
+            "label": "currency",
+            "backends": list(ROUTE_LABEL_BACKENDS["currency"]),
+            "method": "pattern",
+            "reason": "Query asks whether an entity is still current "
+            "(lifecycle / EOL / deprecation).",
         }
     taxonomy = _taxonomy_label(q)
     factual_confidence = float(

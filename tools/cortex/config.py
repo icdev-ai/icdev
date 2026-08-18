@@ -73,8 +73,11 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
         # this key in args/cortex_config.yaml. It must survive an unreadable
         # config file, because "config missing" is exactly when an advisory
         # result would otherwise fall back to the neutral 1.0 and outrank
-        # evidence.
-        "strategy_weights": {"rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6, "sme": 0.0},
+        # evidence. currency (cef-bck-01) is an ordinary retrieval weight.
+        "strategy_weights": {
+            "rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6,
+            "currency": 0.7, "sme": 0.0,
+        },
         "rrf_k": 60,
         "crag_threshold": 0.55,
         "timeouts": {"default": 10.0},

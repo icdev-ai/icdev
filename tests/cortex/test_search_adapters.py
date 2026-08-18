@@ -455,12 +455,18 @@ def test_adapters_importable_via_canonical_namespace():
         search_all,
         search_dic,
         search_graph,
+        search_currency,
         search_kb,
         search_rag,
         search_sme,
     )
 
-    assert set(BACKEND_ADAPTERS) == {"rag", "graph", "dic", "kb", "sme"}
+    from tools.cortex.schemas import CORTEX_BACKENDS
+
+    # Pinned against CORTEX_BACKENDS rather than a literal set: a backend
+    # declared in the facade but missing from the dispatch table would never
+    # run, and "all" would silently mean "all but that one".
+    assert set(BACKEND_ADAPTERS) == set(CORTEX_BACKENDS)
 
 
 # ---------------------------------------------------------------------------

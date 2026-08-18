@@ -231,6 +231,20 @@ python tools/ci/red_first_gate.py --json --out red-first-proof.json
 # recorded RED. Exempt a file with a WRITTEN REASON in args/red_first_gate.yaml;
 # never `mode: advisory` and never a shell neutraliser.
 
+# Which open PRs are awaiting merge, and WHY is each one not merging? (kpr-watch-01)
+python -m tools.ci.merge_readiness --json          # every open PR, task-linked or not
+python -m tools.ci.merge_readiness                 # human table
+python -m tools.ci.merge_readiness --state awaiting_ci --state conflicting
+python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
+# READ-ONLY: it never merges, pushes, un-drafts or closes. `pr_watcher`'s unlinked
+# sweep and this report read the SAME pure function,
+# classify_merge_readiness(pr, *, default_branch, linked_urls) -> (state, reason),
+# so the report can never describe a merge policy the merger does not have. Do
+# NOT write a second copy of the ladder. States: merged | linked | draft |
+# held_label | wrong_base | conflicting | no_checks | ci_failed | awaiting_ci |
+# changes_requested | ready. `no_checks` (empty rollup) is never merged into
+# `awaiting_ci`, and mergeable=UNKNOWN reports a different REASON from
+# CONFLICTING. Exit 2 = the report could not be produced, never an empty table.
 # Raw board writers — does this INSERT bypass the canonical seeder? (rem-hyg-05)
 python tools/kanban/raw_insert_census.py --check          # the gate; exit 1 on a NEW raw INSERT
 python tools/kanban/raw_insert_census.py --json           # full report
