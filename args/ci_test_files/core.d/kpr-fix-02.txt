@@ -1,1 +1,20 @@
+# kpr-fix-02 — seeding order was gating dispatch as if it were a dependency.
+#
+# Gated in the PR that makes them pass, per docs/ci/test-gating-policy.md, and in
+# their own fragment so they cannot collide with a sibling's append to core.txt
+# (tsg-policy-03).
+#
+# test_dep_supersede.py holds the rule and, more importantly, the two things that
+# would fail SILENTLY if it drifted: the manual-gate carve-out (a gate is a HOLD,
+# not seeding order, and releasing one ships work a human deliberately held) and
+# the agreement between the SQL and Python renderings of the same rule — the
+# dispatcher uses the SQL one and nothing else compares them.
+#
+# The other three cover the sites a released task would still stall at, which is
+# why they join the allowlist now: the HTTP done-guard a worker session uses to
+# report its own completion, the draft-ready guard on its PR, and the reports
+# that otherwise describe a merge/dispatch policy the board does not have.
 tests/kanban/test_dep_supersede.py
+tests/kanban/test_dep_supersede_consumers.py
+tests/kanban/test_cli_list_shows_blockers.py
+tests/ci/test_pr_watcher_draft_ready.py
