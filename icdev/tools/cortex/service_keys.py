@@ -103,7 +103,17 @@ BOM_SCOPES = ("cortex:bom",)
 AGENT_SCOPES = ("cortex:agent",)
 DATABRIDGE_SCOPES = ("databridge:iris:read", "databridge:iris:write",
                      "databridge:icdev_demand:read",
-                     "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write")
+                     "databridge:icdev_cpmp:read", "databridge:icdev_cpmp:write",
+                     # cef-bck-02: the Cortex `external` search rung. A key
+                     # holding `cortex:search` reaches five in-boundary corpora;
+                     # this is the sixth, and it is the only one whose evidence
+                     # comes from off-box, so it is a separate grant rather than
+                     # a property of being able to search. The scope is per
+                     # CONNECTOR (`databridge:<connector>:read`), matching the
+                     # broker's own connector+table allowlist — authorising a key
+                     # for one external source must not authorise it for the next
+                     # one an operator adds. Never in DEFAULT_SCOPES.
+                     "databridge:rss:read")
 ALL_SCOPES = (CORTEX_SCOPES + INTAKE_SCOPES + WIN_THEME_SCOPES + STAFFING_SCOPES
               + PRICING_SCOPES + DASHBOARD_SCOPES + AWARD_SCOPES + BOM_SCOPES
               + AGENT_SCOPES + DATABRIDGE_SCOPES)

@@ -151,11 +151,19 @@ def _server_context(domain: str = "") -> CortexContext:
         or user.get("classification")
         or "CUI"
     )
+    # Scopes from the presenting service key, or None when no key was presented
+    # (a session-authenticated dashboard user carries no g.cortex_binding).
+    # Tri-state, and the empty list is NOT the same as None — see
+    # CortexContext.scopes. Read by the `external` search backend (cef-bck-02),
+    # which requires databridge:<connector>:read before it will egress.
+    binding = getattr(g, "cortex_binding", None)
+    scopes = list(binding.get("scopes") or []) if binding is not None else None
     return CortexContext(
         tenant_id=str(tenant_id),
         user_id=str(user_id),
         classification=str(classification),
         domain=domain or "",
+        scopes=scopes,
     )
 
 

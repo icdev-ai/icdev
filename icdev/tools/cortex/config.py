@@ -71,6 +71,7 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
     "search": {
         "strategy_weights": {
             "rag": 1.0, "graph": 0.8, "dic": 0.9, "kb": 0.6, "currency": 0.7,
+            "external": 0.5,
         },
         "rrf_k": 60,
         "crag_threshold": 0.55,

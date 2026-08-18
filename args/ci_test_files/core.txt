@@ -2373,3 +2373,14 @@ tests/test_extension_manager.py
 # ordering (curated catalog above feed above learner), which is banded in
 # code precisely so it cannot be overturned by a bumped confidence prior.
 tests/cortex/test_search_currency_backend.py
+
+# cef-bck-02: the Cortex `external` rung, the only backend whose evidence comes
+# from outside the boundary. Gated because the assertions that matter here are
+# refusals: that the rung pins fail_closed=True regardless of the platform's
+# `governance.fail_closed: false` default, that air-gap returns BackendResults
+# with a populated .errors and contacts nothing, that a missing
+# `databridge:<connector>:read` scope denies AND writes the refusal to
+# databridge_agent_access_log, and that an unaudited fetch drops its rows even
+# when they arrived. A regression in any of those is silent by construction --
+# it looks exactly like an empty corpus -- so an ungated file would not catch it.
+tests/cortex/test_search_external_backend.py

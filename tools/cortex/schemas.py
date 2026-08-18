@@ -23,8 +23,11 @@ from typing import Optional
 # The normalized retrieval backends behind the Cortex facade. ``currency``
 # (cef-bck-01) answers "is this entity still current?" over the entity-currency
 # store and the learned de-facto standards; it is a retrieval backend like the
-# other four, not a separate facade.
-CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "currency")
+# other four, not a separate facade. ``external`` (cef-bck-02) is the only one
+# whose evidence comes from OUTSIDE the boundary: it reads authorized external
+# sources through the DataBridge agent broker, inheriting that broker's
+# authorization model whole rather than restating any part of it.
+CORTEX_BACKENDS = ("rag", "graph", "dic", "kb", "currency", "external")
 
 
 def _known_fields(cls: type, data: Optional[dict]) -> dict:
@@ -276,6 +279,21 @@ class CortexContext:
     # STILL applied: trust affects the *input* screen only, never egress or the
     # NIST-AU record. Default False — callers must opt in explicitly.
     trusted_content: bool = False
+    # Service-key scopes when the caller presented one (rest_v1 copies them off
+    # ``g.cortex_binding``); None when no key was presented at all — a
+    # session-authenticated dashboard user, an in-process caller, a reflex.
+    #
+    # Tri-state on purpose, and the third state is the point: None means "no key
+    # was presented, so this context carries no scope claim" and defers to
+    # whatever the downstream rung's own authorization is, while an EMPTY LIST
+    # means "a key WAS presented and it carries no scopes" — a denial, not an
+    # absence. Collapsing the two would make an unscoped key indistinguishable
+    # from a trusted internal caller, which is the wrong direction to guess in.
+    #
+    # Read by the ``external`` search backend (cef-bck-02), which requires
+    # ``databridge:<connector>:read``; that scope is never in DEFAULT_SCOPES, so
+    # reaching an external source over REST is an explicit grant.
+    scopes: Optional[list] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
