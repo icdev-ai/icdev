@@ -108,6 +108,7 @@ logger = get_logger("icdev.kanban.cli")
 # capture, silently pointing the CLI at another repo's database.
 from tools.db import storage  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+from tools.kanban import deps as kanban_deps  # noqa: E402
 
 # Fail-loud shadow guard: refuse to run against a foreign storage module.
 _shadow_err = _storage_shadow_error(storage.__file__, _repo_root)
@@ -586,7 +587,19 @@ def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
             params,
         ).fetchall()
 
-    results = [dict(r) for r in rows]
+        results = [dict(r) for r in rows]
+        # WHICH dependency actually holds is tools.kanban.deps' answer, not the
+        # scalar column's. Printing "blocked by <seeding predecessor>" for a task
+        # the dispatcher will happily run is the same misleading-output defect
+        # the comment above describes, one mechanism further in (kpr-fix-02).
+        blocking_map = kanban_deps.blocking_dep_status_bulk(
+            [r["id"] for r in results], conn
+        )
+    for r in results:
+        r["blocking_deps"] = [
+            f"{dep} ({status or 'MISSING'})"
+            for dep, status in blocking_map.get(r["id"], [])
+        ]
 
     if json_out:
         print(json.dumps(results, indent=2))
@@ -594,11 +607,9 @@ def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
         if not results:
             print("  (no tasks found)")
         for r in results:
-            dep = r.get("depends_on_task_id")
-            held = dep and r.get("depends_on_status") not in ("done", "decomposed")
+            held = r["blocking_deps"]
             blocked = (
-                f"  <- blocked by {dep} ({r.get('depends_on_status') or 'MISSING'})"
-                if held else ""
+                f"  <- blocked by {', '.join(held[:3])}" if held else ""
             )
             print(f"  [{r['status']:15s}] {r['id']:25s} {r.get('title','')[:60]}{blocked}")
     return 0

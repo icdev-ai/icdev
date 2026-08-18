@@ -4,3 +4,4 @@
 # is invisible in the happy path: with no junction rows the scalar must STILL
 # hold a task behind a manual gate, and only a test says so.
 tests/kanban/test_dependency_gate_precedence.py
+tests/kanban/test_dep_supersede.py
