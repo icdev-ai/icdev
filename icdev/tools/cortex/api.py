@@ -17,6 +17,12 @@ Routing is config-driven: each facade function passes a logical function name
 ``tools/rag/query_classifier.py`` when the router raises, so it stays usable
 in air-gap / no-LLM environments. ``complete()`` and ``extract()`` have no
 deterministic equivalent and propagate router errors to the caller.
+
+``resolve()`` (cef-rsv-01) is the one facade that reaches NO model at all: its
+verdict comes from ``DomainPack.evaluate()`` and its evidence from the existing
+search fan-out with the CRAG rewrite disabled. It is registered through the same
+``_governed_facade`` decorator as every other verb, so "no LLM" is a property of
+the operation, never of the governance around it.
 """
 from __future__ import annotations
 
@@ -42,6 +48,12 @@ from .governance import GovernancePipeline, record_llm_call
 # the same reason as ``ask``; the public ``search`` below is governance-wrapped.
 from .search_service import search as _search_impl
 
+# Evidence resolution (cef-rsv-01). Same pattern again: the raw impl is imported
+# here and the public ``resolve`` below is the governance-wrapped facade. The
+# error type is re-exported so callers keep one import surface.
+from .resolver import CortexResolutionBlocked  # noqa: F401 - re-export
+from .resolver import resolve as _resolve_impl
+
 # Search endpoint (ctx-search-01..04): the public ``cortex_api.search`` the
 # intent router / chat surface dispatch to is the GOVERNED facade defined below
 # (search = _governed_facade(...)(_search_impl)), not the raw search_service
@@ -63,10 +75,13 @@ from .config import (  # noqa: F401 - re-exports
 )
 from .schemas import (  # noqa: F401 - re-exports
     CORTEX_BACKENDS,
+    RESOLVE_VERDICTS,
     Citation,
     CortexContext,
+    CortexResolution,
     CortexResult,
     CortexSearchResult,
+    EntityAssessment,
     GovernanceReport,
 )
 
@@ -156,6 +171,7 @@ CORTEX_FACADES = (
     "extract",
     "search",
     "ask",
+    "resolve",
     "govern",
     "agent",
     "reason",
@@ -991,6 +1007,39 @@ search = _governed_facade(
 ask = _governed_facade(
     "cortex.ask", text_param="question", retrieval=False, attach=False
 )(_ask_impl)
+
+# ---------------------------------------------------------------------------
+# resolve — the governed evidence-resolution verb (cef-rsv-01)
+# ---------------------------------------------------------------------------
+# Registered here, through the SAME decorator as search and ask, because that
+# inheritance is the whole point: resolve gets the 8-gate TRUST chain, the
+# cortex_audit row carrying gates_json / outcome / blocked / provenance_id, and
+# real blocking, without one line of governance code in tools/cortex/resolver.py.
+#
+# text_param="entity" — the entity is the untrusted string. It arrives from
+# document text (a docmod pack extraction, a DI surface), it is what feeds pack
+# extraction and the evidence query, and it is the only caller input echoed into
+# the returned prose. ``question`` is caller framing that shapes the retrieval
+# query and nothing else, and it reaches no provider at all: resolver passes
+# corrective=False, so the CRAG rewrite — the single LLM call that lives inside
+# retrieval — does not run, and a resolution makes no model call whatsoever.
+# Output redaction still screens everything that leaves, as on every facade.
+#
+# attach=False, exactly like ask: the resolution carries its OWN
+# GovernanceReport, recording the citation_grounding outcome that
+# tools/cortex/resolver.py enforces (and BLOCKS on) over the resolution's own
+# citation set. Letting the pipeline attach would overwrite that with a report
+# whose grounding gates were skipped, and ``grounded`` would then read True for
+# a resolution nothing had graded. The enforced-pipeline report is still
+# observable under _OUTER_GOVERNANCE_KEY via _stash_outer_report.
+#
+# retrieval=False for the same reason it is False on search and ask: resolve
+# PRODUCES its sources rather than being handed them, so the pipeline has no
+# injected source set to grade the answer against. The grading that matters
+# happens inside the operation, against the sources it actually retrieved.
+resolve = _governed_facade(
+    "cortex.resolve", text_param="entity", retrieval=False, attach=False
+)(_resolve_impl)
 
 
 # ---------------------------------------------------------------------------

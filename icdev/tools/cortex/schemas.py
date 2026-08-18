@@ -270,6 +270,159 @@ class CortexResult:
         return cls(**kwargs)
 
 
+# ---------------------------------------------------------------------------
+# resolve() — the governed evidence-resolution shapes (cef-rsv-01)
+# ---------------------------------------------------------------------------
+#: The CLOSED verdict vocabulary ``cortex.resolve`` answers with. Four values,
+#: and the fourth is the point: ``unknown`` is a visible finding, never a
+#: silent ``current``.
+#:
+#:   current     — an authority asserts this is the thing to be on.
+#:   deprecated  — discouraged / past its life, with NO successor named.
+#:   superseded  — the same, and evidence NAMES what replaces it. Strictly
+#:                 stronger than ``deprecated``: it is actionable.
+#:   unknown     — nothing deterministic could answer. Always accompanied by a
+#:                 ``gaps`` entry saying why.
+#:
+#: This is NOT ``doc_modernization.constants.CURRENCY_VERDICTS`` and must not be
+#: conflated with it. That vocabulary is a docmod FINDING vocabulary of six
+#: values; this one is the four states a consumer of a resolution branches on.
+#: The mapping between them lives in ONE place —
+#: ``tools/cortex/resolver.py::PACK_VERDICT_MAP`` — so it cannot drift into two.
+RESOLVE_VERDICTS = ("current", "deprecated", "superseded", "unknown")
+
+
+@dataclass
+class EntityAssessment:
+    """One domain pack's DETERMINISTIC assessment of one entity.
+
+    Produced by ``DomainPack.evaluate()`` (+ ``recommend()``), never by an LLM
+    — ``base_pack`` TRUST rule 1. ``pack_verdict`` keeps the pack's own
+    vocabulary verbatim alongside the mapped :data:`RESOLVE_VERDICTS` value, so
+    a consumer needing the finer distinction ("divergent", "eol" vs "retired")
+    reads it here instead of having it flattened away.
+    """
+
+    entity: str = ""
+    entity_type: str = ""
+    pack_id: str = ""
+    verdict: str = "unknown"  # one of RESOLVE_VERDICTS
+    pack_verdict: str = ""  # the pack's own currency verdict, verbatim
+    finding_type: str = ""
+    severity: str = ""
+    confidence: float = 0.0
+    rationale: str = ""
+    superseded_by: str = ""  # Replacement.label — a real catalog/rulebook entry
+    replacement_source: str = ""  # 'catalog' | 'defacto' | 'rulebook'
+    replacement_ref: str = ""
+    evidence: list = field(default_factory=list)  # citation-shaped dicts
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "EntityAssessment":
+        return cls(**_known_fields(cls, data))
+
+
+@dataclass
+class CortexResolution(CortexResult):
+    """The answer ``cortex.resolve(entity, question, ctx)`` returns.
+
+    A :class:`CortexResult` SUBCLASS on purpose, not a sibling shape: the
+    governance pipeline branches on ``isinstance(result, CortexResult)`` for
+    output redaction (masking ``result.text`` in place), for report attachment,
+    and for LLM accounting. A parallel dataclass would have been silently
+    treated as "some other shape" — its text redacted for the provenance hash
+    but never written back to the caller-visible field.
+
+    The five fields the verb exists for:
+
+    ``verdict``         one of :data:`RESOLVE_VERDICTS`, DERIVED FROM
+                        ``DomainPack.evaluate()`` and nothing else.
+    ``citations``       (inherited) validated through
+                        ``tools/quality/citation_grounding``; an inline
+                        ``[source: id]`` tag naming something outside this list
+                        BLOCKS the resolution.
+    ``gaps``            entities nothing could answer for. Present whenever the
+                        verdict is ``unknown`` — that is what makes unknown a
+                        finding rather than a shrug.
+    ``conflicts``       backends that disagree. Populated by cef-rsv-02
+                        (semantic entity resolution across backends); the field
+                        is declared here so the contract is stable and empty is
+                        honest — no conflict DETECTION has run yet.
+    ``backend_errors``  a backend that DIED, never merged with one that matched
+                        nothing. Carried straight off ``BackendResults.errors``.
+    """
+
+    entity: str = ""
+    question: str = ""
+    verdict: str = "unknown"
+    # "pack_evaluate" when a pack produced it; "none" when no pack matched the
+    # entity at all. There is deliberately no third value: an LLM cannot be the
+    # source of a verdict, so there is no vocabulary entry for one.
+    verdict_source: str = "none"
+    assessments: list = field(default_factory=list)  # list[EntityAssessment]
+    gaps: list = field(default_factory=list)
+    conflicts: list = field(default_factory=list)
+    backend_errors: list = field(default_factory=list)
+    backends_consulted: list = field(default_factory=list)
+
+    @property
+    def errors(self) -> list:
+        """Alias for ``backend_errors``.
+
+        ``api._governed_facade`` reads ``getattr(result, "errors", None)`` to
+        decide a result is DEGRADED and must not be cached — the same check that
+        stops a momentary embedding outage being served from memory for a whole
+        TTL (ctx-perf-04). ``resolve`` is not in ``cache.operations`` today, so
+        nothing reads this yet; it exists so that enabling the cache for resolve
+        is a one-line config change rather than a silent correctness bug.
+        """
+        return self.backend_errors
+
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data.update({
+            "entity": self.entity,
+            "question": self.question,
+            "verdict": self.verdict,
+            "verdict_source": self.verdict_source,
+            "assessments": [
+                a.to_dict() if hasattr(a, "to_dict") else a for a in self.assessments
+            ],
+            "gaps": list(self.gaps),
+            "conflicts": list(self.conflicts),
+            "backend_errors": list(self.backend_errors),
+            "backends_consulted": list(self.backends_consulted),
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "CortexResolution":
+        base = super().from_dict(data)
+        kwargs = _known_fields(cls, data)
+        kwargs.update({
+            "text": base.text,
+            "citations": base.citations,
+            "governance": base.governance,
+            "provider": base.provider,
+            "model": base.model,
+            "cost": base.cost,
+            "latency_ms": base.latency_ms,
+            "input_tokens": base.input_tokens,
+            "output_tokens": base.output_tokens,
+            "grounded": base.grounded,
+            "data": base.data,
+            "metadata": base.metadata,
+        })
+        kwargs["assessments"] = [
+            EntityAssessment.from_dict(a) if isinstance(a, dict) else a
+            for a in kwargs.get("assessments") or []
+        ]
+        return cls(**kwargs)
+
+
 @dataclass
 class CortexContext:
     """Caller identity and policy context threaded through every Cortex call.

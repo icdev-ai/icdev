@@ -48,6 +48,7 @@ from tools.mcp import cortex_server, tool_registry  # noqa: E402
 CORTEX_TOOLS = (
     "cortex_search",
     "cortex_ask",
+    "cortex_resolve",
     "cortex_complete",
     "cortex_reason",
     "cortex_classify",
@@ -111,11 +112,13 @@ def test_unified_server_exposes_cortex_tools():
         assert name in server._tools, f"{name} not registered on unified server"
 
 
-def test_build_server_registers_eight_tools():
+def test_build_server_registers_every_cortex_tool():
     server = cortex_server.build_server()
     for name in CORTEX_TOOLS:
         assert name in server._tools
-    assert len({t["name"] for t in cortex_server.CORTEX_TOOLS}) == 8
+    # Count derived from the list above rather than written out again: a tool
+    # added to one and not the other is the drift this test exists to catch.
+    assert {t["name"] for t in cortex_server.CORTEX_TOOLS} == set(CORTEX_TOOLS)
 
 
 # --------------------------------------------------------------------------- #

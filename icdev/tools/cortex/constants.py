@@ -12,6 +12,14 @@ package exports.
 
 There are eight facade modes (complete / reason / classify / extract / search /
 ask / govern / agent); each maps onto one public facade in tools/cortex/api.py.
+
+``resolve`` (cef-rsv-01) is the ninth facade and is DELIBERATELY NOT a mode here.
+A chat turn carries free-form text, and ``resolve`` needs an ENTITY — the same
+reason classify / extract / govern are advertised but degrade in
+``blueprint._run_facade``. Advertising a mode the chat surface cannot serve is
+the declared-but-unconsumed defect in miniature, so the canvas surface for
+resolve is its own card (cef-ui-01 / cef-ui-02) rather than an entry added here
+ahead of the UI that reads it. Pinned by tests/cortex/test_resolve_facade.py.
 """
 from __future__ import annotations
 

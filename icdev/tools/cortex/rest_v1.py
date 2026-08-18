@@ -38,7 +38,7 @@ from .analyst import CortexAnalystError, CortexQueryBlocked
 # gateway screen, redaction, grounding, provenance, append-only audit). Importing
 # ask/search from .analyst/.search_service would reach the RAW ungoverned impls,
 # so the REST /api/v1/search + /ask endpoints would bypass governance entirely.
-from .api import CortexSchemaError, agent, ask, classify, complete, extract, reason, search
+from .api import CortexSchemaError, agent, ask, classify, complete, extract, reason, resolve, search
 from .governance import GovernanceBlockedError, GovernancePipeline
 from .schemas import CortexContext, CortexResult
 
@@ -81,6 +81,26 @@ def _schema_error_classes() -> tuple:
     if CortexSchemaError not in found:
         found.append(CortexSchemaError)
     return tuple(found)
+
+
+def _resolution_blocked_classes() -> tuple:
+    """Every live CortexResolutionBlocked class, across namespaces and reloads.
+
+    Same hazard, same fix as ``_schema_error_classes`` above — see that comment
+    for why a module-level ``from .resolver import ...`` binding is not enough.
+    """
+    import importlib as _il
+
+    found = []
+    for _mod in ("tools.cortex.resolver", "icdev.tools.cortex.resolver"):
+        try:
+            _cls = getattr(_il.import_module(_mod), "CortexResolutionBlocked", None)
+        except Exception:  # noqa: BLE001 — a missing namespace is not an error
+            continue
+        if isinstance(_cls, type) and _cls not in found:
+            found.append(_cls)
+    return tuple(found)
+
 
 _API_V1 = "/api/v1"
 
@@ -242,6 +262,18 @@ def _cortex_api(func: Callable) -> Callable:
                 "error": str(exc),
                 "governance": exc.governance.to_dict(),
             }), 422
+        except _resolution_blocked_classes() as exc:
+            # 403, alongside the other governance refusals. A resolution that
+            # cites a source it does not hold is REFUSED, not degraded — a
+            # redline gets drafted from this answer, and an unresolvable
+            # citation is how an invented authority reaches a document.
+            return jsonify({
+                "error": str(exc),
+                "blocked": True,
+                "gate": "citation_grounding",
+                "entity": getattr(exc, "entity", ""),
+                "citation_report": getattr(exc, "report", {}),
+            }), 403
         except _schema_error_classes() as exc:
             # 422, not 500. The server did its job; the MODEL could not produce
             # output conforming to the caller's schema, even after one bounded
@@ -308,6 +340,29 @@ def api_v1_ask(data):
         canvas=params["canvas"],
         collections=params["collections"],
         summarize=params["summarize"],
+    )
+    return result.to_dict()
+
+
+@_cortex_api
+def api_v1_resolve(data):
+    """Deterministic currency resolution for one entity, with its evidence.
+
+    Called BARE, like search/ask/complete: ``api.resolve`` is itself a
+    ``@_governed_facade`` ("cortex.resolve"), so wrapping it in ``_governed``
+    here would run the TRUST chain twice over one request — two gateway
+    screens, two redaction passes, two ``source_citation_registry`` rows, two
+    ``cortex_audit`` rows and a double count in /cortex/metrics. That is the
+    defect ctx-trust-02 removed from four endpoints; pinned by
+    tests/cortex/test_rest_single_governance.py.
+    """
+    params = validators.validate_resolve(data)
+    ctx = _server_context(validators.domain_of(data))
+    result = resolve(
+        params["entity"],
+        params["question"],
+        ctx=ctx,
+        top_k=params["top_k"],
     )
     return result.to_dict()
 
@@ -1167,7 +1222,7 @@ def api_v1_health():
             "status": "healthy",
             "airgap": bool(airgap_active(None)),
             "operations": [
-                "search", "ask", "complete", "reason", "classify", "extract", "govern", "intake", "slides", "win_themes", "staffing_matrix", "cost_volume", "dashboard", "award", "bom", "agent",
+                "search", "ask", "resolve", "complete", "reason", "classify", "extract", "govern", "intake", "slides", "win_themes", "staffing_matrix", "cost_volume", "dashboard", "award", "bom", "agent",
             ],
         })
     except Exception as exc:  # noqa: BLE001
@@ -1184,6 +1239,7 @@ def register_rest_v1(cortex_bp) -> None:
     for name, view in (
         ("search", api_v1_search),
         ("ask", api_v1_ask),
+        ("resolve", api_v1_resolve),
         ("complete", api_v1_complete),
         ("reason", api_v1_reason),
         ("classify", api_v1_classify),

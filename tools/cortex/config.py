@@ -92,6 +92,15 @@ CORTEX_CONFIG_DEFAULTS: Dict = {
     "analyst": {
         "nlq_fallback_enabled": True,
     },
+    # cortex.resolve (cef-rsv-01). In-boundary evidentiary rungs only: `external`
+    # would make a currency question the trigger for an outbound call, and `sme`
+    # is an LLM opinion, which cannot be evidence for a deterministic verdict.
+    # This fallback matters more than most — it is what applies when the config
+    # file is unreadable, i.e. exactly when a permissive default would quietly
+    # widen the rung set.
+    "resolve": {
+        "backends": ["currency", "rag", "dic", "graph", "kb"],
+    },
     "cache": {
         # Off by default — matches shipped args/cortex_config.yaml. See there for
         # the security model (key folds tenant/classification/domain/air_gap).
