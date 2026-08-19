@@ -1106,7 +1106,92 @@ def explorer():
             conn.close()
     except Exception as exc:  # noqa: BLE001 — themes are best-effort; findings still render
         logger.debug("dic: explorer themes unavailable: %s", exc)
-    return render_template("document_intelligence/explorer.html", findings=findings, themes=themes)
+
+    # cef-ui-02 — the cross-source disagreements and per-entity gaps
+    # cortex.resolve() detected (cef-rsv-02), projected into a browsable store
+    # by tools/cortex/finding_store.py. This page is the KG buried-bodies
+    # surface for contradictions, so it is where a contradiction between two of
+    # the platform's OWN sources belongs.
+    cortex = _cortex_findings(tenant_id)
+    return render_template(
+        "document_intelligence/explorer.html",
+        findings=findings, themes=themes, cortex=cortex,
+    )
+
+
+def _cortex_findings(tenant_id: str, limit: int = 200) -> dict:
+    """Conflicts, gaps, their filter vocabulary and the MEASUREMENT STATE.
+
+    ``stats["state"]`` is what stops an empty list reading as a clean bill of
+    health: ``disabled`` (recording off), ``unmeasured`` (no resolution has run
+    here yet), ``clean`` (resolutions ran and every claim was compatible) and
+    ``findings``. The first two leave the counts NULL rather than 0. Degrades to
+    the same UNMEASURED shape when the store is unreachable — an outage must not
+    render as "your sources agree".
+    """
+    empty = {
+        "conflicts": [], "gaps": [], "stats": {
+            "state": "unmeasured", "conflicts": None, "gaps": None,
+            "resolutions": 0, "clean_resolutions": 0, "cross_backend": None,
+            "last_run_at": "", "detail": "",
+        },
+        "filters": {"reasons": [], "backends": [], "kinds": []},
+        "actionable": {},
+    }
+    try:
+        from tools.cortex.finding_store import (
+            FINDING_CONFLICT, FINDING_GAP, filter_options, finding_stats,
+            list_findings,
+        )
+        conflicts = list_findings(tenant_id, finding_type=FINDING_CONFLICT,
+                                  limit=limit)
+        gaps = list_findings(tenant_id, finding_type=FINDING_GAP, limit=limit)
+        return {
+            "conflicts": conflicts,
+            "gaps": gaps,
+            "stats": finding_stats(tenant_id),
+            "filters": filter_options(conflicts + gaps),
+            # How many DocDrift findings already exist for each entity, so a
+            # conflict links to where it is ACTED ON rather than dead-ending here.
+            "actionable": _docdrift_counts(
+                [f["entity_label"] for f in conflicts + gaps]
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: cortex findings unavailable: %s", exc)
+        empty["stats"]["detail"] = f"finding store unavailable: {exc}"
+        return empty
+
+
+def _docdrift_counts(labels) -> dict:
+    """Open ``docmod_findings`` per entity label — the DocDrift handoff.
+
+    A conflict on this page and a finding on DocDrift are about the same entity
+    and have different jobs: this one says the sources disagree, that one is the
+    queue a redline is drafted from. Counting them here is what keeps the
+    disagreement actionable instead of terminal.
+    """
+    wanted = {str(v) for v in labels if v}
+    if not wanted:
+        return {}
+    counts: dict = {}
+    try:
+        conn = _conn()
+        try:
+            rows = _safe_rows(
+                conn,
+                "SELECT entity_label, COUNT(*) AS n FROM docmod_findings "
+                "GROUP BY entity_label",
+            )
+        finally:
+            conn.close()
+        for row in rows:
+            label = str(row.get("entity_label") or "")
+            if label in wanted:
+                counts[label] = int(row.get("n") or 0)
+    except Exception as exc:  # noqa: BLE001 — the handoff is best-effort
+        logger.debug("dic: docdrift finding counts unavailable: %s", exc)
+    return counts
 
 
 @dic_bp.route("/handoff")
@@ -3817,6 +3902,46 @@ def api_explorer_refresh():
         return jsonify({"findings": findings, "count": len(findings)})
     except Exception as exc:
         logger.warning("dic: explorer refresh error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/explorer/cortex-findings", methods=["GET"])
+def api_explorer_cortex_findings():
+    """Server-side filtering for the conflict and gap lists (cef-ui-02).
+
+    Query params: ``type`` (conflict|gap), ``entity``, ``reason``, ``backend``,
+    ``cross_backend`` (1 to keep only the disagreements that span more than one
+    backend), ``limit``.
+
+    ``reason`` and ``backend`` are matched in Python against the stored JSON
+    payloads rather than with SQLite-dialect JSON SQL at a runtime call site.
+
+    The response ALWAYS carries ``stats``, so a caller that receives an empty
+    list can still tell "nothing has been recorded" from "recorded, and your
+    sources agree". An error is a 500 with a reason, never an empty list.
+    """
+    tenant_id, _ = _security_context()
+    try:
+        from tools.cortex.finding_store import (
+            filter_options, finding_stats, list_findings,
+        )
+        findings = list_findings(
+            tenant_id,
+            finding_type=(request.args.get("type") or "").strip() or None,
+            entity=(request.args.get("entity") or "").strip(),
+            reason=(request.args.get("reason") or "").strip(),
+            backend=(request.args.get("backend") or "").strip(),
+            cross_backend_only=(request.args.get("cross_backend") or "") in ("1", "true"),
+            limit=min(int(request.args.get("limit", 200) or 200), 1000),
+        )
+        return jsonify({
+            "findings": findings,
+            "count": len(findings),
+            "stats": finding_stats(tenant_id),
+            "filters": filter_options(findings),
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: cortex findings query error: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
 

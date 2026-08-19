@@ -108,6 +108,7 @@ from .entity_resolution import (
     entity_ident,
     resolve_entities,
 )
+from .finding_store import record_findings
 from .resolution_provenance import (
     attach_conflict_citations,
     attach_gap_citations,
@@ -894,4 +895,15 @@ def resolve(
     # fail on the report above, and `fail` specifically means MISCONFIGURED
     # rather than momentarily unavailable.
     register_resolution(result, context)
+
+    # cef-ui-02 — the conflicts and gaps above exist only on the object this
+    # function returns, so the only reader of a finding is whoever triggered the
+    # resolution. Project them into `cortex_entity_findings` so a human can
+    # browse them on /document-intelligence/explorer long after the request.
+    #
+    # Runs on EVERY resolution including the clean ones: that write is the
+    # denominator, and without it an empty findings table cannot be told apart
+    # from a surface nothing ever looked at. Never raises, never blocks, and
+    # stores NO WINNER — the sides are persisted whole, exactly as detected.
+    result.metadata["finding_store"] = record_findings(result, context, config)
     return result
