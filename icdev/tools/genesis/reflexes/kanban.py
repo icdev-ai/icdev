@@ -2233,6 +2233,21 @@ def _supersede_stale_prs(task_id: str, keep_url: str, keep_branch: str, repo_roo
     return closed
 
 
+def _pr_opens_as_draft() -> bool:
+    """True when the runner opens a kanban PR as a DRAFT (kpr-watch-06).
+
+    Default ON — the fail-safe direction. ``ICDEV_KANBAN_PR_DRAFT=0`` (also
+    ``false``/``no``/``off``) restores the pre-inversion behaviour, and is the
+    switch to reach for if a deployment's ``pr_watcher`` cannot promote drafts;
+    never neutralise the draft by turning ``auto_ready_draft_prs`` off as well.
+    """
+    import os as _os
+
+    return _os.environ.get("ICDEV_KANBAN_PR_DRAFT", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
 def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     """Push the kanban branch to origin and open a GitHub PR.
 
@@ -2338,12 +2353,34 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
         _ensure_pr_base(_existing["url"], task_id)
         return _existing["url"]
 
+    # OPEN IT AS A DRAFT (kpr-watch-06). The PR used to open READY, so anything
+    # wanting to hold one had to convert it back to a draft before the watcher's
+    # next 30s poll — an external poller with a time window and a session
+    # lifetime, neither of which is a property a safety control may have.
+    #
+    # Inverted, the hold is a ROW. `pr_watcher.PRWatcher._mark_ready` promotes
+    # the draft only once CI is green AND the task is not a manual-gate sentinel
+    # AND `tools.kanban.deps.blocking_deps` is empty — the same interlock
+    # `promote_backlog_to_scheduled` already reads. So the ABSENCE of a decision
+    # now leaves work HELD rather than merged, which is the correct direction
+    # for a loop that merges to main unattended.
+    #
+    # Stand it down with ICDEV_KANBAN_PR_DRAFT=0, which is auditable in a way a
+    # shell operator inside a JSON string is not. Do NOT also turn
+    # `auto_ready_draft_prs` off: that combination is the one failure mode
+    # strictly worse than the old default — every kanban PR stuck in draft with
+    # nothing left in the loop able to clear it.
+    _create_argv = [
+        "gh", "pr", "create",
+        "--title", pr_title,
+        "--body", pr_body,
+        "--head", branch_name,
+        "--base", default_branch,
+    ]
+    if _pr_opens_as_draft():
+        _create_argv.append("--draft")
     create = _sp.run(
-        ["gh", "pr", "create",
-         "--title", pr_title,
-         "--body", pr_body,
-         "--head", branch_name,
-         "--base", default_branch],
+        _create_argv,
         cwd=str(_repo_root), capture_output=True, text=True, timeout=60,
     )
     if create.returncode != 0:
