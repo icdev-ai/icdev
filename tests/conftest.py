@@ -662,6 +662,27 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     previous_hash TEXT,
     signature TEXT
 );
+-- kpr-watch-02 / migration 20260819011454. One row per OBSERVED TRANSITION of a
+-- PR's merge eligibility, which is the only record of WHEN a PR became mergeable
+-- and therefore the only thing an "it should have merged 40 minutes ago" alarm
+-- can measure an age against. Append-only (see APPEND_ONLY_TABLES).
+CREATE TABLE IF NOT EXISTS pr_merge_eligibility_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pr_url TEXT NOT NULL,
+    pr_number INTEGER,
+    head_sha TEXT,
+    head_ref TEXT,
+    state TEXT NOT NULL,
+    eligible INTEGER NOT NULL DEFAULT 0,
+    door TEXT,
+    reason TEXT,
+    observed_at TIMESTAMP NOT NULL,
+    recorded_by TEXT,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_pr_merge_elig_url_observed
+    ON pr_merge_eligibility_events(pr_url, observed_at DESC);
 -- exa-audit-03 / migration 20260812041301. Where the audit_trail hash chain
 -- starts. Rows below chain_start_id predate the chain writer, so their NULL
 -- hashes mean "never chained", not "tampered with" -- without this the verifier

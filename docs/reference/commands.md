@@ -6695,6 +6695,74 @@ python -m tools.ci.merge_readiness --max-behind 5            # override the thre
 python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
 python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
 
+# MERGE STALL ALARM — eligible-but-unmerged, the signal the MERGER stalled
+# (kpr-watch-02). `merge_readiness` above explains every rung the ladder REFUSES
+# on. This answers the one case where it refuses NOTHING: a PR classified `ready`
+# that is STILL open on the next poll. Nothing is wrong with that PR — the actor
+# should have merged it and did not, and that is an automation-liveness problem
+# with a completely different repair.
+#
+# Eligibility is asked by calling the SAME `classify_merge_readiness` with
+# `linked_urls=()`, so the `linked` short-circuit cannot hide the task path —
+# where 3 of the 4 previously-observed causes live — and ownership is carried
+# apart as `door`. There is NO second copy of the ladder; do not write one.
+#
+# SEVERITY, not one "stuck" bucket, because the causes need different responses:
+#   alarm       eligible, aged past the threshold, and NOTHING explains it
+#   outage      the daemon is not polling, or the forge refused this host's
+#               credentials. Reported with NO threshold (a down merger does not
+#               become more down with time) and attributed ONCE to the fleet
+#               rather than N times to N innocent PRs.
+#   by_design   sibling hold, enforced done-gate, landed hold, protected path,
+#               auto-merge disabled, CI-still-running. Escalates to `alarm` only
+#               past `by_design_stall_after_minutes` — a hold that can never
+#               escalate is a category people stop reading.
+#   unmeasured  eligible, but nothing knows for how long. Never a reassuring zero.
+#   ok          not eligible, or eligible and young.
+#
+# AGE has TWO sources that are never merged and are BOTH always printed:
+#   recorded      `pr_merge_eligibility_events` (migration 20260819011454,
+#                 append-only), written per TRANSITION of (state, head_sha) — so
+#                 the newest row IS first-seen-ready: one indexed read, no
+#                 aggregation, a handful of rows a day rather than ~29,000.
+#   ci_estimate   max(statusCheckRollup[].completedAt). A labelled PROXY: a PR
+#                 whose hold cleared AFTER it went green reads as instantly hours
+#                 old, so it would alarm on first sight.
+# A recorded row for a DIFFERENT head sha is refused — a force-push is a new merge
+# opportunity whose clock restarts. Neither source available prints "?", never 0.
+#
+# CAUSE ATTRIBUTION reuses `audit_trail`, which already held 104,319 pr_watcher
+# rows including 42,742 `wait` rows carrying each refusal's own reason text. No
+# new writer and no new instrumentation — the existing record simply read, which
+# is what nothing was doing. Patterns are DATA in args/merge_stall.yaml and every
+# one was taken from a live row. FAIL-OPEN to `unattributed`: excusing a PR on
+# missing evidence is how an alarm goes quiet, so never add a catch-all pattern.
+#
+# SURVEYED BEFORE ARMING, per CLAUDE.md, over the last 150 merged PRs. The ENTIRE
+# tail is attributed (n=30, max 116.37 min — 17 done-gate, 12 sibling hold, 1
+# forge outage) while the unattributed population (n=120) stops at 13.98 min:
+#     threshold      5      10      15      20      30      60     120
+#     RAW age    28.00%  12.00%   6.67%   4.67%   4.00%   2.00%   0.00%
+#     ATTRIBUTED 16.00%   4.00%   0.00%   0.00%   0.00%   0.00%   0.00%
+# CLAUDE.md already calls a 1.63% fire rate grounds for standing a check down, so
+# that gap IS the design. `stall_after_minutes: 20` rather than 15 — both fire on
+# 0.00%, and 15 leaves ONE minute of headroom above its own observed maximum.
+# Re-measure with --survey; never raise a threshold to quieten an alarm, because
+# an alarm here means the MERGER stopped and the repair is to the merger.
+#
+# READ-ONLY against the forge — only `gh pr list` and `gh auth status`, proven by
+# AST in tests/test_merge_stall.py — and it writes exactly one table.
+# `pr_watcher.poll_once` records an observation beside its heartbeat: the
+# heartbeat proves the WATCHER ran, this proves what it was looking at.
+python -m tools.ci.merge_stall                               # human table
+python -m tools.ci.merge_stall --json
+python -m tools.ci.merge_stall --gate                        # exit 1 on `alarm` ONLY
+python -m tools.ci.merge_stall --survey                      # re-derive the threshold
+python -m tools.ci.merge_stall --survey --survey-limit 300 --json
+python -m tools.ci.merge_stall --stall-after 30              # one-run override
+python -m tools.ci.merge_stall --no-record                   # every age -> ci_estimate
+python -m tools.ci.merge_stall --from-json prs.json --default-branch main
+
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require
 # all 8 completeness-gate components from CLAUDE.md (template + icdev/ mirrored

@@ -162,6 +162,15 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # "it never had a hash anyway", so a re-cutover appends a second row and
         # the earliest one still wins.
         "audit_chain_genesis",
+        # kpr-watch-02, migration 20260819011454. One row per OBSERVED
+        # TRANSITION of a PR's merge eligibility. It is the only record of WHEN
+        # a PR became mergeable, so it is the only thing the "this should have
+        # merged 40 minutes ago" alarm can measure an age against — and an
+        # observation that a PR was eligible at 03:14 does not stop being true
+        # when it merges at 03:15. An UPDATE here would not correct the past, it
+        # would move the clock the alarm reads, which is indistinguishable from
+        # switching the alarm off for that PR.
+        "pr_merge_eligibility_events",
         # Refinement-cycle snapshots of the supplemental harness state
         # (exa-refine-05, migration 20260812074403). A snapshot is a
         # point-in-time record of what the harness looked like before it
