@@ -2101,6 +2101,52 @@ class PRWatcher:
             except Exception:
                 pass
 
+    def _record_merge_eligibility(self) -> dict:
+        """Append a merge-eligibility observation for every open PR (kpr-watch-02).
+
+        WHY THE WATCHER AND NOT THE REPORT. `merge_stall` can answer "is this PR
+        eligible" from one `gh pr list`, but it cannot answer "and for HOW LONG"
+        without somebody having been watching. Nothing was: the forge's
+        `updatedAt` moves on a comment or a label, and `_audit` records the
+        ACTIONS this watcher takes, never the moment a refusal stopped applying.
+        So the alarm that says "this should have merged 40 minutes ago" needs an
+        observer on the same cadence as the merger, which is this loop.
+
+        Rows are written only when a PR's (state, head_sha) CHANGES, so a PR
+        sitting `ready` for an hour has exactly one row whose `observed_at` IS
+        its first-seen-ready. A 30s poll therefore costs a handful of rows a day,
+        not ~29,000.
+
+        Best-effort, like the heartbeat beside it: an observation is evidence for
+        a report, and no report is worth stopping the thing that actually merges.
+        `dry_run` writes nothing, for the same reason `_audit` does not.
+        """
+        if self.dry_run:
+            return {"ok": None, "written": 0, "error": "dry run"}
+        try:
+            from tools.ci import merge_stall
+
+            cfg = merge_stall.load_config()
+            if not (cfg["record_observations"] and cfg["record_from_pr_watcher"]):
+                return {"ok": None, "written": 0, "error": "disabled by config"}
+            prs = merge_stall.list_prs("open", runner=self._pr_list_runner)
+            rows = merge_stall.eligibility_rows(
+                prs,
+                default_branch=self._default_branch(),
+                # Ownership is carried as `door`, never fed to the ladder — see
+                # merge_stall's docstring. A task-linked PR must be judged on the
+                # same merits as any other or every stall on the task path, which
+                # is where three of the four known causes live, stays invisible.
+                linked_urls={(t.get("pr_url") or "").strip()
+                             for t in list_pr_tasks(self._connection())},
+                protected_paths=self._protected_paths(),
+                max_behind_commits=self._max_behind(),
+            )
+            return merge_stall.record_transitions(rows, recorded_by="pr_watcher")
+        except Exception as exc:  # noqa: BLE001 — never break the watch loop
+            logger.debug("pr_watcher: merge-eligibility recording failed: %s", exc)
+            return {"ok": False, "written": 0, "error": str(exc)[:200]}
+
     def _record_heartbeat(self, report: "WatcherReport") -> bool:
         """Append this poll's liveness row to `heartbeat_checks`.
 
@@ -3019,6 +3065,12 @@ class PRWatcher:
             logger.debug("pr_watcher: stranded reconcile failed: %s", exc)
 
         report.finished_at = datetime.now(timezone.utc).isoformat()
+        # Merge-eligibility observation (kpr-watch-02), beside the heartbeat and
+        # for the same reason: the heartbeat proves the WATCHER ran, and this
+        # proves what it was looking at while it ran. Together they separate "the
+        # merger is down" from "the merger is up and a green PR is still sitting
+        # there", which is the distinction nothing in this pipeline could make.
+        self._record_merge_eligibility()
         # Liveness proof, written only once the poll has actually completed.
         self._record_heartbeat(report)
         return report
