@@ -36,7 +36,7 @@ Probed against the live PostgreSQL board on 2026-08-16.
 | `kg_ontology` | **0** | declared-ontology chain inert beneath a rich graph |
 | `tech_radar_entries` / `_history` | **0 / 0** | declared-but-unconsumed; **not** a usable currency provider |
 | `dic_ssp_fragments` | **0** | ACOIC SSP generation never produced output |
-| `cross_canvas_context.py` | dead code | purpose-built for cross-canvas evidence, called by nothing but its test |
+| `cross_canvas_context.py` | **DELETED** (cef-di-06) | was dead code; measured redundant with the `graph`/`rag` backends and the `network` lens |
 
 ### Five separate evidence chains, none shared
 | Surface | Reaches |
@@ -246,6 +246,41 @@ and return `BackendResults([], errors=[...])` rather than raising.
   currently sits outside both the DB and the vector store.
 - `cef-di-05` `doc_generator.py` and the blueprint `generate` routes → `resolve()`
 - `cef-di-06` Activate `cross_canvas_context.py` as a resolve source, or delete it.
+  **Outcome: DELETED** (module, mirror and test). The card offered both branches; the measurement
+  chose this one. Three findings, taken together, made activation the wrong move:
+  1. **Its headline capability cannot work on this platform.** The module's stated purpose is that
+     "a *networking* document should be informed by the Network Design Canvas (NDC) and the
+     Migration Canvas, and a *security* document by the Security Canvas (SDC)". Probed against the
+     live board 2026-08-18: of the eight non-`rag-*` KG graphs, `ndc`, `mdc` and `sdc` **have no
+     graph at all** — three of the five canvases in `CANVAS_KG_SELECTORS` hold zero nodes. What
+     actually answers is `idc` (49 nodes, only ever a *tertiary* fallback in every route) and
+     `compliance`, which resolves to a `rag-rag_compliance_corpus-*` bridge graph — i.e. RAG chunks
+     re-projected into the KG, already reachable through the `rag` backend. Wiring it in would have
+     shipped the fallback, not the promised capability.
+  2. **Everything it does that works is already a governed Cortex rung.** KG lexical search over
+     `kg_nodes` is the `graph` backend; RAG-by-`source_type` is the `rag` backend; and
+     "which canvases inform which kind of document" is precisely the **data-driven domain lens**
+     layer in `args/cortex_config.yaml` — which already carries a `network` lens
+     ("Network / Migration canvases", `backends: [rag, graph, kb]`, persona, intents). The module is
+     a second, private implementation of the lens layer. Adding it as a `canvas` backend would have
+     made a **third** path over `kg_nodes`, against this plan's own standing rule that backend scope
+     and row scope have to agree.
+  3. **It is ungoverned, and hardcodes domain knowledge.** `CONTEXT_ROUTES` is a Python
+     keyword→canvas table (`"bgp"`, `"vlan"`, `"zero trust"`, `"stig"` …) in an epic whose first
+     principle is *no hardcoded domain knowledge*. Its output bypasses citation validation,
+     provenance persistence, clearance filtering and output redaction — the probe returned node
+     properties reading `classification=CUI` straight into a raw LLM prompt block. It also emits
+     bare `?` placeholders on a PostgreSQL-primary deployment, working only because `translate_sql`
+     rewrites them, which would have put a documented init-only fallback on a hot runtime path.
+
+  No toggle accompanies this task, and that is not an omission: the migration rule exists so a
+  *migrated* surface can be restored by flipping a flag rather than reverting a merge. There is no
+  legacy chain here to restore — the module had **zero** runtime consumers, so there are no two
+  behaviours to toggle between. Before/after on the live canvas is therefore byte-identical: nothing
+  imported it, so no DI surface changes. The capability it gestured at — *graph-level* scoping of KG
+  retrieval to one canvas — is real but absent from `search_graph`; if it is wanted it belongs in the
+  `graph` adapter under the lens system, not in a DI-private module, and it needs an NDC/MDC/SDC
+  graph writer to exist first.
 
 ### Phase 4 — Surfaces (`cef-ui-`)
 - `cef-ui-01` DocDrift: verdict + citations + SME opinion + unknowns
