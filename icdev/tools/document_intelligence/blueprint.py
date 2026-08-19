@@ -1106,7 +1106,92 @@ def explorer():
             conn.close()
     except Exception as exc:  # noqa: BLE001 — themes are best-effort; findings still render
         logger.debug("dic: explorer themes unavailable: %s", exc)
-    return render_template("document_intelligence/explorer.html", findings=findings, themes=themes)
+
+    # cef-ui-02 — the cross-source disagreements and per-entity gaps
+    # cortex.resolve() detected (cef-rsv-02), projected into a browsable store
+    # by tools/cortex/finding_store.py. This page is the KG buried-bodies
+    # surface for contradictions, so it is where a contradiction between two of
+    # the platform's OWN sources belongs.
+    cortex = _cortex_findings(tenant_id)
+    return render_template(
+        "document_intelligence/explorer.html",
+        findings=findings, themes=themes, cortex=cortex,
+    )
+
+
+def _cortex_findings(tenant_id: str, limit: int = 200) -> dict:
+    """Conflicts, gaps, their filter vocabulary and the MEASUREMENT STATE.
+
+    ``stats["state"]`` is what stops an empty list reading as a clean bill of
+    health: ``disabled`` (recording off), ``unmeasured`` (no resolution has run
+    here yet), ``clean`` (resolutions ran and every claim was compatible) and
+    ``findings``. The first two leave the counts NULL rather than 0. Degrades to
+    the same UNMEASURED shape when the store is unreachable — an outage must not
+    render as "your sources agree".
+    """
+    empty = {
+        "conflicts": [], "gaps": [], "stats": {
+            "state": "unmeasured", "conflicts": None, "gaps": None,
+            "resolutions": 0, "clean_resolutions": 0, "cross_backend": None,
+            "last_run_at": "", "detail": "",
+        },
+        "filters": {"reasons": [], "backends": [], "kinds": []},
+        "actionable": {},
+    }
+    try:
+        from tools.cortex.finding_store import (
+            FINDING_CONFLICT, FINDING_GAP, filter_options, finding_stats,
+            list_findings,
+        )
+        conflicts = list_findings(tenant_id, finding_type=FINDING_CONFLICT,
+                                  limit=limit)
+        gaps = list_findings(tenant_id, finding_type=FINDING_GAP, limit=limit)
+        return {
+            "conflicts": conflicts,
+            "gaps": gaps,
+            "stats": finding_stats(tenant_id),
+            "filters": filter_options(conflicts + gaps),
+            # How many DocDrift findings already exist for each entity, so a
+            # conflict links to where it is ACTED ON rather than dead-ending here.
+            "actionable": _docdrift_counts(
+                [f["entity_label"] for f in conflicts + gaps]
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: cortex findings unavailable: %s", exc)
+        empty["stats"]["detail"] = f"finding store unavailable: {exc}"
+        return empty
+
+
+def _docdrift_counts(labels) -> dict:
+    """Open ``docmod_findings`` per entity label — the DocDrift handoff.
+
+    A conflict on this page and a finding on DocDrift are about the same entity
+    and have different jobs: this one says the sources disagree, that one is the
+    queue a redline is drafted from. Counting them here is what keeps the
+    disagreement actionable instead of terminal.
+    """
+    wanted = {str(v) for v in labels if v}
+    if not wanted:
+        return {}
+    counts: dict = {}
+    try:
+        conn = _conn()
+        try:
+            rows = _safe_rows(
+                conn,
+                "SELECT entity_label, COUNT(*) AS n FROM docmod_findings "
+                "GROUP BY entity_label",
+            )
+        finally:
+            conn.close()
+        for row in rows:
+            label = str(row.get("entity_label") or "")
+            if label in wanted:
+                counts[label] = int(row.get("n") or 0)
+    except Exception as exc:  # noqa: BLE001 — the handoff is best-effort
+        logger.debug("dic: docdrift finding counts unavailable: %s", exc)
+    return counts
 
 
 @dic_bp.route("/handoff")
@@ -2572,6 +2657,45 @@ def api_document_versions(doc_id):
 
 # ── API: Review (HITL) ────────────────────────────────────────────────────────
 
+def _record_hitl_decision(surface: str, item_id: str, decision: str, reviewer: str,
+                          details: dict | None = None) -> None:
+    """Record that a HUMAN disposed of an AI-produced proposal (cef-ui-03).
+
+    ONE audit event type, ``dic.hitl_decision``, with the surface namespaced in
+    ``action`` — ``docmod_finding.accepted``, ``dic_suggestion.rejected``,
+    ``dic_version.approved`` — following the ``migration_canvas`` precedent in
+    ``VALID_EVENT_TYPES`` rather than six near-identical types.
+
+    This is NOT a new approval path: it writes no state and decides nothing. The
+    existing routes call it, and every one of them calls it BEFORE the mutation
+    it authorises.
+
+    FAIL-CLOSED (``raise_on_error=True``), matching ``acoic._review_fragment``:
+    the workflow tables it accompanies (``dic_suggestions``, ``dic_versions``)
+    hold only the CURRENT status, so an approval that is not audited leaves no
+    evidence of who decided what, when. NIST AU-5 — an unrecorded authorisation
+    decision is an audit finding, so failing the decision is the safer outcome.
+    Machine-driven transitions stay best-effort elsewhere; only human decisions
+    gate on the audit write.
+
+    ``details['applied']`` describes the KIND of decision — whether this
+    disposition is the one that writes the proposal into the document — not a
+    runtime outcome. It is deterministic at the moment of authorisation, which
+    is when this row is written.
+    """
+    from tools.audit.audit_logger import log_event
+
+    tenant_id, classification = _security_context()
+    log_event(
+        event_type="dic.hitl_decision",
+        actor=reviewer or "unknown",
+        action=f"{surface}.{decision}",
+        details={"item_id": item_id, "tenant_id": tenant_id, **(details or {})},
+        classification=classification or "CUI",
+        raise_on_error=True,
+    )
+
+
 def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_id: str) -> None:
     """Persist a review note (best-effort)."""
     try:
@@ -2812,6 +2936,19 @@ def api_review_approve(item_id):
                 # not look like one that passed.
                 resp["cove_unrunnable"] = True
                 resp["cove_reason"] = cove_report.get("reason", "")
+            # cef-ui-03 — audited BEFORE the status moves, and fail-closed.
+            # dic_versions holds only the CURRENT status, so an approval that is
+            # not audited leaves no evidence of who published it. Every gate
+            # above returns 409 without reaching here, so this row is written
+            # only for a decision that was actually taken.
+            _record_hitl_decision(
+                "dic_version", item_id, "approved", reviewer,
+                {"version_id": item_id, "forced": bool(force),
+                 "placeholder_defects": len(placeholder_hits),
+                 "citation_defects": len(citation_hits),
+                 "cove_defects": len(cove_hits),
+                 "cove_unrunnable": bool(cove_report.get("unrunnable"))},
+            )
             conn.execute(
                 "UPDATE dic_versions SET status='approved' WHERE version_id=%s", (item_id,)
             )
@@ -2855,10 +2992,34 @@ def api_review_approve(item_id):
                                          cove_hits, reviewer, tenant_id)
         else:
             # Try ACOIC approve helper first.
+            #
+            # cef-ui-03: THE FALLBACK NOW AUDITS. It caught everything —
+            # including the fail-closed audit write inside `_review_fragment`,
+            # which is called with raise_on_error=True precisely so an
+            # unaudited approval cannot stand. The refusal came straight back
+            # here and this handler did the UPDATE anyway, unaudited, turning
+            # the strictest control on the path into a no-op. Not hypothetical:
+            # `dic.ssp_fragment.review` was not in VALID_EVENT_TYPES, so
+            # `log_event` raised ValueError on EVERY human approval and this
+            # handler swallowed it every single time.
+            #
+            # The `except Exception` stays — a narrower one would change how
+            # unrelated failures (a legacy fragment table missing the columns
+            # acoic reads) are handled, which is not this card's business. What
+            # changes is that the fallback records the decision itself, and
+            # fail-closed: there is no longer a branch through this route that
+            # approves without an audit row.
             try:
                 from tools.document_intelligence.acoic import approve_fragment
                 approve_fragment(item_id, reviewed_by=reviewer)
-            except Exception:
+            except Exception as exc:
+                logger.warning("dic approve: acoic approve_fragment unusable for "
+                               "%s (%s); falling back to a direct, audited UPDATE",
+                               item_id, exc)
+                _record_hitl_decision("dic_ssp_fragment", item_id, "approved",
+                                      reviewer, {"fragment_id": item_id,
+                                                 "path": "route_fallback",
+                                                 "acoic_error": str(exc)[:200]})
                 conn.execute(
                     "UPDATE dic_ssp_fragments SET status='approved', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
@@ -2909,14 +3070,27 @@ def api_review_reject(item_id):
     conn = _conn()
     try:
         if item_type == "version":
+            # cef-ui-03: a rejection is audited as deliberately as an approval.
+            # A surface that records only its positive outcome cannot answer
+            # "was this ever reviewed?", only "was it ever approved?".
+            _record_hitl_decision("dic_version", item_id, "rejected", reviewer,
+                                  {"version_id": item_id})
             conn.execute(
                 "UPDATE dic_versions SET status='rejected' WHERE version_id=%s", (item_id,)
             )
         else:
+            # The fallback audits — see api_review_approve for why.
             try:
                 from tools.document_intelligence.acoic import reject_fragment
                 reject_fragment(item_id, reviewed_by=reviewer)
-            except Exception:
+            except Exception as exc:
+                logger.warning("dic reject: acoic reject_fragment unusable for "
+                               "%s (%s); falling back to a direct, audited UPDATE",
+                               item_id, exc)
+                _record_hitl_decision("dic_ssp_fragment", item_id, "rejected",
+                                      reviewer, {"fragment_id": item_id,
+                                                 "path": "route_fallback",
+                                                 "acoic_error": str(exc)[:200]})
                 conn.execute(
                     "UPDATE dic_ssp_fragments SET status='rejected', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
@@ -3731,6 +3905,46 @@ def api_explorer_refresh():
         return jsonify({"error": str(exc)}), 500
 
 
+@dic_bp.route("/api/explorer/cortex-findings", methods=["GET"])
+def api_explorer_cortex_findings():
+    """Server-side filtering for the conflict and gap lists (cef-ui-02).
+
+    Query params: ``type`` (conflict|gap), ``entity``, ``reason``, ``backend``,
+    ``cross_backend`` (1 to keep only the disagreements that span more than one
+    backend), ``limit``.
+
+    ``reason`` and ``backend`` are matched in Python against the stored JSON
+    payloads rather than with SQLite-dialect JSON SQL at a runtime call site.
+
+    The response ALWAYS carries ``stats``, so a caller that receives an empty
+    list can still tell "nothing has been recorded" from "recorded, and your
+    sources agree". An error is a 500 with a reason, never an empty list.
+    """
+    tenant_id, _ = _security_context()
+    try:
+        from tools.cortex.finding_store import (
+            filter_options, finding_stats, list_findings,
+        )
+        findings = list_findings(
+            tenant_id,
+            finding_type=(request.args.get("type") or "").strip() or None,
+            entity=(request.args.get("entity") or "").strip(),
+            reason=(request.args.get("reason") or "").strip(),
+            backend=(request.args.get("backend") or "").strip(),
+            cross_backend_only=(request.args.get("cross_backend") or "") in ("1", "true"),
+            limit=min(int(request.args.get("limit", 200) or 200), 1000),
+        )
+        return jsonify({
+            "findings": findings,
+            "count": len(findings),
+            "stats": finding_stats(tenant_id),
+            "filters": filter_options(findings),
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: cortex findings query error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Analytics Page + API ─────────────────────────────────────────────────────
 
 @dic_bp.route("/analytics")
@@ -3933,7 +4147,60 @@ def api_suggestion_accept(suggestion_id: str):
 
     section_id = s.get("section_id", "")
     suggested_content = s.get("suggested_content", "")
-    user = _current_user()
+    data = request.get_json(silent=True) or {}
+    note = data.get("note", "")
+    user = data.get("reviewer") or _current_user()
+    tenant_id, classification = _security_context()
+
+    # cef-ui-03 — THE DECISION IS RECORDED BEFORE THE DOCUMENT IS TOUCHED.
+    #
+    # This route was the only writer of `dic_sections.content` for a proposal,
+    # and it applied the content FIRST and called `decide_suggestion` afterwards
+    # without checking what it returned. A decision-log write that failed — or
+    # that returned False because the suggestion was decided concurrently — left
+    # LLM-drafted prose in the document with no recorded human decision behind
+    # it, silently. Reordering makes the invariant structural: nothing reaches
+    # the document until the decision and its audit row are both on disk.
+    #
+    # The residual case is the mirror image and is deliberately preferred: a
+    # decision recorded whose apply then fails is VISIBLE (the reviewer gets a
+    # 500 naming both facts) and honest — the human did authorise it.
+    try:
+        recorded = decide_suggestion(
+            suggestion_id, "accepted", user,
+            note=note, tenant_id=tenant_id, classification=classification,
+        )
+    except Exception as exc:
+        logger.warning("dic suggestion accept: decision write failed for %s: %s",
+                       suggestion_id, exc)
+        recorded = False
+    if not recorded:
+        return jsonify({
+            "error": "decision_not_recorded",
+            "message": ("The accept decision could not be recorded, so the "
+                        "proposal was NOT applied to the document."),
+            "suggestion_id": suggestion_id,
+            "decision_recorded": False,
+            "applied": False,
+        }), 500
+    try:
+        _record_hitl_decision(
+            "dic_suggestion", suggestion_id, "accepted", user,
+            {"suggestion_id": suggestion_id, "section_id": section_id,
+             "doc_id": s.get("doc_id"), "canvas_source": s.get("canvas_source"),
+             "applied": True},
+        )
+    except Exception as exc:
+        logger.warning("dic suggestion accept: audit write failed for %s: %s",
+                       suggestion_id, exc)
+        return jsonify({
+            "error": "decision_not_audited",
+            "message": ("The accept decision could not be audited, so the "
+                        "proposal was NOT applied to the document."),
+            "suggestion_id": suggestion_id,
+            "decision_recorded": True,
+            "applied": False,
+        }), 500
 
     # Apply content to the section (reuse section update logic)
     conn = _conn()
@@ -3949,7 +4216,10 @@ def api_suggestion_accept(suggestion_id: str):
         )
         conn.commit()
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        # The decision and its audit row already stand — say so, rather than
+        # returning a bare error a reviewer would read as "nothing happened".
+        return jsonify({"error": str(exc), "suggestion_id": suggestion_id,
+                        "decision_recorded": True, "applied": False}), 500
     finally:
         conn.close()
 
@@ -3964,16 +4234,6 @@ def api_suggestion_accept(suggestion_id: str):
         )
     except Exception:
         pass
-
-    # Record the accept decision (marks suggestion as accepted)
-    data = request.get_json(silent=True) or {}
-    note = data.get("note", "")
-    _, classification = _security_context()
-    tenant_id, _ = _security_context()
-    decide_suggestion(
-        suggestion_id, "accepted", user,
-        note=note, tenant_id=tenant_id, classification=classification,
-    )
 
     from tools.document_intelligence.conflict_detector import compute_hash
     return jsonify({
@@ -4003,7 +4263,7 @@ def api_suggestion_reject(suggestion_id: str):
 
     data = request.get_json(silent=True) or {}
     note = data.get("note", "")
-    user = _current_user()
+    user = data.get("reviewer") or _current_user()
     tenant_id, classification = _security_context()
 
     result = decide_suggestion(
@@ -4011,7 +4271,18 @@ def api_suggestion_reject(suggestion_id: str):
         note=note, tenant_id=tenant_id, classification=classification,
     )
     if not result:
-        return jsonify({"error": "could not record rejection"}), 500
+        return jsonify({"error": "could not record rejection",
+                        "suggestion_id": suggestion_id,
+                        "decision_recorded": False, "applied": False}), 500
+    # cef-ui-03: a rejection is audited as deliberately as an acceptance — a
+    # surface that records only its positive outcome cannot answer "was this
+    # ever reviewed?", only "was it ever approved?".
+    _record_hitl_decision(
+        "dic_suggestion", suggestion_id, "rejected", user,
+        {"suggestion_id": suggestion_id, "section_id": s.get("section_id"),
+         "doc_id": s.get("doc_id"), "canvas_source": s.get("canvas_source"),
+         "applied": False},
+    )
 
     return jsonify({"status": "rejected", "suggestion_id": suggestion_id})
 

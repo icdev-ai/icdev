@@ -18,6 +18,13 @@ copy of this ladder anywhere.
 
   * ``pr_watcher._sweep_unlinked_prs`` consumes it to DECIDE (merges on ``ready``).
   * ``python -m tools.ci.merge_readiness`` consumes it to REPORT (never merges).
+  * ``pr_watcher.poll_once`` (the TASK-LINKED merge path) consumes
+    ``hold_labels`` / ``held_label_reason`` — kpr-watch-04. It runs a longer
+    ladder of its own (gates, dependencies, resumes, rebases) so it cannot call
+    the whole table, but the ONE rung a human can reach from outside must not
+    mean two different things depending on which door the work came through.
+    It had meant nothing at all there: the list was referenced at exactly one
+    site, and ``_GH_JSON_FIELDS`` never even requested ``labels``.
 
 PURITY. ``classify_merge_readiness`` does no I/O: no subprocess, no database, no
 network, no clock, no LLM. It takes the parsed ``gh pr list --json`` dict plus
@@ -183,6 +190,39 @@ def protected_hits(
     return sorted(hits)
 
 
+def hold_labels(pr: Dict[str, Any]) -> List[str]:
+    """The hold labels this PR carries, lower-cased and sorted. [] when clean.
+
+    ONE EXTRACTION, TWO MERGE PATHS (kpr-watch-04). The list itself already
+    lived here, and it was still possible for a label to mean two different
+    things: ``classify_merge_readiness`` read it for the UNLINKED sweep, and the
+    task-linked auto-merge path in ``pr_watcher.poll_once`` never looked at
+    labels at all — ``_GH_JSON_FIELDS`` did not even request them. So a human
+    labelling a ``kanban/<task-id>`` PR ``do-not-merge`` got no warning and no
+    effect, and the PR merged itself. A shared LIST is not a shared CHECK: the
+    linked path needs to ask this question outside the ladder (it runs a
+    different, longer ladder of its own), so the question is a function both
+    sides call rather than a second transcription of ``.get("labels")``.
+
+    Accepts the ``gh pr view --json labels`` shape — a list of
+    ``{"name": ...}`` dicts. A bare string is accepted too, because
+    ``gh`` is not the only thing that ever builds one of these records and
+    silently ignoring a label is the failure mode this whole card is about.
+    """
+    names = set()
+    for lbl in (pr.get("labels") or []):
+        name = lbl.get("name") if isinstance(lbl, dict) else lbl
+        name = (str(name or "")).strip().lower()
+        if name:
+            names.add(name)
+    return sorted(names & NO_AUTOMERGE_LABELS)
+
+
+def held_label_reason(held: Iterable[str]) -> str:
+    """The one sentence both merge paths report for a hold label."""
+    return "carries hold label(s): " + ", ".join(held)
+
+
 def classify_merge_readiness(
     pr: Dict[str, Any],
     *,
@@ -272,12 +312,9 @@ def classify_merge_readiness(
         # never un-drafted: for a human the draft IS the "not ready" signal.
         return MergeReadiness(DRAFT, "draft -- mark it ready for review to land it")
 
-    labels = {(lbl.get("name") or "").strip().lower()
-              for lbl in (pr.get("labels") or [])}
-    held = sorted(labels & NO_AUTOMERGE_LABELS)
+    held = hold_labels(pr)
     if held:
-        return MergeReadiness(
-            HELD_LABEL, "carries hold label(s): " + ", ".join(held))
+        return MergeReadiness(HELD_LABEL, held_label_reason(held))
 
     base = (pr.get("baseRefName") or "").strip()
     if base != default_branch:
@@ -687,6 +724,38 @@ def linked_pr_tasks(get_connection=None) -> Dict[str, Dict[str, Any]]:
         out[url] = {"task_id": task.get("id"),
                     "task_status": task.get("status")}
     return out
+def load_protected_paths(config_path=None) -> List[str]:
+    """`protected_paths` from args/pr_watcher_config.yaml, or [] if unreadable.
+
+    Read from the WATCHER's config rather than a second list of its own: two
+    lists would drift, and a report that names a different set than the merger
+    enforces is the defect this function exists to close.
+    """
+    try:
+        import yaml
+    except Exception:  # noqa: BLE001 — a report must not require pyyaml
+        return []
+    path = config_path or (REPO_ROOT / "args" / "pr_watcher_config.yaml")
+    try:
+        data = yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        return []
+    return [str(p).strip() for p in (data.get("protected_paths") or [])
+            if str(p or "").strip()]
+
+
+def _changed_files(pr: Dict[str, Any]) -> Optional[List[str]]:
+    """Changed paths from a ``gh pr list --json ...,files`` record.
+
+    ``None`` when the record carries no ``files`` key at all, which is the
+    honest answer for a ``--from-json`` dump taken before that field was
+    fetched, and which FAILS CLOSED at the protected-path rung — the same
+    answer the merger gives when it cannot see a PR's files.
+    """
+    if "files" not in pr:
+        return None
+    return [str(f.get("path") or "") for f in (pr.get("files") or [])
+            if isinstance(f, dict) and f.get("path")]
 
 
 def build_report(
@@ -699,6 +768,7 @@ def build_report(
     max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
     linked_tasks: Optional[Dict[str, Dict[str, Any]]] = None,
     now: Optional[_dt.datetime] = None,
+    protected_paths: Iterable[str] = (),
 ) -> Dict[str, Any]:
     """Classify every PR. Pure — takes data, returns data.
 
@@ -720,24 +790,41 @@ def build_report(
     and without it every kanban PR reports "a task owns it" and nothing about
     whether it is red, stale, or simply waiting. This is not a second copy of
     the ladder — it is the one ladder, asked a second question.
+
+    ``protected_paths`` (kpr-watch-10) must be passed for the report to
+    evaluate the rung the MERGER evaluates. It was not, so a PR the watcher was
+    actively refusing as ``protected_path`` was reported ``linked`` — the report
+    describing a merge policy the merger does not have, which is the one thing
+    this module's docstring promises cannot happen. A PR record with no
+    ``files`` key fails closed, exactly as it does at the merge, so the report
+    cannot be more optimistic than the merger either.
     """
     linked = frozenset((u or "").strip() for u in linked_urls)
     task_map = dict(linked_tasks or {})
     behind_map = dict(behind_by_url or {})
     reference = now or _dt.datetime.now(_dt.timezone.utc)
+    guarded = [p for p in (protected_paths or ()) if str(p or "").strip()]
     rows: List[Dict[str, Any]] = []
     counts: Dict[str, int] = {}
     pipeline_counts: Dict[str, int] = {}
     for pr in prs:
         url = (pr.get("url") or "").strip()
         behind = behind_map.get(url)
+        changed = _changed_files(pr)
         verdict = classify_merge_readiness(
             pr, default_branch=default_branch, linked_urls=linked,
-            behind_by=behind, max_behind_commits=max_behind_commits)
+            behind_by=behind, max_behind_commits=max_behind_commits,
+            changed_files=changed, protected_paths=guarded)
+        # BOTH verdicts get the protected-path inputs (kpr-watch-03 x
+        # kpr-watch-10). The diagnosis asks the SAME ladder "why would this not
+        # merge, setting aside who owns it" — answering that without the rung
+        # the merger actually enforces would reintroduce the exact gap
+        # kpr-watch-10 closed, one column over.
         diagnosis = (
             verdict if verdict.state != LINKED else classify_merge_readiness(
                 pr, default_branch=default_branch, linked_urls=(),
-                behind_by=behind, max_behind_commits=max_behind_commits))
+                behind_by=behind, max_behind_commits=max_behind_commits,
+                changed_files=changed, protected_paths=guarded))
         counts[verdict.state] = counts.get(verdict.state, 0) + 1
         pipeline_counts[diagnosis.state] = pipeline_counts.get(
             diagnosis.state, 0) + 1
@@ -923,10 +1010,16 @@ def collect_report(
     # TWO PHASES -- see main(). The staleness rung is the only one that costs a
     # forge round-trip, so it is measured only for the PRs a behind-count could
     # still change the verdict of.
+    # The dashboard surface evaluates the SAME protected-path rung the merger
+    # does (kpr-watch-10). Without it this report answers `linked` for a PR the
+    # watcher is actively refusing — which is the defect kpr-watch-10 closed,
+    # reappearing one surface over. Supplied only when the records carry
+    # `files`, for the reason main() gives.
+    guarded = load_protected_paths() if any("files" in pr for pr in prs) else []
     report = build_report(
         prs, default_branch=default_branch, linked_urls=linked,
         linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
-        max_behind_commits=max_behind_commits)
+        max_behind_commits=max_behind_commits, protected_paths=guarded)
     if measure_behind:
         ready_urls = {r["url"] for r in report["prs"] if r["state"] == READY}
         if ready_urls:
@@ -936,7 +1029,8 @@ def collect_report(
             report = build_report(
                 prs, default_branch=default_branch, linked_urls=linked,
                 linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
-                behind_by_url=behind, max_behind_commits=max_behind_commits)
+                behind_by_url=behind, max_behind_commits=max_behind_commits,
+                protected_paths=guarded)
     # Why the board was unreadable, not merely that it was. A degraded report
     # that cannot say what degraded it sends the reader to the wrong fix.
     report["linked_lookup_error"] = linked_lookup_error

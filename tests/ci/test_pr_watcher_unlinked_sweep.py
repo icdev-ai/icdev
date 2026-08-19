@@ -38,7 +38,8 @@ class _W(pw.PRWatcher):
         self.merged = []
         self._pr_list_runner = lambda *a, **k: type(
             "P", (), {"returncode": 0, "stdout": json.dumps(self._prs), "stderr": ""})()
-        self._auto_merge = lambda url: (self.merged.append(url) or True)
+        # `**_kw`: kpr-watch-04 hands `_auto_merge` the PR record too.
+        self._auto_merge = lambda url, **_kw: (self.merged.append(url) or True)
         self._default_branch = lambda: "main"
         self._audit = lambda action: None
 

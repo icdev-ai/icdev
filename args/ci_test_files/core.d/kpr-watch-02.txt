@@ -1,0 +1,4 @@
+# kpr-watch-02 -- alarm on eligible-but-unmerged (the merger has stalled).
+# The decision table, the cause attribution, the two age sources, and the AST
+# proof that the observer never becomes a second merger.
+tests/test_merge_stall.py

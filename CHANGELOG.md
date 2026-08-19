@@ -6,6 +6,13 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Removed
+- **Four extension points that nothing dispatched: `memory_save_before`, `memory_save_after`, `compliance_check_before`, `compliance_check_after`.** They were declared in `ExtensionPoint` from the beginning and never wired to a dispatcher — public names with no behaviour behind them. `ExtensionPoint` now declares six points, and `tools/extensions/liveness.py` reports a dead count of 0.
+
+  **ACTION FOR SITE OPERATORS.** Extensions are auto-discovered drop-ins loaded from the `scan_directories` in `args/extension_config.yaml`, which includes a project-root `extensions/` directory that is **not** part of this repository. A tenant or site-local drop-in naming one of the four removed points is therefore invisible to this project and cannot be migrated for you. **Such a drop-in will stop loading.** It is not a startup failure — both loaders resolve a point by value inside `try/except ValueError`, and the per-file load is wrapped in `except Exception`, so the extension is skipped with a log line and the platform starts normally — but the extension will silently stop doing its job unless you look. Search your `extensions/` tree for these four names before upgrading; if you have one, the surviving points are `tool_execute_before/after`, `chat_message_before/after` and `agent_start/end`.
+
 ## [1.2.42] - 2026-07-27
 
 ### Fixed

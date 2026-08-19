@@ -113,6 +113,25 @@ CREATE TABLE IF NOT EXISTS dic_suggestion_decisions (
     tenant_id     TEXT,
     classification TEXT NOT NULL DEFAULT 'CUI'
 );
+-- cef-ui-03: accept/reject now audit the human decision fail-closed, BEFORE the
+-- section is touched, so audit_trail is part of these routes' substrate. Kept in
+-- step with tests/conftest.py's audit_trail, which mirrors the LIVE PG shape.
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id     TEXT,
+    event_type     TEXT NOT NULL,
+    actor          TEXT NOT NULL,
+    action         TEXT NOT NULL,
+    details        TEXT,
+    affected_files TEXT,
+    classification TEXT DEFAULT 'CUI',
+    ip_address     TEXT,
+    session_id     TEXT,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    hash           TEXT,
+    previous_hash  TEXT,
+    signature      TEXT
+);
 CREATE TABLE IF NOT EXISTS dic_edit_history (
     edit_id       TEXT PRIMARY KEY,
     section_id    TEXT NOT NULL,
@@ -165,8 +184,19 @@ def _make_shim(db_path: str) -> _ShimConn:
     return _ShimConn(raw)
 
 
+def _audit_actions(db_path: str) -> list[str]:
+    """The HITL decision actions recorded against this fixture's audit_trail."""
+    conn = sqlite3.connect(db_path)
+    try:
+        return [r[0] for r in conn.execute(
+            "SELECT action FROM audit_trail WHERE event_type = 'dic.hitl_decision' "
+            "ORDER BY id").fetchall()]
+    finally:
+        conn.close()
+
+
 @pytest.fixture()
-def app(db):
+def app(db, monkeypatch):
     flask_app = Flask(
         __name__,
         template_folder=str(Path(__file__).parent.parent / "tools" / "dashboard" / "templates"),
@@ -175,6 +205,13 @@ def app(db):
     flask_app.config["SECRET_KEY"] = "test-secret"
 
     db_path = db
+    # audit_logger binds `get_connection` at import and is not one of the
+    # patched seams below, so point the ambient storage at this fixture's own
+    # SQLite file instead of stubbing the writer out. The audit row these routes
+    # now write is then a real one, written by the real writer.
+    import tools.db.storage as _storage
+    monkeypatch.setenv("ICDEV_DB_PATH", db_path)
+    monkeypatch.setattr(_storage, "DB_PATH", db_path, raising=False)
 
     def _fake_conn():
         return _make_shim(db_path)
@@ -317,6 +354,9 @@ def test_accept_returns_200(client, db):
     data = r.get_json()
     assert data["status"] == "accepted"
     assert data["suggestion_id"] == sid
+    # cef-ui-03: the decision is audited BEFORE the section is touched, so an
+    # accept can never reach the document unrecorded.
+    assert _audit_actions(db) == ["dic_suggestion.accepted"]
 
 
 def test_accept_updates_section_content(client, db):
@@ -393,6 +433,8 @@ def test_reject_returns_200(client, db):
     r = _post(client, f"/document-intelligence/api/suggestions/{sid}/reject", {"note": "Outdated."})
     assert r.status_code == 200
     assert r.get_json()["status"] == "rejected"
+    # cef-ui-03: a rejection is audited as deliberately as an acceptance.
+    assert _audit_actions(db) == ["dic_suggestion.rejected"]
 
 
 def test_reject_marks_suggestion_rejected(client, db):

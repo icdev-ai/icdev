@@ -1,0 +1,7 @@
+{
+  "description": "pr merge eligibility events",
+  "date": "2026-08-19",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

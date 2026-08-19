@@ -60,10 +60,24 @@ class ExtensionPoint(str, Enum):
     CHAT_MESSAGE_AFTER = "chat_message_after"
     AGENT_START = "agent_start"
     AGENT_END = "agent_end"
-    MEMORY_SAVE_BEFORE = "memory_save_before"
-    MEMORY_SAVE_AFTER = "memory_save_after"
-    COMPLIANCE_CHECK_BEFORE = "compliance_check_before"
-    COMPLIANCE_CHECK_AFTER = "compliance_check_after"
+
+    # REMOVED 2026-08-18 (hcx-live-gate-01): memory_save_before/after and
+    # compliance_check_before/after. Declared from the beginning, dispatched by
+    # nothing, and so a public name with no behaviour behind it — the defect
+    # CLAUDE.md calls "a declared capability that is never consumed", wearing the
+    # extension seam's clothes. Measured by tools/extensions/liveness.py:
+    # compliance_check_* were `dead` (no dispatcher, no handler site at all) and
+    # memory_save_* were `handlers_only`, their sole handler site being a test.
+    #
+    # A site-local drop-in naming a removed point is CONTAINED, not fatal. Both
+    # loaders resolve the point by VALUE inside a try/except and log — an unknown
+    # name in a directory is skipped, an unknown key in EXTENSION_HOOKS is
+    # warned, and the whole module load is wrapped in `except Exception` — so the
+    # extension stops loading and the platform starts. That is asserted in
+    # tests/test_extension_point_removal_is_contained.py rather than assumed,
+    # because the gate that held this decision recorded the risk as "a hard
+    # startup failure for that deployment, not a warning" and that is not what
+    # the loaders do.
 
 
 # ---------------------------------------------------------------------------

@@ -183,6 +183,7 @@ grandfathered:
   #                      (dashboard/chat_manager.py, nine builtin handlers),
   #                      agent_start / agent_end (hcx-live-03, agent_runtime/
   #                      runtime.py + chat_manager.py)
+  #   (RESOLVED hcx-live-gate-01, 2026-08-18: all four removed.)
   #   handlers_only (2)  memory_save_before / memory_save_after — a handler can
   #                      register, nothing dispatches
   #   dead (2)           compliance_check_before / compliance_check_after —

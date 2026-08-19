@@ -135,17 +135,44 @@ under `dynamic_dispatch_sites` instead of being credited to every point.
 | `chat_message_after` | live | `tools/dashboard/chat_manager.py` (+ mirror) |
 | `agent_start` | dispatcher_only | **`tools/agent_runtime/runtime.py`** + `chat_manager.py` |
 | `agent_end` | dispatcher_only | **`tools/agent_runtime/runtime.py`** + `chat_manager.py` |
-| `memory_save_before` | **dead** | — |
-| `memory_save_after` | **dead** | — |
-| `compliance_check_before` | **dead** | — |
-| `compliance_check_after` | **dead** | — |
+
+**Removed 2026-08-18 (hcx-live-gate-01):** `memory_save_before`,
+`memory_save_after`, `compliance_check_before` and `compliance_check_after`.
+They were declared from the beginning and dispatched by nothing, so they were
+public names with no behaviour behind them. `ExtensionPoint` now declares six
+points and `tools/extensions/liveness.py` reports a dead count of **0** —
+`args/extension_liveness.yaml`'s census is empty, which is what a census that
+only ever shrinks looks like when it finishes.
 
 `dispatcher_only` means the point fires and nothing is listening. That is not
 the same defect as `dead`, and the tool does not merge them: a point with a
 dispatcher works the moment somebody drops a handler in, while a point without
 one is inert whatever they drop.
 
-## Why the four are reported and not deleted
+## Why the four were deleted rather than wired
+
+**Resolved 2026-08-18 by a human decision, as the section below required.** The
+choice was between deleting them, wiring `memory_save_*` into
+`tools/memory/memory_write.py`, and wiring `compliance_check_*`. Deletion is the
+sanctioned resolution under CLAUDE.md — *wire the capability to a consumer or
+stop declaring it* — and the two wiring options were each a new governance
+surface rather than a wiring change: `memory_save_before` declared
+`allow_modification: true`, meaning a handler could suppress a memory write, and
+the compliance gates are the controls the platform's ATO evidence rests on.
+
+**The stated risk was smaller than recorded, and was measured before acting.**
+The reasoning preserved below says a site-local drop-in naming a removed member
+becomes *"an AttributeError at import — a hard startup failure for that
+deployment, not a warning."* That is not what the loaders do. Both discovery
+paths resolve a point by **value** inside `try/except ValueError`, and the whole
+per-file load sits inside `except Exception` with a log line, so such a drop-in
+**fails to load and the platform starts normally**. The consequence is a
+silently disabled extension — hence the release note — not a dead deployment.
+`tests/test_extension_point_removal_is_contained.py` is the standing proof, and
+it asserts the property rather than the four names, so the next removal inherits
+it.
+
+## Original reasoning: why the four were reported and not deleted
 
 Deleting a declared-but-unconsumed capability **is** the sanctioned resolution
 under CLAUDE.md, and it may well be right for all four. It is not a call an

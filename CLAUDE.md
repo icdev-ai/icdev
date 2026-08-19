@@ -219,6 +219,85 @@ python tools/cache_savings/by_provider.py --provider anthropic --json
 # items are still `queued`. This card migrated the evidence chain, not the
 # trigger.
 
+# DIC document generation asks ONE governed seam, and screens what it wrote (#cef-di-05)
+# A library, no CLI. Import it:
+#   from icdev.tools.document_intelligence.docgen_evidence import (
+#       resolve_evidence, screen_draft)
+#   bundle = resolve_evidence("network transport SOP", collection_id="default")
+#   screen = screen_draft(drafted_prose)   # None means NOT SCREENED, not clean
+# Toggle: `cortex.enabled` in args/dic_docgen_config.yaml -- DEFAULT OFF, and off
+# means the seam is NEVER consulted, so the rollback is a flag flip and not a
+# merge revert. What migrated is the one retrieval line in each of
+# doc_generator.generate_document and .regenerate_section -- what the routes
+# POST /api/generate and POST /api/generate/section call. The seam hands back
+# real `DICSearchResult` objects, so EVERYTHING downstream of retrieval (the
+# evidence blocks, the verifier replay, the persisted citations, the quality
+# gate's `allowed_source_ids`) is untouched, and `chunk_id` is the Cortex
+# citation's `source_id`, so the existing `[source: chunk N]` contract holds
+# without touching a prompt. `GovernedCitation` SUBCLASSES the DIC `Citation`
+# and its `to_dict()` is a SUPERSET, so `citations_json` GAINS `source_type` /
+# `source_table` / `provenance_id` / `evidence_path` and loses nothing.
+#
+# THE CURRENCY GUARD IS THE POINT, and it catches what nothing else can.
+# `verifier.verify` asks whether a claim is SUPPORTED by the retrieved
+# evidence -- and a 2019 runbook fully supports "configure the enclave to use
+# TLS 1.1". The verifier passes it, the attribution score passes it, the
+# confabulation detector passes it, and the document ships reintroducing a
+# protocol the estate spent two years removing. `screen_draft` passes the
+# DRAFTED PROSE back through `cortex.resolve`, whose pack assessments are
+# DETERMINISTIC (TRUST rule 1 -- no LLM decides what is deprecated). Measured on
+# the live canvas 2026-08-18, real packs, real prose: `TLS 1.1` -> superseded
+# (crypto_protocols, rule:crypto-tls-02, successor "TLS 1.2 or higher (prefer
+# TLS 1.3)") and `Catalyst 6500` -> deprecated (network_hardware,
+# mc_net_eol:cisco:Catalyst 6500). A flagged section is annotated with a cited
+# advisory, has `verified` CLEARED whatever the verifier said, and carries a
+# `currency_verdict` citation. `on_deprecated: abstain` drops the prose instead.
+# `unknown` NEVER trips it -- that means no pack RECOGNISED the entity, which is
+# a gap, and treating it as a finding would flag every draft on the board.
+# `screen_draft` returning None means the screen did NOT RUN; `citation_report.
+# currency.screened` is what tells that apart from "ran, found nothing", and the
+# two must never be read as one.
+#
+# THE MEASURED CAVEAT -- the governed path is FASTER and THINNER here.
+# Same query ("network transport security SOP"), live canvas 2026-08-18:
+#   legacy DICSearchEngine  10 hits, 17.5s, chunk bodies 627-8021 chars
+#   cortex.resolve (cold)    3 hits, 10.3s, snippets capped at 200 chars,
+#                            all from dic_documents; `graph` and `kb` errored
+#   cortex.resolve (warm)    3 hits, 10.6s; `rag` errored too
+# So enabling the toggle on THIS deployment today hands the drafter ~600 chars
+# of evidence where the legacy chain gave ~11k. That is not a fallback case --
+# 3 hits is thin, NOT empty, so `fallback_on_empty` (default true) does not
+# fire. The abandoned backends are RECORDED on every section under
+# `citation_report.evidence_detail.backend_errors` instead, so a thin run reads
+# as an infrastructure event and not as a claim about the corpus. The 200-char
+# cap is search_service.py's citation snippet, deliberate for the same reason as
+# cef-di-03: the text must BE the citation's snippet. Do NOT "fix" the timeouts
+# by raising the global budgets in args/cortex_config.yaml -- every Cortex
+# consumer shares them. The card's value here is the currency guard and the
+# governed provenance, NOT evidence volume; weigh that before flipping the flag.
+# Budget the screen too: it costs ~12s per section on this deployment, so a
+# 6-section document pays ~75s. `max_resolves_per_run` (default 50) bounds it
+# and refused asks are COUNTED in `run_stats()`, never silent.
+#
+# Which chain produced a section is recorded on it as
+# `citation_report.evidence_path`: cortex | cortex_empty_fallback | legacy.
+# `pack_evidence` citations are dropped at the seam. The advisory carries NO
+# `[source: chunk ...]` tag -- a pack's evidence ref is a synthetic key
+# (`entity_currency:nist`), not a retrievable chunk id, so tagging it would be a
+# hallucinated citation manufactured by the trust guard itself; the verdict is
+# cited STRUCTURALLY instead.
+# The module ships byte-identical in BOTH trees and they are separate module
+# objects with separate thread-local run state. Reach it through
+# doc_generator._evidence_module() (icdev first) -- in a test, patch the copy
+# that function returns, and patch EVERY alias of tools.cortex.api.
+# NOT migrated, on purpose: the Chain-of-Debate paths (ChainOrchestrator in
+# _cot_generate / _cod_compress -- they consume an evidence STRING and work
+# identically either way, still behind ICDEV_DIC_COT_ENABLED), the
+# "Source document content:" query-scrape fallback (it never went near
+# retrieval), and regenerate_section's dic_sections / dic_versions row reads --
+# EXACT primary-key lookups, and a ranked seam cannot return "the section
+# before this one".
+
 # DIC grounded search asks ONE governed seam for its candidates (#cef-di-04)
 # A library, no CLI. Import it:
 #   from icdev.tools.document_intelligence.search_evidence import resolve_evidence
@@ -277,6 +356,141 @@ python tools/cache_savings/by_provider.py --provider anthropic --json
 # answer() gained a `clearance` parameter in the same change: it had always
 # called search() with NO clearance, so a synthesized answer could be composed
 # over evidence search() itself would have withheld.
+
+# HITL approve/reject for a resolve-produced proposal — EXISTING routes (#cef-ui-03)
+# No CLI and NO NEW ROUTE. The decision surface is frozen at the eight routes
+# `tests/docmod/test_hitl_decision_wiring.py::_DECISION_ROUTES` enumerates; a
+# ninth fails that test.
+#   POST /document-intelligence/api/modernization/findings/<id>/resolve
+#        {"disposition": "accepted"|"rejected", "reviewer": "...", "note": "..."}
+#   POST /document-intelligence/api/suggestions/<id>/accept | /reject
+#   POST /document-intelligence/api/review/<id>/approve | /reject
+#
+# A REDLINE PROPOSAL HAS TWO IDENTITIES AND THEY WERE NEVER CONNECTED. The
+# TRUST-gated drafter writes a `docmod_findings` state row (the DISPOSITION
+# door, `/resolve`) AND a `dic_suggestions` row (the APPLY door,
+# `/api/suggestions/<id>/accept`, the only writer of `dic_sections.content`).
+# Measured on the live PG board 2026-08-18: 49 findings in `redline_drafted`,
+# 49 suggestions all `pending`, and ZERO rows in `dic_suggestion_decisions` —
+# nobody had ever decided anything, and rejecting a finding left its proposal
+# fully applyable through the other door.
+#
+# THE CASCADE IS ASYMMETRIC, ON PURPOSE — it only ever REMOVES an apply
+# capability. `rejected` also rejects the linked pending proposal through the
+# existing `decide_suggestion` seam, so a declined redline can never afterwards
+# be applied. `accepted` leaves the proposal PENDING and returns
+# `proposal.apply_url`: accepting a FINDING means "yes, this document is
+# stale", NOT authorisation to write LLM prose into the document. Auto-applying
+# there is exactly the "never auto-apply" prohibition. A cascade that fails is
+# reported as `proposal.cascade_failed`, never silently.
+#
+# THE APPLY DOOR RECORDS THE DECISION BEFORE IT TOUCHES THE DOCUMENT. It used
+# to UPDATE `dic_sections` first and call `decide_suggestion` afterwards
+# WITHOUT CHECKING ITS RETURN — so a failed (or already-decided) decision left
+# drafted prose in the document with no recorded human decision, silently. The
+# order is now decision -> audit -> apply, each fail-closed, and the response
+# says `decision_recorded` / `applied` separately so the residual case (decided,
+# apply failed) is visible rather than guessed at.
+#
+# ACCEPT AND REJECT ARE BOTH AUDITED, at every door: one event type
+# `dic.hitl_decision` with the surface namespaced in `action`
+# (`docmod_finding.accepted`, `dic_suggestion.rejected`, `dic_version.approved`,
+# `dic_ssp_fragment.approved`), following the `migration_canvas` precedent
+# rather than six types. `_record_hitl_decision` in blueprint.py is the one
+# writer; it is FAIL-CLOSED (`raise_on_error=True`) and called BEFORE the
+# mutation it authorises, because `dic_suggestions` / `dic_versions` hold only
+# the CURRENT status and an unaudited approval leaves no evidence of who
+# decided. A surface that records only its POSITIVE outcome can answer "was
+# this approved?" but never "was this reviewed?" — hence both legs.
+#
+# TWO PRE-EXISTING DEFECTS FIXED ON THE WAY, and they are the same defect:
+# `acoic._review_fragment` has written every human SSP-fragment decision under
+# `dic.ssp_fragment.review` since it was authored, and that name was NEVER in
+# `VALID_EVENT_TYPES` — so `log_event` raised `ValueError` on its first line,
+# before touching the database, on EVERY approval. It passes
+# `raise_on_error=True` precisely so an unaudited approval cannot stand; and
+# `blueprint.py`'s `except Exception:` fallback caught that refusal and ran the
+# UPDATE anyway, unaudited. Both names are admitted by migration
+# 20260819021003, and the fallback now records the decision itself (the broad
+# `except` stays — narrowing it would change how an unrelated legacy-schema
+# failure is handled, which is not this card's business). There is no longer a
+# branch through these routes that approves without an audit row.
+#
+# The redline drafter is UNTOUCHED — the TRUST chain (hallucinated citation =>
+# hard block, out-of-candidate replacement => hard block, reasoning-residue
+# scrub, confidence bands, provenance) still runs upstream of every door, so a
+# blocked draft never becomes a `dic_suggestions` row and there is nothing to
+# approve. Asserted, not assumed.
+# NOT wired, on purpose: `/api/sections/<id>/approve|reject` (section-level
+# editing state, not a proposal) and `/api/modernization/claims/<id>/reject`
+# (a claim, which has no drafted replacement to apply).
+# A conflict/gap the request DIDN'T take with it, browsable on Explorer (#cef-ui-02)
+# A library, no CLI. Import it:
+#   from tools.cortex.finding_store import list_findings, finding_stats
+#   stats = finding_stats("default")        # state: disabled|unmeasured|clean|findings
+#   rows  = list_findings("default", finding_type="conflict")
+# UI: /document-intelligence/explorer -> "Cross-Source Conflicts & Gaps"
+# API: GET /document-intelligence/api/explorer/cortex-findings?type=gap&reason=&backend=
+# Toggle: `resolve.persist_findings` in args/cortex_config.yaml -- default ON,
+# because the surface renders nothing without it and an empty Explorer that
+# LOOKS like a clean bill of health is the defect this card exists to prevent.
+# Migration 20260819030255.
+#
+# cef-rsv-02 made a cross-source disagreement COMPUTABLE and cef-rsv-03 CITED
+# it -- and both then travelled on the CortexResolution the caller already held
+# and NOWHERE ELSE. So the only reader of a finding was whatever code happened
+# to trigger the resolution: a docmod sweep, a DocDrift draft screen, an MCP
+# verb. A conflict is a finding a HUMAN adjudicates and a gap is a data-quality
+# ticket, and neither is actionable if it dies with the request. `record_findings`
+# runs in `resolver.resolve` right after `register_resolution`.
+#
+# A PROJECTION, NOT AN AUDIT TABLE. One upserted row per (tenant, entity,
+# finding), so a conflict observed on forty resolutions is ONE disagreement with
+# `seen_count` 40 -- forty rows would render as forty findings. A conflict whose
+# claimed VALUES change is a NEW finding, because what a human adjudicated is no
+# longer what is on the table. Deliberately NOT in APPEND_ONLY_TABLES; the
+# immutable record of a resolution is the source_citation_registry row
+# cef-rsv-03 already writes.
+#
+# IT STORES NO WINNER, and the page renders none. There is no `resolved_value`,
+# `consensus` or score column in FINDING_COLUMNS; every side is persisted and
+# rendered whole with its OWN backend, source, source_id, source_table, as_of,
+# authoritative, confidence and extraction lane, side by side, under a standing
+# "unresolved by design" note. `TestNoSilentWinner` asserts that against the
+# COLUMN LIST and the round-tripped row, not one hand-built payload, so a field
+# that merely happened to be unset in a fixture cannot ship. Authority is
+# RECORDED on the sides and never APPLIED -- `entity_currency.resolve()` answers
+# "what is the best available answer", which is a DIFFERENT question from "do my
+# sources agree", and answering the second with the first deletes the finding.
+#
+# A gap's `backends_failed` stays its OWN column and never becomes a reason; on
+# screen it is a red `outage:` badge beside the blue reason badges, and filtering
+# by reason cannot match it. A partial outage is CONTEXT for a gap, not its cause.
+#
+# FOUR CAUSES OF AN EMPTY LIST and only ONE is "your sources agree":
+#   disabled     persist_findings off -- nothing recorded, says nothing about the corpus
+#   unmeasured   recording on, no resolution recorded on this deployment yet
+#   clean        resolutions ran and every claim was compatible  <- the measurement
+#   findings     rows exist
+# `conflicts`/`gaps` are None -- NEVER 0 -- for the first two, so the template
+# physically cannot print a reassuring zero for a surface that never looked. An
+# unreachable or unmigrated store degrades to the SAME unmeasured shape.
+#
+# Filtering (entity/reason/backend) goes through the API so the filter and the
+# stored payloads cannot disagree about what a reason means; the filter
+# VOCABULARY is derived from the rows on screen, never from the constants, so a
+# chip can never offer a value matching nothing. `reason`/`backend` live inside
+# JSON payloads and are matched in PYTHON, not with SQLite-dialect JSON SQL.
+#
+# NOTHING ON THIS PAGE TRIGGERS A RESOLUTION. It renders what resolve() has
+# already produced -- a browse surface that fanned out across five backends on
+# page load would put a 5-11s retrieval on every render. Measured 2026-08-19:
+# 8 real resolutions, 4 clean (each still bumping the denominator, which is the
+# whole reason the denominator exists), 2 real gaps. This deployment's corpus
+# has produced NO real conflict yet, so `conflicts` reads a MEASURED 0.
+# Each finding links to /document-intelligence/docdrift?entity=<label> with its
+# open docmod_findings count -- this page says the sources disagree, DocDrift is
+# the queue a redline is drafted from.
 
 # Is this entity still current? ONE store, any source, any domain (#cef-fnd-04)
 python -m tools.currency.entity_currency --backfill --json
@@ -489,6 +703,54 @@ python tools/kanban/cli.py --awaiting-merge --merge-state behind_main --json
 # says why, because a panel that disappears when it breaks is indistinguishable
 # from a clean board. Cached 120s server-side (a `gh pr list` plus a /compare
 # per ready PR), and the cache AGE is rendered — never presented as live.
+
+# A PR that IS eligible and STILL open — the merger has stalled (kpr-watch-02)
+python -m tools.ci.merge_stall                     # human table
+python -m tools.ci.merge_stall --json
+python -m tools.ci.merge_stall --gate              # exit 1 on an `alarm` ONLY
+python -m tools.ci.merge_stall --survey            # re-derive the threshold from merge history
+python -m tools.ci.merge_stall --stall-after 30    # override the threshold for one run
+python -m tools.ci.merge_stall --no-record         # do not append observations
+python -m tools.ci.merge_stall --from-json prs.json --default-branch main
+# `merge_readiness` explains every rung the ladder REFUSES on. This answers the
+# one case where it refuses NOTHING: a PR classified `ready` that is STILL open
+# on the next poll. Nothing is wrong with that PR — the actor should have merged
+# it and did not, which is an automation-liveness problem with a different repair.
+# Eligibility is asked by calling the SAME classify_merge_readiness with
+# `linked_urls=()`, so the `linked` short-circuit cannot hide the task path (where
+# 3 of the 4 known causes live); ownership is carried apart as `door`. NO second
+# copy of the ladder — do not write one.
+# SEVERITY, not one "stuck" bucket: alarm (eligible, aged out, NOTHING explains
+# it) | outage (daemon down, or the forge refused this host's credentials —
+# reported with NO threshold and attributed ONCE to the fleet, never N times to N
+# innocent PRs) | by_design (sibling hold, enforced done-gate, landed hold,
+# protected path, auto-merge off, CI-still-running) | unmeasured | ok.
+# AGE has TWO sources, never merged and both always printed: `recorded` (the
+# append-only `pr_merge_eligibility_events`, written per TRANSITION of
+# (state, head_sha), so the newest row IS first-seen-ready — one indexed read, a
+# handful of rows a day) and `ci_estimate` (max statusCheckRollup completedAt, a
+# labelled PROXY that reads a PR whose hold cleared after green as instantly hours
+# old). A recorded row for a DIFFERENT head sha is refused: a force-push is a new
+# merge opportunity whose clock restarts. No source at all prints "?", never 0.
+# CAUSE ATTRIBUTION reuses `audit_trail` — 104,319 pr_watcher rows, 42,742 `wait`
+# rows already carrying the refusal's own reason. No new writer; the existing
+# record simply read. Patterns are DATA in args/merge_stall.yaml, every one taken
+# from a live row. FAIL-OPEN to `unattributed` — excusing a PR on missing evidence
+# is how an alarm goes quiet. Do NOT add a catch-all pattern.
+# SURVEYED BEFORE ARMING (150 merged PRs): the ENTIRE tail is attributed (n=30,
+# max 116.37 min — 17 done-gate, 12 sibling, 1 forge outage) while the
+# unattributed population (n=120) stops at 13.98. At 20 min an alarm that IGNORES
+# cause fires on 4.67% of routine merges; one that ATTRIBUTES first fires on
+# 0.00%. That gap IS the design — CLAUDE.md already calls 1.63% grounds for
+# standing a check down. `stall_after_minutes: 20` not 15 (both 0.00%, but 15
+# leaves ONE minute of headroom above its own sample);
+# `by_design_stall_after_minutes: 180`, because a hold that can never escalate is
+# a category people stop reading. Re-measure with --survey; never raise a
+# threshold to quieten an alarm — an alarm here means the MERGER stopped.
+# READ-ONLY against the forge (only `gh pr list` / `gh auth status`, proven by
+# AST) and it writes exactly one table. pr_watcher records an observation each
+# poll beside its heartbeat: the heartbeat proves the WATCHER ran, this proves
+# what it was looking at.
 # Raw board writers — does this INSERT bypass the canonical seeder? (rem-hyg-05)
 python tools/kanban/raw_insert_census.py --check          # the gate; exit 1 on a NEW raw INSERT
 python tools/kanban/raw_insert_census.py --json           # full report

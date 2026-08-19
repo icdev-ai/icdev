@@ -662,6 +662,27 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     previous_hash TEXT,
     signature TEXT
 );
+-- kpr-watch-02 / migration 20260819011454. One row per OBSERVED TRANSITION of a
+-- PR's merge eligibility, which is the only record of WHEN a PR became mergeable
+-- and therefore the only thing an "it should have merged 40 minutes ago" alarm
+-- can measure an age against. Append-only (see APPEND_ONLY_TABLES).
+CREATE TABLE IF NOT EXISTS pr_merge_eligibility_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pr_url TEXT NOT NULL,
+    pr_number INTEGER,
+    head_sha TEXT,
+    head_ref TEXT,
+    state TEXT NOT NULL,
+    eligible INTEGER NOT NULL DEFAULT 0,
+    door TEXT,
+    reason TEXT,
+    observed_at TIMESTAMP NOT NULL,
+    recorded_by TEXT,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_pr_merge_elig_url_observed
+    ON pr_merge_eligibility_events(pr_url, observed_at DESC);
 -- exa-audit-03 / migration 20260812041301. Where the audit_trail hash chain
 -- starts. Rows below chain_start_id predate the chain writer, so their NULL
 -- hashes mean "never chained", not "tampered with" -- without this the verifier
@@ -4440,6 +4461,53 @@ CREATE INDEX IF NOT EXISTS idx_nc_sim_sessions_topology_id ON nc_simulation_sess
 CREATE INDEX IF NOT EXISTS idx_nc_sim_runs_session_id ON nc_simulation_runs(session_id);
 CREATE INDEX IF NOT EXISTS idx_nc_sim_artifacts_run_id ON nc_simulation_artifacts(run_id);
 CREATE INDEX IF NOT EXISTS idx_nc_sim_artifacts_type ON nc_simulation_artifacts(artifact_type);
+
+-- cef-ui-02: the durable projection of what cortex.resolve() DETECTED --
+-- cross-source conflicts (cef-rsv-02) and per-entity gaps -- so the Explorer
+-- can browse them after the request that produced them is gone. A PROJECTION,
+-- not an audit table: one row per (tenant, entity, finding), upserted, with
+-- seen_count carrying the recurrence. There is deliberately no winner column.
+CREATE TABLE IF NOT EXISTS cortex_entity_findings (
+    finding_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    finding_type TEXT NOT NULL DEFAULT 'gap',
+    entity_key TEXT NOT NULL DEFAULT '',
+    entity_label TEXT NOT NULL DEFAULT '',
+    entity_type TEXT NOT NULL DEFAULT '',
+    conflict_kind TEXT NOT NULL DEFAULT '',
+    reasons_json TEXT NOT NULL DEFAULT '[]',
+    values_json TEXT NOT NULL DEFAULT '[]',
+    sides_json TEXT NOT NULL DEFAULT '[]',
+    backends_json TEXT NOT NULL DEFAULT '[]',
+    backends_failed_json TEXT NOT NULL DEFAULT '[]',
+    cross_backend INTEGER NOT NULL DEFAULT 0,
+    citations_json TEXT NOT NULL DEFAULT '[]',
+    uncited_sides_json TEXT NOT NULL DEFAULT '[]',
+    citation_basis TEXT NOT NULL DEFAULT '',
+    subject_entity TEXT NOT NULL DEFAULT '',
+    subject_verdict TEXT NOT NULL DEFAULT '',
+    provenance_id TEXT NOT NULL DEFAULT '',
+    seen_count INTEGER NOT NULL DEFAULT 1,
+    first_seen_at TIMESTAMP,
+    last_seen_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cef_findings_browse
+    ON cortex_entity_findings (tenant_id, finding_type, last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_cef_findings_entity
+    ON cortex_entity_findings (tenant_id, entity_key);
+
+-- The DENOMINATOR. Without it an empty findings table cannot be told apart
+-- from a surface nothing ever looked at.
+CREATE TABLE IF NOT EXISTS cortex_finding_runs (
+    tenant_id TEXT PRIMARY KEY,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    resolutions INTEGER NOT NULL DEFAULT 0,
+    conflicts_seen INTEGER NOT NULL DEFAULT 0,
+    gaps_seen INTEGER NOT NULL DEFAULT 0,
+    clean_resolutions INTEGER NOT NULL DEFAULT 0,
+    last_run_at TIMESTAMP
+);
 """
 
 

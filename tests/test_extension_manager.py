@@ -247,9 +247,12 @@ class TestIntrospection:
 
 
 class TestExtensionPoint:
-    def test_all_10_points(self):
-        assert len(ExtensionPoint) == 10
+    def test_all_6_points(self):
+        # SIX since hcx-live-gate-01 (2026-08-18): memory_save_before/after and
+        # compliance_check_before/after were removed rather than wired, having
+        # been declared from the beginning and dispatched by nothing.
+        assert len(ExtensionPoint) == 6
 
     def test_values(self):
         assert ExtensionPoint.TOOL_EXECUTE_BEFORE.value == "tool_execute_before"
-        assert ExtensionPoint.COMPLIANCE_CHECK_AFTER.value == "compliance_check_after"
+        assert ExtensionPoint.AGENT_END.value == "agent_end"

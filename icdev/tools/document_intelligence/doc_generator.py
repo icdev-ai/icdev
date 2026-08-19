@@ -93,6 +93,232 @@ def _dic_cot_enabled() -> bool:
 _COD_WORD_THRESHOLD = 800
 
 
+# ── cef-di-05: the governed evidence seam ─────────────────────────────────────
+def _evidence_module():
+    """The governed evidence seam, or ``None`` when it cannot be imported.
+
+    A DIC install without the seam module behaves exactly like one with the
+    toggle off. Drafting must not stop because an evidence module failed to
+    import — that is the same fail-open this file already applies to the
+    verifier, the confabulation detector and the placeholder scan.
+
+    ``icdev`` first, deliberately: ``tools.X is icdev.tools.X`` is False and the
+    two copies have separate thread-local run state, so a caller that resets or
+    inspects one by importing a namespace directly can be talking to the copy
+    nobody is using. Every call inside this module goes through here, so a
+    process only ever touches one — and a test must patch what THIS returns.
+    """
+    try:  # pragma: no cover - import shape varies by install layout
+        from icdev.tools.document_intelligence import docgen_evidence
+    except Exception:
+        try:
+            from tools.document_intelligence import docgen_evidence
+        except Exception:
+            return None
+    return docgen_evidence
+
+
+def _reset_evidence_run() -> None:
+    """Start a fresh evidence run — drop the memo cache, re-arm the budget."""
+    seam = _evidence_module()
+    if seam is not None:
+        seam.reset_run_state()
+
+
+def _evidence_run_stats() -> dict:
+    """Resolutions spent and asks refused by the cap, for a caller to report."""
+    seam = _evidence_module()
+    return seam.run_stats() if seam is not None else {}
+
+
+def _governed_retrieval(
+    query: str,
+    *,
+    collection_id: str | None,
+    tenant_id: str,
+    classification: str,
+    top_k: int,
+    legacy,
+) -> tuple[list, str, dict, list]:
+    """Evidence for one drafting query: governed seam first, legacy retrieval otherwise.
+
+    Returns ``(search_results, path, detail, deprecated)``.
+
+    * ``search_results`` — real ``DICSearchResult`` objects either way, which is
+      what keeps this migration to ONE changed line per entry point: everything
+      downstream (the evidence blocks, the verifier replay, the persisted
+      citations, the quality gate's ``allowed_source_ids``) is untouched.
+    * ``path``      — which chain produced them (``docgen_evidence.PATH_*``),
+      recorded on every section. A drafting run whose evidence chain is
+      unknowable afterwards is exactly what this migration is fixing.
+    * ``detail``    — the backends consulted, the ones that DIED, and a
+      governance refusal. Carried even when the legacy path was taken, so a
+      thin governed answer is never mistaken for a thin corpus.
+    * ``deprecated`` — pack currency findings about the QUERY, so the drafter
+      can be told BEFORE it writes as well as screened after.
+
+    ``legacy`` is a zero-arg callable performing the original
+    ``DICSearchEngine`` retrieval. It is not called at all when the governed
+    path answers, and it is called exactly as before in every other case.
+    """
+    seam = _evidence_module()
+    if seam is None:
+        # No seam module at all — indistinguishable from the toggle being off,
+        # and treated identically.
+        return legacy(), "legacy", {}, []
+
+    bundle = seam.resolve_evidence(
+        query,
+        collection_id=collection_id,
+        tenant_id=tenant_id,
+        classification=classification,
+        top_k=top_k,
+    )
+    if bundle is None:
+        # Toggle off / re-entrant / budget spent / Cortex absent. Each of those
+        # is logged with its own reason inside the seam; here they are one
+        # answer, because they all mean "do what you did before".
+        return legacy(), seam.PATH_LEGACY, {}, []
+
+    detail = bundle.detail()
+    if not bundle.is_empty:
+        return list(bundle.results), seam.PATH_CORTEX, detail, list(bundle.deprecated)
+
+    if seam.fallback_on_empty():
+        # The governed fan-out answered with nothing to draft from — a
+        # governance refusal, or a fan-out where every rung failed. Falling back
+        # keeps the migration behaviour-preserving; `detail` keeps the reason
+        # visible rather than laundering an outage into "no evidence found".
+        return legacy(), seam.PATH_CORTEX_EMPTY_FALLBACK, detail, list(bundle.deprecated)
+    return [], seam.PATH_CORTEX, detail, list(bundle.deprecated)
+
+
+def _currency_constraint(deprecated: list) -> str:
+    """A drafting-prompt constraint naming what the catalog says is dead.
+
+    Advisory only, and never load-bearing: an LLM instruction is a request, so
+    the guarantee lives in :func:`_apply_currency_guard`, which runs on the
+    OUTPUT and is deterministic. This just makes the common case come out right
+    the first time instead of being corrected afterwards.
+    """
+    if not deprecated:
+        return ""
+    lines = []
+    for finding in deprecated[:10]:
+        line = f"- {finding.get('entity', '')} is {finding.get('verdict', '')}"
+        successor = finding.get("superseded_by", "")
+        if successor:
+            line += f"; use {successor} instead"
+        lines.append(line)
+    return (
+        "\nCURRENCY CONSTRAINT — the following are verified deprecated by the "
+        "currency catalog. Do NOT recommend or reintroduce them; if the evidence "
+        "above still describes one, say so explicitly and name the successor:\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+
+def _apply_currency_guard(
+    text: str,
+    *,
+    tenant_id: str,
+    classification: str,
+) -> tuple[str, bool, list, dict]:
+    """Screen a DRAFTED section for entities the currency backend calls dead.
+
+    Returns ``(text, tripped, verdict_citations, report)``.
+
+    This is the deterministic half, and the one that actually holds. The
+    verifier cannot catch this case: it asks whether a claim is SUPPORTED by
+    the retrieved evidence, and a draft grounded in a 2019 runbook that
+    recommends TLS 1.1 is fully supported by that runbook. Every gate
+    downstream agrees, and the document ships reintroducing it.
+
+    ``tripped`` is False both when the guard found nothing AND when it did not
+    run; ``report["screened"]`` is what tells those apart, and it is persisted,
+    because "checked, clean" and "never checked" must not read the same.
+    """
+    seam = _evidence_module()
+    if seam is None or not text:
+        return text, False, [], {"screened": False}
+
+    screen = seam.screen_draft(
+        text, tenant_id=tenant_id, classification=classification,
+    )
+    if screen is None:
+        return text, False, [], {"screened": False}
+
+    report = {
+        "screened": True,
+        "findings": list(screen.findings),
+        "action": screen.action,
+        "errors": list(screen.errors),
+    }
+    if not screen.tripped:
+        return text, False, [], report
+
+    if screen.action == seam.ACTION_ABSTAIN:
+        return (
+            "(Abstained — draft named a deprecated entity: "
+            + ", ".join(f.get("entity", "") for f in screen.findings)
+            + ".)"
+        ), True, list(screen.citations), report
+    return f"{text}\n\n{screen.advisory()}", True, list(screen.citations), report
+
+
+def _citation_report(
+    text: str,
+    search_results: list,
+    evidence_path: str,
+    evidence_detail: dict,
+    currency: dict,
+) -> dict:
+    """Validate this section's citation tags against the sources it was shown.
+
+    The pipeline has always VALIDATED citations at the publish gate; what it did
+    not do is RECORD, on the section, that the check ran and what it said. So a
+    draft whose ``[source: chunk N]`` tags named nothing looked identical to one
+    whose tags all resolved, until somebody clicked publish.
+
+    ``allowed`` is the same set the ``quality_gate`` hook derives — the
+    ``chunk_id`` of every retrieved result — which on the governed path is the
+    Cortex citation's ``source_id``. That is what lets this migration keep the
+    citation contract without touching a prompt: the ids the model was shown
+    are the ids it is checked against, on either path.
+
+    ``evidence_path`` and ``evidence_detail`` answer the two questions a reader
+    of a finished draft cannot otherwise answer: which chain retrieved this, and
+    did any rung of it DIE. A thin section from a fan-out that lost three
+    backends to a timeout is an infrastructure event, not a statement about the
+    corpus, and only ``backend_errors`` can tell them apart.
+    """
+    report = {
+        "evidence_path": evidence_path,
+        "evidence_detail": evidence_detail,
+        "source_count": len(search_results),
+        "currency": currency,
+    }
+    allowed = {
+        str(getattr(r, "chunk_id", "")) for r in search_results
+        if getattr(r, "chunk_id", None)
+    }
+    try:
+        from tools.quality.citation_grounding import validate_citations
+        validation = validate_citations(text or "", allowed)
+        report.update({
+            "valid": bool(validation.get("valid")),
+            "cited_count": validation.get("cited_count", 0),
+            "available_count": validation.get("available_count", 0),
+            "hallucinated_citations": validation.get("hallucinated_citations", []),
+        })
+    except Exception as exc:  # noqa: BLE001 — a scorer outage is not a defect
+        # Reported, never silently omitted: an absent `valid` key that a reader
+        # takes for False is the same class of bug as a skip that reads green.
+        report["validation_error"] = str(exc)
+    return report
+
+
 @dataclass
 class GeneratedSection:
     heading: str = ""
@@ -104,6 +330,11 @@ class GeneratedSection:
     low_confidence: bool = False
     hitl_note: str = ""
     confabulation: dict = field(default_factory=dict)
+    #: cef-di-05 — which evidence chain produced this section, whether its
+    #: `[source: ...]` tags validated against that chain's own source ids, and
+    #: what the currency screen found. Persisted so a drafting run is never
+    #: ambiguous afterwards about which chain wrote it.
+    citation_report: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -137,6 +368,7 @@ class GenerateResult:
                     "low_confidence": s.low_confidence,
                     "hitl_note": s.hitl_note,
                     "confabulation": s.confabulation,
+                    "citation_report": s.citation_report,
                 }
                 for s in self.sections
             ],
@@ -516,6 +748,12 @@ def generate_document(
     """
     from tools.document_intelligence.search_engine import DICSearchEngine
 
+    # Fresh evidence run: drop the memo cache and re-arm the outbound budget.
+    # Per RUN rather than per process — the cache holds live database state, and
+    # memoising it for the lifetime of a dashboard worker would make a newly
+    # ingested document invisible until restart.
+    _reset_evidence_run()
+
     result = GenerateResult(
         query=query,
         collection_id=collection_id or "",
@@ -523,16 +761,29 @@ def generate_document(
         status="pending_review",
     )
 
-    # 1. Retrieve evidence — full KB first, fall back to session-scoped
-    engine = DICSearchEngine(tenant_id=tenant_id)
-    search_results = engine.search(query, collection_id=None, top_k=10)
-    if not search_results and collection_id:
-        search_results = engine.search(query, collection_id=collection_id, top_k=10)
-        if search_results:
-            logger.info(
-                "doc_generator: full-KB search returned 0; fell back to collection %s (%d hits)",
-                collection_id, len(search_results),
-            )
+    # 1. Retrieve evidence — governed seam first (cef-di-05), legacy otherwise.
+    # The legacy chain is unchanged and is what runs whenever the seam declines:
+    # full KB first, fall back to session-scoped.
+    def _legacy_retrieval() -> list:
+        engine = DICSearchEngine(tenant_id=tenant_id)
+        results = engine.search(query, collection_id=None, top_k=10)
+        if not results and collection_id:
+            results = engine.search(query, collection_id=collection_id, top_k=10)
+            if results:
+                logger.info(
+                    "doc_generator: full-KB search returned 0; fell back to collection %s (%d hits)",
+                    collection_id, len(results),
+                )
+        return results
+
+    search_results, _evidence_path, _evidence_detail, _deprecated = _governed_retrieval(
+        query,
+        collection_id=collection_id,
+        tenant_id=tenant_id,
+        classification=classification,
+        top_k=10,
+        legacy=_legacy_retrieval,
+    )
 
     # When no DIC chunks exist, fall back to source text embedded in query string
     _source_text_fallback = ""
@@ -589,6 +840,9 @@ def generate_document(
                     title=title, heading=heading, summary=summary, evidence=sec_evidence,
                     chunk_id=search_results[0].chunk_id if search_results else "N/A",
                 )
+                # Advisory only — the guarantee is _apply_currency_guard below,
+                # which is deterministic and runs on the output.
+                + _currency_constraint(_deprecated)
             )
 
         if not raw_text:
@@ -647,6 +901,33 @@ def generate_document(
         # prose carries no leaked CoT/CoD scaffolding.
         if not abstained:
             raw_text = _strip_reasoning_artifacts(raw_text)
+
+        # cef-di-05: deterministic currency guard. Runs on the FINAL prose, so
+        # it also catches an entity the CoD compressor or the verifier's
+        # verified_text reintroduced after the drafting prompt was obeyed.
+        currency_report: dict = {"screened": False}
+        currency_citations: list = []
+        if not abstained:
+            raw_text, _tripped, currency_citations, currency_report = _apply_currency_guard(
+                raw_text, tenant_id=tenant_id, classification=classification,
+            )
+            if _tripped:
+                # A section that reintroduces a deprecated entity is never
+                # `verified`, whatever the verifier said — the verifier asked a
+                # different question (is this claim supported by the retrieved
+                # evidence) and a stale source answers it yes.
+                verified = False
+                low_confidence = True
+                if heading not in flagged_headings:
+                    flagged_headings.append(heading)
+                names = ", ".join(f.get("entity", "") for f in currency_report["findings"])
+                hitl_note = (
+                    f"{hitl_note} ⚠ Currency: names deprecated {names} — "
+                    f"confirm the successor before publishing."
+                ).strip()
+                if currency_report.get("action") == "abstain":
+                    abstained = True
+                    confidence = 0.0
 
         # Deterministic placeholder check — unresolved [BRACKETED] tokens
         # force a HITL flag regardless of verifier confidence.
@@ -718,6 +999,13 @@ def generate_document(
             except Exception:
                 confab = {}
 
+        # cef-di-05: the section CITES the currency verdict that flagged it —
+        # structurally, as a `currency_verdict` citation, not as a bracketed tag
+        # in the prose. A pack's evidence ref is a synthetic key, not a
+        # retrievable chunk id, so tagging it would manufacture exactly the
+        # hallucinated citation this pipeline exists to prevent.
+        citations = citations + currency_citations
+
         generated_sections.append(GeneratedSection(
             heading=heading,
             content=raw_text,
@@ -728,6 +1016,9 @@ def generate_document(
             low_confidence=low_confidence,
             hitl_note=hitl_note,
             confabulation=confab,
+            citation_report=_citation_report(
+                raw_text, search_results, _evidence_path, _evidence_detail, currency_report,
+            ),
         ))
 
     result.sections = generated_sections
@@ -843,6 +1134,8 @@ def regenerate_section(
     from tools.document_intelligence.search_engine import DICSearchEngine
     from tools.document_intelligence.verifier import verify as _verify
 
+    _reset_evidence_run()
+
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -875,8 +1168,21 @@ def regenerate_section(
     finally:
         conn.close()
 
-    engine = DICSearchEngine(tenant_id=tenant_id)
-    search_results = engine.search(heading, collection_id=collection_id, top_k=8)
+    # Governed seam first (cef-di-05), legacy targeted retrieval otherwise. The
+    # query is the heading on BOTH paths, unchanged, so a before/after
+    # comparison of what came back is like-for-like.
+    def _legacy_retrieval() -> list:
+        engine = DICSearchEngine(tenant_id=tenant_id)
+        return engine.search(heading, collection_id=collection_id, top_k=8)
+
+    search_results, _evidence_path, _evidence_detail, _deprecated = _governed_retrieval(
+        heading,
+        collection_id=collection_id,
+        tenant_id=tenant_id,
+        classification=classification,
+        top_k=8,
+        legacy=_legacy_retrieval,
+    )
     evidence = _targeted_evidence_block(search_results)
 
     if not search_results:
@@ -887,6 +1193,13 @@ def regenerate_section(
             "citation_count": 0,
             "status": "pending_review",
             "abstained": True,
+            # Which chain returned nothing is the whole question here: a
+            # governed fan-out that lost every rung to a timeout and a corpus
+            # that genuinely holds nothing produce the same empty list and need
+            # opposite responses. `evidence_detail.backend_errors` separates them.
+            "citation_report": _citation_report(
+                "", [], _evidence_path, _evidence_detail, {"screened": False},
+            ),
         }
 
     if patch_mode:
@@ -928,6 +1241,8 @@ def regenerate_section(
             "For every factual claim write a bracketed citation: [source: chunk <id>]. "
             "If the evidence does not support a claim, omit it rather than inventing it."
         )
+    # Advisory only — the guarantee is the deterministic guard below.
+    prompt += _currency_constraint(_deprecated)
     raw_text = _llm_generate(prompt)
     if raw_text:
         raw_text = _strip_reasoning_artifacts(raw_text)  # TRUST: no leaked reasoning
@@ -953,7 +1268,22 @@ def regenerate_section(
     except Exception as exc:
         logger.warning("doc_generator: per-section verify error: %s", exc)
 
-    citations = [r.citation.to_dict() for r in search_results[:5]]
+    # cef-di-05: deterministic currency guard on the FINAL prose. Same reason as
+    # in generate_document — the verifier asks whether a claim is supported by
+    # the retrieved evidence, and a stale runbook supports a dead protocol.
+    currency_citations: list = []
+    currency_report: dict = {"screened": False}
+    currency_tripped = False
+    if not abstained:
+        verified_text, currency_tripped, currency_citations, currency_report = (
+            _apply_currency_guard(
+                verified_text, tenant_id=tenant_id, classification=classification,
+            )
+        )
+        if currency_tripped and currency_report.get("action") == "abstain":
+            abstained = True
+
+    citations = [r.citation.to_dict() for r in search_results[:5]] + currency_citations
 
     conn = get_connection()
     try:
@@ -1004,4 +1334,12 @@ def regenerate_section(
         "citation_count": len(citations),
         "status": "pending_review",
         "abstained": abstained,
+        # cef-di-05 — which chain retrieved this, whether its citation tags
+        # validated, and what the currency screen found. `screened: false` means
+        # the guard did not RUN; it is not the same as "ran and found nothing",
+        # and the two must never be read as one.
+        "citation_report": _citation_report(
+            verified_text, search_results, _evidence_path, _evidence_detail, currency_report,
+        ),
+        "currency_flagged": currency_tripped,
     }
