@@ -36,10 +36,24 @@ def _watcher():
 
 def _live_watcher():
     """dry_run off AND auto_merge on: both short-circuit before the merge runner,
-    so a test that forgets either one passes while exercising nothing."""
+    so a test that forgets either one passes while exercising nothing.
+
+    THREE short-circuits now, since kpr-watch-05. The protected-path guard also
+    precedes the merge runner, and it FAILS CLOSED when the open-PR index cannot
+    name this PR's changed files — which is every test, because nothing here
+    stubs the forge listing. So a clean index is part of "live" too, or these
+    tests silently stop exercising the gh path and start exercising the guard.
+    That is the same trap the docstring above already warns about, one rung
+    later; the guard's own refusal is covered in
+    tests/test_pr_watcher_protected_paths.py.
+    """
     w = pr_watcher.PRWatcher(dry_run=True)
     w.dry_run = False
     w.config = {**getattr(w, "config", {}), "auto_merge_enabled": True}
+    w._open_pr_index = lambda: {  # noqa: SLF001 — fixture, not production wiring
+        "https://github.com/o/r/pull/1": {
+            "files": {"README.md"}, "mergeable": "MERGEABLE", "draft": False},
+    }
     return w
 
 

@@ -214,3 +214,20 @@ def test_dry_run_does_not_excuse_a_protected_pr():
     ahead of that, or a dry run reports a merge the real run would refuse."""
     w = _Watcher(["tools/ci/pr_watcher.py"], dry_run=True)
     assert w._auto_merge("https://github.com/o/r/pull/1") is False
+
+
+def test_the_refusal_LOGS_as_well_as_audits(caplog):
+    """`tests/ci/test_pr_watcher_stale_conflict_recovery.py` defends one
+    principle — "a refusal must leave a trace" — after eleven PRs went unmerged
+    for a day with no evidence a merge had been attempted. This guard adds a
+    THIRD way `_auto_merge` can return False, so it owes that file's principle
+    the same debt: refuse loudly, and name the path that caused it.
+    """
+    w = _Watcher(["tools/ci/pr_watcher.py"])
+    pw.logger.propagate = True
+    with caplog.at_level("WARNING", logger=pw.logger.name):
+        assert w._auto_merge("https://github.com/o/r/pull/1") is False
+    assert any("REFUSING to merge" in r.getMessage() for r in caplog.records), \
+        "a protected-path refusal must leave a trace, like every other refusal"
+    assert any("tools/ci/pr_watcher.py" in r.getMessage() for r in caplog.records), \
+        "name the path — 'refused' without the reason is the silence this fixes"
