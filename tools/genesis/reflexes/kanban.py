@@ -2233,6 +2233,15 @@ def _supersede_stale_prs(task_id: str, keep_url: str, keep_branch: str, repo_roo
     return closed
 
 
+#: The ONE `gh pr create` failure that is retried without ``--draft``
+#: (kpr-watch-06). Draft PRs are a GitHub plan feature; every other failure —
+#: a rejected push, a bad base, an existing PR — must still fail exactly as it
+#: did before, so this pattern is deliberately narrow rather than a substring
+#: test for "draft".
+_DRAFT_UNSUPPORTED_RE = re.compile(
+    r"draft pull requests? (are|is) not supported", re.IGNORECASE)
+
+
 def _pr_opens_as_draft() -> bool:
     """True when the runner opens a kanban PR as a DRAFT (kpr-watch-06).
 
@@ -2383,6 +2392,28 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
         _create_argv,
         cwd=str(_repo_root), capture_output=True, text=True, timeout=60,
     )
+    if create.returncode != 0 and "--draft" in _create_argv and _DRAFT_UNSUPPORTED_RE.search(
+            create.stderr or ""):
+        # A FORGE THAT CANNOT DO DRAFTS AT ALL (kpr-watch-06). Drafts are a
+        # GitHub plan feature, so an EXTERNAL task targeting a repository
+        # without them would otherwise stop opening PRs entirely — a whole class
+        # of repos broken by a safety default they cannot express. Retry ready,
+        # and say so LOUDLY: the property is unavailable on this forge, which is
+        # a different thing from it being switched off, and a reader must be
+        # able to tell those apart. Narrow on purpose — only this one error
+        # retries, so a rejected push or a bad base still fails as before.
+        logger.warning(
+            "PR flow: %s does not support draft PRs (%s) — opening %s READY. "
+            "The draft hold is UNAVAILABLE on this forge, not disabled; nothing "
+            "will hold this PR back except the watcher's own gates.",
+            _repo_root, (create.stderr or "").strip()[:200], task_id,
+        )
+        _create_argv.remove("--draft")
+        create = _sp.run(
+            _create_argv,
+            cwd=str(_repo_root), capture_output=True, text=True, timeout=60,
+        )
+
     if create.returncode != 0:
         logger.warning("PR flow: gh pr create failed for %s: %s", task_id, create.stderr.strip())
         # The task agent may already have opened a PR for this branch

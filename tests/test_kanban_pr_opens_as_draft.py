@@ -97,6 +97,55 @@ def test_pr_is_opened_as_a_draft(monkeypatch, tmp_path):
     assert "--draft" in _create_argv(calls)
 
 
+def test_a_forge_without_drafts_retries_ready_rather_than_failing(monkeypatch, tmp_path):
+    """Drafts are a GitHub plan feature. A repo that cannot do them must still
+    get a PR — otherwise a safety default it cannot express breaks it outright.
+    """
+    monkeypatch.delenv("ICDEV_KANBAN_PR_DRAFT", raising=False)
+    calls = _stub_pr_flow(monkeypatch, tmp_path)
+    real_run = subprocess.run
+
+    def _refuse_drafts(argv, *a, **kw):
+        proc = real_run(argv, *a, **kw)
+        if argv[:3] == ["gh", "pr", "create"] and "--draft" in argv:
+            proc.returncode = 1
+            proc.stdout = ""
+            proc.stderr = ("pull request create failed: GraphQL: Draft pull "
+                           "requests are not supported in this repository.")
+        return proc
+
+    monkeypatch.setattr(subprocess, "run", _refuse_drafts)
+
+    url = kb._push_branch_and_open_pr("kpr-watch-06", "did the thing")
+
+    creates = [c for c in calls if c[:3] == ["gh", "pr", "create"]]
+    assert len(creates) == 2, "it must retry exactly once: %r" % (creates,)
+    assert "--draft" in creates[0]
+    assert "--draft" not in creates[1]
+    assert url == "https://github.com/icdev-ai/ICDev/pull/9999"
+
+
+def test_any_other_create_failure_still_fails(monkeypatch, tmp_path):
+    """Narrow on purpose — a rejected push or a bad base must not silently
+    become a second, ready PR."""
+    monkeypatch.delenv("ICDEV_KANBAN_PR_DRAFT", raising=False)
+    calls = _stub_pr_flow(monkeypatch, tmp_path)
+    real_run = subprocess.run
+
+    def _fail_hard(argv, *a, **kw):
+        proc = real_run(argv, *a, **kw)
+        if argv[:3] == ["gh", "pr", "create"]:
+            proc.returncode = 1
+            proc.stdout = ""
+            proc.stderr = "pull request create failed: base branch not found"
+        return proc
+
+    monkeypatch.setattr(subprocess, "run", _fail_hard)
+
+    assert kb._push_branch_and_open_pr("kpr-watch-06", "did the thing") is None
+    assert len([c for c in calls if c[:3] == ["gh", "pr", "create"]]) == 1
+
+
 def test_kill_switch_opens_it_ready(monkeypatch, tmp_path):
     monkeypatch.setenv("ICDEV_KANBAN_PR_DRAFT", "0")
     calls = _stub_pr_flow(monkeypatch, tmp_path)
