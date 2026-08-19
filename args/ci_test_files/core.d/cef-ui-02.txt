@@ -1,0 +1,9 @@
+# cef-ui-02 — Explorer renders cross-source conflicts and gaps.
+#
+# The store: no winner is persisted, both claims survive whole with their own
+# provenance and as-of dates, the gap list filters, and an empty list reports
+# WHICH of its four causes it has.
+tests/cortex/test_finding_store.py
+# The page: both claims side by side, nothing resolved to one side, the gap
+# list browsable and filterable, and the four empty states rendered distinctly.
+tests/cortex/test_explorer_conflict_render.py

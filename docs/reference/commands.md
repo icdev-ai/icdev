@@ -4724,6 +4724,42 @@ python -c "from tools.cortex.entity_resolution import resolve_entities; print(re
 # Governed ops return 403 + serialized GovernanceReport on a TRUST block; 400 on validation; 422 unanswerable.
 #   GET  /cortex/api/v1/health   (unauthenticated liveness — status only)
 
+# --- Finding store: browse what a resolution DETECTED (cef-ui-02) ---
+# A LIBRARY, not a CLI. `resolver.resolve` calls `record_findings` after
+# `register_resolution`; the read side is what /document-intelligence/explorer renders.
+python -c "from tools.cortex.finding_store import list_findings, finding_stats; print(finding_stats('default')); print(len(list_findings('default', finding_type='conflict')))"
+python -c "from tools.cortex.finding_store import list_findings; print([f['entity_label'] for f in list_findings('default', finding_type='gap', reason='no_claim')])"
+#   GET /document-intelligence/api/explorer/cortex-findings?type=gap&entity=&reason=&backend=&cross_backend=1
+# cef-rsv-02 made a disagreement computable and cef-rsv-03 cited it, and both then
+# travelled on the CortexResolution the caller held and NOWHERE ELSE — so the only reader
+# of a finding was whatever triggered the resolution. A conflict is adjudicated by a HUMAN
+# and a gap is a data-quality ticket; neither is actionable if it dies with the request.
+# A PROJECTION, not an audit table: one upserted row per (tenant, entity, finding), so a
+# conflict seen on forty resolutions is ONE disagreement with seen_count=40 rather than
+# forty findings. A conflict whose claimed VALUES change is a NEW finding — what a human
+# adjudicated is no longer what is on the table.
+# IT STORES NO WINNER. No resolved_value / consensus / score column exists, every side is
+# kept whole with its own backend, source, source_id, source_table, as_of, authoritative,
+# confidence and extraction lane, and TestNoSilentWinner asserts that against
+# FINDING_COLUMNS rather than one payload. Authority is RECORDED on the sides, never
+# APPLIED — entity_currency.resolve() answers "what is the best available answer", which
+# is a different question from "do my sources agree".
+# A gap's `backends_failed` stays its own column and NEVER becomes a reason; the page
+# renders it as a red `outage:` badge beside the blue reason badges, because a partial
+# outage is CONTEXT for a gap and not its cause.
+# `finding_stats` names WHICH of the four causes an empty list has, and only one of them
+# is a statement about the data:
+#   disabled     resolve.persist_findings is off — nothing was recorded
+#   unmeasured   recording on, no resolution recorded on this deployment yet
+#   clean        resolutions ran and every claim was compatible   <- the only measurement
+#   findings     rows exist
+# `conflicts`/`gaps` are None — never 0 — for the first two, so a template physically
+# cannot print a reassuring zero for a surface that never looked. An unreachable or
+# unmigrated store degrades to the SAME unmeasured shape, never to "your sources agree".
+# Exception-isolated end to end: the projection can never fail a resolution, and its
+# outcome lands on result.metadata["finding_store"]. Toggle `resolve.persist_findings`
+# in args/cortex_config.yaml (default true). Migration 20260819030255.
+
 # --- Service keys (service_keys.py: external-caller auth, ctx-expose-02) ---
 # Issue a scoped, tenant-bound icdev_ctx_ key for an external consumer (raw key shown ONCE)
 python -m tools.cortex.service_keys create --label compass --tenant compass --scopes cortex:search,cortex:ask,cortex:complete,cortex:govern --ceiling CUI --json

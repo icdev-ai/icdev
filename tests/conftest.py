@@ -4461,6 +4461,53 @@ CREATE INDEX IF NOT EXISTS idx_nc_sim_sessions_topology_id ON nc_simulation_sess
 CREATE INDEX IF NOT EXISTS idx_nc_sim_runs_session_id ON nc_simulation_runs(session_id);
 CREATE INDEX IF NOT EXISTS idx_nc_sim_artifacts_run_id ON nc_simulation_artifacts(run_id);
 CREATE INDEX IF NOT EXISTS idx_nc_sim_artifacts_type ON nc_simulation_artifacts(artifact_type);
+
+-- cef-ui-02: the durable projection of what cortex.resolve() DETECTED --
+-- cross-source conflicts (cef-rsv-02) and per-entity gaps -- so the Explorer
+-- can browse them after the request that produced them is gone. A PROJECTION,
+-- not an audit table: one row per (tenant, entity, finding), upserted, with
+-- seen_count carrying the recurrence. There is deliberately no winner column.
+CREATE TABLE IF NOT EXISTS cortex_entity_findings (
+    finding_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    finding_type TEXT NOT NULL DEFAULT 'gap',
+    entity_key TEXT NOT NULL DEFAULT '',
+    entity_label TEXT NOT NULL DEFAULT '',
+    entity_type TEXT NOT NULL DEFAULT '',
+    conflict_kind TEXT NOT NULL DEFAULT '',
+    reasons_json TEXT NOT NULL DEFAULT '[]',
+    values_json TEXT NOT NULL DEFAULT '[]',
+    sides_json TEXT NOT NULL DEFAULT '[]',
+    backends_json TEXT NOT NULL DEFAULT '[]',
+    backends_failed_json TEXT NOT NULL DEFAULT '[]',
+    cross_backend INTEGER NOT NULL DEFAULT 0,
+    citations_json TEXT NOT NULL DEFAULT '[]',
+    uncited_sides_json TEXT NOT NULL DEFAULT '[]',
+    citation_basis TEXT NOT NULL DEFAULT '',
+    subject_entity TEXT NOT NULL DEFAULT '',
+    subject_verdict TEXT NOT NULL DEFAULT '',
+    provenance_id TEXT NOT NULL DEFAULT '',
+    seen_count INTEGER NOT NULL DEFAULT 1,
+    first_seen_at TIMESTAMP,
+    last_seen_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cef_findings_browse
+    ON cortex_entity_findings (tenant_id, finding_type, last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_cef_findings_entity
+    ON cortex_entity_findings (tenant_id, entity_key);
+
+-- The DENOMINATOR. Without it an empty findings table cannot be told apart
+-- from a surface nothing ever looked at.
+CREATE TABLE IF NOT EXISTS cortex_finding_runs (
+    tenant_id TEXT PRIMARY KEY,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    resolutions INTEGER NOT NULL DEFAULT 0,
+    conflicts_seen INTEGER NOT NULL DEFAULT 0,
+    gaps_seen INTEGER NOT NULL DEFAULT 0,
+    clean_resolutions INTEGER NOT NULL DEFAULT 0,
+    last_run_at TIMESTAMP
+);
 """
 
 
