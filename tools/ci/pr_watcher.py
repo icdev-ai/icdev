@@ -59,6 +59,8 @@ from tools.ci.merge_readiness import (
     READY,
     HELD_LABEL,
     classify_merge_readiness,
+    held_label_reason,
+    hold_labels,
     measure_behind_by,
     protected_hits,
 )
@@ -562,8 +564,15 @@ _NO_AUTOMERGE_LABELS = NO_AUTOMERGE_LABELS
 #: only where the base branch has `strict` protection, which this repo does NOT
 #: — measured 2026-08-18), and `headRefOid` is what `measure_behind_by` compares
 #: against the base tip to get the count the check actually runs on.
+#: `labels` is kpr-watch-04. `_NO_AUTOMERGE_LABELS` was referenced at exactly
+#: ONE site — the unlinked sweep — and the task-linked path could not have
+#: honoured a hold label even if it wanted to, because this field list never
+#: asked for one. So the documented escape hatch did not cover the path that
+#: does most of the merging: a human labelling a `kanban/<id>` PR `do-not-merge`
+#: got no warning and no effect, and the PR merged itself. A label has to mean
+#: the same thing on both paths, and that starts with fetching it.
 _GH_JSON_FIELDS = (
-    "state,statusCheckRollup,reviews,mergeable,mergeStateStatus,isDraft,"
+    "state,statusCheckRollup,reviews,mergeable,mergeStateStatus,isDraft,labels,"
     "headRefName,headRefOid,baseRefName,updatedAt,createdAt,number,url"
 )
 
@@ -986,6 +995,37 @@ class PRWatcher:
         ))
         return hits
 
+    def _refuse_held_label(
+        self, pr_url: str, state: dict, task_id: str = "",
+    ) -> List[str]:
+        """Report and audit a hold-label refusal. Returns the labels (or []).
+
+        kpr-watch-04. Shaped exactly like `_refuse_protected` above, for the
+        same reason it is: a refusal nobody can see is how work goes quiet. The
+        label case was the ONE refusal in the unlinked sweep that already said
+        something out loud, and the task-linked path said nothing because it
+        never looked. Both now report the `held_label` state through the shared
+        classifier's own vocabulary.
+
+        The membership test itself is `merge_readiness.hold_labels`, not a
+        second `.get("labels")` here — see that function for why a shared LIST
+        was not enough.
+        """
+        held = hold_labels(state or {})
+        if not held:
+            return []
+        logger.warning(
+            "pr_watcher: REFUSING to merge %s — it %s. A human put that label "
+            "there; remove it to let the pipeline land this.",
+            pr_url, held_label_reason(held))
+        self._audit(WatcherAction(
+            task_id=task_id, pr_url=pr_url, classification="blocked",
+            action="held_label_hold",
+            reason=held_label_reason(held)[:500],
+            resume_cycle=0,
+        ))
+        return held
+
     def _open_pr_files(self) -> Dict[str, set]:
         """Map every open PR's url -> set of changed file paths."""
         return {url: e["files"] for url, e in self._open_pr_index().items()}
@@ -1364,7 +1404,9 @@ class PRWatcher:
             return ""
         return (getattr(p, "stdout", "") or "").strip()
 
-    def _mark_ready(self, pr_url: str, task_id: str, get_conn) -> bool:
+    def _mark_ready(
+        self, pr_url: str, task_id: str, get_conn, state=None,
+    ) -> bool:
         """Take a green PR out of draft so the merge below can actually run.
 
         The pipeline is autonomous up to this exact point and then stops: a
@@ -1378,7 +1420,44 @@ class PRWatcher:
         caller, not assumed here: the task is not a gate sentinel, and its
         dependency is satisfied. A held card keeps its draft, because for a
         MANUAL-ONLY card the draft IS the brake.
+
+        DECISION (kpr-watch-04): A HOLD LABEL SUPPRESSES AUTO-READY TOO, not
+        only auto-merge. The card asked for this to be decided explicitly, so
+        the reasoning lives here next to the code.
+
+        AGAINST: drafts and labels are separate controls, and conflating them
+        surprises people in the other direction — somebody who marks a PR `wip`
+        while still expecting the "Ready for review" button to work is not wrong
+        about what those two widgets normally mean.
+
+        FOR, and why it wins: un-drafting HERE is not a human clicking that
+        button, it is one step of this automation's own merge sequence. The
+        comment at the call site says exactly that, and says un-drafting must
+        never happen "for a PR that was not about to merge anyway" — and a PR
+        carrying `do-not-merge` is by definition not about to merge, so
+        un-drafting it destroys state and enables nothing. The asymmetry decides
+        it: the merge this would eventually permit is irreversible and the
+        un-draft is "visible and hard to walk back", while the cost of erring
+        the other way is that a human removes a label they applied on purpose.
+        `wip` and `hold` are in `NO_AUTOMERGE_LABELS` because they ARE the
+        not-finished signal, which is the same thing the draft is saying.
+
+        NOTHING HUMAN IS SUPPRESSED. This stops `gh pr ready` issued by the
+        watcher. A person may still un-draft the PR by hand at any moment, and
+        the merge is still refused afterwards — so the two controls stay
+        independent in the direction where independence matters.
+
+        Placement mirrors the protected-path guard: ahead of `dry_run`, or a dry
+        run reports a transition the real run would refuse.
         """
+        held = hold_labels(state or {})
+        if held:
+            logger.info(
+                "pr_watcher: NOT un-drafting %s — it %s (task %s). A hold label "
+                "stops the whole automated merge sequence, not just its last "
+                "step; remove the label to let the pipeline land this.",
+                pr_url, held_label_reason(held), task_id)
+            return False
         if self.dry_run:
             return True
         if not self.config.get("auto_ready_draft_prs", True):
@@ -1419,12 +1498,26 @@ class PRWatcher:
         logger.info("pr_watcher: marked %s ready for review (task %s)", pr_url, task_id)
         return True
 
-    def _auto_merge(self, pr_url: str) -> bool:
+    def _auto_merge(self, pr_url: str, state: Optional[dict] = None) -> bool:
         # LAST LINE, not the only one. Both merge paths call this, so the guard
         # here cannot be routed around by a future caller — but the linked path
         # also checks BEFORE it un-drafts, because un-drafting a PR that was
         # never going to merge burns the one brake a human still has.
         if self._refuse_protected(pr_url):
+            return False
+        # HOLD LABEL (kpr-watch-04), the same belt-and-braces shape. `state` is
+        # optional because each caller has already asked the same question by
+        # the time it gets here; passing the record makes the chokepoint answer
+        # for both of them, so a future caller cannot route around the label the
+        # way the task-linked path routed around it for its whole existence.
+        # LOGGED, NOT AUDITED: whoever decided to stop already wrote the audit
+        # row, and one refusal must not produce two — the same rule the unlinked
+        # sweep states next to its `protected_path` branch.
+        held = hold_labels(state or {})
+        if held:
+            logger.warning(
+                "pr_watcher: REFUSING to merge %s — it %s.",
+                pr_url, held_label_reason(held))
             return False
         if self.dry_run:
             return True
@@ -2571,6 +2664,43 @@ class PRWatcher:
                         report.actions.append(action)
                         self._audit(action)
                         continue
+                    # HOLD LABEL (kpr-watch-04). THE ESCAPE HATCH DID NOT
+                    # COVER THE DOOR THAT DOES MOST OF THE MERGING.
+                    # `_NO_AUTOMERGE_LABELS` was referenced at exactly one site,
+                    # inside `_sweep_unlinked_prs`, and its own comment said so.
+                    # This path never saw a label and could not have: the
+                    # `gh pr view` field list did not request `labels` at all.
+                    # So for a `kanban/<task-id>` PR there was no label-shaped
+                    # brake of any kind, and the asymmetry ran in the dangerous
+                    # direction — a human labelling one `do-not-merge` got no
+                    # warning and no effect, and would reasonably believe the PR
+                    # was held while the watcher merged it.
+                    #
+                    # It matters most at exactly the moment the other brakes
+                    # come off. The remaining holds on this path are the draft
+                    # (which `_mark_ready` clears itself the moment a dependency
+                    # is satisfied), an unsatisfied dependency, a manual gate row
+                    # and a reviewer requesting changes — so releasing a
+                    # MANUAL-ONLY card's gate removes every one of them at once.
+                    #
+                    # BEFORE THE UN-DRAFT, for the reason kpr-watch-05 put the
+                    # protected-path guard there: un-drafting is visible, hard to
+                    # walk back, and burns the one brake a human still has. The
+                    # refusal is REPORTED as the shared classifier's `held_label`
+                    # state, never a silent skip — that was the other half of the
+                    # complaint, and `_refuse_held_label` writes the audit row.
+                    held = self._refuse_held_label(pr_url, state, task["id"])
+                    if held:
+                        action = WatcherAction(
+                            task_id=task["id"], pr_url=pr_url,
+                            classification=HELD_LABEL, action="wait",
+                            reason=("held: " + held_label_reason(held))[:500],
+                            resume_cycle=cycle,
+                        )
+                        report.actions.append(action)
+                        self._audit(action)
+                        continue
+
                     # UN-DRAFT FIRST, before any hold can `continue` past this.
                     #
                     # Auto-merge must work regardless of who opened the PR — a
@@ -2587,7 +2717,8 @@ class PRWatcher:
                     # watcher clear later, and _mark_ready still refuses for a
                     # manual gate or an unsatisfied dependency.
                     if state.get("isDraft"):
-                        self._mark_ready(pr_url, task["id"], self._connection())
+                        self._mark_ready(pr_url, task["id"], self._connection(),
+                                         state=state)
 
                     # Sibling-file-conflict guard (kph): another open PR edits the
                     # same source file(s) — merging both races on one path (the
@@ -2797,8 +2928,8 @@ class PRWatcher:
                         approved_ok = False
                     if approved_ok and state.get("isDraft"):
                         approved_ok = self._mark_ready(
-                            pr_url, task["id"], self._connection())
-                    if approved_ok and self._auto_merge(pr_url):
+                            pr_url, task["id"], self._connection(), state=state)
+                    if approved_ok and self._auto_merge(pr_url, state=state):
                         action = WatcherAction(
                             task_id=task["id"], pr_url=pr_url,
                             classification="done",
@@ -3313,7 +3444,7 @@ class PRWatcher:
                     logger.debug("pr_watcher: not merging %s — %s: %s",
                                  url or "<no url>", verdict.state, verdict.reason)
                 continue
-            if self._auto_merge(url):
+            if self._auto_merge(url, state=pr):
                 logger.info("pr_watcher: auto-merged unlinked PR %s (%s)",
                             url, pr.get("headRefName"))
                 action = WatcherAction(

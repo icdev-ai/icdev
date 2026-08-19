@@ -24,6 +24,19 @@ auto_merge_require_approval: false
 # is how a MANUAL-ONLY card (e.g. AGOV) expresses "a human decides when this
 # ships". For those the draft IS the brake, and it stays on. Set false to
 # require a human on every PR regardless.
+#
+# A HOLD LABEL ALSO STOPS THIS, not merely the merge (kpr-watch-04). Any of
+# hold / do-not-merge / "do not merge" / wip / no-automerge / blocked on the PR
+# suppresses BOTH the un-draft and the merge, on the task-linked path as well as
+# the unlinked sweep. Un-drafting here is not a human clicking "Ready for
+# review"; it is a step of the watcher's own merge sequence, and that sequence
+# must not run for a PR somebody has explicitly marked not-finished. A person
+# may still un-draft by hand at any time — the merge is refused afterwards, so
+# the two controls stay independent where that matters. The label list lives in
+# `NO_AUTOMERGE_LABELS` in tools/ci/merge_readiness.py, deliberately in code
+# rather than here: it is the vocabulary the shared merge-readiness classifier
+# reports as the `held_label` state, and a per-deployment list would let a label
+# mean two different things again.
 auto_ready_draft_prs: true
 
 # Truncate CI log excerpts before injecting as resume context
