@@ -320,7 +320,9 @@ def _watcher(prs, merged, *, behind, config=None):
         default_branch_resolver=lambda: "main",
         behind_probe=lambda base, head: behind,
     )
-    w._auto_merge = lambda url: (merged.append(url) or True)  # type: ignore
+    # `**_kw`: kpr-watch-04 hands `_auto_merge` the PR record too, so the
+    # shared chokepoint can answer the hold-label question for both callers.
+    w._auto_merge = lambda url, **_kw: (merged.append(url) or True)  # type: ignore
     w._audit = lambda action: None  # type: ignore
     return w, pw
 

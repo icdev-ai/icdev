@@ -64,7 +64,9 @@ class _FakeWatcher:
     def _default_branch(self):
         return self._branch
 
-    def _auto_merge(self, pr_url):
+    def _auto_merge(self, pr_url, state=None):
+        # `state` is kpr-watch-04: the shared chokepoint takes the PR record
+        # so it can refuse a hold label for both callers.
         self.merge_calls.append(pr_url)
         return self._merge_ok
 
