@@ -203,13 +203,13 @@ def test_the_bound_falls_back_to_the_global_safety_limit_when_a_point_omits_it()
     mgr = _manager({}, safety={"max_handlers_per_point": 1})
     for i in range(3):
         mgr.register(
-            ExtensionPoint.MEMORY_SAVE_AFTER,
+            ExtensionPoint.AGENT_END,
             _appender(log, f"h{i}"),
             name=f"h{i}",
             priority=i * 10,
         )
 
-    mgr.dispatch(ExtensionPoint.MEMORY_SAVE_AFTER, {})
+    mgr.dispatch(ExtensionPoint.AGENT_END, {})
 
     assert log == ["h0"]
 
@@ -317,13 +317,13 @@ def test_an_undeclared_point_keeps_the_permissive_default():
     """A config with no block for a point must not silently strip modification."""
     mgr = _manager({})
     mgr.register(
-        ExtensionPoint.MEMORY_SAVE_BEFORE,
+        ExtensionPoint.AGENT_START,
         lambda ctx: {**ctx, "marked": True},
         name="marker",
         allow_modification=True,
     )
 
-    assert mgr.dispatch(ExtensionPoint.MEMORY_SAVE_BEFORE, {"a": 1})["marked"] is True
+    assert mgr.dispatch(ExtensionPoint.AGENT_START, {"a": 1})["marked"] is True
 
 
 def test_point_config_resolves_every_key_the_yaml_declares():
@@ -382,16 +382,16 @@ def test_every_dispatch_records_one_row_on_the_extension_surface(inv_db):
 def test_a_dispatch_with_no_handlers_is_still_recorded(inv_db):
     """The load-bearing case for measurement.
 
-    Eight of the ten points have no handler registered. "Dispatched, nothing
+    Five of the six points have no handler registered. "Dispatched, nothing
     listening" and "never dispatched" are different defects with different
     fixes, and only a row for the empty dispatch tells them apart.
     """
     mgr = _manager({})
 
-    mgr.dispatch(ExtensionPoint.COMPLIANCE_CHECK_BEFORE, {})
+    mgr.dispatch(ExtensionPoint.AGENT_START, {})
 
     rows = _rows(inv_db)
-    assert [r["name"] for r in rows] == ["compliance_check_before"]
+    assert [r["name"] for r in rows] == ["agent_start"]
 
 
 def test_the_row_stores_context_key_names_and_never_their_values(inv_db):
@@ -579,7 +579,7 @@ def test_a_builtin_that_declares_itself_disabled_is_not_registered(tmp_path):
         "def handle(context):\n"
         "    context['ran'] = context.get('ran', []) + ['on']\n"
         "    return context\n"
-        "EXTENSION_HOOKS = {'memory_save_before': {'handler': handle,\n"
+        "EXTENSION_HOOKS = {'agent_start': {'handler': handle,\n"
         "    'name': 'on', 'allow_modification': True, 'enabled': True}}\n",
         encoding="utf-8",
     )
@@ -587,7 +587,7 @@ def test_a_builtin_that_declares_itself_disabled_is_not_registered(tmp_path):
         "def handle(context):\n"
         "    context['ran'] = context.get('ran', []) + ['off']\n"
         "    return context\n"
-        "EXTENSION_HOOKS = {'memory_save_before': {'handler': handle,\n"
+        "EXTENSION_HOOKS = {'agent_start': {'handler': handle,\n"
         "    'name': 'off', 'allow_modification': True, 'enabled': False}}\n",
         encoding="utf-8",
     )
@@ -604,12 +604,12 @@ def test_a_builtin_that_declares_itself_disabled_is_not_registered(tmp_path):
                 enabled=meta.get("enabled", True),
             )
 
-    listed = {h["name"]: h["enabled"] for h in mgr.list_handlers(ExtensionPoint.MEMORY_SAVE_BEFORE)}
+    listed = {h["name"]: h["enabled"] for h in mgr.list_handlers(ExtensionPoint.AGENT_START)}
     assert listed == {"on": True, "off": False}, listed
 
     # The disabled one is registered and INTROSPECTABLE — it just never runs.
     # Dropping it entirely would make "declared off" look like "never declared".
-    out = mgr.dispatch(ExtensionPoint.MEMORY_SAVE_BEFORE, {})
+    out = mgr.dispatch(ExtensionPoint.AGENT_START, {})
     assert out.get("ran") == ["on"], out
 
 

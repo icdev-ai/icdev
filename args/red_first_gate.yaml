@@ -121,6 +121,34 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_extension_dispatch_governance.py"
+    reason: >-
+      FORCED FIXTURE RENAME, and the proof lives in a different file rather
+      than being absent. hcx-live-gate-01 removed four members from the public
+      ExtensionPoint enum. Every use of those four IN THIS FILE was an
+      ARBITRARY fixture — the max_handlers bound, the permissive default for an
+      undeclared point, the empty-dispatch inventory row, and enabled/disabled
+      drop-in loading. None of them is about memory or compliance semantics, so
+      each moves to a live point (AGENT_START / AGENT_END) and asserts exactly
+      what it asserted before.
+      The file therefore CANNOT go red: the swapped version passes against the
+      merge base too, because the live points it now names existed there as
+      well. It also cannot be left alone — it references removed members, so
+      without the rename it fails at collection. A mechanical adaptation that
+      is required for the file to run and that changes no claim has no new RED
+      to record, which is the same situation the gate already reports as
+      `not_applicable` for a docstring-only diff; this diff edits assertion
+      ARGUMENTS rather than assertions, so it lands in `not_discriminating`
+      instead.
+      THE REMOVAL ITSELF IS PROVED, just not here. The RED for this change is
+      recorded by tests/test_extension_point_removal_is_contained.py — 8 failed
+      / 1 passed against the merge base — which asserts the property that made
+      the removal safe: a site-local drop-in naming a removed point is SKIPPED
+      with a log line rather than killing the platform at import.
+      Scoped to this ONE file, deliberately. "A test-only rename" also
+      describes a test quietly weakened to match code that broke, and the two
+      are not mechanically distinguishable, so this must not become a pattern
+      for the enum's next change.
   - pattern: "tests/test_cpmp_overdue_deliverable_state.py"
     reason: >-
       DETERMINISM FIX, and the proof is structurally impossible rather than
