@@ -76,12 +76,13 @@ NO_CHECKS = "no_checks"
 CHANGES_REQUESTED = "changes_requested"
 BEHIND_MAIN = "behind_main"
 LINKED = "linked"
+PROTECTED_PATH = "protected_path"
 UNKNOWN = "unknown"
 
 #: Every state this table can return, in ladder order. ``unknown`` is last
 #: because it is the degenerate case (a PR record with no url), not a rung.
 MERGE_STATES: tuple = (
-    MERGED, LINKED, DRAFT, HELD_LABEL, WRONG_BASE, CONFLICTING,
+    MERGED, PROTECTED_PATH, LINKED, DRAFT, HELD_LABEL, WRONG_BASE, CONFLICTING,
     NO_CHECKS, CI_FAILED, AWAITING_CI, CHANGES_REQUESTED, BEHIND_MAIN,
     READY, UNKNOWN,
 )
@@ -126,6 +127,43 @@ class MergeReadiness(NamedTuple):
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def protected_hits(
+    changed_files: Optional[Iterable[str]], protected_paths: Iterable[str]
+) -> Optional[List[str]]:
+    """Which protected paths this PR touches, or None when nothing is protected.
+
+    An entry matches a path EXACTLY or as a directory prefix: ``e`` matches ``p``
+    when ``p == e`` or ``p.startswith(e + "/")``. Both halves are load-bearing.
+    A bare prefix test would make the entry ``tools/ci/pr_watcher.py`` also catch
+    ``tools/ci/pr_watcher_helpers.py``, and a control that stops work it was
+    never meant to stop gets switched off.
+
+    FAIL-CLOSED, and this is the OPPOSITE default from the sibling-conflict map
+    a few lines away in the watcher, so the asymmetry needs saying. That map
+    answers "might these two PRs collide?" — degrading it to a warning costs a
+    retry. This answers "may this PR edit the merger itself?" — degrading it to
+    a warning costs the control entirely, because the case where the file list
+    is unavailable is not distinguishable from the case where it is unavailable
+    BECAUSE the PR is unusual. So a ``changed_files`` of None, with any path
+    protected, is treated as a hit. A merge gate that opens when it cannot see
+    is not a gate.
+
+    Returns ``None`` (not an empty list) when no path is configured, so a caller
+    can tell "protection is off" from "protection is on and this PR is clean".
+    """
+    entries = [str(e).strip().replace("\\", "/").strip("/")
+               for e in (protected_paths or ()) if str(e or "").strip()]
+    if not entries:
+        return None
+    if changed_files is None:
+        return sorted(entries)          # fail closed — see above
+    paths = [str(f).strip().replace("\\", "/").lstrip("/")
+             for f in changed_files if str(f or "").strip()]
+    hits = {e for e in entries
+            for f in paths if f == e or f.startswith(e + "/")}
+    return sorted(hits)
+
+
 def classify_merge_readiness(
     pr: Dict[str, Any],
     *,
@@ -133,6 +171,8 @@ def classify_merge_readiness(
     linked_urls: Iterable[str] = (),
     behind_by: Optional[int] = None,
     max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
+    changed_files: Optional[Iterable[str]] = None,
+    protected_paths: Iterable[str] = (),
 ) -> MergeReadiness:
     """Why is this PR not merging? Pure — no I/O, no clock, no LLM.
 
@@ -184,6 +224,25 @@ def classify_merge_readiness(
         # the task path owns.
         return MergeReadiness(
             UNKNOWN, "PR record carries no url -- cannot be identified or merged")
+
+    # ── PROTECTED PATHS (kpr-watch-05) ──────────────────────────────────────
+    # AHEAD OF `linked`, which is the whole point. Every other rung answers "is
+    # this PR finished?"; this one answers "may an automation merge this at
+    # all?", and the answer must not depend on which door the work came through.
+    # The watcher auto-merges any CI-green kanban/* branch INCLUDING one that
+    # edits the watcher, so a defect in the ladder below could merge itself into
+    # main and every later cycle would run on the new, wrong rule with no human
+    # in the path. A self-protection rung placed AFTER the logic it protects can
+    # be bypassed by a defect in that logic, so it goes first.
+    hits = protected_hits(changed_files, protected_paths)
+    if hits:
+        return MergeReadiness(
+            PROTECTED_PATH,
+            "touches protected path(s) %s -- a human must merge this"
+            % ", ".join(hits)
+            if changed_files is not None else
+            "changed files could not be determined and %d path(s) are protected "
+            "-- refusing rather than guessing" % len(hits))
 
     if url in linked:
         return MergeReadiness(
@@ -407,7 +466,7 @@ def _pending_names(rollup: List[Dict[str, Any]]) -> str:
 #: with `strict` protection), the second is what `measure_behind_by` compares.
 _GH_FIELDS = ("number,url,title,headRefName,headRefOid,baseRefName,isDraft,"
               "mergeable,mergeStateStatus,labels,statusCheckRollup,reviews,"
-              "state,updatedAt")
+              "state,updatedAt,files")
 
 
 def list_open_prs(*, runner=None, limit: int = 100,

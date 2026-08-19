@@ -227,3 +227,34 @@ restart_on_code_change: true
 # Escape hatch: any of hold / do-not-merge / wip / no-automerge / blocked as a
 # LABEL, or leave the PR as a draft. Requested changes are never merged over.
 merge_unlinked_prs: true
+
+# ── protected_paths (kpr-watch-05) ────────────────────────────────────────────
+# THE STANDING HAZARD. This watcher auto-merges any CI-green kanban/* branch,
+# including one that edits the watcher. A defect in the merge-eligibility ladder
+# therefore merges ITSELF into main, and every cycle after that runs on the new,
+# wrong rule with no human in the path. That is not episodic — it is true
+# whenever any card touches these files, which is why two separate cards had to
+# invent per-episode manual gates for it. A per-episode gate cannot fix a
+# standing hazard.
+#
+# A PR whose changed files intersect this list is refused by BOTH merge paths
+# (the task-linked auto-merge and the unlinked sweep) and reported as the
+# `protected_path` state, so it is visible rather than silently skipped. Merge
+# it by hand after reading the diff.
+#
+# THIS FILE IS ON THE LIST ON PURPOSE. A PR that weakens or empties
+# `protected_paths` must not be able to auto-merge itself in.
+# tools/kanban/gates.py already states the principle: "A gate that cannot
+# protect itself is not a control."
+#
+# Matching is exact-or-directory-prefix: `tools/ci/pr_watcher.py` matches that
+# file and NOT `tools/ci/pr_watcher_helpers.py`; a bare directory entry matches
+# everything beneath it. If the changed-file set cannot be determined at all,
+# the PR is treated as protected — a merge gate that opens when it cannot see is
+# not a gate.
+protected_paths:
+  - tools/ci/pr_watcher.py
+  - args/pr_watcher_config.yaml
+  - .claude/hooks/pre_tool_use.py
+  - tools/kanban/task_factory.py
+  - tools/kanban/gates.py
