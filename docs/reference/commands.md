@@ -6762,6 +6762,28 @@ python -m tools.ci.merge_stall --survey --survey-limit 300 --json
 python -m tools.ci.merge_stall --stall-after 30              # one-run override
 python -m tools.ci.merge_stall --no-record                   # every age -> ci_estimate
 python -m tools.ci.merge_stall --from-json prs.json --default-branch main
+# Is the draft -> ready -> merged round trip turning over? (kpr-watch-06)
+# The runner now opens every kanban PR with `gh pr create --draft`, so the hold
+# on unattended work is a ROW rather than an external poller racing the 30s
+# cycle: `pr_watcher._mark_ready` promotes a draft only once CI is green, the
+# task is not a manual-gate sentinel, and `tools.kanban.deps.blocking_deps` is
+# empty -- the same interlock `promote_backlog_to_scheduled` reads. The ABSENCE
+# of a decision now leaves work HELD rather than merged.
+# THE NEW FAILURE MODE, and why this survey exists: a draft nobody promotes is a
+# stalled pipeline, and a stalled pipeline is QUIET. `stuck` is the signal;
+# `opened_per_hour` is the CONTROL and does not move when promotion regresses,
+# because the runner keeps opening PRs either way.
+python -m tools.ci.draft_promotion_survey --json
+python -m tools.ci.draft_promotion_survey --window-hours 24
+python -m tools.ci.draft_promotion_survey --stuck-hours 6
+# promotions = `pr_watcher.auto_ready` audit rows (SUCCESS only, one per PR, so
+# it counts promotions and never polls). An unreachable `gh` or a window holding
+# no kanban PR reports UNMEASURABLE, and `promotions` is None -- never 0 -- when
+# audit_trail cannot be read. Report only, no --gate.
+# Stand the inversion down with ICDEV_KANBAN_PR_DRAFT=0. Do NOT also set
+# `auto_ready_draft_prs: false` -- that combination is the one state strictly
+# worse than the old default: every kanban PR draft forever, nothing left in the
+# loop able to clear it.
 
 # AGOV CASE — agent-session forensics CLI (agov-case-04)
 # CLI-only by design. There is deliberately NO dashboard page: one would require

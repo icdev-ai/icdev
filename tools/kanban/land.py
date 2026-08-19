@@ -268,6 +268,11 @@ def preflight(task_id: str, *, get_conn=None, watcher=None) -> dict:
         "merged": False,
         "already_merged": already_merged,
         "pr_url": pr_url,
+        # kpr-watch-06: every kanban PR now OPENS as a draft, and GitHub refuses
+        # `gh pr merge` on one outright. `land()` reads this to promote it
+        # through the watcher's own guarded path first. Reported rather than
+        # acted on here, because preflight() never changes anything.
+        "is_draft": bool(state.get("isDraft")),
         "reason": ("PR already merged; every gate passed" if already_merged
                    else "every gate passed — PR is landable"),
         "checks": checks,
@@ -310,6 +315,29 @@ def land(
             "dry_run": True,
             "reason": "preflight passed — nothing merged (--dry-run)",
         }
+
+    # A DRAFT CANNOT BE MERGED, ONLY REFUSED (kpr-watch-06). The runner opens
+    # every kanban PR as a draft now, so without this the one path a worker
+    # session uses to report its own completion would fail `gh pr merge` on
+    # every task it exists to land — the half-done inversion that strands work.
+    #
+    # `_mark_ready` is REUSED, never re-derived: a second copy of the promotion
+    # rule would drift from the one the watcher enforces, and this module's whole
+    # premise is that it shares the watcher's gates. So the same two refusals
+    # still stand — a manual-gate sentinel and an unsatisfied dependency keep
+    # their draft — and a refusal refuses the land rather than forcing it.
+    if verdict.get("is_draft"):
+        if not w._mark_ready(pr_url, task_id, get_conn):
+            verdict["checks"].append(
+                _ck("draft_promoted", False, "un-draft refused"))
+            return _refusal(
+                task_id,
+                f"{pr_url} is a DRAFT and could not be promoted — it is a "
+                f"manual gate, its dependency is unsatisfied, or "
+                f"auto_ready_draft_prs is off. The task was NOT marked done",
+                pr_url, verdict["checks"],
+            )
+        verdict["checks"].append(_ck("draft_promoted", True))
 
     if not w._auto_merge(pr_url):
         verdict["checks"].append(_ck("merge_requested", False, "gh pr merge failed"))

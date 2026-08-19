@@ -1521,6 +1521,21 @@ class PRWatcher:
                            pr_url, (proc.stderr or "")[:200])
             return False
         logger.info("pr_watcher: marked %s ready for review (task %s)", pr_url, task_id)
+        # RECORD THE PROMOTION (kpr-watch-06). Every kanban PR now opens as a
+        # draft, so this call is the pipeline's single promotion point — and
+        # until now it left no trace anywhere but a log line, which means a
+        # promotion regression would have shown up as a quiet backlog of drafts
+        # rather than as a number. One row per PR, not per poll: after this
+        # succeeds `isDraft` is false, so the caller never asks again. A REFUSAL
+        # is deliberately not audited here — it repeats every 30s poll for as
+        # long as the hold stands, and the `wait` action the caller already
+        # writes records it once per cycle without a second flood.
+        self._audit(WatcherAction(
+            task_id=task_id, pr_url=pr_url, classification="done",
+            action="auto_ready",
+            reason=("draft promoted: CI green, not a manual gate, "
+                    "dependency satisfied"),
+        ))
         return True
 
     def _auto_merge(self, pr_url: str, state: Optional[dict] = None) -> bool:
