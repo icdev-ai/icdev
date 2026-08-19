@@ -72,22 +72,454 @@
   {% endfor %}
 </div>
 
-<!-- Drift events -->
-<h3 style="color:#9bb8d8;font-size:13px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;">Drift Events</h3>
+<!-- ══════════════════════════════════════════════════════════════════════════
+     cef-ui-01 — Drift findings + what cortex.resolve() found about each one.
+
+     THE THREE AXES ARE THREE COLUMNS AND THREE COLOURS, ON PURPOSE.
+
+       Verdict   what the DETERMINISTIC domain packs concluded. Nothing else
+                 feeds it — no model, and no backend outage.
+       Evidence  whether the fan-out that gathered the citations worked. A
+                 SEPARATE column because the two move independently: TLS 1.1
+                 is `superseded` with four of five backends timed out.
+       Advisory  an LLM-authored OPINION. Rendered inside the detail panel,
+                 smaller and muted, under an explicit ADVISORY header, because
+                 it is not evidence and did not affect the verdict.
+
+     "Not checked" is a VISIBLE state, styled with a dashed grey border so it
+     cannot be mistaken for the green "current". That is the whole point of
+     this page: `we checked and it is current` and `nothing we have could
+     answer` must stop looking identical, and a dead backend must look like
+     neither.
+     ══════════════════════════════════════════════════════════════════════ -->
+
+{# One place where a state's colour, label and meaning are declared. A second
+   copy anywhere in this file would let the legend and the badges disagree. #}
+{% set state_style = {
+  'current':      {'fg': '#8fd08f', 'bg': '#11261a', 'bd': '#2f6b42', 'icon': '✔', 'label': 'Current',
+                   'meaning': 'A domain pack checked it and it is up to date.'},
+  'deprecated':   {'fg': '#e0c080', 'bg': '#2a2313', 'bd': '#6d5a24', 'icon': '▲', 'label': 'Deprecated',
+                   'meaning': 'Past its life. No successor was named.'},
+  'superseded':   {'fg': '#f0a06a', 'bg': '#2c1c12', 'bd': '#7a4522', 'icon': '⇄', 'label': 'Superseded',
+                   'meaning': 'Stale, and a cited replacement exists.'},
+  'unknown':      {'fg': '#c0a8f0', 'bg': '#1d1832', 'bd': '#4c3c86', 'icon': '?', 'label': 'Unknown',
+                   'meaning': 'We asked and NOTHING could answer. This is a finding, not a pass.'},
+  'not_resolved': {'fg': '#8ba0bd', 'bg': 'transparent', 'bd': '#3a5170', 'icon': '—', 'label': 'Not checked',
+                   'meaning': 'Nobody has asked yet. This is not a clean bill of health.'},
+  'refused':      {'fg': '#f08a8a', 'bg': '#2b1414', 'bd': '#7d2f2f', 'icon': '✕', 'label': 'Refused',
+                   'meaning': 'The resolution was assembled and REJECTED (an uncited claim).'}
+} %}
+{% set health_style = {
+  'ok':         {'fg': '#8fd08f', 'icon': '●', 'label': 'All backends answered'},
+  'degraded':   {'fg': '#e0c080', 'icon': '◐', 'label': 'Some retrieval backends died'},
+  'failed':     {'fg': '#f08a8a', 'icon': '○', 'label': 'Every backend died — retrieval is down'},
+  'unmeasured': {'fg': '#6a7f9c', 'icon': '—', 'label': 'Never measured (nothing was resolved)'}
+} %}
+{% set advisory_style = {
+  'not_consulted': {'fg': '#7a8cb0', 'label': 'Not consulted',
+                    'meaning': 'No expert was asked. This is NOT "the expert had no concerns".'},
+  'unavailable':   {'fg': '#e0c080', 'label': 'Consulted — unavailable',
+                    'meaning': 'An expert was asked and the rung errored. An outage, not an absence of opinion.'},
+  'no_opinion':    {'fg': '#8ba0bd', 'label': 'Consulted — no opinion',
+                    'meaning': 'An expert was asked, answered, and offered nothing.'},
+  'opinion':       {'fg': '#9bd0ff', 'label': 'Advisory opinion',
+                    'meaning': 'An ACE domain expert gave an opinion. Advisory only.'}
+} %}
+
+{% macro state_badge(state, size='normal') %}
+  {% set s = state_style.get(state, state_style['not_resolved']) %}
+  <span class="dd-state dd-state-{{ state }}"
+        title="{{ s.meaning }}"
+        style="display:inline-block;padding:{% if size == 'small' %}1px 7px{% else %}3px 10px{% endif %};
+               border-radius:11px;font-size:{% if size == 'small' %}10px{% else %}11px{% endif %};
+               font-weight:600;letter-spacing:.3px;white-space:nowrap;
+               color:{{ s.fg }};background:{{ s.bg }};
+               border:1px {% if state == 'not_resolved' %}dashed{% else %}solid{% endif %} {{ s.bd }};">
+    {{ s.icon }} {{ s.label }}
+  </span>
+{% endmacro %}
+
+{% macro health_badge(health, failed) %}
+  {% set h = health_style.get(health, health_style['unmeasured']) %}
+  <span class="dd-health dd-health-{{ health }}" title="{{ h.label }}{% if failed %} — {{ failed|join(', ') }}{% endif %}"
+        style="font-size:11px;color:{{ h.fg }};white-space:nowrap;">
+    {{ h.icon }}
+    {%- if health == 'unmeasured' %} not measured
+    {%- elif health == 'ok' %} evidence ok
+    {%- elif health == 'failed' %} retrieval down
+    {%- else %} {{ failed|length }} backend{{ '' if failed|length == 1 else 's' }} down
+    {%- endif %}
+  </span>
+{% endmacro %}
+
+<h3 style="color:#9bb8d8;font-size:13px;text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;">
+  Drift Findings — verdict, evidence &amp; unknowns
+</h3>
+
+{% if currency.unavailable %}
+<div style="background:#2a1414;border:1px solid #7d2f2f;border-radius:8px;padding:12px 14px;margin-bottom:14px;color:#f08a8a;font-size:12px;">
+  ✕ The currency panel could not load: <code>{{ currency.unavailable }}</code>.
+  This is a panel outage — it is <strong>not</strong> a statement that these findings are fine.
+</div>
+{% endif %}
+
+<!-- What the three axes mean, stated once, above the numbers. -->
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-left:3px solid #7ab3f0;border-radius:8px;padding:12px 15px;margin-bottom:14px;">
+  <p style="color:#7a8cb0;font-size:12px;margin:0;line-height:1.6;">
+    Each finding carries <strong style="color:#9bb8d8;">three independent answers</strong> from
+    <code style="color:#9bb8d8;">cortex.resolve()</code>, and they are kept apart deliberately.
+    <strong style="color:#c0a8f0;">Verdict</strong> is deterministic — a domain pack derived it from catalog rows,
+    EOL dates and rulebook matches; no model produced it, and no backend outage can change it.
+    <strong style="color:#e0c080;">Evidence</strong> says whether the retrieval fan-out behind the citations worked,
+    which is a different question: a verdict can be solid while the sweep behind it is degraded.
+    <strong style="color:#9bd0ff;">Advisory</strong> is an opinion an LLM authored at query time — it is shown, it is
+    never evidence, and it never reaches the verdict.
+  </p>
+</div>
+
+<!-- Axis 1 — the deterministic verdict. Every state is listed with its count,
+     including the zeroes, so "no unknowns" and "we never looked" are two
+     readable numbers rather than one absent row. -->
+<div style="margin-bottom:10px;">
+  <div style="font-size:11px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">
+    Verdict — deterministic, from the domain packs
+  </div>
+  <div id="dd-summary" style="display:flex;gap:8px;flex-wrap:wrap;">
+    {% for state in ['current','deprecated','superseded','unknown','not_resolved','refused'] %}
+    {% set s = state_style[state] %}
+    <div class="dd-summary-chip" data-state="{{ state }}" title="{{ s.meaning }}"
+         style="flex:1;min-width:150px;background:{{ s.bg if s.bg != 'transparent' else '#0b1726' }};
+                border:1px {% if state == 'not_resolved' %}dashed{% else %}solid{% endif %} {{ s.bd }};
+                border-radius:8px;padding:9px 12px;">
+      <div style="font-size:20px;font-weight:700;color:{{ s.fg }};line-height:1.1;"
+           data-count-state="{{ state }}">{{ currency.summary.get(state, 0) }}</div>
+      <div style="font-size:11px;color:{{ s.fg }};margin-top:2px;">{{ s.icon }} {{ s.label }}</div>
+      <div style="font-size:10px;color:#6a7f9c;margin-top:3px;line-height:1.35;">{{ s.meaning }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Axis 2 — evidence health. A SEPARATE strip, never folded into the row above. -->
+<div style="margin-bottom:14px;">
+  <div style="font-size:11px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">
+    Evidence sweep — a separate axis; a dead backend is not a verdict
+  </div>
+  <div id="dd-health" style="display:flex;gap:8px;flex-wrap:wrap;">
+    {% for health in ['ok','degraded','failed','unmeasured'] %}
+    {% set h = health_style[health] %}
+    <div class="dd-health-chip" data-health="{{ health }}"
+         style="flex:1;min-width:150px;background:#0b1726;border:1px {% if health == 'unmeasured' %}dashed{% else %}solid{% endif %} #1a3560;border-radius:8px;padding:8px 12px;">
+      <div style="font-size:17px;font-weight:700;color:{{ h.fg }};line-height:1.1;"
+           data-count-health="{{ health }}">{{ currency.evidence_health.get(health, 0) }}</div>
+      <div style="font-size:10px;color:{{ h.fg }};margin-top:3px;line-height:1.35;">{{ h.icon }} {{ h.label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Controls -->
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:10px 14px;margin-bottom:10px;
+            display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <button id="dd-resolve-all" {% if not currency.enabled or not currency.total %}disabled{% endif %}
+    style="background:#123a5e;color:#9bd0ff;border:1px solid #1f4d7a;border-radius:5px;padding:7px 14px;font-size:12px;cursor:pointer;">
+    Resolve unchecked findings
+  </button>
+  <label style="color:#7a8cb0;font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer;"
+         title="Consults the `sme` rung — one LLM call per finding. Its answer is an OPINION and never reaches the verdict.">
+    <input type="checkbox" id="dd-advisory-opt" {% if currency.advisory_enabled %}checked{% endif %}>
+    also ask an SME (advisory — costs an LLM call)
+  </label>
+  <span id="dd-resolve-status" style="color:#7a8cb0;font-size:12px;"></span>
+  <span style="margin-left:auto;color:#5a7aa0;font-size:11px;">
+    {{ currency.total }} finding{{ '' if currency.total == 1 else 's' }},
+    {{ currency.distinct_entities }} distinct entit{{ 'y' if currency.distinct_entities == 1 else 'ies' }} ·
+    batch capped at {{ currency.batch_cap }} · stale after {{ currency.stale_after_hours }}h
+    {%- if not currency.enabled %} · <span style="color:#e0c080;">panel disabled in args/dic_docdrift_config.yaml</span>{% endif %}
+  </span>
+</div>
+
+<!-- A resolution for an entity that is NOT one of the listed findings — in
+     practice the RECOMMENDED REPLACEMENT named by a superseded verdict. It gets
+     the same renderer as a finding's detail panel, because "is the successor
+     itself current?" is the same question and must not be answered in a weaker
+     shape than the question that raised it. -->
+<div id="dd-adhoc" style="display:none;background:#08121f;border:1px solid #1a3560;border-radius:8px;margin-bottom:14px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid #0d1e30;">
+    <span style="font-size:11px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.6px;">
+      Checked entity — not one of the findings above
+    </span>
+    <button id="dd-adhoc-close" style="background:none;color:#7ab3f0;border:1px solid #1a3560;border-radius:4px;padding:2px 9px;font-size:11px;cursor:pointer;">close</button>
+  </div>
+  <div id="dd-adhoc-body" class="dd-detail-body" style="padding:14px 18px;"></div>
+</div>
+
+<!-- Findings -->
 <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;overflow:hidden;margin-bottom:22px;">
   <table style="width:100%;border-collapse:collapse;font-size:12px;">
     <thead><tr style="background:#08112a;color:#6090b0;">
-      <th style="padding:7px 10px;text-align:left;">Source</th><th style="padding:7px 10px;text-align:left;">Entity</th>
-      <th style="padding:7px 10px;text-align:left;">Severity</th><th style="padding:7px 10px;text-align:left;">Detected</th>
+      <th style="padding:7px 10px;text-align:left;">Source</th>
+      <th style="padding:7px 10px;text-align:left;">Entity</th>
+      <th style="padding:7px 10px;text-align:left;">Severity</th>
+      <th style="padding:7px 10px;text-align:left;">Verdict</th>
+      <th style="padding:7px 10px;text-align:left;">Evidence</th>
+      <th style="padding:7px 10px;text-align:left;">Detected</th>
+      <th style="padding:7px 10px;text-align:right;"></th>
     </tr></thead>
     <tbody>
-    {% for d in drift_events %}
-      <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;">
-        <td style="padding:6px 10px;">{{ d.source }}</td><td style="padding:6px 10px;">{{ d.entity }}</td>
-        <td style="padding:6px 10px;">{{ d.severity }}</td><td style="padding:6px 10px;">{{ d.detected_at }}</td>
+    {% for f in currency.findings %}
+      {% set r = f.resolution %}
+      {# An entity can appear on SEVERAL drift events (TLS 1.1 is on three of the
+         72 live ones), so a row is paired with its detail row by INDEX, not by
+         entity. Keying on entity meant `querySelector` matched the first
+         duplicate only: the second and third rows toggled somebody else's panel
+         open and kept a stale one of their own. #}
+      <tr class="dd-row" data-entity="{{ r.entity }}" data-state="{{ r.state }}"
+          data-finding-idx="{{ loop.index0 }}"
+          style="border-top:1px solid #0d1e30;color:#a8c8e0;">
+        <td style="padding:6px 10px;">{{ f.source }}</td>
+        <td style="padding:6px 10px;color:#cfe3f7;">{{ f.entity }}</td>
+        <td style="padding:6px 10px;">{{ f.severity }}</td>
+        <td style="padding:6px 10px;" class="dd-cell-verdict">
+          {{ state_badge(r.state) }}
+          {% if r.stale %}<span title="This answer is older than the configured window."
+            style="font-size:10px;color:#e0c080;margin-left:5px;">stale</span>{% endif %}
+        </td>
+        <td style="padding:6px 10px;" class="dd-cell-health">
+          {{ health_badge(r.evidence_health, r.backends_failed) }}
+        </td>
+        <td style="padding:6px 10px;font-size:11px;color:#6a8ab0;">{{ f.detected_at }}</td>
+        <td style="padding:6px 10px;text-align:right;white-space:nowrap;">
+          <button class="dd-detail-btn" data-finding-idx="{{ loop.index0 }}"
+            style="background:none;color:#7ab3f0;border:1px solid #1a3560;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;">detail</button>
+          <button class="dd-resolve-btn" data-entity="{{ f.entity }}"
+            {% if not currency.enabled %}disabled{% endif %}
+            style="background:#0f3460;color:#9bd0ff;border:1px solid #1f4d7a;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;">
+            {% if r.resolved %}re-check{% else %}resolve{% endif %}
+          </button>
+        </td>
+      </tr>
+      <tr class="dd-detail-row" data-entity-detail="{{ r.entity }}"
+          data-finding-idx="{{ loop.index0 }}" style="display:none;">
+        <td colspan="7" style="padding:0;background:#08121f;border-top:1px solid #0d1e30;">
+          <div class="dd-detail-body" style="padding:14px 18px;">
+
+            {# ── The deterministic verdict. First, largest, and on its own. ── #}
+            {% set s = state_style.get(r.state, state_style['not_resolved']) %}
+            <div class="dd-verdict-block dd-state-{{ r.state }}"
+                 style="border-left:3px solid {{ s.bd }};padding:2px 0 2px 12px;margin-bottom:14px;">
+              <div style="font-size:10px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.7px;">
+                Deterministic verdict
+              </div>
+              <div style="font-size:16px;font-weight:700;color:{{ s.fg }};margin:3px 0 4px;">
+                {{ s.icon }} {{ r.entity or f.entity }} — {{ s.label }}
+              </div>
+              <div style="font-size:11px;color:#7a8cb0;line-height:1.55;">
+                {{ s.meaning }}
+                {% if r.verdict_source == 'pack_evaluate' %}
+                  Derived by <code style="color:#9bb8d8;">DomainPack.evaluate()</code> — no model produced it.
+                {% elif r.state in ['current','deprecated','superseded','unknown'] %}
+                  <span style="color:#c0a8f0;">No domain pack recognised this entity</span>
+                  (<code>verdict_source: none</code>), so nothing deterministic could rule on it.
+                {% endif %}
+              </div>
+
+              {% if r.assessments %}
+              <div style="margin-top:8px;">
+                {% for a in r.assessments %}
+                <div style="font-size:11px;color:#a8c8e0;margin-bottom:4px;">
+                  <code style="color:#9bd0ff;">{{ a.pack_id }}</code>
+                  → <strong style="color:{{ s.fg }};">{{ a.verdict }}</strong>
+                  {% if a.pack_verdict and a.pack_verdict != a.verdict %}
+                    <span style="color:#6a7f9c;" title="The pack's own vocabulary, kept verbatim so 'eol' and 'retired' stay distinguishable after both map onto 'deprecated'.">(pack says “{{ a.pack_verdict }}”)</span>
+                  {% endif %}
+                  {% if a.confidence is not none %}<span style="color:#5a7aa0;">· confidence {{ a.confidence }}</span>{% endif %}
+                  {% if a.rationale %}
+                  <div style="color:#7a8cb0;margin:2px 0 0 14px;line-height:1.5;">{{ a.rationale }}</div>
+                  {% endif %}
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+
+              {% if r.superseded_by %}
+              <div style="margin-top:8px;padding:7px 10px;background:#12243a;border:1px solid #1f4d7a;border-radius:5px;">
+                <span style="font-size:11px;color:#9bd0ff;">Recommended replacement:</span>
+                <strong style="color:#cfe3f7;font-size:12px;">{{ r.superseded_by }}</strong>
+                <span style="font-size:10px;color:#6a7f9c;">(source: {{ r.replacement_source or 'unattributed' }})</span>
+                <button class="dd-resolve-btn" data-entity="{{ r.superseded_by }}"
+                  {% if not currency.enabled %}disabled{% endif %}
+                  title="Is the recommended replacement itself current? Resolves the successor through the same governed seam."
+                  style="background:#0f3460;color:#9bd0ff;border:1px solid #1f4d7a;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;margin-left:8px;">
+                  check the replacement
+                </button>
+                <div style="font-size:10px;color:#6a7f9c;margin-top:4px;">
+                  A successor is only shown when a citation attests it — an unbacked replacement blocks the whole resolution.
+                </div>
+              </div>
+              {% endif %}
+            </div>
+
+            {# ── UNKNOWN: a finding with a named reason, never a shrug. ── #}
+            {% if r.state == 'unknown' %}
+            <div class="dd-unknown-block"
+                 style="background:#1d1832;border:1px solid #4c3c86;border-radius:6px;padding:11px 13px;margin-bottom:14px;">
+              <div style="font-size:11px;color:#c0a8f0;font-weight:600;margin-bottom:5px;">
+                ? Unknown — this is a finding, not a pass
+              </div>
+              <div style="font-size:11px;color:#a99ad0;line-height:1.55;margin-bottom:7px;">
+                Nothing available could answer whether this entity is current. That is materially different from
+                “we checked and it is current”, and it is why this row is not green.
+              </div>
+              {% if r.unknown_reasons %}
+              <ul style="margin:0 0 0 16px;padding:0;color:#c0a8f0;font-size:11px;line-height:1.7;">
+                {% for reason in r.unknown_reasons %}
+                <li><code style="color:#d8c8ff;">{{ reason.code }}</code> — {{ reason.label }}</li>
+                {% endfor %}
+              </ul>
+              {% else %}
+              <div style="font-size:11px;color:#a99ad0;">No reason was recorded with this gap.</div>
+              {% endif %}
+              {% if r.citation_bases %}
+              <div style="margin-top:7px;font-size:10px;color:#8f81b8;line-height:1.5;">
+                Why the gap cites nothing:
+                {% for basis in r.citation_bases %}<code style="color:#d8c8ff;">{{ basis.code }}</code> — {{ basis.label }}{{ '; ' if not loop.last }}{% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            {% endif %}
+
+            {# ── The evidence sweep. Separate block, separate colour. ── #}
+            {% if r.backend_errors %}
+            <div class="dd-backend-block"
+                 style="background:#2a2313;border:1px solid #6d5a24;border-radius:6px;padding:11px 13px;margin-bottom:14px;">
+              <div style="font-size:11px;color:#e0c080;font-weight:600;margin-bottom:5px;">
+                {% if r.evidence_health == 'failed' %}○ Retrieval is down{% else %}◐ Evidence sweep degraded{% endif %}
+                — {{ r.backends_failed|length }} of {{ r.backends_consulted|length }} backend(s) failed
+              </div>
+              <div style="font-size:11px;color:#c8b183;line-height:1.55;margin-bottom:7px;">
+                This is an <strong>infrastructure</strong> fact, not a claim about the entity. It does not change the
+                verdict above{% if r.state in ['current','deprecated','superseded'] %} — that came from a domain pack, not from these rungs{% endif %}.
+              </div>
+              <ul style="margin:0 0 0 16px;padding:0;color:#d8c090;font-size:11px;line-height:1.7;">
+                {% for e in r.backend_errors %}
+                <li><code style="color:#f0d0a0;">{{ e.backend }}</code>
+                    <span style="color:#a08a60;">({{ e.stage }})</span> — {{ e.message }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            {# ── Citations. ── #}
+            <div style="margin-bottom:14px;">
+              <div style="font-size:10px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;">
+                Evidence citations
+                <span style="color:#6a8ab0;text-transform:none;letter-spacing:0;">
+                  — {{ r.citation_count }} total, {{ r.corpus_citation_count }} from the corpora
+                </span>
+              </div>
+              {% if r.citations %}
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                {% for c in r.citations %}
+                <div class="dd-citation" style="background:#0b1726;border:1px solid #1a3560;border-radius:5px;padding:7px 10px;">
+                  <div style="font-size:11px;">
+                    <code style="color:#9bd0ff;">{{ c.source_id }}</code>
+                    {% if c.source_table %}<span style="color:#5a7aa0;">· {{ c.source_table }}</span>{% endif %}
+                    {% if c.source_type == 'pack_evidence' %}
+                      <span title="The domain pack's OWN rationale coming back through the fan-out. It justifies the verdict; it is not an independent source corroborating it."
+                            style="font-size:9px;color:#c0a8f0;border:1px solid #4c3c86;border-radius:9px;padding:1px 6px;margin-left:5px;">derived — the pack's own rule</span>
+                    {% else %}
+                      <span style="font-size:9px;color:#6a8ab0;border:1px solid #1f4d7a;border-radius:9px;padding:1px 6px;margin-left:5px;">{{ c.source_type }}</span>
+                    {% endif %}
+                  </div>
+                  {% if c.snippet %}
+                  <div style="font-size:11px;color:#a8c8e0;margin-top:4px;line-height:1.5;">{{ c.snippet }}</div>
+                  {% endif %}
+                </div>
+                {% endfor %}
+              </div>
+              {% if r.provenance_id %}
+              <div style="font-size:10px;color:#5a7aa0;margin-top:6px;">
+                Evidence set registered as <code style="color:#7a9cc0;">{{ r.provenance_id }}</code>
+                in <code style="color:#7a9cc0;">source_citation_registry</code>.
+              </div>
+              {% endif %}
+              {% elif r.state == 'not_resolved' %}
+              <div style="font-size:11px;color:#7a8cb0;border:1px dashed #3a5170;border-radius:5px;padding:9px 11px;">
+                No citations, because nothing has been resolved for this finding yet.
+                <strong style="color:#8ba0bd;">This is not evidence of absence.</strong>
+              </div>
+              {% else %}
+              <div style="font-size:11px;color:#7a8cb0;">The resolution returned no citations.</div>
+              {% endif %}
+            </div>
+
+            {# ── Conflicts, when sources disagree. Reported, never adjudicated. ── #}
+            {% if r.conflicts %}
+            <div style="background:#2c1c12;border:1px solid #7a4522;border-radius:6px;padding:11px 13px;margin-bottom:14px;">
+              <div style="font-size:11px;color:#f0a06a;font-weight:600;margin-bottom:5px;">
+                ⇄ Sources disagree — {{ r.conflicts|length }} conflict(s)
+              </div>
+              <div style="font-size:11px;color:#d0a080;line-height:1.55;">
+                Every side is carried with its own provenance and <strong>no winner is picked</strong>.
+                A disagreement between two evidence sources is a finding a human acts on, not a vote.
+              </div>
+              <ul style="margin:6px 0 0 16px;padding:0;color:#e0b590;font-size:11px;line-height:1.7;">
+                {% for c in r.conflicts %}
+                <li><strong>{{ c.entity_label or c.entity_key }}</strong> — {{ c.kind }}:
+                    {{ (c.values or [])|join(' vs ') }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            {# ══ ADVISORY — subordinate by construction: last, indented, muted,
+                 dashed, smaller type, and under a header that says it is not
+                 evidence. It must never look like the verdict block above. ══ #}
+            <div class="dd-advisory" data-advisory-state="{{ r.advisory_state }}"
+                 style="margin:0 0 4px 22px;padding:9px 12px;background:#0a1420;
+                        border:1px dashed #2a4260;border-left:2px solid #2a4260;border-radius:5px;opacity:.92;">
+              {% set adv = advisory_style.get(r.advisory_state, advisory_style['not_consulted']) %}
+              <div style="font-size:9px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.9px;margin-bottom:4px;">
+                ⚑ Advisory — SME opinion · not evidence · did not affect the verdict
+              </div>
+              <div style="font-size:11px;color:{{ adv.fg }};font-weight:600;">{{ adv.label }}</div>
+              <div style="font-size:10px;color:#6a7f9c;line-height:1.5;margin-top:2px;">
+                {{ adv.meaning }}
+                {% if r.advisory.reason %}<br><span style="color:#5a7aa0;">{{ r.advisory.reason }}</span>{% endif %}
+              </div>
+              {% if r.advisory.get('items') %}
+              {% for item in r.advisory['items'] %}
+              <div style="margin-top:6px;padding:7px 9px;background:#0d1b2e;border:1px dashed #2a4260;border-radius:4px;">
+                <div style="font-size:9px;color:#5a7aa0;margin-bottom:3px;">
+                  ADVISORY OPINION{% if item.persona %} · persona <code style="color:#6a8ab0;">{{ item.persona }}</code>{% endif %}
+                  · authored by a model at query time
+                </div>
+                <div style="font-size:11px;color:#9ab4cc;line-height:1.55;font-style:italic;">{{ item.text }}</div>
+              </div>
+              {% endfor %}
+              {% endif %}
+              {% if r.advisory.get('errors') %}
+              <ul style="margin:5px 0 0 15px;padding:0;color:#c8b183;font-size:10px;line-height:1.6;">
+                {% for e in r.advisory['errors'] %}
+                <li><code>{{ e.backend }}</code> ({{ e.stage }}) — {{ e.message }}</li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+            </div>
+
+            {% if r.resolved_at %}
+            <div style="font-size:10px;color:#4a6a8a;margin-top:8px;">
+              Resolved {{ r.resolved_at }}{% if r.duration_ms %} in {{ r.duration_ms }}ms{% endif %}
+              {%- if r.backends_consulted %} · backends consulted: {{ r.backends_consulted|join(', ') }}{% endif %}
+              {%- if r.error %} · <span style="color:#f08a8a;">{{ r.error }}</span>{% endif %}
+            </div>
+            {% endif %}
+          </div>
+        </td>
       </tr>
     {% else %}
-      <tr><td colspan="4" style="padding:14px;text-align:center;color:#3a6080;">
+      <tr><td colspan="7" style="padding:14px;text-align:center;color:#3a6080;">
         No drift events yet. Drift is detected by comparing a topology against its saved baseline —
         {% if baselines_saved == 0 %}and no baseline is saved yet, so there is nothing to compare.
         Use <strong>Save as baseline</strong> above, change the topology, then run the check.
@@ -217,6 +649,380 @@
       })
       .catch(function (e) { say('Drift check failed: ' + e, '#e0a0a0'); });
   });
+})();
+
+// ── cef-ui-01 — resolve a finding, and re-render the three axes ─────────────
+// Every value below is READ off the API response. This script derives no
+// verdict, no health and no advisory state; it only chooses which of the
+// declared styles to paint, from the same vocabulary the server-side template
+// uses. If it ever had to compute one, the page and the seam could disagree
+// about what a finding is — which is the bug this card exists to fix.
+(function () {
+  var STATE = {
+    current:      {fg: '#8fd08f', bg: '#11261a', bd: '#2f6b42', icon: '✔', label: 'Current',
+                   meaning: 'A domain pack checked it and it is up to date.'},
+    deprecated:   {fg: '#e0c080', bg: '#2a2313', bd: '#6d5a24', icon: '▲', label: 'Deprecated',
+                   meaning: 'Past its life. No successor was named.'},
+    superseded:   {fg: '#f0a06a', bg: '#2c1c12', bd: '#7a4522', icon: '⇄', label: 'Superseded',
+                   meaning: 'Stale, and a cited replacement exists.'},
+    unknown:      {fg: '#c0a8f0', bg: '#1d1832', bd: '#4c3c86', icon: '?', label: 'Unknown',
+                   meaning: 'We asked and NOTHING could answer. This is a finding, not a pass.'},
+    not_resolved: {fg: '#8ba0bd', bg: 'transparent', bd: '#3a5170', icon: '—', label: 'Not checked',
+                   meaning: 'Nobody has asked yet. This is not a clean bill of health.'},
+    refused:      {fg: '#f08a8a', bg: '#2b1414', bd: '#7d2f2f', icon: '✕', label: 'Refused',
+                   meaning: 'The resolution was assembled and REJECTED (an uncited claim).'}
+  };
+  var HEALTH = {
+    ok:         {fg: '#8fd08f', icon: '●', text: 'evidence ok'},
+    degraded:   {fg: '#e0c080', icon: '◐', text: null},
+    failed:     {fg: '#f08a8a', icon: '○', text: 'retrieval down'},
+    unmeasured: {fg: '#6a7f9c', icon: '—', text: 'not measured'}
+  };
+
+  var statusEl = document.getElementById('dd-resolve-status');
+  var advisoryOpt = document.getElementById('dd-advisory-opt');
+  var resolveAll = document.getElementById('dd-resolve-all');
+  var table = document.querySelector('.dd-row') ? document.querySelector('.dd-row').closest('table') : null;
+  if (!table) return;
+
+  function say(msg, color) {
+    if (!statusEl) return;
+    statusEl.textContent = msg;
+    statusEl.style.color = color || '#7a8cb0';
+  }
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s === null || s === undefined ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  // An entity can occupy several rows (one per drift event). ALL of them are
+  // repainted: leaving a duplicate on its stale badge would put two different
+  // answers for one entity on screen at once, which is the same class of defect
+  // this page exists to fix.
+  function rowsFor(entity) {
+    var out = [];
+    Array.prototype.forEach.call(table.querySelectorAll('.dd-row'), function (tr) {
+      if (tr.getAttribute('data-entity') === entity) out.push(tr);
+    });
+    return out;
+  }
+
+  function detailFor(tr) {
+    var idx = tr.getAttribute('data-finding-idx');
+    return table.querySelector('.dd-detail-row[data-finding-idx="' + idx + '"]');
+  }
+
+  // The badge markup mirrors the Jinja macro above. Kept in the same file so a
+  // change to one is visibly next to the other.
+  function stateBadge(state) {
+    var s = STATE[state] || STATE.not_resolved;
+    return '<span class="dd-state dd-state-' + esc(state) + '" title="' + esc(s.meaning) + '"' +
+      ' style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:11px;font-weight:600;' +
+      'letter-spacing:.3px;white-space:nowrap;color:' + s.fg + ';background:' + s.bg + ';' +
+      'border:1px ' + (state === 'not_resolved' ? 'dashed' : 'solid') + ' ' + s.bd + ';">' +
+      s.icon + ' ' + esc(s.label) + '</span>';
+  }
+
+  function healthBadge(health, failed) {
+    var h = HEALTH[health] || HEALTH.unmeasured;
+    var n = (failed || []).length;
+    var text = h.text !== null ? h.text : (n + ' backend' + (n === 1 ? '' : 's') + ' down');
+    return '<span class="dd-health dd-health-' + esc(health) + '"' +
+      ' title="' + esc((failed || []).join(', ')) + '"' +
+      ' style="font-size:11px;color:' + h.fg + ';white-space:nowrap;">' +
+      h.icon + ' ' + esc(text) + '</span>';
+  }
+
+  // Recount the two summary strips from what is actually painted on the rows,
+  // so the headline numbers can never drift from the badges under them.
+  function recount() {
+    var states = {}, healths = {};
+    Array.prototype.forEach.call(table.querySelectorAll('.dd-row'), function (tr) {
+      var st = tr.getAttribute('data-state') || 'not_resolved';
+      states[st] = (states[st] || 0) + 1;
+      var hEl = tr.querySelector('.dd-health');
+      var hm = hEl && hEl.className.match(/dd-health-([a-z_]+)/);
+      var h = hm ? hm[1] : 'unmeasured';
+      healths[h] = (healths[h] || 0) + 1;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-count-state]'), function (el) {
+      el.textContent = states[el.getAttribute('data-count-state')] || 0;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-count-health]'), function (el) {
+      el.textContent = healths[el.getAttribute('data-count-health')] || 0;
+    });
+  }
+
+  function paint(entity, res) {
+    var rows = rowsFor(entity);
+    if (!rows.length) return false;
+    rows.forEach(function (tr) {
+      tr.setAttribute('data-state', res.state);
+      var v = tr.querySelector('.dd-cell-verdict');
+      if (v) v.innerHTML = stateBadge(res.state);
+      var h = tr.querySelector('.dd-cell-health');
+      if (h) h.innerHTML = healthBadge(res.evidence_health, res.backends_failed);
+      var btn = tr.querySelector('.dd-resolve-btn');
+      if (btn) btn.textContent = res.resolved ? 're-check' : 'resolve';
+      // Replace the stale server-rendered detail with a live one, and leave it
+      // open: the operator asked a question and the answer is the detail.
+      var detail = detailFor(tr);
+      if (detail) {
+        var body = detail.querySelector('.dd-detail-body');
+        if (body) body.innerHTML = renderDetail(res);
+        detail.style.display = '';
+      }
+    });
+    recount();
+    return true;
+  }
+
+  function renderDetail(r) {
+    var s = STATE[r.state] || STATE.not_resolved;
+    var html = '';
+
+    // 1. The deterministic verdict — first, largest, on its own.
+    html += '<div class="dd-verdict-block dd-state-' + esc(r.state) + '"' +
+      ' style="border-left:3px solid ' + s.bd + ';padding:2px 0 2px 12px;margin-bottom:14px;">' +
+      '<div style="font-size:10px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.7px;">Deterministic verdict</div>' +
+      '<div style="font-size:16px;font-weight:700;color:' + s.fg + ';margin:3px 0 4px;">' +
+      s.icon + ' ' + esc(r.entity) + ' — ' + esc(s.label) + '</div>' +
+      '<div style="font-size:11px;color:#7a8cb0;line-height:1.55;">' + esc(s.meaning) + ' ' +
+      (r.verdict_source === 'pack_evaluate'
+        ? 'Derived by <code style="color:#9bb8d8;">DomainPack.evaluate()</code> — no model produced it.'
+        : '<span style="color:#c0a8f0;">No domain pack recognised this entity</span> (<code>verdict_source: none</code>), ' +
+          'so nothing deterministic could rule on it.') +
+      '</div>';
+    (r.assessments || []).forEach(function (a) {
+      html += '<div style="font-size:11px;color:#a8c8e0;margin-top:6px;"><code style="color:#9bd0ff;">' +
+        esc(a.pack_id) + '</code> → <strong style="color:' + s.fg + ';">' + esc(a.verdict) + '</strong>' +
+        (a.pack_verdict && a.pack_verdict !== a.verdict
+          ? ' <span style="color:#6a7f9c;">(pack says “' + esc(a.pack_verdict) + '”)</span>' : '') +
+        (a.rationale ? '<div style="color:#7a8cb0;margin:2px 0 0 14px;line-height:1.5;">' + esc(a.rationale) + '</div>' : '') +
+        '</div>';
+    });
+    if (r.superseded_by) {
+      html += '<div style="margin-top:8px;padding:7px 10px;background:#12243a;border:1px solid #1f4d7a;border-radius:5px;">' +
+        '<span style="font-size:11px;color:#9bd0ff;">Recommended replacement:</span> ' +
+        '<strong style="color:#cfe3f7;font-size:12px;">' + esc(r.superseded_by) + '</strong> ' +
+        '<span style="font-size:10px;color:#6a7f9c;">(source: ' + esc(r.replacement_source || 'unattributed') + ')</span>' +
+        '<button class="dd-resolve-btn" data-entity="' + esc(r.superseded_by) + '"' +
+        ' title="Is the recommended replacement itself current?"' +
+        ' style="background:#0f3460;color:#9bd0ff;border:1px solid #1f4d7a;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;margin-left:8px;">' +
+        'check the replacement</button></div>';
+    }
+    html += '</div>';
+
+    // 2. Unknown — a finding with a named reason.
+    if (r.state === 'unknown') {
+      html += '<div class="dd-unknown-block" style="background:#1d1832;border:1px solid #4c3c86;border-radius:6px;padding:11px 13px;margin-bottom:14px;">' +
+        '<div style="font-size:11px;color:#c0a8f0;font-weight:600;margin-bottom:5px;">? Unknown — this is a finding, not a pass</div>' +
+        '<div style="font-size:11px;color:#a99ad0;line-height:1.55;margin-bottom:7px;">Nothing available could answer whether this ' +
+        'entity is current. That is materially different from “we checked and it is current”, and it is why this row is not green.</div>';
+      if ((r.unknown_reasons || []).length) {
+        html += '<ul style="margin:0 0 0 16px;padding:0;color:#c0a8f0;font-size:11px;line-height:1.7;">';
+        r.unknown_reasons.forEach(function (x) {
+          html += '<li><code style="color:#d8c8ff;">' + esc(x.code) + '</code> — ' + esc(x.label) + '</li>';
+        });
+        html += '</ul>';
+      }
+      if ((r.citation_bases || []).length) {
+        html += '<div style="margin-top:7px;font-size:10px;color:#8f81b8;line-height:1.5;">Why the gap cites nothing: ' +
+          r.citation_bases.map(function (b) {
+            return '<code style="color:#d8c8ff;">' + esc(b.code) + '</code> — ' + esc(b.label);
+          }).join('; ') + '</div>';
+      }
+      html += '</div>';
+    }
+
+    // 3. The evidence sweep — separate block, separate colour.
+    if ((r.backend_errors || []).length) {
+      html += '<div class="dd-backend-block" style="background:#2a2313;border:1px solid #6d5a24;border-radius:6px;padding:11px 13px;margin-bottom:14px;">' +
+        '<div style="font-size:11px;color:#e0c080;font-weight:600;margin-bottom:5px;">' +
+        (r.evidence_health === 'failed' ? '○ Retrieval is down' : '◐ Evidence sweep degraded') +
+        ' — ' + (r.backends_failed || []).length + ' of ' + (r.backends_consulted || []).length + ' backend(s) failed</div>' +
+        '<div style="font-size:11px;color:#c8b183;line-height:1.55;margin-bottom:7px;">This is an <strong>infrastructure</strong> fact, ' +
+        'not a claim about the entity. It does not change the verdict above.</div>' +
+        '<ul style="margin:0 0 0 16px;padding:0;color:#d8c090;font-size:11px;line-height:1.7;">';
+      r.backend_errors.forEach(function (e) {
+        html += '<li><code style="color:#f0d0a0;">' + esc(e.backend) + '</code> <span style="color:#a08a60;">(' +
+          esc(e.stage) + ')</span> — ' + esc(e.message) + '</li>';
+      });
+      html += '</ul></div>';
+    }
+
+    // 4. Citations.
+    html += '<div style="margin-bottom:14px;"><div style="font-size:10px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;">' +
+      'Evidence citations <span style="color:#6a8ab0;text-transform:none;letter-spacing:0;">— ' +
+      (r.citation_count || 0) + ' total, ' + (r.corpus_citation_count || 0) + ' from the corpora</span></div>';
+    if ((r.citations || []).length) {
+      html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+      r.citations.forEach(function (c) {
+        html += '<div class="dd-citation" style="background:#0b1726;border:1px solid #1a3560;border-radius:5px;padding:7px 10px;">' +
+          '<div style="font-size:11px;"><code style="color:#9bd0ff;">' + esc(c.source_id) + '</code>' +
+          (c.source_table ? ' <span style="color:#5a7aa0;">· ' + esc(c.source_table) + '</span>' : '') +
+          (c.source_type === 'pack_evidence'
+            ? ' <span title="The domain pack\'s OWN rationale coming back through the fan-out." style="font-size:9px;color:#c0a8f0;border:1px solid #4c3c86;border-radius:9px;padding:1px 6px;margin-left:5px;">derived — the pack’s own rule</span>'
+            : ' <span style="font-size:9px;color:#6a8ab0;border:1px solid #1f4d7a;border-radius:9px;padding:1px 6px;margin-left:5px;">' + esc(c.source_type) + '</span>') +
+          '</div>' +
+          (c.snippet ? '<div style="font-size:11px;color:#a8c8e0;margin-top:4px;line-height:1.5;">' + esc(c.snippet) + '</div>' : '') +
+          '</div>';
+      });
+      html += '</div>';
+      if (r.provenance_id) {
+        html += '<div style="font-size:10px;color:#5a7aa0;margin-top:6px;">Evidence set registered as <code style="color:#7a9cc0;">' +
+          esc(r.provenance_id) + '</code> in <code style="color:#7a9cc0;">source_citation_registry</code>.</div>';
+      }
+    } else if (r.state === 'not_resolved') {
+      html += '<div style="font-size:11px;color:#7a8cb0;border:1px dashed #3a5170;border-radius:5px;padding:9px 11px;">' +
+        'No citations, because nothing has been resolved for this finding yet. ' +
+        '<strong style="color:#8ba0bd;">This is not evidence of absence.</strong></div>';
+    } else {
+      html += '<div style="font-size:11px;color:#7a8cb0;">The resolution returned no citations.</div>';
+    }
+    html += '</div>';
+
+    // 5. ADVISORY — last, indented, muted, dashed. Subordinate by construction.
+    var ADV = {
+      not_consulted: {fg: '#7a8cb0', label: 'Not consulted',
+                      meaning: 'No expert was asked. This is NOT "the expert had no concerns".'},
+      unavailable:   {fg: '#e0c080', label: 'Consulted — unavailable',
+                      meaning: 'An expert was asked and the rung errored. An outage, not an absence of opinion.'},
+      no_opinion:    {fg: '#8ba0bd', label: 'Consulted — no opinion',
+                      meaning: 'An expert was asked, answered, and offered nothing.'},
+      opinion:       {fg: '#9bd0ff', label: 'Advisory opinion',
+                      meaning: 'An ACE domain expert gave an opinion. Advisory only.'}
+    };
+    var adv = ADV[r.advisory_state] || ADV.not_consulted;
+    var advObj = r.advisory || {};
+    html += '<div class="dd-advisory" data-advisory-state="' + esc(r.advisory_state) + '"' +
+      ' style="margin:0 0 4px 22px;padding:9px 12px;background:#0a1420;border:1px dashed #2a4260;' +
+      'border-left:2px solid #2a4260;border-radius:5px;opacity:.92;">' +
+      '<div style="font-size:9px;color:#5a7aa0;text-transform:uppercase;letter-spacing:.9px;margin-bottom:4px;">' +
+      '⚑ Advisory — SME opinion · not evidence · did not affect the verdict</div>' +
+      '<div style="font-size:11px;color:' + adv.fg + ';font-weight:600;">' + esc(adv.label) + '</div>' +
+      '<div style="font-size:10px;color:#6a7f9c;line-height:1.5;margin-top:2px;">' + esc(adv.meaning) +
+      (advObj.reason ? '<br><span style="color:#5a7aa0;">' + esc(advObj.reason) + '</span>' : '') + '</div>';
+    (advObj.items || []).forEach(function (item) {
+      html += '<div style="margin-top:6px;padding:7px 9px;background:#0d1b2e;border:1px dashed #2a4260;border-radius:4px;">' +
+        '<div style="font-size:9px;color:#5a7aa0;margin-bottom:3px;">ADVISORY OPINION' +
+        (item.persona ? ' · persona <code style="color:#6a8ab0;">' + esc(item.persona) + '</code>' : '') +
+        ' · authored by a model at query time</div>' +
+        '<div style="font-size:11px;color:#9ab4cc;line-height:1.55;font-style:italic;">' + esc(item.text) + '</div></div>';
+    });
+    if ((advObj.errors || []).length) {
+      html += '<ul style="margin:5px 0 0 15px;padding:0;color:#c8b183;font-size:10px;line-height:1.6;">';
+      advObj.errors.forEach(function (e) {
+        html += '<li><code>' + esc(e.backend) + '</code> (' + esc(e.stage) + ') — ' + esc(e.message) + '</li>';
+      });
+      html += '</ul>';
+    }
+    html += '</div>';
+
+    if (r.resolved_at) {
+      html += '<div style="font-size:10px;color:#4a6a8a;margin-top:8px;">Resolved ' + esc(r.resolved_at) +
+        (r.duration_ms ? ' in ' + r.duration_ms + 'ms' : '') +
+        ((r.backends_consulted || []).length ? ' · backends consulted: ' + esc(r.backends_consulted.join(', ')) : '') +
+        (r.error ? ' · <span style="color:#f08a8a;">' + esc(r.error) + '</span>' : '') + '</div>';
+    }
+    return html;
+  }
+
+  function resolveOne(entity, btn) {
+    var original = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'resolving…'; }
+    say('Resolving "' + entity + '" — five backends, ~10s…');
+    return fetch('/document-intelligence/api/docdrift/resolve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entity: entity, advisory: !!(advisoryOpt && advisoryOpt.checked)})
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.error) { say('Resolve failed: ' + j.error, '#e0a0a0'); return null; }
+        var res = j.resolution;
+        if (!paint(entity, res)) {
+          // A successor is not one of the listed findings, so there is no row to
+          // repaint. It gets the SAME renderer rather than a one-line summary:
+          // downgrading the answer because of where it was asked from would
+          // reintroduce exactly the collapse this page exists to prevent.
+          var adhoc = document.getElementById('dd-adhoc');
+          var adhocBody = document.getElementById('dd-adhoc-body');
+          if (adhoc && adhocBody) {
+            adhocBody.innerHTML = renderDetail(res);
+            adhoc.style.display = '';
+            adhoc.scrollIntoView({block: 'nearest'});
+          }
+          say(res.entity + ' → ' + (STATE[res.state] || STATE.not_resolved).label,
+              (STATE[res.state] || STATE.not_resolved).fg);
+        } else {
+          say('');
+        }
+        return res;
+      })
+      .catch(function (e) { say('Resolve failed: ' + e, '#e0a0a0'); return null; })
+      .finally(function () { if (btn) { btn.disabled = false; btn.textContent = original; } });
+  }
+
+  // Delegated so buttons rendered into a detail panel work too.
+  document.addEventListener('click', function (ev) {
+    var detailBtn = ev.target.closest && ev.target.closest('.dd-detail-btn');
+    if (detailBtn) {
+      var idx = detailBtn.getAttribute('data-finding-idx');
+      var row = table.querySelector('.dd-detail-row[data-finding-idx="' + idx + '"]');
+      if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+      return;
+    }
+    var resolveBtn = ev.target.closest && ev.target.closest('.dd-resolve-btn');
+    if (resolveBtn && !resolveBtn.disabled) {
+      resolveOne(resolveBtn.getAttribute('data-entity'), resolveBtn);
+    }
+  });
+
+  var adhocClose = document.getElementById('dd-adhoc-close');
+  if (adhocClose) {
+    adhocClose.addEventListener('click', function () {
+      document.getElementById('dd-adhoc').style.display = 'none';
+    });
+  }
+
+  if (resolveAll) {
+    resolveAll.addEventListener('click', function () {
+      var entities = [], seen = {};
+      Array.prototype.forEach.call(table.querySelectorAll('.dd-row'), function (tr) {
+        if (tr.getAttribute('data-state') !== 'not_resolved') return;
+        var ent = tr.getAttribute('data-entity');
+        if (!ent || seen[ent]) return;
+        seen[ent] = 1;
+        entities.push(ent);
+      });
+      if (!entities.length) { say('Every finding already has a resolution.'); return; }
+      resolveAll.disabled = true;
+      say('Resolving ' + entities.length + ' entit' + (entities.length === 1 ? 'y' : 'ies') + '…');
+      fetch('/document-intelligence/api/docdrift/resolve-batch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({entities: entities, advisory: !!(advisoryOpt && advisoryOpt.checked)})
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.error) { say('Batch failed: ' + j.error, '#e0a0a0'); return; }
+          (j.resolved || []).forEach(function (res) { paint(res.entity, res); });
+          // The cap is REPORTED, never silent: a truncated sweep that showed
+          // only its successes would read as full coverage.
+          var msg = (j.resolved || []).length + ' resolved';
+          if ((j.skipped || []).length) {
+            msg += ' · ' + j.skipped.length + ' deferred by the batch cap of ' + j.cap +
+                   ': ' + j.skipped.join(', ');
+          }
+          say(msg, (j.skipped || []).length ? '#e0c080' : '#8fd08f');
+        })
+        .catch(function (e) { say('Batch failed: ' + e, '#e0a0a0'); })
+        .finally(function () { resolveAll.disabled = false; });
+    });
+  }
 })();
 </script>
 {% endblock %}

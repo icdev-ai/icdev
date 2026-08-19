@@ -22,6 +22,9 @@ Routes:
   POST /document-intelligence/api/review/<id>/reject             reject fragment/version
   POST /document-intelligence/api/generate                       AI draft generation
   POST /document-intelligence/api/iqe-query                      IQE natural-language query
+  POST /document-intelligence/api/docdrift/drift-check           run the NDC->DocDrift drift detector
+  POST /document-intelligence/api/docdrift/resolve               governed cortex.resolve for one finding (cef-ui-01)
+  POST /document-intelligence/api/docdrift/resolve-batch         bounded batch of the above
 
   GET  /document-intelligence/api/suggestions                    list suggestions (dsyn-adapt-04)
   GET  /document-intelligence/api/suggestions/<id>               suggestion detail
@@ -608,6 +611,13 @@ def docdrift():
     regen_queue = page["regen_queue"]
     ssp_fragments = page["ssp_fragments"]
     topologies = _docdrift_topologies()
+    # cef-ui-01 — what cortex.resolve() found about each finding's entity.
+    # attach_resolutions READS persisted answers only; it never resolves on
+    # render, because one resolution costs 10-12s against five backends and
+    # this page lists 72 findings. A finding with no stored answer comes back
+    # `not_resolved`, which the template states as "not checked" — never as a
+    # clean bill of health.
+    currency = _docdrift_currency(drift_events)
     return render_template(
         "document_intelligence/docdrift.html",
         drift_events=drift_events,
@@ -615,7 +625,114 @@ def docdrift():
         ssp_fragments=ssp_fragments,
         topologies=topologies,
         baselines_saved=sum(1 for t in topologies if t["has_baseline"]),
+        currency=currency,
     )
+
+
+def _docdrift_evidence_module():
+    """The docdrift_evidence module, preferring the canonical namespace.
+
+    ``icdev.tools.*`` and ``tools.*`` are two module objects with two caches
+    (CLAUDE.md's import-convention note), so a caller that reaches the seam
+    through a different namespace than a test patched gets an unpatched copy.
+    Every caller in this blueprint goes through this one function, so there is
+    exactly one object to patch.
+    """
+    try:  # pragma: no cover - import shape varies by install layout
+        from icdev.tools.document_intelligence import docdrift_evidence
+    except Exception:  # backward-compat shim
+        from tools.document_intelligence import docdrift_evidence
+    return docdrift_evidence
+
+
+def _docdrift_currency(drift_events: list) -> dict:
+    """Per-finding currency views for the DocDrift page.
+
+    Degrades to a shape the template can still render: an unreachable seam
+    yields `enabled: false` with no findings, which the page states as "the
+    currency panel could not load". It does NOT yield an empty findings list
+    that reads as "no findings" — a panel that cannot load and a board with
+    nothing on it are different facts.
+    """
+    try:
+        return _docdrift_evidence_module().attach_resolutions(drift_events)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: docdrift currency panel unavailable: %s", exc)
+        return {
+            "findings": [],
+            "summary": {},
+            "evidence_health": {},
+            "advisory": {},
+            "enabled": False,
+            "advisory_enabled": False,
+            "total": 0,
+            "distinct_entities": 0,
+            "batch_cap": 0,
+            "stale_after_hours": 0,
+            "unavailable": str(exc),
+        }
+
+
+@dic_bp.route("/api/docdrift/resolve", methods=["POST"])
+def api_docdrift_resolve():
+    """Resolve ONE finding's entity through the governed ``cortex.resolve``.
+
+    Costs 10-12s on this deployment (five backends under the per-backend
+    timeouts in args/cortex_config.yaml), which is why it is a button and not
+    something the page render does.
+
+    ``advisory: true`` additionally consults the ``sme`` rung — an LLM-authored
+    OPINION, never evidence and never a verdict input. It is opt-in PER CALL
+    (and per args/dic_docdrift_config.yaml) because it is the only part of this
+    page that costs a model call; the response's ``advisory_state`` says which
+    of the four things happened, so "not asked" and "asked and unavailable" can
+    never be read as "no concerns".
+    """
+    data = request.get_json(silent=True) or {}
+    entity = str(data.get("entity") or "").strip()
+    if not entity:
+        return jsonify({"error": "entity is required"}), 400
+    tenant_id, classification = _security_context()
+    advisory = data.get("advisory")
+    try:
+        view = _docdrift_evidence_module().resolve_finding(
+            entity,
+            tenant_id=tenant_id,
+            classification=classification,
+            advisory=None if advisory is None else bool(advisory),
+        )
+    except Exception as exc:  # noqa: BLE001 — resolve_finding is already
+        # non-raising; this catches an unimportable seam, which must not 500.
+        logger.warning("dic: docdrift resolve failed for %r: %s", entity, exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"resolution": view.to_dict()})
+
+
+@dic_bp.route("/api/docdrift/resolve-batch", methods=["POST"])
+def api_docdrift_resolve_batch():
+    """Resolve a BOUNDED batch of finding entities.
+
+    The cap (``cortex.max_resolves_per_batch``) is applied by the seam and what
+    it deferred comes back NAMED in ``skipped`` — a truncated sweep that
+    reported only its successes would read as full coverage.
+    """
+    data = request.get_json(silent=True) or {}
+    entities = [str(e or "").strip() for e in (data.get("entities") or []) if str(e or "").strip()]
+    if not entities:
+        return jsonify({"error": "entities is required"}), 400
+    tenant_id, classification = _security_context()
+    advisory = data.get("advisory")
+    try:
+        result = _docdrift_evidence_module().resolve_findings(
+            entities,
+            tenant_id=tenant_id,
+            classification=classification,
+            advisory=None if advisory is None else bool(advisory),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: docdrift batch resolve failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
 
 
 @dic_bp.route("/acoic")
