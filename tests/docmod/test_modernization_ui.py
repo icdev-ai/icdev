@@ -29,6 +29,19 @@ def db():
         "CREATE TABLE IF NOT EXISTS dic_documents (doc_id TEXT PRIMARY KEY, "
         "collection_id TEXT, title TEXT, tenant_id TEXT, classification TEXT, created_at TEXT)"
     )
+    # cef-ui-03: /resolve now audits the human disposition fail-closed, so the
+    # append-only audit_trail is part of this route's substrate. Kept in step
+    # with tests/conftest.py's audit_trail, which mirrors the LIVE PG shape.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS audit_trail ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, "
+        "event_type TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, "
+        "details TEXT, affected_files TEXT, classification TEXT DEFAULT 'CUI', "
+        "ip_address TEXT, session_id TEXT, "
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+        "hash TEXT, previous_hash TEXT, signature TEXT)"
+    )
+    conn.execute("DELETE FROM audit_trail")
     conn.execute("DELETE FROM docmod_findings")
     if not conn.execute("SELECT run_id FROM docmod_scan_runs WHERE run_id='run-ui'").fetchone():
         conn.execute(
@@ -122,6 +135,17 @@ def test_resolve_appends_state_row(client, db):
     latest = get_findings(doc_id=doc_id)
     assert len(latest) == 1 and latest[0]["state"] == "accepted"
     assert latest[0]["supersedes_id"] == fid  # append-only chain
+
+    # cef-ui-03: the state row alone records WHAT was decided, never WHO decided
+    # it — docmod_findings has no reviewer column. The audit row is the record
+    # that a human, and not the sweep, disposed of this finding.
+    from tools.db.storage import get_connection
+    conn = get_connection()
+    audits = [dict(r) for r in conn.execute(
+        "SELECT event_type, actor, action FROM audit_trail ORDER BY id").fetchall()]
+    conn.close()
+    assert [a["action"] for a in audits] == ["docmod_finding.accepted"], audits
+    assert audits[0]["event_type"] == "dic.hitl_decision"
 
     assert client.post(
         f"/document-intelligence/api/modernization/findings/{fid}/resolve",

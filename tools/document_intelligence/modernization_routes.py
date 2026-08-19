@@ -28,6 +28,8 @@ from tools.document_intelligence.blueprint import (
     _JOB_LOCK,
     _JOB_QUEUES,
     _conn,
+    _current_user,
+    _record_hitl_decision,
     _security_context,
     dic_bp,
 )
@@ -377,12 +379,35 @@ def api_modernization_bulk():
 
 @dic_bp.route("/api/modernization/findings/<finding_id>/resolve", methods=["POST"])
 def api_modernization_resolve(finding_id: str):
-    """HITL disposition: appends the accepted/rejected state row (append-only)
-    and reconciles the suggested kanban card immediately."""
+    """HITL disposition: appends the accepted/rejected state row (append-only),
+    audits the human decision, reconciles the suggested kanban card, and
+    reconciles the LINKED REDLINE PROPOSAL (cef-ui-03).
+
+    A resolve-produced proposal has two identities: this finding, and the
+    ``dic_suggestions`` row the TRUST-gated redline drafter wrote for it. They
+    were never connected — measured on the live board 2026-08-18, 49 findings
+    sat in ``redline_drafted`` against 49 ``pending`` suggestions and ZERO
+    decision rows.
+
+    THE CASCADE IS ASYMMETRIC, ON PURPOSE. It only ever REMOVES an apply
+    capability:
+
+    * ``rejected`` also rejects the linked pending proposal, through the
+      existing ``decide_suggestion`` seam, so a redline a human has declined can
+      never afterwards be applied through the other door.
+    * ``accepted`` leaves the proposal PENDING and hands back its apply URL.
+      Accepting a finding means "yes, this document is stale"; it is not
+      authorisation to write LLM-drafted prose into the document. That needs the
+      second, explicit decision at ``/api/suggestions/<id>/accept``, which is the
+      only writer of ``dic_sections.content``. Auto-applying here is precisely
+      the "never auto-apply" prohibition this card exists to enforce.
+    """
     body = request.get_json(silent=True) or {}
     disposition = (body.get("disposition") or "").strip()
     if disposition not in ("accepted", "rejected"):
         return jsonify({"error": "disposition must be 'accepted' or 'rejected'"}), 400
+    reviewer = (body.get("reviewer") or "").strip() or _current_user()
+    note = (body.get("note") or "").strip()
     try:
         conn = _conn()
         try:
@@ -392,6 +417,19 @@ def api_modernization_resolve(finding_id: str):
             if not row:
                 return jsonify({"error": "finding not found"}), 404
             f = dict(row)
+            # Audited BEFORE the state row is appended, and fail-closed: a
+            # disposition that cannot be audited must not stand. Raises out to
+            # the handler below, which returns 500 without writing anything.
+            _record_hitl_decision(
+                "docmod_finding", finding_id, disposition, reviewer,
+                {"finding_id": finding_id,
+                 "doc_id": f.get("doc_id"),
+                 "pack_id": f.get("pack_id"),
+                 "entity_label": f.get("entity_label"),
+                 "currency_verdict": f.get("currency_verdict"),
+                 "redline_suggestion_id": f.get("redline_suggestion_id"),
+                 "applied": False},
+            )
             conn.execute(
                 """INSERT INTO docmod_findings
                    (finding_id, run_id, doc_id, version_id, pack_id, entity_label,
@@ -420,11 +458,74 @@ def api_modernization_resolve(finding_id: str):
             reconciled = reconcile()
         except Exception as exc:
             logger.debug("dic modernization: card reconcile skipped: %s", exc)
+        proposal = _reconcile_linked_proposal(
+            f.get("redline_suggestion_id"), disposition, reviewer, note, finding_id
+        )
         return jsonify({"finding_id": finding_id, "state": disposition,
+                        "reviewer": reviewer,
+                        "redline_suggestion_id": f.get("redline_suggestion_id"),
+                        "proposal": proposal,
                         "cards_reconciled": reconciled.get("closed", 0)})
     except Exception as exc:
         logger.warning("dic modernization resolve failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+def _reconcile_linked_proposal(suggestion_id: str | None, disposition: str,
+                               reviewer: str, note: str, finding_id: str) -> dict | None:
+    """Reconcile the redline proposal linked to a just-disposed finding.
+
+    Returns the proposal's post-disposition shape for the UI, or ``None`` when
+    the finding carries no redline (a flag-only finding, or one the TRUST chain
+    blocked or abstained on — those never produced a ``dic_suggestions`` row).
+
+    Reject cascades; accept does not. See ``api_modernization_resolve``.
+    """
+    if not suggestion_id:
+        return None
+    from tools.document_intelligence.suggestion_store import (
+        decide_suggestion,
+        get_suggestion,
+    )
+
+    s = get_suggestion(suggestion_id) or {}
+    if not s:
+        return None
+    base = f"{request.script_root}{dic_bp.url_prefix}/api/suggestions/{suggestion_id}"
+    out = {
+        "suggestion_id": suggestion_id,
+        "status": s.get("status"),
+        "section_id": s.get("section_id"),
+        "apply_url": f"{base}/accept",
+        "reject_url": f"{base}/reject",
+    }
+    if disposition != "rejected" or s.get("status") != "pending":
+        return out
+    try:
+        cascaded = decide_suggestion(
+            suggestion_id, "rejected", reviewer,
+            note=note or f"cascaded from docmod finding {finding_id} (rejected)",
+            tenant_id=s.get("tenant_id") or "",
+            classification=s.get("classification") or "CUI",
+        )
+    except Exception as exc:
+        logger.warning("dic modernization: proposal cascade failed for %s: %s",
+                       suggestion_id, exc)
+        cascaded = False
+    if not cascaded:
+        # Loud, not silent: the finding is rejected but its proposal is still
+        # applyable, and the reviewer needs to know that before they walk away.
+        out["cascade_failed"] = True
+        return out
+    _record_hitl_decision(
+        "dic_suggestion", suggestion_id, "rejected", reviewer,
+        {"suggestion_id": suggestion_id, "section_id": s.get("section_id"),
+         "doc_id": s.get("doc_id"), "canvas_source": s.get("canvas_source"),
+         "cascaded_from_finding": finding_id, "applied": False},
+    )
+    out["status"] = "rejected"
+    out["cascaded"] = True
+    return out
 
 
 # ── docmod-ux-02: bulk legacy-document onboarding ────────────────────────────
