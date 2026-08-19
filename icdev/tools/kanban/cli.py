@@ -546,6 +546,57 @@ def cmd_needs_human(json_out: bool) -> int:
     return 1
 
 
+def cmd_awaiting_merge(json_out: bool, states: list | None = None,
+                       measure_behind: bool = True) -> int:
+    """Which open PRs are awaiting merge, and why is each one not merging?
+
+    kpr-watch-03. ``--needs-human`` above answers "what has the pipeline GIVEN
+    UP on"; this answers the question in between, which nothing on the board
+    could answer from a terminal: a PR sitting in ``awaiting_ci`` for nine
+    hours, or merging cleanly while 200 commits behind main, is not an alert
+    and is not done -- it was invisible in both directions.
+
+    READ ONLY, deliberately and completely: it never merges, pushes, un-drafts
+    or closes. The point is to SEE what the automation is doing, not to add a
+    second way to act on it -- the CLI already has ``--set-status <id> done
+    --merge`` for that, and it is gated.
+
+    Reads ``tools.ci.merge_readiness.collect_report``, the same gatherer
+    ``python -m tools.ci.merge_readiness`` and the dashboard panel read, so the
+    terminal and the web view cannot disagree about why a PR is stuck -- the
+    same discipline ``--needs-human`` follows for the ``alerts`` table.
+
+    Exit 0 = report produced (even if empty), 2 = it COULD NOT BE produced.
+    A report that listed nothing must never read like a repo with nothing open.
+    """
+    from tools.ci import merge_readiness as mr
+
+    try:
+        report = mr.collect_report(measure_behind=measure_behind)
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+        msg = f"cannot produce the merge-readiness report: {exc}"
+        if json_out:
+            print(json.dumps({"ok": False, "error": msg}, indent=2))
+        else:
+            print(f"ERROR: {msg}", file=sys.stderr)
+        return 2
+
+    if states:
+        wanted = set(states)
+        report["prs"] = [r for r in report["prs"]
+                         if r.get("pipeline_state") in wanted
+                         or r.get("state") in wanted]
+        report["filtered_to"] = sorted(wanted)
+
+    if json_out:
+        report["ok"] = True
+        report["groups"] = mr.group_by_state(report)
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    print(_ascii(mr.render_grouped(report)))
+    return 0
+
+
 def cmd_list(prefix: str | None, status: str | None, json_out: bool) -> int:
     conditions = []
     params = []
@@ -915,6 +966,20 @@ def main():
     parser.add_argument("--needs-human", dest="needs_human", action="store_true",
                         help="List tasks whose automatic recovery is exhausted and "
                              "which will not move without a person (exit 1 if any)")
+    parser.add_argument("--awaiting-merge", dest="awaiting_merge",
+                        action="store_true",
+                        help="Which open PRs are awaiting merge and why each one "
+                             "is not merging, grouped by state (READ ONLY -- it "
+                             "never merges, pushes or un-drafts). Exit 2 if the "
+                             "report could not be produced.")
+    parser.add_argument("--merge-state", dest="merge_state", action="append",
+                        metavar="STATE",
+                        help="With --awaiting-merge: only show PRs in this state "
+                             "(repeatable), e.g. --merge-state behind_main")
+    parser.add_argument("--no-measure-behind", dest="no_measure_behind",
+                        action="store_true",
+                        help="With --awaiting-merge: skip the forge /compare call; "
+                             "staleness then reports UNMEASURED, never fresh")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true",
                         help="With --reverify: compute the verdict without writing it. "
                              "With --merge: run the landing preflight only "
@@ -983,6 +1048,10 @@ def main():
 
     elif args.needs_human:
         sys.exit(cmd_needs_human(args.json_out))
+    elif args.awaiting_merge:
+        sys.exit(cmd_awaiting_merge(
+            args.json_out, states=args.merge_state,
+            measure_behind=not args.no_measure_behind))
     elif args.reverify:
         sys.exit(cmd_reverify(args.reverify, args.json_out, dry_run=args.dry_run))
 

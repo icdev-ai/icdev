@@ -419,6 +419,10 @@ python -m tools.ci.merge_readiness --state awaiting_ci --state conflicting
 python -m tools.ci.merge_readiness --from-json prs.json --default-branch main
 python -m tools.ci.merge_readiness --state behind_main       # the stale ones
 python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare calls
+python -m tools.ci.merge_readiness --group                   # bucketed by state
+python tools/kanban/cli.py --awaiting-merge                  # same view, board CLI
+python tools/kanban/cli.py --awaiting-merge --merge-state behind_main --json
+# UI: Home (/) -> "Awaiting Merge"   API: GET /api/merge-readiness (no POST sibling)
 # READ-ONLY: it never merges, pushes, un-drafts or closes. `pr_watcher`'s unlinked
 # sweep and this report read the SAME pure function,
 # classify_merge_readiness(pr, *, default_branch, linked_urls, behind_by) ->
@@ -451,6 +455,40 @@ python -m tools.ci.merge_readiness --no-measure-behind       # skip the /compare
 # goes to the existing `_maybe_rebase` path (same ownership refusal, same
 # per-base-era budget) and raises a HITL alert when that declines; an UNLINKED
 # PR is reported and LEFT ALONE, because the sweep never pushes.
+#
+# SURFACED (kpr-watch-03) — a report nobody opens is not observability, and for
+# two cards the only place this answer existed was a CLI somebody had to think
+# to run. Now: the "Awaiting Merge" panel on Home (a section inside
+# templates/_autonomy_status.html, NOT a new page, so the 8-point page gate does
+# not apply) and `python tools/kanban/cli.py --awaiting-merge`. Both read
+# `collect_report`, the SAME gatherer `python -m tools.ci.merge_readiness`
+# reads — one ladder, one gatherer, three surfaces.
+# READ ONLY BY CONSTRUCTION: no merge button, no un-draft, and the route is GET
+# with no POST sibling (asserted in tests/test_merge_readiness_surface.py).
+# TWO VERDICTS PER PR, FROM ONE TABLE. `state` is the merger's, unchanged and
+# authoritative. `pipeline_state` is the same function called with
+# `linked_urls=()` — "why would this not merge, setting aside who owns it" —
+# because `state` short-circuits at the `linked` rung for EVERY kanban PR,
+# which is the exact population the panel is for; grouping on it collapsed the
+# board into one bucket labelled "a task owns it". For an UNLINKED PR the two
+# are identical by construction and a test asserts it, which is what proves
+# this is not a second copy of the ladder.
+# AGE IS A LOWER BOUND, and it is NOT `updatedAt`. Nothing persists a state
+# transition, so the age is measured from the NEWEST observable event on the
+# PR and reported as "it has been like this at LEAST this long". `updatedAt`
+# does not bump when a check completes — measured 2026-08-19, PR #1817 reported
+# updatedAt=01:10:24Z while its own check completed at 01:11:09Z, 45s LATER —
+# so keying on it alone overstates the age, in the direction that makes a stuck
+# pipeline look MORE stuck. `gh` renders an unfinished check's timestamp as the
+# Go zero value, which parses to a real year-1 datetime; it is rejected, not
+# min()-ed away. Unmeasured is `None` and prints "?", NEVER 0.
+# Groups are in ATTENTION order (`ready`, `behind_main` first — the two states
+# the card names), which is deliberately NOT the ladder order; presentation
+# only, in ATTENTION_ORDER beside the ladder, and it never reorders the ladder.
+# The panel hides ONLY on a known-empty board: a failed report stays visible and
+# says why, because a panel that disappears when it breaks is indistinguishable
+# from a clean board. Cached 120s server-side (a `gh pr list` plus a /compare
+# per ready PR), and the cache AGE is rendered — never presented as live.
 # Raw board writers — does this INSERT bypass the canonical seeder? (rem-hyg-05)
 python tools/kanban/raw_insert_census.py --check          # the gate; exit 1 on a NEW raw INSERT
 python tools/kanban/raw_insert_census.py --json           # full report
