@@ -969,11 +969,36 @@ class PRWatcher:
         files = entry.get("files") if entry else None
         return protected_hits(files, paths) or []
 
+    def _protected_already_held(self, pr_url: str) -> bool:
+        """Has this PR's hold already been recorded?
+
+        `audit_trail` is APPEND-ONLY, and the watcher polls every few seconds.
+        Auditing a standing hold each cycle wrote 161 rows in 59 minutes for two
+        PRs — a signal buried in its own repetition, and unbounded for a PR left
+        held over a weekend. A hold is an EVENT; it is recorded when it starts.
+
+        Read from the audit rather than an in-memory set so the dedupe survives
+        a daemon restart, which is precisely when a re-audit storm would start
+        again. Best-effort: `_count_audit_actions` already returns 0 on any
+        error, and a duplicate audit row is a far smaller harm than a missed
+        refusal, so an unreadable audit re-records rather than going quiet.
+        """
+        return self._count_audit_actions(
+            "", ("pr_watcher.protected_path_hold",), pr_url=pr_url) > 0
+
     def _refuse_protected(self, pr_url: str, task_id: str = "") -> List[str]:
         """Report and audit a protected-path refusal. Returns the hits (or [])."""
         hits = self._protected_hits(pr_url)
         if not hits:
             return []
+        if self._protected_already_held(pr_url):
+            # Still SAID every cycle, at debug: the refusal must never become
+            # invisible, and a held PR that stops appearing anywhere is how the
+            # AWAITING MERGE column went quiet in the first place.
+            logger.debug(
+                "pr_watcher: still refusing %s — protected path(s) %s (already "
+                "audited)", pr_url, ", ".join(hits))
+            return hits
         logger.warning(
             "pr_watcher: REFUSING to merge %s — it touches protected path(s) %s. "
             "A human must review and merge this by hand.",
@@ -3233,14 +3258,22 @@ class PRWatcher:
                     # and why. `_refuse_protected` is not called here — the
                     # classifier already decided, and calling it would emit a
                     # second audit row for one refusal.
-                    logger.warning(
-                        "pr_watcher: %s is green and MERGEABLE but %s",
-                        url, verdict.reason)
-                    self._audit(WatcherAction(
-                        task_id="", pr_url=url, classification="blocked",
-                        action="protected_path_hold", reason=verdict.reason[:500],
-                        resume_cycle=0,
-                    ))
+                    #
+                    # Audited ONCE per PR (kpr-watch-10). This branch is reached
+                    # every poll for as long as the PR sits there, and it was
+                    # the louder of the two writers: 161 rows in 59 minutes.
+                    if self._protected_already_held(url):
+                        logger.debug("pr_watcher: %s still held — %s",
+                                     url, verdict.reason)
+                    else:
+                        logger.warning(
+                            "pr_watcher: %s is green and MERGEABLE but %s",
+                            url, verdict.reason)
+                        self._audit(WatcherAction(
+                            task_id="", pr_url=url, classification="blocked",
+                            action="protected_path_hold",
+                            reason=verdict.reason[:500], resume_cycle=0,
+                        ))
                 elif verdict.state == BEHIND_MAIN:
                     # AND NOTHING ELSE. The unlinked sweep deliberately never
                     # pushes — it has no task to carry the state and no claim on
