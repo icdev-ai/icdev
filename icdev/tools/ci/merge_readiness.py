@@ -18,6 +18,13 @@ copy of this ladder anywhere.
 
   * ``pr_watcher._sweep_unlinked_prs`` consumes it to DECIDE (merges on ``ready``).
   * ``python -m tools.ci.merge_readiness`` consumes it to REPORT (never merges).
+  * ``pr_watcher.poll_once`` (the TASK-LINKED merge path) consumes
+    ``hold_labels`` / ``held_label_reason`` — kpr-watch-04. It runs a longer
+    ladder of its own (gates, dependencies, resumes, rebases) so it cannot call
+    the whole table, but the ONE rung a human can reach from outside must not
+    mean two different things depending on which door the work came through.
+    It had meant nothing at all there: the list was referenced at exactly one
+    site, and ``_GH_JSON_FIELDS`` never even requested ``labels``.
 
 PURITY. ``classify_merge_readiness`` does no I/O: no subprocess, no database, no
 network, no clock, no LLM. It takes the parsed ``gh pr list --json`` dict plus
@@ -164,6 +171,39 @@ def protected_hits(
     return sorted(hits)
 
 
+def hold_labels(pr: Dict[str, Any]) -> List[str]:
+    """The hold labels this PR carries, lower-cased and sorted. [] when clean.
+
+    ONE EXTRACTION, TWO MERGE PATHS (kpr-watch-04). The list itself already
+    lived here, and it was still possible for a label to mean two different
+    things: ``classify_merge_readiness`` read it for the UNLINKED sweep, and the
+    task-linked auto-merge path in ``pr_watcher.poll_once`` never looked at
+    labels at all — ``_GH_JSON_FIELDS`` did not even request them. So a human
+    labelling a ``kanban/<task-id>`` PR ``do-not-merge`` got no warning and no
+    effect, and the PR merged itself. A shared LIST is not a shared CHECK: the
+    linked path needs to ask this question outside the ladder (it runs a
+    different, longer ladder of its own), so the question is a function both
+    sides call rather than a second transcription of ``.get("labels")``.
+
+    Accepts the ``gh pr view --json labels`` shape — a list of
+    ``{"name": ...}`` dicts. A bare string is accepted too, because
+    ``gh`` is not the only thing that ever builds one of these records and
+    silently ignoring a label is the failure mode this whole card is about.
+    """
+    names = set()
+    for lbl in (pr.get("labels") or []):
+        name = lbl.get("name") if isinstance(lbl, dict) else lbl
+        name = (str(name or "")).strip().lower()
+        if name:
+            names.add(name)
+    return sorted(names & NO_AUTOMERGE_LABELS)
+
+
+def held_label_reason(held: Iterable[str]) -> str:
+    """The one sentence both merge paths report for a hold label."""
+    return "carries hold label(s): " + ", ".join(held)
+
+
 def classify_merge_readiness(
     pr: Dict[str, Any],
     *,
@@ -253,12 +293,9 @@ def classify_merge_readiness(
         # never un-drafted: for a human the draft IS the "not ready" signal.
         return MergeReadiness(DRAFT, "draft -- mark it ready for review to land it")
 
-    labels = {(lbl.get("name") or "").strip().lower()
-              for lbl in (pr.get("labels") or [])}
-    held = sorted(labels & NO_AUTOMERGE_LABELS)
+    held = hold_labels(pr)
     if held:
-        return MergeReadiness(
-            HELD_LABEL, "carries hold label(s): " + ", ".join(held))
+        return MergeReadiness(HELD_LABEL, held_label_reason(held))
 
     base = (pr.get("baseRefName") or "").strip()
     if base != default_branch:
