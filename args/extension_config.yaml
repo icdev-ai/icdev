@@ -70,26 +70,6 @@ extensions:
       allow_modification: false
       max_handlers: 10
       timeout_ms: 3000
-    memory_save_before:
-      enabled: true
-      allow_modification: true       # Can filter/transform before save
-      max_handlers: 10
-      timeout_ms: 3000
-    memory_save_after:
-      enabled: true
-      allow_modification: false
-      max_handlers: 10
-      timeout_ms: 3000
-    compliance_check_before:
-      enabled: true
-      allow_modification: false
-      max_handlers: 10
-      timeout_ms: 3000
-    compliance_check_after:
-      enabled: true
-      allow_modification: false
-      max_handlers: 10
-      timeout_ms: 3000
 
   # Layered override resolution (D184 cascade pattern)
   layered_override:

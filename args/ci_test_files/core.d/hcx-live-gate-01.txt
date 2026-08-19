@@ -1,0 +1,7 @@
+# hcx-live-gate-01 — four extension points that nothing dispatched were removed
+# from a PUBLIC str-Enum. Gated because the property that made the removal safe
+# is the fragile part and nothing else states it: a site-local drop-in naming a
+# removed point must be SKIPPED with a log line, not kill the platform at
+# import. That containment lives in two `except ValueError` sites plus a
+# per-file `except Exception`, any of which a later refactor could unwrap.
+tests/test_extension_point_removal_is_contained.py

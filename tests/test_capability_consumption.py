@@ -462,7 +462,7 @@ def test_a_hook_point_nothing_dispatches_reports_inert(conn_factory):
     cls = _by_class(report)["extension_hook_point"]
 
     assert cls["telemetry_available"] is True
-    assert cls["declared"] == 10
+    assert cls["declared"] == 6
     assert cls["consumed"] == 1, "the positive control did not register"
     assert "tool_execute_after" in cls["inert_units"]
     assert "chat_message_after" not in cls["inert_units"]
@@ -515,7 +515,7 @@ def test_a_point_disabled_in_config_is_not_counted_as_declared(
         "  hook_points:\n"
         "    agent_start:\n"
         "      enabled: false\n"
-        "    memory_save_after:\n"
+        "    agent_end:\n"
         "      enabled: false\n",
         encoding="utf-8",
     )
@@ -530,9 +530,9 @@ def test_a_point_disabled_in_config_is_not_counted_as_declared(
     )
     cls = _by_class(report)["extension_hook_point"]
 
-    assert cls["declared"] == 8
-    assert cls["extra"]["disabled_in_config"] == ["agent_start", "memory_save_after"]
-    assert cls["extra"]["enum_points_total"] == 10
+    assert cls["declared"] == 4
+    assert cls["extra"]["disabled_in_config"] == ["agent_end", "agent_start"]
+    assert cls["extra"]["enum_points_total"] == 6
 
 
 def test_an_absent_runtime_invocations_is_unmeasurable_not_zero(conn_factory):
@@ -568,5 +568,5 @@ def test_the_enum_is_read_without_importing_the_module(monkeypatch):
     monkeypatch.delitem(sys.modules, "tools.extensions.extension_manager", raising=False)
     points = capcon._extension_points_from_source()
 
-    assert "tool_execute_before" in points and len(points) == 10
+    assert "tool_execute_before" in points and len(points) == 6
     assert "tools.extensions.extension_manager" not in sys.modules

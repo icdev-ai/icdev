@@ -17,7 +17,7 @@
 # The census only ever SHRINKS. Wire the point to a dispatcher, or take the
 # removal decision below; do not add an entry to get a commit through.
 #
-# WHY THESE FOUR ARE NOT SIMPLY DELETED HERE
+# WHY THESE FOUR WERE DELETED (hcx-live-gate-01, 2026-08-18)
 # ------------------------------------------
 # Deleting a declared-but-unconsumed capability IS the sanctioned resolution
 # under CLAUDE.md, and it may well be the right call for all four. It is not a
@@ -33,27 +33,17 @@
 classification: CUI // SP-CTI
 
 # Measured 2026-08-16 by `python tools/extensions/liveness.py --json`.
-known_dead:
-  memory_save_before:
-    reason: >-
-      No dispatcher and no handler. Declared allow_modification: true in
-      args/extension_config.yaml, i.e. it claims to be able to filter or
-      transform a memory write before it lands — nothing anywhere calls it, so
-      no memory write has ever been filtered. tools/memory/memory_write.py and
-      the hybrid-memory writers do not import the extension manager at all.
-    follow_up: hcx-live-gate-01
-  memory_save_after:
-    reason: >-
-      No dispatcher and no handler. The observational twin of the above; same
-      writers, same absence.
-    follow_up: hcx-live-gate-01
-  compliance_check_before:
-    reason: >-
-      No dispatcher and no handler. The compliance path (security gates,
-      crosswalk, STIG/FedRAMP/CMMC assessors) has its own gate machinery in
-      args/security_gates.yaml and never consults the extension seam.
-    follow_up: hcx-live-gate-01
-  compliance_check_after:
-    reason: >-
-      No dispatcher and no handler. The observational twin of the above.
-    follow_up: hcx-live-gate-01
+known_dead: {}
+
+# EMPTY, and that is the point: the census only ever shrinks, and it has now
+# reached zero. Every declared ExtensionPoint has a dispatcher.
+#
+# The four that were listed here — memory_save_before/after and
+# compliance_check_before/after — were REMOVED from ExtensionPoint on
+# 2026-08-18 rather than wired, which is the sanctioned resolution under
+# CLAUDE.md: wire the capability to a consumer or stop declaring it. The
+# decision was a human's, as the note above required.
+#
+# Do not add an entry here to get a commit through. A newly dead point means
+# either its dispatcher was deleted (restore it) or the point should not have
+# been declared (remove it).

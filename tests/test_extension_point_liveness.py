@@ -55,10 +55,6 @@ EXPECTED_MEMBERS = (
     "CHAT_MESSAGE_AFTER",
     "AGENT_START",
     "AGENT_END",
-    "MEMORY_SAVE_BEFORE",
-    "MEMORY_SAVE_AFTER",
-    "COMPLIANCE_CHECK_BEFORE",
-    "COMPLIANCE_CHECK_AFTER",
 )
 
 #: Measured 2026-08-16. Kept in step with ``args/extension_liveness.yaml``.
@@ -67,10 +63,10 @@ EXPECTED_MEMBERS = (
 # gained a dispatcher on main while this PR was open, so they are alive now and
 # asserting them dead would be asserting a stale measurement. That is the
 # direction the class exists to track: the enumeration SHRINKS as points drain.
-EXPECTED_DEAD = (
-    "compliance_check_before",
-    "compliance_check_after",
-)
+#: EMPTY since hcx-live-gate-01 (2026-08-18). The four points that could not
+#: fire were removed rather than wired, so every declared point now has a
+#: dispatcher. A non-empty value here is a regression, not a fact to record.
+EXPECTED_DEAD: tuple = ()
 
 
 # ---------------------------------------------------------------------------
