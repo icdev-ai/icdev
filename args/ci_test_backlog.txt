@@ -956,7 +956,6 @@ tests/test_genesis_reflex_failure_triage.py
 tests/test_genesis_reflex_nocc_alarm_triage.py
 tests/test_genesis_reflex_nocc_sla_watcher.py
 tests/test_genesis_reflex_oracle_triage.py
-tests/test_genesis_reflex_pmo_weekly_report.py
 tests/test_genesis_reflex_publish_anomaly_detection.py
 tests/test_genesis_reflex_self_monitor_anomaly.py
 tests/test_genesis_reporter_anomaly.py

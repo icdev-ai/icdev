@@ -1257,12 +1257,41 @@ fetch('/document-intelligence/api/modernization/doc/{{ doc.doc_id }}/findings')
   })
   .catch(function(err){ console.warn('docmod findings overlay skipped:', err); });
 
+// cef-ui-03: a finding disposition and the drafted redline are TWO decisions.
+// Accepting the finding says "yes, this document is stale"; it does NOT write
+// the LLM-drafted prose into the document. The route therefore leaves the
+// proposal PENDING and hands back its apply URL, and the reviewer takes the
+// second decision explicitly here — through the EXISTING suggestion route, and
+// recorded and audited in its own right. Before this the pending proposal was
+// simply orphaned: the finding left the awaiting-review list and nothing ever
+// pointed at the redline again.
 function resolveFinding(findingId, disposition) {
   fetch('/document-intelligence/api/modernization/findings/' + findingId + '/resolve', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({disposition: disposition})
   }).then(function(r){ return r.json(); }).then(function(d) {
     if (d.error) { alert('Resolve failed: ' + d.error); return; }
+    var p = d.proposal;
+    if (disposition === 'accepted' && p && p.status === 'pending') {
+      var ok = confirm('Finding accepted. A TRUST-gated redline is still PENDING '
+        + 'for it. Apply that drafted text to the document now? '
+        + '[OK = apply it, recorded and audited as its own decision] '
+        + '[Cancel = leave it pending for review]');
+      if (ok) {
+        fetch(p.apply_url, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        }).then(function(r){ return r.json(); }).then(function(a) {
+          if (a.error) { alert('Redline NOT applied: ' + (a.message || a.error)); }
+          location.reload();
+        });
+        return;
+      }
+    }
+    if (p && p.cascade_failed) {
+      alert('Finding rejected — but its redline proposal could not be rejected with it '
+        + 'and is still pending. Reject it in the review queue.');
+    }
     location.reload();
   });
 }

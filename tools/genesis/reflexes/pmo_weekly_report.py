@@ -20,6 +20,141 @@ if str(BASE_DIR) not in sys.path:
 
 REPORTS_DIR = BASE_DIR / "data" / "reports"
 
+# Portfolio data-quality states. NEVER merged into one "no data" bucket — each
+# one sends the reader somewhere different, and only `measured` licenses the
+# brief's own conclusions:
+#   unmeasurable  no contracts at all — load the portfolio
+#   synthetic     rows exist but are probe/seed placeholders — the figures
+#                 describe test residue, not a programme
+#   degraded      real contracts, but an EVM feed with no variance — fix the feed
+#   measured      act on the brief
+DQ_UNMEASURABLE = "unmeasurable"
+DQ_SYNTHETIC = "synthetic"
+DQ_DEGRADED = "degraded"
+DQ_MEASURED = "measured"
+
+# Declared placeholder markers, not scattered literals — a title matching one of
+# these is a record something created to exercise a code path. Matched on the
+# whole normalised title or as a standalone token, so a real "Untitled Contract
+# Modification" is not swept up by a substring hit.
+PLACEHOLDER_TITLE_TOKENS = (
+    "probe",
+    "untitled contract",
+    "seed contract",
+    "test contract",
+    "demo contract",
+    "sample contract",
+    "example contract",
+    "placeholder",
+)
+
+# Share of placeholder-titled contracts at or above which the portfolio as a
+# whole is called synthetic rather than merely containing a stray fixture.
+PLACEHOLDER_SHARE_THRESHOLD = 0.5
+
+
+def _contract_label(contract: Dict[str, Any]) -> str:
+    """A stable, distinguishing label for a contract row.
+
+    `contract_number` is the label whenever it is populated, verbatim. All nine
+    contracts on the live board carry an EMPTY one, which the report rendered as
+    "—" — so every "Worst CPI" and "Critical Issues" row named the same nothing
+    and no reader could tell which contract to act on. Falling back to the title
+    alone does not fix it either (five rows share "Untitled Contract"), so the
+    id's short prefix is appended to keep two placeholders apart.
+    """
+    number = (contract.get("contract_number") or "").strip()
+    if number:
+        return number
+    title = (contract.get("title") or "").strip() or "Untitled"
+    cid = str(contract.get("id") or contract.get("contract_id") or "").strip()
+    return f"{title} [{cid[:8]}]" if cid else title
+
+
+def _is_placeholder_title(title: Any) -> bool:
+    """True when a title is a marker something left behind, not a programme name.
+
+    Matched on whole words ("bypass probe" hits `probe`, "GCPL Seed Contract"
+    hits `seed contract`) so a real title is not caught by a bare substring.
+    """
+    normalised = " ".join(str(title or "").strip().lower().split())
+    if not normalised:
+        return True
+    padded = f" {normalised} "
+    return any(f" {token} " in padded for token in PLACEHOLDER_TITLE_TOKENS)
+
+
+def _assess_data_quality(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    """Can this brief's figures be read as a measurement of a live portfolio?
+
+    Every reason found is reported — the first one is not the only one, and a
+    reader repairing the feed needs the whole list.
+    """
+    contracts = snapshot.get("contracts") or []
+    total = snapshot.get("total_contracts", 0) or 0
+    reasons = []
+    details = []
+
+    if not contracts and not total:
+        return {
+            "state": DQ_UNMEASURABLE,
+            "reasons": ["no_contracts"],
+            "detail": (
+                "No contract records were returned, so this brief measures nothing. "
+                "This is not the same as a portfolio with no problems."
+            ),
+        }
+
+    if not contracts:
+        # A count without the rows behind it — the aggregates cannot be checked.
+        return {
+            "state": DQ_UNMEASURABLE,
+            "reasons": ["no_contract_rows"],
+            "detail": (
+                f"{total} contract(s) are reported but no contract rows were returned, "
+                "so none of the per-contract figures below could be verified."
+            ),
+        }
+
+    n = len(contracts)
+    unidentified = [c for c in contracts if not (c.get("contract_number") or "").strip()]
+    placeholder = [c for c in contracts if _is_placeholder_title(c.get("title"))]
+
+    if len(unidentified) == n:
+        reasons.append("unidentified_contracts")
+        details.append(f"{n} of {n} contract record(s) carry no contract number")
+    elif unidentified:
+        details.append(f"{len(unidentified)} of {n} contract record(s) carry no contract number")
+
+    if placeholder and len(placeholder) / n >= PLACEHOLDER_SHARE_THRESHOLD:
+        reasons.append("placeholder_titles")
+        details.append(
+            f"{len(placeholder)} of {n} title(s) match a seed/probe placeholder "
+            f"(e.g. {', '.join(sorted({str(c.get('title')) for c in placeholder})[:3])})"
+        )
+
+    distinct_cpi = snapshot.get("cpi_distinct_values")
+    sample = snapshot.get("cpi_sample_size") or 0
+    if distinct_cpi is not None and sample >= 2 and distinct_cpi <= 1:
+        reasons.append("no_cpi_variance")
+        details.append(
+            f"all {sample} contract(s) reporting a CPI report the SAME value, so the "
+            "portfolio average is one constant restated and ranks nothing"
+        )
+
+    if "unidentified_contracts" in reasons or "placeholder_titles" in reasons:
+        state = DQ_SYNTHETIC
+    elif reasons:
+        state = DQ_DEGRADED
+    else:
+        state = DQ_MEASURED
+
+    return {
+        "state": state,
+        "reasons": reasons,
+        "detail": ("; ".join(details) + ".") if details else "",
+    }
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute weekly PMO report reflex."""
@@ -68,6 +203,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "red_contracts": snapshot.get("health", {}).get("red", 0),
             "overdue_deliverables": snapshot.get("overdue_deliverables", 0),
             "critical_options": snapshot.get("critical_options", 0),
+            "data_quality": snapshot.get("data_quality") or {},
         },
     }
 
@@ -120,6 +256,11 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
         snapshot["worst_cpi_contracts"] = contracts_with_cpi[:3]
         cpi_vals = [float(c["cpi"]) for c in contracts_with_cpi if c.get("cpi")]
         snapshot["avg_portfolio_cpi"] = round(sum(cpi_vals) / len(cpi_vals), 3) if cpi_vals else None
+        # Published beside the average so a constant restated per contract cannot
+        # read as portfolio dispersion. All 43 live cpmp_evm_periods rows held two
+        # distinct (cpi, spi) pairs, so "worst CPI" ranked three identical numbers.
+        snapshot["cpi_sample_size"] = len(cpi_vals)
+        snapshot["cpi_distinct_values"] = len(set(cpi_vals)) if cpi_vals else None
         spi_vals = [float(c["spi"]) for c in contracts_raw if c.get("spi") and isinstance(c.get("spi"), (int, float))]
         snapshot["avg_portfolio_spi"] = round(sum(spi_vals) / len(spi_vals), 3) if spi_vals else None
     except Exception:
@@ -150,7 +291,7 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
                 critical = [i for i in issues_result.get("issues", []) if i.get("severity") in ("critical", "high")]
                 for issue in critical[:2]:
                     top_issues.append({
-                        "contract": c.get("contract_number", "N/A"),
+                        "contract": _contract_label(c),
                         "issue": issue.get("description", ""),
                         "severity": issue.get("severity"),
                     })
@@ -160,15 +301,54 @@ def _gather_portfolio_snapshot() -> Dict[str, Any]:
     except Exception:
         snapshot["top_issues"] = []
 
+    # Assessed LAST — it reads the CPI variance and contract rows gathered above.
+    snapshot["data_quality"] = _assess_data_quality(snapshot)
+
     return snapshot
 
 
+def _data_quality_advisory(snapshot: Dict[str, Any]) -> str:
+    """The sentence that must precede any figure this brief cannot vouch for.
+
+    Empty for a `measured` portfolio — a banner on every clean week is noise,
+    and noise is how a real advisory stops being read.
+    """
+    dq = snapshot.get("data_quality") or {}
+    state = dq.get("state")
+    if not state or state == DQ_MEASURED:
+        return ""
+
+    consequence = {
+        DQ_UNMEASURABLE: (
+            "This brief measures nothing this week — it is not a statement that the "
+            "portfolio is healthy."
+        ),
+        DQ_SYNTHETIC: (
+            "The records below are seed/probe residue, not a live portfolio. Treat every "
+            "figure in this brief as describing test data until real contracts are loaded."
+        ),
+        DQ_DEGRADED: (
+            "The contract records are real but at least one feed behind these figures is "
+            "not discriminating between contracts. Repair the feed before ranking anything."
+        ),
+    }.get(state, "")
+
+    detail = dq.get("detail") or ""
+    return f"DATA QUALITY — {state.upper()}: {consequence} {detail}".strip()
+
+
 def _generate_narrative(snapshot: Dict[str, Any], config: Dict[str, Any]) -> str:
-    """Try LLM narrative; fall back to deterministic template."""
-    narrative = _try_llm_narrative(snapshot)
-    if narrative:
-        return narrative
-    return _deterministic_narrative(snapshot)
+    """Try LLM narrative; fall back to deterministic template.
+
+    The advisory is prepended to WHICHEVER body is produced. It is deterministic
+    and is never handed to the model to restate — a caveat an LLM may paraphrase
+    away is not a caveat.
+    """
+    body = _try_llm_narrative(snapshot) or _deterministic_narrative(snapshot)
+    advisory = _data_quality_advisory(snapshot)
+    if advisory and not body.startswith("DATA QUALITY"):
+        return f"{advisory} {body}"
+    return body
 
 
 def _try_llm_narrative(snapshot: Dict[str, Any]) -> Optional[str]:
@@ -239,7 +419,15 @@ def _deterministic_narrative(snapshot: Dict[str, Any]) -> str:
 
     issues = snapshot.get("top_issues", [])
     if issues:
-        lines.append(f"Top open issue: {issues[0].get('issue', '')} ({issues[0].get('contract', '')})")
+        contract = (issues[0].get("contract") or "").strip()
+        top = f"Top open issue: {issues[0].get('issue', '')}"
+        lines.append(f"{top} ({contract})" if contract else top)
+
+    advisory = _data_quality_advisory(snapshot)
+    if advisory:
+        # The all-clear is withheld: "nothing to report" and "nothing measurable
+        # to report from" are different weeks and must never share a sentence.
+        return " ".join([advisory] + lines)
 
     return " ".join(lines) if lines else "No significant portfolio issues detected this week."
 
@@ -258,7 +446,7 @@ def _render_html_report(snapshot: Dict[str, Any], narrative: str, report_date: s
         return colors.get(color, "#888")
 
     worst_rows = "".join(
-        f"<tr><td>{c.get('contract_number','—')}</td><td>{c.get('title','—')[:40]}</td>"
+        f"<tr><td>{_contract_label(c)}</td><td>{(c.get('title') or '—')[:40]}</td>"
         f"<td style='color:#dc3545;font-weight:700;'>{c.get('cpi','—')}</td>"
         f"<td>{c.get('spi','—')}</td></tr>"
         for c in worst
@@ -292,6 +480,29 @@ def _render_html_report(snapshot: Dict[str, Any], narrative: str, report_date: s
         )
     issue_rows = "".join(_issue_row(i) for i in top_issues)
 
+    dq = snapshot.get("data_quality") or {}
+    dq_state = dq.get("state")
+    dq_block = ""
+    if dq_state and dq_state != DQ_MEASURED:
+        dq_color = "#dc3545" if dq_state in (DQ_UNMEASURABLE, DQ_SYNTHETIC) else "#fd7e14"
+        dq_reasons = ", ".join(dq.get("reasons") or []) or "—"
+        dq_block = (
+            "<div class='dq' style='border-left:4px solid " + dq_color + ";'>"
+            "<strong style='color:" + dq_color + ";'>Data Quality — " + dq_state.upper() + "</strong>"
+            "<div style='margin-top:6px;'>" + (dq.get("detail") or "") + "</div>"
+            "<div style='margin-top:6px;font-size:11px;color:#666;'>Reasons: " + dq_reasons + "</div>"
+            "</div>"
+        )
+
+    # Published beside the average: an average over one repeated value ranks
+    # nothing, and the stat tile is where that has to be visible.
+    distinct = snapshot.get("cpi_distinct_values")
+    sample = snapshot.get("cpi_sample_size") or 0
+    cpi_note = (
+        f"Avg Portfolio CPI ({distinct} distinct value{'' if distinct == 1 else 's'} / {sample})"
+        if distinct is not None else "Avg Portfolio CPI"
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>PMO Weekly Report — {report_date}</title>
@@ -309,11 +520,13 @@ th{{background:#2c3e6b;color:#fff;padding:8px 12px;text-align:left;font-size:12p
 td{{padding:7px 12px;border-bottom:1px solid #eee;font-size:12px;}}
 .narrative{{background:#fff;border-left:4px solid #4a90d9;padding:16px 20px;border-radius:4px;
            margin:16px 0;font-size:14px;line-height:1.6;}}
+.dq{{background:#fff;padding:14px 20px;border-radius:4px;margin:16px 0;font-size:13px;line-height:1.5;}}
 .footer{{font-size:11px;color:#888;margin-top:32px;text-align:center;}}
 </style></head>
 <body>
 <div class="banner">CUI // SP-CTI &nbsp;&nbsp; ICDEV™ PMO Weekly Report &nbsp;&nbsp; {report_date}</div>
 <h1>Portfolio Executive Brief</h1>
+{dq_block}
 <div class="narrative">{narrative}</div>
 
 <h2>Portfolio Health</h2>
@@ -322,7 +535,7 @@ td{{padding:7px 12px;border-bottom:1px solid #eee;font-size:12px;}}
   <div class="stat"><div class="stat-val" style="color:#28a745;">{health.get("green",0)}</div><div class="stat-lbl">Green</div></div>
   <div class="stat"><div class="stat-val" style="color:#ffc107;">{health.get("yellow",0)}</div><div class="stat-lbl">Yellow</div></div>
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{health.get("red",0)}</div><div class="stat-lbl">Red</div></div>
-  <div class="stat"><div class="stat-val">{cpi}</div><div class="stat-lbl">Avg Portfolio CPI</div></div>
+  <div class="stat"><div class="stat-val">{cpi}</div><div class="stat-lbl">{cpi_note}</div></div>
   <div class="stat"><div class="stat-val">{spi}</div><div class="stat-lbl">Avg Portfolio SPI</div></div>
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{snapshot.get("overdue_deliverables",0)}</div><div class="stat-lbl">Overdue Deliverables</div></div>
   <div class="stat"><div class="stat-val" style="color:#dc3545;">{snapshot.get("critical_options",0)}</div><div class="stat-lbl">Critical Option Windows</div></div>
@@ -355,6 +568,8 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
             "overdue_deliverables": snapshot.get("overdue_deliverables", 0),
             "critical_options": snapshot.get("critical_options", 0),
             "report_path": str(REPORTS_DIR / f"pmo_weekly_{report_date}.html"),
+            "data_quality": (snapshot.get("data_quality") or {}).get("state"),
+            "data_quality_reasons": (snapshot.get("data_quality") or {}).get("reasons") or [],
         })
         conn.execute(
             """INSERT INTO kanban_tasks

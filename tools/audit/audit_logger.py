@@ -395,6 +395,25 @@ VALID_EVENT_TYPES = (
     # Constraint rebuilt by migration 20260808071512.
     "sbom.distributed",
     "sbom.distribution_denied",
+
+    # DIC human-in-the-loop dispositions (cef-ui-03). One event type, actions
+    # namespaced per surface — docmod_finding.accepted|rejected,
+    # dic_suggestion.accepted|rejected, dic_version.approved|rejected — following
+    # the migration_canvas precedent above rather than six types. These are the
+    # record that a HUMAN, not the sweep, decided a resolve-produced proposal.
+    "dic.hitl_decision",
+
+    # tools/document_intelligence/acoic.py::_review_fragment has written every
+    # human SSP-fragment decision under this type since it was authored, and the
+    # type was never admitted to the vocabulary — so log_event raised ValueError
+    # on the very first line, before touching the database, on EVERY approval.
+    # It is called with raise_on_error=True precisely so an unaudited approval
+    # cannot stand; but blueprint.py's `except Exception:` fallback caught that
+    # refusal and did the UPDATE anyway, unaudited. Same shape as
+    # migration_canvas: the write was there, the vocabulary was not, and the
+    # best-effort handler downstream made the rejection invisible.
+    # Constraint rebuilt by migration 20260819021003.
+    "dic.ssp_fragment.review",
 )
 
 EVENT_TYPE_CONSTRAINT = "audit_trail_event_type_check"

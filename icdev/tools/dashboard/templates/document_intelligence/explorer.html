@@ -31,6 +31,254 @@
   </div>
 </div>
 
+{#
+  cef-ui-02 — cross-source conflicts and gaps from cortex.resolve().
+
+  Two findings the platform could not previously SEE, let alone show: two of its
+  own sources disagreeing about one entity (cef-rsv-02), and an entity nothing
+  could answer for. Both are rendered WITHOUT a winner — every side is shown
+  whole with its own provenance and as-of date, because picking one here would
+  delete the finding and report the survivor as fact.
+#}
+{% set cortex = cortex or {"conflicts": [], "gaps": [], "stats": {"state": "unmeasured"}, "filters": {}, "actionable": {}} %}
+{% set cstats = cortex.stats or {} %}
+
+<div id="cortex-findings" style="background:#0b1726;border:1px solid #3d2a10;border-radius:8px;padding:14px;margin-bottom:20px;">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
+    <h3 style="margin:0;color:#eaeaea;font-size:15px;">⚖️ Cross-Source Conflicts &amp; Gaps
+      <span style="color:#7a8cb0;font-size:11px;font-weight:400;">— what <code style="color:#7ab3f0;">cortex.resolve()</code> found when it put two sources' claims side by side</span>
+    </h3>
+    <span id="cortex-state-badge" style="font-size:11px;padding:2px 10px;border-radius:10px;
+      {% if cstats.state == 'findings' %}background:#2e1a05;color:#fbbf24;
+      {% elif cstats.state == 'clean' %}background:#052e1a;color:#6ee7b7;
+      {% else %}background:#1e293b;color:#94a3b8;{% endif %}">
+      {{ {'findings': 'FINDINGS', 'clean': 'MEASURED CLEAN', 'unmeasured': 'UNMEASURED', 'disabled': 'RECORDING OFF'}.get(cstats.state, 'UNMEASURED') }}
+    </span>
+  </div>
+
+  {#
+    A zero here has four causes and only ONE of them is "your sources agree".
+    `conflicts`/`gaps` are None — not 0 — for the two that are not measurements,
+    so this block cannot print a reassuring number for a surface that never
+    looked.
+  #}
+  <div style="display:flex;gap:12px;margin:12px 0;flex-wrap:wrap;">
+    <div style="flex:1;min-width:150px;background:#16213e;border:1px solid #4a3a1e;border-radius:8px;padding:12px;text-align:center;">
+      <div id="stat-conflicts" style="font-size:24px;font-weight:700;color:#fbbf24;">{% if cstats.conflicts is none %}—{% else %}{{ cstats.conflicts }}{% endif %}</div>
+      <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">⚖️ Conflicts</div>
+    </div>
+    <div style="flex:1;min-width:150px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+      <div style="font-size:24px;font-weight:700;color:#c084fc;">{% if cstats.cross_backend is none %}—{% else %}{{ cstats.cross_backend }}{% endif %}</div>
+      <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🔀 Cross-backend</div>
+    </div>
+    <div style="flex:1;min-width:150px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+      <div id="stat-gaps" style="font-size:24px;font-weight:700;color:#7ab3f0;">{% if cstats.gaps is none %}—{% else %}{{ cstats.gaps }}{% endif %}</div>
+      <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">🕳️ Gaps (nobody answered)</div>
+    </div>
+    <div style="flex:1;min-width:150px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+      <div style="font-size:24px;font-weight:700;color:#94a3b8;">{{ cstats.resolutions or 0 }}</div>
+      <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">📋 Resolutions recorded</div>
+    </div>
+  </div>
+
+  {% if cstats.state != 'findings' %}
+  <div style="background:#050d1f;border:1px solid #1a3560;border-radius:6px;padding:10px 12px;margin-bottom:12px;color:#9bb8d8;font-size:12px;line-height:1.5;">
+    {% if cstats.state == 'clean' %}
+    <strong style="color:#6ee7b7;">Measured clean.</strong> {{ cstats.detail }}
+    An empty list here means detection RAN and found nothing — not that nothing looked.
+    {% elif cstats.state == 'disabled' %}
+    <strong style="color:#fbbf24;">Recording is off.</strong> {{ cstats.detail }}
+    Set <code style="color:#7ab3f0;">resolve.persist_findings: true</code> in <code style="color:#7ab3f0;">args/cortex_config.yaml</code>. This says nothing about whether your sources agree.
+    {% else %}
+    <strong style="color:#94a3b8;">Unmeasured.</strong> {{ cstats.detail or 'No resolution has been recorded on this deployment yet.' }}
+    Conflicts and gaps appear here once <code style="color:#7ab3f0;">cortex.resolve()</code> runs — a docmod sweep, a DocDrift draft screen, or <code style="color:#7ab3f0;">POST /cortex/api/v1/resolve</code>. This is <em>not</em> a clean bill of health.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ── Conflicts: both claims, side by side, no winner ──────────────────── -->
+  <h4 style="margin:16px 0 8px;color:#fbbf24;font-size:13px;">⚖️ Conflicts <span style="color:#7a8cb0;font-weight:400;font-size:11px;">— two sources, one entity, incompatible claims. Nothing below picks a side.</span></h4>
+  {% for c in cortex.conflicts %}
+  <details class="cortex-conflict" data-entity="{{ c.entity_label | lower }}" style="margin-bottom:8px;background:#050d1f;border:1px solid #4a3a1e;border-radius:6px;" {% if loop.first %}open{% endif %}>
+    <summary style="cursor:pointer;padding:9px 12px;color:#eaeaea;font-size:13px;">
+      <strong>{{ c.entity_label or c.entity_key }}</strong>
+      <span style="color:#7a8cb0;font-size:11px;"> · {{ c.conflict_kind }}</span>
+      <span style="display:inline-block;background:#2e1a05;color:#fbbf24;font-size:10px;padding:1px 8px;border-radius:10px;margin-left:6px;">
+        {{ c['values'] | join(' ⚔ ') }}
+      </span>
+      {% if c.cross_backend %}<span style="display:inline-block;background:#2a1040;color:#c084fc;font-size:10px;padding:1px 8px;border-radius:10px;margin-left:4px;">cross-backend</span>{% endif %}
+      <span style="color:#5a7aa8;font-size:10px;margin-left:6px;">{{ c.sides | length }} claim(s) · seen {{ c.seen_count }}×</span>
+    </summary>
+    <div style="padding:4px 12px 12px;">
+      <div style="color:#fbbf24;font-size:11px;background:#1a1205;border:1px solid #4a3a1e;border-radius:4px;padding:6px 10px;margin-bottom:10px;">
+        ⚠️ <strong>Unresolved by design.</strong> Both claims are shown as their sources made them. ICDEV does not
+        pick a winner here — a currency disagreement is adjudicated by a human, and resolving it in the detector
+        would delete the finding and report the survivor as fact.
+      </div>
+
+      <!-- Each side, whole, with its own provenance and as-of date -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        {% for s in c.sides %}
+        <div class="conflict-side" style="flex:1;min-width:280px;background:#0b1726;border:1px solid {% if s.authoritative %}#2e5a3e{% else %}#1a3560{% endif %};border-radius:6px;padding:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
+            <span class="side-status" style="color:#eaeaea;font-size:14px;font-weight:700;">{{ s.status }}</span>
+            <span style="color:#5a7aa8;font-size:10px;">claim {{ loop.index }} of {{ c.sides | length }}</span>
+          </div>
+          {% if s.raw_status and s.raw_status != s.status %}
+          <div style="color:#7a8cb0;font-size:11px;margin-top:2px;">source's own word: “{{ s.raw_status }}”</div>
+          {% endif %}
+          <div style="margin-top:6px;font-size:11px;line-height:1.7;">
+            <div><span style="color:#5a7aa8;">source</span> <span class="side-source" style="color:#9bb8d8;">{{ s.source or '—' }}</span></div>
+            <div><span style="color:#5a7aa8;">as of</span> <span class="side-asof" style="color:#9bb8d8;">{{ s.as_of or 'not stated' }}</span>
+              <span style="color:#3a6080;">(the source's clock, not ours)</span></div>
+            <div><span style="color:#5a7aa8;">backend</span>
+              {% for b in (s.backends or [s.backend]) %}<span style="display:inline-block;background:#0f2440;color:#7ab3f0;font-size:10px;padding:1px 7px;border-radius:10px;margin-right:3px;">{{ b }}</span>{% endfor %}
+            </div>
+            {% if s.source_table or s.source_id %}
+            <div><span style="color:#5a7aa8;">row</span> <code style="color:#7ab3f0;font-size:10px;">{{ s.source_table }}{% if s.source_id %}#{{ s.source_id }}{% endif %}</code></div>
+            {% endif %}
+            {% if s.superseded_by %}<div><span style="color:#5a7aa8;">successor</span> <span style="color:#6ee7b7;">{{ s.superseded_by }}</span></div>{% endif %}
+            {% if s.eol_date %}<div><span style="color:#5a7aa8;">EOL</span> <span style="color:#9bb8d8;">{{ s.eol_date }}</span></div>{% endif %}
+          </div>
+          <div style="margin-top:6px;">
+            {#
+              The extraction LANE, carried on every side so a reader can discount
+              a weaker one without the detector having quietly discounted it.
+            #}
+            <span style="display:inline-block;background:#101d33;color:#94a3b8;font-size:10px;padding:1px 7px;border-radius:10px;">{{ s.extraction }}</span>
+            {% if s.authoritative %}<span style="display:inline-block;background:#052e1a;color:#6ee7b7;font-size:10px;padding:1px 7px;border-radius:10px;">authoritative</span>{% endif %}
+            {% if s.confidence %}<span style="display:inline-block;background:#101d33;color:#7a8cb0;font-size:10px;padding:1px 7px;border-radius:10px;">prior {{ s.confidence }}</span>{% endif %}
+          </div>
+          {% if s.snippet %}
+          <div style="margin-top:6px;color:#7a8cb0;font-size:11px;font-style:italic;border-left:2px solid #1e3a6e;padding-left:8px;">{{ s.snippet }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if c.uncited_sides %}
+      <div style="margin-top:10px;color:#94a3b8;font-size:11px;background:#101d33;border-radius:4px;padding:6px 10px;">
+        <strong style="color:#9bb8d8;">Sides that name an authority and no row:</strong>
+        {% for u in c.uncited_sides %}<span style="color:#7a8cb0;">{{ u.source or u.backend }} ({{ u.status }}) — {{ u.reason }}</span>{% if not loop.last %}; {% endif %}{% endfor %}
+        <div style="color:#3a6080;margin-top:2px;">Reported, never lent a neighbour's citation — that would attribute one source's claim to another source's row.</div>
+      </div>
+      {% endif %}
+
+      <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="color:#5a7aa8;font-size:10px;">
+          {{ c.citations | length }} citation(s){% if c.subject_entity %} · surfaced resolving <span style="color:#7a8cb0;">{{ c.subject_entity }}</span> (verdict <span style="color:#7a8cb0;">{{ c.subject_verdict }}</span>){% endif %}
+        </div>
+        {# Actionable: DocDrift is where a redline is drafted from. #}
+        <a href="/document-intelligence/docdrift?entity={{ c.entity_label | urlencode }}" style="background:#0f3460;color:#7ab3f0;padding:4px 12px;border-radius:4px;text-decoration:none;font-size:11px;">
+          🛰️ Act on DocDrift{% if cortex.actionable.get(c.entity_label) %} · {{ cortex.actionable.get(c.entity_label) }} finding(s){% endif %} →
+        </a>
+      </div>
+    </div>
+  </details>
+  {% else %}
+  <p style="color:#3a6080;font-size:12px;padding:10px 4px;">
+    {% if cstats.state == 'clean' %}No conflict: every source that made a claim made a compatible one.
+    {% else %}No conflicts recorded — see the measurement state above before reading that as agreement.{% endif %}
+  </p>
+  {% endfor %}
+
+  <!-- ── Gaps: browsable and filterable ───────────────────────────────────── -->
+  <h4 style="margin:18px 0 8px;color:#7ab3f0;font-size:13px;">🕳️ Gaps <span style="color:#7a8cb0;font-weight:400;font-size:11px;">— entities no source could answer for. Unknown is a finding, not silence.</span></h4>
+
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+    <input id="gap-search" type="text" placeholder="Filter by entity…" oninput="loadGaps()"
+           style="background:#050d1f;color:#eaeaea;border:1px solid #1a3560;border-radius:4px;padding:5px 10px;font-size:11px;min-width:180px;">
+    <select id="gap-reason" onchange="loadGaps()" style="background:#050d1f;color:#94a3b8;border:1px solid #1a3560;border-radius:4px;padding:5px 10px;font-size:11px;">
+      <option value="">All reasons</option>
+      {% for r in cortex.filters.reasons or [] %}<option value="{{ r }}">{{ r | replace('_', ' ') }}</option>{% endfor %}
+    </select>
+    <select id="gap-backend" onchange="loadGaps()" style="background:#050d1f;color:#94a3b8;border:1px solid #1a3560;border-radius:4px;padding:5px 10px;font-size:11px;">
+      <option value="">All backends</option>
+      {% for b in cortex.filters.backends or [] %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+    </select>
+    <span id="gap-count" style="color:#5a7aa8;font-size:11px;">{{ cortex.gaps | length }} shown</span>
+  </div>
+
+  <div id="gap-list">
+    {% for g in cortex.gaps %}
+    <div class="cortex-gap" style="background:#050d1f;border:1px solid #1a3560;border-radius:6px;padding:9px 12px;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;">
+        <div>
+          <strong style="color:#eaeaea;font-size:13px;">{{ g.entity_label or g.entity_key }}</strong>
+          {% for r in g.reasons %}<span style="display:inline-block;background:#0f2440;color:#7ab3f0;font-size:10px;padding:1px 8px;border-radius:10px;margin-left:4px;">{{ r | replace('_', ' ') }}</span>{% endfor %}
+          {#
+            An outage is context for a gap, NEVER its cause — carried on its own
+            field so a dead backend cannot read as a statement about the corpus.
+          #}
+          {% if g.backends_failed %}<span style="display:inline-block;background:#2e0505;color:#f87171;font-size:10px;padding:1px 8px;border-radius:10px;margin-left:4px;">outage: {{ g.backends_failed | join(', ') }}</span>{% endif %}
+        </div>
+        <a href="/document-intelligence/docdrift?entity={{ g.entity_label | urlencode }}" style="color:#7ab3f0;font-size:11px;text-decoration:none;">🛰️ DocDrift{% if cortex.actionable.get(g.entity_label) %} · {{ cortex.actionable.get(g.entity_label) }}{% endif %} →</a>
+      </div>
+      <div style="color:#7a8cb0;font-size:11px;margin-top:4px;">
+        consulted {{ g.backends | join(', ') or '—' }} · {{ g.citations | length }} citation(s)
+        {% if g.citation_basis %}· basis <span style="color:#9bb8d8;">{{ g.citation_basis | replace('_', ' ') }}</span>{% endif %}
+        · seen {{ g.seen_count }}×
+      </div>
+    </div>
+    {% else %}
+    <p style="color:#3a6080;font-size:12px;padding:10px 4px;">
+      {% if cstats.state == 'clean' %}No gap: every entity in the resolved set drew a claim.
+      {% else %}No gaps recorded — see the measurement state above.{% endif %}
+    </p>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+// Gap filtering goes through the server (cef-ui-02), so the filter and the
+// stored payloads can never disagree about what a reason or a backend means.
+function loadGaps() {
+  var q = new URLSearchParams({
+    type: 'gap',
+    entity: document.getElementById('gap-search').value || '',
+    reason: document.getElementById('gap-reason').value || '',
+    backend: document.getElementById('gap-backend').value || ''
+  });
+  fetch('/document-intelligence/api/explorer/cortex-findings?' + q.toString())
+    .then(function (r) { return r.json(); })
+    .then(function (d) { renderGaps(d.findings || []); })
+    .catch(function () { /* leave the server-rendered list in place */ });
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c];
+  });
+}
+
+function renderGaps(gaps) {
+  var list = document.getElementById('gap-list');
+  document.getElementById('gap-count').textContent = gaps.length + ' shown';
+  if (!gaps.length) {
+    list.innerHTML = '<p style="color:#3a6080;font-size:12px;padding:10px 4px;">No gap matches this filter.</p>';
+    return;
+  }
+  list.innerHTML = gaps.map(function (g) {
+    var reasons = (g.reasons || []).map(function (r) {
+      return '<span style="display:inline-block;background:#0f2440;color:#7ab3f0;font-size:10px;padding:1px 8px;border-radius:10px;margin-left:4px;">' + esc(r.replace(/_/g, ' ')) + '</span>';
+    }).join('');
+    // An outage stays visually distinct from a reason — different fix.
+    var failed = (g.backends_failed || []).length
+      ? '<span style="display:inline-block;background:#2e0505;color:#f87171;font-size:10px;padding:1px 8px;border-radius:10px;margin-left:4px;">outage: ' + esc((g.backends_failed || []).join(', ')) + '</span>'
+      : '';
+    var label = esc(g.entity_label || g.entity_key);
+    return '<div class="cortex-gap" style="background:#050d1f;border:1px solid #1a3560;border-radius:6px;padding:9px 12px;margin-bottom:6px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;"><div>'
+      + '<strong style="color:#eaeaea;font-size:13px;">' + label + '</strong>' + reasons + failed
+      + '</div><a href="/document-intelligence/docdrift?entity=' + encodeURIComponent(g.entity_label || '') + '" style="color:#7ab3f0;font-size:11px;text-decoration:none;">🛰️ DocDrift →</a></div>'
+      + '<div style="color:#7a8cb0;font-size:11px;margin-top:4px;">consulted ' + esc((g.backends || []).join(', ') || '—')
+      + ' · ' + ((g.citations || []).length) + ' citation(s)'
+      + (g.citation_basis ? ' · basis ' + esc(String(g.citation_basis).replace(/_/g, ' ')) : '')
+      + ' · seen ' + esc(g.seen_count) + '×</div></div>';
+  }).join('');
+}
+</script>
+
 <!-- GraphRAG Themes -->
 <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;margin-bottom:20px;">
   <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">

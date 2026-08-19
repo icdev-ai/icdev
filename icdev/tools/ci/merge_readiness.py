@@ -542,6 +542,40 @@ def linked_pr_urls(get_connection=None) -> FrozenSet[str]:
     )
 
 
+def load_protected_paths(config_path=None) -> List[str]:
+    """`protected_paths` from args/pr_watcher_config.yaml, or [] if unreadable.
+
+    Read from the WATCHER's config rather than a second list of its own: two
+    lists would drift, and a report that names a different set than the merger
+    enforces is the defect this function exists to close.
+    """
+    try:
+        import yaml
+    except Exception:  # noqa: BLE001 — a report must not require pyyaml
+        return []
+    path = config_path or (REPO_ROOT / "args" / "pr_watcher_config.yaml")
+    try:
+        data = yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        return []
+    return [str(p).strip() for p in (data.get("protected_paths") or [])
+            if str(p or "").strip()]
+
+
+def _changed_files(pr: Dict[str, Any]) -> Optional[List[str]]:
+    """Changed paths from a ``gh pr list --json ...,files`` record.
+
+    ``None`` when the record carries no ``files`` key at all, which is the
+    honest answer for a ``--from-json`` dump taken before that field was
+    fetched, and which FAILS CLOSED at the protected-path rung — the same
+    answer the merger gives when it cannot see a PR's files.
+    """
+    if "files" not in pr:
+        return None
+    return [str(f.get("path") or "") for f in (pr.get("files") or [])
+            if isinstance(f, dict) and f.get("path")]
+
+
 def build_report(
     prs: List[Dict[str, Any]],
     *,
@@ -550,15 +584,25 @@ def build_report(
     linked_lookup_ok: bool = True,
     behind_by_url: Optional[Dict[str, Optional[int]]] = None,
     max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
+    protected_paths: Iterable[str] = (),
 ) -> Dict[str, Any]:
     """Classify every PR. Pure — takes data, returns data.
 
     ``behind_by_url`` maps PR url -> commits behind base, as
     ``measure_behind_map`` returns it. A url absent from the mapping, or
     mapped to ``None``, is UNMEASURED — reported as such and never as fresh.
+
+    ``protected_paths`` (kpr-watch-10) must be passed for the report to
+    evaluate the rung the MERGER evaluates. It was not, so a PR the watcher was
+    actively refusing as ``protected_path`` was reported ``linked`` — the report
+    describing a merge policy the merger does not have, which is the one thing
+    this module's docstring promises cannot happen. A PR record with no
+    ``files`` key fails closed, exactly as it does at the merge, so the report
+    cannot be more optimistic than the merger either.
     """
     linked = frozenset((u or "").strip() for u in linked_urls)
     behind_map = dict(behind_by_url or {})
+    guarded = [p for p in (protected_paths or ()) if str(p or "").strip()]
     rows: List[Dict[str, Any]] = []
     counts: Dict[str, int] = {}
     for pr in prs:
@@ -566,7 +610,8 @@ def build_report(
         behind = behind_map.get(url)
         verdict = classify_merge_readiness(
             pr, default_branch=default_branch, linked_urls=linked,
-            behind_by=behind, max_behind_commits=max_behind_commits)
+            behind_by=behind, max_behind_commits=max_behind_commits,
+            changed_files=_changed_files(pr), protected_paths=guarded)
         counts[verdict.state] = counts.get(verdict.state, 0) + 1
         rows.append({
             "number": pr.get("number"),
@@ -711,9 +756,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     # ONLY the PRs that came back `ready` -- those are the ones whose verdict a
     # behind-count can still change, and the ones the merger would act on. The
     # rest keep the refusal the merger reached first.
+    # kpr-watch-10: the report evaluates the SAME protected-path rung the
+    # merger does. Without this it reported `linked` for a PR the watcher was
+    # actively refusing, which is the report describing a policy the merger does
+    # not have. Only supplied when the fetched records actually carry `files` —
+    # a `--from-json` dump taken before that field was fetched cannot answer the
+    # question, and every row failing closed would be noise rather than news.
+    guarded = load_protected_paths() if any("files" in pr for pr in prs) else []
     report = build_report(prs, default_branch=default_branch,
                           linked_urls=linked, linked_lookup_ok=linked_lookup_ok,
-                          max_behind_commits=max_behind)
+                          max_behind_commits=max_behind,
+                          protected_paths=guarded)
     if not args.no_measure_behind:
         ready_urls = {r["url"] for r in report["prs"] if r["state"] == READY}
         if ready_urls:
@@ -723,7 +776,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             report = build_report(
                 prs, default_branch=default_branch, linked_urls=linked,
                 linked_lookup_ok=linked_lookup_ok, behind_by_url=behind,
-                max_behind_commits=max_behind)
+                max_behind_commits=max_behind, protected_paths=guarded)
     if args.state:
         wanted = set(args.state)
         report["prs"] = [r for r in report["prs"] if r["state"] in wanted]

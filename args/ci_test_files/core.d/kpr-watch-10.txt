@@ -1,0 +1,6 @@
+# kpr-watch-10 — the protected-path guard refused correctly but the REPORT could
+# not see the refusal (it said `linked`), and the hold re-audited every poll
+# (161 append-only rows in 59 minutes for two PRs). Gated because both fixes can
+# regress silently: the report/merger agreement is the shared classifier's whole
+# promise, and an audit dedupe is one `if` away from also skipping the refusal.
+tests/ci/test_protected_path_report_and_audit.py

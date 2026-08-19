@@ -63,7 +63,30 @@ _SCHEMA = [
         fragment_id TEXT PRIMARY KEY, status TEXT,
         reviewed_by TEXT, reviewed_at TEXT
     )""",
+    # cef-ui-03: /api/review/<id>/approve now audits the human decision
+    # fail-closed, BEFORE the status moves, so audit_trail is part of this
+    # route's substrate. Kept in step with tests/conftest.py's audit_trail,
+    # which mirrors the LIVE PostgreSQL shape.
+    """CREATE TABLE IF NOT EXISTS audit_trail (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT,
+        event_type TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL,
+        details TEXT, affected_files TEXT, classification TEXT DEFAULT 'CUI',
+        ip_address TEXT, session_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        hash TEXT, previous_hash TEXT, signature TEXT
+    )""",
 ]
+
+
+def _audit_actions(db_path: str) -> list[str]:
+    """The HITL decision actions recorded against this fixture's audit_trail."""
+    conn = sqlite3.connect(db_path)
+    try:
+        return [r[0] for r in conn.execute(
+            "SELECT action FROM audit_trail WHERE event_type = 'dic.hitl_decision' "
+            "ORDER BY id").fetchall()]
+    finally:
+        conn.close()
 
 
 @pytest.fixture()
@@ -97,7 +120,7 @@ def _seed_version(db, version_id, sections):
 
 
 @pytest.fixture()
-def app(db):
+def app(db, monkeypatch):
     flask_app = Flask(
         __name__,
         template_folder=str(
@@ -106,6 +129,14 @@ def app(db):
     )
     flask_app.config["TESTING"] = True
     flask_app.config["SECRET_KEY"] = "test-secret"
+
+    # audit_logger binds `get_connection` at import and is not one of the
+    # patched seams below, so point the ambient storage at this fixture's own
+    # SQLite file instead of stubbing the writer out. The audit row this route
+    # now writes is then a real one, written by the real writer.
+    import tools.db.storage as _storage
+    monkeypatch.setenv("ICDEV_DB_PATH", db)
+    monkeypatch.setattr(_storage, "DB_PATH", db, raising=False)
 
     def _make_shim():
         return _FakeConn(sqlite3.connect(db))
@@ -284,6 +315,20 @@ class TestApprovePublishGate:
         assert body["status"] == "approved"
         assert "forced" not in body
         assert _version_status(db, "ver-ok1") == "approved"
+        # cef-ui-03: dic_versions holds only the CURRENT status, so without this
+        # row an approval leaves no evidence of who published it. Written BEFORE
+        # the status moves, and fail-closed.
+        assert _audit_actions(db) == ["dic_version.approved"]
+
+    def test_reject_is_audited_as_deliberately_as_approve(self, client, db):
+        """cef-ui-03: a surface that records only its positive outcome can
+        answer 'was this ever approved?' but never 'was this ever reviewed?'."""
+        _seed_version(db, "ver-rej1", [("Overview", "Nope.")])
+        r = client.post(f"{_BASE}/api/review/ver-rej1/reject",
+                        json={"type": "version", "reviewer": "alice"})
+        assert r.status_code == 200
+        assert _version_status(db, "ver-rej1") == "rejected"
+        assert _audit_actions(db) == ["dic_version.rejected"]
 
     def test_numeric_conflicts_reported_but_do_not_block(self, client, db):
         _seed_version(db, "ver-num1", [
@@ -305,3 +350,7 @@ class TestApprovePublishGate:
                         json={"type": "fragment"})
         assert r.status_code == 200
         assert r.get_json()["status"] == "approved"
+        # cef-ui-03: this fixture's dic_ssp_fragments is the narrow legacy shape
+        # acoic cannot read, so the route takes its fallback — which used to
+        # UPDATE with no audit at all. There is no longer an unaudited branch.
+        assert _audit_actions(db) == ["dic_ssp_fragment.approved"]

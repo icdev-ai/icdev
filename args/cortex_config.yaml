@@ -367,6 +367,25 @@ resolve:
   # first. Prefer narrowing a rule to disabling the lane.
   text_claims: true
 
+  # Persist the conflicts and gaps a resolution DETECTED (cef-ui-02), so they
+  # outlive the request that produced them and a human can browse them on
+  # /document-intelligence/explorer.
+  #
+  # cef-rsv-02 made a cross-source disagreement computable and cef-rsv-03 cited
+  # it, and both travel on the CortexResolution the caller holds and nowhere
+  # else — so the only reader of a finding was the code that happened to trigger
+  # the resolution. A conflict is a finding a HUMAN adjudicates and a gap is a
+  # data-quality ticket; neither is actionable if it dies with the request.
+  #
+  # ON by default, because the surface renders nothing without it and an empty
+  # Explorer that LOOKS like a clean bill of health is the defect this card
+  # exists to prevent. Turning it off stays honest rather than silent: the read
+  # side reports state="disabled" and leaves the counts NULL, never 0.
+  #
+  # The write is one upsert per finding plus one per resolution (the
+  # denominator), is exception-isolated, and can never fail a resolution.
+  persist_findings: true
+
 governance:
   # Platform-wide fail-closed default for Cortex calls that DON'T set an explicit
   # CortexContext.fail_closed (i.e. ctx.fail_closed is None). Resolved by
