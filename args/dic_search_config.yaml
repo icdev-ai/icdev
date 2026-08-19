@@ -1,0 +1,113 @@
+# CUI // SP-CTI
+# DIC grounded search — governed evidence seam + behaviour toggles (cef-di-04).
+#
+# tools/document_intelligence/search_engine.py::DICSearchEngine.search() is the
+# canvas's retrieval surface: the dashboard search page, dic_chat, doc_generator,
+# output_generators and ACE all reach the corpus through it. Its candidate half
+# is DICSearchEngine._rag_search — one RAGRetriever.search() call, i.e. exactly
+# ONE rung. The currency store, the knowledge graph and the KB all hold evidence
+# about the same entities and none of them were ever asked.
+#
+# cef-di-04 routes that candidate half through ONE call — `cortex.resolve(query)`
+# — which fans out over those rungs under the 8-gate TRUST chain, writes a
+# `cortex_audit` row and registers a `source_citation_registry` row for the
+# evidence set.
+#
+# WHAT DOES NOT CHANGE
+# --------------------
+# Only WHERE CANDIDATES COME FROM moves. Everything DICSearchEngine.search()
+# does with a candidate is untouched and still runs, in the same order:
+#
+#   1. _chunk_meta / _doc_meta enrichment into the mandatory Citation pack
+#   2. the collection post-filter
+#   3. the CLEARANCE DROP — still strictly BEFORE the top_k cap, so an
+#      accessible result is never starved by a withheld one
+#   4. _rerank_by_attribution over the full accessible pool
+#   5. the top_k cap
+#
+# The BM25 air-gap fallback (_bm25_fallback) is also untouched and is still the
+# floor under both paths: the seam declining, Cortex being absent, or the
+# governed resolution coming back empty all land on _rag_search's direct
+# retriever, which falls to BM25 exactly as before.
+#
+# `cortex.resolve` makes no model call of its own (it passes corrective=False,
+# so even the CRAG rewrite does not run), so turning this on does not put an LLM
+# anywhere one was not already.
+#
+# THE CYCLE, AND WHY THE INTERLOCK IS PROCESS-WIDE
+# ------------------------------------------------
+# Cortex's own `dic` rung IS DICSearchEngine.search() (search_service.py
+# ::search_dic), and `dic` is in `resolve.backends` in args/cortex_config.yaml.
+# So search -> resolve -> dic rung -> search is a real cycle, and it recurses
+# inside a BOUNDED ThreadPoolExecutor, which makes the failure pool exhaustion
+# rather than a slow query.
+#
+# The interlock is a process-wide depth counter, NOT a thread-local one, and
+# that is forced rather than chosen: search_service._run_backends submits each
+# backend onto a shared pool, so the re-entrant call arrives on a DIFFERENT
+# thread and a thread-local guard (what cef-di-01 and cef-di-03 correctly use,
+# because nothing calls those surfaces back) is structurally blind to it.
+#
+# The rule the interlock states: THE INNERMOST DIC SEARCH INSIDE A RESOLVE
+# FAN-OUT IS ALWAYS THE RAW RUNG. DIC asks Cortex; Cortex asks DIC; DIC does not
+# ask Cortex again. Depth is bounded at 1 by construction.
+#
+# Its cost is real and is reported rather than hidden: while a seam-initiated
+# resolution is in flight, a CONCURRENT unrelated search on another thread also
+# takes the direct retriever. That is the pre-migration behaviour, so it is safe
+# degradation — and it is counted as `reentrant` in
+# `search_evidence.run_stats()`, never silent.
+cortex:
+  # Master toggle — DEFAULT OFF (never remove).
+  #
+  # Off means the seam is NEVER consulted: `_rag_search` runs the original
+  # RAGRetriever call and DICSearchEngine behaves exactly as before the
+  # migration. That is the rollback — flip this flag, do not revert a merge.
+  enabled: false
+
+  # Evidence citations requested per Cortex backend. `search()` asks
+  # `_rag_search` for `top_k * 2` candidates so the clearance drop and the
+  # collection post-filter have headroom before the cap; the seam is handed that
+  # same number and this is only the floor under it.
+  top_k: 10
+
+  # Outbound resolutions per run. A resolution is a five-backend fan-out with
+  # per-backend budgets up to 10s, and `generate_document` issues one search per
+  # section, so an uncapped batch is an outage rather than a slow pass. Queries
+  # are memoised per run, so this bounds DISTINCT queries, not calls. Asks
+  # refused by the cap are counted and reported (`search_evidence.run_stats`),
+  # never silently dropped.
+  max_resolves_per_run: 50
+
+  # Fall back to the direct retriever when the governed resolution produced no
+  # usable candidate at all. DEFAULT TRUE. Cases: a governance refusal, a
+  # fan-out where every rung failed, or a corpus that genuinely matched nothing.
+  #
+  # It does NOT catch a THIN answer. On this deployment a cold process abandons
+  # `rag`, `dic` and `graph` at the 10.0/10.0/8.0s budgets in
+  # args/cortex_config.yaml and answers from `currency` alone — thin, not empty,
+  # so this flag does not fire. What covers that case instead is that the
+  # abandoned backends are RECORDED on `SearchEvidence.errors`, so a thin search
+  # reads as an infrastructure event and not as a claim about the corpus. Do NOT
+  # "fix" the cold case by raising the global Cortex timeouts — every Cortex
+  # consumer shares them.
+  #
+  # Set it to false to see the governed path unvarnished.
+  fallback_on_empty: true
+
+  # Honour a collection-scoped search on the governed path? DEFAULT FALSE, and
+  # false is the SAFE answer, not a stub.
+  #
+  # `search(collection_id=...)` must return evidence from THAT collection.
+  # cortex.resolve has no collection parameter — its `dic` rung calls
+  # `engine.search(query, top_k, clearance)` with no scope, and `rag`, `graph`,
+  # `kb` and `currency` have no notion of a DIC collection at all. A governed
+  # candidate therefore carries no collection of record, so
+  # `search()`'s post-filter (`if collection_id and col_id != collection_id`)
+  # drops every one of them: a scoped governed search returns ZERO where the
+  # direct retriever returned results.
+  #
+  # So a scoped ask DECLINES the seam and takes the direct retriever, counted as
+  # `declined_collection_scoped`. Setting this true asks the seam anyway and is
+  # for measuring the drop, not for production.
+  honour_collection_scope: false
