@@ -1114,7 +1114,6 @@
 | Recipe Loader | tools\config\recipe_loader.py | Auto-registered: config/recipe_loader.py | --json | JSON |
 | Context Factory | tools\coworkers\context_factory.py | Auto-registered: coworkers/context_factory.py | --json | JSON |
 | Chat Memory | tools\document_intelligence\chat_memory.py | Auto-registered: document_intelligence/chat_memory.py | --json | JSON |
-| Cross Canvas Context | tools\document_intelligence\cross_canvas_context.py | Auto-registered: document_intelligence/cross_canvas_context.py | --json | JSON |
 | Seed Demo Corpus | tools\document_intelligence\seed_demo_corpus.py | Auto-registered: document_intelligence/seed_demo_corpus.py | --json | JSON |
 | Analyze Backlog | tools\kanban\analyze_backlog.py | Auto-registered: kanban/analyze_backlog.py | --json | JSON |
 | Balance Scheduler | tools\kanban\balance_scheduler.py | Auto-registered: kanban/balance_scheduler.py | --json | JSON |

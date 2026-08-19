@@ -1,0 +1,7 @@
+# kpr-dup-08 — `--release` matched on holder_session and so could never match
+# its own `--claim`, which runs in a different process with a different derived
+# session id. Gated because the SAFETY half is the fragile part: the fallback
+# reclaims a claim whose holder has exited, and must never steal one whose
+# holder is still alive — that would recreate the duplicate-build race the
+# claim exists to prevent.
+tests/kanban/test_release_reclaims_a_dead_claim.py

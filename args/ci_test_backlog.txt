@@ -700,7 +700,6 @@ tests/test_dic_collection_scoping.py
 tests/test_dic_confabulation.py
 tests/test_dic_consumer_file_anomaly.py
 tests/test_dic_consumer_pipeline_health_anomaly.py
-tests/test_dic_cross_canvas_context.py
 tests/test_dic_dead_surfaces_removed.py
 tests/test_dic_derivation_all_paths.py
 tests/test_dic_derivation_wiring.py

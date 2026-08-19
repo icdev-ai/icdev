@@ -1,10 +1,10 @@
 # CUI // SP-CTI
 """Tests for Karpathy LLM Wiki integrations (Items 1–5).
 
-Item 1: DIC wiki bypass — _check_wiki_cache returns cached DICAnswer on hit
+Item 1: DIC wiki bypass — REMOVED by cef-di-04 (ungoverned pre-RAG cache)
 Item 2: ACE coworker role wiki context enrichment on _run startup
 Item 3: ANVIL Navigate wiki pre-step via wiki_tool_query
-Item 4: DIC answer filing — _file_qa_to_wiki writes wiki file after grounded answer
+Item 4: DIC answer filing — REMOVED by cef-di-04 (see test_dic_search_evidence.py)
 Item 5: ACE session end cross-role wiki links via _file_session_to_wiki
 """
 
@@ -35,121 +35,16 @@ def _make_wiki_dir(tmp):
 
 
 # ---------------------------------------------------------------------------
-# Item 4: _file_qa_to_wiki
+# Items 1 and 4 -- the DIC wiki Q&A cache -- were REMOVED by cef-di-04, so the
+# tests that pinned them are gone with them. That cache filed grounded DIC
+# answers into the auto-memory directory and served them back BEFORE any
+# retrieval, with no tenant in its key, no clearance filter, no citations and
+# no invalidation. Coverage of the decision now lives in
+# tests/test_dic_search_evidence.py::TestWikiCacheRemoved, which asserts the
+# symbols are gone from BOTH trees and that answer() cannot reach the
+# auto-memory directory by any route. The ACE and ANVIL wiki items below are
+# untouched.
 # ---------------------------------------------------------------------------
-
-class TestFileQaToWiki(unittest.TestCase):
-    def test_writes_file_to_wiki_dir(self):
-        from tools.document_intelligence.search_engine import _file_qa_to_wiki, _qa_slug
-        with tempfile.TemporaryDirectory() as td:
-            _wiki = _make_wiki_dir(td)
-            with patch.dict("os.environ", {"USERPROFILE": td}):
-                # Patch auto_dir derivation inside function
-                from pathlib import Path as _Path
-
-                auto_path = _Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
-                auto_path.mkdir(parents=True, exist_ok=True)
-                (auto_path / "MEMORY.md").write_text("# Index\n", encoding="utf-8")
-
-                with patch("tools.memory.memory_write.update_crossrefs"):
-                    _file_qa_to_wiki("what is DIC?", "DIC stands for Document Intelligence Canvas.", "col-1")
-
-                slug = _qa_slug("what is DIC?", "col-1")
-                filed = auto_path / f"{slug}.md"
-                self.assertTrue(filed.exists(), "Q&A wiki file should be created")
-                content = filed.read_text(encoding="utf-8")
-                self.assertIn("DIC stands for", content)
-                self.assertIn("**Q:** what is DIC?", content)
-
-    def test_skips_if_file_already_exists(self):
-        from tools.document_intelligence.search_engine import _file_qa_to_wiki, _qa_slug
-        with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
-            auto_path.mkdir(parents=True, exist_ok=True)
-            (auto_path / "MEMORY.md").write_text("# Index\n", encoding="utf-8")
-
-            slug = _qa_slug("repeated query", None)
-            pre_existing = auto_path / f"{slug}.md"
-            pre_existing.write_text("already there", encoding="utf-8")
-
-            with patch.dict("os.environ", {"USERPROFILE": td}):
-                with patch("tools.memory.memory_write.update_crossrefs") as mock_xref:
-                    _file_qa_to_wiki("repeated query", "some answer", None)
-                    # crossrefs should NOT be called since file already exists
-                    mock_xref.assert_not_called()
-
-    def test_does_not_raise_on_bad_dir(self):
-        from tools.document_intelligence.search_engine import _file_qa_to_wiki
-        with patch.dict("os.environ", {"USERPROFILE": "/nonexistent/nowhere"}):
-            # Should not raise
-            _file_qa_to_wiki("q", "a", None)
-
-
-# ---------------------------------------------------------------------------
-# Item 1: _check_wiki_cache
-# ---------------------------------------------------------------------------
-
-class TestCheckWikiCache(unittest.TestCase):
-    def test_exact_slug_hit_returns_answer(self):
-        from tools.document_intelligence.search_engine import _check_wiki_cache, _qa_slug
-        with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
-            auto_path.mkdir(parents=True, exist_ok=True)
-            slug = _qa_slug("what is RLS?", None)
-            content = (
-                "---\nname: {slug}\n---\n\n"
-                "**Q:** what is RLS?\n\n"
-                "**A (DIC grounded):** RLS is Row-Level Security.\n\n"
-                "*Synthesized from DIC search.*\n"
-            )
-            (auto_path / f"{slug}.md").write_text(content, encoding="utf-8")
-
-            with patch.dict("os.environ", {"USERPROFILE": td}):
-                result = _check_wiki_cache("what is RLS?", None)
-
-            self.assertIsNotNone(result, "Should return cached answer")
-            self.assertTrue(result.grounded)
-            self.assertIn("RLS is Row-Level Security", result.answer)
-            self.assertEqual(result.origin, "wiki_cache")
-
-    def test_miss_returns_none(self):
-        from tools.document_intelligence.search_engine import _check_wiki_cache
-        with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
-            auto_path.mkdir(parents=True, exist_ok=True)
-
-            with patch.dict("os.environ", {"USERPROFILE": td}):
-                result = _check_wiki_cache("query with no cached answer", None)
-
-            self.assertIsNone(result)
-
-    def test_nonexistent_dir_returns_none(self):
-        from tools.document_intelligence.search_engine import _check_wiki_cache
-        with patch.dict("os.environ", {"USERPROFILE": "/no/such/path"}):
-            result = _check_wiki_cache("any query", None)
-        self.assertIsNone(result)
-
-    def test_fuzzy_hit_via_keyword_search(self):
-        from tools.document_intelligence.search_engine import _check_wiki_cache
-        with tempfile.TemporaryDirectory() as td:
-            auto_path = Path(td) / f".claude/projects/{_PROJECT_SLUG}/memory"
-            auto_path.mkdir(parents=True, exist_ok=True)
-            # Create a Q&A file with different slug but overlapping keywords
-            (auto_path / "dic-qa-aaabbbcccdddee.md").write_text(
-                "**Q:** what does postgresql primary mean?\n\n"
-                "**A (DIC grounded):** PostgreSQL is the primary database backend "
-                "for ICDEV, replacing the SQLite fallback.\n\n"
-                "*Synthesized from DIC search.*\n",
-                encoding="utf-8",
-            )
-            with patch.dict("os.environ", {"USERPROFILE": td}):
-                result = _check_wiki_cache("postgresql primary database backend", None)
-
-            # May or may not hit depending on score threshold — just ensure no crash
-            # and type is correct when it does hit
-            if result is not None:
-                self.assertTrue(result.grounded)
-                self.assertEqual(result.origin, "wiki_cache")
 
 
 # ---------------------------------------------------------------------------
@@ -288,18 +183,6 @@ class TestRunnerWikiNavigate(unittest.TestCase):
         from tools.anvil.runner import _wiki_navigate_context
         result = _wiki_navigate_context([])
         self.assertIsNone(result)
-
-    def test_wiki_keyword_search_scores_by_overlap(self):
-        from tools.document_intelligence.search_engine import _wiki_keyword_search
-        with tempfile.TemporaryDirectory() as td:
-            p = Path(td)
-            (p / "match.md").write_text(
-                "# PostgreSQL\nPostgresql primary backend storage configuration.", encoding="utf-8"
-            )
-            (p / "nomatch.md").write_text("# Cooking\nPasta recipes.", encoding="utf-8")
-            hits = _wiki_keyword_search("postgresql primary storage", p, top_k=5)
-            self.assertTrue(len(hits) >= 1)
-            self.assertEqual(hits[0][1], "match")
 
 
 if __name__ == "__main__":

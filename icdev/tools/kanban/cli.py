@@ -674,13 +674,62 @@ def cmd_claim(task_id: str, json_out: bool) -> int:
 
 
 def cmd_release(task_id: str, json_out: bool) -> int:
-    """Release the per-task lease so the runner (or another session) can take it."""
+    """Release the per-task lease so the runner (or another session) can take it.
+
+    Falls back to :func:`leases.release_stale` when this session did not take the
+    claim — which is almost always, for exactly the reason ``--resume-runner``
+    documents a few lines below. ``leases.release`` matches on ``holder_session``,
+    and ``get_session_id`` derives a fresh ``local-<uuid>`` per PROCESS unless
+    CLAUDE_SESSION_ID is exported. So the claim and the release are two different
+    processes with two different identities and the match can never succeed:
+
+      * ``cli.py --claim <id>`` acquires and exits;
+      * ``create_tasks(specs, claim=True)`` acquires inside whatever short-lived
+        process ran the seeder.
+
+    Either way ``--release`` reported "NOT HELD BY THIS SESSION" and the only way
+    out was the TTL. Observed 2026-08-18 on kpr-fix-03: the work had merged, the
+    row was ``done``, and the claim was still held by pid 28076, long exited —
+    withholding a finished task from the runner for the rest of its 4-hour lease.
+    That is the same defect ``--pause-runner`` had, found and fixed there and left
+    unfixed here, and CLAUDE.md meanwhile documents ``--release`` as the way to
+    hand a task back.
+
+    A claim whose holder is still RUNNING is left alone. That one is real: another
+    live session is building the task, and stealing its claim is precisely the
+    duplicate-build race the claim exists to prevent.
+    """
     from tools.coordination import leases
-    released = leases.release(_task_lease_resource(task_id))
+
+    resource = _task_lease_resource(task_id)
+    prior = leases.holder(resource)
+    released = leases.release(resource)
+    reclaimed = False
+    if not released:
+        reclaimed = leases.release_stale(resource)
+        released = reclaimed
+
+    still = leases.holder(resource)
     if json_out:
-        print(json.dumps({"released": released, "task_id": task_id}, indent=2))
+        print(json.dumps({
+            "released": released,
+            "reclaimed_from_exited_session": reclaimed,
+            "task_id": task_id,
+            "prior_holder": (prior or {}).get("holder_session"),
+            "still_held_by": (still or {}).get("holder_session"),
+        }, indent=2))
+    elif released and reclaimed:
+        print(f"  RELEASED: {task_id} (reclaimed from exited session "
+              f"{(prior or {}).get('holder_session')}, pid {(prior or {}).get('pid')})")
+    elif released:
+        print(f"  RELEASED: {task_id}")
+    elif still:
+        # Not a failure to report as "not held by you" — the holder is ALIVE,
+        # and that is the case the claim exists for.
+        print(f"  STILL CLAIMED by a LIVE session "
+              f"{still.get('holder_session')} (pid {still.get('pid')}): {task_id}")
     else:
-        print(f"  {'RELEASED' if released else 'NOT HELD BY THIS SESSION'}: {task_id}")
+        print(f"  NOT CLAIMED: {task_id}")
     return 0 if released else 1
 
 

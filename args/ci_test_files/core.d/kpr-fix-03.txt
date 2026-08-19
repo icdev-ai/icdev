@@ -1,0 +1,7 @@
+# kpr-fix-03 — the dispatch-path fire-rate survey that decides whether the
+# pre-dispatch landed check may refuse. Gated because the WRONG bucket is the
+# load-bearing number: it is what says 2.67% of dispatches would be refused
+# wrongly, and a survey that silently reported zero there would make arming the
+# gate look free. Also pins the merge-direction fix the survey exposed — a
+# merge INTO the task branch is not a landing.
+tests/kanban/test_landed_dispatch_survey.py

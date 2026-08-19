@@ -124,6 +124,12 @@ def test_every_state_is_reachable_and_declared():
     seen.add(mr.classify_merge_readiness(
         _pr(), default_branch="main", behind_by=99,
         max_behind_commits=10).state)
+    # kpr-watch-05. Also not reachable from `_matrix()`: the changed-file set is
+    # not a field of the PR json the matrix builds, it is passed in alongside the
+    # configured paths.
+    seen.add(mr.classify_merge_readiness(
+        _pr(), default_branch="main", changed_files=["tools/ci/pr_watcher.py"],
+        protected_paths=["tools/ci/pr_watcher.py"]).state)
     assert seen == set(mr.MERGE_STATES), (
         "unreachable or undeclared states: %s"
         % (seen.symmetric_difference(mr.MERGE_STATES),))

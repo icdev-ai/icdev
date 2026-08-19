@@ -1,0 +1,8 @@
+# kpr-watch-05 — pr_watcher auto-merges any CI-green kanban/* branch INCLUDING
+# one that edits pr_watcher itself, so a defect in the merge ladder could merge
+# itself into main with no human in the path. Gated because the guard's two
+# safety properties are the fragile parts and only a test states them: it must
+# fail CLOSED when the changed-file set is unavailable (the opposite default
+# from the sibling-conflict map next to it), and it must refuse BEFORE the
+# un-draft, since un-drafting burns the one brake a human still has.
+tests/test_pr_watcher_protected_paths.py

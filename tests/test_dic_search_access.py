@@ -233,9 +233,15 @@ def _patch_pipeline(monkeypatch, classifications):
             pass
 
     monkeypatch.setattr(storage, "get_connection", lambda *a, **k: _Conn())
+    # **kwargs so this stub survives a signature change on the private method it
+    # stands in for — cef-di-04 added `clearance=` to `_rag_search`, and a stub
+    # that enumerates the parameters breaks on a change that has nothing to do
+    # with what this file tests (the clearance DROP, downstream of retrieval).
     monkeypatch.setattr(
         se.DICSearchEngine, "_rag_search",
-        lambda self, query, top_k, mode, collection_id=None: [_Raw(i) for i in range(len(classifications))],
+        lambda self, query, top_k, mode, collection_id=None, **kwargs: [
+            _Raw(i) for i in range(len(classifications))
+        ],
     )
     # doc_id -> classification injected via _doc_meta; chunk meta resolves doc_id.
     monkeypatch.setattr(
