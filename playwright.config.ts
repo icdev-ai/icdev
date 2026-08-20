@@ -73,10 +73,22 @@ const config = defineConfig({
   // instead (see below) — Playwright skips globalSetup for `--list`.
   globalSetup: path.resolve(ROOT, 'globalSetup.ts'),
   timeout: 60000, // cold-start server + beforeEach login flows need >30s
-  fullyParallel: false, // Sequential for Gov/DoD audit traceability
+  // Sequential for Gov/DoD audit traceability. UNCHANGED, and deliberately so:
+  // CI parallelises this suite by SHARDING it across jobs (`--shard=k/N`), not
+  // by raising `workers` inside one job. Order within a shard therefore stays
+  // deterministic and every spec still runs exactly once — the traceability
+  // property is about a spec's execution being reproducible, and splitting the
+  // suite across runners does not weaken that, whereas interleaving specs in
+  // one process would.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: 1, // Single worker for deterministic execution order
+  // Single worker for deterministic execution order — WITHIN a shard. Do not
+  // raise this to parallelise: the specs share one dashboard server and one
+  // database per job, so concurrent workers would contend on both. Scale by
+  // adding shards (each gets its own server and its own PostgreSQL container),
+  // not by adding workers to a shard.
+  workers: 1,
   reporter: [
     ['list'],
     ['json', { outputFile: path.resolve(ROOT, `.tmp/test_runs/playwright-results${RUN_TAG}.json`) }],

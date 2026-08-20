@@ -102,7 +102,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 #: Directory holding the allowlists, relative to the repository root.
 LIST_DIR = Path("args") / "ci_test_files"
@@ -138,6 +138,14 @@ FRAGMENT_DIRS: Dict[str, str] = {
 #: straight back). A list that loses a third of itself is not a retirement, it is
 #: a bad merge or a bad sed, and that is what these numbers catch.
 #: Counts when the lists were extracted from icdev-ci.yml: core 97, windows 13.
+#: Groups of test files that MUST land in the same shard, one group per line in
+#: `args/ci_test_files/shard_pins.txt` with a written reason after `#`.
+#:
+#: A pin is a WORKAROUND for an order dependency, never a fix. The fix is to
+#: remove the shared-state coupling; until then a pin keeps the coupled files in
+#: one process so sharding does not surface the coupling as a CI failure.
+SHARD_PINS = "shard_pins.txt"
+
 FLOORS: Dict[str, int] = {
     "core": 80,
     "windows": 10,
@@ -234,16 +242,116 @@ def resolve(name: str = "core", root: Optional[Path] = None) -> List[str]:
     return entries
 
 
-def check(name: str = "core", root: Optional[Path] = None) -> Dict[str, object]:
-    """Resolve a list and validate it. Never raises for a *content* problem —
-    the caller reads `ok` — but does raise when the file itself is unreadable.
+def parse_pin_groups(text: str) -> List[List[str]]:
+    """One group per line, whitespace-separated paths, `#` starts the reason.
+
+    Sibling of `parse()` rather than a reuse of it: `parse()` returns ONE path
+    per line, and a pin group is many.
+    """
+    groups: List[List[str]] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.split("#", 1)[0].strip()
+        members = line.split()
+        if members:
+            groups.append(members)
+    return groups
+
+
+def load_shard_pins(root: Optional[Path] = None) -> List[List[str]]:
+    """Pin groups, or [] when the file is absent.
+
+    An absent pin file is NORMAL — unlike an absent `core.txt`, which is a
+    defect — because most repositories have no order dependencies to pin.
     """
     root = root or repo_root()
-    entries = resolve(name, root)
+    path = root / LIST_DIR / SHARD_PINS
+    if not path.exists():
+        return []
+    return parse_pin_groups(path.read_text(encoding="utf-8"))
+
+
+def shard(
+    entries: Sequence[str],
+    index: int,
+    total: int,
+    groups: Optional[Sequence[Sequence[str]]] = None,
+) -> List[str]:
+    """The `index`-of-`total` slice of `entries`. 1-based index.
+
+    ROUND-ROBIN over group keys, not contiguous chunks and not a hash.
+
+    * Contiguous chunks keep directory locality, which sounds good for order
+      dependence — but they CONCENTRATE a coupled directory on one runner, and
+      `tests/cortex/` (44 near-consecutive entries) is exactly the population
+      you least want co-located.
+    * A stable hash (`zlib.crc32`) would keep a file on the same shard as the
+      list grows, but measured over the real list it costs 15-24% count
+      imbalance, and count is the only duration proxy available today.
+    * Round-robin gives exact count balance (+/-1). Its usual weakness — one
+      insertion reshuffles everything — does not bite here, because `resolve()`
+      is append-only `core.txt` followed by the `core.d/` tail, so an insertion
+      moves at most that tail.
+
+    NEVER use the builtin `hash()` for this. `PYTHONHASHSEED` is randomised per
+    process, so two shards would disagree about which files exist and files
+    would silently go unrun — the failure this module exists to prevent.
+
+    Pinned groups share one key, so every member lands in the same shard.
+    """
+    if total < 1:
+        raise ValueError(f"shard total must be >= 1, got {total}")
+    if not 1 <= index <= total:
+        raise ValueError(f"shard index {index} out of range 1..{total}")
+
+    key_of: Dict[str, str] = {}
+    for group in groups or []:
+        present = [m for m in entries if m in set(group)]
+        if not present:
+            continue
+        # The group's key is its first member IN `entries` ORDER, so the key
+        # does not depend on how the pin file happens to be written.
+        key = present[0]
+        for member in present:
+            key_of[member] = key
+
+    ordered_keys: List[str] = []
+    seen_keys = set()
+    for entry in entries:
+        key = key_of.get(entry, entry)
+        if key not in seen_keys:
+            seen_keys.add(key)
+            ordered_keys.append(key)
+
+    mine = set(ordered_keys[index - 1 :: total])
+    # `entries` order is preserved: the shard is a SUBSEQUENCE of the resolved
+    # list, so within a shard pytest still sees the documented order.
+    return [e for e in entries if key_of.get(e, e) in mine]
+
+
+def check(
+    name: str = "core",
+    root: Optional[Path] = None,
+    shard_spec: Optional[Tuple[int, int]] = None,
+) -> Dict[str, object]:
+    """Resolve a list and validate it. Never raises for a *content* problem —
+    the caller reads `ok` — but does raise when the file itself is unreadable.
+
+    ``shard_spec`` narrows the RETURNED entries to one shard. It deliberately
+    does NOT narrow what is validated: the floor, the duplicate check and the
+    existence check all run against the FULL list, so a shard cannot dilute
+    them. That costs nothing (resolving the full list is ~0s) and means the
+    truncation guard is enforced N+1 times per run instead of once.
+    """
+    root = root or repo_root()
+    full = resolve(name, root)
+    entries = full
     floor = FLOORS.get(name, 1)
 
     seen: Dict[str, int] = {}
-    for entry in entries:
+    for entry in full:
         seen[entry] = seen.get(entry, 0) + 1
     duplicates = sorted(k for k, v in seen.items() if v > 1)
 
@@ -253,16 +361,40 @@ def check(name: str = "core", root: Optional[Path] = None) -> Dict[str, object]:
     # as missing — a check that cries wolf gets a `|| true` bolted onto it. CI
     # always runs this from the checkout, where tests/ is present.
     existence_checked = (root / "tests").is_dir()
-    missing = [e for e in entries if not (root / e).exists()] if existence_checked else []
+    missing = [e for e in full if not (root / e).exists()] if existence_checked else []
 
     errors: List[str] = []
-    if not entries:
+
+    # The shard is applied AFTER the full-list validation above, so `errors`
+    # already reflects the whole allowlist.
+    shard_report: Dict[str, object] = {}
+    if shard_spec is not None:
+        index, total = shard_spec
+        if total > len(full):
+            errors.append(
+                f"--shard {index}/{total} over a {len(full)}-entry list — "
+                f"more shards than targets")
+        entries = shard(full, index, total, load_shard_pins(root))
+        if not entries:
+            errors.append(
+                f"shard {index}/{total} of {LISTS[name]} resolved to ZERO "
+                f"targets — {len(full)} targets across {total} shards should "
+                f"never leave one empty; the partition function is broken")
+        shard_report = {"shard": f"{index}/{total}",
+                        "shard_count": len(entries),
+                        "total_count": len(full)}
+    if not full:
         errors.append(
             f"{LISTS[name]} resolved to ZERO test targets — the gate would run nothing"
         )
-    elif len(entries) < floor:
+    # AGAINST THE FULL LIST, never the shard: a correct 73-file shard of a
+    # 438-entry list must not be measured against a floor meant for 438.
+    # A derived per-shard floor would be strictly weaker (a 110-file shard
+    # could lose 90 files and still clear a floor of 20), so the floor stays
+    # whole and is simply enforced once per shard job as well.
+    elif len(full) < floor:
         errors.append(
-            f"{LISTS[name]} resolved to {len(entries)} targets, below the floor of "
+            f"{LISTS[name]} resolved to {len(full)} targets, below the floor of "
             f"{floor} — the gate shrank; if this is a deliberate retirement, lower "
             f"FLOORS[{name!r}] in tools/ci/gated_test_list.py in the same commit"
         )
@@ -271,7 +403,7 @@ def check(name: str = "core", root: Optional[Path] = None) -> Dict[str, object]:
     if duplicates:
         errors.append(f"listed more than once: {', '.join(duplicates)}")
 
-    return {
+    report: Dict[str, object] = {
         "list": name,
         "path": str(list_path(name, root)),
         "count": len(entries),
@@ -283,6 +415,8 @@ def check(name: str = "core", root: Optional[Path] = None) -> Dict[str, object]:
         "errors": errors,
         "ok": not errors,
     }
+    report.update(shard_report)
+    return report
 
 
 # --------------------------------------------------------------------------- #
@@ -675,11 +809,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--job", help="restrict --extract-workflow to one job block")
     parser.add_argument("--min-targets", type=int, default=1,
                         help="with --extract-workflow, ignore pytest chains shorter than this")
+    parser.add_argument("--shard", metavar="K/N",
+                        help="run only the K-th of N shards (1-based). Narrows the "
+                             "PRINTED targets only; the floor, duplicate and "
+                             "existence checks always see the whole list")
     parser.add_argument("--check-coverage", action="store_true",
                         help="fail when a test file is gated by nothing (tsg-policy-01)")
     parser.add_argument("--prune-backlog", action="store_true",
                         help="delete backlog census lines that are now gated or gone")
     args = parser.parse_args(argv)
+
+    shard_spec = None
+    if args.shard:
+        # A shard narrows what RUNS. It must never narrow what a census or a
+        # policy sweep SEES — sharding `--check-coverage` would silently shrink
+        # the ratchet guarding the ungated backlog, which is the exact defect
+        # class this module exists to prevent. An error, not a silent no-op.
+        if args.check_coverage or args.prune_backlog:
+            parser.error("--shard cannot be combined with --check-coverage or "
+                         "--prune-backlog: those must always see the whole tree")
+        try:
+            k_str, n_str = str(args.shard).split("/", 1)
+            shard_spec = (int(k_str), int(n_str))
+        except ValueError:
+            parser.error(f"--shard expects K/N with integers, got {args.shard!r}")
+        if shard_spec[1] < 1 or not 1 <= shard_spec[0] <= shard_spec[1]:
+            parser.error(f"--shard {args.shard} is out of range (1-based, K <= N)")
+
 
     # LF on every platform. `print()` translates "\n" to "\r\n" on Windows, and
     # bash's `read -r` strips only the newline — so the consumer got
@@ -748,7 +904,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         root = args.root.resolve() if args.root else repo_root()
-        report = check(args.name, root)
+        report = check(args.name, root, shard_spec=shard_spec)
     except AllowlistError as exc:
         # Never emit an empty stdout on failure: a caller doing
         # `readarray < <(... --print)` must not read "no tests" as success.
