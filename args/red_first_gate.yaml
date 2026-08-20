@@ -121,6 +121,36 @@ run:
 # while the set churns, which is exactly how a gap regrows behind a green gate
 # (see args/ci_test_backlog.txt, which is enumerated for the same reason).
 exemptions:
+  - pattern: "tests/test_proposals_ptw_blackhat_api.py"
+    reason: >-
+      PURE TEST REPAIR — NO PRODUCTION BEHAVIOUR CHANGED, so nothing here can go
+      red. Ten of this file's twenty tests have returned 401 UNAUTHORIZED since
+      the day they were written: 90d7b0ecf added
+      `@require_role("admin","capture_mgr","pm")` to the proposals write
+      endpoints at 19:53, and 146cbb77d added this file at 20:56 the same
+      evening on a PARALLEL branch, against a tree that did not yet carry it.
+      `git merge-base --is-ancestor` confirms neither is an ancestor of the
+      other. Each was green alone; they were jointly broken on merge, and the
+      file sits in args/ci_test_backlog.txt so CI has never run it.
+      THE RED IS RECORDED, and it is the strongest kind — the file itself,
+      unmodified, against main: `pytest tests/test_proposals_ptw_blackhat_api.py`
+      on a clean checkout of d4aba1d85 gives "10 failed, 10 passed". The gate
+      cannot re-derive that because the FIX is the `g.current_user` fixture,
+      which lives IN this test file: applying the file to the merge base applies
+      the fix along with it, so it passes there and is reported
+      `not_discriminating`.
+      The 401s were a REAL GUARD DOING ITS JOB, so the repair authenticates
+      rather than relaxing the routes — and seven NEW tests in this file pin the
+      guard itself (anonymous -> 401, role=viewer -> 403, GET stays open) so
+      that a future "fix" by deleting the decorator turns them red instead of
+      green. Those seven assert behaviour main already has, which is the other
+      reason this file cannot discriminate.
+      Scoped to this ONE file. "A test-only repair" also describes a test
+      quietly weakened to match code that broke, and the two are not
+      mechanically distinguishable — so this must not become the pattern for the
+      next 401 somebody meets in this suite. The file is GATED by the same
+      change, so its next regression fails CI within the hour rather than in six
+      weeks.
   - pattern: "tests/test_extension_dispatch_governance.py"
     reason: >-
       FORCED FIXTURE RENAME, and the proof lives in a different file rather
