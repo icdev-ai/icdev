@@ -940,13 +940,47 @@ python tools/kanban/cli.py --awaiting-merge --merge-state behind_main --json
 # Threshold `max_behind_commits: 10` in args/pr_watcher_config.yaml, surveyed:
 # over 120 merged PRs the routine population tops out at 8 behind at merge
 # (p50 1, p90 5, p95 6), so it fires on 0 of them and on #1651.
-# Measured LAST, and only for a PR every cheaper rung already passed — it is
-# the one rung that costs a forge round-trip. UNMEASURED is `None` and prints
-# "?", NEVER 0, and is FAIL-OPEN: a forge that cannot answer must not freeze
-# the pipeline. The repair differs by door — a task-linked kanban/<id> branch
-# goes to the existing `_maybe_rebase` path (same ownership refusal, same
-# per-base-era budget) and raises a HITL alert when that declines; an UNLINKED
-# PR is reported and LEFT ALONE, because the sweep never pushes.
+# Measured LAST BY THE MERGER, and only for a PR every cheaper rung already
+# passed — it is the one rung that costs a forge round-trip. UNMEASURED is
+# `None` and prints "?", NEVER 0, and is FAIL-OPEN: a forge that cannot answer
+# must not freeze the pipeline. The repair differs by door — a task-linked
+# kanban/<id> branch goes to the existing `_maybe_rebase` path (same ownership
+# refusal, same per-base-era budget) and raises a HITL alert when that
+# declines; an UNLINKED PR is reported and LEFT ALONE, because the sweep never
+# pushes.
+#
+# THE REPORT MEASURES EVERY OPEN PR — the merger's rung is NOT the report's
+# (rem-hyg-12). `collect_report` used to `/compare` only the urls the ladder
+# had already called `ready`, which is right for the MERGER (a non-ready PR
+# will not merge, so the count cannot change its verdict) and WRONG for the
+# human report, which is what somebody reads BEFORE deciding to un-draft or
+# merge something. Measured 2026-08-20: #1850 sat in AWAITING MERGE as a
+# `draft`, MERGEABLE, mergeStateStatus=CLEAN, 13 commits behind main, with a
+# diff against main of +97/-1691 — one un-draft away from deleting
+# `posture.py` (rem-hyg-09), `cortex/metrics.py` (ctx-obs-03) and
+# `kanban_project_sync.py` (rem-hyg-08). #1845 was `linked` and 16 behind,
+# which is why its red-first proof compared against an ancient merge base.
+# Both short-circuited the ladder BEFORE the staleness rung, so neither was
+# ever measured.
+# THE LADDER IS NOT REORDERED and no merge verdict moves: every rung above the
+# staleness one short-circuits, so handing it a count it previously lacked
+# cannot change a non-ready PR's `state`. That equivalence is ASSERTED, and it
+# is what proves the cost optimisation was removed from the REPORT and not
+# from the MERGER — `pr_watcher` keeps its own lazy probe, untouched.
+# STALENESS IS A THIRD AXIS, beside `state` and `pipeline_state` and never
+# inside them, because a `draft` PR's state can NEVER be `behind_main` — the
+# ladder refuses it earlier, correctly. `staleness()` returns `stale` +
+# `stale_reason`; `stale` is `None`, NEVER `False`, when the count was not
+# measured, and `stale_count` / `stale_unmeasured_count` are reported as TWO
+# numbers so "2 stale" cannot be read over a board where five PRs were never
+# compared. The flat table marks a stale row "!", the grouped view (which has
+# no BEHIND column, and is what the kanban CLI and the dashboard read) prints
+# a STALE line under it, and the panel renders an `mr-stale` badge gated on
+# `r.stale === true` rather than on truthiness.
+# COST: one /compare per DISTINCT (base, head sha) rather than per ready PR —
+# ~15 calls on a normal board against a 5,000/hr budget, behind the panel's
+# 120s cache. `--no-measure-behind` turns it off, and then every PR reports
+# UNMEASURED rather than fresh.
 #
 # SURFACED (kpr-watch-03) — a report nobody opens is not observability, and for
 # two cards the only place this answer existed was a CLI somebody had to think
