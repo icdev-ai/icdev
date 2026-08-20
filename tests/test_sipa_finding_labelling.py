@@ -188,3 +188,86 @@ def test_authorized_modules_actually_perform_a_dynamic_import(allowlist):
         assert "import_module" in text or "__import__" in text, (
             f"{rel} is allowlisted for dynamic_import but performs none"
         )
+
+
+# ---------------------------------------------------------------------------
+# assessment-300 / task-c49fb2727d: the DIC governed-evidence seam
+#
+# `_triaged_modules_are_authorized` above asserts a STRING is in a list, which
+# is not the same claim as "the scanner stops reporting this file". The
+# suppression predicate is what the Genesis self-scan actually consults, so the
+# entry is asserted through it, in the exact backslash form assessment 300
+# recorded (`document_intelligence\search_engine.py:1315`).
+# ---------------------------------------------------------------------------
+
+_DIC_SEARCH_ENGINE_SUFFIX = "document_intelligence/search_engine.py"
+
+#: The form the finding recorded — a Windows-separator path relative to tools/.
+_DIC_SEARCH_ENGINE_RECORDED = r"document_intelligence\search_engine.py"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/document_intelligence/search_engine.py",
+        "document_intelligence/search_engine.py",
+    ],
+)
+def test_dic_search_engine_is_authorized(path, allowlist):
+    """Both path forms: the self-scan reports paths relative to tools/."""
+    assert path in allowlist
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        _DIC_SEARCH_ENGINE_RECORDED,
+        "tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+        "icdev/tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+    ],
+)
+def test_dic_search_engine_finding_is_suppressed_by_the_predicate(recorded, allowlist):
+    """The entry has to fire through the predicate, not merely exist in YAML."""
+    from tools.integrity.scanners import _is_safe_dynamic_import
+
+    assert _is_safe_dynamic_import(recorded, frozenset(allowlist)), (
+        f"{recorded!r} is in known_safe_dynamic_import_modules but the scanner's "
+        "own suppression predicate does not match it"
+    )
+
+
+def test_dic_search_engine_actually_performs_a_dynamic_import():
+    """Guard against authorizing a file that never needed it.
+
+    An allowlist entry for a module with no dynamic import is dead config that
+    silently widens the exemption surface if that file later grows one.
+    """
+    for rel in ("tools/" + _DIC_SEARCH_ENGINE_SUFFIX, "icdev/tools/" + _DIC_SEARCH_ENGINE_SUFFIX):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        assert "import_module" in text or "__import__" in text, (
+            f"{rel} is allowlisted for dynamic_import but performs none"
+        )
+
+
+def test_dic_search_engine_entry_matches_only_the_two_mirrored_copies():
+    """Suffix matching is not segment-anchored, so state the tree fact.
+
+    ``document_intelligence/search_engine.py`` is a bare two-segment suffix. The
+    authorization is only as narrow as the set of files it can match, so assert
+    that set rather than asserting the matcher.
+    """
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout.splitlines()
+    matched = sorted(p for p in tracked if p.endswith(_DIC_SEARCH_ENGINE_SUFFIX))
+    assert matched == [
+        "icdev/tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+        "tools/" + _DIC_SEARCH_ENGINE_SUFFIX,
+    ], f"the authorization suffix now reaches unrelated files: {matched}"
