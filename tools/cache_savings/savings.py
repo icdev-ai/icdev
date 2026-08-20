@@ -9,7 +9,7 @@ Two-level cache cost model:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-from typing import Any
+from typing import Any, Optional
 
 from tools.llm.provider import prefix_cache_savings_are_monetary
 
@@ -177,6 +177,38 @@ def _provider_breakdown(conn: Any) -> tuple[list, float]:
     return out, round(withheld, 4)
 
 
+def _table_is_unlogged(conn: Any, backend: str) -> Optional[bool]:
+    """Is ``llm_response_cache`` actually UNLOGGED? MEASURED, not assumed.
+
+    This field used to be ``str(backend).startswith("postgres")`` — which asks
+    "am I on PostgreSQL", not "is this table unlogged" — so it reported True for
+    every PG deployment. Migration 20260816123233 set the table LOGGED, and from
+    that day the field asserted the exact opposite of the truth: measured on the
+    live board, ``pg_class.relpersistence`` is ``'p'`` (permanent) while the
+    field said ``True``. It went unnoticed only because nothing renders it, and
+    a payload nobody reads is still a payload that lies.
+
+    Three values, and ``None`` is the important one: on a backend where the
+    question does not apply (SQLite has no such concept) or where the catalogue
+    could not be read, "unknown" must not collapse to "no". A False here is a
+    claim that the rows survive a crash, and that claim has to be earned.
+    """
+    if not str(backend).startswith("postgres"):
+        return None                      # not a PostgreSQL concept
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT relpersistence FROM pg_class WHERE relname = 'llm_response_cache'"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None                  # table absent — not "logged"
+        value = row["relpersistence"] if isinstance(row, dict) else row[0]
+        return str(value) == "u"
+    except Exception:
+        return None                      # catalogue unreadable — unknown, not False
+
+
 def get_savings_stats(conn: Any = None) -> dict:
     """Return aggregated cache savings metrics.
 
@@ -253,7 +285,9 @@ def get_savings_stats(conn: Any = None) -> dict:
 
         # Rate is avoided_calls / requests. It was hits/entries, which is
         # requests-per-entry: one entry served three times reported "300%".
-        hit_rate = round(avoided / hits * 100, 1) if hits else 0.0
+        # None, never 0.0, when the row was never requested — see
+        # platform_hit_rate below for why.
+        hit_rate = round(avoided / hits * 100, 1) if hits else None
 
         by_function.append({
             "function":              fn,
@@ -280,7 +314,17 @@ def get_savings_stats(conn: Any = None) -> dict:
     # hit_count + miss_count == t_hits (total requests), so the rate below is the
     # same number the two counts imply — they used to disagree: miss_count was
     # max(0, entries - hits), which is 0 for every possible input.
-    platform_hit_rate = round(t_avoided / t_hits * 100, 1) if t_hits else 0.0
+    # None, NEVER 0.0, when NOTHING WAS ASKED. With hit_count == miss_count == 0
+    # there is no rate to report: the cache was not consulted, so it did not
+    # fail. A hard 0.0 renders as a big red "0.0% Hit Rate" and is the single
+    # thing that makes a warming cache look broken.
+    #
+    # cch-obs-01 already settled this shape one layer down — `cached_share_pct`
+    # is None, never 0.0, for `no_data` and `unreported` — and the HEADLINE
+    # number on the same card did not follow it. A rendered 0% must mean the
+    # cache was asked and missed every time (a real measured zero), which is
+    # exactly what a non-zero t_hits gives.
+    platform_hit_rate = round(t_avoided / t_hits * 100, 1) if t_hits else None
     miss_count = t_entries
 
     try:
@@ -310,7 +354,11 @@ def get_savings_stats(conn: Any = None) -> dict:
         "state":         state,
         "state_detail":  _STATE_DETAIL.get(state, ""),
         "stored_entries": stored_entries,
-        "unlogged":      str(backend).startswith("postgres"),
+        # MEASURED (see _table_is_unlogged), never inferred from the backend
+        # name. None means the question does not apply or could not be
+        # answered — it must never collapse to False, which is a claim
+        # that these rows survive a crash.
+        "unlogged":      _table_is_unlogged(conn, backend),
         "summary": {
             "total_entries":           t_entries,
             "total_hits":              t_hits,
