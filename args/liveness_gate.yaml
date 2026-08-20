@@ -201,6 +201,84 @@ grandfathered:
   # site is precisely the defect, and it should trip the check.
   extension_hook_point: 10
 
+  # ── Cortex federation layer (cef-ci-01) ──────────────────────────────────
+  # Two NEW classes, arguing their way in as the note at the top of this file
+  # requires. Neither number was CHOSEN to pass a commit: both are the count
+  # measured on the live PostgreSQL board on 2026-08-19 (audit_trail: 114,287
+  # rows, well clear of the evidence anchor) with
+  # `python tools/awareness/capability_consumption.py --json --window-days 36500`.
+  #
+  # 7 rungs in CORTEX_BACKENDS, 1 that has ever ANSWERED. Consumption is
+  # gates_json.backends.used on a cortex_audit row — a rung that RETURNED A HIT
+  # — and never `consulted`, which is a read of resolve.backends in
+  # args/cortex_config.yaml and would have reported 5 of the 7 live on a
+  # deployment where 4 of those 5 die on every call.
+  #
+  # The 6 are two different defects and the probe keeps them apart, because the
+  # repair is different:
+  #
+  #   rag, dic, graph, kb   ROUTED AND FAILING. All four are in
+  #                         resolve.backends and all four raised on the
+  #                         resolution measured here — the embedding provider
+  #                         answers 401 on this host, and `kb` carries the
+  #                         known `column "use_count" does not exist` defect.
+  #                         They appear in extra.consulted_never_used AND
+  #                         extra.failed_events, which is the shape that says
+  #                         "wired, reached, broken" rather than "never wired".
+  #                         Repair: fix the backend. Lower this to 2 when they
+  #                         answer.
+  #   external, sme         NEVER ROUTED. Absent from resolve.backends and from
+  #                         search.fan_out.backends ON PURPOSE — `external`
+  #                         opens a socket to a host ICDEV does not run, so an
+  #                         automated sweep must not be the trigger for an
+  #                         outbound call, and `sme` returns an LLM's opinion,
+  #                         which base_pack TRUST rule 1 forbids from
+  #                         outranking evidence. They are reported in
+  #                         extra.opt_in_only and COUNTED anyway: a caller
+  #                         naming strategy="external" produces a real event, so
+  #                         these are measurable, merely un-asked-for. Do NOT
+  #                         "fix" this by adding either to fan_out — that is an
+  #                         egress decision and an evidence-ranking decision
+  #                         respectively, not a tuning knob. Repair: a caller.
+  #
+  # Before cef-ci-01 nothing recorded which rung a governed call reached, so
+  # every backend's lifetime count was necessarily zero on the day the counter
+  # landed — the same first-day artefact extension_hook_point above documents.
+  # This budget is the count measured AFTER the writer landed and after a real
+  # governed resolve exercised it, not that artefact.
+  #
+  # Consequence to know before you add a rung: this budget is coupled to
+  # CORTEX_BACKENDS, so a backend registered without a route and without a
+  # caller trips the check by +1. That is the gate working — a newly declared
+  # rung nothing reaches is precisely the defect this card exists to prevent.
+  cortex_backend: 6
+
+  # 9 verbs in CORTEX_FACADES, 5 with a recorded governed call:
+  # cortex.resolve (127), cortex.classify (65), cortex.complete (37),
+  # cortex.search (26), cortex.extract (22). The 4 below have never been
+  # invoked through the governed door on this deployment:
+  #
+  #   cortex.ask      the grounded-answer verb
+  #   cortex.reason   the reasoning verb
+  #   cortex.govern   gate-only (the identity operation), so a zero here means
+  #                   nothing has asked for governance WITHOUT an operation
+  #   cortex.agent    the agent-launch verb
+  #
+  # This is a real finding, not a first-day artefact: cortex_audit has recorded
+  # every governed call since ctx-govern-03 and holds 307 rows.
+  #
+  # The probe also reports `cortex.verify` under extra.undeclared_units_observed
+  # — 29 rows written under an operation name CORTEX_FACADES does not declare.
+  # Left as a report rather than folded into either count: the declaration
+  # source and the telemetry disagreeing about what exists is worth a human
+  # look, and silently widening `declared` to match whatever the audit happens
+  # to contain would make this class unable to detect the thing it is for.
+  #
+  # Lower this as each verb gains a caller. Never raise it: a facade declared
+  # and never invoked is the defect, and the resolve facade this card was
+  # opened for is exactly the one that must never read inert.
+  cortex_facade: 4
+
   # GEPA — RESOLVED by rem-cap-01, budget lowered 1 -> 0. It was dispatched
   # every 24h with 7 successful runs and recorded nothing, because the only
   # outcome it could write was status='applied': an artifact it declined stayed

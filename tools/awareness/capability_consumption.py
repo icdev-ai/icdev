@@ -990,6 +990,283 @@ def probe_extension_hook_point(
     return res
 
 
+# ---------------------------------------------------------------------------
+# Cortex federation layer (cef-ci-01)
+#
+# The federation layer added three rungs — ``currency`` (cef-bck-01),
+# ``external`` (cef-bck-02) and ``sme`` (cef-bck-03) — behind one governed
+# facade, ``cortex.resolve`` (cef-rsv-01). That is the textbook shape of this
+# repository's signature defect: registered in CORTEX_BACKENDS, importable,
+# weighted in args/cortex_config.yaml, documented — and reachable only if
+# something actually asks for them.
+#
+# Two probes rather than one, because "was this rung reached" and "was this verb
+# called" are different questions with different repairs. A facade nothing calls
+# is a missing CALLER; a rung nothing returns from is a missing ROUTE (or a dead
+# backend). Folding them into one class would let a busy ``cortex.resolve`` hide
+# three rungs that never answered — the exact miss ``inert_units`` exists to
+# prevent.
+# ---------------------------------------------------------------------------
+_CORTEX_SCHEMAS_SRC = "tools/cortex/schemas.py"
+_CORTEX_API_SRC = "tools/cortex/api.py"
+_CORTEX_CONFIG_SRC = "args/cortex_config.yaml"
+_CORTEX_AUDIT_TABLE = "cortex_audit"
+
+#: Newest-first cap on cortex_audit rows whose gates_json is parsed. The blob
+#: has no column of its own to filter on, so the rung tally is a Python scan;
+#: the cap bounds it and ``rows_truncated`` REPORTS when it bit, because a
+#: silently sampled "never consumed" is the one reading this module may not
+#: produce.
+_CORTEX_AUDIT_SCAN_LIMIT = 50000
+
+
+def _str_tuple_from_source(path: str, name: str) -> List[str]:
+    """The string members of a module-level tuple/list literal, without importing.
+
+    ``tools.cortex`` pulls in the retrieval stack, the LLM router and a domain
+    pack registry on import. A measurement tool must not need a working Cortex
+    to report on Cortex, so the declaration is read the way
+    ``_extension_points_from_source`` reads the ExtensionPoint enum.
+    """
+    tree = ast.parse(_repo_file(path).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        if name not in targets or not isinstance(node.value, (ast.Tuple, ast.List)):
+            continue
+        return [
+            elt.value for elt in node.value.elts
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+        ]
+    raise ValueError(f"{name} not found in {path}")
+
+
+def _cortex_routed_backends() -> Dict[str, List[str]]:
+    """Which rungs a deployment's config puts on an AUTOMATIC route.
+
+    ``resolve.backends``, ``search.fan_out.backends`` and every
+    ``search.domains.*.backends`` are the routes a caller gets without naming
+    one. A rung on none of them is reachable only by an explicit
+    ``strategy=``/``backends=`` argument — which is a real, deliberate posture
+    here (``external`` opens a socket outside the boundary; ``sme`` returns an
+    LLM's opinion and must never outrank evidence) and NOT a reason to exempt
+    it. It is reported, so a zero against it reads as "no caller has ever asked"
+    rather than "the config is broken".
+    """
+    import yaml
+
+    cfg = yaml.safe_load(
+        _repo_file(_CORTEX_CONFIG_SRC).read_text(encoding="utf-8")
+    ) or {}
+    search = cfg.get("search") or {}
+    routes: Dict[str, List[str]] = {
+        "resolve.backends": list(((cfg.get("resolve") or {}).get("backends")) or []),
+        "search.fan_out.backends": list(
+            ((search.get("fan_out") or {}).get("backends")) or []
+        ),
+    }
+    for domain, block in (search.get("domains") or {}).items():
+        if isinstance(block, dict) and block.get("backends"):
+            routes[f"search.domains.{domain}.backends"] = list(block["backends"])
+    return routes
+
+
+def _cortex_backend_events(
+    conn, since: datetime, limit: int = _CORTEX_AUDIT_SCAN_LIMIT
+) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int], int, bool]:
+    """Tally ``gates_json['backends']`` over cortex_audit rows newer than ``since``.
+
+    Parsed in PYTHON, never with SQLite-dialect JSON SQL in the query — the
+    repository rule, and here also a correctness one: ``gates_json`` is ``jsonb``
+    on PostgreSQL and TEXT on SQLite, so one dialect's extraction operator does
+    not exist on the other backend at all.
+
+    Returns ``(used, consulted, failed, rows_scanned, truncated)``.
+    """
+    bound = _window_bound(conn, _CORTEX_AUDIT_TABLE, "created_at", since)
+    rows = conn.execute(
+        "SELECT gates_json FROM " + _CORTEX_AUDIT_TABLE + " "
+        "WHERE created_at IS NOT NULL AND created_at >= %s "
+        "ORDER BY created_at DESC LIMIT %s",
+        (bound, int(limit) + 1),
+    ).fetchall()
+    truncated = len(rows) > int(limit)
+    rows = rows[: int(limit)]
+    used: Dict[str, int] = {}
+    consulted: Dict[str, int] = {}
+    failed: Dict[str, int] = {}
+    buckets = {"used": used, "consulted": consulted, "failed": failed}
+    for row in rows:
+        blob = dict(row).get("gates_json")
+        if isinstance(blob, (str, bytes)):
+            try:
+                blob = json.loads(blob)
+            except Exception:  # noqa: BLE001 — one unreadable blob is not a verdict
+                continue
+        if not isinstance(blob, dict):
+            continue
+        backends = blob.get("backends")
+        if not isinstance(backends, dict):
+            continue
+        for key, sink in buckets.items():
+            for name in backends.get(key) or ():
+                if name:
+                    sink[str(name)] = sink.get(str(name), 0) + 1
+    return used, consulted, failed, len(rows), truncated
+
+
+def probe_cortex_backend(
+    conn, since: datetime, threshold: int, max_listed: int
+) -> ClassResult:
+    """Cortex retrieval rungs declared vs. rungs that actually ANSWERED.
+
+    Consumption is a governed call whose audit row records the rung under
+    ``gates_json.backends.used`` — a rung that RETURNED A HIT. Deliberately not
+    ``consulted``: that list is a read of ``resolve.backends`` in
+    args/cortex_config.yaml, so counting it would report every declared rung
+    live on a deployment where not one of them ever answered, which is this
+    gate's failure mode rather than its finding.
+
+    ``sme`` counts on the same terms as the rest. Its hits are excluded from a
+    resolution's citations and can never move a verdict (base_pack TRUST rule
+    1), and that is a statement about CITABILITY, not about whether the rung was
+    reached. Conflating the two would make the one advisory backend permanently
+    unmeasurable.
+    """
+    res = ClassResult(
+        capability_class="cortex_backend",
+        declaration_source="CORTEX_BACKENDS (tools/cortex/schemas.py)",
+        telemetry_table="cortex_audit (gates_json.backends.used)",
+    )
+    try:
+        declared = _str_tuple_from_source(_CORTEX_SCHEMAS_SRC, "CORTEX_BACKENDS")
+        advisory = _str_tuple_from_source(_CORTEX_SCHEMAS_SRC, "ADVISORY_BACKENDS")
+        routes = _cortex_routed_backends()
+    except Exception as exc:  # noqa: BLE001
+        return _unmeasured(
+            "cortex_backend", res.declaration_source, res.telemetry_table,
+            f"declaration source unreadable: {exc}",
+        )
+    if not declared:
+        return _unmeasured(
+            "cortex_backend", res.declaration_source, res.telemetry_table,
+            "CORTEX_BACKENDS is empty",
+        )
+
+    automatic = {b for names in routes.values() for b in names}
+    res.extra["advisory_backends"] = sorted(set(advisory) & set(declared))
+    res.extra["routes"] = {k: sorted(v) for k, v in sorted(routes.items())}
+    # Reachable ONLY when a caller names it. Reported, never exempted: an
+    # unreached rung here needs a CALLER, which is a different repair from a
+    # rung that is routed to and still never answers.
+    res.extra["opt_in_only"] = sorted(set(declared) - automatic)
+
+    from tools.db.storage import table_exists
+
+    if not table_exists(conn, _CORTEX_AUDIT_TABLE):
+        return _unmeasured(
+            "cortex_backend", res.declaration_source, res.telemetry_table,
+            f"{_CORTEX_AUDIT_TABLE} does not exist",
+        )
+    try:
+        used, consulted, failed, scanned, truncated = _cortex_backend_events(conn, since)
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        return _unmeasured(
+            "cortex_backend", res.declaration_source, res.telemetry_table,
+            f"query failed: {exc}",
+        )
+
+    res = _finish(res, declared, used, threshold, max_listed)
+    res.extra["audit_rows_scanned"] = scanned
+    res.extra["rows_truncated"] = truncated
+    # A rung the router ASKED and that never answered. Not consumption, and a
+    # different finding from a rung nothing ever routed to: this one is wired
+    # and silent, which usually means an empty corpus or a dead adapter.
+    res.extra["consulted_never_used"] = sorted(
+        b for b in declared if consulted.get(b, 0) > 0 and used.get(b, 0) <= threshold
+    )[:max_listed]
+    res.extra["consulted_events"] = {
+        b: consulted[b] for b in sorted(declared) if consulted.get(b, 0)
+    }
+    # A rung that DIED. Recorded so "reached and broken" never reads as inert.
+    res.extra["failed_events"] = {
+        b: failed[b] for b in sorted(declared) if failed.get(b, 0)
+    }
+    return res
+
+
+def probe_cortex_facade(
+    conn, since: datetime, threshold: int, max_listed: int
+) -> ClassResult:
+    """Governed Cortex verbs declared vs. verbs a governed call ever ran.
+
+    ``CORTEX_FACADES`` is the closed list of public verbs, and every one of them
+    is wrapped by ``@_governed_facade``, which writes exactly one append-only
+    ``cortex_audit`` row per call with ``function = 'cortex.<verb>'``. So the
+    declaration and the telemetry are the same seam observed from both ends, and
+    a verb with no rows has genuinely never been invoked through the governed
+    door.
+
+    Units are the FULL operation name rather than the bare verb, so the count
+    and the audit row's ``function`` are the same string — and so an operation
+    recorded under a name no facade declares surfaces as
+    ``undeclared_units_observed`` instead of being quietly dropped.
+    """
+    res = ClassResult(
+        capability_class="cortex_facade",
+        declaration_source="CORTEX_FACADES (tools/cortex/api.py)",
+        telemetry_table="cortex_audit (function)",
+    )
+    try:
+        facades = _str_tuple_from_source(_CORTEX_API_SRC, "CORTEX_FACADES")
+    except Exception as exc:  # noqa: BLE001
+        return _unmeasured(
+            "cortex_facade", res.declaration_source, res.telemetry_table,
+            f"declaration source unreadable: {exc}",
+        )
+    if not facades:
+        return _unmeasured(
+            "cortex_facade", res.declaration_source, res.telemetry_table,
+            "CORTEX_FACADES is empty",
+        )
+    declared = [f"cortex.{name}" for name in facades]
+
+    from tools.db.storage import table_exists
+
+    if not table_exists(conn, _CORTEX_AUDIT_TABLE):
+        return _unmeasured(
+            "cortex_facade", res.declaration_source, res.telemetry_table,
+            f"{_CORTEX_AUDIT_TABLE} does not exist",
+        )
+    try:
+        counts = _count_by_key(
+            conn, _CORTEX_AUDIT_TABLE, "function", "created_at", since,
+        )
+        blocked = _count_by_key(
+            conn, _CORTEX_AUDIT_TABLE, "function", "created_at", since,
+            extra_sql="AND blocked = %s", extra_params=(True,),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _rollback(conn)
+        return _unmeasured(
+            "cortex_facade", res.declaration_source, res.telemetry_table,
+            f"query failed: {exc}",
+        )
+
+    res = _finish(res, declared, counts, threshold, max_listed)
+    # A BLOCKED call is still a call: the verb was invoked and the TRUST chain
+    # refused it. It counts as consumption and is reported separately, on the
+    # same terms as extension_hook_point's failed dispatches — a verb that is
+    # only ever blocked is consumed and broken, and the two readings must not
+    # cancel out.
+    res.extra["blocked_events"] = {
+        f: blocked[f] for f in sorted(declared) if blocked.get(f, 0)
+    }
+    return res
+
+
 PROBES: Dict[str, Callable[..., ClassResult]] = {
     "reflex": probe_reflex,
     "mcp_dispatch_tool": probe_mcp_dispatch_tool,
@@ -999,6 +1276,8 @@ PROBES: Dict[str, Callable[..., ClassResult]] = {
     "audit_chain": probe_audit_chain,
     "skill_optimizer": probe_skill_optimizer,
     "extension_hook_point": probe_extension_hook_point,
+    "cortex_backend": probe_cortex_backend,
+    "cortex_facade": probe_cortex_facade,
 }
 
 

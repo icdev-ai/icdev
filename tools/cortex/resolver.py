@@ -868,6 +868,19 @@ def resolve(
         "verdict_source": verdict_source,
         "pack_ids": sorted({a.pack_id for a in assessments}),
         "evidence_hits": len(hits),
+        # Which backends actually PRODUCED a hit (cef-ci-01). Deliberately not
+        # `backends_consulted`, which is a read of `resolve.backends` in the
+        # config and therefore says only what the deployment declared: counting
+        # a config list as consumption is the exact defect capability_liveness
+        # exists to catch, and it would report every declared rung live on a
+        # platform where none of them ever returned anything.
+        #
+        # Built from ALL hits, advisory included: an `sme` opinion is excluded
+        # from citations and from the verdict, and it is still evidence that the
+        # rung was reached. Consumption and citability are different questions.
+        "backends_used": sorted({
+            str(getattr(h, "backend", "") or "") for h in hits
+        } - {""}),
         # Candidates a pack produced that were NOT about this entity (see
         # in_scope). Reported, never silent.
         "out_of_scope": out_of_scope,

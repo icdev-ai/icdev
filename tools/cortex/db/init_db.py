@@ -355,6 +355,14 @@ def record_audit(payload: dict, conn=None) -> str:
                         # on every row whose profile did not declare the gate,
                         # which is every row before this card.
                         "kg_grounding": payload.get("kg_grounding") or {},
+                        # Which Cortex rungs this call reached (cef-ci-01).
+                        # `used` is the only one that means a backend actually
+                        # answered; `consulted` is a read of the configured
+                        # rung set and `failed` is an outage. Absent ({}) on
+                        # every row written before this card — which is why the
+                        # cortex_backend probe reads a LIFETIME window and says
+                        # so, rather than reporting a fresh zero as a finding.
+                        "backends": payload.get("backends") or {},
                     },
                     default=str,
                 ),
