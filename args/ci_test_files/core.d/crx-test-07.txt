@@ -1,0 +1,14 @@
+# crx-test-07 — bin-pack the test shards by measured duration, not file count.
+#
+# Gated in the PR that makes it pass, per docs/ci/test-gating-policy.md, and in
+# its own fragment so it cannot collide with a sibling's append (tsg-policy-03).
+#
+# These two gate rather than merely run once because they guard invariants whose
+# violation reports GREEN. A partition that drops a file does not turn CI red —
+# the suite simply never runs that file. A partition that is not stable across
+# processes puts a file on shard 2 in one job and shard 4 in another, so some
+# files run twice and others never, and every shard still exits 0. Nothing
+# downstream of the partition can observe either, so the only place they can be
+# caught is here.
+tests/ci/test_shard_binpacking.py
+tests/ci/test_shard_timings.py

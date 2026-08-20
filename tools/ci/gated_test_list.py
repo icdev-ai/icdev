@@ -87,6 +87,8 @@ Usage
     python tools/ci/gated_test_list.py --check-coverage          # the ratchet
     python tools/ci/gated_test_list.py --check-coverage --json
     python tools/ci/gated_test_list.py --prune-backlog           # drop fixed lines
+    python tools/ci/gated_test_list.py --print --list core --shard 2/4
+    python tools/ci/gated_test_list.py --check --list core --shard 2/4 --no-timings
     # Before/after proof that moving the list changed no entry:
     git show <rev>:.github/workflows/icdev-ci.yml > /tmp/old.yml
     python tools/ci/gated_test_list.py --extract-workflow /tmp/old.yml --job test
@@ -99,6 +101,7 @@ import fnmatch
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 from pathlib import Path
@@ -273,42 +276,124 @@ def load_shard_pins(root: Optional[Path] = None) -> List[List[str]]:
     return parse_pin_groups(path.read_text(encoding="utf-8"))
 
 
-def shard(
-    entries: Sequence[str],
-    index: int,
-    total: int,
-    groups: Optional[Sequence[Sequence[str]]] = None,
-) -> List[str]:
-    """The `index`-of-`total` slice of `entries`. 1-based index.
+#: Directory holding per-file duration snapshots, relative to the repository root.
+#:
+#: TIMING-AWARE SHARDING (crx-test-07)
+#: -----------------------------------
+#: `shard()` partitioned ROUND-ROBIN, which balances FILE COUNT and says nothing
+#: about RUNTIME. Measured on the first merged sharded pipeline (GitHub run
+#: 32352491214, 2026-08-20): shard 1 took 17m01s while its three siblings took
+#: 5m59s, 5m43s and 6m36s, so the `Test` check cost 17 minutes to do ~7 minutes
+#: of work and three runners idled for ten of them. Shard 1 had simply drawn the
+#: repo-wide scanners, whose cost is superlinear in tree size.
+#:
+#: The data to fix it did not exist when round-robin was written and does now:
+#: every shard uploads `ci-junit-shard-<k>.xml`, which is per-test timing for the
+#: whole gated set. `tools/ci/shard_timings.py` folds those four artifacts into a
+#: per-FILE snapshot here, and `partition()` bin-packs against it.
+#:
+#: WHY A DIRECTORY AND NOT ONE FILE. `core.txt` was the largest merge-collision
+#: surface in the repository (82.8% of merged kanban PRs touched it) and the fix
+#: was per-task fragments. A snapshot has the same shape of risk, so it gets the
+#: same treatment: every `*.json` in here is read and merged, the scheduled
+#: refresh owns `snapshot.json`, and a task that needs to correct one file's
+#: weight drops its own `<task-id>.json` beside it without touching the snapshot.
+#:
+#: WHY SCHEDULED AND NOT HAND-MAINTAINED. A snapshot nobody refreshes goes stale
+#: exactly the way the ungated census did — three days stale on the day it was
+#: written, and only ever moved by a human. `.github/workflows/shard-timings.yml`
+#: rebuilds it weekly from the newest green `main` run and opens a PR.
+TIMING_DIR = Path("args") / "ci_test_timings"
 
-    ROUND-ROBIN over group keys, not contiguous chunks and not a hash.
 
-    * Contiguous chunks keep directory locality, which sounds good for order
-      dependence — but they CONCENTRATE a coupled directory on one runner, and
-      `tests/cortex/` (44 near-consecutive entries) is exactly the population
-      you least want co-located.
-    * A stable hash (`zlib.crc32`) would keep a file on the same shard as the
-      list grows, but measured over the real list it costs 15-24% count
-      imbalance, and count is the only duration proxy available today.
-    * Round-robin gives exact count balance (+/-1). Its usual weakness — one
-      insertion reshuffles everything — does not bite here, because `resolve()`
-      is append-only `core.txt` followed by the `core.d/` tail, so an insertion
-      moves at most that tail.
+def timing_files(root: Optional[Path] = None) -> List[Path]:
+    """Every timing snapshot, in a DETERMINISTIC filename order.
 
-    NEVER use the builtin `hash()` for this. `PYTHONHASHSEED` is randomised per
-    process, so two shards would disagree about which files exist and files
-    would silently go unrun — the failure this module exists to prevent.
-
-    Pinned groups share one key, so every member lands in the same shard.
+    An absent directory is NORMAL, not a defect: without it the partition falls
+    back to round-robin, which is exactly what shipped before this existed.
     """
-    if total < 1:
-        raise ValueError(f"shard total must be >= 1, got {total}")
-    if not 1 <= index <= total:
-        raise ValueError(f"shard index {index} out of range 1..{total}")
+    d = (root or repo_root()) / TIMING_DIR
+    if not d.is_dir():
+        return []
+    return sorted(d.glob("*.json"), key=lambda p: p.name)
 
+
+def parse_timing_snapshot(text: str) -> Tuple[str, Dict[str, float]]:
+    """`(generated_at, {path: seconds})` from one snapshot document.
+
+    Raises ValueError on anything malformed. The CALLER decides what a malformed
+    snapshot means; see `load_timings`.
+    """
+    doc = json.loads(text)
+    if not isinstance(doc, dict):
+        raise ValueError("snapshot root is not an object")
+    raw = doc.get("durations")
+    if not isinstance(raw, dict):
+        raise ValueError("snapshot has no 'durations' object")
+    out: Dict[str, float] = {}
+    for path, seconds in raw.items():
+        if not isinstance(path, str):
+            raise ValueError(f"non-string path key {path!r}")
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+            raise ValueError(f"non-numeric duration for {path!r}: {seconds!r}")
+        if seconds < 0:
+            raise ValueError(f"negative duration for {path!r}: {seconds!r}")
+        # Normalise separators: a snapshot written on Windows must partition the
+        # same list the same way as one written on a Linux runner.
+        out[path.replace("\\", "/")] = float(seconds)
+    generated_at = doc.get("generated_at")
+    return (generated_at if isinstance(generated_at, str) else ""), out
+
+
+def load_timings(root: Optional[Path] = None) -> Dict[str, object]:
+    """Merge every snapshot under `TIMING_DIR` into one `{path: seconds}` map.
+
+    NEWEST WINS, per path. Snapshots are applied in ascending
+    `(generated_at, filename)` order and later writes overwrite earlier ones, so
+    a task fragment stamped after the scheduled snapshot corrects it and one
+    stamped before it cannot silently undo a fresh measurement. The filename
+    tie-break keeps two snapshots sharing a timestamp deterministic.
+
+    NEVER RAISES for a content problem. A timing snapshot is an OPTIMISATION: a
+    malformed one must degrade to round-robin, not turn the `Test` check red for
+    a reason that has nothing to do with the commit under test. It is reported in
+    `warnings` instead, and `check()` prints those — a silent degradation would
+    look identical to the balanced run it is not.
+    """
+    root = root or repo_root()
+    loaded: List[Tuple[str, str, Dict[str, float]]] = []
+    warnings: List[str] = []
+    sources: List[str] = []
+    for path in timing_files(root):
+        try:
+            generated_at, part = parse_timing_snapshot(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            warnings.append(f"{path.name}: unreadable timing snapshot ({exc}) — ignored")
+            continue
+        loaded.append((generated_at, path.name, part))
+
+    durations: Dict[str, float] = {}
+    for generated_at, name, part in sorted(loaded, key=lambda t: (t[0], t[1])):
+        durations.update(part)
+        sources.append(f"{name}@{generated_at or 'undated'}[{len(part)}]")
+
+    return {"durations": durations, "sources": sources, "warnings": warnings}
+
+
+def _unit_keys(
+    entries: Sequence[str],
+    groups: Optional[Sequence[Sequence[str]]] = None,
+) -> Tuple[Dict[str, str], List[str]]:
+    """`(key_of, ordered_keys)` — the indivisible units a partition moves.
+
+    A pinned group collapses to ONE key so every member lands in one shard; an
+    unpinned entry is its own key. `ordered_keys` is in `entries` order, which is
+    what keeps both partition strategies deterministic without a hash.
+    """
     key_of: Dict[str, str] = {}
     for group in groups or []:
-        present = [m for m in entries if m in set(group)]
+        members = set(group)
+        present = [m for m in entries if m in members]
         if not present:
             continue
         # The group's key is its first member IN `entries` ORDER, so the key
@@ -324,17 +409,209 @@ def shard(
         if key not in seen_keys:
             seen_keys.add(key)
             ordered_keys.append(key)
+    return key_of, ordered_keys
 
-    mine = set(ordered_keys[index - 1 :: total])
-    # `entries` order is preserved: the shard is a SUBSEQUENCE of the resolved
-    # list, so within a shard pytest still sees the documented order.
-    return [e for e in entries if key_of.get(e, e) in mine]
+
+def entry_duration(
+    entry: str,
+    durations: Dict[str, float],
+    default: float,
+) -> Tuple[float, bool]:
+    """`(seconds, measured)` for one allowlist entry.
+
+    A directory target sums every measured file beneath it. `measured` is False
+    when nothing under the entry was ever timed, which is what the caller counts
+    to report snapshot COVERAGE — a stale snapshot must be visible as a number,
+    not inferred from a suspiciously uneven partition.
+    """
+    if entry in durations:
+        return durations[entry], True
+    if entry.endswith("/"):
+        beneath = [v for k, v in durations.items() if k.startswith(entry)]
+        if beneath:
+            return sum(beneath), True
+    return default, False
+
+
+def partition(
+    entries: Sequence[str],
+    total: int,
+    groups: Optional[Sequence[Sequence[str]]] = None,
+    durations: Optional[Dict[str, float]] = None,
+) -> Tuple[List[List[str]], Dict[str, object]]:
+    """Split `entries` into `total` shards. Returns `(shards, report)`.
+
+    TWO STRATEGIES, and which one ran is always in the report.
+
+    * `duration` — greedy longest-processing-time-first bin packing over the
+      committed timing snapshot. Units are sorted by measured weight descending
+      and each is placed on the currently lightest shard. LPT is the standard
+      makespan heuristic, it is one pass, and it is deterministic.
+    * `round_robin` — what shipped before a snapshot existed, and the fallback
+      whenever one is absent, unreadable, or covers nothing in this list. It
+      balances COUNT, which is the only duration proxy available without a
+      measurement.
+
+    DETERMINISTIC ACROSS PROCESSES. No builtin `hash()` anywhere — PYTHONHASHSEED
+    is randomised per process, so a hash partition puts a file in shard 2 on one
+    runner and shard 4 on another: some files run twice, others never, and the
+    run reports GREEN. Every ordering here is by measured weight with a
+    first-appearance-index tie-break, so two shards computed in two processes
+    agree by construction.
+
+    A FILE ABSENT FROM THE SNAPSHOT IS NEVER DROPPED. It is weighted at the
+    MEDIAN of the measured entries in this same list and packed like any other.
+    Median rather than zero, because zero declares a brand-new test free and lets
+    an arbitrary number of them pile onto one shard; median rather than mean,
+    because the mean here is dragged upward by the very repo-wide scanners that
+    caused the imbalance. With NOTHING measured the median is undefined and the
+    whole thing degrades to round-robin.
+
+    LOSSLESS AND DISJOINT, asserted before returning. A partition bug that drops
+    files reports GREEN — the suite simply never runs them — so this is checked
+    rather than trusted.
+
+    IT IS LESS STABLE THAN ROUND-ROBIN UNDER LIST GROWTH, and that is the real
+    cost of packing. Round-robin's weakness was that one insertion reshuffles
+    everything, which did not bite because `resolve()` is append-only and an
+    insertion moved only the tail. Greedy packing has no such property: the
+    assignment of every unit sorted after the new one depends on the running
+    `loads`, so ONE added file cascades. Measured on this list 2026-08-20,
+    adding the two test files this card ships moved ~50 of the other 442 between
+    shards. Nothing is lost or duplicated — that is what the assertion above is
+    for — but a file's NEIGHBOURS change, and CLAUDE.md's warning applies: an
+    order-dependent pass surfaces as a failure in whatever PR happened to move
+    the list. The mitigations already exist and are unchanged: `isolation_run.py`
+    runs every changed test file ALONE, the shard runs it IN-SUITE, and a PR's
+    own `Test` executes the exact partition it will merge with. Do not respond to
+    such a failure by pinning the file; make the test self-sufficient.
+    """
+    if total < 1:
+        raise ValueError(f"shard total must be >= 1, got {total}")
+    entries = list(entries)
+    key_of, ordered_keys = _unit_keys(entries, groups)
+    key_index = {k: i for i, k in enumerate(ordered_keys)}
+
+    durations = durations or {}
+    measured = [durations[e] for e in entries if e in durations]
+    method = "duration" if measured else "round_robin"
+
+    imputed_keys: Set[str] = set()
+    weight: Dict[str, float] = {k: 0.0 for k in ordered_keys}
+    loads = [0.0] * total
+    assignment: Dict[str, int] = {}
+
+    if method == "duration":
+        default = float(statistics.median(measured))
+        for entry in entries:
+            seconds, was_measured = entry_duration(entry, durations, default)
+            key = key_of.get(entry, entry)
+            weight[key] += seconds
+            if not was_measured:
+                imputed_keys.add(key)
+        for key in sorted(ordered_keys, key=lambda k: (-weight[k], key_index[k])):
+            # `(load, index)` breaks a tie on the LOWEST shard index, so a list
+            # of equal weights packs identically to round-robin rather than
+            # depending on dict iteration order.
+            target = min(range(total), key=lambda i: (loads[i], i))
+            assignment[key] = target
+            loads[target] += weight[key]
+    else:
+        for i, key in enumerate(ordered_keys):
+            assignment[key] = i % total
+
+    shards: List[List[str]] = [[] for _ in range(total)]
+    for entry in entries:
+        # `entries` order is preserved within a shard: the shard is a
+        # SUBSEQUENCE of the resolved list, so pytest still sees the documented
+        # order inside one process.
+        shards[assignment[key_of.get(entry, entry)]].append(entry)
+
+    # LOSSLESS: multiset equality, which also proves nothing was invented and —
+    # because `assignment` is a function of the unit key — that the shards are
+    # disjoint. Checked, not trusted: a dropped file makes CI GREENER, not
+    # redder, which is the one failure mode nothing downstream can catch.
+    packed = [e for s in shards for e in s]
+    if sorted(packed) != sorted(entries):
+        raise AllowlistError(
+            f"partition into {total} shards is not lossless: {len(entries)} "
+            f"targets in, {len(packed)} out — the partition function is broken")
+
+    report: Dict[str, object] = {
+        "method": method,
+        "shards": total,
+        "units": len(ordered_keys),
+        "measured_entries": len({e for e in entries if e in durations}),
+        "entries": len(entries),
+        "imputed_units": len(imputed_keys),
+        "estimated_seconds": (
+            [round(x, 1) for x in loads] if method == "duration" else None),
+    }
+    if method == "duration" and weight:
+        # THE MAKESPAN FLOOR, reported because it is the number that decides
+        # whether more shards would buy anything. A partition can never finish
+        # faster than its single heaviest INDIVISIBLE unit, so once the busiest
+        # shard sits at this bound the critical path is one file and raising N
+        # wastes a 5th and 6th runner exactly the way an unbalanced partition
+        # wastes the current three. Measured 2026-08-20 the bound is 699.2s of a
+        # 1791.2s suite — `tests/cortex/test_chat_routing.py`, 39% of the whole
+        # gated run in four tests. Splitting THAT is crx-test-08.
+        heaviest = max(ordered_keys, key=lambda k: (weight[k], -key_index[k]))
+        report["lower_bound_seconds"] = round(weight[heaviest], 1)
+        report["heaviest_unit"] = heaviest
+        report["at_lower_bound"] = bool(
+            loads and max(loads) <= weight[heaviest] + 1e-9)
+    if method == "duration" and total > 1 and max(loads) > 0:
+        report["estimated_spread_pct"] = round(
+            100.0 * (max(loads) - min(loads)) / max(loads), 1)
+    return shards, report
+
+
+def shard(
+    entries: Sequence[str],
+    index: int,
+    total: int,
+    groups: Optional[Sequence[Sequence[str]]] = None,
+    durations: Optional[Dict[str, float]] = None,
+) -> List[str]:
+    """The `index`-of-`total` slice of `entries`. 1-based index.
+
+    A thin projection of `partition()`, which computes the WHOLE partition and
+    then hands back one shard. That is deliberate: computing all N here is what
+    lets the losslessness assertion run inside the single process that resolves
+    one shard, so a partition bug is caught on the runner that would otherwise
+    have silently skipped files.
+
+    See `partition()` for the strategies. Without `durations` this is exactly the
+    round-robin that shipped with crx-test-05:
+
+    * Contiguous chunks keep directory locality, which sounds good for order
+      dependence — but they CONCENTRATE a coupled directory on one runner, and
+      `tests/cortex/` (44 near-consecutive entries) is exactly the population you
+      least want co-located.
+    * A stable hash (`zlib.crc32`) keeps a file on the same shard as the list
+      grows, but measured over the real list it costs 15-24% count imbalance.
+    * Round-robin gives exact count balance (+/-1). Its usual weakness — one
+      insertion reshuffles everything — does not bite here, because `resolve()`
+      is append-only `core.txt` followed by the `core.d/` tail.
+
+    NEVER use the builtin `hash()` for this. `PYTHONHASHSEED` is randomised per
+    process, so two shards would disagree about which files exist and files would
+    silently go unrun — the failure this module exists to prevent.
+
+    Pinned groups share one key, so every member lands in the same shard.
+    """
+    if not 1 <= index <= total:
+        raise ValueError(f"shard index {index} out of range 1..{total}")
+    shards, _ = partition(entries, total, groups, durations)
+    return shards[index - 1]
 
 
 def check(
     name: str = "core",
     root: Optional[Path] = None,
     shard_spec: Optional[Tuple[int, int]] = None,
+    use_timings: bool = True,
 ) -> Dict[str, object]:
     """Resolve a list and validate it. Never raises for a *content* problem —
     the caller reads `ok` — but does raise when the file itself is unreadable.
@@ -344,6 +621,10 @@ def check(
     existence check all run against the FULL list, so a shard cannot dilute
     them. That costs nothing (resolving the full list is ~0s) and means the
     truncation guard is enforced N+1 times per run instead of once.
+
+    ``use_timings=False`` forces the round-robin partition even when a snapshot
+    is committed — an escape hatch for reproducing a shard as it was cut before
+    a snapshot landed, never a posture to ship.
     """
     root = root or repo_root()
     full = resolve(name, root)
@@ -374,15 +655,35 @@ def check(
             errors.append(
                 f"--shard {index}/{total} over a {len(full)}-entry list — "
                 f"more shards than targets")
-        entries = shard(full, index, total, load_shard_pins(root))
+        # A malformed or absent snapshot degrades to round-robin and says so in
+        # `timing_warnings`; it never becomes an `error`, because the timing
+        # snapshot governs how fast the gate runs and not what it covers.
+        timings = load_timings(root) if use_timings else {
+            "durations": {}, "sources": [],
+            "warnings": ["--no-timings: partitioning round-robin on file count, "
+                         "ignoring the committed duration snapshot"]}
+        shards, partition_report = partition(
+            full, total, load_shard_pins(root),
+            timings["durations"],  # type: ignore[arg-type]
+        )
+        entries = shards[index - 1]
         if not entries:
             errors.append(
                 f"shard {index}/{total} of {LISTS[name]} resolved to ZERO "
                 f"targets — {len(full)} targets across {total} shards should "
                 f"never leave one empty; the partition function is broken")
-        shard_report = {"shard": f"{index}/{total}",
-                        "shard_count": len(entries),
-                        "total_count": len(full)}
+        estimated = partition_report.get("estimated_seconds")
+        shard_report = {
+            "shard": f"{index}/{total}",
+            "shard_count": len(entries),
+            "total_count": len(full),
+            "shard_method": partition_report["method"],
+            "shard_partition": partition_report,
+            "shard_estimated_seconds": (
+                estimated[index - 1] if isinstance(estimated, list) else None),
+            "timing_sources": timings["sources"],
+            "timing_warnings": timings["warnings"],
+        }
     if not full:
         errors.append(
             f"{LISTS[name]} resolved to ZERO test targets — the gate would run nothing"
@@ -813,6 +1114,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="run only the K-th of N shards (1-based). Narrows the "
                              "PRINTED targets only; the floor, duplicate and "
                              "existence checks always see the whole list")
+    parser.add_argument("--no-timings", action="store_true",
+                        help="ignore args/ci_test_timings/ and partition round-robin "
+                             "on file count (crx-test-07 escape hatch)")
     parser.add_argument("--check-coverage", action="store_true",
                         help="fail when a test file is gated by nothing (tsg-policy-01)")
     parser.add_argument("--prune-backlog", action="store_true",
@@ -904,7 +1208,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         root = args.root.resolve() if args.root else repo_root()
-        report = check(args.name, root, shard_spec=shard_spec)
+        report = check(args.name, root, shard_spec=shard_spec,
+                       use_timings=not args.no_timings)
     except AllowlistError as exc:
         # Never emit an empty stdout on failure: a caller doing
         # `readarray < <(... --print)` must not read "no tests" as success.
@@ -927,6 +1232,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             for err in report["errors"]:  # type: ignore[union-attr]
                 print(f"::error::CI test allowlist ({args.name}): {err}", file=sys.stderr)
             return 1
+        # A degraded partition is a WARNING and never an error: a stale or broken
+        # snapshot costs wall clock, not coverage. But it is printed, because a
+        # silent fallback to round-robin looks exactly like the balanced run it
+        # is not — which is how a measurement nobody reads goes stale.
+        # stderr, always: `--print` writes the target list to stdout and a caller
+        # doing `readarray < <(... --print)` must not read a status line as a
+        # pytest target.
+        for warning in report.get("timing_warnings") or []:  # type: ignore[union-attr]
+            print(f"::warning::shard timings: {warning}", file=sys.stderr)
+        if report.get("shard"):
+            partition_report = report.get("shard_partition") or {}
+            method = partition_report.get("method")  # type: ignore[union-attr]
+            if method == "duration":
+                print(
+                    f"Shard {report['shard']}: {report['shard_count']} targets, "
+                    f"~{report['shard_estimated_seconds']}s estimated "
+                    f"(bin-packed; {partition_report['measured_entries']}/"  # type: ignore[index]
+                    f"{partition_report['entries']} measured, "  # type: ignore[index]
+                    f"{partition_report['imputed_units']} units imputed, "  # type: ignore[index]
+                    f"spread {partition_report.get('estimated_spread_pct')}%, "  # type: ignore[union-attr]
+                    f"floor {partition_report.get('lower_bound_seconds')}s)",  # type: ignore[union-attr]
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"Shard {report['shard']}: {report['shard_count']} targets "
+                    f"(round-robin on file count — no usable timing snapshot)",
+                    file=sys.stderr,
+                )
         if not (args.json or args.do_print):
             presence = (
                 "all present, no duplicates"

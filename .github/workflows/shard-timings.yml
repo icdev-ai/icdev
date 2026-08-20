@@ -1,0 +1,197 @@
+# CUI // SP-CTI
+name: Shard Timing Refresh
+
+# WHY THIS IS SCHEDULED (crx-test-07). `args/ci_test_timings/snapshot.json` is
+# what `gated_test_list.partition()` bin-packs the gated pytest run by. A
+# snapshot nobody refreshes goes stale exactly the way the ungated census did —
+# three days stale on the day it was written, and only ever moved by a human —
+# and a stale snapshot degrades silently: every new test gets the median
+# imputed, the partition drifts back toward count-balance, and the only symptom
+# is a `Test` check that is slowly getting slower. Nothing goes red.
+#
+# WHY IT OPENS A PR RATHER THAN PUSHING. The snapshot decides which runner runs
+# which test. That edit gets reviewed like any other, and the PR itself runs the
+# sharded suite WITH the new snapshot in it — so the partition is proved by the
+# same pipeline it repartitions before anyone merges it.
+#
+# WHY IT READS AN EXISTING RUN RATHER THAN RUNNING THE SUITE. `Test` already
+# uploads `ci-junit-shard-<k>.xml` from every shard on every run. Re-running the
+# suite here to time it would burn ~25 runner-minutes to measure something four
+# artifacts already record, and it would measure a DIFFERENT partition from the
+# one main actually uses.
+on:
+  schedule:
+    # Weekly. Per-file cost moves when a test is added or a fixture changes, not
+    # hourly; and a snapshot that changed every day would make
+    # args/ci_test_timings/ a churning file in every rebase.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ICDEV CI run id to read (default: newest successful run on the default branch)"
+        required: false
+      open_pr:
+        description: "Open a PR with the refreshed snapshot (false = report only)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+  pull-requests: write
+  # `gh run download` reads another workflow's artifacts.
+  actions: read
+
+jobs:
+  refresh:
+    name: Rebuild the per-file duration snapshot
+    runs-on: ubuntu-latest
+    if: github.repository == 'icdev-ai/icdev'
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The refresh branches off this checkout; a shallow clone cannot.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pick the run to read
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ github.event.inputs.run_id || '' }}"
+          if [ -z "$RUN_ID" ]; then
+            # Newest SUCCESSFUL run on the default branch. A failed run's shards
+            # abort at the first failure (`-x`), so its JUnit is a partial
+            # measurement — folding that in would under-weight everything after
+            # the failure and quietly unbalance the next month of runs.
+            # The branch is asked of the API, not read off `github.event`: a
+            # `schedule` payload and a `workflow_dispatch` payload do not agree
+            # about what branch this is, and reading the wrong one would
+            # silently measure a feature branch.
+            DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+            RUN_ID=$(gh run list --workflow "ICDEV CI" \
+              --branch "$DEFAULT_BRANCH" \
+              --status success --limit 1 --json databaseId \
+              --jq '.[0].databaseId // empty')
+          fi
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::no successful ICDEV CI run found to read timings from"
+            exit 1
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "reading timings from run $RUN_ID"
+
+      - name: Download the shard JUnit artifacts
+        id: download
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          mkdir -p .tmp/junit
+          FOUND=0
+          # The shard count is not read from anywhere: this loop simply asks for
+          # each name and skips the ones that do not exist, so changing N in
+          # icdev-ci.yml needs no edit here. An artifact that expired is skipped
+          # the same way, and the count below is what decides whether enough of
+          # the run survived to be worth folding in.
+          for k in 1 2 3 4 5 6 7 8; do
+            if gh run download "${{ steps.pick.outputs.run_id }}" \
+                 -n "ci-junit-shard-$k" -D ".tmp/junit/shard$k" 2>/dev/null; then
+              FOUND=$((FOUND + 1))
+            fi
+          done
+          echo "found=$FOUND" >> "$GITHUB_OUTPUT"
+          echo "downloaded $FOUND shard report(s)"
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::error::run ${{ steps.pick.outputs.run_id }} has no ci-junit-shard-* artifacts (expired?)"
+            exit 1
+          fi
+
+      - name: Rebuild the snapshot
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          ICDEV_STORAGE_BACKEND: sqlite
+        # `shard_timings.py` REFUSES to write a snapshot with no attributed
+        # durations, so a partial or mis-shaped download fails here rather than
+        # replacing a good snapshot with one that silently reverts every shard
+        # to round-robin.
+        run: |
+          set -euo pipefail
+          python tools/ci/shard_timings.py \
+            --from-junit '.tmp/junit/shard*/ci-junit-shard-*.xml' \
+            --source "github-run-${{ steps.pick.outputs.run_id }}" \
+            --write
+          python tools/ci/shard_timings.py --balance --shards 4
+
+      - name: Mirror the snapshot into the package data tree
+        # args/ is mirrored to icdev/data/args/ by sync_package_tree; a wheel
+        # whose snapshot does not match the checkout partitions differently.
+        run: |
+          set -euo pipefail
+          mkdir -p icdev/data/args/ci_test_timings
+          cp args/ci_test_timings/*.json icdev/data/args/ci_test_timings/
+
+      - name: Is it actually different?
+        id: diff
+        run: |
+          # `--porcelain`, not `git diff --quiet`: on a tree where one of these
+          # paths is UNTRACKED, `git diff` reports no change and the refresh
+          # would open no PR while looking like it had nothing to say.
+          if [ -z "$(git status --porcelain -- args/ci_test_timings icdev/data/args/ci_test_timings)" ]; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+            echo "snapshot unchanged — nothing to open a PR for"
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a PR with the refreshed snapshot
+        if: steps.diff.outputs.changed == '1' && (github.event.inputs.open_pr || 'true') == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="chore/shard-timings-$(date -u +%Y%m%dT%H%M%SZ)"
+          git config user.name "icdev-bot"
+          git config user.email "noreply@icdev.ai"
+          git checkout -b "$BRANCH"
+          git add args/ci_test_timings icdev/data/args/ci_test_timings
+          python tools/ci/shard_timings.py --balance --shards 4 > balance.txt
+          {
+            echo "chore(ci): refresh the shard timing snapshot"
+            echo
+            echo "Rebuilt from the ci-junit-shard-*.xml artifacts of run"
+            echo "${{ steps.pick.outputs.run_id }} (${{ steps.download.outputs.found }} shard reports)."
+            echo
+            cat balance.txt
+          } > commit_msg.txt
+          git commit -F commit_msg.txt
+          git push -u origin "$BRANCH"
+          {
+            echo "Refreshed \`args/ci_test_timings/snapshot.json\` from run"
+            echo "[${{ steps.pick.outputs.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ steps.pick.outputs.run_id }})."
+            echo
+            echo "The partition this produces:"
+            echo
+            echo '```'
+            cat balance.txt
+            echo '```'
+            echo
+            echo "This PR's own \`Test\` check runs the sharded suite WITH this snapshot,"
+            echo "so the new partition is proved by the pipeline it repartitions."
+          } > pr_body.md
+          gh pr create \
+            --title "chore(ci): refresh the shard timing snapshot" \
+            --body-file pr_body.md
+
+      - name: Upload the snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-timing-snapshot
+          path: args/ci_test_timings/snapshot.json
+          if-no-files-found: ignore

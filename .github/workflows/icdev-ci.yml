@@ -285,6 +285,17 @@ jobs:
   # ── Tier 1: the gated pytest run, sharded across runners ────────────────
   # 31m15s of the old 33m43s `Test` job was this one pytest call over 436 files.
   #
+  # BIN-PACKED BY MEASURED DURATION, not file count (crx-test-07).
+  # Round-robin balanced the COUNT (111/111/110/110) and said nothing about
+  # runtime: on the first merged sharded run shard 1 took 17m01s against
+  # 5m59s/5m43s/6m36s, because it drew the repo-wide scanners. `partition()`
+  # now packs against args/ci_test_timings/, refreshed weekly by
+  # .github/workflows/shard-timings.yml from these very artifacts. Do NOT
+  # respond to a slow shard by raising N -- an unbalanced partition wastes a
+  # 5th and 6th runner the same way it wastes the current three, and
+  # `shard_timings.py --balance` reports the makespan floor that says
+  # whether more runners could help at all.
+  #
   # SHARDED ACROSS RUNNERS, not with pytest-xdist inside one. The parallelisation
   # spike measured the blocker: 138 test files write the ambient
   # cwd/data/icdev.db through a bare get_connection(), and xdist workers all
@@ -333,6 +344,13 @@ jobs:
         # existence) and then asserts this shard is non-empty. The floor is
         # never divided by N — a derived per-shard floor would be strictly
         # weaker than the whole-list one.
+        #
+        # `--check` also prints WHICH partition it cut (crx-test-07):
+        # bin-packed against args/ci_test_timings/, or round-robin because
+        # no usable snapshot was found. A silent fallback to round-robin
+        # looks exactly like the balanced run it is not, so it is a line in
+        # every build log rather than something inferred from the wall
+        # clock afterwards.
         run: |
           python tools/ci/gated_test_list.py --check --list core \
             --shard ${{ matrix.shard }}/${{ strategy.job-total }}
