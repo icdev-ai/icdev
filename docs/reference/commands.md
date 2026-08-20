@@ -6548,6 +6548,19 @@ python tools/ci/gated_test_list.py --check --list core       # validate: empty/s
 python tools/ci/gated_test_list.py --print --list windows    # resolved targets, one per line
 python tools/ci/gated_test_list.py --list core --json        # full report (count, floor, missing, duplicates)
 python tools/ci/gated_test_list.py --extract-workflow .github/workflows/icdev-ci.yml --job test --min-targets 2
+
+# E2E promotion survey (crx-test-06) — is `E2E (Playwright)` fit to be REQUIRED?
+# Answer today: NOT YET. Report only, no --gate; exit 2 = could not be produced.
+python tools/ci/e2e_flake_survey.py                          # human table, both populations
+python tools/ci/e2e_flake_survey.py --json                   # machine-readable + verdict
+python tools/ci/e2e_flake_survey.py --limit 100              # runs to examine
+python tools/ci/e2e_flake_survey.py --from-json runs.json    # offline replay of a saved payload
+# The 25/25 green was selection bias: pre-crx-test-05 E2E declared `needs: [test]`
+# and was SKIPPED whenever the unit suite failed (10 of 40 runs, measured
+# 2026-08-19), so the failures were missing from the DENOMINATOR. Population is
+# split structurally on the presence of an `E2E Shard k of N` job; success /
+# failure / cancelled / skipped / in_progress are never merged; flake_rate is
+# None (never 0.0) when nothing was exercised. Claims: args/e2e_promotion.yaml.
 python tools/git/ci_test_list_merge_rehearsal.py             # inline vs external vs external-union, both merge paths
 python tools/git/ci_test_list_merge_rehearsal.py --branches 5 --gate
 python tools/git/ci_test_list_merge_rehearsal.py --repo .    # rehearse against a CLONE of this repo + the real list
