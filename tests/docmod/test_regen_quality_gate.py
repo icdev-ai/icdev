@@ -99,7 +99,6 @@ def _dic_doc_cols():
     no column named filename". Deriving it from `_DDL` means the two cannot
     disagree again, which is the only reason the hand-written version was wrong.
     """
-    import re
 
     ddl = next(d for d in _DDL if "dic_documents" in d)
     body = ddl[ddl.index("(") + 1: ddl.rindex(")")]
