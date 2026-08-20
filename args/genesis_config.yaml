@@ -1211,6 +1211,19 @@ reflexes:
 
   # ── BDC ISA Expiry Alerting (bdr-ops-1 — was registered-but-undispatched) ────
 
+  canvas_reassess:
+    timeout_seconds: 900     # up to 25 designs x one in-process engine run each
+    enabled: true
+    risk_tier: green         # appends assessment rows; mutates no design
+    schedule: "every 24h"
+    interval_seconds: 86400
+    cooldown_minutes: 240
+    description: "Canvas reassessment (rem-hyg-11): re-run each canvas's own assessment engine for designs whose newest assessment is missing or older than stale_after_days, and persist the score the engine ACTUALLY returned. Fixes the cause of the Compliance Posture card being 33-71 days stale - an assessment was only ever written by a human clicking assess in the canvas UI. Covers observability/boundary/infra; Security is out of scope (wider schema, design-id engine)."
+    dry_run: false
+    success_metric:
+      name: reassessed
+      threshold: 0
+      operator: gte          # Informational - 0 is healthy once the backlog has drained
   bdc_isa_expiry:
     timeout_seconds: 120     # single BDC table scan + canvas event publish + Telegram fire-and-forget
     enabled: true
