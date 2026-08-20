@@ -131,6 +131,30 @@ jobs:
       - name: Test gating census
         working-directory: ${{ github.workspace }}
         run: python tools/ci/gated_test_list.py --check-coverage
+      # cef-ci-02. The step above enforces the census by COUNT, and a count is
+      # exactly what an enumerated census exists to distrust: one line out and
+      # one line in leaves the ceiling unmoved while a suite leaves CI. Nothing
+      # compared either census against its previous self, so the ceiling's slack
+      # was the whole guard — and measured on main at 42f7ea894 that slack was 8
+      # slots (backlog_max 1711 against 1703 entries), enough to un-gate eight
+      # CEF suites with --check-coverage still reporting "0 unlisted", exit 0.
+      #
+      # This is the set rule: args/ci_test_backlog.txt and args/ci_skip_census.txt
+      # may LOSE names and never GAIN one, vs the merge base. Deliberately not a
+      # tighter ceiling — "ceiling must equal the count" red-lights main whenever
+      # two concurrent PRs each gate a backlogged file and each lower it by one,
+      # and census line deletions land about five times a day here.
+      #
+      # SURVEYED BEFORE ARMING: every commit touching args/ci_test_backlog.txt
+      # since adoption (ceb10709b) is +0 — 35 commits, 150 deletions, ZERO
+      # additions. It would have refused nothing in the census's history.
+      #
+      # Needs the merge base, so it depends on `fetch-depth: 0` above. Exit 2 is
+      # "could not compare" and stays red: a gate that could not run is not a
+      # gate that found nothing. Do NOT add `|| true`.
+      - name: Closed-census growth
+        working-directory: ${{ github.workspace }}
+        run: python tools/ci/census_growth.py --check
       # trust-disc-01. The two steps above prove a changed test file is RUN by
       # CI. This one proves it DISCRIMINATES: for every test file this branch
       # adds or modifies, check out the merge base, apply ONLY that test file on

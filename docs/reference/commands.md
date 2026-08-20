@@ -6600,6 +6600,23 @@ python tools/ci/red_first_gate.py                            # report over the P
 python tools/ci/red_first_gate.py --gate                     # the merge gate
 python tools/ci/red_first_gate.py --files tests/test_x.py --gate   # prove one file
 python tools/ci/red_first_gate.py --base origin/main --json --out red-first-proof.json
+
+# CLOSED-CENSUS growth (cef-ci-02) — a closed census may LOSE names, never GAIN one.
+# The ratchet above enforces args/ci_test_backlog.txt by a COUNT, and a count is exactly
+# what an ENUMERATED census exists to distrust. Nothing compared a census against its
+# previous self, so the ceiling's slack was the whole guard: measured on main at 42f7ea894
+# it was 8 slots (backlog_max 1711 vs 1703 entries; skip_max was 81 vs 81) — enough to
+# un-gate eight CEF suites (test_resolve_facade.py, test_resolve_trust_loop.py among them)
+# with --check-coverage still reporting "0 unlisted" and exiting 0. backlog_max is now 1703.
+# Catches the SWAP a ceiling structurally cannot: one line out, one in, count unchanged.
+# NOT a tighter ceiling — "ceiling == count" red-lights main when two concurrent PRs each
+# gate a backlogged file and each lower it by one (deletions land ~5x/day here).
+# Surveyed before arming: 35 post-adoption commits on the backlog census, ALL +0.
+# The skip census has no post-adoption commit, so its rate reports UNMEASURABLE, not zero.
+# Exit 2 = could not compare (needs fetch-depth: 0) and stays red.
+python tools/ci/census_growth.py --check                     # exit 1 when a census gained a name
+python tools/ci/census_growth.py --json
+python tools/ci/census_growth.py --base origin/main --root .
 # CI SKIP census (trust-disc-03) — a gated test that SKIPS is UNMEASURED, not passing.
 # The ratchet above answers "does CI run this file?" and nothing else. tests/test_app.py's
 # overview test is gated, green on every PR, and has been skipping ("SQLite test DB lacks
